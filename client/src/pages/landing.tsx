@@ -1,9 +1,44 @@
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { ClipboardList, Users, Shield, Smartphone, FileUp, BarChart3 } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { ClipboardList, Users, Shield, Smartphone, FileUp, BarChart3, Loader2 } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
 
 export default function Landing() {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const { toast } = useToast();
+
+  const handleLocalLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!username || !password) {
+      toast({
+        title: "Error",
+        description: "Please enter both username and password",
+        variant: "destructive",
+      });
+      return;
+    }
+    setIsLoading(true);
+    try {
+      await apiRequest("POST", "/api/auth/local/login", { username, password });
+      window.location.href = "/";
+    } catch (error: any) {
+      toast({
+        title: "Login Failed",
+        description: error.message || "Invalid username or password",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const features = [
     {
       icon: ClipboardList,
@@ -45,35 +80,87 @@ export default function Landing() {
             <ClipboardList className="h-6 w-6 text-primary" />
             <span className="text-xl font-semibold">WorkFlow Pro</span>
           </div>
-          <div className="flex items-center gap-2">
-            <ThemeToggle />
-            <a href="/api/login">
-              <Button data-testid="button-login">Log In</Button>
-            </a>
-          </div>
+          <ThemeToggle />
         </div>
       </header>
 
       <main>
-        <section className="py-20 px-6">
-          <div className="max-w-4xl mx-auto text-center">
-            <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">
-              Streamline Your Field Operations
-            </h1>
-            <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">
-              Manage work orders efficiently with our comprehensive platform. 
-              Track progress, assign tasks, and sync with mobile teams seamlessly.
-            </p>
-            <div className="flex items-center justify-center gap-4 flex-wrap">
-              <a href="/api/login">
-                <Button size="lg" data-testid="button-get-started">
-                  Get Started
-                </Button>
-              </a>
-              <Button variant="outline" size="lg" data-testid="button-learn-more">
-                Learn More
-              </Button>
+        <section className="py-16 px-6">
+          <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+            <div>
+              <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">
+                Streamline Your Field Operations
+              </h1>
+              <p className="text-lg text-muted-foreground mb-8">
+                Manage work orders efficiently with our comprehensive platform. 
+                Track progress, assign tasks, and sync with mobile teams seamlessly.
+              </p>
             </div>
+            
+            <Card className="max-w-md mx-auto w-full">
+              <CardHeader>
+                <CardTitle>Sign In</CardTitle>
+                <CardDescription>
+                  Enter your credentials to access the system
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <form onSubmit={handleLocalLogin} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="username">Username</Label>
+                    <Input
+                      id="username"
+                      type="text"
+                      placeholder="Enter username"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      data-testid="input-username"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="password">Password</Label>
+                    <Input
+                      id="password"
+                      type="password"
+                      placeholder="Enter password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      data-testid="input-password"
+                    />
+                  </div>
+                  <Button 
+                    type="submit" 
+                    className="w-full" 
+                    disabled={isLoading}
+                    data-testid="button-login-submit"
+                  >
+                    {isLoading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Signing in...
+                      </>
+                    ) : (
+                      "Sign In"
+                    )}
+                  </Button>
+                </form>
+                
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t border-border" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-card px-2 text-muted-foreground">Or</span>
+                  </div>
+                </div>
+                
+                <a href="/api/login" className="block">
+                  <Button variant="outline" className="w-full" data-testid="button-login-replit">
+                    Sign in with Replit
+                  </Button>
+                </a>
+              </CardContent>
+            </Card>
           </div>
         </section>
 
@@ -99,20 +186,6 @@ export default function Landing() {
                 </Card>
               ))}
             </div>
-          </div>
-        </section>
-
-        <section className="py-20 px-6">
-          <div className="max-w-4xl mx-auto text-center">
-            <h2 className="text-3xl font-bold mb-4">Ready to get started?</h2>
-            <p className="text-muted-foreground mb-8">
-              Join thousands of teams already using WorkFlow Pro to manage their operations.
-            </p>
-            <a href="/api/login">
-              <Button size="lg" data-testid="button-start-free">
-                Start Free Trial
-              </Button>
-            </a>
           </div>
         </section>
       </main>

@@ -4,12 +4,54 @@ import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { insertWorkOrderSchema, insertProjectSchema } from "@shared/schema";
 import { z } from "zod";
+import bcrypt from "bcryptjs";
+
+async function initializeAdminUser() {
+  const existingAdmin = await storage.getUserByUsername("admin");
+  if (!existingAdmin) {
+    const passwordHash = await bcrypt.hash("pa$$werd1", 10);
+    await storage.createLocalUser("admin", passwordHash, "admin");
+    console.log("Admin user created: username 'admin', password 'pa$$werd1'");
+  }
+}
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
   await setupAuth(app);
+  await initializeAdminUser();
+
+  app.post("/api/auth/local/login", async (req, res) => {
+    try {
+      const { username, password } = req.body;
+      if (!username || !password) {
+        return res.status(400).json({ message: "Username and password are required" });
+      }
+      const user = await storage.getUserByUsername(username);
+      if (!user || !user.passwordHash) {
+        return res.status(401).json({ message: "Invalid username or password" });
+      }
+      const isValid = await bcrypt.compare(password, user.passwordHash);
+      if (!isValid) {
+        return res.status(401).json({ message: "Invalid username or password" });
+      }
+      const sessionUser = {
+        claims: { sub: user.id },
+        expires_at: Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60),
+      };
+      (req as any).login(sessionUser, (err: any) => {
+        if (err) {
+          console.error("Login error:", err);
+          return res.status(500).json({ message: "Login failed" });
+        }
+        res.json({ message: "Login successful", user: { id: user.id, username: user.username, role: user.role } });
+      });
+    } catch (error) {
+      console.error("Local login error:", error);
+      res.status(500).json({ message: "Login failed" });
+    }
+  });
 
   app.get("/api/auth/user", isAuthenticated, async (req: any, res) => {
     try {

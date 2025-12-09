@@ -14,6 +14,8 @@ import { eq, desc, and, sql, ilike, or } from "drizzle-orm";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
+  getUserByUsername(username: string): Promise<User | undefined>;
+  createLocalUser(username: string, passwordHash: string, role: string): Promise<User>;
   upsertUser(user: UpsertUser): Promise<User>;
   getAllUsers(): Promise<User[]>;
   updateUserRole(id: string, role: string): Promise<User | undefined>;
@@ -37,6 +39,24 @@ export interface IStorage {
 export class DatabaseStorage implements IStorage {
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user;
+  }
+
+  async createLocalUser(username: string, passwordHash: string, role: string): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values({
+        username,
+        passwordHash,
+        role,
+        firstName: username,
+      })
+      .returning();
     return user;
   }
 
