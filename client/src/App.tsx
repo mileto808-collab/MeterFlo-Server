@@ -3,25 +3,109 @@ import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { AppSidebar } from "@/components/app-sidebar";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { useAuth } from "@/hooks/useAuth";
+import { Skeleton } from "@/components/ui/skeleton";
+
+import Landing from "@/pages/landing";
+import Dashboard from "@/pages/dashboard";
+import WorkOrders from "@/pages/work-orders";
+import WorkOrderForm from "@/pages/work-order-form";
+import WorkOrderDetail from "@/pages/work-order-detail";
+import Projects from "@/pages/projects";
+import ProjectForm from "@/pages/project-form";
+import Users from "@/pages/users";
+import Import from "@/pages/import";
+import Settings from "@/pages/settings";
 import NotFound from "@/pages/not-found";
 
-function Router() {
+function LoadingScreen() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="flex flex-col items-center gap-4">
+        <div className="h-12 w-12 rounded-md bg-primary animate-pulse" />
+        <Skeleton className="h-4 w-32" />
+      </div>
+    </div>
+  );
+}
+
+function AuthenticatedRouter() {
+  const { user } = useAuth();
+  const role = user?.role || "user";
+
   return (
     <Switch>
-      {/* Add pages below */}
-      {/* <Route path="/" component={Home}/> */}
-      {/* Fallback to 404 */}
+      <Route path="/" component={Dashboard} />
+      <Route path="/work-orders" component={WorkOrders} />
+      <Route path="/work-orders/new" component={WorkOrderForm} />
+      <Route path="/work-orders/:id" component={WorkOrderDetail} />
+      <Route path="/work-orders/:id/edit" component={WorkOrderForm} />
+      {(role === "admin" || role === "user") && (
+        <>
+          <Route path="/projects" component={Projects} />
+          <Route path="/projects/new" component={ProjectForm} />
+          <Route path="/projects/:id/edit" component={ProjectForm} />
+        </>
+      )}
+      {role === "admin" && (
+        <>
+          <Route path="/users" component={Users} />
+          <Route path="/import" component={Import} />
+          <Route path="/settings" component={Settings} />
+        </>
+      )}
       <Route component={NotFound} />
     </Switch>
   );
+}
+
+function AuthenticatedLayout() {
+  const style = {
+    "--sidebar-width": "16rem",
+    "--sidebar-width-icon": "3rem",
+  };
+
+  return (
+    <SidebarProvider style={style as React.CSSProperties}>
+      <div className="flex min-h-screen w-full">
+        <AppSidebar />
+        <div className="flex flex-col flex-1 min-w-0">
+          <header className="flex items-center justify-between gap-4 p-3 border-b border-border sticky top-0 z-50 bg-background">
+            <SidebarTrigger data-testid="button-sidebar-toggle" />
+            <ThemeToggle />
+          </header>
+          <main className="flex-1 overflow-auto">
+            <AuthenticatedRouter />
+          </main>
+        </div>
+      </div>
+    </SidebarProvider>
+  );
+}
+
+function Router() {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
+
+  if (!isAuthenticated) {
+    return <Landing />;
+  }
+
+  return <AuthenticatedLayout />;
 }
 
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <Toaster />
         <Router />
+        <Toaster />
       </TooltipProvider>
     </QueryClientProvider>
   );
