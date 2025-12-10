@@ -1,42 +1,53 @@
 import {
   users,
   projects,
-  workOrders,
+  userProjects,
+  systemSettings,
   type User,
   type UpsertUser,
   type Project,
   type InsertProject,
-  type WorkOrder,
-  type InsertWorkOrder,
+  type UserProject,
+  type InsertUserProject,
+  type SystemSetting,
+  type InsertSystemSetting,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, sql, ilike, or } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 
 export interface IStorage {
+  // User operations
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createLocalUser(username: string, passwordHash: string, role: string): Promise<User>;
   upsertUser(user: UpsertUser): Promise<User>;
   getAllUsers(): Promise<User[]>;
   updateUserRole(id: string, role: string): Promise<User | undefined>;
-  updateUserProject(id: string, projectId: number | null): Promise<User | undefined>;
+  deleteUser(id: string): Promise<boolean>;
 
+  // Project operations
   getProjects(): Promise<Project[]>;
   getProject(id: number): Promise<Project | undefined>;
   createProject(project: InsertProject): Promise<Project>;
   updateProject(id: number, project: Partial<InsertProject>): Promise<Project | undefined>;
+  updateProjectDatabaseName(id: number, databaseName: string): Promise<Project | undefined>;
   deleteProject(id: number): Promise<boolean>;
 
-  getWorkOrders(filters?: { projectId?: number; status?: string; assignedTo?: string }): Promise<WorkOrder[]>;
-  getWorkOrder(id: number): Promise<WorkOrder | undefined>;
-  createWorkOrder(workOrder: InsertWorkOrder): Promise<WorkOrder>;
-  updateWorkOrder(id: number, workOrder: Partial<InsertWorkOrder>): Promise<WorkOrder | undefined>;
-  deleteWorkOrder(id: number): Promise<boolean>;
-  getWorkOrderStats(): Promise<{ pending: number; inProgress: number; completed: number; total: number }>;
-  importWorkOrders(workOrders: InsertWorkOrder[]): Promise<{ imported: number; errors: string[] }>;
+  // User-Project assignment operations
+  getUserProjects(userId: string): Promise<Project[]>;
+  getProjectUsers(projectId: number): Promise<User[]>;
+  assignUserToProject(userId: string, projectId: number): Promise<UserProject>;
+  removeUserFromProject(userId: string, projectId: number): Promise<boolean>;
+  isUserAssignedToProject(userId: string, projectId: number): Promise<boolean>;
+
+  // System settings operations
+  getSetting(key: string): Promise<string | null>;
+  setSetting(key: string, value: string, description?: string): Promise<SystemSetting>;
+  getAllSettings(): Promise<SystemSetting[]>;
 }
 
 export class DatabaseStorage implements IStorage {
+  // User operations
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
     return user;
@@ -94,15 +105,12 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  async updateUserProject(id: string, projectId: number | null): Promise<User | undefined> {
-    const [user] = await db
-      .update(users)
-      .set({ projectId, updatedAt: new Date() })
-      .where(eq(users.id, id))
-      .returning();
-    return user;
+  async deleteUser(id: string): Promise<boolean> {
+    await db.delete(users).where(eq(users.id, id));
+    return true;
   }
 
+  // Project operations
   async getProjects(): Promise<Project[]> {
     return await db.select().from(projects).orderBy(desc(projects.createdAt));
   }
@@ -113,7 +121,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createProject(project: InsertProject): Promise<Project> {
-    const [newProject] = await db.insert(projects).values(project).returning();
+    const [newProject] = await db.insert(projects).values({
+      name: project.name,
+      description: project.description,
+      customerEmail: project.customerEmail,
+    }).returning();
     return newProject;
   }
 
@@ -126,95 +138,116 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async deleteProject(id: number): Promise<boolean> {
-    const result = await db.delete(projects).where(eq(projects.id, id));
-    return true;
-  }
-
-  async getWorkOrders(filters?: { projectId?: number; status?: string; assignedTo?: string }): Promise<WorkOrder[]> {
-    let query = db.select().from(workOrders);
-    
-    const conditions = [];
-    if (filters?.projectId) {
-      conditions.push(eq(workOrders.projectId, filters.projectId));
-    }
-    if (filters?.status) {
-      conditions.push(eq(workOrders.status, filters.status));
-    }
-    if (filters?.assignedTo) {
-      conditions.push(eq(workOrders.assignedTo, filters.assignedTo));
-    }
-    
-    if (conditions.length > 0) {
-      return await db.select().from(workOrders).where(and(...conditions)).orderBy(desc(workOrders.createdAt));
-    }
-    
-    return await db.select().from(workOrders).orderBy(desc(workOrders.createdAt));
-  }
-
-  async getWorkOrder(id: number): Promise<WorkOrder | undefined> {
-    const [workOrder] = await db.select().from(workOrders).where(eq(workOrders.id, id));
-    return workOrder;
-  }
-
-  async createWorkOrder(workOrder: InsertWorkOrder): Promise<WorkOrder> {
-    const [newWorkOrder] = await db.insert(workOrders).values(workOrder).returning();
-    return newWorkOrder;
-  }
-
-  async updateWorkOrder(id: number, workOrder: Partial<InsertWorkOrder>): Promise<WorkOrder | undefined> {
-    const updateData: any = { ...workOrder, updatedAt: new Date() };
-    
-    if (workOrder.status === "completed") {
-      updateData.completedAt = new Date();
-    }
-    
+  async updateProjectDatabaseName(id: number, databaseName: string): Promise<Project | undefined> {
     const [updated] = await db
-      .update(workOrders)
-      .set(updateData)
-      .where(eq(workOrders.id, id))
+      .update(projects)
+      .set({ databaseName, updatedAt: new Date() })
+      .where(eq(projects.id, id))
       .returning();
     return updated;
   }
 
-  async deleteWorkOrder(id: number): Promise<boolean> {
-    await db.delete(workOrders).where(eq(workOrders.id, id));
+  async deleteProject(id: number): Promise<boolean> {
+    await db.delete(projects).where(eq(projects.id, id));
     return true;
   }
 
-  async getWorkOrderStats(): Promise<{ pending: number; inProgress: number; completed: number; total: number }> {
-    const allOrders = await db.select().from(workOrders);
+  // User-Project assignment operations
+  async getUserProjects(userId: string): Promise<Project[]> {
+    const assignments = await db
+      .select()
+      .from(userProjects)
+      .where(eq(userProjects.userId, userId));
     
-    const stats = {
-      pending: 0,
-      inProgress: 0,
-      completed: 0,
-      total: allOrders.length,
-    };
+    if (assignments.length === 0) return [];
     
-    for (const order of allOrders) {
-      if (order.status === "pending") stats.pending++;
-      else if (order.status === "in_progress") stats.inProgress++;
-      else if (order.status === "completed") stats.completed++;
+    const projectIds = assignments.map(a => a.projectId);
+    const projectList: Project[] = [];
+    
+    for (const projectId of projectIds) {
+      const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
+      if (project) projectList.push(project);
     }
     
-    return stats;
+    return projectList;
   }
 
-  async importWorkOrders(workOrdersData: InsertWorkOrder[]): Promise<{ imported: number; errors: string[] }> {
-    const errors: string[] = [];
-    let imported = 0;
+  async getProjectUsers(projectId: number): Promise<User[]> {
+    const assignments = await db
+      .select()
+      .from(userProjects)
+      .where(eq(userProjects.projectId, projectId));
     
-    for (let i = 0; i < workOrdersData.length; i++) {
-      try {
-        await db.insert(workOrders).values(workOrdersData[i]);
-        imported++;
-      } catch (error) {
-        errors.push(`Row ${i + 1}: ${error instanceof Error ? error.message : "Unknown error"}`);
-      }
+    if (assignments.length === 0) return [];
+    
+    const userIds = assignments.map(a => a.userId);
+    const userList: User[] = [];
+    
+    for (const userId of userIds) {
+      const [user] = await db.select().from(users).where(eq(users.id, userId));
+      if (user) userList.push(user);
     }
     
-    return { imported, errors };
+    return userList;
+  }
+
+  async assignUserToProject(userId: string, projectId: number): Promise<UserProject> {
+    const existing = await db
+      .select()
+      .from(userProjects)
+      .where(and(eq(userProjects.userId, userId), eq(userProjects.projectId, projectId)));
+    
+    if (existing.length > 0) return existing[0];
+    
+    const [assignment] = await db
+      .insert(userProjects)
+      .values({ userId, projectId })
+      .returning();
+    return assignment;
+  }
+
+  async removeUserFromProject(userId: string, projectId: number): Promise<boolean> {
+    await db
+      .delete(userProjects)
+      .where(and(eq(userProjects.userId, userId), eq(userProjects.projectId, projectId)));
+    return true;
+  }
+
+  async isUserAssignedToProject(userId: string, projectId: number): Promise<boolean> {
+    const [assignment] = await db
+      .select()
+      .from(userProjects)
+      .where(and(eq(userProjects.userId, userId), eq(userProjects.projectId, projectId)));
+    return !!assignment;
+  }
+
+  // System settings operations
+  async getSetting(key: string): Promise<string | null> {
+    const [setting] = await db.select().from(systemSettings).where(eq(systemSettings.key, key));
+    return setting?.value || null;
+  }
+
+  async setSetting(key: string, value: string, description?: string): Promise<SystemSetting> {
+    const existing = await db.select().from(systemSettings).where(eq(systemSettings.key, key));
+    
+    if (existing.length > 0) {
+      const [updated] = await db
+        .update(systemSettings)
+        .set({ value, description, updatedAt: new Date() })
+        .where(eq(systemSettings.key, key))
+        .returning();
+      return updated;
+    }
+    
+    const [setting] = await db
+      .insert(systemSettings)
+      .values({ key, value, description })
+      .returning();
+    return setting;
+  }
+
+  async getAllSettings(): Promise<SystemSetting[]> {
+    return await db.select().from(systemSettings);
   }
 }
 
