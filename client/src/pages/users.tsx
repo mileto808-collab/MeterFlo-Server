@@ -20,8 +20,10 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import type { User, Project } from "@shared/schema";
-import { Search, Users as UsersIcon, Plus, MoreHorizontal, Pencil, Lock, Unlock, Key, Trash2, FolderPlus } from "lucide-react";
+import { Search, Users as UsersIcon, Plus, MoreHorizontal, Pencil, Lock, Unlock, Key, Trash2, FolderPlus, X, Folder } from "lucide-react";
 import { format } from "date-fns";
+
+type UserWithProjects = User & { assignedProjects?: Project[] };
 
 const createUserSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters").max(100),
@@ -72,6 +74,39 @@ export default function Users() {
 
   const { data: users, isLoading } = useQuery<User[]>({ queryKey: ["/api/users"] });
   const { data: projects } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
+  
+  // Fetch assigned projects for selected user
+  const { data: selectedUserProjects, isLoading: loadingUserProjects } = useQuery<Project[]>({
+    queryKey: ["/api/users", selectedUser?.id, "projects"],
+    queryFn: async () => {
+      if (!selectedUser) return [];
+      const res = await fetch(`/api/users/${selectedUser.id}/projects`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch user projects");
+      return res.json();
+    },
+    enabled: !!selectedUser && assignProjectDialogOpen,
+  });
+
+  // Fetch all user project assignments for the table display
+  const { data: allUsersProjects } = useQuery({
+    queryKey: ["/api/users/all-projects"],
+    queryFn: async () => {
+      if (!users) return {};
+      const map: Record<string, Project[]> = {};
+      for (const user of users) {
+        try {
+          const res = await fetch(`/api/users/${user.id}/projects`, { credentials: "include" });
+          if (res.ok) {
+            map[user.id] = await res.json();
+          }
+        } catch {
+          map[user.id] = [];
+        }
+      }
+      return map;
+    },
+    enabled: !!users && users.length > 0,
+  });
 
   const createForm = useForm<CreateUserForm>({
     resolver: zodResolver(createUserSchema),
@@ -195,10 +230,27 @@ export default function Users() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users/all-projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users", selectedUser?.id, "projects"] });
       toast({ title: "Success", description: "Project assigned successfully" });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message || "Failed to assign project", variant: "destructive" });
+    },
+  });
+
+  const removeProjectMutation = useMutation({
+    mutationFn: async ({ userId, projectId }: { userId: string; projectId: number }) => {
+      await apiRequest("DELETE", `/api/users/${userId}/projects/${projectId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users/all-projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users", selectedUser?.id, "projects"] });
+      toast({ title: "Success", description: "User removed from project" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message || "Failed to remove from project", variant: "destructive" });
     },
   });
 
@@ -299,6 +351,7 @@ export default function Users() {
                     <TableHead>User</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Role</TableHead>
+                    <TableHead>Projects</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Joined</TableHead>
                     <TableHead>Last Login</TableHead>
@@ -329,6 +382,29 @@ export default function Users() {
                         <Badge variant={getRoleBadgeVariant(user.role)} data-testid={`badge-role-${user.id}`}>
                           {user.role}
                         </Badge>
+                      </TableCell>
+                      <TableCell data-testid={`cell-projects-${user.id}`}>
+                        {allUsersProjects && allUsersProjects[user.id]?.length > 0 ? (
+                          <div className="flex flex-wrap gap-1 max-w-[200px]">
+                            {allUsersProjects[user.id].slice(0, 3).map((project) => (
+                              <Badge 
+                                key={project.id} 
+                                variant="secondary" 
+                                className="text-xs"
+                                data-testid={`badge-project-${user.id}-${project.id}`}
+                              >
+                                {project.name}
+                              </Badge>
+                            ))}
+                            {allUsersProjects[user.id].length > 3 && (
+                              <Badge variant="outline" className="text-xs">
+                                +{allUsersProjects[user.id].length - 3} more
+                              </Badge>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">None</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         {user.isLocked ? (
@@ -714,31 +790,88 @@ export default function Users() {
 
       {/* Assign Projects Dialog */}
       <Dialog open={assignProjectDialogOpen} onOpenChange={setAssignProjectDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Assign Projects</DialogTitle>
-            <DialogDescription>Assign projects to {selectedUser?.username || selectedUser?.email}</DialogDescription>
+            <DialogTitle>Manage Project Assignments</DialogTitle>
+            <DialogDescription>Manage project access for {selectedUser?.username || selectedUser?.email}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            {projects && projects.length > 0 ? (
-              projects.map((project) => (
-                <div key={project.id} className="flex items-center gap-3 p-2 rounded-md hover-elevate">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => selectedUser && assignProjectMutation.mutate({ userId: selectedUser.id, projectId: project.id })}
-                    disabled={assignProjectMutation.isPending}
-                    data-testid={`button-assign-project-${project.id}`}
-                  >
-                    <FolderPlus className="h-4 w-4 mr-2" />
-                    Assign
-                  </Button>
-                  <span className="font-medium">{project.name}</span>
+          <div className="space-y-6 py-4">
+            {/* Current Assignments */}
+            <div>
+              <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
+                <Folder className="h-4 w-4" />
+                Assigned Projects
+              </h4>
+              {loadingUserProjects ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-8 w-full" />
+                  <Skeleton className="h-8 w-full" />
                 </div>
-              ))
-            ) : (
-              <p className="text-muted-foreground text-center py-4">No projects available</p>
-            )}
+              ) : selectedUserProjects && selectedUserProjects.length > 0 ? (
+                <div className="space-y-2">
+                  {selectedUserProjects.map((project) => (
+                    <div 
+                      key={project.id} 
+                      className="flex items-center justify-between gap-3 p-2 rounded-md bg-muted/50"
+                      data-testid={`assigned-project-${project.id}`}
+                    >
+                      <span className="font-medium">{project.name}</span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive h-7"
+                        onClick={() => selectedUser && removeProjectMutation.mutate({ userId: selectedUser.id, projectId: project.id })}
+                        disabled={removeProjectMutation.isPending}
+                        data-testid={`button-remove-project-${project.id}`}
+                      >
+                        <X className="h-4 w-4 mr-1" />
+                        Remove
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-sm py-2">No projects assigned</p>
+              )}
+            </div>
+
+            {/* Available Projects to Assign */}
+            <div>
+              <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
+                <FolderPlus className="h-4 w-4" />
+                Available Projects
+              </h4>
+              {projects && projects.length > 0 ? (
+                <div className="space-y-2">
+                  {projects
+                    .filter((p) => !selectedUserProjects?.some((up) => up.id === p.id))
+                    .map((project) => (
+                      <div 
+                        key={project.id} 
+                        className="flex items-center justify-between gap-3 p-2 rounded-md border"
+                        data-testid={`available-project-${project.id}`}
+                      >
+                        <span className="font-medium">{project.name}</span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => selectedUser && assignProjectMutation.mutate({ userId: selectedUser.id, projectId: project.id })}
+                          disabled={assignProjectMutation.isPending}
+                          data-testid={`button-assign-project-${project.id}`}
+                        >
+                          <FolderPlus className="h-4 w-4 mr-1" />
+                          Assign
+                        </Button>
+                      </div>
+                    ))}
+                  {projects.filter((p) => !selectedUserProjects?.some((up) => up.id === p.id)).length === 0 && (
+                    <p className="text-muted-foreground text-sm py-2">All projects are assigned</p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-sm py-2">No projects available</p>
+              )}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAssignProjectDialogOpen(false)}>Close</Button>
