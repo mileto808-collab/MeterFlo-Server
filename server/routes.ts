@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
-import { insertWorkOrderSchema, insertProjectSchema, createUserSchema, updateUserSchema, resetPasswordSchema, permissionKeys } from "@shared/schema";
+import { insertProjectWorkOrderSchema, insertProjectSchema, createUserSchema, updateUserSchema, resetPasswordSchema, permissionKeys } from "@shared/schema";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import multer from "multer";
@@ -1198,6 +1198,7 @@ export async function registerRoutes(
         projectId,
         status,
         priority,
+        serviceType,
         dateFrom,
         dateTo,
         assignedTo,
@@ -1235,17 +1236,26 @@ export async function registerRoutes(
           
           // Apply additional filters
           const filteredOrders = workOrders.filter(wo => {
-            // Text search in title, description, notes
+            // Text search in customerWoId, customerName, address, notes, oldMeterId, newMeterId
             if (query) {
               const searchQuery = query.toLowerCase();
-              const matchesTitle = wo.title?.toLowerCase().includes(searchQuery);
-              const matchesDesc = wo.description?.toLowerCase().includes(searchQuery);
+              const matchesWoId = wo.customerWoId?.toLowerCase().includes(searchQuery);
+              const matchesName = wo.customerName?.toLowerCase().includes(searchQuery);
+              const matchesAddress = wo.address?.toLowerCase().includes(searchQuery);
               const matchesNotes = wo.notes?.toLowerCase().includes(searchQuery);
-              if (!matchesTitle && !matchesDesc && !matchesNotes) return false;
+              const matchesOldMeter = wo.oldMeterId?.toLowerCase().includes(searchQuery);
+              const matchesNewMeter = wo.newMeterId?.toLowerCase().includes(searchQuery);
+              const matchesRoute = wo.route?.toLowerCase().includes(searchQuery);
+              const matchesZone = wo.zone?.toLowerCase().includes(searchQuery);
+              if (!matchesWoId && !matchesName && !matchesAddress && !matchesNotes && 
+                  !matchesOldMeter && !matchesNewMeter && !matchesRoute && !matchesZone) return false;
             }
             
             // Priority filter
             if (priority && wo.priority !== priority) return false;
+            
+            // Service type filter
+            if (serviceType && wo.serviceType !== serviceType) return false;
             
             // Date range filter
             if (dateFrom) {

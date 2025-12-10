@@ -101,23 +101,9 @@ export type WorkOrderStatus = (typeof workOrderStatusEnum)[number];
 export const workOrderPriorityEnum = ["low", "medium", "high", "urgent"] as const;
 export type WorkOrderPriority = (typeof workOrderPriorityEnum)[number];
 
-// Work Orders table - kept in main schema for reference but will be in per-project databases
-export const workOrders = pgTable("work_orders", {
-  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  title: varchar("title", { length: 255 }).notNull(),
-  description: text("description"),
-  status: varchar("status", { length: 20 }).notNull().default("pending"),
-  priority: varchar("priority", { length: 20 }).notNull().default("medium"),
-  projectId: integer("project_id"),
-  assignedTo: varchar("assigned_to"),
-  createdBy: varchar("created_by"),
-  dueDate: timestamp("due_date"),
-  completedAt: timestamp("completed_at"),
-  notes: text("notes"),
-  attachments: text("attachments").array(),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
+// Service type enum for utility work orders
+export const serviceTypeEnum = ["Water", "Electric", "Gas"] as const;
+export type ServiceType = (typeof serviceTypeEnum)[number];
 
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
@@ -222,15 +208,28 @@ export const insertSystemSettingSchema = z.object({
   description: z.string().optional().nullable(),
 });
 
-export const insertWorkOrderSchema = z.object({
-  title: z.string().min(1).max(255),
-  description: z.string().optional().nullable(),
+// Project work order schema for utility meter tracking
+export const insertProjectWorkOrderSchema = z.object({
+  customerWoId: z.string().min(1, "Work Order ID is required").max(100),
+  customerId: z.string().min(1, "Customer ID is required").max(100),
+  customerName: z.string().min(1, "Customer name is required").max(255),
+  address: z.string().min(1, "Address is required").max(500),
+  city: z.string().max(100).optional().nullable(),
+  state: z.string().max(50).optional().nullable(),
+  zip: z.string().max(20).optional().nullable(),
+  phone: z.string().max(50).optional().nullable(),
+  email: z.string().email().max(255).optional().nullable().or(z.literal("")),
+  route: z.string().max(100).optional().nullable(),
+  zone: z.string().max(100).optional().nullable(),
+  serviceType: z.enum(serviceTypeEnum),
+  oldMeterId: z.string().max(100).optional().nullable(),
+  newMeterId: z.string().max(100).optional().nullable(),
+  oldGps: z.string().max(100).optional().nullable(),
+  newGps: z.string().max(100).optional().nullable(),
   status: z.enum(workOrderStatusEnum).optional(),
   priority: z.enum(workOrderPriorityEnum).optional(),
-  projectId: z.number().optional().nullable(),
   assignedTo: z.string().optional().nullable(),
   createdBy: z.string().optional().nullable(),
-  dueDate: z.date().optional().nullable(),
   notes: z.string().optional().nullable(),
   attachments: z.array(z.string()).optional().nullable(),
 });
@@ -252,8 +251,7 @@ export type InsertUserProject = z.infer<typeof insertUserProjectSchema>;
 export type SystemSetting = typeof systemSettings.$inferSelect;
 export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;
 
-export type WorkOrder = typeof workOrders.$inferSelect;
-export type InsertWorkOrder = z.infer<typeof insertWorkOrderSchema>;
+export type InsertProjectWorkOrder = z.infer<typeof insertProjectWorkOrderSchema>;
 
 export type Subrole = typeof subroles.$inferSelect;
 export type InsertSubrole = z.infer<typeof insertSubroleSchema>;
