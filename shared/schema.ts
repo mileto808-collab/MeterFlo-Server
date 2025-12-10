@@ -29,6 +29,10 @@ export const users = pgTable("users", {
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
   role: varchar("role", { length: 20 }).notNull().default("user"),
+  isLocked: boolean("is_locked").default(false),
+  lockedAt: timestamp("locked_at"),
+  lockedReason: varchar("locked_reason", { length: 255 }),
+  lastLoginAt: timestamp("last_login_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -117,6 +121,40 @@ export const insertUserSchema = z.object({
   lastName: z.string().optional().nullable(),
   profileImageUrl: z.string().optional().nullable(),
   role: z.enum(userRoleEnum).optional(),
+  isLocked: z.boolean().optional(),
+  lockedReason: z.string().optional().nullable(),
+});
+
+// Schema for creating a new user
+export const createUserSchema = z.object({
+  username: z.string().min(3).max(100),
+  password: z.string().min(8).regex(
+    /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
+    "Password must contain at least one uppercase letter, one lowercase letter, and one number"
+  ),
+  firstName: z.string().optional(),
+  lastName: z.string().optional(),
+  email: z.string().email().optional().nullable(),
+  role: z.enum(userRoleEnum).default("user"),
+});
+
+// Schema for updating a user
+export const updateUserSchema = z.object({
+  username: z.string().min(3).max(100).optional(),
+  firstName: z.string().optional().nullable(),
+  lastName: z.string().optional().nullable(),
+  email: z.string().email().optional().nullable(),
+  role: z.enum(userRoleEnum).optional(),
+  isLocked: z.boolean().optional(),
+  lockedReason: z.string().optional().nullable(),
+});
+
+// Schema for password reset
+export const resetPasswordSchema = z.object({
+  newPassword: z.string().min(8).regex(
+    /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
+    "Password must contain at least one uppercase letter, one lowercase letter, and one number"
+  ),
 });
 
 export const insertProjectSchema = z.object({
@@ -153,6 +191,9 @@ export const insertWorkOrderSchema = z.object({
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
+export type CreateUser = z.infer<typeof createUserSchema>;
+export type UpdateUser = z.infer<typeof updateUserSchema>;
+export type ResetPassword = z.infer<typeof resetPasswordSchema>;
 
 export type Project = typeof projects.$inferSelect;
 export type InsertProject = z.infer<typeof insertProjectSchema>;
