@@ -7,7 +7,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import multer from "multer";
 import { createProjectSchema, deleteProjectSchema, getProjectWorkOrderStorage, sanitizeSchemaName } from "./projectDb";
-import { ensureProjectDirectory, saveWorkOrderFile, getWorkOrderFiles, deleteWorkOrderFile, getFilePath, getProjectFilesPath, setProjectFilesPath, deleteProjectDirectory } from "./fileStorage";
+import { ensureProjectDirectory, saveWorkOrderFile, getWorkOrderFiles, deleteWorkOrderFile, getFilePath, getProjectFilesPath, setProjectFilesPath, deleteProjectDirectory, saveProjectFile, getProjectFiles, deleteProjectFile, getProjectFilePath } from "./fileStorage";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -838,6 +838,143 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error deleting file:", error);
       res.status(500).json({ message: "Failed to delete file" });
+    }
+  });
+
+  // Project-level files (separate from work order files)
+  app.get("/api/projects/:projectId/files", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      
+      if (currentUser?.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const files = await getProjectFiles(project.name, project.id);
+      res.json(files);
+    } catch (error) {
+      console.error("Error fetching project files:", error);
+      res.status(500).json({ message: "Failed to fetch project files" });
+    }
+  });
+
+  app.post("/api/projects/:projectId/files", isAuthenticated, upload.single("file"), async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      
+      if (currentUser?.role === "customer") {
+        return res.status(403).json({ message: "Customers cannot upload files" });
+      }
+      
+      if (currentUser?.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+      
+      // Check file size against settings
+      const maxFileSizeValue = await storage.getSetting("max_file_size_mb");
+      const maxFileSizeMB = maxFileSizeValue ? parseInt(maxFileSizeValue) : 100;
+      const maxFileSize = maxFileSizeMB * 1024 * 1024;
+      
+      if (req.file.size > maxFileSize) {
+        return res.status(400).json({ message: `File exceeds maximum size of ${maxFileSizeMB} MB` });
+      }
+      
+      // Check file extension against settings
+      const allowedExtensionsValue = await storage.getSetting("allowed_extensions");
+      if (allowedExtensionsValue && allowedExtensionsValue.trim()) {
+        const allowedExts = allowedExtensionsValue.split(",").map(e => e.trim().toLowerCase());
+        const fileExt = "." + req.file.originalname.split(".").pop()?.toLowerCase();
+        if (!allowedExts.includes(fileExt)) {
+          return res.status(400).json({ message: `File type ${fileExt} is not allowed. Allowed types: ${allowedExtensionsValue}` });
+        }
+      }
+      
+      const filePath = await saveProjectFile(
+        project.name,
+        project.id,
+        req.file.originalname,
+        req.file.buffer
+      );
+      
+      res.status(201).json({ message: "File uploaded", path: filePath });
+    } catch (error) {
+      console.error("Error uploading project file:", error);
+      res.status(500).json({ message: "Failed to upload file" });
+    }
+  });
+
+  app.delete("/api/projects/:projectId/files/:filename", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      
+      if (currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      await deleteProjectFile(project.name, project.id, req.params.filename);
+      
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting project file:", error);
+      res.status(500).json({ message: "Failed to delete file" });
+    }
+  });
+
+  app.get("/api/projects/:projectId/files/:filename/download", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      
+      if (currentUser?.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const filePath = await getProjectFilePath(project.name, project.id, req.params.filename);
+      
+      if (!filePath) {
+        return res.status(404).json({ message: "File not found" });
+      }
+      
+      res.download(filePath, req.params.filename);
+    } catch (error) {
+      console.error("Error downloading project file:", error);
+      res.status(500).json({ message: "Failed to download file" });
     }
   });
 

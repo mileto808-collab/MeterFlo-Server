@@ -36,7 +36,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, ClipboardList, AlertCircle, Upload, Trash2, ShieldAlert } from "lucide-react";
+import { Plus, ClipboardList, AlertCircle, Upload, Trash2, ShieldAlert, Folder } from "lucide-react";
 import type { Project } from "@shared/schema";
 import type { ProjectWorkOrder } from "../../../server/projectDb";
 
@@ -237,13 +237,20 @@ export default function ProjectWorkOrders() {
           <p className="text-muted-foreground">Work Orders</p>
         </div>
         {user?.role !== "customer" && (
-          <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-            <DialogTrigger asChild>
-              <Button data-testid="button-create-work-order">
-                <Plus className="h-4 w-4 mr-2" />
-                New Work Order
+          <div className="flex items-center gap-2 flex-wrap">
+            <Link href={`/projects/${projectId}/files`}>
+              <Button variant="outline" data-testid="button-project-files">
+                <Folder className="h-4 w-4 mr-2" />
+                Project Files
               </Button>
-            </DialogTrigger>
+            </Link>
+            <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+              <DialogTrigger asChild>
+                <Button data-testid="button-create-work-order">
+                  <Plus className="h-4 w-4 mr-2" />
+                  New Work Order
+                </Button>
+              </DialogTrigger>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Create Work Order</DialogTitle>
@@ -324,6 +331,7 @@ export default function ProjectWorkOrders() {
               </Form>
             </DialogContent>
           </Dialog>
+          </div>
         )}
       </div>
 
