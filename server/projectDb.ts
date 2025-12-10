@@ -289,3 +289,120 @@ export function getProjectWorkOrderStorage(schemaName: string): ProjectWorkOrder
   }
   return projectStorageCache.get(schemaName)!;
 }
+
+// Backup project database to JSON format
+export async function backupProjectDatabase(schemaName: string): Promise<{
+  schemaName: string;
+  backupDate: string;
+  workOrders: ProjectWorkOrder[];
+  version: string;
+}> {
+  const client = await pool.connect();
+  try {
+    const result = await client.query(
+      `SELECT * FROM "${schemaName}".work_orders ORDER BY id`
+    );
+    
+    const workOrders = result.rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      description: row.description,
+      status: row.status,
+      priority: row.priority,
+      assignedTo: row.assigned_to,
+      createdBy: row.created_by,
+      dueDate: row.due_date,
+      completedAt: row.completed_at,
+      notes: row.notes,
+      attachments: row.attachments,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }));
+    
+    return {
+      schemaName,
+      backupDate: new Date().toISOString(),
+      workOrders,
+      version: "1.0",
+    };
+  } finally {
+    client.release();
+  }
+}
+
+// Restore project database from backup JSON
+export async function restoreProjectDatabase(
+  schemaName: string,
+  backup: { workOrders: Array<Omit<ProjectWorkOrder, "id" | "createdAt" | "updatedAt">> },
+  options: { clearExisting?: boolean } = {}
+): Promise<{ restored: number; errors: string[] }> {
+  const client = await pool.connect();
+  const errors: string[] = [];
+  let restored = 0;
+  
+  try {
+    if (options.clearExisting) {
+      await client.query(`DELETE FROM "${schemaName}".work_orders`);
+    }
+    
+    for (let i = 0; i < backup.workOrders.length; i++) {
+      const wo = backup.workOrders[i];
+      try {
+        await client.query(
+          `INSERT INTO "${schemaName}".work_orders 
+           (title, description, status, priority, assigned_to, created_by, due_date, completed_at, notes, attachments)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          [
+            wo.title,
+            wo.description || null,
+            wo.status || "pending",
+            wo.priority || "medium",
+            wo.assignedTo || null,
+            wo.createdBy || null,
+            wo.dueDate || null,
+            wo.completedAt || null,
+            wo.notes || null,
+            wo.attachments || null,
+          ]
+        );
+        restored++;
+      } catch (error) {
+        errors.push(`Row ${i + 1}: ${error instanceof Error ? error.message : "Unknown error"}`);
+      }
+    }
+    
+    return { restored, errors };
+  } finally {
+    client.release();
+  }
+}
+
+// Get project database statistics
+export async function getProjectDatabaseStats(schemaName: string): Promise<{
+  totalRecords: number;
+  tableSize: string;
+  lastModified: string | null;
+}> {
+  const client = await pool.connect();
+  try {
+    const countResult = await client.query(
+      `SELECT COUNT(*) as count FROM "${schemaName}".work_orders`
+    );
+    
+    const sizeResult = await client.query(
+      `SELECT pg_size_pretty(pg_total_relation_size('"${schemaName}".work_orders')) as size`
+    );
+    
+    const lastModifiedResult = await client.query(
+      `SELECT MAX(updated_at) as last_modified FROM "${schemaName}".work_orders`
+    );
+    
+    return {
+      totalRecords: parseInt(countResult.rows[0].count, 10),
+      tableSize: sizeResult.rows[0].size,
+      lastModified: lastModifiedResult.rows[0].last_modified?.toISOString() || null,
+    };
+  } finally {
+    client.release();
+  }
+}
