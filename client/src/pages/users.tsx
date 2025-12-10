@@ -19,7 +19,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
-import type { User, Project } from "@shared/schema";
+import type { User, Project, Subrole } from "@shared/schema";
 import { Search, Users as UsersIcon, Plus, MoreHorizontal, Pencil, Lock, Unlock, Key, Trash2, FolderPlus, X, Folder } from "lucide-react";
 import { format } from "date-fns";
 
@@ -43,6 +43,7 @@ const editUserSchema = z.object({
   lastName: z.string().optional(),
   email: z.string().email("Invalid email address").optional().or(z.literal("")),
   role: z.enum(["admin", "user", "customer"]),
+  subroleId: z.number().nullable().optional(),
 });
 
 const resetPasswordSchema = z.object({
@@ -74,6 +75,7 @@ export default function Users() {
 
   const { data: users, isLoading } = useQuery<User[]>({ queryKey: ["/api/users"] });
   const { data: projects } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
+  const { data: subroles } = useQuery<Subrole[]>({ queryKey: ["/api/subroles"] });
   
   // Fetch assigned projects for selected user
   const { data: selectedUserProjects, isLoading: loadingUserProjects } = useQuery<Project[]>({
@@ -115,7 +117,7 @@ export default function Users() {
 
   const editForm = useForm<EditUserForm>({
     resolver: zodResolver(editUserSchema),
-    defaultValues: { username: "", firstName: "", lastName: "", email: "", role: "user" },
+    defaultValues: { username: "", firstName: "", lastName: "", email: "", role: "user", subroleId: null },
   });
 
   const resetPasswordForm = useForm<ResetPasswordForm>({
@@ -284,6 +286,7 @@ export default function Users() {
       lastName: user.lastName || "",
       email: user.email || "",
       role: (user.role as "admin" | "user" | "customer") || "user",
+      subroleId: user.subroleId ?? null,
     });
     setEditDialogOpen(true);
   };
@@ -351,6 +354,7 @@ export default function Users() {
                     <TableHead>User</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Role</TableHead>
+                    <TableHead>Access Level</TableHead>
                     <TableHead>Projects</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Joined</TableHead>
@@ -382,6 +386,19 @@ export default function Users() {
                         <Badge variant={getRoleBadgeVariant(user.role)} data-testid={`badge-role-${user.id}`}>
                           {user.role}
                         </Badge>
+                      </TableCell>
+                      <TableCell data-testid={`cell-access-level-${user.id}`}>
+                        {user.role === "user" && user.subroleId ? (
+                          <Badge variant="outline" className="capitalize">
+                            {subrolesData?.find(s => s.id === user.subroleId)?.name || "—"}
+                          </Badge>
+                        ) : user.role === "admin" ? (
+                          <span className="text-muted-foreground text-sm">Full Access</span>
+                        ) : user.role === "customer" ? (
+                          <span className="text-muted-foreground text-sm">Read Only</span>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">—</span>
+                        )}
                       </TableCell>
                       <TableCell data-testid={`cell-projects-${user.id}`}>
                         {allUsersProjects && allUsersProjects[user.id]?.length > 0 ? (
@@ -661,7 +678,12 @@ export default function Users() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Role</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
+                    <Select onValueChange={(value) => {
+                      field.onChange(value);
+                      if (value !== "user") {
+                        editForm.setValue("subroleId", null);
+                      }
+                    }} value={field.value}>
                       <FormControl>
                         <SelectTrigger data-testid="select-edit-role">
                           <SelectValue />
@@ -677,6 +699,41 @@ export default function Users() {
                   </FormItem>
                 )}
               />
+              {editForm.watch("role") === "user" && (
+                <FormField
+                  control={editForm.control}
+                  name="subroleId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Access Level</FormLabel>
+                      <Select 
+                        onValueChange={(value) => field.onChange(value === "none" ? null : parseInt(value))} 
+                        value={field.value?.toString() || "none"}
+                      >
+                        <FormControl>
+                          <SelectTrigger data-testid="select-edit-subrole">
+                            <SelectValue placeholder="Select access level" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="none">No Subrole (View Only)</SelectItem>
+                          {subroles?.filter(s => s.baseRole === "user").map((subrole) => (
+                            <SelectItem key={subrole.id} value={subrole.id.toString()}>
+                              {subrole.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {field.value 
+                          ? subroles?.find(s => s.id === field.value)?.description 
+                          : "Basic view-only access to assigned projects"}
+                      </p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
                 <Button type="submit" disabled={updateUserMutation.isPending} data-testid="button-submit-edit">

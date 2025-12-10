@@ -19,6 +19,32 @@ export const sessions = pgTable(
 export const userRoleEnum = ["admin", "user", "customer"] as const;
 export type UserRole = (typeof userRoleEnum)[number];
 
+// Subroles table - defines subroles within base roles (primarily for "user" role)
+export const subroles = pgTable("subroles", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  key: varchar("key", { length: 50 }).notNull().unique(),
+  label: varchar("label", { length: 100 }).notNull(),
+  baseRole: varchar("base_role", { length: 20 }).notNull().default("user"),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Permissions table - defines all available permissions
+export const permissions = pgTable("permissions", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  key: varchar("key", { length: 100 }).notNull().unique(),
+  label: varchar("label", { length: 100 }).notNull(),
+  category: varchar("category", { length: 50 }).notNull(),
+  description: text("description"),
+});
+
+// SubRole-Permissions junction table
+export const subrolePermissions = pgTable("subrole_permissions", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  subroleId: integer("subrole_id").notNull().references(() => subroles.id, { onDelete: "cascade" }),
+  permissionKey: varchar("permission_key", { length: 100 }).notNull(),
+});
+
 // Users table - supports both Replit Auth and local auth
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -29,6 +55,7 @@ export const users = pgTable("users", {
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
   role: varchar("role", { length: 20 }).notNull().default("user"),
+  subroleId: integer("subrole_id").references(() => subroles.id, { onDelete: "set null" }),
   isLocked: boolean("is_locked").default(false),
   lockedAt: timestamp("locked_at"),
   lockedReason: varchar("locked_reason", { length: 255 }),
@@ -145,6 +172,7 @@ export const updateUserSchema = z.object({
   lastName: z.string().optional().nullable(),
   email: z.string().email().optional().nullable(),
   role: z.enum(userRoleEnum).optional(),
+  subroleId: z.number().optional().nullable(),
   isLocked: z.boolean().optional(),
   lockedReason: z.string().optional().nullable(),
 });
@@ -161,6 +189,25 @@ export const insertProjectSchema = z.object({
   name: z.string().min(1).max(255),
   description: z.string().optional().nullable(),
   customerEmail: z.string().email().optional().nullable(),
+});
+
+export const insertSubroleSchema = z.object({
+  key: z.string().min(1).max(50),
+  label: z.string().min(1).max(100),
+  baseRole: z.enum(userRoleEnum).default("user"),
+  description: z.string().optional().nullable(),
+});
+
+export const insertPermissionSchema = z.object({
+  key: z.string().min(1).max(100),
+  label: z.string().min(1).max(100),
+  category: z.string().min(1).max(50),
+  description: z.string().optional().nullable(),
+});
+
+export const insertSubrolePermissionSchema = z.object({
+  subroleId: z.number(),
+  permissionKey: z.string(),
 });
 
 export const insertUserProjectSchema = z.object({
@@ -206,3 +253,31 @@ export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;
 
 export type WorkOrder = typeof workOrders.$inferSelect;
 export type InsertWorkOrder = z.infer<typeof insertWorkOrderSchema>;
+
+export type Subrole = typeof subroles.$inferSelect;
+export type InsertSubrole = z.infer<typeof insertSubroleSchema>;
+
+export type Permission = typeof permissions.$inferSelect;
+export type InsertPermission = z.infer<typeof insertPermissionSchema>;
+
+export type SubrolePermission = typeof subrolePermissions.$inferSelect;
+export type InsertSubrolePermission = z.infer<typeof insertSubrolePermissionSchema>;
+
+// Default permission keys
+export const permissionKeys = {
+  PROJECTS_VIEW: "projects.view",
+  PROJECTS_MANAGE: "projects.manage",
+  WORK_ORDERS_VIEW: "workOrders.view",
+  WORK_ORDERS_CREATE: "workOrders.create",
+  WORK_ORDERS_EDIT: "workOrders.edit",
+  WORK_ORDERS_DELETE: "workOrders.delete",
+  USERS_MANAGE: "users.manage",
+  SETTINGS_MANAGE: "settings.manage",
+  MAINTENANCE_MANAGE: "maintenance.manage",
+  FILES_UPLOAD: "files.upload",
+  FILES_DELETE: "files.delete",
+  IMPORT_DATA: "import.data",
+  SEARCH_REPORTS: "search.reports",
+} as const;
+
+export type PermissionKey = typeof permissionKeys[keyof typeof permissionKeys];
