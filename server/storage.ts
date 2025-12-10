@@ -19,11 +19,18 @@ export interface IStorage {
   // User operations
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
-  createLocalUser(username: string, passwordHash: string, role: string): Promise<User>;
+  getUserByEmail(email: string): Promise<User | undefined>;
+  createLocalUser(username: string, passwordHash: string, role: string, firstName?: string, lastName?: string, email?: string | null): Promise<User>;
   upsertUser(user: UpsertUser): Promise<User>;
   getAllUsers(): Promise<User[]>;
+  updateUser(id: string, data: Partial<{username: string; firstName: string | null; lastName: string | null; email: string | null; role: string; isLocked: boolean; lockedReason: string | null}>): Promise<User | undefined>;
   updateUserRole(id: string, role: string): Promise<User | undefined>;
+  updateUserPassword(id: string, passwordHash: string): Promise<User | undefined>;
+  lockUser(id: string, reason?: string): Promise<User | undefined>;
+  unlockUser(id: string): Promise<User | undefined>;
+  updateLastLogin(id: string): Promise<User | undefined>;
   deleteUser(id: string): Promise<boolean>;
+  countActiveAdmins(): Promise<number>;
 
   // Project operations
   getProjects(): Promise<Project[]>;
@@ -58,14 +65,21 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  async createLocalUser(username: string, passwordHash: string, role: string): Promise<User> {
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user;
+  }
+
+  async createLocalUser(username: string, passwordHash: string, role: string, firstName?: string, lastName?: string, email?: string | null): Promise<User> {
     const [user] = await db
       .insert(users)
       .values({
         username,
         passwordHash,
         role,
-        firstName: username,
+        firstName: firstName || username,
+        lastName: lastName || null,
+        email: email || null,
       })
       .returning();
     return user;
@@ -105,9 +119,81 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
+  async updateUser(id: string, data: Partial<{username: string; firstName: string | null; lastName: string | null; email: string | null; role: string; isLocked: boolean; lockedReason: string | null}>): Promise<User | undefined> {
+    const updateData: any = { ...data, updatedAt: new Date() };
+    
+    if (data.isLocked === true) {
+      updateData.lockedAt = new Date();
+    } else if (data.isLocked === false) {
+      updateData.lockedAt = null;
+      updateData.lockedReason = null;
+    }
+    
+    const [user] = await db
+      .update(users)
+      .set(updateData)
+      .where(eq(users.id, id))
+      .returning();
+    return user;
+  }
+
+  async updateUserPassword(id: string, passwordHash: string): Promise<User | undefined> {
+    const [user] = await db
+      .update(users)
+      .set({ passwordHash, updatedAt: new Date() })
+      .where(eq(users.id, id))
+      .returning();
+    return user;
+  }
+
+  async lockUser(id: string, reason?: string): Promise<User | undefined> {
+    const [user] = await db
+      .update(users)
+      .set({ 
+        isLocked: true, 
+        lockedAt: new Date(), 
+        lockedReason: reason || null,
+        updatedAt: new Date() 
+      })
+      .where(eq(users.id, id))
+      .returning();
+    return user;
+  }
+
+  async unlockUser(id: string): Promise<User | undefined> {
+    const [user] = await db
+      .update(users)
+      .set({ 
+        isLocked: false, 
+        lockedAt: null, 
+        lockedReason: null,
+        updatedAt: new Date() 
+      })
+      .where(eq(users.id, id))
+      .returning();
+    return user;
+  }
+
+  async updateLastLogin(id: string): Promise<User | undefined> {
+    const [user] = await db
+      .update(users)
+      .set({ lastLoginAt: new Date() })
+      .where(eq(users.id, id))
+      .returning();
+    return user;
+  }
+
   async deleteUser(id: string): Promise<boolean> {
     await db.delete(users).where(eq(users.id, id));
     return true;
+  }
+
+  async countActiveAdmins(): Promise<number> {
+    const adminUsers = await db
+      .select()
+      .from(users)
+      .where(and(eq(users.role, "admin"), eq(users.isLocked, false)));
+    return adminUsers.length;
   }
 
   // Project operations
