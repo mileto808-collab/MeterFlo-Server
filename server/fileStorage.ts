@@ -155,3 +155,95 @@ export async function getFilePath(
     return null;
   }
 }
+
+// === PROJECT-LEVEL FILE FUNCTIONS ===
+
+// Ensure project documents folder exists (separate from work order folders)
+export async function ensureProjectDocumentsDirectory(projectName: string, projectId: number): Promise<string> {
+  const projectPath = await ensureProjectDirectory(projectName, projectId);
+  const docsDir = path.join(projectPath, "_project_documents");
+  
+  try {
+    await fs.mkdir(docsDir, { recursive: true });
+  } catch (error) {
+    // Directory might already exist
+  }
+  
+  return docsDir;
+}
+
+// Save a file to project documents
+export async function saveProjectFile(
+  projectName: string,
+  projectId: number,
+  filename: string,
+  buffer: Buffer
+): Promise<string> {
+  const docsDir = await ensureProjectDocumentsDirectory(projectName, projectId);
+  const sanitizedFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const filePath = path.join(docsDir, sanitizedFilename);
+  
+  await fs.writeFile(filePath, buffer);
+  
+  return filePath;
+}
+
+// Get list of files in project documents
+export async function getProjectFiles(
+  projectName: string,
+  projectId: number
+): Promise<{ name: string; size: number; modifiedAt: Date }[]> {
+  const docsDir = await ensureProjectDocumentsDirectory(projectName, projectId);
+  
+  try {
+    const files = await fs.readdir(docsDir);
+    const fileDetails = await Promise.all(
+      files.map(async (file) => {
+        const filePath = path.join(docsDir, file);
+        const stats = await fs.stat(filePath);
+        return {
+          name: file,
+          size: stats.size,
+          modifiedAt: stats.mtime,
+        };
+      })
+    );
+    return fileDetails;
+  } catch (error) {
+    return [];
+  }
+}
+
+// Delete a file from project documents
+export async function deleteProjectFile(
+  projectName: string,
+  projectId: number,
+  filename: string
+): Promise<boolean> {
+  const docsDir = await ensureProjectDocumentsDirectory(projectName, projectId);
+  const filePath = path.join(docsDir, filename);
+  
+  try {
+    await fs.unlink(filePath);
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+// Get project file path for download
+export async function getProjectFilePath(
+  projectName: string,
+  projectId: number,
+  filename: string
+): Promise<string | null> {
+  const docsDir = await ensureProjectDocumentsDirectory(projectName, projectId);
+  const filePath = path.join(docsDir, filename);
+  
+  try {
+    await fs.access(filePath);
+    return filePath;
+  } catch (error) {
+    return null;
+  }
+}

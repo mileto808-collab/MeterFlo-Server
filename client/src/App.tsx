@@ -16,6 +16,7 @@ import Projects from "@/pages/projects";
 import ProjectForm from "@/pages/project-form";
 import ProjectWorkOrders from "@/pages/project-work-orders";
 import ProjectImport from "@/pages/project-import";
+import ProjectFiles from "@/pages/project-files";
 import WorkOrderFiles from "@/pages/work-order-files";
 import Users from "@/pages/users";
 import Settings from "@/pages/settings";
@@ -57,6 +58,7 @@ function AuthenticatedRouter() {
       {(role === "admin" || role === "user") && (
         <>
           <Route path="/projects/:projectId/work-orders" component={ProjectWorkOrders} />
+          <Route path="/projects/:projectId/files" component={ProjectFiles} />
           <Route path="/projects/:projectId/work-orders/:workOrderId/files" component={WorkOrderFiles} />
           <Route path="/projects/:projectId/import" component={ProjectImport} />
         </>
