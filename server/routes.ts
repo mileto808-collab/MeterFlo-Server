@@ -978,6 +978,123 @@ export async function registerRoutes(
     }
   });
 
+  // Global Work Order Search (across all accessible projects)
+  app.get("/api/search/work-orders", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // Get projects user has access to
+      let accessibleProjects;
+      if (currentUser.role === "admin") {
+        accessibleProjects = await storage.getProjects();
+      } else {
+        accessibleProjects = await storage.getProjectsForUser(currentUser.id);
+      }
+      
+      // Parse search filters from query
+      const {
+        query,
+        projectId,
+        status,
+        priority,
+        dateFrom,
+        dateTo,
+        assignedTo,
+      } = req.query;
+      
+      // Filter projects if specific project requested
+      let projectsToSearch = accessibleProjects;
+      if (projectId) {
+        projectsToSearch = accessibleProjects.filter(p => p.id === parseInt(projectId));
+      }
+      
+      const results: Array<{
+        projectId: number;
+        projectName: string;
+        workOrder: any;
+      }> = [];
+      
+      // Search across all accessible projects
+      for (const project of projectsToSearch) {
+        if (!project.databaseName) continue;
+        
+        try {
+          const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+          const filters: { status?: string; assignedTo?: string } = {};
+          
+          if (status) filters.status = status;
+          if (assignedTo) filters.assignedTo = assignedTo;
+          
+          // Customers can only see completed work orders
+          if (currentUser.role === "customer") {
+            filters.status = "completed";
+          }
+          
+          const workOrders = await workOrderStorage.getWorkOrders(filters);
+          
+          // Apply additional filters
+          const filteredOrders = workOrders.filter(wo => {
+            // Text search in title, description, notes
+            if (query) {
+              const searchQuery = query.toLowerCase();
+              const matchesTitle = wo.title?.toLowerCase().includes(searchQuery);
+              const matchesDesc = wo.description?.toLowerCase().includes(searchQuery);
+              const matchesNotes = wo.notes?.toLowerCase().includes(searchQuery);
+              if (!matchesTitle && !matchesDesc && !matchesNotes) return false;
+            }
+            
+            // Priority filter
+            if (priority && wo.priority !== priority) return false;
+            
+            // Date range filter
+            if (dateFrom) {
+              const fromDate = new Date(dateFrom);
+              const woDate = wo.createdAt ? new Date(wo.createdAt) : null;
+              if (!woDate || woDate < fromDate) return false;
+            }
+            if (dateTo) {
+              const toDate = new Date(dateTo);
+              toDate.setHours(23, 59, 59, 999);
+              const woDate = wo.createdAt ? new Date(wo.createdAt) : null;
+              if (!woDate || woDate > toDate) return false;
+            }
+            
+            return true;
+          });
+          
+          filteredOrders.forEach(wo => {
+            results.push({
+              projectId: project.id,
+              projectName: project.name,
+              workOrder: wo,
+            });
+          });
+        } catch (err) {
+          console.error(`Error searching project ${project.id}:`, err);
+        }
+      }
+      
+      // Sort by created date (newest first)
+      results.sort((a, b) => {
+        const dateA = a.workOrder.createdAt ? new Date(a.workOrder.createdAt).getTime() : 0;
+        const dateB = b.workOrder.createdAt ? new Date(b.workOrder.createdAt).getTime() : 0;
+        return dateB - dateA;
+      });
+      
+      res.json({
+        results,
+        total: results.length,
+        projectsSearched: projectsToSearch.length,
+      });
+    } catch (error) {
+      console.error("Error searching work orders:", error);
+      res.status(500).json({ message: "Failed to search work orders" });
+    }
+  });
+
   // System settings (Admin only)
   app.get("/api/settings", isAuthenticated, async (req: any, res) => {
     try {

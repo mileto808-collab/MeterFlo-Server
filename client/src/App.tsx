@@ -18,6 +18,7 @@ import ProjectWorkOrders from "@/pages/project-work-orders";
 import ProjectImport from "@/pages/project-import";
 import ProjectFiles from "@/pages/project-files";
 import WorkOrderFiles from "@/pages/work-order-files";
+import SearchReports from "@/pages/search-reports";
 import Users from "@/pages/users";
 import Settings from "@/pages/settings";
 import NotFound from "@/pages/not-found";
@@ -61,6 +62,7 @@ function AuthenticatedRouter() {
           <Route path="/projects/:projectId/files" component={ProjectFiles} />
           <Route path="/projects/:projectId/work-orders/:workOrderId/files" component={WorkOrderFiles} />
           <Route path="/projects/:projectId/import" component={ProjectImport} />
+          <Route path="/search" component={SearchReports} />
         </>
       )}
       

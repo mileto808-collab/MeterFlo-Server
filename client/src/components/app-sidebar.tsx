@@ -26,6 +26,7 @@ import {
   Settings,
   LogOut,
   ChevronRight,
+  Search,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -164,6 +165,21 @@ export function AppSidebar() {
                     <Link href="/settings">
                       <Settings className="h-4 w-4" />
                       <span>Settings</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
+
+              {(role === "admin" || role === "user") && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={location === "/search"}
+                    data-testid="nav-search"
+                  >
+                    <Link href="/search">
+                      <Search className="h-4 w-4" />
+                      <span>Search & Reports</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
