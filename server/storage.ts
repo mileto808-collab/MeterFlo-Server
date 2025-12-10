@@ -63,8 +63,12 @@ export interface IStorage {
   getAllSubroles(): Promise<Subrole[]>;
   getSubrole(id: number): Promise<Subrole | undefined>;
   getSubroleByKey(key: string): Promise<Subrole | undefined>;
+  createSubrole(data: { key: string; label: string; baseRole: string; description?: string | null }): Promise<Subrole>;
+  updateSubrole(id: number, data: { key?: string; label?: string; baseRole?: string; description?: string | null }): Promise<Subrole | undefined>;
+  deleteSubrole(id: number): Promise<boolean>;
   getAllPermissions(): Promise<Permission[]>;
   getSubrolePermissions(subroleId: number): Promise<string[]>;
+  setSubrolePermissions(subroleId: number, permissionKeys: string[]): Promise<void>;
   getUserEffectivePermissions(user: User): Promise<string[]>;
   updateUserSubrole(userId: string, subroleId: number | null): Promise<User | undefined>;
   hasPermission(user: User, permissionKey: string): Promise<boolean>;
@@ -369,6 +373,33 @@ export class DatabaseStorage implements IStorage {
     return subrole;
   }
 
+  async createSubrole(data: { key: string; label: string; baseRole: string; description?: string | null }): Promise<Subrole> {
+    const [subrole] = await db
+      .insert(subroles)
+      .values({
+        key: data.key,
+        label: data.label,
+        baseRole: data.baseRole,
+        description: data.description || null,
+      })
+      .returning();
+    return subrole;
+  }
+
+  async updateSubrole(id: number, data: { key?: string; label?: string; baseRole?: string; description?: string | null }): Promise<Subrole | undefined> {
+    const [subrole] = await db
+      .update(subroles)
+      .set(data)
+      .where(eq(subroles.id, id))
+      .returning();
+    return subrole;
+  }
+
+  async deleteSubrole(id: number): Promise<boolean> {
+    const result = await db.delete(subroles).where(eq(subroles.id, id));
+    return true;
+  }
+
   async getAllPermissions(): Promise<Permission[]> {
     return await db.select().from(permissions);
   }
@@ -379,6 +410,15 @@ export class DatabaseStorage implements IStorage {
       .from(subrolePermissions)
       .where(eq(subrolePermissions.subroleId, subroleId));
     return perms.map(p => p.permissionKey);
+  }
+
+  async setSubrolePermissions(subroleId: number, permissionKeyList: string[]): Promise<void> {
+    await db.delete(subrolePermissions).where(eq(subrolePermissions.subroleId, subroleId));
+    if (permissionKeyList.length > 0) {
+      await db.insert(subrolePermissions).values(
+        permissionKeyList.map(key => ({ subroleId, permissionKey: key }))
+      );
+    }
   }
 
   async getUserEffectivePermissions(user: User): Promise<string[]> {
