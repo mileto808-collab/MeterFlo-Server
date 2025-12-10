@@ -163,6 +163,7 @@ export const createUserSchema = z.object({
   lastName: z.string().optional(),
   email: z.string().email().optional().nullable(),
   role: z.enum(userRoleEnum).default("user"),
+  subroleId: z.number().nullable().optional(),
 });
 
 // Schema for updating a user

@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -35,6 +35,7 @@ const createUserSchema = z.object({
   lastName: z.string().optional(),
   email: z.string().email("Invalid email address").optional().or(z.literal("")),
   role: z.enum(["admin", "user", "customer"]),
+  subroleId: z.number().nullable().optional(),
 });
 
 const editUserSchema = z.object({
@@ -112,7 +113,7 @@ export default function Users() {
 
   const createForm = useForm<CreateUserForm>({
     resolver: zodResolver(createUserSchema),
-    defaultValues: { username: "", password: "", firstName: "", lastName: "", email: "", role: "user" },
+    defaultValues: { username: "", password: "", firstName: "", lastName: "", email: "", role: "user", subroleId: null },
   });
 
   const editForm = useForm<EditUserForm>({
@@ -390,7 +391,7 @@ export default function Users() {
                       <TableCell data-testid={`cell-access-level-${user.id}`}>
                         {user.role === "user" && user.subroleId ? (
                           <Badge variant="outline" className="capitalize">
-                            {subrolesData?.find(s => s.id === user.subroleId)?.name || "—"}
+                            {subroles?.find(s => s.id === user.subroleId)?.label || "—"}
                           </Badge>
                         ) : user.role === "admin" ? (
                           <span className="text-muted-foreground text-sm">Full Access</span>
@@ -582,7 +583,15 @@ export default function Users() {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Role</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
+                    <Select 
+                      onValueChange={(value) => {
+                        field.onChange(value);
+                        if (value !== "user") {
+                          createForm.setValue("subroleId", null);
+                        }
+                      }} 
+                      value={field.value}
+                    >
                       <FormControl>
                         <SelectTrigger data-testid="select-create-role">
                           <SelectValue placeholder="Select a role" />
@@ -598,6 +607,38 @@ export default function Users() {
                   </FormItem>
                 )}
               />
+              {createForm.watch("role") === "user" && (
+                <FormField
+                  control={createForm.control}
+                  name="subroleId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Access Level</FormLabel>
+                      <Select 
+                        onValueChange={(value) => field.onChange(value ? parseInt(value) : null)} 
+                        value={field.value?.toString() || ""}
+                      >
+                        <FormControl>
+                          <SelectTrigger data-testid="select-create-subrole">
+                            <SelectValue placeholder="Select access level" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {subroles?.map((subrole) => (
+                            <SelectItem key={subrole.id} value={subrole.id.toString()}>
+                              {subrole.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormDescription className="text-xs">
+                        Determines what the user can access within the system
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
                 <Button type="submit" disabled={createUserMutation.isPending} data-testid="button-submit-create">

@@ -27,7 +27,7 @@ export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
-  createLocalUser(username: string, passwordHash: string, role: string, firstName?: string, lastName?: string, email?: string | null): Promise<User>;
+  createLocalUser(username: string, passwordHash: string, role: string, firstName?: string, lastName?: string, email?: string | null, subroleId?: number | null): Promise<User>;
   upsertUser(user: UpsertUser): Promise<User>;
   getAllUsers(): Promise<User[]>;
   updateUser(id: string, data: Partial<{username: string; firstName: string | null; lastName: string | null; email: string | null; role: string; isLocked: boolean; lockedReason: string | null; subroleId: number | null}>): Promise<User | undefined>;
@@ -87,7 +87,7 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  async createLocalUser(username: string, passwordHash: string, role: string, firstName?: string, lastName?: string, email?: string | null): Promise<User> {
+  async createLocalUser(username: string, passwordHash: string, role: string, firstName?: string, lastName?: string, email?: string | null, subroleId?: number | null): Promise<User> {
     const [user] = await db
       .insert(users)
       .values({
@@ -97,6 +97,7 @@ export class DatabaseStorage implements IStorage {
         firstName: firstName || username,
         lastName: lastName || null,
         email: email || null,
+        subroleId: subroleId || null,
       })
       .returning();
     return user;
