@@ -397,6 +397,119 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/subroles", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const { key, label, baseRole, description, permissions: permissionList } = req.body;
+      
+      if (!key || !label || !baseRole) {
+        return res.status(400).json({ message: "key, label, and baseRole are required" });
+      }
+      
+      const existing = await storage.getSubroleByKey(key);
+      if (existing) {
+        return res.status(409).json({ message: "Subrole with this key already exists" });
+      }
+      
+      const subrole = await storage.createSubrole({ key, label, baseRole, description });
+      
+      if (permissionList && Array.isArray(permissionList)) {
+        await storage.setSubrolePermissions(subrole.id, permissionList);
+      }
+      
+      res.status(201).json(subrole);
+    } catch (error) {
+      console.error("Error creating subrole:", error);
+      res.status(500).json({ message: "Failed to create subrole" });
+    }
+  });
+
+  app.put("/api/subroles/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const id = parseInt(req.params.id);
+      const { key, label, baseRole, description, permissions: permissionList } = req.body;
+      
+      const existing = await storage.getSubrole(id);
+      if (!existing) {
+        return res.status(404).json({ message: "Subrole not found" });
+      }
+      
+      if (key && key !== existing.key) {
+        const duplicate = await storage.getSubroleByKey(key);
+        if (duplicate) {
+          return res.status(409).json({ message: "Subrole with this key already exists" });
+        }
+      }
+      
+      const subrole = await storage.updateSubrole(id, { key, label, baseRole, description });
+      
+      if (permissionList && Array.isArray(permissionList)) {
+        await storage.setSubrolePermissions(id, permissionList);
+      }
+      
+      res.json(subrole);
+    } catch (error) {
+      console.error("Error updating subrole:", error);
+      res.status(500).json({ message: "Failed to update subrole" });
+    }
+  });
+
+  app.delete("/api/subroles/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const id = parseInt(req.params.id);
+      const existing = await storage.getSubrole(id);
+      if (!existing) {
+        return res.status(404).json({ message: "Subrole not found" });
+      }
+      
+      await storage.deleteSubrole(id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting subrole:", error);
+      res.status(500).json({ message: "Failed to delete subrole" });
+    }
+  });
+
+  app.put("/api/subroles/:id/permissions", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const id = parseInt(req.params.id);
+      const existing = await storage.getSubrole(id);
+      if (!existing) {
+        return res.status(404).json({ message: "Subrole not found" });
+      }
+      
+      const { permissions: permissionList } = req.body;
+      if (!Array.isArray(permissionList)) {
+        return res.status(400).json({ message: "permissions must be an array" });
+      }
+      
+      await storage.setSubrolePermissions(id, permissionList);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error updating subrole permissions:", error);
+      res.status(500).json({ message: "Failed to update subrole permissions" });
+    }
+  });
+
   app.get("/api/permissions", isAuthenticated, async (req: any, res) => {
     try {
       const permissions = await storage.getAllPermissions();
