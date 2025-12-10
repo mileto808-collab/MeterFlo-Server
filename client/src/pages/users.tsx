@@ -389,7 +389,7 @@ export default function Users() {
                         </Badge>
                       </TableCell>
                       <TableCell data-testid={`cell-access-level-${user.id}`}>
-                        {user.role === "user" && user.subroleId ? (
+                        {(user.role === "user" || user.role === "customer") && user.subroleId ? (
                           <Badge variant="outline" className="capitalize">
                             {subroles?.find(s => s.id === user.subroleId)?.label || "—"}
                           </Badge>
@@ -397,6 +397,8 @@ export default function Users() {
                           <span className="text-muted-foreground text-sm">Full Access</span>
                         ) : user.role === "customer" ? (
                           <span className="text-muted-foreground text-sm">Read Only</span>
+                        ) : user.role === "user" ? (
+                          <span className="text-muted-foreground text-sm">View Only</span>
                         ) : (
                           <span className="text-muted-foreground text-sm">—</span>
                         )}
@@ -586,7 +588,7 @@ export default function Users() {
                     <Select 
                       onValueChange={(value) => {
                         field.onChange(value);
-                        if (value !== "user") {
+                        if (value === "admin") {
                           createForm.setValue("subroleId", null);
                         }
                       }} 
@@ -607,7 +609,7 @@ export default function Users() {
                   </FormItem>
                 )}
               />
-              {createForm.watch("role") === "user" && (
+              {(createForm.watch("role") === "user" || createForm.watch("role") === "customer") && (
                 <FormField
                   control={createForm.control}
                   name="subroleId"
@@ -624,7 +626,7 @@ export default function Users() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {subroles?.map((subrole) => (
+                          {subroles?.filter(s => s.baseRole === createForm.watch("role")).map((subrole) => (
                             <SelectItem key={subrole.id} value={subrole.id.toString()}>
                               {subrole.label}
                             </SelectItem>
@@ -632,7 +634,7 @@ export default function Users() {
                         </SelectContent>
                       </Select>
                       <FormDescription className="text-xs">
-                        Determines what the user can access within the system
+                        Determines what the {createForm.watch("role")} can access within the system
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -721,7 +723,7 @@ export default function Users() {
                     <FormLabel>Role</FormLabel>
                     <Select onValueChange={(value) => {
                       field.onChange(value);
-                      if (value !== "user") {
+                      if (value === "admin") {
                         editForm.setValue("subroleId", null);
                       }
                     }} value={field.value}>
@@ -740,7 +742,7 @@ export default function Users() {
                   </FormItem>
                 )}
               />
-              {editForm.watch("role") === "user" && (
+              {(editForm.watch("role") === "user" || editForm.watch("role") === "customer") && (
                 <FormField
                   control={editForm.control}
                   name="subroleId"
@@ -757,8 +759,8 @@ export default function Users() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="none">No Subrole (View Only)</SelectItem>
-                          {subroles?.filter(s => s.baseRole === "user").map((subrole) => (
+                          <SelectItem value="none">No Access Level ({editForm.watch("role") === "customer" ? "Read Only" : "View Only"})</SelectItem>
+                          {subroles?.filter(s => s.baseRole === editForm.watch("role")).map((subrole) => (
                             <SelectItem key={subrole.id} value={subrole.id.toString()}>
                               {subrole.label}
                             </SelectItem>
@@ -768,7 +770,9 @@ export default function Users() {
                       <p className="text-xs text-muted-foreground mt-1">
                         {field.value 
                           ? subroles?.find(s => s.id === field.value)?.description 
-                          : "Basic view-only access to assigned projects"}
+                          : editForm.watch("role") === "customer" 
+                            ? "Read-only access to completed work orders in assigned projects"
+                            : "Basic view-only access to assigned projects"}
                       </p>
                       <FormMessage />
                     </FormItem>
