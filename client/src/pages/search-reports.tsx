@@ -21,6 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Search, Download, FileSpreadsheet, FileText, FileDown, Filter, X } from "lucide-react";
@@ -33,17 +34,30 @@ type SearchResult = {
   projectName: string;
   workOrder: {
     id: number;
-    title: string;
-    description?: string;
+    customerWoId?: string | null;
+    customerId?: string | null;
+    customerName?: string | null;
+    address?: string | null;
+    city?: string | null;
+    state?: string | null;
+    zip?: string | null;
+    phone?: string | null;
+    email?: string | null;
+    route?: string | null;
+    zone?: string | null;
+    serviceType?: string | null;
+    oldMeterId?: string | null;
+    newMeterId?: string | null;
+    oldGps?: string | null;
+    newGps?: string | null;
     status: string;
     priority: string;
-    assignedTo?: string;
-    createdBy?: string;
-    dueDate?: string;
-    completedAt?: string;
-    notes?: string;
-    createdAt?: string;
-    updatedAt?: string;
+    assignedTo?: string | null;
+    createdBy?: string | null;
+    completedAt?: string | null;
+    notes?: string | null;
+    createdAt?: string | null;
+    updatedAt?: string | null;
   };
 };
 
@@ -61,6 +75,7 @@ export default function SearchReports() {
   const [selectedProject, setSelectedProject] = useState<string>("all");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [selectedPriority, setSelectedPriority] = useState<string>("all");
+  const [selectedServiceType, setSelectedServiceType] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [isSearchActive, setIsSearchActive] = useState(false);
@@ -75,6 +90,7 @@ export default function SearchReports() {
     if (selectedProject !== "all") params.append("projectId", selectedProject);
     if (selectedStatus !== "all") params.append("status", selectedStatus);
     if (selectedPriority !== "all") params.append("priority", selectedPriority);
+    if (selectedServiceType !== "all") params.append("serviceType", selectedServiceType);
     if (dateFrom) params.append("dateFrom", dateFrom);
     if (dateTo) params.append("dateTo", dateTo);
     return params.toString();
@@ -103,6 +119,7 @@ export default function SearchReports() {
     setSelectedProject("all");
     setSelectedStatus("all");
     setSelectedPriority("all");
+    setSelectedServiceType("all");
     setDateFrom("");
     setDateTo("");
     setIsSearchActive(false);
@@ -118,14 +135,17 @@ export default function SearchReports() {
     return <Badge variant={variants[status] || "default"} className="text-xs">{status.replace("_", " ")}</Badge>;
   };
 
-  const getPriorityBadge = (priority: string) => {
-    const colors: Record<string, string> = {
-      low: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300",
-      medium: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300",
-      high: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300",
-      urgent: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300",
-    };
-    return <Badge className={`text-xs ${colors[priority] || ""}`}>{priority}</Badge>;
+  const getServiceTypeBadge = (serviceType: string | undefined) => {
+    switch (serviceType) {
+      case "Water":
+        return <Badge className="bg-blue-500 text-white text-xs">Water</Badge>;
+      case "Electric":
+        return <Badge className="bg-yellow-500 text-black text-xs">Electric</Badge>;
+      case "Gas":
+        return <Badge className="bg-orange-500 text-white text-xs">Gas</Badge>;
+      default:
+        return <Badge variant="outline" className="text-xs">{serviceType || "-"}</Badge>;
+    }
   };
 
   const exportToCSV = () => {
@@ -134,19 +154,30 @@ export default function SearchReports() {
       return;
     }
 
-    const headers = ["Project", "Work Order ID", "Title", "Description", "Status", "Priority", "Assigned To", "Created By", "Due Date", "Completed At", "Created At", "Notes"];
+    const headers = ["Project", "WO ID", "Customer ID", "Customer Name", "Address", "City", "State", "ZIP", "Phone", "Email", "Route", "Zone", "Service Type", "Old Meter ID", "New Meter ID", "Old GPS", "New GPS", "Status", "Priority", "Assigned To", "Created At", "Completed At", "Notes"];
     const rows = searchResults.results.map(r => [
       r.projectName,
-      r.workOrder.id,
-      r.workOrder.title,
-      r.workOrder.description || "",
+      r.workOrder.customerWoId || "",
+      r.workOrder.customerId || "",
+      r.workOrder.customerName || "",
+      r.workOrder.address || "",
+      r.workOrder.city || "",
+      r.workOrder.state || "",
+      r.workOrder.zip || "",
+      r.workOrder.phone || "",
+      r.workOrder.email || "",
+      r.workOrder.route || "",
+      r.workOrder.zone || "",
+      r.workOrder.serviceType || "",
+      r.workOrder.oldMeterId || "",
+      r.workOrder.newMeterId || "",
+      r.workOrder.oldGps || "",
+      r.workOrder.newGps || "",
       r.workOrder.status,
       r.workOrder.priority,
       r.workOrder.assignedTo || "",
-      r.workOrder.createdBy || "",
-      r.workOrder.dueDate ? format(new Date(r.workOrder.dueDate), "yyyy-MM-dd") : "",
-      r.workOrder.completedAt ? format(new Date(r.workOrder.completedAt), "yyyy-MM-dd HH:mm") : "",
       r.workOrder.createdAt ? format(new Date(r.workOrder.createdAt), "yyyy-MM-dd HH:mm") : "",
+      r.workOrder.completedAt ? format(new Date(r.workOrder.completedAt), "yyyy-MM-dd HH:mm") : "",
       r.workOrder.notes || "",
     ]);
 
@@ -173,16 +204,27 @@ export default function SearchReports() {
 
     const data = searchResults.results.map(r => ({
       "Project": r.projectName,
-      "Work Order ID": r.workOrder.id,
-      "Title": r.workOrder.title,
-      "Description": r.workOrder.description || "",
+      "WO ID": r.workOrder.customerWoId || "",
+      "Customer ID": r.workOrder.customerId || "",
+      "Customer Name": r.workOrder.customerName || "",
+      "Address": r.workOrder.address || "",
+      "City": r.workOrder.city || "",
+      "State": r.workOrder.state || "",
+      "ZIP": r.workOrder.zip || "",
+      "Phone": r.workOrder.phone || "",
+      "Email": r.workOrder.email || "",
+      "Route": r.workOrder.route || "",
+      "Zone": r.workOrder.zone || "",
+      "Service Type": r.workOrder.serviceType || "",
+      "Old Meter ID": r.workOrder.oldMeterId || "",
+      "New Meter ID": r.workOrder.newMeterId || "",
+      "Old GPS": r.workOrder.oldGps || "",
+      "New GPS": r.workOrder.newGps || "",
       "Status": r.workOrder.status,
       "Priority": r.workOrder.priority,
       "Assigned To": r.workOrder.assignedTo || "",
-      "Created By": r.workOrder.createdBy || "",
-      "Due Date": r.workOrder.dueDate ? format(new Date(r.workOrder.dueDate), "yyyy-MM-dd") : "",
-      "Completed At": r.workOrder.completedAt ? format(new Date(r.workOrder.completedAt), "yyyy-MM-dd HH:mm") : "",
       "Created At": r.workOrder.createdAt ? format(new Date(r.workOrder.createdAt), "yyyy-MM-dd HH:mm") : "",
+      "Completed At": r.workOrder.completedAt ? format(new Date(r.workOrder.completedAt), "yyyy-MM-dd HH:mm") : "",
       "Notes": r.workOrder.notes || "",
     }));
 
@@ -210,21 +252,16 @@ export default function SearchReports() {
           h1 { color: #333; }
           .meta { color: #666; margin-bottom: 20px; }
           table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 12px; }
+          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 11px; }
           th { background-color: #f4f4f4; font-weight: bold; }
           tr:nth-child(even) { background-color: #fafafa; }
-          .status-pending { color: #666; }
-          .status-in_progress { color: #0066cc; }
-          .status-completed { color: #00aa00; }
-          .status-cancelled { color: #cc0000; }
-          .priority-low { color: #00aa00; }
-          .priority-medium { color: #cc9900; }
-          .priority-high { color: #cc6600; }
-          .priority-urgent { color: #cc0000; }
+          .service-water { color: #0066cc; }
+          .service-electric { color: #cc9900; }
+          .service-gas { color: #cc6600; }
         </style>
       </head>
       <body>
-        <h1>Work Orders Report</h1>
+        <h1>Utility Meter Work Orders Report</h1>
         <div class="meta">
           <p>Generated: ${format(new Date(), "MMMM d, yyyy 'at' h:mm a")}</p>
           <p>Total Results: ${searchResults.total}</p>
@@ -234,22 +271,28 @@ export default function SearchReports() {
           <thead>
             <tr>
               <th>Project</th>
-              <th>ID</th>
-              <th>Title</th>
+              <th>WO ID</th>
+              <th>Customer</th>
+              <th>Address</th>
+              <th>Service</th>
+              <th>Route</th>
+              <th>Zone</th>
+              <th>Old Meter</th>
               <th>Status</th>
-              <th>Priority</th>
-              <th>Created</th>
             </tr>
           </thead>
           <tbody>
             ${searchResults.results.map(r => `
               <tr>
                 <td>${r.projectName}</td>
-                <td>${r.workOrder.id}</td>
-                <td>${r.workOrder.title}</td>
-                <td class="status-${r.workOrder.status}">${r.workOrder.status.replace("_", " ")}</td>
-                <td class="priority-${r.workOrder.priority}">${r.workOrder.priority}</td>
-                <td>${r.workOrder.createdAt ? format(new Date(r.workOrder.createdAt), "MMM d, yyyy") : "-"}</td>
+                <td>${r.workOrder.customerWoId || "-"}</td>
+                <td>${r.workOrder.customerName || "-"}</td>
+                <td>${r.workOrder.address || "-"}</td>
+                <td class="service-${(r.workOrder.serviceType || "").toLowerCase()}">${r.workOrder.serviceType || "-"}</td>
+                <td>${r.workOrder.route || "-"}</td>
+                <td>${r.workOrder.zone || "-"}</td>
+                <td>${r.workOrder.oldMeterId || "-"}</td>
+                <td>${r.workOrder.status.replace("_", " ")}</td>
               </tr>
             `).join("")}
           </tbody>
@@ -282,7 +325,7 @@ export default function SearchReports() {
             Search Filters
           </CardTitle>
           <CardDescription>
-            Filter work orders by project, status, priority, date range, or text search
+            Filter work orders by project, status, service type, or text search
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -291,7 +334,7 @@ export default function SearchReports() {
               <Label htmlFor="search-query">Search Text</Label>
               <Input
                 id="search-query"
-                placeholder="Search in title, description, notes..."
+                placeholder="Search in WO ID, name, address, meter ID..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 data-testid="input-search-query"
@@ -308,6 +351,20 @@ export default function SearchReports() {
                   {projects.map((p) => (
                     <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Service Type</Label>
+              <Select value={selectedServiceType} onValueChange={setSelectedServiceType}>
+                <SelectTrigger data-testid="select-service-type">
+                  <SelectValue placeholder="All Service Types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Service Types</SelectItem>
+                  <SelectItem value="Water">Water</SelectItem>
+                  <SelectItem value="Electric">Electric</SelectItem>
+                  <SelectItem value="Gas">Gas</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -411,16 +468,18 @@ export default function SearchReports() {
                   <p className="text-muted-foreground">No work orders found matching your criteria</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
+                <ScrollArea className="w-full">
                   <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead>Project</TableHead>
-                        <TableHead>ID</TableHead>
-                        <TableHead>Title</TableHead>
+                        <TableHead>WO ID</TableHead>
+                        <TableHead>Address</TableHead>
+                        <TableHead>Service</TableHead>
+                        <TableHead>Route</TableHead>
+                        <TableHead>Zone</TableHead>
+                        <TableHead>Old Meter</TableHead>
                         <TableHead>Status</TableHead>
-                        <TableHead>Priority</TableHead>
-                        <TableHead>Created</TableHead>
                         <TableHead>Actions</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -428,15 +487,13 @@ export default function SearchReports() {
                       {searchResults.results.map((result, index) => (
                         <TableRow key={`${result.projectId}-${result.workOrder.id}-${index}`} data-testid={`row-result-${index}`}>
                           <TableCell>{result.projectName}</TableCell>
-                          <TableCell>{result.workOrder.id}</TableCell>
-                          <TableCell className="max-w-xs truncate">{result.workOrder.title}</TableCell>
+                          <TableCell className="font-medium">{result.workOrder.customerWoId || "-"}</TableCell>
+                          <TableCell className="max-w-xs truncate">{result.workOrder.address || "-"}</TableCell>
+                          <TableCell>{getServiceTypeBadge(result.workOrder.serviceType)}</TableCell>
+                          <TableCell>{result.workOrder.route || "-"}</TableCell>
+                          <TableCell>{result.workOrder.zone || "-"}</TableCell>
+                          <TableCell>{result.workOrder.oldMeterId || "-"}</TableCell>
                           <TableCell>{getStatusBadge(result.workOrder.status)}</TableCell>
-                          <TableCell>{getPriorityBadge(result.workOrder.priority)}</TableCell>
-                          <TableCell>
-                            {result.workOrder.createdAt 
-                              ? format(new Date(result.workOrder.createdAt), "MMM d, yyyy")
-                              : "-"}
-                          </TableCell>
                           <TableCell>
                             <Link href={`/projects/${result.projectId}/work-orders`}>
                               <Button variant="ghost" size="sm" data-testid={`button-view-${index}`}>
@@ -448,7 +505,7 @@ export default function SearchReports() {
                       ))}
                     </TableBody>
                   </Table>
-                </div>
+                </ScrollArea>
               )}
             </CardContent>
           </Card>

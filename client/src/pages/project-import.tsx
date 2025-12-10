@@ -22,6 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -30,25 +31,72 @@ import type { Project } from "@shared/schema";
 import * as XLSX from "xlsx";
 
 type ParsedWorkOrder = {
-  title: string;
-  description?: string;
+  customerWoId: string;
+  customerId: string;
+  customerName: string;
+  address: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  phone?: string;
+  email?: string;
+  route?: string;
+  zone?: string;
+  serviceType: string;
+  oldMeterId?: string;
+  newMeterId?: string;
+  oldGps?: string;
+  newGps?: string;
   priority?: string;
   status?: string;
   notes?: string;
-  dueDate?: string;
   assignedTo?: string;
-  attachments?: string[];
 };
 
 type ColumnMapping = {
-  title: string;
-  description: string;
+  customerWoId: string;
+  customerId: string;
+  customerName: string;
+  address: string;
+  city: string;
+  state: string;
+  zip: string;
+  phone: string;
+  email: string;
+  route: string;
+  zone: string;
+  serviceType: string;
+  oldMeterId: string;
+  newMeterId: string;
+  oldGps: string;
+  newGps: string;
   priority: string;
   status: string;
   notes: string;
-  dueDate: string;
   assignedTo: string;
-  attachments: string;
+};
+
+const defaultColumnMapping: ColumnMapping = {
+  customerWoId: "",
+  customerId: "",
+  customerName: "",
+  address: "",
+  city: "",
+  state: "",
+  zip: "",
+  phone: "",
+  email: "",
+  route: "",
+  zone: "",
+  serviceType: "",
+  oldMeterId: "",
+  newMeterId: "",
+  oldGps: "",
+  newGps: "",
+  priority: "",
+  status: "",
+  notes: "",
+  assignedTo: "",
 };
 
 export default function ProjectImport() {
@@ -66,16 +114,7 @@ export default function ProjectImport() {
   const [hasHeader, setHasHeader] = useState(true);
   const [rawData, setRawData] = useState<string[][]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
-  const [columnMapping, setColumnMapping] = useState<ColumnMapping>({
-    title: "",
-    description: "",
-    priority: "",
-    status: "",
-    notes: "",
-    dueDate: "",
-    assignedTo: "",
-    attachments: "",
-  });
+  const [columnMapping, setColumnMapping] = useState<ColumnMapping>(defaultColumnMapping);
   const [previewData, setPreviewData] = useState<ParsedWorkOrder[]>([]);
   const [fileName, setFileName] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -116,7 +155,7 @@ export default function ProjectImport() {
         setAccessDenied(true);
         toast({ title: "Access denied", description: "You are not assigned to this project", variant: "destructive" });
       } else {
-        toast({ title: "Import failed", variant: "destructive" });
+        toast({ title: "Import failed", description: errorMsg, variant: "destructive" });
       }
     },
   });
@@ -126,16 +165,7 @@ export default function ProjectImport() {
     setHeaders([]);
     setPreviewData([]);
     setFileName("");
-    setColumnMapping({
-      title: "",
-      description: "",
-      priority: "",
-      status: "",
-      notes: "",
-      dueDate: "",
-      assignedTo: "",
-      attachments: "",
-    });
+    setColumnMapping(defaultColumnMapping);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
@@ -240,58 +270,43 @@ export default function ProjectImport() {
       const columnCount = Math.max(...data.map(row => row.length));
       const generatedHeaders = Array.from({ length: columnCount }, (_, i) => `Column ${i + 1}`);
       setHeaders(generatedHeaders);
-      setColumnMapping({
-        title: "",
-        description: "",
-        priority: "",
-        status: "",
-        notes: "",
-        dueDate: "",
-        assignedTo: "",
-        attachments: "",
-      });
+      setColumnMapping(defaultColumnMapping);
     }
   };
 
   const autoMapColumns = (headerRow: string[]) => {
-    const newMapping: ColumnMapping = {
-      title: "",
-      description: "",
-      priority: "",
-      status: "",
-      notes: "",
-      dueDate: "",
-      assignedTo: "",
-      attachments: "",
-    };
+    const newMapping: ColumnMapping = { ...defaultColumnMapping };
 
-    const titleVariants = ["title", "name", "subject", "work order", "workorder", "wo title"];
-    const descVariants = ["description", "desc", "details", "summary"];
-    const priorityVariants = ["priority", "urgency", "importance"];
-    const statusVariants = ["status", "state", "condition"];
-    const notesVariants = ["notes", "comments", "remarks"];
-    const dateVariants = ["due date", "duedate", "due", "deadline", "date"];
-    const assignedVariants = ["assigned", "assignedto", "assigned to", "technician", "worker", "assignee"];
-    const attachmentsVariants = ["attachments", "files", "documents", "attachment"];
+    const mappings: { field: keyof ColumnMapping; variants: string[] }[] = [
+      { field: "customerWoId", variants: ["wo id", "work order id", "workorderid", "customer_wo_id", "customerWoId", "wo_id", "woid"] },
+      { field: "customerId", variants: ["customer id", "customerid", "customer_id", "cust id", "custid", "cust_id", "account"] },
+      { field: "customerName", variants: ["customer name", "customername", "customer_name", "name", "cust name", "custname", "account name"] },
+      { field: "address", variants: ["address", "street", "street address", "location", "service address"] },
+      { field: "city", variants: ["city", "town"] },
+      { field: "state", variants: ["state", "province", "st"] },
+      { field: "zip", variants: ["zip", "zipcode", "zip code", "postal", "postal code"] },
+      { field: "phone", variants: ["phone", "telephone", "tel", "contact phone", "phone number"] },
+      { field: "email", variants: ["email", "e-mail", "mail", "contact email"] },
+      { field: "route", variants: ["route", "route id", "route_id", "routeid"] },
+      { field: "zone", variants: ["zone", "zone id", "zone_id", "zoneid", "area", "district"] },
+      { field: "serviceType", variants: ["service type", "servicetype", "service_type", "type", "utility", "utility type", "meter type"] },
+      { field: "oldMeterId", variants: ["old meter", "old meter id", "oldmeterid", "old_meter_id", "current meter", "existing meter", "old_meter"] },
+      { field: "newMeterId", variants: ["new meter", "new meter id", "newmeterid", "new_meter_id", "replacement meter", "new_meter"] },
+      { field: "oldGps", variants: ["old gps", "old_gps", "oldgps", "current gps", "existing gps", "old coordinates"] },
+      { field: "newGps", variants: ["new gps", "new_gps", "newgps", "new coordinates"] },
+      { field: "priority", variants: ["priority", "urgency", "importance"] },
+      { field: "status", variants: ["status", "state", "condition", "wo status"] },
+      { field: "notes", variants: ["notes", "comments", "remarks", "description"] },
+      { field: "assignedTo", variants: ["assigned", "assignedto", "assigned to", "technician", "worker", "assignee", "tech"] },
+    ];
 
     headerRow.forEach((header) => {
-      const lower = header.toLowerCase();
-      if (titleVariants.some(v => lower.includes(v)) && !newMapping.title) {
-        newMapping.title = header;
-      } else if (descVariants.some(v => lower.includes(v)) && !newMapping.description) {
-        newMapping.description = header;
-      } else if (priorityVariants.some(v => lower.includes(v)) && !newMapping.priority) {
-        newMapping.priority = header;
-      } else if (statusVariants.some(v => lower.includes(v)) && !newMapping.status) {
-        newMapping.status = header;
-      } else if (notesVariants.some(v => lower.includes(v)) && !newMapping.notes) {
-        newMapping.notes = header;
-      } else if (dateVariants.some(v => lower.includes(v)) && !newMapping.dueDate) {
-        newMapping.dueDate = header;
-      } else if (assignedVariants.some(v => lower.includes(v)) && !newMapping.assignedTo) {
-        newMapping.assignedTo = header;
-      } else if (attachmentsVariants.some(v => lower.includes(v)) && !newMapping.attachments) {
-        newMapping.attachments = header;
+      const lower = header.toLowerCase().trim();
+      for (const mapping of mappings) {
+        if (mapping.variants.some(v => lower === v || lower.includes(v)) && !newMapping[mapping.field]) {
+          newMapping[mapping.field] = header;
+          break;
+        }
       }
     });
 
@@ -312,16 +327,27 @@ export default function ProjectImport() {
         return index >= 0 ? String(row[index] || "") : "";
       };
 
-      const attachmentsValue = getValueByHeader(columnMapping.attachments);
       const workOrder: ParsedWorkOrder = {
-        title: getValueByHeader(columnMapping.title) || "Untitled",
-        description: getValueByHeader(columnMapping.description),
-        priority: getValueByHeader(columnMapping.priority),
-        status: getValueByHeader(columnMapping.status),
-        notes: getValueByHeader(columnMapping.notes),
-        dueDate: getValueByHeader(columnMapping.dueDate),
-        assignedTo: getValueByHeader(columnMapping.assignedTo),
-        attachments: attachmentsValue ? attachmentsValue.split(",").map(s => s.trim()).filter(Boolean) : undefined,
+        customerWoId: getValueByHeader(columnMapping.customerWoId) || "",
+        customerId: getValueByHeader(columnMapping.customerId) || "",
+        customerName: getValueByHeader(columnMapping.customerName) || "",
+        address: getValueByHeader(columnMapping.address) || "",
+        city: getValueByHeader(columnMapping.city) || undefined,
+        state: getValueByHeader(columnMapping.state) || undefined,
+        zip: getValueByHeader(columnMapping.zip) || undefined,
+        phone: getValueByHeader(columnMapping.phone) || undefined,
+        email: getValueByHeader(columnMapping.email) || undefined,
+        route: getValueByHeader(columnMapping.route) || undefined,
+        zone: getValueByHeader(columnMapping.zone) || undefined,
+        serviceType: getValueByHeader(columnMapping.serviceType) || "Water",
+        oldMeterId: getValueByHeader(columnMapping.oldMeterId) || undefined,
+        newMeterId: getValueByHeader(columnMapping.newMeterId) || undefined,
+        oldGps: getValueByHeader(columnMapping.oldGps) || undefined,
+        newGps: getValueByHeader(columnMapping.newGps) || undefined,
+        priority: getValueByHeader(columnMapping.priority) || undefined,
+        status: getValueByHeader(columnMapping.status) || undefined,
+        notes: getValueByHeader(columnMapping.notes) || undefined,
+        assignedTo: getValueByHeader(columnMapping.assignedTo) || undefined,
       };
 
       return workOrder;
@@ -344,8 +370,8 @@ export default function ProjectImport() {
   };
 
   const handleFileImport = () => {
-    if (!columnMapping.title) {
-      toast({ title: "Please map at least the Title column", variant: "destructive" });
+    if (!columnMapping.customerWoId || !columnMapping.customerId || !columnMapping.customerName || !columnMapping.address || !columnMapping.serviceType) {
+      toast({ title: "Please map required columns: Work Order ID, Customer ID, Customer Name, Address, and Service Type", variant: "destructive" });
       return;
     }
 
@@ -359,24 +385,39 @@ export default function ProjectImport() {
 
       const priority = getValueByHeader(columnMapping.priority).toLowerCase();
       const status = getValueByHeader(columnMapping.status).toLowerCase();
-      const attachmentsValue = getValueByHeader(columnMapping.attachments);
+      const serviceTypeRaw = getValueByHeader(columnMapping.serviceType);
+      const serviceType = ["Water", "Electric", "Gas"].find(
+        t => t.toLowerCase() === serviceTypeRaw.toLowerCase()
+      ) || "Water";
 
       const workOrder: ParsedWorkOrder = {
-        title: getValueByHeader(columnMapping.title) || "Untitled",
-        description: getValueByHeader(columnMapping.description) || undefined,
+        customerWoId: getValueByHeader(columnMapping.customerWoId),
+        customerId: getValueByHeader(columnMapping.customerId),
+        customerName: getValueByHeader(columnMapping.customerName),
+        address: getValueByHeader(columnMapping.address),
+        city: getValueByHeader(columnMapping.city) || undefined,
+        state: getValueByHeader(columnMapping.state) || undefined,
+        zip: getValueByHeader(columnMapping.zip) || undefined,
+        phone: getValueByHeader(columnMapping.phone) || undefined,
+        email: getValueByHeader(columnMapping.email) || undefined,
+        route: getValueByHeader(columnMapping.route) || undefined,
+        zone: getValueByHeader(columnMapping.zone) || undefined,
+        serviceType,
+        oldMeterId: getValueByHeader(columnMapping.oldMeterId) || undefined,
+        newMeterId: getValueByHeader(columnMapping.newMeterId) || undefined,
+        oldGps: getValueByHeader(columnMapping.oldGps) || undefined,
+        newGps: getValueByHeader(columnMapping.newGps) || undefined,
         priority: ["low", "medium", "high", "urgent"].includes(priority) ? priority : "medium",
         status: ["pending", "in_progress", "completed", "cancelled"].includes(status) ? status : "pending",
         notes: getValueByHeader(columnMapping.notes) || undefined,
-        dueDate: getValueByHeader(columnMapping.dueDate) || undefined,
         assignedTo: getValueByHeader(columnMapping.assignedTo) || undefined,
-        attachments: attachmentsValue ? attachmentsValue.split(",").map(s => s.trim()).filter(Boolean) : undefined,
       };
 
       return workOrder;
-    }).filter(wo => wo.title && wo.title !== "Untitled");
+    }).filter(wo => wo.customerWoId && wo.customerId && wo.customerName && wo.address);
 
     if (workOrders.length === 0) {
-      toast({ title: "No valid work orders to import", variant: "destructive" });
+      toast({ title: "No valid work orders to import. Ensure required fields are mapped.", variant: "destructive" });
       return;
     }
 
@@ -436,6 +477,26 @@ export default function ProjectImport() {
     );
   }
 
+  const MappingSelect = ({ field, label, required = false }: { field: keyof ColumnMapping; label: string; required?: boolean }) => (
+    <div>
+      <Label>{label} {required && <span className="text-destructive">*</span>}</Label>
+      <Select
+        value={columnMapping[field] || ""}
+        onValueChange={(v) => setColumnMapping(prev => ({ ...prev, [field]: v === "none" ? "" : v }))}
+      >
+        <SelectTrigger data-testid={`select-map-${field}`}>
+          <SelectValue placeholder="Select column" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="none">-- Not Mapped --</SelectItem>
+          {headers.map((h) => (
+            <SelectItem key={h} value={h}>{h}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+
   return (
     <div className="p-6 space-y-6">
       <div>
@@ -463,7 +524,7 @@ export default function ProjectImport() {
                 Upload File
               </CardTitle>
               <CardDescription>
-                Upload a CSV or Excel file (.csv, .xlsx, .xls) containing work orders
+                Upload a CSV or Excel file containing utility meter work orders
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -532,67 +593,41 @@ export default function ProjectImport() {
                 Expected Data Format
               </CardTitle>
               <CardDescription>
-                Prepare your file with the following column structure
+                Prepare your file with utility meter work order data
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
                 <div>
-                  <h4 className="font-medium mb-2">Supported File Types</h4>
-                  <p className="text-sm text-muted-foreground">
-                    CSV (.csv), Text (.txt), Excel (.xlsx, .xls)
-                  </p>
-                </div>
-                
-                <div>
-                  <h4 className="font-medium mb-2">Required Column</h4>
-                  <div className="text-sm">
-                    <span className="font-mono bg-muted px-2 py-1 rounded">title</span>
-                    <span className="text-muted-foreground ml-2">- Work order title (text)</span>
+                  <h4 className="font-medium mb-2">Required Columns</h4>
+                  <div className="space-y-2 text-sm">
+                    <div><span className="font-mono bg-muted px-2 py-1 rounded">customer_wo_id</span> - Unique Work Order ID</div>
+                    <div><span className="font-mono bg-muted px-2 py-1 rounded">customer_id</span> - Customer Account ID</div>
+                    <div><span className="font-mono bg-muted px-2 py-1 rounded">customer_name</span> - Customer Name</div>
+                    <div><span className="font-mono bg-muted px-2 py-1 rounded">address</span> - Service Address</div>
+                    <div><span className="font-mono bg-muted px-2 py-1 rounded">service_type</span> - Water, Electric, or Gas</div>
                   </div>
                 </div>
                 
                 <div>
                   <h4 className="font-medium mb-2">Optional Columns</h4>
                   <div className="space-y-2 text-sm">
-                    <div>
-                      <span className="font-mono bg-muted px-2 py-1 rounded">description</span>
-                      <span className="text-muted-foreground ml-2">- Detailed description (text)</span>
-                    </div>
-                    <div>
-                      <span className="font-mono bg-muted px-2 py-1 rounded">priority</span>
-                      <span className="text-muted-foreground ml-2">- low, medium, high, or urgent (defaults to medium)</span>
-                    </div>
-                    <div>
-                      <span className="font-mono bg-muted px-2 py-1 rounded">status</span>
-                      <span className="text-muted-foreground ml-2">- pending, in_progress, completed, or cancelled (defaults to pending)</span>
-                    </div>
-                    <div>
-                      <span className="font-mono bg-muted px-2 py-1 rounded">notes</span>
-                      <span className="text-muted-foreground ml-2">- Additional notes (text)</span>
-                    </div>
-                    <div>
-                      <span className="font-mono bg-muted px-2 py-1 rounded">dueDate</span>
-                      <span className="text-muted-foreground ml-2">- Due date (YYYY-MM-DD format recommended)</span>
-                    </div>
-                    <div>
-                      <span className="font-mono bg-muted px-2 py-1 rounded">assignedTo</span>
-                      <span className="text-muted-foreground ml-2">- Person assigned to the work order (text)</span>
-                    </div>
-                    <div>
-                      <span className="font-mono bg-muted px-2 py-1 rounded">attachments</span>
-                      <span className="text-muted-foreground ml-2">- Comma-separated list of file paths or URLs (text)</span>
-                    </div>
+                    <div><span className="font-mono bg-muted px-2 py-1 rounded">city, state, zip</span> - Location details</div>
+                    <div><span className="font-mono bg-muted px-2 py-1 rounded">phone, email</span> - Contact information</div>
+                    <div><span className="font-mono bg-muted px-2 py-1 rounded">route, zone</span> - Service routing</div>
+                    <div><span className="font-mono bg-muted px-2 py-1 rounded">old_meter_id, new_meter_id</span> - Meter IDs</div>
+                    <div><span className="font-mono bg-muted px-2 py-1 rounded">old_gps, new_gps</span> - GPS coordinates</div>
+                    <div><span className="font-mono bg-muted px-2 py-1 rounded">priority, status, notes</span> - Work order details</div>
                   </div>
                 </div>
                 
                 <div>
                   <h4 className="font-medium mb-2">Example CSV</h4>
                   <pre className="text-xs bg-muted p-3 rounded overflow-x-auto">
-{`title,description,priority,status,dueDate,assignedTo,attachments
-Fix leaky faucet,Kitchen sink dripping,high,pending,2024-12-15,John Smith,photo1.jpg
-Replace light bulb,Hallway light burned out,low,pending,2024-12-20,Jane Doe,
-HVAC maintenance,Annual checkup,medium,in_progress,2024-12-10,Mike Johnson,manual.pdf,invoice.pdf`}
+{`customer_wo_id,customer_id,customer_name,address,city,state,zip,service_type,route,zone,old_meter_id
+WO-001,CUST-123,John Smith,123 Main St,Springfield,IL,62701,Water,Route A,Zone 1,MTR-OLD-001
+WO-002,CUST-456,Jane Doe,456 Oak Ave,Springfield,IL,62702,Electric,Route B,Zone 2,MTR-OLD-002
+WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,MTR-OLD-003`}
                   </pre>
                 </div>
               </div>
@@ -604,146 +639,31 @@ HVAC maintenance,Annual checkup,medium,in_progress,2024-12-10,Mike Johnson,manua
               <CardHeader>
                 <CardTitle>Column Mapping</CardTitle>
                 <CardDescription>
-                  Map your file columns to work order fields
+                  Map your file columns to work order fields. Fields marked with * are required.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <div>
-                    <Label>Title (Required)</Label>
-                    <Select 
-                      value={columnMapping.title} 
-                      onValueChange={(v) => setColumnMapping(prev => ({ ...prev, title: v }))}
-                    >
-                      <SelectTrigger data-testid="select-map-title">
-                        <SelectValue placeholder="Select column" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {headers.map((h) => (
-                          <SelectItem key={h} value={h}>{h}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>Description</Label>
-                    <Select 
-                      value={columnMapping.description} 
-                      onValueChange={(v) => setColumnMapping(prev => ({ ...prev, description: v }))}
-                    >
-                      <SelectTrigger data-testid="select-map-description">
-                        <SelectValue placeholder="Select column" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="">-- None --</SelectItem>
-                        {headers.map((h) => (
-                          <SelectItem key={h} value={h}>{h}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>Priority</Label>
-                    <Select 
-                      value={columnMapping.priority} 
-                      onValueChange={(v) => setColumnMapping(prev => ({ ...prev, priority: v }))}
-                    >
-                      <SelectTrigger data-testid="select-map-priority">
-                        <SelectValue placeholder="Select column" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="">-- None --</SelectItem>
-                        {headers.map((h) => (
-                          <SelectItem key={h} value={h}>{h}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>Status</Label>
-                    <Select 
-                      value={columnMapping.status} 
-                      onValueChange={(v) => setColumnMapping(prev => ({ ...prev, status: v }))}
-                    >
-                      <SelectTrigger data-testid="select-map-status">
-                        <SelectValue placeholder="Select column" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="">-- None --</SelectItem>
-                        {headers.map((h) => (
-                          <SelectItem key={h} value={h}>{h}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>Notes</Label>
-                    <Select 
-                      value={columnMapping.notes} 
-                      onValueChange={(v) => setColumnMapping(prev => ({ ...prev, notes: v }))}
-                    >
-                      <SelectTrigger data-testid="select-map-notes">
-                        <SelectValue placeholder="Select column" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="">-- None --</SelectItem>
-                        {headers.map((h) => (
-                          <SelectItem key={h} value={h}>{h}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>Due Date</Label>
-                    <Select 
-                      value={columnMapping.dueDate} 
-                      onValueChange={(v) => setColumnMapping(prev => ({ ...prev, dueDate: v }))}
-                    >
-                      <SelectTrigger data-testid="select-map-due-date">
-                        <SelectValue placeholder="Select column" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="">-- None --</SelectItem>
-                        {headers.map((h) => (
-                          <SelectItem key={h} value={h}>{h}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>Assigned To</Label>
-                    <Select 
-                      value={columnMapping.assignedTo} 
-                      onValueChange={(v) => setColumnMapping(prev => ({ ...prev, assignedTo: v }))}
-                    >
-                      <SelectTrigger data-testid="select-map-assigned-to">
-                        <SelectValue placeholder="Select column" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="">-- None --</SelectItem>
-                        {headers.map((h) => (
-                          <SelectItem key={h} value={h}>{h}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>Attachments</Label>
-                    <Select 
-                      value={columnMapping.attachments} 
-                      onValueChange={(v) => setColumnMapping(prev => ({ ...prev, attachments: v }))}
-                    >
-                      <SelectTrigger data-testid="select-map-attachments">
-                        <SelectValue placeholder="Select column" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="">-- None --</SelectItem>
-                        {headers.map((h) => (
-                          <SelectItem key={h} value={h}>{h}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <MappingSelect field="customerWoId" label="Work Order ID" required />
+                  <MappingSelect field="customerId" label="Customer ID" required />
+                  <MappingSelect field="customerName" label="Customer Name" required />
+                  <MappingSelect field="address" label="Address" required />
+                  <MappingSelect field="serviceType" label="Service Type" required />
+                  <MappingSelect field="city" label="City" />
+                  <MappingSelect field="state" label="State" />
+                  <MappingSelect field="zip" label="ZIP Code" />
+                  <MappingSelect field="phone" label="Phone" />
+                  <MappingSelect field="email" label="Email" />
+                  <MappingSelect field="route" label="Route" />
+                  <MappingSelect field="zone" label="Zone" />
+                  <MappingSelect field="oldMeterId" label="Old Meter ID" />
+                  <MappingSelect field="newMeterId" label="New Meter ID" />
+                  <MappingSelect field="oldGps" label="Old GPS" />
+                  <MappingSelect field="newGps" label="New GPS" />
+                  <MappingSelect field="priority" label="Priority" />
+                  <MappingSelect field="status" label="Status" />
+                  <MappingSelect field="notes" label="Notes" />
+                  <MappingSelect field="assignedTo" label="Assigned To" />
                 </div>
               </CardContent>
             </Card>
@@ -754,43 +674,46 @@ HVAC maintenance,Annual checkup,medium,in_progress,2024-12-10,Mike Johnson,manua
               <CardHeader>
                 <CardTitle>Preview (First 10 rows)</CardTitle>
                 <CardDescription>
-                  Review how your data will be imported
+                  Review mapped data before importing
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="overflow-x-auto">
+                <ScrollArea className="w-full">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Title</TableHead>
-                        <TableHead>Description</TableHead>
-                        <TableHead>Priority</TableHead>
-                        <TableHead>Status</TableHead>
+                        <TableHead>WO ID</TableHead>
+                        <TableHead>Customer</TableHead>
+                        <TableHead>Address</TableHead>
+                        <TableHead>Service</TableHead>
+                        <TableHead>Route</TableHead>
+                        <TableHead>Zone</TableHead>
+                        <TableHead>Old Meter</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {previewData.map((row, index) => (
-                        <TableRow key={index}>
-                          <TableCell className="font-medium">{row.title}</TableCell>
-                          <TableCell className="max-w-xs truncate">{row.description || "-"}</TableCell>
-                          <TableCell>{row.priority || "medium"}</TableCell>
-                          <TableCell>{row.status || "pending"}</TableCell>
+                      {previewData.map((wo, idx) => (
+                        <TableRow key={idx}>
+                          <TableCell>{wo.customerWoId || "-"}</TableCell>
+                          <TableCell>{wo.customerName || "-"}</TableCell>
+                          <TableCell>{wo.address || "-"}</TableCell>
+                          <TableCell>{wo.serviceType || "-"}</TableCell>
+                          <TableCell>{wo.route || "-"}</TableCell>
+                          <TableCell>{wo.zone || "-"}</TableCell>
+                          <TableCell>{wo.oldMeterId || "-"}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
-                </div>
-                <div className="mt-4 flex items-center justify-between gap-4 flex-wrap">
-                  <p className="text-sm text-muted-foreground">
-                    Total rows to import: {(hasHeader ? rawData.length - 1 : rawData.length)}
-                  </p>
+                </ScrollArea>
+                <div className="mt-4">
                   <Button
                     onClick={handleFileImport}
-                    disabled={!columnMapping.title || importMutation.isPending}
+                    disabled={importMutation.isPending}
                     data-testid="button-import-file"
                   >
                     <FileUp className="h-4 w-4 mr-2" />
-                    {importMutation.isPending ? "Importing..." : "Import Work Orders"}
+                    {importMutation.isPending ? "Importing..." : `Import ${hasHeader ? rawData.length - 1 : rawData.length} Work Orders`}
                   </Button>
                 </div>
               </CardContent>
@@ -802,56 +725,42 @@ HVAC maintenance,Annual checkup,medium,in_progress,2024-12-10,Mike Johnson,manua
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <FileUp className="h-5 w-5" />
-                Import JSON Data
+                <FileJson className="h-5 w-5" />
+                JSON Import
               </CardTitle>
               <CardDescription>
-                Paste JSON data to import multiple work orders at once
+                Paste JSON array of work orders
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <Label htmlFor="json-input">JSON Data</Label>
+                <Label>JSON Data</Label>
                 <Textarea
-                  id="json-input"
                   value={jsonInput}
                   onChange={(e) => setJsonInput(e.target.value)}
-                  placeholder={`[\n  {\n    "title": "Work Order 1",\n    "description": "Description here",\n    "priority": "medium",\n    "status": "pending"\n  }\n]`}
-                  className="font-mono min-h-[200px]"
-                  data-testid="textarea-json-input"
+                  placeholder={`[
+  {
+    "customerWoId": "WO-001",
+    "customerId": "CUST-123",
+    "customerName": "John Smith",
+    "address": "123 Main St",
+    "serviceType": "Water",
+    "route": "Route A",
+    "zone": "Zone 1"
+  }
+]`}
+                  className="min-h-[200px] font-mono text-sm"
+                  data-testid="textarea-json"
                 />
               </div>
               <Button
                 onClick={handleJsonImport}
-                disabled={!jsonInput.trim() || importMutation.isPending}
+                disabled={importMutation.isPending || !jsonInput.trim()}
                 data-testid="button-import-json"
               >
                 <FileUp className="h-4 w-4 mr-2" />
-                {importMutation.isPending ? "Importing..." : "Import Work Orders"}
+                {importMutation.isPending ? "Importing..." : "Import JSON"}
               </Button>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>JSON Format Reference</CardTitle>
-              <CardDescription>Expected format for importing work orders</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <pre className="bg-muted p-4 rounded-md overflow-x-auto text-sm">
-{`[
-  {
-    "title": "Work Order Title (required)",
-    "description": "Optional description",
-    "priority": "low | medium | high | urgent",
-    "status": "pending | in_progress | completed | cancelled",
-    "notes": "Optional notes",
-    "dueDate": "2024-12-31T00:00:00Z",
-    "assignedTo": "John Smith",
-    "attachments": ["file1.pdf", "image.jpg"]
-  }
-]`}
-              </pre>
             </CardContent>
           </Card>
         </TabsContent>
@@ -869,18 +778,18 @@ HVAC maintenance,Annual checkup,medium,in_progress,2024-12-10,Mike Johnson,manua
               Import Results
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <p data-testid="text-import-result">
-              Successfully imported <strong>{importResult.imported}</strong> work orders
-            </p>
+          <CardContent>
+            <p className="mb-2">Successfully imported: {importResult.imported} work orders</p>
             {importResult.errors.length > 0 && (
               <div>
-                <p className="font-medium text-destructive mb-2">Errors ({importResult.errors.length}):</p>
-                <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
-                  {importResult.errors.map((error, index) => (
-                    <li key={index}>{error}</li>
-                  ))}
-                </ul>
+                <p className="text-destructive mb-2">Errors ({importResult.errors.length}):</p>
+                <ScrollArea className="h-[200px]">
+                  <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
+                    {importResult.errors.map((err, idx) => (
+                      <li key={idx}>{err}</li>
+                    ))}
+                  </ul>
+                </ScrollArea>
               </div>
             )}
           </CardContent>
