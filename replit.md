@@ -34,8 +34,26 @@ Preferred communication style: Simple, everyday language.
 
 ### Role-Based Access Control
 - **Admin**: Full access to all features including user management, project creation, data import, and settings
-- **User**: Can manage work orders in assigned projects, cannot access user management or create projects
+- **User**: Access controlled by subrole (access level) with granular permissions
 - **Customer**: Limited view of completed work orders for their assigned project only
+
+### Granular Permission System (Subroles)
+Users with the "user" role can be assigned a subrole that determines their specific permissions:
+- **Project Manager**: `projects.manage`, `projects.view`, `workOrders.create`, `workOrders.edit`, `workOrders.delete`
+- **Field Technician**: `projects.view`, `workOrders.create`, `workOrders.edit`
+- **Viewer**: `projects.view` (read-only access)
+
+**Permission Types**:
+- `projects.manage` - Create/edit/delete projects
+- `projects.view` - View assigned projects
+- `workOrders.create` - Create work orders
+- `workOrders.edit` - Edit work orders
+- `workOrders.delete` - Delete work orders
+- `users.manage` - Manage user accounts
+- `settings.manage` - Access system settings
+- `maintenance.manage` - Access database backup/restore
+
+**Database Tables**: `subroles`, `permissions`, `subrole_permissions` (junction table)
 
 ### Multi-Tenant Architecture
 - **Per-Project Database Schemas**: Each project gets its own PostgreSQL schema (format: `projectName_projectID`) for data isolation
