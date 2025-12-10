@@ -6,7 +6,7 @@ import { insertWorkOrderSchema, insertProjectSchema, createUserSchema, updateUse
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import multer from "multer";
-import { createProjectSchema, deleteProjectSchema, getProjectWorkOrderStorage, sanitizeSchemaName } from "./projectDb";
+import { createProjectSchema, deleteProjectSchema, getProjectWorkOrderStorage, sanitizeSchemaName, backupProjectDatabase, restoreProjectDatabase, getProjectDatabaseStats } from "./projectDb";
 import { ensureProjectDirectory, saveWorkOrderFile, getWorkOrderFiles, deleteWorkOrderFile, getFilePath, getProjectFilesPath, setProjectFilesPath, deleteProjectDirectory, saveProjectFile, getProjectFiles, deleteProjectFile, getProjectFilePath } from "./fileStorage";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -1187,6 +1187,145 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error updating file settings:", error);
       res.status(500).json({ message: "Failed to update file settings" });
+    }
+  });
+
+  // Database backup/restore endpoints (Admin only)
+  
+  // Get database stats for a project
+  app.get("/api/projects/:projectId/database/stats", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const projectId = parseInt(req.params.projectId);
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found or has no database" });
+      }
+      
+      const stats = await getProjectDatabaseStats(project.databaseName);
+      res.json(stats);
+    } catch (error) {
+      console.error("Error getting database stats:", error);
+      res.status(500).json({ message: "Failed to get database statistics" });
+    }
+  });
+
+  // Create database backup for a project
+  app.get("/api/projects/:projectId/database/backup", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const projectId = parseInt(req.params.projectId);
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found or has no database" });
+      }
+      
+      const backup = await backupProjectDatabase(project.databaseName);
+      
+      // Return as downloadable JSON file
+      const filename = `backup_${project.name.replace(/[^a-z0-9]/gi, "_")}_${new Date().toISOString().slice(0, 10)}.json`;
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader("Content-Type", "application/json");
+      res.json({
+        ...backup,
+        projectId: project.id,
+        projectName: project.name,
+      });
+    } catch (error) {
+      console.error("Error creating backup:", error);
+      res.status(500).json({ message: "Failed to create database backup" });
+    }
+  });
+
+  // Restore database from backup
+  app.post("/api/projects/:projectId/database/restore", isAuthenticated, upload.single("backup"), async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const projectId = parseInt(req.params.projectId);
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found or has no database" });
+      }
+      
+      const clearExisting = req.body.clearExisting === "true";
+      
+      if (!req.file) {
+        return res.status(400).json({ message: "No backup file provided" });
+      }
+      
+      let backup;
+      try {
+        backup = JSON.parse(req.file.buffer.toString());
+      } catch (e) {
+        return res.status(400).json({ message: "Invalid backup file format" });
+      }
+      
+      if (!backup.workOrders || !Array.isArray(backup.workOrders)) {
+        return res.status(400).json({ message: "Invalid backup file: missing workOrders array" });
+      }
+      
+      const result = await restoreProjectDatabase(project.databaseName, backup, { clearExisting });
+      
+      res.json({
+        message: "Database restored successfully",
+        restored: result.restored,
+        errors: result.errors,
+      });
+    } catch (error) {
+      console.error("Error restoring backup:", error);
+      res.status(500).json({ message: "Failed to restore database backup" });
+    }
+  });
+
+  // Get all projects with database stats for maintenance page
+  app.get("/api/maintenance/projects", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const projects = await storage.getProjects();
+      const projectsWithStats = await Promise.all(
+        projects.map(async (project) => {
+          if (!project.databaseName) {
+            return {
+              ...project,
+              stats: null,
+            };
+          }
+          
+          try {
+            const stats = await getProjectDatabaseStats(project.databaseName);
+            return {
+              ...project,
+              stats,
+            };
+          } catch (e) {
+            return {
+              ...project,
+              stats: null,
+            };
+          }
+        })
+      );
+      
+      res.json(projectsWithStats);
+    } catch (error) {
+      console.error("Error fetching maintenance projects:", error);
+      res.status(500).json({ message: "Failed to fetch projects for maintenance" });
     }
   });
 

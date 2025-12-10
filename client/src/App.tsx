@@ -19,6 +19,7 @@ import ProjectImport from "@/pages/project-import";
 import ProjectFiles from "@/pages/project-files";
 import WorkOrderFiles from "@/pages/work-order-files";
 import SearchReports from "@/pages/search-reports";
+import Maintenance from "@/pages/maintenance";
 import Users from "@/pages/users";
 import Settings from "@/pages/settings";
 import NotFound from "@/pages/not-found";
@@ -52,6 +53,7 @@ function AuthenticatedRouter() {
           <Route path="/projects/new" component={ProjectForm} />
           <Route path="/projects/:id/edit" component={ProjectForm} />
           <Route path="/users" component={Users} />
+          <Route path="/maintenance" component={Maintenance} />
           <Route path="/settings" component={Settings} />
         </>
       )}

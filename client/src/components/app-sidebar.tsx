@@ -27,6 +27,7 @@ import {
   LogOut,
   ChevronRight,
   Search,
+  Wrench,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -150,6 +151,21 @@ export function AppSidebar() {
                     <Link href="/users">
                       <Users className="h-4 w-4" />
                       <span>Users</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
+
+              {role === "admin" && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={location === "/maintenance"}
+                    data-testid="nav-maintenance"
+                  >
+                    <Link href="/maintenance">
+                      <Wrench className="h-4 w-4" />
+                      <span>Maintenance</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
