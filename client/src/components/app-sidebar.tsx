@@ -28,6 +28,7 @@ import {
   ChevronRight,
   Search,
   Wrench,
+  FileText,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -245,6 +246,18 @@ export function AppSidebar() {
                                 <Link href={`/projects/${project.id}/work-orders`}>
                                   <ClipboardList className="h-3 w-3" />
                                   <span>Work Orders</span>
+                                </Link>
+                              </SidebarMenuSubButton>
+                            </SidebarMenuSubItem>
+                            <SidebarMenuSubItem>
+                              <SidebarMenuSubButton
+                                asChild
+                                isActive={location === `/projects/${project.id}/files`}
+                                data-testid={`nav-project-${project.id}-documents`}
+                              >
+                                <Link href={`/projects/${project.id}/files`}>
+                                  <FileText className="h-3 w-3" />
+                                  <span>Project Documents</span>
                                 </Link>
                               </SidebarMenuSubButton>
                             </SidebarMenuSubItem>
