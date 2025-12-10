@@ -25,7 +25,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { FileUp, CheckCircle, AlertCircle, ShieldAlert, Upload, FileSpreadsheet, FileJson } from "lucide-react";
+import { FileUp, CheckCircle, AlertCircle, ShieldAlert, Upload, FileSpreadsheet, FileJson, Info } from "lucide-react";
 import type { Project } from "@shared/schema";
 import * as XLSX from "xlsx";
 
@@ -497,6 +497,72 @@ export default function ProjectImport() {
                     Selected: {fileName}
                   </p>
                 )}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Info className="h-5 w-5" />
+                Expected Data Format
+              </CardTitle>
+              <CardDescription>
+                Prepare your file with the following column structure
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div>
+                  <h4 className="font-medium mb-2">Supported File Types</h4>
+                  <p className="text-sm text-muted-foreground">
+                    CSV (.csv), Text (.txt), Excel (.xlsx, .xls)
+                  </p>
+                </div>
+                
+                <div>
+                  <h4 className="font-medium mb-2">Required Column</h4>
+                  <div className="text-sm">
+                    <span className="font-mono bg-muted px-2 py-1 rounded">title</span>
+                    <span className="text-muted-foreground ml-2">- Work order title (text)</span>
+                  </div>
+                </div>
+                
+                <div>
+                  <h4 className="font-medium mb-2">Optional Columns</h4>
+                  <div className="space-y-2 text-sm">
+                    <div>
+                      <span className="font-mono bg-muted px-2 py-1 rounded">description</span>
+                      <span className="text-muted-foreground ml-2">- Detailed description (text)</span>
+                    </div>
+                    <div>
+                      <span className="font-mono bg-muted px-2 py-1 rounded">priority</span>
+                      <span className="text-muted-foreground ml-2">- low, medium, high, or urgent (defaults to medium)</span>
+                    </div>
+                    <div>
+                      <span className="font-mono bg-muted px-2 py-1 rounded">status</span>
+                      <span className="text-muted-foreground ml-2">- pending, in_progress, completed, or cancelled (defaults to pending)</span>
+                    </div>
+                    <div>
+                      <span className="font-mono bg-muted px-2 py-1 rounded">notes</span>
+                      <span className="text-muted-foreground ml-2">- Additional notes (text)</span>
+                    </div>
+                    <div>
+                      <span className="font-mono bg-muted px-2 py-1 rounded">dueDate</span>
+                      <span className="text-muted-foreground ml-2">- Due date (YYYY-MM-DD format recommended)</span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div>
+                  <h4 className="font-medium mb-2">Example CSV</h4>
+                  <pre className="text-xs bg-muted p-3 rounded overflow-x-auto">
+{`title,description,priority,status,dueDate
+Fix leaky faucet,Kitchen sink dripping,high,pending,2024-12-15
+Replace light bulb,Hallway light burned out,low,pending,2024-12-20
+HVAC maintenance,Annual checkup,medium,in_progress,2024-12-10`}
+                  </pre>
+                </div>
               </div>
             </CardContent>
           </Card>
