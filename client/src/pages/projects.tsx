@@ -128,7 +128,7 @@ export default function Projects() {
                     <TableHead>Description</TableHead>
                     <TableHead>Customer Email</TableHead>
                     <TableHead>Created</TableHead>
-                    {canEdit && <TableHead className="text-right">Actions</TableHead>}
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -143,25 +143,32 @@ export default function Projects() {
                       <TableCell>
                         {project.createdAt ? format(new Date(project.createdAt), "MMM d, yyyy") : "—"}
                       </TableCell>
-                      {canEdit && (
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <Link href={`/projects/${project.id}/edit`}>
-                              <Button variant="ghost" size="icon" data-testid={`button-edit-${project.id}`}>
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                            </Link>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => { setProjectToDelete(project.id); setDeleteDialogOpen(true); }}
-                              data-testid={`button-delete-${project.id}`}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Link href={`/projects/${project.id}/work-orders`}>
+                            <Button variant="ghost" size="icon" data-testid={`button-view-${project.id}`}>
+                              <Eye className="h-4 w-4" />
                             </Button>
-                          </div>
-                        </TableCell>
-                      )}
+                          </Link>
+                          {canEdit && (
+                            <>
+                              <Link href={`/projects/${project.id}/edit`}>
+                                <Button variant="ghost" size="icon" data-testid={`button-edit-${project.id}`}>
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                              </Link>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => { setProjectToDelete(project.id); setDeleteDialogOpen(true); }}
+                                data-testid={`button-delete-${project.id}`}
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </>
+                          )}
+                        </div>
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

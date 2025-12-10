@@ -33,9 +33,15 @@ Preferred communication style: Simple, everyday language.
 - **Tables**: users, sessions, projects, workOrders
 
 ### Role-Based Access Control
-- **Admin**: Full access to all features including user management, data import, and settings
-- **User**: Can manage work orders and projects, cannot access user management
-- **Customer**: Limited view of work orders associated with their assigned project
+- **Admin**: Full access to all features including user management, project creation, data import, and settings
+- **User**: Can manage work orders in assigned projects, cannot access user management or create projects
+- **Customer**: Limited view of completed work orders for their assigned project only
+
+### Multi-Tenant Architecture
+- **Per-Project Database Schemas**: Each project gets its own PostgreSQL schema (format: `projectName_projectID`) for data isolation
+- **User-Project Assignments**: Many-to-many relationship via `user_projects` junction table
+- **File Storage**: Configurable root directory with structure `Project Files/projectName_projectID/workOrderID/`
+- **System Settings**: Stored in `system_settings` table (includes configurable project files path)
 
 ### Project Structure
 ```
@@ -44,9 +50,18 @@ Preferred communication style: Simple, everyday language.
 │   ├── hooks/           # Custom React hooks
 │   ├── lib/             # Utilities and query client
 │   └── pages/           # Route components
+│       ├── dashboard.tsx         # Main dashboard with project list
+│       ├── projects.tsx          # Admin project management
+│       ├── project-work-orders.tsx  # Project-scoped work orders
+│       ├── project-import.tsx    # Import work orders into project
+│       ├── work-order-files.tsx  # File management per work order
+│       ├── users.tsx             # User management (admin only)
+│       └── settings.tsx          # System settings
 ├── server/              # Express backend
 │   ├── routes.ts        # API route definitions
-│   ├── storage.ts       # Database access layer
+│   ├── storage.ts       # Main database access layer
+│   ├── projectDb.ts     # Per-project schema management
+│   ├── fileStorage.ts   # File storage service
 │   └── replitAuth.ts    # Authentication setup
 ├── shared/              # Shared code between client/server
 │   └── schema.ts        # Drizzle schema and Zod types

@@ -1,4 +1,5 @@
 import { Link, useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import {
   Sidebar,
   SidebarContent,
@@ -10,6 +11,9 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubItem,
+  SidebarMenuSubButton,
 } from "@/components/ui/sidebar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -19,47 +23,40 @@ import {
   LayoutDashboard,
   Users,
   FolderOpen,
-  FileUp,
   Settings,
   LogOut,
-  Building2,
+  ChevronRight,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { useState } from "react";
+import type { Project } from "@shared/schema";
 
 export function AppSidebar() {
   const [location] = useLocation();
   const { user } = useAuth();
   const role = user?.role || "user";
+  const [openProjects, setOpenProjects] = useState<number[]>([]);
 
-  const adminMenuItems = [
-    { title: "Dashboard", url: "/", icon: LayoutDashboard },
-    { title: "Work Orders", url: "/work-orders", icon: ClipboardList },
-    { title: "Projects", url: "/projects", icon: FolderOpen },
-    { title: "Users", url: "/users", icon: Users },
-    { title: "Import Data", url: "/import", icon: FileUp },
-    { title: "Settings", url: "/settings", icon: Settings },
-  ];
+  const { data: projects = [] } = useQuery<Project[]>({
+    queryKey: ["/api/projects"],
+    enabled: !!user,
+  });
 
-  const userMenuItems = [
-    { title: "Dashboard", url: "/", icon: LayoutDashboard },
-    { title: "Work Orders", url: "/work-orders", icon: ClipboardList },
-    { title: "Projects", url: "/projects", icon: FolderOpen },
-  ];
-
-  const customerMenuItems = [
-    { title: "My Work Orders", url: "/", icon: ClipboardList },
-  ];
-
-  const menuItems =
-    role === "admin"
-      ? adminMenuItems
-      : role === "customer"
-        ? customerMenuItems
-        : userMenuItems;
+  const toggleProject = (projectId: number) => {
+    setOpenProjects((prev) =>
+      prev.includes(projectId)
+        ? prev.filter((id) => id !== projectId)
+        : [...prev, projectId]
+    );
+  };
 
   const getInitials = () => {
     if (user?.firstName && user?.lastName) {
       return `${user.firstName[0]}${user.lastName[0]}`.toUpperCase();
+    }
+    if (user?.username) {
+      return user.username[0].toUpperCase();
     }
     if (user?.email) {
       return user.email[0].toUpperCase();
@@ -99,27 +96,147 @@ export function AppSidebar() {
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {menuItems.map((item) => {
-                const isActive = location === item.url || 
-                  (item.url !== "/" && location.startsWith(item.url));
-                return (
-                  <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={isActive}
-                      data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, "-")}`}
-                    >
-                      <Link href={item.url}>
-                        <item.icon className="h-4 w-4" />
-                        <span>{item.title}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={location === "/"}
+                  data-testid="nav-dashboard"
+                >
+                  <Link href="/">
+                    <LayoutDashboard className="h-4 w-4" />
+                    <span>Dashboard</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              {role === "customer" && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={location.startsWith("/work-orders")}
+                    data-testid="nav-work-orders"
+                  >
+                    <Link href="/work-orders">
+                      <ClipboardList className="h-4 w-4" />
+                      <span>Work Orders</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
+
+              {role === "admin" && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={location === "/projects"}
+                    data-testid="nav-projects"
+                  >
+                    <Link href="/projects">
+                      <FolderOpen className="h-4 w-4" />
+                      <span>Projects</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
+
+              {role === "admin" && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={location === "/users"}
+                    data-testid="nav-users"
+                  >
+                    <Link href="/users">
+                      <Users className="h-4 w-4" />
+                      <span>Users</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
+
+              {role === "admin" && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={location === "/settings"}
+                    data-testid="nav-settings"
+                  >
+                    <Link href="/settings">
+                      <Settings className="h-4 w-4" />
+                      <span>Settings</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+
+        {(role === "admin" || role === "user") && projects.length > 0 && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Projects</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {projects.map((project) => {
+                  const isOpen = openProjects.includes(project.id);
+                  const isProjectActive = location.startsWith(`/projects/${project.id}`);
+                  
+                  return (
+                    <Collapsible
+                      key={project.id}
+                      open={isOpen || isProjectActive}
+                      onOpenChange={() => toggleProject(project.id)}
+                    >
+                      <SidebarMenuItem>
+                        <CollapsibleTrigger asChild>
+                          <SidebarMenuButton
+                            isActive={isProjectActive}
+                            data-testid={`nav-project-${project.id}`}
+                          >
+                            <FolderOpen className="h-4 w-4" />
+                            <span className="flex-1 truncate">{project.name}</span>
+                            <ChevronRight
+                              className={`h-4 w-4 transition-transform ${
+                                isOpen || isProjectActive ? "rotate-90" : ""
+                              }`}
+                            />
+                          </SidebarMenuButton>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent>
+                          <SidebarMenuSub>
+                            <SidebarMenuSubItem>
+                              <SidebarMenuSubButton
+                                asChild
+                                isActive={location === `/projects/${project.id}/work-orders`}
+                                data-testid={`nav-project-${project.id}-work-orders`}
+                              >
+                                <Link href={`/projects/${project.id}/work-orders`}>
+                                  <ClipboardList className="h-3 w-3" />
+                                  <span>Work Orders</span>
+                                </Link>
+                              </SidebarMenuSubButton>
+                            </SidebarMenuSubItem>
+                            <SidebarMenuSubItem>
+                              <SidebarMenuSubButton
+                                asChild
+                                isActive={location === `/projects/${project.id}/import`}
+                                data-testid={`nav-project-${project.id}-import`}
+                              >
+                                <Link href={`/projects/${project.id}/import`}>
+                                  <span>Import Data</span>
+                                </Link>
+                              </SidebarMenuSubButton>
+                            </SidebarMenuSubItem>
+                          </SidebarMenuSub>
+                        </CollapsibleContent>
+                      </SidebarMenuItem>
+                    </Collapsible>
+                  );
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
 
       <SidebarFooter className="p-4 border-t border-sidebar-border">
@@ -136,7 +253,7 @@ export function AppSidebar() {
             <span className="text-sm font-medium truncate">
               {user?.firstName && user?.lastName
                 ? `${user.firstName} ${user.lastName}`
-                : user?.email || "User"}
+                : user?.username || user?.email || "User"}
             </span>
             <Badge
               variant={getRoleBadgeVariant()}

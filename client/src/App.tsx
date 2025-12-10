@@ -12,12 +12,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import Landing from "@/pages/landing";
 import Dashboard from "@/pages/dashboard";
 import WorkOrders from "@/pages/work-orders";
-import WorkOrderForm from "@/pages/work-order-form";
-import WorkOrderDetail from "@/pages/work-order-detail";
 import Projects from "@/pages/projects";
 import ProjectForm from "@/pages/project-form";
+import ProjectWorkOrders from "@/pages/project-work-orders";
+import ProjectImport from "@/pages/project-import";
+import WorkOrderFiles from "@/pages/work-order-files";
 import Users from "@/pages/users";
-import Import from "@/pages/import";
 import Settings from "@/pages/settings";
 import NotFound from "@/pages/not-found";
 
@@ -39,24 +39,33 @@ function AuthenticatedRouter() {
   return (
     <Switch>
       <Route path="/" component={Dashboard} />
-      <Route path="/work-orders" component={WorkOrders} />
-      <Route path="/work-orders/new" component={WorkOrderForm} />
-      <Route path="/work-orders/:id" component={WorkOrderDetail} />
-      <Route path="/work-orders/:id/edit" component={WorkOrderForm} />
-      {(role === "admin" || role === "user") && (
+      
+      {role === "customer" && (
+        <Route path="/work-orders" component={WorkOrders} />
+      )}
+      
+      {role === "admin" && (
         <>
           <Route path="/projects" component={Projects} />
           <Route path="/projects/new" component={ProjectForm} />
           <Route path="/projects/:id/edit" component={ProjectForm} />
-        </>
-      )}
-      {role === "admin" && (
-        <>
           <Route path="/users" component={Users} />
-          <Route path="/import" component={Import} />
           <Route path="/settings" component={Settings} />
         </>
       )}
+      
+      {(role === "admin" || role === "user") && (
+        <>
+          <Route path="/projects/:projectId/work-orders" component={ProjectWorkOrders} />
+          <Route path="/projects/:projectId/work-orders/:workOrderId/files" component={WorkOrderFiles} />
+          <Route path="/projects/:projectId/import" component={ProjectImport} />
+        </>
+      )}
+      
+      {role === "user" && (
+        <Route path="/settings" component={Settings} />
+      )}
+      
       <Route component={NotFound} />
     </Switch>
   );

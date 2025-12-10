@@ -5,6 +5,11 @@ import { setupAuth, isAuthenticated } from "./replitAuth";
 import { insertWorkOrderSchema, insertProjectSchema } from "@shared/schema";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
+import multer from "multer";
+import { createProjectSchema, deleteProjectSchema, getProjectWorkOrderStorage, sanitizeSchemaName } from "./projectDb";
+import { ensureProjectDirectory, saveWorkOrderFile, getWorkOrderFiles, deleteWorkOrderFile, getFilePath, getProjectFilesPath, setProjectFilesPath, deleteProjectDirectory } from "./fileStorage";
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 async function initializeAdminUser() {
   const existingAdmin = await storage.getUserByUsername("admin");
@@ -22,6 +27,7 @@ export async function registerRoutes(
   await setupAuth(app);
   await initializeAdminUser();
 
+  // Local authentication
   app.post("/api/auth/local/login", async (req, res) => {
     try {
       const { username, password } = req.body;
@@ -64,6 +70,7 @@ export async function registerRoutes(
     }
   });
 
+  // User management (Admin only)
   app.get("/api/users", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
@@ -99,38 +106,74 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/users/:id/project", isAuthenticated, async (req: any, res) => {
+  // User-Project assignment endpoints
+  app.get("/api/users/:id/projects", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const targetUserId = req.params.id;
+      
+      if (currentUser?.role !== "admin" && currentUser?.id !== targetUserId) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      
+      const projects = await storage.getUserProjects(targetUserId);
+      res.json(projects);
+    } catch (error) {
+      console.error("Error fetching user projects:", error);
+      res.status(500).json({ message: "Failed to fetch user projects" });
+    }
+  });
+
+  app.post("/api/users/:id/projects", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       if (currentUser?.role !== "admin") {
         return res.status(403).json({ message: "Forbidden: Admin access required" });
       }
+      
       const { projectId } = req.body;
-      const user = await storage.updateUserProject(req.params.id, projectId);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
+      if (!projectId) {
+        return res.status(400).json({ message: "projectId is required" });
       }
-      res.json(user);
+      
+      const assignment = await storage.assignUserToProject(req.params.id, projectId);
+      res.status(201).json(assignment);
     } catch (error) {
-      console.error("Error updating user project:", error);
-      res.status(500).json({ message: "Failed to update user project" });
+      console.error("Error assigning user to project:", error);
+      res.status(500).json({ message: "Failed to assign user to project" });
     }
   });
 
+  app.delete("/api/users/:userId/projects/:projectId", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      await storage.removeUserFromProject(req.params.userId, parseInt(req.params.projectId));
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error removing user from project:", error);
+      res.status(500).json({ message: "Failed to remove user from project" });
+    }
+  });
+
+  // Project endpoints
   app.get("/api/projects", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (currentUser?.role === "customer") {
-        if (currentUser.projectId) {
-          const project = await storage.getProject(currentUser.projectId);
-          res.json(project ? [project] : []);
-        } else {
-          res.json([]);
-        }
-        return;
+      
+      if (currentUser?.role === "admin") {
+        const projects = await storage.getProjects();
+        res.json(projects);
+      } else if (currentUser?.role === "user") {
+        const projects = await storage.getUserProjects(currentUser.id);
+        res.json(projects);
+      } else {
+        const projects = await storage.getUserProjects(currentUser!.id);
+        res.json(projects);
       }
-      const projects = await storage.getProjects();
-      res.json(projects);
     } catch (error) {
       console.error("Error fetching projects:", error);
       res.status(500).json({ message: "Failed to fetch projects" });
@@ -142,9 +185,10 @@ export async function registerRoutes(
       const currentUser = await storage.getUser(req.user.claims.sub);
       const projectId = parseInt(req.params.id);
       
-      if (currentUser?.role === "customer") {
-        if (currentUser.projectId !== projectId) {
-          return res.status(403).json({ message: "Forbidden: You can only view your assigned project" });
+      if (currentUser?.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
         }
       }
       
@@ -159,18 +203,42 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/projects/:id/users", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const users = await storage.getProjectUsers(parseInt(req.params.id));
+      res.json(users);
+    } catch (error) {
+      console.error("Error fetching project users:", error);
+      res.status(500).json({ message: "Failed to fetch project users" });
+    }
+  });
+
   app.post("/api/projects", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       if (currentUser?.role !== "admin") {
         return res.status(403).json({ message: "Forbidden: Admin access required" });
       }
+      
       const parsed = insertProjectSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid project data", errors: parsed.error.errors });
       }
+      
       const project = await storage.createProject(parsed.data);
-      res.status(201).json(project);
+      
+      const schemaName = await createProjectSchema(project.name, project.id);
+      await storage.updateProjectDatabaseName(project.id, schemaName);
+      
+      await ensureProjectDirectory(project.name, project.id);
+      
+      const updatedProject = await storage.getProject(project.id);
+      res.status(201).json(updatedProject);
     } catch (error) {
       console.error("Error creating project:", error);
       res.status(500).json({ message: "Failed to create project" });
@@ -200,6 +268,18 @@ export async function registerRoutes(
       if (currentUser?.role !== "admin") {
         return res.status(403).json({ message: "Forbidden: Admin access required" });
       }
+      
+      const project = await storage.getProject(parseInt(req.params.id));
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      if (project.databaseName) {
+        await deleteProjectSchema(project.databaseName);
+      }
+      
+      await deleteProjectDirectory(project.name, project.id);
+      
       await storage.deleteProject(parseInt(req.params.id));
       res.status(204).send();
     } catch (error) {
@@ -208,32 +288,35 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/work-orders", isAuthenticated, async (req: any, res) => {
+  // Project-scoped work orders
+  app.get("/api/projects/:projectId/work-orders", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      const filters: { projectId?: number; status?: string; assignedTo?: string } = {};
+      const projectId = parseInt(req.params.projectId);
       
-      if (req.query.projectId) {
-        filters.projectId = parseInt(req.query.projectId);
-      }
-      if (req.query.status) {
-        filters.status = req.query.status;
-      }
-      if (req.query.assignedTo) {
-        filters.assignedTo = req.query.assignedTo;
-      }
-      
-      if (currentUser?.role === "customer") {
-        if (currentUser.projectId) {
-          filters.projectId = currentUser.projectId;
-          filters.status = "completed";
-        } else {
-          res.json([]);
-          return;
+      if (currentUser?.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
         }
       }
       
-      const workOrders = await storage.getWorkOrders(filters);
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found or not initialized" });
+      }
+      
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      const filters: { status?: string; assignedTo?: string } = {};
+      
+      if (req.query.status) filters.status = req.query.status;
+      if (req.query.assignedTo) filters.assignedTo = req.query.assignedTo;
+      
+      if (currentUser?.role === "customer") {
+        filters.status = "completed";
+      }
+      
+      const workOrders = await workOrderStorage.getWorkOrders(filters);
       res.json(workOrders);
     } catch (error) {
       console.error("Error fetching work orders:", error);
@@ -241,9 +324,25 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/work-orders/stats", isAuthenticated, async (req: any, res) => {
+  app.get("/api/projects/:projectId/work-orders/stats", isAuthenticated, async (req: any, res) => {
     try {
-      const stats = await storage.getWorkOrderStats();
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      
+      if (currentUser?.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      const stats = await workOrderStorage.getWorkOrderStats();
       res.json(stats);
     } catch (error) {
       console.error("Error fetching work order stats:", error);
@@ -251,19 +350,33 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/work-orders/:id", isAuthenticated, async (req: any, res) => {
+  app.get("/api/projects/:projectId/work-orders/:workOrderId", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      const workOrder = await storage.getWorkOrder(parseInt(req.params.id));
+      const projectId = parseInt(req.params.projectId);
+      const workOrderId = parseInt(req.params.workOrderId);
+      
+      if (currentUser?.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      const workOrder = await workOrderStorage.getWorkOrder(workOrderId);
       
       if (!workOrder) {
         return res.status(404).json({ message: "Work order not found" });
       }
       
-      if (currentUser?.role === "customer") {
-        if (workOrder.projectId !== currentUser.projectId || workOrder.status !== "completed") {
-          return res.status(403).json({ message: "Forbidden: You can only view completed work orders for your project" });
-        }
+      if (currentUser?.role === "customer" && workOrder.status !== "completed") {
+        return res.status(403).json({ message: "Forbidden: Customers can only view completed work orders" });
       }
       
       res.json(workOrder);
@@ -273,21 +386,33 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/work-orders", isAuthenticated, async (req: any, res) => {
+  app.post("/api/projects/:projectId/work-orders", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      
       if (currentUser?.role === "customer") {
         return res.status(403).json({ message: "Customers cannot create work orders" });
       }
       
-      const parsed = insertWorkOrderSchema.safeParse({
-        ...req.body,
-        createdBy: req.user.claims.sub,
-      });
-      if (!parsed.success) {
-        return res.status(400).json({ message: "Invalid work order data", errors: parsed.error.errors });
+      if (currentUser?.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
+        }
       }
-      const workOrder = await storage.createWorkOrder(parsed.data);
+      
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      const workOrder = await workOrderStorage.createWorkOrder({
+        ...req.body,
+        createdBy: currentUser!.id,
+      });
+      
       res.status(201).json(workOrder);
     } catch (error) {
       console.error("Error creating work order:", error);
@@ -295,17 +420,35 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/work-orders/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/projects/:projectId/work-orders/:workOrderId", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      const workOrderId = parseInt(req.params.workOrderId);
+      
       if (currentUser?.role === "customer") {
         return res.status(403).json({ message: "Customers cannot edit work orders" });
       }
       
-      const workOrder = await storage.updateWorkOrder(parseInt(req.params.id), req.body);
+      if (currentUser?.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      const workOrder = await workOrderStorage.updateWorkOrder(workOrderId, req.body);
+      
       if (!workOrder) {
         return res.status(404).json({ message: "Work order not found" });
       }
+      
       res.json(workOrder);
     } catch (error) {
       console.error("Error updating work order:", error);
@@ -313,13 +456,23 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/work-orders/:id", isAuthenticated, async (req: any, res) => {
+  app.delete("/api/projects/:projectId/work-orders/:workOrderId", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      
       if (currentUser?.role !== "admin") {
         return res.status(403).json({ message: "Forbidden: Admin access required" });
       }
-      await storage.deleteWorkOrder(parseInt(req.params.id));
+      
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      await workOrderStorage.deleteWorkOrder(parseInt(req.params.workOrderId));
+      
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting work order:", error);
@@ -327,11 +480,26 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/import/work-orders", isAuthenticated, async (req: any, res) => {
+  // Import work orders for a project
+  app.post("/api/projects/:projectId/import", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      
+      if (currentUser?.role === "customer") {
+        return res.status(403).json({ message: "Customers cannot import work orders" });
+      }
+      
       if (currentUser?.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found" });
       }
       
       const { workOrders: workOrdersData } = req.body;
@@ -344,19 +512,166 @@ export async function registerRoutes(
         description: wo.description || null,
         status: wo.status || "pending",
         priority: wo.priority || "medium",
-        projectId: wo.projectId || null,
         assignedTo: wo.assignedTo || null,
-        createdBy: req.user.claims.sub,
+        createdBy: currentUser!.id,
         dueDate: wo.dueDate ? new Date(wo.dueDate) : null,
         notes: wo.notes || null,
         attachments: wo.attachments || null,
       }));
       
-      const result = await storage.importWorkOrders(toImport);
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      const result = await workOrderStorage.importWorkOrders(toImport);
       res.json(result);
     } catch (error) {
       console.error("Error importing work orders:", error);
       res.status(500).json({ message: "Failed to import work orders" });
+    }
+  });
+
+  // File upload for work orders
+  app.post("/api/projects/:projectId/work-orders/:workOrderId/files", isAuthenticated, upload.single("file"), async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      const workOrderId = parseInt(req.params.workOrderId);
+      
+      if (currentUser?.role === "customer") {
+        return res.status(403).json({ message: "Customers cannot upload files" });
+      }
+      
+      if (currentUser?.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+      
+      const filePath = await saveWorkOrderFile(
+        project.name,
+        project.id,
+        workOrderId,
+        req.file.originalname,
+        req.file.buffer
+      );
+      
+      res.status(201).json({ message: "File uploaded", path: filePath });
+    } catch (error) {
+      console.error("Error uploading file:", error);
+      res.status(500).json({ message: "Failed to upload file" });
+    }
+  });
+
+  app.get("/api/projects/:projectId/work-orders/:workOrderId/files", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      const workOrderId = parseInt(req.params.workOrderId);
+      
+      if (currentUser?.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const files = await getWorkOrderFiles(project.name, project.id, workOrderId);
+      res.json(files);
+    } catch (error) {
+      console.error("Error fetching files:", error);
+      res.status(500).json({ message: "Failed to fetch files" });
+    }
+  });
+
+  app.delete("/api/projects/:projectId/work-orders/:workOrderId/files/:filename", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      
+      if (currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      await deleteWorkOrderFile(
+        project.name,
+        project.id,
+        parseInt(req.params.workOrderId),
+        req.params.filename
+      );
+      
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting file:", error);
+      res.status(500).json({ message: "Failed to delete file" });
+    }
+  });
+
+  // System settings (Admin only)
+  app.get("/api/settings", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const settings = await storage.getAllSettings();
+      res.json(settings);
+    } catch (error) {
+      console.error("Error fetching settings:", error);
+      res.status(500).json({ message: "Failed to fetch settings" });
+    }
+  });
+
+  app.get("/api/settings/project-files-path", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const path = await getProjectFilesPath();
+      res.json({ path });
+    } catch (error) {
+      console.error("Error fetching project files path:", error);
+      res.status(500).json({ message: "Failed to fetch project files path" });
+    }
+  });
+
+  app.put("/api/settings/project-files-path", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const { path } = req.body;
+      if (!path || typeof path !== "string") {
+        return res.status(400).json({ message: "Invalid path" });
+      }
+      
+      await setProjectFilesPath(path);
+      res.json({ message: "Project files path updated", path });
+    } catch (error) {
+      console.error("Error updating project files path:", error);
+      res.status(500).json({ message: "Failed to update project files path" });
     }
   });
 

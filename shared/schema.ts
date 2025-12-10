@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, jsonb, index } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, jsonb, index, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -29,18 +29,36 @@ export const users = pgTable("users", {
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
   role: varchar("role", { length: 20 }).notNull().default("user"),
-  projectId: integer("project_id"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// Projects table - for customer organization
+// Projects table - for customer organization with per-project database support
 export const projects = pgTable("projects", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
   customerEmail: varchar("customer_email"),
+  databaseName: varchar("database_name", { length: 255 }),
+  isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// User-Project junction table (many-to-many relationship)
+export const userProjects = pgTable("user_projects", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// System settings table for application-wide configuration
+export const systemSettings = pgTable("system_settings", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  key: varchar("key", { length: 100 }).notNull().unique(),
+  value: text("value"),
+  description: text("description"),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
@@ -52,16 +70,16 @@ export type WorkOrderStatus = (typeof workOrderStatusEnum)[number];
 export const workOrderPriorityEnum = ["low", "medium", "high", "urgent"] as const;
 export type WorkOrderPriority = (typeof workOrderPriorityEnum)[number];
 
-// Work Orders table
+// Work Orders table - kept in main schema for reference but will be in per-project databases
 export const workOrders = pgTable("work_orders", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   title: varchar("title", { length: 255 }).notNull(),
   description: text("description"),
   status: varchar("status", { length: 20 }).notNull().default("pending"),
   priority: varchar("priority", { length: 20 }).notNull().default("medium"),
-  projectId: integer("project_id").references(() => projects.id),
-  assignedTo: varchar("assigned_to").references(() => users.id),
-  createdBy: varchar("created_by").references(() => users.id),
+  projectId: integer("project_id"),
+  assignedTo: varchar("assigned_to"),
+  createdBy: varchar("created_by"),
   dueDate: timestamp("due_date"),
   completedAt: timestamp("completed_at"),
   notes: text("notes"),
@@ -71,55 +89,64 @@ export const workOrders = pgTable("work_orders", {
 });
 
 // Relations
-export const usersRelations = relations(users, ({ one, many }) => ({
-  project: one(projects, {
-    fields: [users.projectId],
-    references: [projects.id],
-  }),
-  assignedWorkOrders: many(workOrders, { relationName: "assignedTo" }),
-  createdWorkOrders: many(workOrders, { relationName: "createdBy" }),
+export const usersRelations = relations(users, ({ many }) => ({
+  userProjects: many(userProjects),
 }));
 
 export const projectsRelations = relations(projects, ({ many }) => ({
-  workOrders: many(workOrders),
-  users: many(users),
+  userProjects: many(userProjects),
 }));
 
-export const workOrdersRelations = relations(workOrders, ({ one }) => ({
+export const userProjectsRelations = relations(userProjects, ({ one }) => ({
+  user: one(users, {
+    fields: [userProjects.userId],
+    references: [users.id],
+  }),
   project: one(projects, {
-    fields: [workOrders.projectId],
+    fields: [userProjects.projectId],
     references: [projects.id],
   }),
-  assignee: one(users, {
-    fields: [workOrders.assignedTo],
-    references: [users.id],
-    relationName: "assignedTo",
-  }),
-  creator: one(users, {
-    fields: [workOrders.createdBy],
-    references: [users.id],
-    relationName: "createdBy",
-  }),
 }));
 
-// Insert schemas
-export const insertUserSchema = createInsertSchema(users).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
+// Insert schemas - defined manually for proper type inference
+export const insertUserSchema = z.object({
+  email: z.string().email().optional().nullable(),
+  username: z.string().min(3).max(100).optional().nullable(),
+  passwordHash: z.string().optional().nullable(),
+  firstName: z.string().optional().nullable(),
+  lastName: z.string().optional().nullable(),
+  profileImageUrl: z.string().optional().nullable(),
+  role: z.enum(userRoleEnum).optional(),
 });
 
-export const insertProjectSchema = createInsertSchema(projects).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
+export const insertProjectSchema = z.object({
+  name: z.string().min(1).max(255),
+  description: z.string().optional().nullable(),
+  customerEmail: z.string().email().optional().nullable(),
 });
 
-export const insertWorkOrderSchema = createInsertSchema(workOrders).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-  completedAt: true,
+export const insertUserProjectSchema = z.object({
+  userId: z.string(),
+  projectId: z.number(),
+});
+
+export const insertSystemSettingSchema = z.object({
+  key: z.string().min(1).max(100),
+  value: z.string().optional().nullable(),
+  description: z.string().optional().nullable(),
+});
+
+export const insertWorkOrderSchema = z.object({
+  title: z.string().min(1).max(255),
+  description: z.string().optional().nullable(),
+  status: z.enum(workOrderStatusEnum).optional(),
+  priority: z.enum(workOrderPriorityEnum).optional(),
+  projectId: z.number().optional().nullable(),
+  assignedTo: z.string().optional().nullable(),
+  createdBy: z.string().optional().nullable(),
+  dueDate: z.date().optional().nullable(),
+  notes: z.string().optional().nullable(),
+  attachments: z.array(z.string()).optional().nullable(),
 });
 
 // Types
@@ -129,6 +156,12 @@ export type InsertUser = z.infer<typeof insertUserSchema>;
 
 export type Project = typeof projects.$inferSelect;
 export type InsertProject = z.infer<typeof insertProjectSchema>;
+
+export type UserProject = typeof userProjects.$inferSelect;
+export type InsertUserProject = z.infer<typeof insertUserProjectSchema>;
+
+export type SystemSetting = typeof systemSettings.$inferSelect;
+export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;
 
 export type WorkOrder = typeof workOrders.$inferSelect;
 export type InsertWorkOrder = z.infer<typeof insertWorkOrderSchema>;
