@@ -36,6 +36,8 @@ type ParsedWorkOrder = {
   status?: string;
   notes?: string;
   dueDate?: string;
+  assignedTo?: string;
+  attachments?: string[];
 };
 
 type ColumnMapping = {
@@ -45,6 +47,8 @@ type ColumnMapping = {
   status: string;
   notes: string;
   dueDate: string;
+  assignedTo: string;
+  attachments: string;
 };
 
 export default function ProjectImport() {
@@ -69,6 +73,8 @@ export default function ProjectImport() {
     status: "",
     notes: "",
     dueDate: "",
+    assignedTo: "",
+    attachments: "",
   });
   const [previewData, setPreviewData] = useState<ParsedWorkOrder[]>([]);
   const [fileName, setFileName] = useState("");
@@ -127,6 +133,8 @@ export default function ProjectImport() {
       status: "",
       notes: "",
       dueDate: "",
+      assignedTo: "",
+      attachments: "",
     });
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -239,6 +247,8 @@ export default function ProjectImport() {
         status: "",
         notes: "",
         dueDate: "",
+        assignedTo: "",
+        attachments: "",
       });
     }
   };
@@ -251,6 +261,8 @@ export default function ProjectImport() {
       status: "",
       notes: "",
       dueDate: "",
+      assignedTo: "",
+      attachments: "",
     };
 
     const titleVariants = ["title", "name", "subject", "work order", "workorder", "wo title"];
@@ -259,6 +271,8 @@ export default function ProjectImport() {
     const statusVariants = ["status", "state", "condition"];
     const notesVariants = ["notes", "comments", "remarks"];
     const dateVariants = ["due date", "duedate", "due", "deadline", "date"];
+    const assignedVariants = ["assigned", "assignedto", "assigned to", "technician", "worker", "assignee"];
+    const attachmentsVariants = ["attachments", "files", "documents", "attachment"];
 
     headerRow.forEach((header) => {
       const lower = header.toLowerCase();
@@ -274,6 +288,10 @@ export default function ProjectImport() {
         newMapping.notes = header;
       } else if (dateVariants.some(v => lower.includes(v)) && !newMapping.dueDate) {
         newMapping.dueDate = header;
+      } else if (assignedVariants.some(v => lower.includes(v)) && !newMapping.assignedTo) {
+        newMapping.assignedTo = header;
+      } else if (attachmentsVariants.some(v => lower.includes(v)) && !newMapping.attachments) {
+        newMapping.attachments = header;
       }
     });
 
@@ -294,6 +312,7 @@ export default function ProjectImport() {
         return index >= 0 ? String(row[index] || "") : "";
       };
 
+      const attachmentsValue = getValueByHeader(columnMapping.attachments);
       const workOrder: ParsedWorkOrder = {
         title: getValueByHeader(columnMapping.title) || "Untitled",
         description: getValueByHeader(columnMapping.description),
@@ -301,6 +320,8 @@ export default function ProjectImport() {
         status: getValueByHeader(columnMapping.status),
         notes: getValueByHeader(columnMapping.notes),
         dueDate: getValueByHeader(columnMapping.dueDate),
+        assignedTo: getValueByHeader(columnMapping.assignedTo),
+        attachments: attachmentsValue ? attachmentsValue.split(",").map(s => s.trim()).filter(Boolean) : undefined,
       };
 
       return workOrder;
@@ -338,6 +359,7 @@ export default function ProjectImport() {
 
       const priority = getValueByHeader(columnMapping.priority).toLowerCase();
       const status = getValueByHeader(columnMapping.status).toLowerCase();
+      const attachmentsValue = getValueByHeader(columnMapping.attachments);
 
       const workOrder: ParsedWorkOrder = {
         title: getValueByHeader(columnMapping.title) || "Untitled",
@@ -346,6 +368,8 @@ export default function ProjectImport() {
         status: ["pending", "in_progress", "completed", "cancelled"].includes(status) ? status : "pending",
         notes: getValueByHeader(columnMapping.notes) || undefined,
         dueDate: getValueByHeader(columnMapping.dueDate) || undefined,
+        assignedTo: getValueByHeader(columnMapping.assignedTo) || undefined,
+        attachments: attachmentsValue ? attachmentsValue.split(",").map(s => s.trim()).filter(Boolean) : undefined,
       };
 
       return workOrder;
@@ -551,16 +575,24 @@ export default function ProjectImport() {
                       <span className="font-mono bg-muted px-2 py-1 rounded">dueDate</span>
                       <span className="text-muted-foreground ml-2">- Due date (YYYY-MM-DD format recommended)</span>
                     </div>
+                    <div>
+                      <span className="font-mono bg-muted px-2 py-1 rounded">assignedTo</span>
+                      <span className="text-muted-foreground ml-2">- Person assigned to the work order (text)</span>
+                    </div>
+                    <div>
+                      <span className="font-mono bg-muted px-2 py-1 rounded">attachments</span>
+                      <span className="text-muted-foreground ml-2">- Comma-separated list of file paths or URLs (text)</span>
+                    </div>
                   </div>
                 </div>
                 
                 <div>
                   <h4 className="font-medium mb-2">Example CSV</h4>
                   <pre className="text-xs bg-muted p-3 rounded overflow-x-auto">
-{`title,description,priority,status,dueDate
-Fix leaky faucet,Kitchen sink dripping,high,pending,2024-12-15
-Replace light bulb,Hallway light burned out,low,pending,2024-12-20
-HVAC maintenance,Annual checkup,medium,in_progress,2024-12-10`}
+{`title,description,priority,status,dueDate,assignedTo,attachments
+Fix leaky faucet,Kitchen sink dripping,high,pending,2024-12-15,John Smith,photo1.jpg
+Replace light bulb,Hallway light burned out,low,pending,2024-12-20,Jane Doe,
+HVAC maintenance,Annual checkup,medium,in_progress,2024-12-10,Mike Johnson,manual.pdf,invoice.pdf`}
                   </pre>
                 </div>
               </div>
@@ -678,6 +710,40 @@ HVAC maintenance,Annual checkup,medium,in_progress,2024-12-10`}
                       </SelectContent>
                     </Select>
                   </div>
+                  <div>
+                    <Label>Assigned To</Label>
+                    <Select 
+                      value={columnMapping.assignedTo} 
+                      onValueChange={(v) => setColumnMapping(prev => ({ ...prev, assignedTo: v }))}
+                    >
+                      <SelectTrigger data-testid="select-map-assigned-to">
+                        <SelectValue placeholder="Select column" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">-- None --</SelectItem>
+                        {headers.map((h) => (
+                          <SelectItem key={h} value={h}>{h}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Attachments</Label>
+                    <Select 
+                      value={columnMapping.attachments} 
+                      onValueChange={(v) => setColumnMapping(prev => ({ ...prev, attachments: v }))}
+                    >
+                      <SelectTrigger data-testid="select-map-attachments">
+                        <SelectValue placeholder="Select column" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">-- None --</SelectItem>
+                        {headers.map((h) => (
+                          <SelectItem key={h} value={h}>{h}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -780,7 +846,9 @@ HVAC maintenance,Annual checkup,medium,in_progress,2024-12-10`}
     "priority": "low | medium | high | urgent",
     "status": "pending | in_progress | completed | cancelled",
     "notes": "Optional notes",
-    "dueDate": "2024-12-31T00:00:00Z"
+    "dueDate": "2024-12-31T00:00:00Z",
+    "assignedTo": "John Smith",
+    "attachments": ["file1.pdf", "image.jpg"]
   }
 ]`}
               </pre>
