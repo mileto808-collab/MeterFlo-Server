@@ -47,7 +47,9 @@ type SearchResult = {
     zone?: string | null;
     serviceType?: string | null;
     oldMeterId?: string | null;
+    oldMeterReading?: number | null;
     newMeterId?: string | null;
+    newMeterReading?: number | null;
     oldGps?: string | null;
     newGps?: string | null;
     status: string;
@@ -135,7 +137,7 @@ export default function SearchReports() {
     return <Badge variant={variants[status] || "default"} className="text-xs">{status.replace("_", " ")}</Badge>;
   };
 
-  const getServiceTypeBadge = (serviceType: string | undefined) => {
+  const getServiceTypeBadge = (serviceType: string | null | undefined) => {
     switch (serviceType) {
       case "Water":
         return <Badge className="bg-blue-500 text-white text-xs">Water</Badge>;
@@ -154,7 +156,7 @@ export default function SearchReports() {
       return;
     }
 
-    const headers = ["Project", "WO ID", "Customer ID", "Customer Name", "Address", "City", "State", "ZIP", "Phone", "Email", "Route", "Zone", "Service Type", "Old Meter ID", "New Meter ID", "Old GPS", "New GPS", "Status", "Priority", "Assigned To", "Created At", "Completed At", "Notes"];
+    const headers = ["Project", "WO ID", "Customer ID", "Customer Name", "Address", "City", "State", "ZIP", "Phone", "Email", "Route", "Zone", "Service Type", "Old Meter ID", "Old Meter Reading", "New Meter ID", "New Meter Reading", "Old GPS", "New GPS", "Status", "Priority", "Assigned To", "Created At", "Completed At", "Notes"];
     const rows = searchResults.results.map(r => [
       r.projectName,
       r.workOrder.customerWoId || "",
@@ -170,7 +172,9 @@ export default function SearchReports() {
       r.workOrder.zone || "",
       r.workOrder.serviceType || "",
       r.workOrder.oldMeterId || "",
+      r.workOrder.oldMeterReading ?? "",
       r.workOrder.newMeterId || "",
+      r.workOrder.newMeterReading ?? "",
       r.workOrder.oldGps || "",
       r.workOrder.newGps || "",
       r.workOrder.status,
@@ -217,7 +221,9 @@ export default function SearchReports() {
       "Zone": r.workOrder.zone || "",
       "Service Type": r.workOrder.serviceType || "",
       "Old Meter ID": r.workOrder.oldMeterId || "",
+      "Old Meter Reading": r.workOrder.oldMeterReading ?? "",
       "New Meter ID": r.workOrder.newMeterId || "",
+      "New Meter Reading": r.workOrder.newMeterReading ?? "",
       "Old GPS": r.workOrder.oldGps || "",
       "New GPS": r.workOrder.newGps || "",
       "Status": r.workOrder.status,
@@ -278,6 +284,9 @@ export default function SearchReports() {
               <th>Route</th>
               <th>Zone</th>
               <th>Old Meter</th>
+              <th>Old Reading</th>
+              <th>New Meter</th>
+              <th>New Reading</th>
               <th>Status</th>
             </tr>
           </thead>
@@ -292,6 +301,9 @@ export default function SearchReports() {
                 <td>${r.workOrder.route || "-"}</td>
                 <td>${r.workOrder.zone || "-"}</td>
                 <td>${r.workOrder.oldMeterId || "-"}</td>
+                <td>${r.workOrder.oldMeterReading ?? "-"}</td>
+                <td>${r.workOrder.newMeterId || "-"}</td>
+                <td>${r.workOrder.newMeterReading ?? "-"}</td>
                 <td>${r.workOrder.status.replace("_", " ")}</td>
               </tr>
             `).join("")}

@@ -83,7 +83,9 @@ export default function ProjectWorkOrders() {
       zone: "",
       serviceType: "Water",
       oldMeterId: "",
+      oldMeterReading: undefined,
       newMeterId: "",
+      newMeterReading: undefined,
       oldGps: "",
       newGps: "",
       priority: "medium",
@@ -107,7 +109,9 @@ export default function ProjectWorkOrders() {
       zone: "",
       serviceType: "Water",
       oldMeterId: "",
+      oldMeterReading: undefined,
       newMeterId: "",
+      newMeterReading: undefined,
       oldGps: "",
       newGps: "",
       priority: "medium",
@@ -159,7 +163,9 @@ export default function ProjectWorkOrders() {
         zone: editingWorkOrder.zone || "",
         serviceType: (editingWorkOrder.serviceType as any) || "Water",
         oldMeterId: editingWorkOrder.oldMeterId || "",
+        oldMeterReading: editingWorkOrder.oldMeterReading ?? undefined,
         newMeterId: editingWorkOrder.newMeterId || "",
+        newMeterReading: editingWorkOrder.newMeterReading ?? undefined,
         oldGps: editingWorkOrder.oldGps || "",
         newGps: editingWorkOrder.newGps || "",
         priority: (editingWorkOrder.priority as any) || "medium",
@@ -178,7 +184,9 @@ export default function ProjectWorkOrders() {
     route: data.route || null,
     zone: data.zone || null,
     oldMeterId: data.oldMeterId || null,
+    oldMeterReading: data.oldMeterReading ?? null,
     newMeterId: data.newMeterId || null,
+    newMeterReading: data.newMeterReading ?? null,
     oldGps: data.oldGps || null,
     newGps: data.newGps || null,
     notes: data.notes || null,
@@ -511,12 +519,52 @@ export default function ProjectWorkOrders() {
       />
       <FormField
         control={formInstance.control}
+        name="oldMeterReading"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Old Meter Reading</FormLabel>
+            <FormControl>
+              <Input 
+                type="number" 
+                {...field} 
+                value={field.value ?? ""} 
+                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                placeholder="12345" 
+                data-testid="input-old-meter-reading" 
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={formInstance.control}
         name="newMeterId"
         render={({ field }) => (
           <FormItem>
             <FormLabel>New Meter ID</FormLabel>
             <FormControl>
               <Input {...field} value={field.value || ""} placeholder="NEW-67890" data-testid="input-new-meter-id" />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={formInstance.control}
+        name="newMeterReading"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>New Meter Reading</FormLabel>
+            <FormControl>
+              <Input 
+                type="number" 
+                {...field} 
+                value={field.value ?? ""} 
+                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                placeholder="67890" 
+                data-testid="input-new-meter-reading" 
+              />
             </FormControl>
             <FormMessage />
           </FormItem>

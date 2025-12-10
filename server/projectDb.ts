@@ -23,7 +23,9 @@ export const projectWorkOrders = pgTable("work_orders", {
   zone: varchar("zone", { length: 100 }),
   serviceType: varchar("service_type", { length: 20 }),
   oldMeterId: varchar("old_meter_id", { length: 100 }),
+  oldMeterReading: integer("old_meter_reading"),
   newMeterId: varchar("new_meter_id", { length: 100 }),
+  newMeterReading: integer("new_meter_reading"),
   oldGps: varchar("old_gps", { length: 100 }),
   newGps: varchar("new_gps", { length: 100 }),
   status: varchar("status", { length: 20 }).notNull().default("pending"),
@@ -77,7 +79,9 @@ export async function createProjectSchema(projectName: string, projectId: number
         zone VARCHAR(100),
         service_type VARCHAR(20),
         old_meter_id VARCHAR(100),
+        old_meter_reading INTEGER,
         new_meter_id VARCHAR(100),
+        new_meter_reading INTEGER,
         old_gps VARCHAR(100),
         new_gps VARCHAR(100),
         status VARCHAR(20) NOT NULL DEFAULT 'pending',
@@ -165,8 +169,8 @@ export class ProjectWorkOrderStorage {
     try {
       const result = await client.query(
         `INSERT INTO "${this.schemaName}".work_orders 
-         (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, new_meter_id, old_gps, new_gps, status, priority, assigned_to, created_by, notes, attachments)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+         (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, priority, assigned_to, created_by, notes, attachments)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
          RETURNING *`,
         [
           workOrder.customerWoId,
@@ -182,7 +186,9 @@ export class ProjectWorkOrderStorage {
           workOrder.zone || null,
           workOrder.serviceType,
           workOrder.oldMeterId || null,
+          workOrder.oldMeterReading ?? null,
           workOrder.newMeterId || null,
+          workOrder.newMeterReading ?? null,
           workOrder.oldGps || null,
           workOrder.newGps || null,
           workOrder.status || "pending",
@@ -258,9 +264,17 @@ export class ProjectWorkOrderStorage {
         setClauses.push(`old_meter_id = $${paramCount++}`);
         values.push(updates.oldMeterId);
       }
+      if (updates.oldMeterReading !== undefined) {
+        setClauses.push(`old_meter_reading = $${paramCount++}`);
+        values.push(updates.oldMeterReading);
+      }
       if (updates.newMeterId !== undefined) {
         setClauses.push(`new_meter_id = $${paramCount++}`);
         values.push(updates.newMeterId);
+      }
+      if (updates.newMeterReading !== undefined) {
+        setClauses.push(`new_meter_reading = $${paramCount++}`);
+        values.push(updates.newMeterReading);
       }
       if (updates.oldGps !== undefined) {
         setClauses.push(`old_gps = $${paramCount++}`);
@@ -372,7 +386,9 @@ export class ProjectWorkOrderStorage {
       zone: row.zone,
       serviceType: row.service_type,
       oldMeterId: row.old_meter_id,
+      oldMeterReading: row.old_meter_reading,
       newMeterId: row.new_meter_id,
+      newMeterReading: row.new_meter_reading,
       oldGps: row.old_gps,
       newGps: row.new_gps,
       status: row.status,
@@ -426,7 +442,9 @@ export async function backupProjectDatabase(schemaName: string): Promise<{
       zone: row.zone,
       serviceType: row.service_type,
       oldMeterId: row.old_meter_id,
+      oldMeterReading: row.old_meter_reading,
       newMeterId: row.new_meter_id,
+      newMeterReading: row.new_meter_reading,
       oldGps: row.old_gps,
       newGps: row.new_gps,
       status: row.status,
@@ -471,8 +489,8 @@ export async function restoreProjectDatabase(
       try {
         await client.query(
           `INSERT INTO "${schemaName}".work_orders 
-           (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, new_meter_id, old_gps, new_gps, status, priority, assigned_to, created_by, completed_at, notes, attachments)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
+           (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, priority, assigned_to, created_by, completed_at, notes, attachments)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)`,
           [
             wo.customerWoId || null,
             wo.customerId || null,
@@ -487,7 +505,9 @@ export async function restoreProjectDatabase(
             wo.zone || null,
             wo.serviceType || null,
             wo.oldMeterId || null,
+            wo.oldMeterReading ?? null,
             wo.newMeterId || null,
+            wo.newMeterReading ?? null,
             wo.oldGps || null,
             wo.newGps || null,
             wo.status || "pending",
