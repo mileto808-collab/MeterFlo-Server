@@ -130,7 +130,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Invalid user data", errors: parsed.error.errors });
       }
       
-      const { username, password, firstName, lastName, email, role } = parsed.data;
+      const { username, password, firstName, lastName, email, role, subroleId } = parsed.data;
       
       const existingUser = await storage.getUserByUsername(username);
       if (existingUser) {
@@ -145,7 +145,7 @@ export async function registerRoutes(
       }
       
       const passwordHash = await bcrypt.hash(password, 10);
-      const user = await storage.createLocalUser(username, passwordHash, role, firstName, lastName, email);
+      const user = await storage.createLocalUser(username, passwordHash, role, firstName, lastName, email, subroleId);
       
       res.status(201).json(user);
     } catch (error) {
