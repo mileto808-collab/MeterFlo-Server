@@ -3,16 +3,33 @@ import { pgTable, text, varchar, timestamp, integer } from "drizzle-orm/pg-core"
 import { pool } from "./db";
 import { sql } from "drizzle-orm";
 
+// Service type enum for work orders
+export const serviceTypeEnum = ["Water", "Electric", "Gas"] as const;
+export type ServiceType = (typeof serviceTypeEnum)[number];
+
 // Work orders schema for project databases (within project-specific schemas)
 export const projectWorkOrders = pgTable("work_orders", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  title: varchar("title", { length: 255 }).notNull(),
-  description: text("description"),
+  customerWoId: varchar("customer_wo_id", { length: 100 }).unique(),
+  customerId: varchar("customer_id", { length: 100 }),
+  customerName: varchar("customer_name", { length: 255 }),
+  address: varchar("address", { length: 500 }),
+  city: varchar("city", { length: 100 }),
+  state: varchar("state", { length: 50 }),
+  zip: varchar("zip", { length: 20 }),
+  phone: varchar("phone", { length: 50 }),
+  email: varchar("email", { length: 255 }),
+  route: varchar("route", { length: 100 }),
+  zone: varchar("zone", { length: 100 }),
+  serviceType: varchar("service_type", { length: 20 }),
+  oldMeterId: varchar("old_meter_id", { length: 100 }),
+  newMeterId: varchar("new_meter_id", { length: 100 }),
+  oldGps: varchar("old_gps", { length: 100 }),
+  newGps: varchar("new_gps", { length: 100 }),
   status: varchar("status", { length: 20 }).notNull().default("pending"),
   priority: varchar("priority", { length: 20 }).notNull().default("medium"),
   assignedTo: varchar("assigned_to"),
   createdBy: varchar("created_by"),
-  dueDate: timestamp("due_date"),
   completedAt: timestamp("completed_at"),
   notes: text("notes"),
   attachments: text("attachments").array(),
@@ -47,13 +64,26 @@ export async function createProjectSchema(projectName: string, projectId: number
     await client.query(`
       CREATE TABLE IF NOT EXISTS "${schemaName}".work_orders (
         id SERIAL PRIMARY KEY,
-        title VARCHAR(255) NOT NULL,
-        description TEXT,
+        customer_wo_id VARCHAR(100) UNIQUE,
+        customer_id VARCHAR(100),
+        customer_name VARCHAR(255),
+        address VARCHAR(500),
+        city VARCHAR(100),
+        state VARCHAR(50),
+        zip VARCHAR(20),
+        phone VARCHAR(50),
+        email VARCHAR(255),
+        route VARCHAR(100),
+        zone VARCHAR(100),
+        service_type VARCHAR(20),
+        old_meter_id VARCHAR(100),
+        new_meter_id VARCHAR(100),
+        old_gps VARCHAR(100),
+        new_gps VARCHAR(100),
         status VARCHAR(20) NOT NULL DEFAULT 'pending',
         priority VARCHAR(20) NOT NULL DEFAULT 'medium',
         assigned_to VARCHAR,
         created_by VARCHAR,
-        due_date TIMESTAMP,
         completed_at TIMESTAMP,
         notes TEXT,
         attachments TEXT[],
@@ -135,17 +165,30 @@ export class ProjectWorkOrderStorage {
     try {
       const result = await client.query(
         `INSERT INTO "${this.schemaName}".work_orders 
-         (title, description, status, priority, assigned_to, created_by, due_date, notes, attachments)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, new_meter_id, old_gps, new_gps, status, priority, assigned_to, created_by, notes, attachments)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
          RETURNING *`,
         [
-          workOrder.title,
-          workOrder.description || null,
+          workOrder.customerWoId,
+          workOrder.customerId,
+          workOrder.customerName,
+          workOrder.address,
+          workOrder.city || null,
+          workOrder.state || null,
+          workOrder.zip || null,
+          workOrder.phone || null,
+          workOrder.email || null,
+          workOrder.route || null,
+          workOrder.zone || null,
+          workOrder.serviceType,
+          workOrder.oldMeterId || null,
+          workOrder.newMeterId || null,
+          workOrder.oldGps || null,
+          workOrder.newGps || null,
           workOrder.status || "pending",
           workOrder.priority || "medium",
           workOrder.assignedTo || null,
           workOrder.createdBy || null,
-          workOrder.dueDate || null,
           workOrder.notes || null,
           workOrder.attachments || null,
         ]
@@ -163,13 +206,69 @@ export class ProjectWorkOrderStorage {
       const values: any[] = [];
       let paramCount = 1;
 
-      if (updates.title !== undefined) {
-        setClauses.push(`title = $${paramCount++}`);
-        values.push(updates.title);
+      if (updates.customerWoId !== undefined) {
+        setClauses.push(`customer_wo_id = $${paramCount++}`);
+        values.push(updates.customerWoId);
       }
-      if (updates.description !== undefined) {
-        setClauses.push(`description = $${paramCount++}`);
-        values.push(updates.description);
+      if (updates.customerId !== undefined) {
+        setClauses.push(`customer_id = $${paramCount++}`);
+        values.push(updates.customerId);
+      }
+      if (updates.customerName !== undefined) {
+        setClauses.push(`customer_name = $${paramCount++}`);
+        values.push(updates.customerName);
+      }
+      if (updates.address !== undefined) {
+        setClauses.push(`address = $${paramCount++}`);
+        values.push(updates.address);
+      }
+      if (updates.city !== undefined) {
+        setClauses.push(`city = $${paramCount++}`);
+        values.push(updates.city);
+      }
+      if (updates.state !== undefined) {
+        setClauses.push(`state = $${paramCount++}`);
+        values.push(updates.state);
+      }
+      if (updates.zip !== undefined) {
+        setClauses.push(`zip = $${paramCount++}`);
+        values.push(updates.zip);
+      }
+      if (updates.phone !== undefined) {
+        setClauses.push(`phone = $${paramCount++}`);
+        values.push(updates.phone);
+      }
+      if (updates.email !== undefined) {
+        setClauses.push(`email = $${paramCount++}`);
+        values.push(updates.email);
+      }
+      if (updates.route !== undefined) {
+        setClauses.push(`route = $${paramCount++}`);
+        values.push(updates.route);
+      }
+      if (updates.zone !== undefined) {
+        setClauses.push(`zone = $${paramCount++}`);
+        values.push(updates.zone);
+      }
+      if (updates.serviceType !== undefined) {
+        setClauses.push(`service_type = $${paramCount++}`);
+        values.push(updates.serviceType);
+      }
+      if (updates.oldMeterId !== undefined) {
+        setClauses.push(`old_meter_id = $${paramCount++}`);
+        values.push(updates.oldMeterId);
+      }
+      if (updates.newMeterId !== undefined) {
+        setClauses.push(`new_meter_id = $${paramCount++}`);
+        values.push(updates.newMeterId);
+      }
+      if (updates.oldGps !== undefined) {
+        setClauses.push(`old_gps = $${paramCount++}`);
+        values.push(updates.oldGps);
+      }
+      if (updates.newGps !== undefined) {
+        setClauses.push(`new_gps = $${paramCount++}`);
+        values.push(updates.newGps);
       }
       if (updates.status !== undefined) {
         setClauses.push(`status = $${paramCount++}`);
@@ -185,10 +284,6 @@ export class ProjectWorkOrderStorage {
       if (updates.assignedTo !== undefined) {
         setClauses.push(`assigned_to = $${paramCount++}`);
         values.push(updates.assignedTo);
-      }
-      if (updates.dueDate !== undefined) {
-        setClauses.push(`due_date = $${paramCount++}`);
-        values.push(updates.dueDate);
       }
       if (updates.notes !== undefined) {
         setClauses.push(`notes = $${paramCount++}`);
@@ -264,13 +359,26 @@ export class ProjectWorkOrderStorage {
   private mapRowToWorkOrder(row: any): ProjectWorkOrder {
     return {
       id: row.id,
-      title: row.title,
-      description: row.description,
+      customerWoId: row.customer_wo_id,
+      customerId: row.customer_id,
+      customerName: row.customer_name,
+      address: row.address,
+      city: row.city,
+      state: row.state,
+      zip: row.zip,
+      phone: row.phone,
+      email: row.email,
+      route: row.route,
+      zone: row.zone,
+      serviceType: row.service_type,
+      oldMeterId: row.old_meter_id,
+      newMeterId: row.new_meter_id,
+      oldGps: row.old_gps,
+      newGps: row.new_gps,
       status: row.status,
       priority: row.priority,
       assignedTo: row.assigned_to,
       createdBy: row.created_by,
-      dueDate: row.due_date,
       completedAt: row.completed_at,
       notes: row.notes,
       attachments: row.attachments,
@@ -305,13 +413,26 @@ export async function backupProjectDatabase(schemaName: string): Promise<{
     
     const workOrders = result.rows.map((row) => ({
       id: row.id,
-      title: row.title,
-      description: row.description,
+      customerWoId: row.customer_wo_id,
+      customerId: row.customer_id,
+      customerName: row.customer_name,
+      address: row.address,
+      city: row.city,
+      state: row.state,
+      zip: row.zip,
+      phone: row.phone,
+      email: row.email,
+      route: row.route,
+      zone: row.zone,
+      serviceType: row.service_type,
+      oldMeterId: row.old_meter_id,
+      newMeterId: row.new_meter_id,
+      oldGps: row.old_gps,
+      newGps: row.new_gps,
       status: row.status,
       priority: row.priority,
       assignedTo: row.assigned_to,
       createdBy: row.created_by,
-      dueDate: row.due_date,
       completedAt: row.completed_at,
       notes: row.notes,
       attachments: row.attachments,
@@ -323,7 +444,7 @@ export async function backupProjectDatabase(schemaName: string): Promise<{
       schemaName,
       backupDate: new Date().toISOString(),
       workOrders,
-      version: "1.0",
+      version: "2.0",
     };
   } finally {
     client.release();
@@ -350,16 +471,29 @@ export async function restoreProjectDatabase(
       try {
         await client.query(
           `INSERT INTO "${schemaName}".work_orders 
-           (title, description, status, priority, assigned_to, created_by, due_date, completed_at, notes, attachments)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+           (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, new_meter_id, old_gps, new_gps, status, priority, assigned_to, created_by, completed_at, notes, attachments)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
           [
-            wo.title,
-            wo.description || null,
+            wo.customerWoId || null,
+            wo.customerId || null,
+            wo.customerName || null,
+            wo.address || null,
+            wo.city || null,
+            wo.state || null,
+            wo.zip || null,
+            wo.phone || null,
+            wo.email || null,
+            wo.route || null,
+            wo.zone || null,
+            wo.serviceType || null,
+            wo.oldMeterId || null,
+            wo.newMeterId || null,
+            wo.oldGps || null,
+            wo.newGps || null,
             wo.status || "pending",
             wo.priority || "medium",
             wo.assignedTo || null,
             wo.createdBy || null,
-            wo.dueDate || null,
             wo.completedAt || null,
             wo.notes || null,
             wo.attachments || null,
