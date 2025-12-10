@@ -44,7 +44,9 @@ type ParsedWorkOrder = {
   zone?: string;
   serviceType: string;
   oldMeterId?: string;
+  oldMeterReading?: number;
   newMeterId?: string;
+  newMeterReading?: number;
   oldGps?: string;
   newGps?: string;
   priority?: string;
@@ -67,7 +69,9 @@ type ColumnMapping = {
   zone: string;
   serviceType: string;
   oldMeterId: string;
+  oldMeterReading: string;
   newMeterId: string;
+  newMeterReading: string;
   oldGps: string;
   newGps: string;
   priority: string;
@@ -90,13 +94,22 @@ const defaultColumnMapping: ColumnMapping = {
   zone: "",
   serviceType: "",
   oldMeterId: "",
+  oldMeterReading: "",
   newMeterId: "",
+  newMeterReading: "",
   oldGps: "",
   newGps: "",
   priority: "",
   status: "",
   notes: "",
   assignedTo: "",
+};
+
+const parseIntOrUndefined = (value: string): number | undefined => {
+  const trimmed = value.trim();
+  if (trimmed === "") return undefined;
+  const parsed = parseInt(trimmed, 10);
+  return isNaN(parsed) ? undefined : parsed;
 };
 
 export default function ProjectImport() {
@@ -291,7 +304,9 @@ export default function ProjectImport() {
       { field: "zone", variants: ["zone", "zone id", "zone_id", "zoneid", "area", "district"] },
       { field: "serviceType", variants: ["service type", "servicetype", "service_type", "type", "utility", "utility type", "meter type"] },
       { field: "oldMeterId", variants: ["old meter", "old meter id", "oldmeterid", "old_meter_id", "current meter", "existing meter", "old_meter"] },
+      { field: "oldMeterReading", variants: ["old meter reading", "old reading", "oldmeterreading", "old_meter_reading", "current reading", "existing reading"] },
       { field: "newMeterId", variants: ["new meter", "new meter id", "newmeterid", "new_meter_id", "replacement meter", "new_meter"] },
+      { field: "newMeterReading", variants: ["new meter reading", "new reading", "newmeterreading", "new_meter_reading", "replacement reading"] },
       { field: "oldGps", variants: ["old gps", "old_gps", "oldgps", "current gps", "existing gps", "old coordinates"] },
       { field: "newGps", variants: ["new gps", "new_gps", "newgps", "new coordinates"] },
       { field: "priority", variants: ["priority", "urgency", "importance"] },
@@ -341,7 +356,9 @@ export default function ProjectImport() {
         zone: getValueByHeader(columnMapping.zone) || undefined,
         serviceType: getValueByHeader(columnMapping.serviceType) || "Water",
         oldMeterId: getValueByHeader(columnMapping.oldMeterId) || undefined,
+        oldMeterReading: columnMapping.oldMeterReading ? parseIntOrUndefined(getValueByHeader(columnMapping.oldMeterReading)) : undefined,
         newMeterId: getValueByHeader(columnMapping.newMeterId) || undefined,
+        newMeterReading: columnMapping.newMeterReading ? parseIntOrUndefined(getValueByHeader(columnMapping.newMeterReading)) : undefined,
         oldGps: getValueByHeader(columnMapping.oldGps) || undefined,
         newGps: getValueByHeader(columnMapping.newGps) || undefined,
         priority: getValueByHeader(columnMapping.priority) || undefined,
@@ -404,7 +421,9 @@ export default function ProjectImport() {
         zone: getValueByHeader(columnMapping.zone) || undefined,
         serviceType,
         oldMeterId: getValueByHeader(columnMapping.oldMeterId) || undefined,
+        oldMeterReading: columnMapping.oldMeterReading ? parseIntOrUndefined(getValueByHeader(columnMapping.oldMeterReading)) : undefined,
         newMeterId: getValueByHeader(columnMapping.newMeterId) || undefined,
+        newMeterReading: columnMapping.newMeterReading ? parseIntOrUndefined(getValueByHeader(columnMapping.newMeterReading)) : undefined,
         oldGps: getValueByHeader(columnMapping.oldGps) || undefined,
         newGps: getValueByHeader(columnMapping.newGps) || undefined,
         priority: ["low", "medium", "high", "urgent"].includes(priority) ? priority : "medium",
@@ -657,7 +676,9 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,M
                   <MappingSelect field="route" label="Route" />
                   <MappingSelect field="zone" label="Zone" />
                   <MappingSelect field="oldMeterId" label="Old Meter ID" />
+                  <MappingSelect field="oldMeterReading" label="Old Meter Reading" />
                   <MappingSelect field="newMeterId" label="New Meter ID" />
+                  <MappingSelect field="newMeterReading" label="New Meter Reading" />
                   <MappingSelect field="oldGps" label="Old GPS" />
                   <MappingSelect field="newGps" label="New GPS" />
                   <MappingSelect field="priority" label="Priority" />
