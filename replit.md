@@ -53,19 +53,30 @@ Preferred communication style: Simple, everyday language.
 │       ├── dashboard.tsx         # Main dashboard with project list
 │       ├── projects.tsx          # Admin project management
 │       ├── project-work-orders.tsx  # Project-scoped work orders
-│       ├── project-import.tsx    # Import work orders into project
+│       ├── project-import.tsx    # Import work orders (CSV/Excel with delimiter options)
+│       ├── project-files.tsx     # Project-level document management
 │       ├── work-order-files.tsx  # File management per work order
+│       ├── search-reports.tsx    # Advanced search with CSV/Excel/PDF export
+│       ├── maintenance.tsx       # Database backup/restore per project
 │       ├── users.tsx             # User management (admin only)
-│       └── settings.tsx          # System settings
+│       └── settings.tsx          # System settings (file size, extensions)
 ├── server/              # Express backend
 │   ├── routes.ts        # API route definitions
 │   ├── storage.ts       # Main database access layer
-│   ├── projectDb.ts     # Per-project schema management
+│   ├── projectDb.ts     # Per-project schema management + backup/restore
 │   ├── fileStorage.ts   # File storage service
 │   └── replitAuth.ts    # Authentication setup
 ├── shared/              # Shared code between client/server
 │   └── schema.ts        # Drizzle schema and Zod types
 ```
+
+### Recent Changes (December 2024)
+- **User Management**: Local username/password authentication, user lock/unlock, password reset, last admin protection
+- **Project Files**: Separate file storage for project-level documents (in `_project_documents` subdirectory)
+- **Import Feature**: CSV/Excel import with configurable delimiters (comma, semicolon, tab, pipe), column mapping, header toggle
+- **Search & Reports**: Advanced work order search across all projects with CSV/Excel/PDF export
+- **Maintenance**: Per-project database backup to JSON and restore functionality
+- **File Settings**: Configurable max file size (up to 1GB) and allowed extensions in system settings
 
 ### Key Design Patterns
 - **Storage Interface**: `IStorage` interface in `storage.ts` abstracts database operations, making it testable and swappable
