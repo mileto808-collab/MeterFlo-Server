@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
-import { insertWorkOrderSchema, insertProjectSchema, createUserSchema, updateUserSchema, resetPasswordSchema } from "@shared/schema";
+import { insertWorkOrderSchema, insertProjectSchema, createUserSchema, updateUserSchema, resetPasswordSchema, permissionKeys } from "@shared/schema";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import multer from "multer";
@@ -376,6 +376,79 @@ export async function registerRoutes(
     }
   });
 
+  // Subroles and Permissions endpoints
+  app.get("/api/subroles", isAuthenticated, async (req: any, res) => {
+    try {
+      const subroles = await storage.getAllSubroles();
+      res.json(subroles);
+    } catch (error) {
+      console.error("Error fetching subroles:", error);
+      res.status(500).json({ message: "Failed to fetch subroles" });
+    }
+  });
+
+  app.get("/api/subroles/:id/permissions", isAuthenticated, async (req: any, res) => {
+    try {
+      const permissions = await storage.getSubrolePermissions(parseInt(req.params.id));
+      res.json(permissions);
+    } catch (error) {
+      console.error("Error fetching subrole permissions:", error);
+      res.status(500).json({ message: "Failed to fetch subrole permissions" });
+    }
+  });
+
+  app.get("/api/permissions", isAuthenticated, async (req: any, res) => {
+    try {
+      const permissions = await storage.getAllPermissions();
+      res.json(permissions);
+    } catch (error) {
+      console.error("Error fetching permissions:", error);
+      res.status(500).json({ message: "Failed to fetch permissions" });
+    }
+  });
+
+  app.get("/api/users/:id/permissions", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const targetUserId = req.params.id;
+      
+      // Allow users to get their own permissions, or admins to get any user's permissions
+      if (currentUser?.role !== "admin" && currentUser?.id !== targetUserId) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      
+      const targetUser = await storage.getUser(targetUserId);
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      const permissions = await storage.getUserEffectivePermissions(targetUser);
+      res.json(permissions);
+    } catch (error) {
+      console.error("Error fetching user permissions:", error);
+      res.status(500).json({ message: "Failed to fetch user permissions" });
+    }
+  });
+
+  app.patch("/api/users/:id/subrole", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const { subroleId } = req.body;
+      const user = await storage.updateUserSubrole(req.params.id, subroleId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      res.json(user);
+    } catch (error) {
+      console.error("Error updating user subrole:", error);
+      res.status(500).json({ message: "Failed to update user subrole" });
+    }
+  });
+
   // Project endpoints
   app.get("/api/projects", isAuthenticated, async (req: any, res) => {
     try {
@@ -438,8 +511,12 @@ export async function registerRoutes(
   app.post("/api/projects", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (currentUser?.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canManageProjects = await storage.hasPermission(currentUser, permissionKeys.PROJECTS_MANAGE);
+      if (!canManageProjects) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to create projects" });
       }
       
       const parsed = insertProjectSchema.safeParse(req.body);
@@ -465,8 +542,12 @@ export async function registerRoutes(
   app.patch("/api/projects/:id", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (currentUser?.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canManageProjects = await storage.hasPermission(currentUser, permissionKeys.PROJECTS_MANAGE);
+      if (!canManageProjects) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to edit projects" });
       }
       const project = await storage.updateProject(parseInt(req.params.id), req.body);
       if (!project) {
@@ -482,8 +563,12 @@ export async function registerRoutes(
   app.delete("/api/projects/:id", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (currentUser?.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canManageProjects = await storage.hasPermission(currentUser, permissionKeys.PROJECTS_MANAGE);
+      if (!canManageProjects) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to delete projects" });
       }
       
       const project = await storage.getProject(parseInt(req.params.id));
@@ -991,7 +1076,7 @@ export async function registerRoutes(
       if (currentUser.role === "admin") {
         accessibleProjects = await storage.getProjects();
       } else {
-        accessibleProjects = await storage.getProjectsForUser(currentUser.id);
+        accessibleProjects = await storage.getUserProjects(currentUser.id);
       }
       
       // Parse search filters from query
@@ -1008,7 +1093,7 @@ export async function registerRoutes(
       // Filter projects if specific project requested
       let projectsToSearch = accessibleProjects;
       if (projectId) {
-        projectsToSearch = accessibleProjects.filter(p => p.id === parseInt(projectId));
+        projectsToSearch = accessibleProjects.filter((p: { id: number }) => p.id === parseInt(projectId));
       }
       
       const results: Array<{

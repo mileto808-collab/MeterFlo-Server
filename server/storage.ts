@@ -3,6 +3,10 @@ import {
   projects,
   userProjects,
   systemSettings,
+  subroles,
+  permissions,
+  subrolePermissions,
+  permissionKeys,
   type User,
   type UpsertUser,
   type Project,
@@ -11,6 +15,9 @@ import {
   type InsertUserProject,
   type SystemSetting,
   type InsertSystemSetting,
+  type Subrole,
+  type Permission,
+  type PermissionKey,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and } from "drizzle-orm";
@@ -23,7 +30,7 @@ export interface IStorage {
   createLocalUser(username: string, passwordHash: string, role: string, firstName?: string, lastName?: string, email?: string | null): Promise<User>;
   upsertUser(user: UpsertUser): Promise<User>;
   getAllUsers(): Promise<User[]>;
-  updateUser(id: string, data: Partial<{username: string; firstName: string | null; lastName: string | null; email: string | null; role: string; isLocked: boolean; lockedReason: string | null}>): Promise<User | undefined>;
+  updateUser(id: string, data: Partial<{username: string; firstName: string | null; lastName: string | null; email: string | null; role: string; isLocked: boolean; lockedReason: string | null; subroleId: number | null}>): Promise<User | undefined>;
   updateUserRole(id: string, role: string): Promise<User | undefined>;
   updateUserPassword(id: string, passwordHash: string): Promise<User | undefined>;
   lockUser(id: string, reason?: string): Promise<User | undefined>;
@@ -51,6 +58,16 @@ export interface IStorage {
   getSetting(key: string): Promise<string | null>;
   setSetting(key: string, value: string, description?: string): Promise<SystemSetting>;
   getAllSettings(): Promise<SystemSetting[]>;
+
+  // Subrole and permission operations
+  getAllSubroles(): Promise<Subrole[]>;
+  getSubrole(id: number): Promise<Subrole | undefined>;
+  getSubroleByKey(key: string): Promise<Subrole | undefined>;
+  getAllPermissions(): Promise<Permission[]>;
+  getSubrolePermissions(subroleId: number): Promise<string[]>;
+  getUserEffectivePermissions(user: User): Promise<string[]>;
+  updateUserSubrole(userId: string, subroleId: number | null): Promise<User | undefined>;
+  hasPermission(user: User, permissionKey: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -119,7 +136,7 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  async updateUser(id: string, data: Partial<{username: string; firstName: string | null; lastName: string | null; email: string | null; role: string; isLocked: boolean; lockedReason: string | null}>): Promise<User | undefined> {
+  async updateUser(id: string, data: Partial<{username: string; firstName: string | null; lastName: string | null; email: string | null; role: string; isLocked: boolean; lockedReason: string | null; subroleId: number | null}>): Promise<User | undefined> {
     const updateData: any = { ...data, updatedAt: new Date() };
     
     if (data.isLocked === true) {
@@ -334,6 +351,71 @@ export class DatabaseStorage implements IStorage {
 
   async getAllSettings(): Promise<SystemSetting[]> {
     return await db.select().from(systemSettings);
+  }
+
+  // Subrole and permission operations
+  async getAllSubroles(): Promise<Subrole[]> {
+    return await db.select().from(subroles);
+  }
+
+  async getSubrole(id: number): Promise<Subrole | undefined> {
+    const [subrole] = await db.select().from(subroles).where(eq(subroles.id, id));
+    return subrole;
+  }
+
+  async getSubroleByKey(key: string): Promise<Subrole | undefined> {
+    const [subrole] = await db.select().from(subroles).where(eq(subroles.key, key));
+    return subrole;
+  }
+
+  async getAllPermissions(): Promise<Permission[]> {
+    return await db.select().from(permissions);
+  }
+
+  async getSubrolePermissions(subroleId: number): Promise<string[]> {
+    const perms = await db
+      .select()
+      .from(subrolePermissions)
+      .where(eq(subrolePermissions.subroleId, subroleId));
+    return perms.map(p => p.permissionKey);
+  }
+
+  async getUserEffectivePermissions(user: User): Promise<string[]> {
+    // Admins have all permissions
+    if (user.role === "admin") {
+      return Object.values(permissionKeys);
+    }
+
+    // Customers have read-only view permissions for work orders only
+    if (user.role === "customer") {
+      return [permissionKeys.WORK_ORDERS_VIEW];
+    }
+
+    // For regular users, check their subrole
+    if (user.role === "user" && user.subroleId) {
+      return await this.getSubrolePermissions(user.subroleId);
+    }
+
+    // Users without a subrole get basic view permissions
+    return [
+      permissionKeys.PROJECTS_VIEW,
+      permissionKeys.WORK_ORDERS_VIEW,
+      permissionKeys.SEARCH_REPORTS,
+    ];
+  }
+
+  async updateUserSubrole(userId: string, subroleId: number | null): Promise<User | undefined> {
+    const [user] = await db
+      .update(users)
+      .set({ subroleId, updatedAt: new Date() })
+      .where(eq(users.id, userId))
+      .returning();
+    return user;
+  }
+
+  async hasPermission(user: User, permissionKey: string): Promise<boolean> {
+    const permissions = await this.getUserEffectivePermissions(user);
+    return permissions.includes(permissionKey);
   }
 }
 

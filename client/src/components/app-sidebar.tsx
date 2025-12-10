@@ -46,6 +46,22 @@ export function AppSidebar() {
     enabled: !!user,
   });
 
+  const { data: userPermissions = [] } = useQuery<string[]>({
+    queryKey: ["/api/users", user?.id, "permissions"],
+    queryFn: async () => {
+      if (!user) return [];
+      const res = await fetch(`/api/users/${user.id}/permissions`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!user,
+  });
+
+  const hasPermission = (permission: string) => {
+    if (role === "admin") return true;
+    return userPermissions.includes(permission);
+  };
+
   const toggleProject = (projectId: number) => {
     setOpenProjects((prev) =>
       prev.includes(projectId)
@@ -127,7 +143,7 @@ export function AppSidebar() {
                 </SidebarMenuItem>
               )}
 
-              {role === "admin" && (
+              {hasPermission("projects.manage") && (
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     asChild
@@ -142,7 +158,7 @@ export function AppSidebar() {
                 </SidebarMenuItem>
               )}
 
-              {role === "admin" && (
+              {hasPermission("users.manage") && (
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     asChild
@@ -157,7 +173,7 @@ export function AppSidebar() {
                 </SidebarMenuItem>
               )}
 
-              {role === "admin" && (
+              {hasPermission("maintenance.manage") && (
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     asChild
@@ -172,7 +188,7 @@ export function AppSidebar() {
                 </SidebarMenuItem>
               )}
 
-              {role === "admin" && (
+              {hasPermission("settings.manage") && (
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     asChild
@@ -187,7 +203,7 @@ export function AppSidebar() {
                 </SidebarMenuItem>
               )}
 
-              {(role === "admin" || role === "user") && (
+              {hasPermission("search.reports") && (
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     asChild
@@ -205,7 +221,7 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {(role === "admin" || role === "user") && projects.length > 0 && (
+        {hasPermission("projects.view") && projects.length > 0 && (
           <SidebarGroup>
             <SidebarGroupLabel>Projects</SidebarGroupLabel>
             <SidebarGroupContent>
