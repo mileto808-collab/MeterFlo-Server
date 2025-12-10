@@ -892,5 +892,49 @@ export async function registerRoutes(
     }
   });
 
+  // File settings endpoints
+  app.get("/api/settings/file-settings", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const maxFileSizeValue = await storage.getSetting("max_file_size_mb");
+      const allowedExtensionsValue = await storage.getSetting("allowed_extensions");
+      
+      res.json({
+        maxFileSizeMB: maxFileSizeValue ? parseInt(maxFileSizeValue) : 100,
+        allowedExtensions: allowedExtensionsValue || "",
+      });
+    } catch (error) {
+      console.error("Error fetching file settings:", error);
+      res.status(500).json({ message: "Failed to fetch file settings" });
+    }
+  });
+
+  app.put("/api/settings/file-settings", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const { maxFileSizeMB, allowedExtensions } = req.body;
+      
+      if (typeof maxFileSizeMB !== "number" || maxFileSizeMB < 1 || maxFileSizeMB > 1024) {
+        return res.status(400).json({ message: "Invalid max file size. Must be between 1 and 1024 MB." });
+      }
+      
+      await storage.setSetting("max_file_size_mb", String(maxFileSizeMB), "Maximum file upload size in MB");
+      await storage.setSetting("allowed_extensions", allowedExtensions || "", "Comma-separated list of allowed file extensions");
+      
+      res.json({ message: "File settings updated" });
+    } catch (error) {
+      console.error("Error updating file settings:", error);
+      res.status(500).json({ message: "Failed to update file settings" });
+    }
+  });
+
   return httpServer;
 }

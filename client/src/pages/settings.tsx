@@ -4,22 +4,36 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { useTheme } from "@/hooks/use-theme";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { Moon, Sun, User, Shield, FolderOpen, Save } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Moon, Sun, User, Shield, FolderOpen, Save, FileUp } from "lucide-react";
+
+interface FileSettings {
+  maxFileSizeMB: number;
+  allowedExtensions: string;
+}
 
 export default function Settings() {
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
   const { toast } = useToast();
   const [projectFilesPath, setProjectFilesPath] = useState("");
+  const [maxFileSizeMB, setMaxFileSizeMB] = useState("100");
+  const [allowedExtensions, setAllowedExtensions] = useState("");
 
   const { data: pathData } = useQuery<{ path: string }>({
     queryKey: ["/api/settings/project-files-path"],
+    enabled: user?.role === "admin",
+  });
+
+  const { data: fileSettingsData } = useQuery<FileSettings>({
+    queryKey: ["/api/settings/file-settings"],
     enabled: user?.role === "admin",
   });
 
@@ -28,6 +42,13 @@ export default function Settings() {
       setProjectFilesPath(pathData.path);
     }
   }, [pathData]);
+
+  useEffect(() => {
+    if (fileSettingsData) {
+      setMaxFileSizeMB(String(fileSettingsData.maxFileSizeMB || 100));
+      setAllowedExtensions(fileSettingsData.allowedExtensions || "");
+    }
+  }, [fileSettingsData]);
 
   const updatePathMutation = useMutation({
     mutationFn: async (path: string) => {
@@ -39,6 +60,19 @@ export default function Settings() {
     },
     onError: () => {
       toast({ title: "Failed to update path", variant: "destructive" });
+    },
+  });
+
+  const updateFileSettingsMutation = useMutation({
+    mutationFn: async (data: { maxFileSizeMB: number; allowedExtensions: string }) => {
+      return apiRequest("PUT", "/api/settings/file-settings", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/file-settings"] });
+      toast({ title: "File settings updated" });
+    },
+    onError: () => {
+      toast({ title: "Failed to update file settings", variant: "destructive" });
     },
   });
 
@@ -117,41 +151,106 @@ export default function Settings() {
         </Card>
 
         {user?.role === "admin" && (
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <FolderOpen className="h-5 w-5 text-muted-foreground" />
-                <CardTitle>Project Files Directory</CardTitle>
-              </div>
-              <CardDescription>Configure the root directory where project files are stored</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <Label htmlFor="project-files-path">Current Path</Label>
-                <div className="flex gap-2 mt-2">
-                  <Input
-                    id="project-files-path"
-                    value={projectFilesPath}
-                    onChange={(e) => setProjectFilesPath(e.target.value)}
-                    placeholder="Project Files"
-                    className="flex-1"
-                    data-testid="input-project-files-path"
-                  />
-                  <Button
-                    onClick={() => updatePathMutation.mutate(projectFilesPath)}
-                    disabled={!projectFilesPath.trim() || updatePathMutation.isPending || projectFilesPath === pathData?.path}
-                    data-testid="button-save-path"
-                  >
-                    <Save className="h-4 w-4 mr-2" />
-                    Save
-                  </Button>
+          <>
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <FolderOpen className="h-5 w-5 text-muted-foreground" />
+                  <CardTitle>Project Files Directory</CardTitle>
                 </div>
-                <p className="text-sm text-muted-foreground mt-2">
-                  Files will be stored in: <code className="bg-muted px-1 rounded">{projectFilesPath || "Project Files"}/[project_name]_[id]/[work_order_id]/</code>
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+                <CardDescription>Configure the root directory where project files are stored</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label htmlFor="project-files-path">Current Path</Label>
+                  <div className="flex gap-2 mt-2">
+                    <Input
+                      id="project-files-path"
+                      value={projectFilesPath}
+                      onChange={(e) => setProjectFilesPath(e.target.value)}
+                      placeholder="Project Files"
+                      className="flex-1"
+                      data-testid="input-project-files-path"
+                    />
+                    <Button
+                      onClick={() => updatePathMutation.mutate(projectFilesPath)}
+                      disabled={!projectFilesPath.trim() || updatePathMutation.isPending || projectFilesPath === pathData?.path}
+                      data-testid="button-save-path"
+                    >
+                      <Save className="h-4 w-4 mr-2" />
+                      Save
+                    </Button>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Files will be stored in: <code className="bg-muted px-1 rounded">{projectFilesPath || "Project Files"}/[project_name]_[id]/[work_order_id]/</code>
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <FileUp className="h-5 w-5 text-muted-foreground" />
+                  <CardTitle>File Upload Settings</CardTitle>
+                </div>
+                <CardDescription>Configure file upload limits and allowed file types</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label htmlFor="max-file-size">Maximum File Size</Label>
+                  <div className="flex gap-2 mt-2 items-center">
+                    <Select
+                      value={maxFileSizeMB}
+                      onValueChange={setMaxFileSizeMB}
+                    >
+                      <SelectTrigger className="w-48" data-testid="select-max-file-size">
+                        <SelectValue placeholder="Select size" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="10">10 MB</SelectItem>
+                        <SelectItem value="25">25 MB</SelectItem>
+                        <SelectItem value="50">50 MB</SelectItem>
+                        <SelectItem value="100">100 MB</SelectItem>
+                        <SelectItem value="250">250 MB</SelectItem>
+                        <SelectItem value="500">500 MB</SelectItem>
+                        <SelectItem value="1024">1 GB</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <span className="text-sm text-muted-foreground">per file</span>
+                  </div>
+                </div>
+
+                <div>
+                  <Label htmlFor="allowed-extensions">Allowed File Extensions</Label>
+                  <Textarea
+                    id="allowed-extensions"
+                    value={allowedExtensions}
+                    onChange={(e) => setAllowedExtensions(e.target.value)}
+                    placeholder=".pdf, .doc, .docx, .xls, .xlsx, .jpg, .jpeg, .png, .gif, .txt, .csv"
+                    className="mt-2"
+                    rows={3}
+                    data-testid="input-allowed-extensions"
+                  />
+                  <p className="text-sm text-muted-foreground mt-2">
+                    Enter file extensions separated by commas. Leave empty to allow all file types.
+                  </p>
+                </div>
+
+                <Button
+                  onClick={() => updateFileSettingsMutation.mutate({
+                    maxFileSizeMB: parseInt(maxFileSizeMB),
+                    allowedExtensions: allowedExtensions.trim(),
+                  })}
+                  disabled={updateFileSettingsMutation.isPending}
+                  data-testid="button-save-file-settings"
+                >
+                  <Save className="h-4 w-4 mr-2" />
+                  Save File Settings
+                </Button>
+              </CardContent>
+            </Card>
+          </>
         )}
 
         <Card>
