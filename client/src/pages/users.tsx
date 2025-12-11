@@ -65,7 +65,7 @@ type ResetPasswordForm = z.infer<typeof resetPasswordSchema>;
 export default function Users() {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
-  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [isCreatingUser, setIsCreatingUser] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [resetPasswordDialogOpen, setResetPasswordDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -134,7 +134,7 @@ export default function Users() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       toast({ title: "Success", description: "User created successfully" });
-      setCreateDialogOpen(false);
+      setIsCreatingUser(false);
       createForm.reset();
     },
     onError: (error: Error) => {
@@ -311,6 +311,180 @@ export default function Users() {
     setSelectedUser(user);
     setAssignProjectDialogOpen(true);
   };
+
+  if (isCreatingUser) {
+    return (
+      <div className="p-6 max-w-3xl mx-auto">
+        <div className="mb-6">
+          <Button 
+            variant="ghost" 
+            onClick={() => {
+              setIsCreatingUser(false);
+              createForm.reset();
+            }} 
+            className="mb-4"
+            data-testid="button-back-to-users"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Users
+          </Button>
+          <h1 className="text-3xl font-bold" data-testid="text-create-user-title">Add New User</h1>
+          <p className="text-muted-foreground mt-1">Create a new user account</p>
+        </div>
+        <Card>
+          <CardContent className="pt-6">
+            <Form {...createForm}>
+              <form onSubmit={createForm.handleSubmit((data) => createUserMutation.mutate(data))} className="space-y-4">
+                <FormField
+                  control={createForm.control}
+                  name="username"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Username</FormLabel>
+                      <FormControl>
+                        <Input {...field} placeholder="johndoe" data-testid="input-create-username" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={createForm.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Password</FormLabel>
+                      <FormControl>
+                        <Input type="password" {...field} placeholder="Min 8 characters" data-testid="input-create-password" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={createForm.control}
+                    name="firstName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>First Name</FormLabel>
+                        <FormControl>
+                          <Input {...field} placeholder="John" data-testid="input-create-firstname" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={createForm.control}
+                    name="lastName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Last Name</FormLabel>
+                        <FormControl>
+                          <Input {...field} placeholder="Doe" data-testid="input-create-lastname" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <FormField
+                  control={createForm.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email (optional)</FormLabel>
+                      <FormControl>
+                        <Input type="email" {...field} placeholder="john@example.com" data-testid="input-create-email" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={createForm.control}
+                  name="role"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Role</FormLabel>
+                      <Select 
+                        onValueChange={(value) => {
+                          field.onChange(value);
+                          if (value === "admin") {
+                            createForm.setValue("subroleId", null);
+                          }
+                        }} 
+                        value={field.value}
+                      >
+                        <FormControl>
+                          <SelectTrigger data-testid="select-create-role">
+                            <SelectValue placeholder="Select a role" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="admin">Admin</SelectItem>
+                          <SelectItem value="user">User</SelectItem>
+                          <SelectItem value="customer">Customer</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                {(createForm.watch("role") === "user" || createForm.watch("role") === "customer") && (
+                  <FormField
+                    control={createForm.control}
+                    name="subroleId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Access Level</FormLabel>
+                        <Select 
+                          onValueChange={(value) => field.onChange(value === "none" ? null : parseInt(value))} 
+                          value={field.value?.toString() || "none"}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="select-create-subrole">
+                              <SelectValue placeholder="Select access level" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="none">No Access Level ({createForm.watch("role") === "customer" ? "Read Only" : "View Only"})</SelectItem>
+                            {subroles?.filter(s => s.baseRole === createForm.watch("role")).map((subrole) => (
+                              <SelectItem key={subrole.id} value={subrole.id.toString()}>
+                                {subrole.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {field.value 
+                            ? subroles?.find(s => s.id === field.value)?.description 
+                            : createForm.watch("role") === "customer" 
+                              ? "Read-only access to completed work orders in assigned projects"
+                              : "Basic view-only access to assigned projects"}
+                        </p>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+                <div className="flex gap-4 pt-4">
+                  <Button type="button" variant="outline" onClick={() => {
+                    setIsCreatingUser(false);
+                    createForm.reset();
+                  }}>Cancel</Button>
+                  <Button type="submit" disabled={createUserMutation.isPending} data-testid="button-submit-create">
+                    {createUserMutation.isPending ? "Creating..." : "Create User"}
+                  </Button>
+                </div>
+              </form>
+            </Form>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (editingUser) {
     return (
