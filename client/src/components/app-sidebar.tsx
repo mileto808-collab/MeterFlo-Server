@@ -30,6 +30,8 @@ import {
   Wrench,
   FileText,
   Database,
+  Upload,
+  FolderSync,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -285,7 +287,20 @@ export function AppSidebar() {
                                 data-testid={`nav-project-${project.id}-import`}
                               >
                                 <Link href={`/projects/${project.id}/import`}>
+                                  <Upload className="h-3 w-3" />
                                   <span>File Import</span>
+                                </Link>
+                              </SidebarMenuSubButton>
+                            </SidebarMenuSubItem>
+                            <SidebarMenuSubItem>
+                              <SidebarMenuSubButton
+                                asChild
+                                isActive={location === `/projects/${project.id}/ftp-files`}
+                                data-testid={`nav-project-${project.id}-ftp-files`}
+                              >
+                                <Link href={`/projects/${project.id}/ftp-files`}>
+                                  <FolderSync className="h-3 w-3" />
+                                  <span>FTP Files</span>
                                 </Link>
                               </SidebarMenuSubButton>
                             </SidebarMenuSubItem>

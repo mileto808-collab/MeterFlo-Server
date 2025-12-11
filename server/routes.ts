@@ -7,7 +7,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import multer from "multer";
 import { createProjectSchema, deleteProjectSchema, getProjectWorkOrderStorage, sanitizeSchemaName, backupProjectDatabase, restoreProjectDatabase, getProjectDatabaseStats } from "./projectDb";
-import { ensureProjectDirectory, saveWorkOrderFile, getWorkOrderFiles, deleteWorkOrderFile, getFilePath, getProjectFilesPath, setProjectFilesPath, deleteProjectDirectory, saveProjectFile, getProjectFiles, deleteProjectFile, getProjectFilePath } from "./fileStorage";
+import { ensureProjectDirectory, saveWorkOrderFile, getWorkOrderFiles, deleteWorkOrderFile, getFilePath, getProjectFilesPath, setProjectFilesPath, deleteProjectDirectory, saveProjectFile, getProjectFiles, deleteProjectFile, getProjectFilePath, ensureProjectFtpDirectory, getProjectFtpFiles, deleteProjectFtpFile, getProjectFtpFilePath, saveProjectFtpFile } from "./fileStorage";
 import { ExternalDatabaseService } from "./externalDbService";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -1173,6 +1173,144 @@ export async function registerRoutes(
       res.download(filePath, req.params.filename);
     } catch (error) {
       console.error("Error downloading project file:", error);
+      res.status(500).json({ message: "Failed to download file" });
+    }
+  });
+
+  // === PROJECT FTP FILES ROUTES ===
+  
+  // Get FTP files for a project
+  app.get("/api/projects/:projectId/ftp-files", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      
+      if (currentUser?.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      // Ensure FTP directory exists
+      await ensureProjectFtpDirectory(project.name, project.id);
+      
+      const files = await getProjectFtpFiles(project.name, project.id);
+      res.json(files);
+    } catch (error) {
+      console.error("Error getting FTP files:", error);
+      res.status(500).json({ message: "Failed to get FTP files" });
+    }
+  });
+
+  // Upload file to project FTP directory
+  app.post("/api/projects/:projectId/ftp-files", isAuthenticated, upload.single("file"), async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      
+      if (currentUser?.role === "customer") {
+        return res.status(403).json({ message: "Customers cannot upload files" });
+      }
+      
+      if (currentUser?.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      if (!req.file) {
+        return res.status(400).json({ message: "No file provided" });
+      }
+      
+      // Get allowed extensions from settings
+      const allowedExtensionsSetting = await storage.getSetting("allowed_extensions");
+      const allowedExtensions = allowedExtensionsSetting ? allowedExtensionsSetting.split(",").map(e => e.trim().toLowerCase()) : [".csv", ".xlsx", ".xls", ".txt"];
+      const fileExtension = "." + req.file.originalname.split(".").pop()?.toLowerCase();
+      
+      if (!allowedExtensions.includes(fileExtension)) {
+        return res.status(400).json({ message: `File type ${fileExtension} not allowed. Allowed: ${allowedExtensions.join(", ")}` });
+      }
+      
+      const savedPath = await saveProjectFtpFile(
+        project.name,
+        project.id,
+        req.file.originalname,
+        req.file.buffer
+      );
+      
+      res.json({ success: true, path: savedPath });
+    } catch (error) {
+      console.error("Error uploading FTP file:", error);
+      res.status(500).json({ message: "Failed to upload file" });
+    }
+  });
+
+  // Delete file from project FTP directory
+  app.delete("/api/projects/:projectId/ftp-files/:filename", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      
+      if (currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const success = await deleteProjectFtpFile(project.name, project.id, req.params.filename);
+      if (!success) {
+        return res.status(404).json({ message: "File not found" });
+      }
+      
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting FTP file:", error);
+      res.status(500).json({ message: "Failed to delete file" });
+    }
+  });
+
+  // Download file from project FTP directory
+  app.get("/api/projects/:projectId/ftp-files/:filename/download", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      
+      if (currentUser?.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const filePath = await getProjectFtpFilePath(project.name, project.id, req.params.filename);
+      
+      if (!filePath) {
+        return res.status(404).json({ message: "File not found" });
+      }
+      
+      res.download(filePath, req.params.filename);
+    } catch (error) {
+      console.error("Error downloading FTP file:", error);
       res.status(500).json({ message: "Failed to download file" });
     }
   });

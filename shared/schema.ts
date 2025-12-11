@@ -156,6 +156,41 @@ export const importHistory = pgTable("import_history", {
   completedAt: timestamp("completed_at"),
 });
 
+// File import configurations - scheduled pickup from FTP directory
+export const fileImportConfigs = pgTable("file_import_configs", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  delimiter: varchar("delimiter", { length: 10 }).notNull().default(","),
+  hasHeader: boolean("has_header").default(true),
+  columnMapping: jsonb("column_mapping"),
+  scheduleFrequency: varchar("schedule_frequency", { length: 50 }).notNull().default("manual"),
+  customCronExpression: varchar("custom_cron_expression", { length: 100 }),
+  isEnabled: boolean("is_enabled").default(true),
+  processedFilePattern: varchar("processed_file_pattern", { length: 255 }),
+  lastProcessedFile: varchar("last_processed_file", { length: 500 }),
+  lastRunAt: timestamp("last_run_at"),
+  lastRunStatus: varchar("last_run_status", { length: 50 }),
+  lastRunMessage: text("last_run_message"),
+  lastRunRecordCount: integer("last_run_record_count"),
+  nextRunAt: timestamp("next_run_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// File import history - tracks each file import execution
+export const fileImportHistory = pgTable("file_import_history", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  fileImportConfigId: integer("file_import_config_id").notNull().references(() => fileImportConfigs.id, { onDelete: "cascade" }),
+  fileName: varchar("file_name", { length: 500 }).notNull(),
+  status: varchar("status", { length: 50 }).notNull(),
+  recordsImported: integer("records_imported").default(0),
+  recordsFailed: integer("records_failed").default(0),
+  errorDetails: text("error_details"),
+  startedAt: timestamp("started_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
+});
+
 // Work order status enum
 export const workOrderStatusEnum = ["pending", "in_progress", "completed", "cancelled"] as const;
 export type WorkOrderStatus = (typeof workOrderStatusEnum)[number];
@@ -383,6 +418,37 @@ export type UpdateImportConfig = z.infer<typeof updateImportConfigSchema>;
 
 // Import history types
 export type ImportHistory = typeof importHistory.$inferSelect;
+
+// File import config schemas and types
+export const insertFileImportConfigSchema = z.object({
+  projectId: z.number(),
+  name: z.string().min(1).max(255),
+  delimiter: z.string().max(10).optional(),
+  hasHeader: z.boolean().optional(),
+  columnMapping: z.record(z.string()).optional(),
+  scheduleFrequency: z.enum(importScheduleFrequencyEnum).optional(),
+  customCronExpression: z.string().max(100).optional().nullable(),
+  isEnabled: z.boolean().optional(),
+  processedFilePattern: z.string().max(255).optional().nullable(),
+});
+
+export const updateFileImportConfigSchema = z.object({
+  name: z.string().min(1).max(255).optional(),
+  delimiter: z.string().max(10).optional(),
+  hasHeader: z.boolean().optional(),
+  columnMapping: z.record(z.string()).optional(),
+  scheduleFrequency: z.enum(importScheduleFrequencyEnum).optional(),
+  customCronExpression: z.string().max(100).optional().nullable(),
+  isEnabled: z.boolean().optional(),
+  processedFilePattern: z.string().max(255).optional().nullable(),
+});
+
+export type FileImportConfig = typeof fileImportConfigs.$inferSelect;
+export type InsertFileImportConfig = z.infer<typeof insertFileImportConfigSchema>;
+export type UpdateFileImportConfig = z.infer<typeof updateFileImportConfigSchema>;
+
+// File import history types
+export type FileImportHistory = typeof fileImportHistory.$inferSelect;
 
 // Default permission keys
 export const permissionKeys = {
