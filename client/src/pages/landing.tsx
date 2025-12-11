@@ -78,12 +78,11 @@ export default function Landing() {
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <ClipboardList className="h-6 w-6 text-primary" />
-            <span className="text-xl font-semibold">WorkFlow Pro</span>
+            <span className="text-xl font-semibold">MeterFlow Server</span>
           </div>
           <ThemeToggle />
         </div>
       </header>
-
       <main>
         <section className="py-16 px-6">
           <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
@@ -189,7 +188,6 @@ export default function Landing() {
           </div>
         </section>
       </main>
-
       <footer className="border-t border-border py-8 px-6">
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4 flex-wrap text-sm text-muted-foreground">
           <div className="flex items-center gap-2">
