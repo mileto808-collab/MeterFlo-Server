@@ -28,10 +28,10 @@ export const projectWorkOrders = pgTable("work_orders", {
   newMeterReading: integer("new_meter_reading"),
   oldGps: varchar("old_gps", { length: 100 }),
   newGps: varchar("new_gps", { length: 100 }),
-  status: varchar("status", { length: 20 }).notNull().default("pending"),
-  priority: varchar("priority", { length: 20 }).notNull().default("medium"),
+  status: varchar("status", { length: 50 }).notNull().default("Open"),
   assignedTo: varchar("assigned_to"),
   createdBy: varchar("created_by"),
+  updatedBy: varchar("updated_by"),
   completedAt: timestamp("completed_at"),
   notes: text("notes"),
   attachments: text("attachments").array(),
@@ -84,10 +84,10 @@ export async function createProjectSchema(projectName: string, projectId: number
         new_meter_reading INTEGER,
         old_gps VARCHAR(100),
         new_gps VARCHAR(100),
-        status VARCHAR(20) NOT NULL DEFAULT 'pending',
-        priority VARCHAR(20) NOT NULL DEFAULT 'medium',
+        status VARCHAR(50) NOT NULL DEFAULT 'Open',
         assigned_to VARCHAR,
         created_by VARCHAR,
+        updated_by VARCHAR,
         completed_at TIMESTAMP,
         notes TEXT,
         attachments TEXT[],
@@ -177,12 +177,12 @@ export class ProjectWorkOrderStorage {
     }
   }
 
-  async createWorkOrder(workOrder: Omit<InsertProjectWorkOrder, "id" | "createdAt" | "updatedAt">): Promise<ProjectWorkOrder> {
+  async createWorkOrder(workOrder: Omit<InsertProjectWorkOrder, "id" | "createdAt" | "updatedAt">, createdBy?: string): Promise<ProjectWorkOrder> {
     const client = await pool.connect();
     try {
       const result = await client.query(
         `INSERT INTO "${this.schemaName}".work_orders 
-         (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, priority, assigned_to, created_by, notes, attachments)
+         (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, assigned_to, created_by, updated_by, notes, attachments)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
          RETURNING *`,
         [
@@ -204,10 +204,10 @@ export class ProjectWorkOrderStorage {
           workOrder.newMeterReading ?? null,
           workOrder.oldGps || null,
           workOrder.newGps || null,
-          workOrder.status || "pending",
-          workOrder.priority || "medium",
+          workOrder.status || "Open",
           workOrder.assignedTo || null,
-          workOrder.createdBy || null,
+          createdBy || workOrder.createdBy || null,
+          createdBy || null,
           workOrder.notes || null,
           workOrder.attachments || null,
         ]
@@ -218,7 +218,7 @@ export class ProjectWorkOrderStorage {
     }
   }
 
-  async updateWorkOrder(id: number, updates: Partial<InsertProjectWorkOrder>): Promise<ProjectWorkOrder | undefined> {
+  async updateWorkOrder(id: number, updates: Partial<InsertProjectWorkOrder>, updatedBy?: string): Promise<ProjectWorkOrder | undefined> {
     const client = await pool.connect();
     try {
       const setClauses: string[] = [];
@@ -300,17 +300,9 @@ export class ProjectWorkOrderStorage {
       if (updates.status !== undefined) {
         setClauses.push(`status = $${paramCount++}`);
         values.push(updates.status);
-        if (updates.status === "completed") {
+        if (updates.status === "Completed") {
           setClauses.push(`completed_at = NOW()`);
         }
-      }
-      if (updates.priority !== undefined) {
-        setClauses.push(`priority = $${paramCount++}`);
-        values.push(updates.priority);
-      }
-      if (updates.assignedTo !== undefined) {
-        setClauses.push(`assigned_to = $${paramCount++}`);
-        values.push(updates.assignedTo);
       }
       if (updates.notes !== undefined) {
         setClauses.push(`notes = $${paramCount++}`);
@@ -321,6 +313,11 @@ export class ProjectWorkOrderStorage {
         values.push(updates.attachments);
       }
 
+      // Always set updatedBy and updated_at
+      if (updatedBy) {
+        setClauses.push(`updated_by = $${paramCount++}`);
+        values.push(updatedBy);
+      }
       setClauses.push(`updated_at = NOW()`);
       values.push(id);
 
@@ -344,22 +341,24 @@ export class ProjectWorkOrderStorage {
     }
   }
 
-  async getWorkOrderStats(): Promise<{ pending: number; inProgress: number; completed: number; total: number }> {
+  async getWorkOrderStats(): Promise<{ open: number; completed: number; scheduled: number; skipped: number; total: number }> {
     const client = await pool.connect();
     try {
       const result = await client.query(`
         SELECT 
-          COUNT(*) FILTER (WHERE status = 'pending') as pending,
-          COUNT(*) FILTER (WHERE status = 'in_progress') as in_progress,
-          COUNT(*) FILTER (WHERE status = 'completed') as completed,
+          COUNT(*) FILTER (WHERE status = 'Open') as open,
+          COUNT(*) FILTER (WHERE status = 'Completed') as completed,
+          COUNT(*) FILTER (WHERE status = 'Scheduled') as scheduled,
+          COUNT(*) FILTER (WHERE status = 'Skipped') as skipped,
           COUNT(*) as total
         FROM "${this.schemaName}".work_orders
       `);
       const row = result.rows[0];
       return {
-        pending: parseInt(row.pending) || 0,
-        inProgress: parseInt(row.in_progress) || 0,
+        open: parseInt(row.open) || 0,
         completed: parseInt(row.completed) || 0,
+        scheduled: parseInt(row.scheduled) || 0,
+        skipped: parseInt(row.skipped) || 0,
         total: parseInt(row.total) || 0,
       };
     } finally {
@@ -405,9 +404,9 @@ export class ProjectWorkOrderStorage {
       oldGps: row.old_gps,
       newGps: row.new_gps,
       status: row.status,
-      priority: row.priority,
       assignedTo: row.assigned_to,
       createdBy: row.created_by,
+      updatedBy: row.updated_by,
       completedAt: row.completed_at,
       notes: row.notes,
       attachments: row.attachments,
@@ -461,9 +460,9 @@ export async function backupProjectDatabase(schemaName: string): Promise<{
       oldGps: row.old_gps,
       newGps: row.new_gps,
       status: row.status,
-      priority: row.priority,
       assignedTo: row.assigned_to,
       createdBy: row.created_by,
+      updatedBy: row.updated_by,
       completedAt: row.completed_at,
       notes: row.notes,
       attachments: row.attachments,
@@ -498,11 +497,11 @@ export async function restoreProjectDatabase(
     }
     
     for (let i = 0; i < backup.workOrders.length; i++) {
-      const wo = backup.workOrders[i];
+      const wo = backup.workOrders[i] as any;
       try {
         await client.query(
           `INSERT INTO "${schemaName}".work_orders 
-           (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, priority, assigned_to, created_by, completed_at, notes, attachments)
+           (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, assigned_to, created_by, updated_by, completed_at, notes, attachments)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)`,
           [
             wo.customerWoId || null,
@@ -523,10 +522,10 @@ export async function restoreProjectDatabase(
             wo.newMeterReading ?? null,
             wo.oldGps || null,
             wo.newGps || null,
-            wo.status || "pending",
-            wo.priority || "medium",
+            wo.status || "Open",
             wo.assignedTo || null,
             wo.createdBy || null,
+            wo.updatedBy || null,
             wo.completedAt || null,
             wo.notes || null,
             wo.attachments || null,

@@ -17,11 +17,34 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Moon, Sun, User, Shield, FolderOpen, Save, FileUp, Users, Plus, Pencil, Trash2 } from "lucide-react";
-import type { Subrole, Permission } from "@shared/schema";
+import type { Subrole, Permission, WorkOrderStatus } from "@shared/schema";
 
 interface FileSettings {
   maxFileSizeMB: number;
   allowedExtensions: string;
+}
+
+const statusColors = [
+  { value: "blue", label: "Blue" },
+  { value: "green", label: "Green" },
+  { value: "orange", label: "Orange" },
+  { value: "red", label: "Red" },
+  { value: "yellow", label: "Yellow" },
+  { value: "purple", label: "Purple" },
+  { value: "gray", label: "Gray" },
+];
+
+function getStatusColorHex(color: string): string {
+  const colorMap: Record<string, string> = {
+    blue: "#3b82f6",
+    green: "#22c55e",
+    orange: "#f97316",
+    red: "#ef4444",
+    yellow: "#eab308",
+    purple: "#a855f7",
+    gray: "#6b7280",
+  };
+  return colorMap[color] || colorMap.gray;
 }
 
 export default function Settings() {
@@ -41,6 +64,16 @@ export default function Settings() {
     baseRole: "user" as "admin" | "user" | "customer",
     description: "",
     permissions: [] as string[],
+  });
+
+  const [statusDialogOpen, setStatusDialogOpen] = useState(false);
+  const [deleteStatusDialogOpen, setDeleteStatusDialogOpen] = useState(false);
+  const [selectedStatus, setSelectedStatus] = useState<WorkOrderStatus | null>(null);
+  const [statusForm, setStatusForm] = useState({
+    code: "",
+    label: "",
+    color: "blue",
+    isDefault: false,
   });
 
   const { data: subroles, isLoading: loadingSubroles } = useQuery<Subrole[]>({
@@ -70,6 +103,11 @@ export default function Settings() {
 
   const { data: fileSettingsData } = useQuery<FileSettings>({
     queryKey: ["/api/settings/file-settings"],
+    enabled: user?.role === "admin",
+  });
+
+  const { data: workOrderStatusList, isLoading: loadingStatuses } = useQuery<WorkOrderStatus[]>({
+    queryKey: ["/api/work-order-statuses"],
     enabled: user?.role === "admin",
   });
 
@@ -140,6 +178,99 @@ export default function Settings() {
       toast({ title: "Failed to delete access level", variant: "destructive" });
     },
   });
+
+  const createStatusMutation = useMutation({
+    mutationFn: async (data: { code: string; label: string; color: string; isDefault?: boolean }) => {
+      return apiRequest("POST", "/api/work-order-statuses", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/work-order-statuses"] });
+      toast({ title: "Status created successfully" });
+      setStatusDialogOpen(false);
+      resetStatusForm();
+    },
+    onError: () => {
+      toast({ title: "Failed to create status", variant: "destructive" });
+    },
+  });
+
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: { code?: string; label?: string; color?: string; isDefault?: boolean } }) => {
+      return apiRequest("PATCH", `/api/work-order-statuses/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/work-order-statuses"] });
+      toast({ title: "Status updated successfully" });
+      setStatusDialogOpen(false);
+      setSelectedStatus(null);
+      resetStatusForm();
+    },
+    onError: () => {
+      toast({ title: "Failed to update status", variant: "destructive" });
+    },
+  });
+
+  const deleteStatusMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return apiRequest("DELETE", `/api/work-order-statuses/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/work-order-statuses"] });
+      toast({ title: "Status deleted successfully" });
+      setDeleteStatusDialogOpen(false);
+      setSelectedStatus(null);
+    },
+    onError: () => {
+      toast({ title: "Failed to delete status", variant: "destructive" });
+    },
+  });
+
+  const resetStatusForm = () => {
+    setStatusForm({
+      code: "",
+      label: "",
+      color: "blue",
+      isDefault: false,
+    });
+  };
+
+  const openCreateStatusDialog = () => {
+    setSelectedStatus(null);
+    resetStatusForm();
+    setStatusDialogOpen(true);
+  };
+
+  const openEditStatusDialog = (status: WorkOrderStatus) => {
+    setSelectedStatus(status);
+    setStatusForm({
+      code: status.code,
+      label: status.label,
+      color: status.color || "blue",
+      isDefault: status.isDefault || false,
+    });
+    setStatusDialogOpen(true);
+  };
+
+  const handleStatusSubmit = () => {
+    if (selectedStatus) {
+      updateStatusMutation.mutate({
+        id: selectedStatus.id,
+        data: {
+          code: statusForm.code,
+          label: statusForm.label,
+          color: statusForm.color,
+          isDefault: statusForm.isDefault,
+        },
+      });
+    } else {
+      createStatusMutation.mutate({
+        code: statusForm.code,
+        label: statusForm.label,
+        color: statusForm.color,
+        isDefault: statusForm.isDefault,
+      });
+    }
+  };
 
   const resetSubroleForm = () => {
     setSubroleForm({
@@ -484,6 +615,87 @@ export default function Settings() {
                 )}
               </CardContent>
             </Card>
+
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <Shield className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <CardTitle>Work Order Statuses</CardTitle>
+                      <CardDescription className="mt-1">Customize the status options available for work orders</CardDescription>
+                    </div>
+                  </div>
+                  <Button onClick={openCreateStatusDialog} data-testid="button-add-status">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Status
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {loadingStatuses ? (
+                  <p className="text-muted-foreground">Loading...</p>
+                ) : workOrderStatusList && workOrderStatusList.length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Code</TableHead>
+                        <TableHead>Label</TableHead>
+                        <TableHead>Color</TableHead>
+                        <TableHead>Default</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {workOrderStatusList.map((status) => (
+                        <TableRow key={status.id} data-testid={`row-status-${status.id}`}>
+                          <TableCell className="font-medium">{status.code}</TableCell>
+                          <TableCell>{status.label}</TableCell>
+                          <TableCell>
+                            <Badge 
+                              variant="outline" 
+                              style={{ 
+                                backgroundColor: getStatusColorHex(status.color || "gray"),
+                                color: ['yellow', 'orange'].includes(status.color || "") ? '#000' : '#fff',
+                                borderColor: getStatusColorHex(status.color || "gray")
+                              }}
+                            >
+                              {status.color || "gray"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>{status.isDefault ? "Yes" : "—"}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={() => openEditStatusDialog(status)}
+                                data-testid={`button-edit-status-${status.id}`}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={() => {
+                                  setSelectedStatus(status);
+                                  setDeleteStatusDialogOpen(true);
+                                }}
+                                data-testid={`button-delete-status-${status.id}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <p className="text-muted-foreground text-center py-4">No statuses defined yet.</p>
+                )}
+              </CardContent>
+            </Card>
           </>
         )}
 
@@ -626,6 +838,117 @@ export default function Settings() {
               data-testid="button-confirm-delete-subrole"
             >
               {deleteSubroleMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{selectedStatus ? "Edit Status" : "Create Status"}</DialogTitle>
+            <DialogDescription>
+              {selectedStatus ? "Update the status settings" : "Define a new status for work orders"}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="status-code">Code</Label>
+              <Input
+                id="status-code"
+                value={statusForm.code}
+                onChange={(e) => setStatusForm(prev => ({ ...prev, code: e.target.value }))}
+                placeholder="e.g. OPEN, COMPLETED"
+                className="mt-2"
+                data-testid="input-status-code"
+              />
+              <p className="text-sm text-muted-foreground mt-1">A unique identifier for the status</p>
+            </div>
+
+            <div>
+              <Label htmlFor="status-label">Label</Label>
+              <Input
+                id="status-label"
+                value={statusForm.label}
+                onChange={(e) => setStatusForm(prev => ({ ...prev, label: e.target.value }))}
+                placeholder="e.g. Open, Completed"
+                className="mt-2"
+                data-testid="input-status-label"
+              />
+              <p className="text-sm text-muted-foreground mt-1">Display name for the status</p>
+            </div>
+
+            <div>
+              <Label htmlFor="status-color">Color</Label>
+              <Select
+                value={statusForm.color}
+                onValueChange={(value) => setStatusForm(prev => ({ ...prev, color: value }))}
+              >
+                <SelectTrigger className="mt-2" data-testid="select-status-color">
+                  <SelectValue placeholder="Select a color" />
+                </SelectTrigger>
+                <SelectContent>
+                  {statusColors.map((color) => (
+                    <SelectItem key={color.value} value={color.value}>
+                      <div className="flex items-center gap-2">
+                        <div 
+                          className="w-4 h-4 rounded-full" 
+                          style={{ backgroundColor: getStatusColorHex(color.value) }} 
+                        />
+                        {color.label}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="status-default"
+                checked={statusForm.isDefault}
+                onCheckedChange={(checked) => setStatusForm(prev => ({ ...prev, isDefault: !!checked }))}
+                data-testid="checkbox-status-default"
+              />
+              <Label htmlFor="status-default" className="cursor-pointer">
+                Default status for new work orders
+              </Label>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setStatusDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleStatusSubmit}
+              disabled={!statusForm.code || !statusForm.label || createStatusMutation.isPending || updateStatusMutation.isPending}
+              data-testid="button-save-status"
+            >
+              {createStatusMutation.isPending || updateStatusMutation.isPending ? "Saving..." : selectedStatus ? "Update" : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={deleteStatusDialogOpen} onOpenChange={setDeleteStatusDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Status</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{selectedStatus?.label}"? This action cannot be undone.
+              Work orders with this status may need to be reassigned.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => selectedStatus && deleteStatusMutation.mutate(selectedStatus.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete-status"
+            >
+              {deleteStatusMutation.isPending ? "Deleting..." : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

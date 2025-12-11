@@ -95,6 +95,8 @@ Users with the "user" role can be assigned a subrole that determines their speci
 - **Search & Reports**: Advanced work order search across all projects with CSV/Excel/PDF export
 - **Maintenance**: Per-project database backup to JSON and restore functionality
 - **File Settings**: Configurable max file size (up to 1GB) and allowed extensions in system settings
+- **Work Order Statuses**: Customizable status codes via Settings page (Open, Completed, Scheduled, Skipped by default); stored in `work_order_statuses` table with label, color, and default flag
+- **Schema Changes**: Removed priority field from work orders; added updatedBy field to track who last modified a work order (stores user's display name)
 
 ### Key Design Patterns
 - **Storage Interface**: `IStorage` interface in `storage.ts` abstracts database operations, making it testable and swappable
