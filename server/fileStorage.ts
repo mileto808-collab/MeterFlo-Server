@@ -156,6 +156,141 @@ export async function getFilePath(
   }
 }
 
+// === PROJECT FTP FILES FUNCTIONS ===
+
+// Ensure project FTP files folder exists (for scheduled file imports)
+export async function ensureProjectFtpDirectory(projectName: string, projectId: number): Promise<string> {
+  const projectPath = await ensureProjectDirectory(projectName, projectId);
+  const ftpDir = path.join(projectPath, "Project FTP Files");
+  
+  try {
+    await fs.mkdir(ftpDir, { recursive: true });
+  } catch (error) {
+    // Directory might already exist
+  }
+  
+  return ftpDir;
+}
+
+// Get list of files in project FTP directory
+export async function getProjectFtpFiles(
+  projectName: string,
+  projectId: number
+): Promise<{ name: string; size: number; modifiedAt: Date }[]> {
+  const ftpDir = await ensureProjectFtpDirectory(projectName, projectId);
+  
+  try {
+    const files = await fs.readdir(ftpDir);
+    const fileDetails = await Promise.all(
+      files.map(async (file) => {
+        const filePath = path.join(ftpDir, file);
+        const stats = await fs.stat(filePath);
+        // Only include files, not directories
+        if (stats.isFile()) {
+          return {
+            name: file,
+            size: stats.size,
+            modifiedAt: stats.mtime,
+          };
+        }
+        return null;
+      })
+    );
+    return fileDetails.filter((f): f is { name: string; size: number; modifiedAt: Date } => f !== null);
+  } catch (error) {
+    return [];
+  }
+}
+
+// Get the latest file in project FTP directory (by modification time)
+export async function getLatestProjectFtpFile(
+  projectName: string,
+  projectId: number
+): Promise<{ name: string; path: string; size: number; modifiedAt: Date } | null> {
+  const ftpDir = await ensureProjectFtpDirectory(projectName, projectId);
+  const files = await getProjectFtpFiles(projectName, projectId);
+  
+  if (files.length === 0) return null;
+  
+  // Sort by modification time descending and get the most recent
+  files.sort((a, b) => b.modifiedAt.getTime() - a.modifiedAt.getTime());
+  const latestFile = files[0];
+  
+  return {
+    name: latestFile.name,
+    path: path.join(ftpDir, latestFile.name),
+    size: latestFile.size,
+    modifiedAt: latestFile.modifiedAt,
+  };
+}
+
+// Read file content from FTP directory
+export async function readProjectFtpFile(
+  projectName: string,
+  projectId: number,
+  filename: string
+): Promise<Buffer | null> {
+  const ftpDir = await ensureProjectFtpDirectory(projectName, projectId);
+  const filePath = path.join(ftpDir, filename);
+  
+  try {
+    const content = await fs.readFile(filePath);
+    return content;
+  } catch (error) {
+    return null;
+  }
+}
+
+// Delete a file from project FTP directory
+export async function deleteProjectFtpFile(
+  projectName: string,
+  projectId: number,
+  filename: string
+): Promise<boolean> {
+  const ftpDir = await ensureProjectFtpDirectory(projectName, projectId);
+  const filePath = path.join(ftpDir, filename);
+  
+  try {
+    await fs.unlink(filePath);
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+// Get project FTP file path for download
+export async function getProjectFtpFilePath(
+  projectName: string,
+  projectId: number,
+  filename: string
+): Promise<string | null> {
+  const ftpDir = await ensureProjectFtpDirectory(projectName, projectId);
+  const filePath = path.join(ftpDir, filename);
+  
+  try {
+    await fs.access(filePath);
+    return filePath;
+  } catch (error) {
+    return null;
+  }
+}
+
+// Save a file to project FTP directory
+export async function saveProjectFtpFile(
+  projectName: string,
+  projectId: number,
+  filename: string,
+  buffer: Buffer
+): Promise<string> {
+  const ftpDir = await ensureProjectFtpDirectory(projectName, projectId);
+  const sanitizedFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const filePath = path.join(ftpDir, sanitizedFilename);
+  
+  await fs.writeFile(filePath, buffer);
+  
+  return filePath;
+}
+
 // === PROJECT-LEVEL FILE FUNCTIONS ===
 
 // Ensure project documents folder exists (separate from work order folders)
