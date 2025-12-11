@@ -84,6 +84,23 @@ export const userProjects = pgTable("user_projects", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// User Groups table - for organizing users into assignable groups
+export const userGroups = pgTable("user_groups", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  name: varchar("name", { length: 100 }).notNull().unique(),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// User Group Members - many-to-many relationship between users and groups
+export const userGroupMembers = pgTable("user_group_members", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  groupId: integer("group_id").notNull().references(() => userGroups.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // System settings table for application-wide configuration
 export const systemSettings = pgTable("system_settings", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -309,6 +326,16 @@ export const insertUserProjectSchema = z.object({
   projectId: z.number(),
 });
 
+export const insertUserGroupSchema = z.object({
+  name: z.string().min(1, "Group name is required").max(100),
+  description: z.string().optional().nullable(),
+});
+
+export const insertUserGroupMemberSchema = z.object({
+  groupId: z.number(),
+  userId: z.string(),
+});
+
 export const insertSystemSettingSchema = z.object({
   key: z.string().min(1).max(100),
   value: z.string().optional().nullable(),
@@ -375,6 +402,12 @@ export type InsertProject = z.infer<typeof insertProjectSchema>;
 
 export type UserProject = typeof userProjects.$inferSelect;
 export type InsertUserProject = z.infer<typeof insertUserProjectSchema>;
+
+export type UserGroup = typeof userGroups.$inferSelect;
+export type InsertUserGroup = z.infer<typeof insertUserGroupSchema>;
+
+export type UserGroupMember = typeof userGroupMembers.$inferSelect;
+export type InsertUserGroupMember = z.infer<typeof insertUserGroupMemberSchema>;
 
 export type SystemSetting = typeof systemSettings.$inferSelect;
 export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;

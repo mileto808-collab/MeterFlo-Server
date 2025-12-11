@@ -14,6 +14,8 @@ import {
   workOrderStatuses,
   defaultWorkOrderStatuses,
   permissionKeys,
+  userGroups,
+  userGroupMembers,
   type User,
   type UpsertUser,
   type Project,
@@ -39,6 +41,9 @@ import {
   type WorkOrderStatus,
   type InsertWorkOrderStatus,
   type UpdateWorkOrderStatus,
+  type UserGroup,
+  type InsertUserGroup,
+  type UserGroupMember,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and } from "drizzle-orm";
@@ -138,6 +143,17 @@ export interface IStorage {
   updateWorkOrderStatus(id: number, data: UpdateWorkOrderStatus): Promise<WorkOrderStatus | undefined>;
   deleteWorkOrderStatus(id: number): Promise<boolean>;
   seedDefaultWorkOrderStatuses(): Promise<void>;
+
+  // User group operations
+  getAllUserGroups(): Promise<UserGroup[]>;
+  getUserGroup(id: number): Promise<UserGroup | undefined>;
+  createUserGroup(data: InsertUserGroup): Promise<UserGroup>;
+  updateUserGroup(id: number, data: Partial<InsertUserGroup>): Promise<UserGroup | undefined>;
+  deleteUserGroup(id: number): Promise<boolean>;
+  getGroupMembers(groupId: number): Promise<User[]>;
+  addUserToGroup(groupId: number, userId: string): Promise<UserGroupMember>;
+  removeUserFromGroup(groupId: number, userId: string): Promise<boolean>;
+  getUserGroupMemberships(userId: string): Promise<UserGroup[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -879,6 +895,68 @@ export class DatabaseStorage implements IStorage {
       }
       console.log("[Storage] Seeded default work order statuses");
     }
+  }
+
+  // User group operations
+  async getAllUserGroups(): Promise<UserGroup[]> {
+    return await db.select().from(userGroups).orderBy(userGroups.name);
+  }
+
+  async getUserGroup(id: number): Promise<UserGroup | undefined> {
+    const [group] = await db.select().from(userGroups).where(eq(userGroups.id, id));
+    return group;
+  }
+
+  async createUserGroup(data: InsertUserGroup): Promise<UserGroup> {
+    const [group] = await db.insert(userGroups).values(data).returning();
+    return group;
+  }
+
+  async updateUserGroup(id: number, data: Partial<InsertUserGroup>): Promise<UserGroup | undefined> {
+    const [updated] = await db
+      .update(userGroups)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(userGroups.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteUserGroup(id: number): Promise<boolean> {
+    await db.delete(userGroups).where(eq(userGroups.id, id));
+    return true;
+  }
+
+  async getGroupMembers(groupId: number): Promise<User[]> {
+    const members = await db
+      .select({ user: users })
+      .from(userGroupMembers)
+      .innerJoin(users, eq(userGroupMembers.userId, users.id))
+      .where(eq(userGroupMembers.groupId, groupId));
+    return members.map((m) => m.user);
+  }
+
+  async addUserToGroup(groupId: number, userId: string): Promise<UserGroupMember> {
+    const [member] = await db
+      .insert(userGroupMembers)
+      .values({ groupId, userId })
+      .returning();
+    return member;
+  }
+
+  async removeUserFromGroup(groupId: number, userId: string): Promise<boolean> {
+    await db
+      .delete(userGroupMembers)
+      .where(and(eq(userGroupMembers.groupId, groupId), eq(userGroupMembers.userId, userId)));
+    return true;
+  }
+
+  async getUserGroupMemberships(userId: string): Promise<UserGroup[]> {
+    const memberships = await db
+      .select({ group: userGroups })
+      .from(userGroupMembers)
+      .innerJoin(userGroups, eq(userGroupMembers.groupId, userGroups.id))
+      .where(eq(userGroupMembers.userId, userId));
+    return memberships.map((m) => m.group);
   }
 }
 
