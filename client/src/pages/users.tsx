@@ -20,7 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import type { User, Project, Subrole } from "@shared/schema";
-import { Search, Users as UsersIcon, Plus, MoreHorizontal, Pencil, Lock, Unlock, Key, Trash2, FolderPlus, X, Folder } from "lucide-react";
+import { Search, Users as UsersIcon, Plus, MoreHorizontal, Pencil, Lock, Unlock, Key, Trash2, FolderPlus, X, Folder, ArrowLeft } from "lucide-react";
 import { format } from "date-fns";
 
 type UserWithProjects = User & { assignedProjects?: Project[] };
@@ -66,7 +66,7 @@ export default function Users() {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<User | null>(null);
   const [resetPasswordDialogOpen, setResetPasswordDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [lockDialogOpen, setLockDialogOpen] = useState(false);
@@ -155,8 +155,7 @@ export default function Users() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       toast({ title: "Success", description: "User updated successfully" });
-      setEditDialogOpen(false);
-      setSelectedUser(null);
+      setEditingUser(null);
     },
     onError: (error: Error) => {
       if (isUnauthorizedError(error)) {
@@ -280,7 +279,6 @@ export default function Users() {
   };
 
   const handleEditUser = (user: User) => {
-    setSelectedUser(user);
     editForm.reset({
       username: user.username || "",
       firstName: user.firstName || "",
@@ -289,7 +287,7 @@ export default function Users() {
       role: (user.role as "admin" | "user" | "customer") || "user",
       subroleId: user.subroleId ?? null,
     });
-    setEditDialogOpen(true);
+    setEditingUser(user);
   };
 
   const handleResetPassword = (user: User) => {
@@ -313,6 +311,162 @@ export default function Users() {
     setSelectedUser(user);
     setAssignProjectDialogOpen(true);
   };
+
+  if (editingUser) {
+    return (
+      <div className="p-6 max-w-3xl mx-auto">
+        <div className="mb-6">
+          <Button 
+            variant="ghost" 
+            onClick={() => setEditingUser(null)} 
+            className="mb-4"
+            data-testid="button-back-to-users"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Users
+          </Button>
+          <h1 className="text-3xl font-bold" data-testid="text-edit-user-title">Edit User</h1>
+          <p className="text-muted-foreground mt-1">
+            Update information for {editingUser.firstName && editingUser.lastName 
+              ? `${editingUser.firstName} ${editingUser.lastName}` 
+              : editingUser.username || editingUser.email}
+          </p>
+        </div>
+        <Card>
+          <CardContent className="pt-6">
+            <Form {...editForm}>
+              <form onSubmit={editForm.handleSubmit((data) => updateUserMutation.mutate({ userId: editingUser.id, data }))} className="space-y-4">
+                <FormField
+                  control={editForm.control}
+                  name="username"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Username</FormLabel>
+                      <FormControl>
+                        <Input {...field} data-testid="input-edit-username" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={editForm.control}
+                    name="firstName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>First Name</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} data-testid="input-edit-firstname" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editForm.control}
+                    name="lastName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Last Name</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} data-testid="input-edit-lastname" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <FormField
+                  control={editForm.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email</FormLabel>
+                      <FormControl>
+                        <Input type="email" {...field} value={field.value || ""} data-testid="input-edit-email" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={editForm.control}
+                  name="role"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Role</FormLabel>
+                      <Select onValueChange={(value) => {
+                        field.onChange(value);
+                        if (value === "admin") {
+                          editForm.setValue("subroleId", null);
+                        }
+                      }} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-edit-role">
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="admin">Admin</SelectItem>
+                          <SelectItem value="user">User</SelectItem>
+                          <SelectItem value="customer">Customer</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                {(editForm.watch("role") === "user" || editForm.watch("role") === "customer") && (
+                  <FormField
+                    control={editForm.control}
+                    name="subroleId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Access Level</FormLabel>
+                        <Select 
+                          onValueChange={(value) => field.onChange(value === "none" ? null : parseInt(value))} 
+                          value={field.value?.toString() || "none"}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="select-edit-subrole">
+                              <SelectValue placeholder="Select access level" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="none">No Access Level ({editForm.watch("role") === "customer" ? "Read Only" : "View Only"})</SelectItem>
+                            {subroles?.filter(s => s.baseRole === editForm.watch("role")).map((subrole) => (
+                              <SelectItem key={subrole.id} value={subrole.id.toString()}>
+                                {subrole.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {field.value 
+                            ? subroles?.find(s => s.id === field.value)?.description 
+                            : editForm.watch("role") === "customer" 
+                              ? "Read-only access to completed work orders in assigned projects"
+                              : "Basic view-only access to assigned projects"}
+                        </p>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+                <div className="flex gap-4 pt-4">
+                  <Button type="button" variant="outline" onClick={() => setEditingUser(null)}>Cancel</Button>
+                  <Button type="submit" disabled={updateUserMutation.isPending} data-testid="button-submit-edit">
+                    {updateUserMutation.isPending ? "Saving..." : "Save Changes"}
+                  </Button>
+                </div>
+              </form>
+            </Form>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -645,144 +799,6 @@ export default function Users() {
                 <Button type="button" variant="outline" onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
                 <Button type="submit" disabled={createUserMutation.isPending} data-testid="button-submit-create">
                   {createUserMutation.isPending ? "Creating..." : "Create User"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </Form>
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit User Dialog */}
-      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Edit User</DialogTitle>
-            <DialogDescription>Update user information</DialogDescription>
-          </DialogHeader>
-          <Form {...editForm}>
-            <form onSubmit={editForm.handleSubmit((data) => selectedUser && updateUserMutation.mutate({ userId: selectedUser.id, data }))} className="space-y-4">
-              <FormField
-                control={editForm.control}
-                name="username"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Username</FormLabel>
-                    <FormControl>
-                      <Input {...field} data-testid="input-edit-username" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={editForm.control}
-                  name="firstName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>First Name</FormLabel>
-                      <FormControl>
-                        <Input {...field} value={field.value || ""} data-testid="input-edit-firstname" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={editForm.control}
-                  name="lastName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Last Name</FormLabel>
-                      <FormControl>
-                        <Input {...field} value={field.value || ""} data-testid="input-edit-lastname" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-              <FormField
-                control={editForm.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email</FormLabel>
-                    <FormControl>
-                      <Input type="email" {...field} value={field.value || ""} data-testid="input-edit-email" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={editForm.control}
-                name="role"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Role</FormLabel>
-                    <Select onValueChange={(value) => {
-                      field.onChange(value);
-                      if (value === "admin") {
-                        editForm.setValue("subroleId", null);
-                      }
-                    }} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger data-testid="select-edit-role">
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="admin">Admin</SelectItem>
-                        <SelectItem value="user">User</SelectItem>
-                        <SelectItem value="customer">Customer</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              {(editForm.watch("role") === "user" || editForm.watch("role") === "customer") && (
-                <FormField
-                  control={editForm.control}
-                  name="subroleId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Access Level</FormLabel>
-                      <Select 
-                        onValueChange={(value) => field.onChange(value === "none" ? null : parseInt(value))} 
-                        value={field.value?.toString() || "none"}
-                      >
-                        <FormControl>
-                          <SelectTrigger data-testid="select-edit-subrole">
-                            <SelectValue placeholder="Select access level" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          <SelectItem value="none">No Access Level ({editForm.watch("role") === "customer" ? "Read Only" : "View Only"})</SelectItem>
-                          {subroles?.filter(s => s.baseRole === editForm.watch("role")).map((subrole) => (
-                            <SelectItem key={subrole.id} value={subrole.id.toString()}>
-                              {subrole.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {field.value 
-                          ? subroles?.find(s => s.id === field.value)?.description 
-                          : editForm.watch("role") === "customer" 
-                            ? "Read-only access to completed work orders in assigned projects"
-                            : "Basic view-only access to assigned projects"}
-                      </p>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              )}
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setEditDialogOpen(false)}>Cancel</Button>
-                <Button type="submit" disabled={updateUserMutation.isPending} data-testid="button-submit-edit">
-                  {updateUserMutation.isPending ? "Saving..." : "Save Changes"}
                 </Button>
               </DialogFooter>
             </form>

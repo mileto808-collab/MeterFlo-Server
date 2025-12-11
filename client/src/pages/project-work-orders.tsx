@@ -45,7 +45,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload } from "lucide-react";
+import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, ArrowLeft } from "lucide-react";
 import type { Project } from "@shared/schema";
 import { insertProjectWorkOrderSchema, serviceTypeEnum, workOrderStatusEnum, workOrderPriorityEnum } from "@shared/schema";
 import type { ProjectWorkOrder } from "../../../server/projectDb";
@@ -63,7 +63,6 @@ export default function ProjectWorkOrders() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [isEditOpen, setIsEditOpen] = useState(false);
   const [editingWorkOrder, setEditingWorkOrder] = useState<ProjectWorkOrder | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
 
@@ -227,7 +226,6 @@ export default function ProjectWorkOrders() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/work-orders`] });
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/work-orders/stats`] });
-      setIsEditOpen(false);
       setEditingWorkOrder(null);
       toast({ title: "Work order updated" });
     },
@@ -275,7 +273,6 @@ export default function ProjectWorkOrders() {
 
   const handleEdit = (workOrder: ProjectWorkOrder) => {
     setEditingWorkOrder(workOrder);
-    setIsEditOpen(true);
   };
 
   const getStatusBadge = (status: string) => {
@@ -333,6 +330,360 @@ export default function ProjectWorkOrders() {
     return (
       <div className="flex items-center justify-center h-full">
         <p className="text-muted-foreground">Loading...</p>
+      </div>
+    );
+  }
+
+  if (editingWorkOrder) {
+    return (
+      <div className="p-6 space-y-6 max-w-4xl mx-auto">
+        <div className="mb-6">
+          <Button 
+            variant="ghost" 
+            onClick={() => setEditingWorkOrder(null)} 
+            className="mb-4"
+            data-testid="button-back-to-work-orders"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Work Orders
+          </Button>
+          <h1 className="text-2xl font-bold" data-testid="text-edit-work-order-title">Edit Work Order</h1>
+          <p className="text-muted-foreground mt-1">
+            Update work order {editingWorkOrder.customerWoId || `#${editingWorkOrder.id}`}
+          </p>
+        </div>
+        <Card>
+          <CardContent className="pt-6">
+            <Form {...editForm}>
+              <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField
+                    control={editForm.control}
+                    name="customerWoId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Work Order ID *</FormLabel>
+                        <FormControl>
+                          <Input {...field} placeholder="WO-001" data-testid="input-edit-customer-wo-id" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editForm.control}
+                    name="customerId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Customer ID *</FormLabel>
+                        <FormControl>
+                          <Input {...field} placeholder="CUST-001" data-testid="input-edit-customer-id" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editForm.control}
+                    name="customerName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Customer Name *</FormLabel>
+                        <FormControl>
+                          <Input {...field} placeholder="John Doe" data-testid="input-edit-customer-name" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editForm.control}
+                    name="serviceType"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Service Type *</FormLabel>
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-edit-service-type">
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {serviceTypeEnum.map((type) => (
+                              <SelectItem key={type} value={type}>{type}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editForm.control}
+                    name="address"
+                    render={({ field }) => (
+                      <FormItem className="md:col-span-2">
+                        <FormLabel>Address *</FormLabel>
+                        <FormControl>
+                          <Input {...field} placeholder="123 Main Street" data-testid="input-edit-address" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editForm.control}
+                    name="city"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>City</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="City" data-testid="input-edit-city" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editForm.control}
+                    name="state"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>State</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="State" data-testid="input-edit-state" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editForm.control}
+                    name="zip"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>ZIP Code</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="12345" data-testid="input-edit-zip" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editForm.control}
+                    name="phone"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Phone</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="555-123-4567" data-testid="input-edit-phone" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editForm.control}
+                    name="email"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Email</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="email@example.com" data-testid="input-edit-email" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editForm.control}
+                    name="route"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Route</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="Route A" data-testid="input-edit-route" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editForm.control}
+                    name="zone"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Zone</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="Zone 1" data-testid="input-edit-zone" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editForm.control}
+                    name="oldMeterId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Old Meter ID</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="OLD-12345" data-testid="input-edit-old-meter-id" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editForm.control}
+                    name="oldMeterReading"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Old Meter Reading</FormLabel>
+                        <FormControl>
+                          <Input 
+                            type="number" 
+                            {...field} 
+                            value={field.value ?? ""} 
+                            onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                            placeholder="12345" 
+                            data-testid="input-edit-old-meter-reading" 
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editForm.control}
+                    name="newMeterId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>New Meter ID</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="NEW-67890" data-testid="input-edit-new-meter-id" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editForm.control}
+                    name="newMeterReading"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>New Meter Reading</FormLabel>
+                        <FormControl>
+                          <Input 
+                            type="number" 
+                            {...field} 
+                            value={field.value ?? ""} 
+                            onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                            placeholder="67890" 
+                            data-testid="input-edit-new-meter-reading" 
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editForm.control}
+                    name="oldGps"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Old GPS Coordinates</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="40.7128,-74.0060" data-testid="input-edit-old-gps" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editForm.control}
+                    name="newGps"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>New GPS Coordinates</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="40.7128,-74.0060" data-testid="input-edit-new-gps" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editForm.control}
+                    name="priority"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Priority</FormLabel>
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-edit-priority">
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {workOrderPriorityEnum.map((p) => (
+                              <SelectItem key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editForm.control}
+                    name="status"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Status</FormLabel>
+                        <Select value={field.value || editingWorkOrder.status} onValueChange={field.onChange}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-edit-status">
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {workOrderStatusEnum.map((s) => (
+                              <SelectItem key={s} value={s}>
+                                {s.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editForm.control}
+                    name="notes"
+                    render={({ field }) => (
+                      <FormItem className="md:col-span-2">
+                        <FormLabel>Notes</FormLabel>
+                        <FormControl>
+                          <Textarea {...field} value={field.value || ""} placeholder="Additional notes..." data-testid="input-edit-notes" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <div className="flex gap-4 pt-4">
+                  <Button type="button" variant="outline" onClick={() => setEditingWorkOrder(null)}>Cancel</Button>
+                  <Button type="submit" disabled={updateMutation.isPending} data-testid="button-update-work-order">
+                    {updateMutation.isPending ? "Updating..." : "Update Work Order"}
+                  </Button>
+                </div>
+              </form>
+            </Form>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -800,53 +1151,6 @@ export default function ProjectWorkOrders() {
           </CardContent>
         </Card>
       )}
-
-      <Dialog open={isEditOpen} onOpenChange={(open) => { setIsEditOpen(open); if (!open) setEditingWorkOrder(null); }}>
-        <DialogContent className="max-w-3xl max-h-[90vh]">
-          <DialogHeader>
-            <DialogTitle>Edit Work Order</DialogTitle>
-            <DialogDescription>Update work order details</DialogDescription>
-          </DialogHeader>
-          <ScrollArea className="max-h-[60vh] pr-4">
-            <Form {...editForm}>
-              <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4">
-                <WorkOrderFormFields formInstance={editForm} />
-                {editingWorkOrder && (
-                  <FormField
-                    control={editForm.control}
-                    name="status"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Status</FormLabel>
-                        <Select value={field.value || editingWorkOrder.status} onValueChange={field.onChange}>
-                          <FormControl>
-                            <SelectTrigger data-testid="select-edit-status">
-                              <SelectValue />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {workOrderStatusEnum.map((s) => (
-                              <SelectItem key={s} value={s}>
-                                {s.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                )}
-                <DialogFooter className="pt-4">
-                  <Button type="submit" disabled={updateMutation.isPending} data-testid="button-update-work-order">
-                    {updateMutation.isPending ? "Updating..." : "Update"}
-                  </Button>
-                </DialogFooter>
-              </form>
-            </Form>
-          </ScrollArea>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
