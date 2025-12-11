@@ -26,8 +26,12 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { FileUp, CheckCircle, AlertCircle, ShieldAlert, Upload, FileSpreadsheet, FileJson, Info } from "lucide-react";
-import type { Project } from "@shared/schema";
+import { FileUp, CheckCircle, AlertCircle, ShieldAlert, Upload, FileSpreadsheet, FileJson, Info, Clock, Play, Trash2, Edit, Plus, Calendar, FolderSync } from "lucide-react";
+import type { Project, FileImportConfig } from "@shared/schema";
+import { Link } from "wouter";
+import { format } from "date-fns";
+import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
 import * as XLSX from "xlsx";
 
 type ParsedWorkOrder = {
@@ -136,6 +140,11 @@ export default function ProjectImport() {
     queryKey: ["/api/projects", projectId],
     enabled: !!projectId,
     retry: false,
+  });
+
+  const { data: fileImportConfigs = [], refetch: refetchConfigs } = useQuery<FileImportConfig[]>({
+    queryKey: [`/api/projects/${projectId}/file-import-configs`],
+    enabled: !!projectId && !accessDenied,
   });
 
   useEffect(() => {
@@ -533,6 +542,10 @@ export default function ProjectImport() {
             <FileJson className="h-4 w-4 mr-2" />
             JSON
           </TabsTrigger>
+          <TabsTrigger value="scheduled" data-testid="tab-scheduled">
+            <Clock className="h-4 w-4 mr-2" />
+            Scheduled
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="file" className="space-y-4">
@@ -782,6 +795,123 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,M
                 <FileUp className="h-4 w-4 mr-2" />
                 {importMutation.isPending ? "Importing..." : "Import JSON"}
               </Button>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="scheduled" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <Clock className="h-5 w-5" />
+                    Scheduled File Imports
+                  </CardTitle>
+                  <CardDescription>
+                    Configure automatic imports from the Project FTP Files directory
+                  </CardDescription>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Link href={`/projects/${projectId}/ftp-files`}>
+                    <Button variant="outline" size="sm">
+                      <FolderSync className="h-4 w-4 mr-2" />
+                      View FTP Files
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {fileImportConfigs.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Clock className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                  <p>No scheduled imports configured</p>
+                  <p className="text-sm mb-4">Upload files to the FTP directory and they will be available for manual import above.</p>
+                  <p className="text-sm">Scheduled import configuration is coming soon.</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Schedule</TableHead>
+                      <TableHead>Last Run</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Enabled</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {fileImportConfigs.map((config) => (
+                      <TableRow key={config.id} data-testid={`row-config-${config.id}`}>
+                        <TableCell className="font-medium">{config.name}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">
+                            {config.scheduleFrequency === "manual" ? "Manual" : config.scheduleFrequency?.replace(/_/g, " ")}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {config.lastRunAt ? format(new Date(config.lastRunAt), "MMM d, h:mm a") : "Never"}
+                        </TableCell>
+                        <TableCell>
+                          {config.lastRunStatus && (
+                            <Badge 
+                              variant={
+                                config.lastRunStatus === "success" ? "default" :
+                                config.lastRunStatus === "partial" ? "secondary" :
+                                config.lastRunStatus === "failed" ? "destructive" : "outline"
+                              }
+                            >
+                              {config.lastRunStatus}
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={config.isEnabled ? "default" : "secondary"}>
+                            {config.isEnabled ? "Active" : "Disabled"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={async () => {
+                              try {
+                                const response = await apiRequest("POST", `/api/file-import-configs/${config.id}/run`);
+                                const result = await response.json();
+                                if (result.success) {
+                                  toast({ title: `Import completed: ${result.imported} imported, ${result.failed} failed` });
+                                } else {
+                                  toast({ title: "Import failed", description: result.error, variant: "destructive" });
+                                }
+                                refetchConfigs();
+                              } catch (error: any) {
+                                toast({ title: "Failed to run import", variant: "destructive" });
+                              }
+                            }}
+                            data-testid={`button-run-${config.id}`}
+                          >
+                            <Play className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>How Scheduled Imports Work</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm text-muted-foreground">
+              <p>1. Upload CSV or Excel files to the Project FTP Files directory.</p>
+              <p>2. The scheduler will automatically pick up the latest file in that directory when the scheduled time arrives.</p>
+              <p>3. Files are processed using the configured column mapping and import settings.</p>
+              <p>4. Only new files (not previously processed) will be imported on scheduled runs.</p>
             </CardContent>
           </Card>
         </TabsContent>
