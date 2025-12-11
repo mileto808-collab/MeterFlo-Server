@@ -93,6 +93,68 @@ export const systemSettings = pgTable("system_settings", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Database types enum for external database connections
+export const databaseTypeEnum = ["postgresql", "mysql", "mssql", "oracle", "sqlite", "mariadb"] as const;
+export type DatabaseType = (typeof databaseTypeEnum)[number];
+
+// Import schedule frequency enum
+export const importScheduleFrequencyEnum = ["manual", "every_15_minutes", "every_30_minutes", "hourly", "every_2_hours", "every_6_hours", "every_12_hours", "daily", "weekly", "monthly"] as const;
+export type ImportScheduleFrequency = (typeof importScheduleFrequencyEnum)[number];
+
+// Import job status enum
+export const importJobStatusEnum = ["idle", "running", "success", "failed"] as const;
+export type ImportJobStatus = (typeof importJobStatusEnum)[number];
+
+// External database configurations per project
+export const externalDatabaseConfigs = pgTable("external_database_configs", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  databaseType: varchar("database_type", { length: 50 }).notNull(),
+  host: varchar("host", { length: 255 }).notNull(),
+  port: integer("port").notNull(),
+  databaseName: varchar("database_name", { length: 255 }).notNull(),
+  username: varchar("username", { length: 255 }).notNull(),
+  password: text("password").notNull(),
+  sslEnabled: boolean("ssl_enabled").default(false),
+  additionalOptions: jsonb("additional_options"),
+  isActive: boolean("is_active").default(true),
+  lastTestedAt: timestamp("last_tested_at"),
+  lastTestResult: boolean("last_test_result"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Import configurations - SQL queries and schedules per database config
+export const importConfigs = pgTable("import_configs", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  externalDbConfigId: integer("external_db_config_id").notNull().references(() => externalDatabaseConfigs.id, { onDelete: "cascade" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  sqlQuery: text("sql_query").notNull(),
+  columnMapping: jsonb("column_mapping"),
+  scheduleFrequency: varchar("schedule_frequency", { length: 50 }).notNull().default("manual"),
+  isEnabled: boolean("is_enabled").default(true),
+  lastRunAt: timestamp("last_run_at"),
+  lastRunStatus: varchar("last_run_status", { length: 50 }),
+  lastRunMessage: text("last_run_message"),
+  lastRunRecordCount: integer("last_run_record_count"),
+  nextRunAt: timestamp("next_run_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Import history - tracks each import execution
+export const importHistory = pgTable("import_history", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  importConfigId: integer("import_config_id").notNull().references(() => importConfigs.id, { onDelete: "cascade" }),
+  status: varchar("status", { length: 50 }).notNull(),
+  recordsImported: integer("records_imported").default(0),
+  recordsFailed: integer("records_failed").default(0),
+  errorDetails: text("error_details"),
+  startedAt: timestamp("started_at").defaultNow(),
+  completedAt: timestamp("completed_at"),
+});
+
 // Work order status enum
 export const workOrderStatusEnum = ["pending", "in_progress", "completed", "cancelled"] as const;
 export type WorkOrderStatus = (typeof workOrderStatusEnum)[number];
@@ -263,6 +325,63 @@ export type InsertPermission = z.infer<typeof insertPermissionSchema>;
 
 export type SubrolePermission = typeof subrolePermissions.$inferSelect;
 export type InsertSubrolePermission = z.infer<typeof insertSubrolePermissionSchema>;
+
+// External database config schemas and types
+export const insertExternalDatabaseConfigSchema = z.object({
+  projectId: z.number(),
+  name: z.string().min(1).max(255),
+  databaseType: z.enum(databaseTypeEnum),
+  host: z.string().min(1).max(255),
+  port: z.number().int().min(1).max(65535),
+  databaseName: z.string().min(1).max(255),
+  username: z.string().min(1).max(255),
+  password: z.string().min(1),
+  sslEnabled: z.boolean().optional(),
+  additionalOptions: z.record(z.any()).optional(),
+  isActive: z.boolean().optional(),
+});
+
+export const updateExternalDatabaseConfigSchema = z.object({
+  name: z.string().min(1).max(255).optional(),
+  databaseType: z.enum(databaseTypeEnum).optional(),
+  host: z.string().min(1).max(255).optional(),
+  port: z.number().int().min(1).max(65535).optional(),
+  databaseName: z.string().min(1).max(255).optional(),
+  username: z.string().min(1).max(255).optional(),
+  password: z.string().min(1).optional(),
+  sslEnabled: z.boolean().optional(),
+  additionalOptions: z.record(z.any()).optional(),
+  isActive: z.boolean().optional(),
+});
+
+export type ExternalDatabaseConfig = typeof externalDatabaseConfigs.$inferSelect;
+export type InsertExternalDatabaseConfig = z.infer<typeof insertExternalDatabaseConfigSchema>;
+export type UpdateExternalDatabaseConfig = z.infer<typeof updateExternalDatabaseConfigSchema>;
+
+// Import config schemas and types
+export const insertImportConfigSchema = z.object({
+  externalDbConfigId: z.number(),
+  name: z.string().min(1).max(255),
+  sqlQuery: z.string().min(1),
+  columnMapping: z.record(z.string()).optional(),
+  scheduleFrequency: z.enum(importScheduleFrequencyEnum).optional(),
+  isEnabled: z.boolean().optional(),
+});
+
+export const updateImportConfigSchema = z.object({
+  name: z.string().min(1).max(255).optional(),
+  sqlQuery: z.string().min(1).optional(),
+  columnMapping: z.record(z.string()).optional(),
+  scheduleFrequency: z.enum(importScheduleFrequencyEnum).optional(),
+  isEnabled: z.boolean().optional(),
+});
+
+export type ImportConfig = typeof importConfigs.$inferSelect;
+export type InsertImportConfig = z.infer<typeof insertImportConfigSchema>;
+export type UpdateImportConfig = z.infer<typeof updateImportConfigSchema>;
+
+// Import history types
+export type ImportHistory = typeof importHistory.$inferSelect;
 
 // Default permission keys
 export const permissionKeys = {
