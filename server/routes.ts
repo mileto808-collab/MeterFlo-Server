@@ -1455,6 +1455,31 @@ export async function registerRoutes(
     }
   });
 
+  // Run file import manually
+  app.post("/api/file-import-configs/:id/run", isAuthenticated, async (req: any, res) => {
+    try {
+      const config = await storage.getFileImportConfig(parseInt(req.params.id));
+      if (!config) {
+        return res.status(404).json({ message: "Config not found" });
+      }
+      
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, config.projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      const { fileImportScheduler } = await import("./fileImportScheduler");
+      const result = await fileImportScheduler.runImport(parseInt(req.params.id));
+      res.json(result);
+    } catch (error) {
+      console.error("Error running file import:", error);
+      res.status(500).json({ message: "Failed to run file import" });
+    }
+  });
+
   // Global Work Order Search (across all accessible projects)
   app.get("/api/search/work-orders", isAuthenticated, async (req: any, res) => {
     try {
