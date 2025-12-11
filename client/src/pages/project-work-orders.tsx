@@ -924,6 +924,7 @@ export default function ProjectWorkOrders() {
                           <PopoverTrigger asChild>
                             <FormControl>
                               <Button
+                                type="button"
                                 variant="outline"
                                 role="combobox"
                                 className="w-full justify-between font-normal"
@@ -1420,6 +1421,7 @@ export default function ProjectWorkOrders() {
                           <PopoverTrigger asChild>
                             <FormControl>
                               <Button
+                                type="button"
                                 variant="outline"
                                 role="combobox"
                                 className="w-full justify-between font-normal"

@@ -29,6 +29,7 @@ export const projectWorkOrders = pgTable("work_orders", {
   oldGps: varchar("old_gps", { length: 100 }),
   newGps: varchar("new_gps", { length: 100 }),
   status: varchar("status", { length: 50 }).notNull().default("Open"),
+  scheduledDate: varchar("scheduled_date"),
   assignedTo: varchar("assigned_to"),
   createdBy: varchar("created_by"),
   updatedBy: varchar("updated_by"),
@@ -85,6 +86,7 @@ export async function createProjectSchema(projectName: string, projectId: number
         old_gps VARCHAR(100),
         new_gps VARCHAR(100),
         status VARCHAR(50) NOT NULL DEFAULT 'Open',
+        scheduled_date DATE,
         assigned_to VARCHAR,
         created_by VARCHAR,
         updated_by VARCHAR,
@@ -180,10 +182,16 @@ export class ProjectWorkOrderStorage {
   async createWorkOrder(workOrder: Omit<InsertProjectWorkOrder, "id" | "createdAt" | "updatedAt">, createdBy?: string): Promise<ProjectWorkOrder> {
     const client = await pool.connect();
     try {
+      // If scheduledDate is set, auto-set status to "Scheduled"
+      let status = workOrder.status || "Open";
+      if (workOrder.scheduledDate) {
+        status = "Scheduled";
+      }
+      
       const result = await client.query(
         `INSERT INTO "${this.schemaName}".work_orders 
-         (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, assigned_to, created_by, updated_by, notes, attachments)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+         (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, scheduled_date, assigned_to, created_by, updated_by, notes, attachments)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
          RETURNING *`,
         [
           workOrder.customerWoId,
@@ -204,7 +212,8 @@ export class ProjectWorkOrderStorage {
           workOrder.newMeterReading ?? null,
           workOrder.oldGps || null,
           workOrder.newGps || null,
-          workOrder.status || "Open",
+          status,
+          workOrder.scheduledDate || null,
           workOrder.assignedTo || null,
           createdBy || workOrder.createdBy || null,
           createdBy || null,
@@ -297,11 +306,23 @@ export class ProjectWorkOrderStorage {
         setClauses.push(`new_gps = $${paramCount++}`);
         values.push(updates.newGps);
       }
+      if (updates.scheduledDate !== undefined) {
+        setClauses.push(`scheduled_date = $${paramCount++}`);
+        values.push(updates.scheduledDate || null);
+        // If scheduledDate is being set, auto-set status to "Scheduled"
+        if (updates.scheduledDate && updates.status === undefined) {
+          setClauses.push(`status = 'Scheduled'`);
+        }
+      }
       if (updates.status !== undefined) {
         setClauses.push(`status = $${paramCount++}`);
         values.push(updates.status);
         if (updates.status === "Completed") {
           setClauses.push(`completed_at = NOW()`);
+        }
+        // If status is changing away from "Scheduled", clear scheduledDate
+        if (updates.status !== "Scheduled" && updates.scheduledDate === undefined) {
+          setClauses.push(`scheduled_date = NULL`);
         }
       }
       if (updates.notes !== undefined) {
@@ -404,6 +425,7 @@ export class ProjectWorkOrderStorage {
       oldGps: row.old_gps,
       newGps: row.new_gps,
       status: row.status,
+      scheduledDate: row.scheduled_date,
       assignedTo: row.assigned_to,
       createdBy: row.created_by,
       updatedBy: row.updated_by,
@@ -460,6 +482,7 @@ export async function backupProjectDatabase(schemaName: string): Promise<{
       oldGps: row.old_gps,
       newGps: row.new_gps,
       status: row.status,
+      scheduledDate: row.scheduled_date,
       assignedTo: row.assigned_to,
       createdBy: row.created_by,
       updatedBy: row.updated_by,
@@ -501,8 +524,8 @@ export async function restoreProjectDatabase(
       try {
         await client.query(
           `INSERT INTO "${schemaName}".work_orders 
-           (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, assigned_to, created_by, updated_by, completed_at, notes, attachments)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)`,
+           (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, scheduled_date, assigned_to, created_by, updated_by, completed_at, notes, attachments)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)`,
           [
             wo.customerWoId || null,
             wo.customerId || null,
@@ -523,6 +546,7 @@ export async function restoreProjectDatabase(
             wo.oldGps || null,
             wo.newGps || null,
             wo.status || "Open",
+            wo.scheduledDate || null,
             wo.assignedTo || null,
             wo.createdBy || null,
             wo.updatedBy || null,
