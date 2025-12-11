@@ -6,6 +6,9 @@ import {
   subroles,
   permissions,
   subrolePermissions,
+  externalDatabaseConfigs,
+  importConfigs,
+  importHistory,
   permissionKeys,
   type User,
   type UpsertUser,
@@ -18,6 +21,13 @@ import {
   type Subrole,
   type Permission,
   type PermissionKey,
+  type ExternalDatabaseConfig,
+  type InsertExternalDatabaseConfig,
+  type UpdateExternalDatabaseConfig,
+  type ImportConfig,
+  type InsertImportConfig,
+  type UpdateImportConfig,
+  type ImportHistory,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and } from "drizzle-orm";
@@ -72,6 +82,29 @@ export interface IStorage {
   getUserEffectivePermissions(user: User): Promise<string[]>;
   updateUserSubrole(userId: string, subroleId: number | null): Promise<User | undefined>;
   hasPermission(user: User, permissionKey: string): Promise<boolean>;
+
+  // External database config operations
+  getExternalDatabaseConfigs(projectId: number): Promise<ExternalDatabaseConfig[]>;
+  getExternalDatabaseConfig(id: number): Promise<ExternalDatabaseConfig | undefined>;
+  createExternalDatabaseConfig(config: InsertExternalDatabaseConfig): Promise<ExternalDatabaseConfig>;
+  updateExternalDatabaseConfig(id: number, data: UpdateExternalDatabaseConfig): Promise<ExternalDatabaseConfig | undefined>;
+  updateExternalDatabaseConfigTestResult(id: number, success: boolean): Promise<ExternalDatabaseConfig | undefined>;
+  deleteExternalDatabaseConfig(id: number): Promise<boolean>;
+
+  // Import config operations
+  getImportConfigs(externalDbConfigId: number): Promise<ImportConfig[]>;
+  getImportConfigsByProject(projectId: number): Promise<ImportConfig[]>;
+  getAllEnabledImportConfigs(): Promise<(ImportConfig & { externalDbConfig: ExternalDatabaseConfig })[]>;
+  getImportConfig(id: number): Promise<ImportConfig | undefined>;
+  createImportConfig(config: InsertImportConfig): Promise<ImportConfig>;
+  updateImportConfig(id: number, data: UpdateImportConfig): Promise<ImportConfig | undefined>;
+  updateImportConfigLastRun(id: number, status: string, message: string | null, recordCount: number | null, nextRunAt: Date | null): Promise<ImportConfig | undefined>;
+  deleteImportConfig(id: number): Promise<boolean>;
+
+  // Import history operations
+  getImportHistory(importConfigId: number, limit?: number): Promise<ImportHistory[]>;
+  createImportHistoryEntry(importConfigId: number, status: string): Promise<ImportHistory>;
+  updateImportHistoryEntry(id: number, status: string, recordsImported: number, recordsFailed: number, errorDetails?: string | null): Promise<ImportHistory | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -457,6 +490,194 @@ export class DatabaseStorage implements IStorage {
   async hasPermission(user: User, permissionKey: string): Promise<boolean> {
     const permissions = await this.getUserEffectivePermissions(user);
     return permissions.includes(permissionKey);
+  }
+
+  // External database config operations
+  async getExternalDatabaseConfigs(projectId: number): Promise<ExternalDatabaseConfig[]> {
+    return await db
+      .select()
+      .from(externalDatabaseConfigs)
+      .where(eq(externalDatabaseConfigs.projectId, projectId))
+      .orderBy(desc(externalDatabaseConfigs.createdAt));
+  }
+
+  async getExternalDatabaseConfig(id: number): Promise<ExternalDatabaseConfig | undefined> {
+    const [config] = await db
+      .select()
+      .from(externalDatabaseConfigs)
+      .where(eq(externalDatabaseConfigs.id, id));
+    return config;
+  }
+
+  async createExternalDatabaseConfig(config: InsertExternalDatabaseConfig): Promise<ExternalDatabaseConfig> {
+    const [created] = await db
+      .insert(externalDatabaseConfigs)
+      .values(config)
+      .returning();
+    return created;
+  }
+
+  async updateExternalDatabaseConfig(id: number, data: UpdateExternalDatabaseConfig): Promise<ExternalDatabaseConfig | undefined> {
+    const [updated] = await db
+      .update(externalDatabaseConfigs)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(externalDatabaseConfigs.id, id))
+      .returning();
+    return updated;
+  }
+
+  async updateExternalDatabaseConfigTestResult(id: number, success: boolean): Promise<ExternalDatabaseConfig | undefined> {
+    const [updated] = await db
+      .update(externalDatabaseConfigs)
+      .set({ lastTestedAt: new Date(), lastTestResult: success, updatedAt: new Date() })
+      .where(eq(externalDatabaseConfigs.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteExternalDatabaseConfig(id: number): Promise<boolean> {
+    await db.delete(externalDatabaseConfigs).where(eq(externalDatabaseConfigs.id, id));
+    return true;
+  }
+
+  // Import config operations
+  async getImportConfigs(externalDbConfigId: number): Promise<ImportConfig[]> {
+    return await db
+      .select()
+      .from(importConfigs)
+      .where(eq(importConfigs.externalDbConfigId, externalDbConfigId))
+      .orderBy(desc(importConfigs.createdAt));
+  }
+
+  async getImportConfigsByProject(projectId: number): Promise<ImportConfig[]> {
+    const dbConfigs = await this.getExternalDatabaseConfigs(projectId);
+    if (dbConfigs.length === 0) return [];
+    
+    const configIds = dbConfigs.map(c => c.id);
+    const allConfigs: ImportConfig[] = [];
+    
+    for (const configId of configIds) {
+      const configs = await db
+        .select()
+        .from(importConfigs)
+        .where(eq(importConfigs.externalDbConfigId, configId));
+      allConfigs.push(...configs);
+    }
+    
+    return allConfigs;
+  }
+
+  async getAllEnabledImportConfigs(): Promise<(ImportConfig & { externalDbConfig: ExternalDatabaseConfig })[]> {
+    const configs = await db
+      .select()
+      .from(importConfigs)
+      .where(eq(importConfigs.isEnabled, true));
+    
+    const result: (ImportConfig & { externalDbConfig: ExternalDatabaseConfig })[] = [];
+    
+    for (const config of configs) {
+      const [dbConfig] = await db
+        .select()
+        .from(externalDatabaseConfigs)
+        .where(eq(externalDatabaseConfigs.id, config.externalDbConfigId));
+      
+      if (dbConfig && dbConfig.isActive) {
+        result.push({ ...config, externalDbConfig: dbConfig });
+      }
+    }
+    
+    return result;
+  }
+
+  async getImportConfig(id: number): Promise<ImportConfig | undefined> {
+    const [config] = await db
+      .select()
+      .from(importConfigs)
+      .where(eq(importConfigs.id, id));
+    return config;
+  }
+
+  async createImportConfig(config: InsertImportConfig): Promise<ImportConfig> {
+    const [created] = await db
+      .insert(importConfigs)
+      .values(config)
+      .returning();
+    return created;
+  }
+
+  async updateImportConfig(id: number, data: UpdateImportConfig): Promise<ImportConfig | undefined> {
+    const [updated] = await db
+      .update(importConfigs)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(importConfigs.id, id))
+      .returning();
+    return updated;
+  }
+
+  async updateImportConfigLastRun(
+    id: number,
+    status: string,
+    message: string | null,
+    recordCount: number | null,
+    nextRunAt: Date | null
+  ): Promise<ImportConfig | undefined> {
+    const [updated] = await db
+      .update(importConfigs)
+      .set({
+        lastRunAt: new Date(),
+        lastRunStatus: status,
+        lastRunMessage: message,
+        lastRunRecordCount: recordCount,
+        nextRunAt,
+        updatedAt: new Date(),
+      })
+      .where(eq(importConfigs.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteImportConfig(id: number): Promise<boolean> {
+    await db.delete(importConfigs).where(eq(importConfigs.id, id));
+    return true;
+  }
+
+  // Import history operations
+  async getImportHistory(importConfigId: number, limit: number = 50): Promise<ImportHistory[]> {
+    return await db
+      .select()
+      .from(importHistory)
+      .where(eq(importHistory.importConfigId, importConfigId))
+      .orderBy(desc(importHistory.startedAt))
+      .limit(limit);
+  }
+
+  async createImportHistoryEntry(importConfigId: number, status: string): Promise<ImportHistory> {
+    const [entry] = await db
+      .insert(importHistory)
+      .values({ importConfigId, status })
+      .returning();
+    return entry;
+  }
+
+  async updateImportHistoryEntry(
+    id: number,
+    status: string,
+    recordsImported: number,
+    recordsFailed: number,
+    errorDetails?: string | null
+  ): Promise<ImportHistory | undefined> {
+    const [updated] = await db
+      .update(importHistory)
+      .set({
+        status,
+        recordsImported,
+        recordsFailed,
+        errorDetails,
+        completedAt: new Date(),
+      })
+      .where(eq(importHistory.id, id))
+      .returning();
+    return updated;
   }
 }
 
