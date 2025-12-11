@@ -667,7 +667,7 @@ export default function ProjectWorkOrders() {
                       <FormItem>
                         <FormLabel>Work Order ID *</FormLabel>
                         <FormControl>
-                          <Input {...field} placeholder="WO-001" data-testid="input-edit-customer-wo-id" />
+                          <Input {...field} value={field.value || ""} placeholder="WO-001" data-testid="input-edit-customer-wo-id" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -680,7 +680,7 @@ export default function ProjectWorkOrders() {
                       <FormItem>
                         <FormLabel>Customer ID *</FormLabel>
                         <FormControl>
-                          <Input {...field} placeholder="CUST-001" data-testid="input-edit-customer-id" />
+                          <Input {...field} value={field.value || ""} placeholder="CUST-001" data-testid="input-edit-customer-id" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -693,7 +693,7 @@ export default function ProjectWorkOrders() {
                       <FormItem>
                         <FormLabel>Customer Name *</FormLabel>
                         <FormControl>
-                          <Input {...field} placeholder="John Doe" data-testid="input-edit-customer-name" />
+                          <Input {...field} value={field.value || ""} placeholder="John Doe" data-testid="input-edit-customer-name" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -728,7 +728,7 @@ export default function ProjectWorkOrders() {
                       <FormItem className="md:col-span-2">
                         <FormLabel>Address *</FormLabel>
                         <FormControl>
-                          <Input {...field} placeholder="123 Main Street" data-testid="input-edit-address" />
+                          <Input {...field} value={field.value || ""} placeholder="123 Main Street" data-testid="input-edit-address" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -1183,7 +1183,7 @@ export default function ProjectWorkOrders() {
                       <FormItem>
                         <FormLabel>Work Order ID *</FormLabel>
                         <FormControl>
-                          <Input {...field} placeholder="WO-001" data-testid="input-create-customer-wo-id" />
+                          <Input {...field} value={field.value || ""} placeholder="WO-001" data-testid="input-create-customer-wo-id" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -1196,7 +1196,7 @@ export default function ProjectWorkOrders() {
                       <FormItem>
                         <FormLabel>Customer ID *</FormLabel>
                         <FormControl>
-                          <Input {...field} placeholder="CUST-001" data-testid="input-create-customer-id" />
+                          <Input {...field} value={field.value || ""} placeholder="CUST-001" data-testid="input-create-customer-id" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -1209,7 +1209,7 @@ export default function ProjectWorkOrders() {
                       <FormItem>
                         <FormLabel>Customer Name *</FormLabel>
                         <FormControl>
-                          <Input {...field} placeholder="John Doe" data-testid="input-create-customer-name" />
+                          <Input {...field} value={field.value || ""} placeholder="John Doe" data-testid="input-create-customer-name" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -1244,7 +1244,7 @@ export default function ProjectWorkOrders() {
                       <FormItem className="md:col-span-2">
                         <FormLabel>Address *</FormLabel>
                         <FormControl>
-                          <Input {...field} placeholder="123 Main Street" data-testid="input-create-address" />
+                          <Input {...field} value={field.value || ""} placeholder="123 Main Street" data-testid="input-create-address" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
