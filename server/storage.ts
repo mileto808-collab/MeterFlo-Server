@@ -11,6 +11,8 @@ import {
   importHistory,
   fileImportConfigs,
   fileImportHistory,
+  workOrderStatuses,
+  defaultWorkOrderStatuses,
   permissionKeys,
   type User,
   type UpsertUser,
@@ -34,6 +36,9 @@ import {
   type InsertFileImportConfig,
   type UpdateFileImportConfig,
   type FileImportHistory,
+  type WorkOrderStatus,
+  type InsertWorkOrderStatus,
+  type UpdateWorkOrderStatus,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and } from "drizzle-orm";
@@ -125,6 +130,14 @@ export interface IStorage {
   getFileImportHistory(fileImportConfigId: number, limit?: number): Promise<FileImportHistory[]>;
   createFileImportHistoryEntry(fileImportConfigId: number, fileName: string, status: string): Promise<FileImportHistory>;
   updateFileImportHistoryEntry(id: number, status: string, recordsImported: number, recordsFailed: number, errorDetails?: string | null): Promise<FileImportHistory | undefined>;
+
+  // Work order status operations
+  getWorkOrderStatuses(): Promise<WorkOrderStatus[]>;
+  getWorkOrderStatus(id: number): Promise<WorkOrderStatus | undefined>;
+  createWorkOrderStatus(data: InsertWorkOrderStatus): Promise<WorkOrderStatus>;
+  updateWorkOrderStatus(id: number, data: UpdateWorkOrderStatus): Promise<WorkOrderStatus | undefined>;
+  deleteWorkOrderStatus(id: number): Promise<boolean>;
+  seedDefaultWorkOrderStatuses(): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -805,6 +818,67 @@ export class DatabaseStorage implements IStorage {
       .where(eq(fileImportHistory.id, id))
       .returning();
     return updated;
+  }
+
+  // Work order status operations
+  async getWorkOrderStatuses(): Promise<WorkOrderStatus[]> {
+    return await db
+      .select()
+      .from(workOrderStatuses)
+      .orderBy(workOrderStatuses.sortOrder);
+  }
+
+  async getWorkOrderStatus(id: number): Promise<WorkOrderStatus | undefined> {
+    const [status] = await db
+      .select()
+      .from(workOrderStatuses)
+      .where(eq(workOrderStatuses.id, id));
+    return status;
+  }
+
+  async createWorkOrderStatus(data: InsertWorkOrderStatus): Promise<WorkOrderStatus> {
+    const [status] = await db
+      .insert(workOrderStatuses)
+      .values(data)
+      .returning();
+    return status;
+  }
+
+  async updateWorkOrderStatus(id: number, data: UpdateWorkOrderStatus): Promise<WorkOrderStatus | undefined> {
+    const [updated] = await db
+      .update(workOrderStatuses)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(workOrderStatuses.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteWorkOrderStatus(id: number): Promise<boolean> {
+    await db.delete(workOrderStatuses).where(eq(workOrderStatuses.id, id));
+    return true;
+  }
+
+  async seedDefaultWorkOrderStatuses(): Promise<void> {
+    const existing = await this.getWorkOrderStatuses();
+    if (existing.length === 0) {
+      const statusColors: Record<string, string> = {
+        Open: "blue",
+        Completed: "green",
+        Scheduled: "orange",
+        Skipped: "gray",
+      };
+      for (let i = 0; i < defaultWorkOrderStatuses.length; i++) {
+        const code = defaultWorkOrderStatuses[i];
+        await db.insert(workOrderStatuses).values({
+          code,
+          label: code,
+          color: statusColors[code] || "gray",
+          isDefault: code === "Open",
+          sortOrder: i,
+        });
+      }
+      console.log("[Storage] Seeded default work order statuses");
+    }
   }
 }
 

@@ -27,6 +27,7 @@ export async function registerRoutes(
 ): Promise<Server> {
   await setupAuth(app);
   await initializeAdminUser();
+  await storage.seedDefaultWorkOrderStatuses();
 
   // Local authentication
   app.post("/api/auth/local/login", async (req, res) => {
@@ -859,7 +860,13 @@ export async function registerRoutes(
       }
       
       const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
-      const workOrder = await workOrderStorage.updateWorkOrder(workOrderId, req.body);
+      
+      // Get the user's display name for updatedBy
+      const updatedByName = currentUser?.firstName 
+        ? `${currentUser.firstName}${currentUser.lastName ? ' ' + currentUser.lastName : ''}`
+        : currentUser?.username || currentUser?.id;
+      
+      const workOrder = await workOrderStorage.updateWorkOrder(workOrderId, req.body, updatedByName);
       
       if (!workOrder) {
         return res.status(404).json({ message: "Work order not found" });
@@ -2296,6 +2303,81 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching import history:", error);
       res.status(500).json({ message: "Failed to fetch import history" });
+    }
+  });
+
+  // Work order status routes
+  app.get("/api/work-order-statuses", isAuthenticated, async (req: any, res) => {
+    try {
+      const statuses = await storage.getWorkOrderStatuses();
+      res.json(statuses);
+    } catch (error) {
+      console.error("Error fetching work order statuses:", error);
+      res.status(500).json({ message: "Failed to fetch work order statuses" });
+    }
+  });
+
+  app.post("/api/work-order-statuses", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const status = await storage.createWorkOrderStatus(req.body);
+      res.status(201).json(status);
+    } catch (error: any) {
+      console.error("Error creating work order status:", error);
+      if (error.code === "23505") {
+        return res.status(400).json({ message: "Status code already exists" });
+      }
+      res.status(500).json({ message: "Failed to create work order status" });
+    }
+  });
+
+  app.patch("/api/work-order-statuses/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const id = parseInt(req.params.id);
+      const status = await storage.updateWorkOrderStatus(id, req.body);
+      
+      if (!status) {
+        return res.status(404).json({ message: "Status not found" });
+      }
+      
+      res.json(status);
+    } catch (error: any) {
+      console.error("Error updating work order status:", error);
+      if (error.code === "23505") {
+        return res.status(400).json({ message: "Status code already exists" });
+      }
+      res.status(500).json({ message: "Failed to update work order status" });
+    }
+  });
+
+  app.delete("/api/work-order-statuses/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const id = parseInt(req.params.id);
+      const status = await storage.getWorkOrderStatus(id);
+      
+      if (!status) {
+        return res.status(404).json({ message: "Status not found" });
+      }
+      
+      await storage.deleteWorkOrderStatus(id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting work order status:", error);
+      res.status(500).json({ message: "Failed to delete work order status" });
     }
   });
 

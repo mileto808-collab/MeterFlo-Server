@@ -46,8 +46,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, ArrowLeft } from "lucide-react";
-import type { Project } from "@shared/schema";
-import { insertProjectWorkOrderSchema, serviceTypeEnum, workOrderStatusEnum, workOrderPriorityEnum } from "@shared/schema";
+import type { Project, WorkOrderStatus } from "@shared/schema";
+import { insertProjectWorkOrderSchema, serviceTypeEnum } from "@shared/schema";
 import type { ProjectWorkOrder } from "../../../server/projectDb";
 
 const workOrderFormSchema = insertProjectWorkOrderSchema.extend({
@@ -87,7 +87,6 @@ export default function ProjectWorkOrders() {
       newMeterReading: undefined,
       oldGps: "",
       newGps: "",
-      priority: "medium",
       notes: "",
     },
   });
@@ -113,7 +112,6 @@ export default function ProjectWorkOrders() {
       newMeterReading: undefined,
       oldGps: "",
       newGps: "",
-      priority: "medium",
       notes: "",
     },
   });
@@ -130,10 +128,14 @@ export default function ProjectWorkOrders() {
     retry: false,
   });
 
-  const { data: stats, error: statsError } = useQuery<{ pending: number; inProgress: number; completed: number; total: number }>({
+  const { data: stats, error: statsError } = useQuery<{ open: number; completed: number; scheduled: number; skipped: number; total: number }>({
     queryKey: [`/api/projects/${projectId}/work-orders/stats`],
     enabled: !!projectId && !accessDenied,
     retry: false,
+  });
+
+  const { data: workOrderStatuses = [] } = useQuery<WorkOrderStatus[]>({
+    queryKey: ["/api/work-order-statuses"],
   });
 
   useEffect(() => {
@@ -167,7 +169,6 @@ export default function ProjectWorkOrders() {
         newMeterReading: editingWorkOrder.newMeterReading ?? undefined,
         oldGps: editingWorkOrder.oldGps || "",
         newGps: editingWorkOrder.newGps || "",
-        priority: (editingWorkOrder.priority as any) || "medium",
         notes: editingWorkOrder.notes || "",
       });
     }
@@ -194,9 +195,10 @@ export default function ProjectWorkOrders() {
   const createMutation = useMutation({
     mutationFn: async (data: WorkOrderFormData) => {
       if (accessDenied) throw new Error("403: Access denied");
+      const defaultStatus = workOrderStatuses.find(s => s.isDefault)?.code || "Open";
       return apiRequest("POST", `/api/projects/${projectId}/work-orders`, {
         ...normalizeOptionalFields(data),
-        status: "pending",
+        status: defaultStatus,
       });
     },
     onSuccess: () => {
@@ -616,28 +618,6 @@ export default function ProjectWorkOrders() {
                   />
                   <FormField
                     control={editForm.control}
-                    name="priority"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Priority</FormLabel>
-                        <Select value={field.value} onValueChange={field.onChange}>
-                          <FormControl>
-                            <SelectTrigger data-testid="select-edit-priority">
-                              <SelectValue />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {workOrderPriorityEnum.map((p) => (
-                              <SelectItem key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={editForm.control}
                     name="status"
                     render={({ field }) => (
                       <FormItem>
@@ -649,9 +629,9 @@ export default function ProjectWorkOrders() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {workOrderStatusEnum.map((s) => (
-                              <SelectItem key={s} value={s}>
-                                {s.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")}
+                            {workOrderStatuses.map((s) => (
+                              <SelectItem key={s.id} value={s.code}>
+                                {s.label}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -949,28 +929,6 @@ export default function ProjectWorkOrders() {
       />
       <FormField
         control={formInstance.control}
-        name="priority"
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>Priority</FormLabel>
-            <Select value={field.value} onValueChange={field.onChange}>
-              <FormControl>
-                <SelectTrigger data-testid="select-priority">
-                  <SelectValue />
-                </SelectTrigger>
-              </FormControl>
-              <SelectContent>
-                {workOrderPriorityEnum.map((p) => (
-                  <SelectItem key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        control={formInstance.control}
         name="notes"
         render={({ field }) => (
           <FormItem className="md:col-span-2">
@@ -1031,23 +989,29 @@ export default function ProjectWorkOrders() {
       </div>
 
       {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>Pending</CardDescription>
-              <CardTitle className="text-2xl" data-testid="stat-pending">{stats.pending}</CardTitle>
+              <CardDescription>Open</CardDescription>
+              <CardTitle className="text-2xl" data-testid="stat-open">{stats.open}</CardTitle>
             </CardHeader>
           </Card>
           <Card>
             <CardHeader className="pb-2">
-              <CardDescription>In Progress</CardDescription>
-              <CardTitle className="text-2xl" data-testid="stat-in-progress">{stats.inProgress}</CardTitle>
+              <CardDescription>Scheduled</CardDescription>
+              <CardTitle className="text-2xl" data-testid="stat-scheduled">{stats.scheduled}</CardTitle>
             </CardHeader>
           </Card>
           <Card>
             <CardHeader className="pb-2">
               <CardDescription>Completed</CardDescription>
               <CardTitle className="text-2xl" data-testid="stat-completed">{stats.completed}</CardTitle>
+            </CardHeader>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardDescription>Skipped</CardDescription>
+              <CardTitle className="text-2xl" data-testid="stat-skipped">{stats.skipped}</CardTitle>
             </CardHeader>
           </Card>
           <Card>

@@ -191,13 +191,22 @@ export const fileImportHistory = pgTable("file_import_history", {
   completedAt: timestamp("completed_at"),
 });
 
-// Work order status enum
-export const workOrderStatusEnum = ["pending", "in_progress", "completed", "cancelled"] as const;
-export type WorkOrderStatus = (typeof workOrderStatusEnum)[number];
+// Work order statuses table - configurable status codes
+export const workOrderStatuses = pgTable("work_order_statuses", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  code: varchar("code", { length: 50 }).notNull().unique(),
+  label: varchar("label", { length: 100 }).notNull(),
+  description: text("description"),
+  color: varchar("color", { length: 20 }),
+  isDefault: boolean("is_default").default(false),
+  sortOrder: integer("sort_order").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
 
-// Work order priority enum
-export const workOrderPriorityEnum = ["low", "medium", "high", "urgent"] as const;
-export type WorkOrderPriority = (typeof workOrderPriorityEnum)[number];
+// Default work order status values (for seeding)
+export const defaultWorkOrderStatuses = ["Open", "Completed", "Scheduled", "Skipped"] as const;
+export type DefaultWorkOrderStatus = (typeof defaultWorkOrderStatuses)[number];
 
 // Service type enum for utility work orders
 export const serviceTypeEnum = ["Water", "Electric", "Gas"] as const;
@@ -326,12 +335,30 @@ export const insertProjectWorkOrderSchema = z.object({
   newMeterReading: z.number().int().optional().nullable(),
   oldGps: z.string().max(100).optional().nullable(),
   newGps: z.string().max(100).optional().nullable(),
-  status: z.enum(workOrderStatusEnum).optional(),
-  priority: z.enum(workOrderPriorityEnum).optional(),
+  status: z.string().max(50).optional().nullable(),
   assignedTo: z.string().optional().nullable(),
   createdBy: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
   attachments: z.array(z.string()).optional().nullable(),
+});
+
+// Schema for work order status management
+export const insertWorkOrderStatusSchema = z.object({
+  code: z.string().min(1).max(50),
+  label: z.string().min(1).max(100),
+  description: z.string().optional().nullable(),
+  color: z.string().max(20).optional().nullable(),
+  isDefault: z.boolean().optional(),
+  sortOrder: z.number().int().optional(),
+});
+
+export const updateWorkOrderStatusSchema = z.object({
+  code: z.string().min(1).max(50).optional(),
+  label: z.string().min(1).max(100).optional(),
+  description: z.string().optional().nullable(),
+  color: z.string().max(20).optional().nullable(),
+  isDefault: z.boolean().optional(),
+  sortOrder: z.number().int().optional(),
 });
 
 // Types
@@ -449,6 +476,11 @@ export type UpdateFileImportConfig = z.infer<typeof updateFileImportConfigSchema
 
 // File import history types
 export type FileImportHistory = typeof fileImportHistory.$inferSelect;
+
+// Work order status types
+export type WorkOrderStatus = typeof workOrderStatuses.$inferSelect;
+export type InsertWorkOrderStatus = z.infer<typeof insertWorkOrderStatusSchema>;
+export type UpdateWorkOrderStatus = z.infer<typeof updateWorkOrderStatusSchema>;
 
 // Default permission keys
 export const permissionKeys = {
