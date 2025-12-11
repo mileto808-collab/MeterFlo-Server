@@ -2,12 +2,13 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
-import { insertProjectWorkOrderSchema, insertProjectSchema, createUserSchema, updateUserSchema, resetPasswordSchema, permissionKeys } from "@shared/schema";
+import { insertProjectWorkOrderSchema, insertProjectSchema, createUserSchema, updateUserSchema, resetPasswordSchema, permissionKeys, insertExternalDatabaseConfigSchema, updateExternalDatabaseConfigSchema, insertImportConfigSchema, updateImportConfigSchema, databaseTypeEnum, importScheduleFrequencyEnum } from "@shared/schema";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import multer from "multer";
 import { createProjectSchema, deleteProjectSchema, getProjectWorkOrderStorage, sanitizeSchemaName, backupProjectDatabase, restoreProjectDatabase, getProjectDatabaseStats } from "./projectDb";
 import { ensureProjectDirectory, saveWorkOrderFile, getWorkOrderFiles, deleteWorkOrderFile, getFilePath, getProjectFilesPath, setProjectFilesPath, deleteProjectDirectory, saveProjectFile, getProjectFiles, deleteProjectFile, getProjectFilePath } from "./fileStorage";
+import { ExternalDatabaseService } from "./externalDbService";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -1534,6 +1535,464 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching maintenance projects:", error);
       res.status(500).json({ message: "Failed to fetch projects for maintenance" });
+    }
+  });
+
+  // ===============================
+  // External Database Import Routes
+  // ===============================
+
+  // Get database type options
+  app.get("/api/database-import/types", isAuthenticated, async (req, res) => {
+    res.json({
+      databaseTypes: databaseTypeEnum,
+      scheduleFrequencies: importScheduleFrequencyEnum.map(freq => ({
+        value: freq,
+        label: freq === "manual" ? "Manual Only" : 
+               freq.replace(/_/g, " ").replace(/^every /, "Every ").replace(/^(\w)/, (c) => c.toUpperCase()),
+      })),
+      workOrderFields: ExternalDatabaseService.getWorkOrderFieldMappings(),
+    });
+  });
+
+  // Get external database configurations for a project
+  app.get("/api/projects/:projectId/database-configs", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const projectId = parseInt(req.params.projectId);
+      const configs = await storage.getExternalDatabaseConfigs(projectId);
+      
+      const safeConfigs = configs.map(c => ({
+        ...c,
+        password: "********",
+      }));
+      
+      res.json(safeConfigs);
+    } catch (error) {
+      console.error("Error fetching database configs:", error);
+      res.status(500).json({ message: "Failed to fetch database configurations" });
+    }
+  });
+
+  // Get single external database configuration
+  app.get("/api/database-configs/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const configId = parseInt(req.params.id);
+      const config = await storage.getExternalDatabaseConfig(configId);
+      
+      if (!config) {
+        return res.status(404).json({ message: "Configuration not found" });
+      }
+      
+      res.json({
+        ...config,
+        password: "********",
+      });
+    } catch (error) {
+      console.error("Error fetching database config:", error);
+      res.status(500).json({ message: "Failed to fetch database configuration" });
+    }
+  });
+
+  // Create external database configuration
+  app.post("/api/projects/:projectId/database-configs", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const projectId = parseInt(req.params.projectId);
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const validatedData = insertExternalDatabaseConfigSchema.parse({
+        ...req.body,
+        projectId,
+      });
+      
+      const config = await storage.createExternalDatabaseConfig(validatedData);
+      
+      res.json({
+        ...config,
+        password: "********",
+      });
+    } catch (error) {
+      console.error("Error creating database config:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to create database configuration" });
+    }
+  });
+
+  // Update external database configuration
+  app.patch("/api/database-configs/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const configId = parseInt(req.params.id);
+      const existing = await storage.getExternalDatabaseConfig(configId);
+      if (!existing) {
+        return res.status(404).json({ message: "Configuration not found" });
+      }
+      
+      const updateData = { ...req.body };
+      if (updateData.password === "********" || !updateData.password) {
+        delete updateData.password;
+      }
+      
+      const validatedData = updateExternalDatabaseConfigSchema.parse(updateData);
+      const config = await storage.updateExternalDatabaseConfig(configId, validatedData);
+      
+      res.json({
+        ...config,
+        password: "********",
+      });
+    } catch (error) {
+      console.error("Error updating database config:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to update database configuration" });
+    }
+  });
+
+  // Delete external database configuration
+  app.delete("/api/database-configs/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const configId = parseInt(req.params.id);
+      await storage.deleteExternalDatabaseConfig(configId);
+      res.json({ message: "Configuration deleted" });
+    } catch (error) {
+      console.error("Error deleting database config:", error);
+      res.status(500).json({ message: "Failed to delete database configuration" });
+    }
+  });
+
+  // Test database connection
+  app.post("/api/database-configs/test-connection", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const { configId, ...connectionParams } = req.body;
+      
+      let testConfig: any;
+      
+      if (configId) {
+        const existing = await storage.getExternalDatabaseConfig(configId);
+        if (!existing) {
+          return res.status(404).json({ message: "Configuration not found" });
+        }
+        testConfig = {
+          ...existing,
+          ...connectionParams,
+          password: connectionParams.password === "********" ? existing.password : connectionParams.password,
+        };
+      } else {
+        testConfig = connectionParams;
+      }
+      
+      const result = await ExternalDatabaseService.testConnection(testConfig);
+      
+      if (configId) {
+        await storage.updateExternalDatabaseConfigTestResult(configId, result.success);
+      }
+      
+      res.json(result);
+    } catch (error) {
+      console.error("Error testing connection:", error);
+      res.status(500).json({ success: false, message: "Failed to test connection" });
+    }
+  });
+
+  // Preview SQL query results
+  app.post("/api/database-configs/:id/preview-query", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const configId = parseInt(req.params.id);
+      const config = await storage.getExternalDatabaseConfig(configId);
+      if (!config) {
+        return res.status(404).json({ message: "Configuration not found" });
+      }
+      
+      const { sqlQuery, limit = 10 } = req.body;
+      if (!sqlQuery) {
+        return res.status(400).json({ message: "SQL query is required" });
+      }
+      
+      const result = await ExternalDatabaseService.executeQuery(config, sqlQuery, limit);
+      res.json(result);
+    } catch (error) {
+      console.error("Error previewing query:", error);
+      res.status(500).json({ success: false, error: "Failed to execute query" });
+    }
+  });
+
+  // ===============================
+  // Import Configuration Routes
+  // ===============================
+
+  // Get import configurations for a database config
+  app.get("/api/database-configs/:dbConfigId/import-configs", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const dbConfigId = parseInt(req.params.dbConfigId);
+      const configs = await storage.getImportConfigs(dbConfigId);
+      res.json(configs);
+    } catch (error) {
+      console.error("Error fetching import configs:", error);
+      res.status(500).json({ message: "Failed to fetch import configurations" });
+    }
+  });
+
+  // Get import configurations for a project
+  app.get("/api/projects/:projectId/import-configs", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const projectId = parseInt(req.params.projectId);
+      const configs = await storage.getImportConfigsByProject(projectId);
+      res.json(configs);
+    } catch (error) {
+      console.error("Error fetching project import configs:", error);
+      res.status(500).json({ message: "Failed to fetch import configurations" });
+    }
+  });
+
+  // Create import configuration
+  app.post("/api/database-configs/:dbConfigId/import-configs", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const dbConfigId = parseInt(req.params.dbConfigId);
+      const dbConfig = await storage.getExternalDatabaseConfig(dbConfigId);
+      if (!dbConfig) {
+        return res.status(404).json({ message: "Database configuration not found" });
+      }
+      
+      const validatedData = insertImportConfigSchema.parse({
+        ...req.body,
+        externalDbConfigId: dbConfigId,
+      });
+      
+      const config = await storage.createImportConfig(validatedData);
+      res.json(config);
+    } catch (error) {
+      console.error("Error creating import config:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to create import configuration" });
+    }
+  });
+
+  // Update import configuration
+  app.patch("/api/import-configs/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const configId = parseInt(req.params.id);
+      const existing = await storage.getImportConfig(configId);
+      if (!existing) {
+        return res.status(404).json({ message: "Import configuration not found" });
+      }
+      
+      const validatedData = updateImportConfigSchema.parse(req.body);
+      const config = await storage.updateImportConfig(configId, validatedData);
+      res.json(config);
+    } catch (error) {
+      console.error("Error updating import config:", error);
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid data", errors: error.errors });
+      }
+      res.status(500).json({ message: "Failed to update import configuration" });
+    }
+  });
+
+  // Delete import configuration
+  app.delete("/api/import-configs/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const configId = parseInt(req.params.id);
+      await storage.deleteImportConfig(configId);
+      res.json({ message: "Import configuration deleted" });
+    } catch (error) {
+      console.error("Error deleting import config:", error);
+      res.status(500).json({ message: "Failed to delete import configuration" });
+    }
+  });
+
+  // Run import manually
+  app.post("/api/import-configs/:id/run", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const configId = parseInt(req.params.id);
+      const importConfig = await storage.getImportConfig(configId);
+      if (!importConfig) {
+        return res.status(404).json({ message: "Import configuration not found" });
+      }
+      
+      const dbConfig = await storage.getExternalDatabaseConfig(importConfig.externalDbConfigId);
+      if (!dbConfig) {
+        return res.status(404).json({ message: "Database configuration not found" });
+      }
+      
+      const project = await storage.getProject(dbConfig.projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found or has no database" });
+      }
+      
+      const historyEntry = await storage.createImportHistoryEntry(configId, "running");
+      
+      try {
+        const queryResult = await ExternalDatabaseService.executeQuery(dbConfig, importConfig.sqlQuery);
+        
+        if (!queryResult.success || !queryResult.data) {
+          await storage.updateImportHistoryEntry(historyEntry.id, "failed", 0, 0, queryResult.error);
+          await storage.updateImportConfigLastRun(configId, "failed", queryResult.error || "Query failed", 0, null);
+          return res.json({ success: false, error: queryResult.error, historyId: historyEntry.id });
+        }
+        
+        const workOrderStorage = await getProjectWorkOrderStorage(project.databaseName);
+        const columnMapping = (importConfig.columnMapping as Record<string, string>) || {};
+        
+        let imported = 0;
+        let failed = 0;
+        const errors: string[] = [];
+        
+        for (const row of queryResult.data) {
+          try {
+            const mappedData: Record<string, any> = {};
+            for (const [sourceCol, targetField] of Object.entries(columnMapping)) {
+              if (targetField && row[sourceCol] !== undefined) {
+                mappedData[targetField] = row[sourceCol];
+              }
+            }
+            
+            if (!mappedData.customerWoId || !mappedData.customerId || !mappedData.customerName || !mappedData.address || !mappedData.serviceType) {
+              failed++;
+              errors.push(`Row missing required fields: ${JSON.stringify(row).slice(0, 100)}`);
+              continue;
+            }
+            
+            const serviceType = String(mappedData.serviceType);
+            if (!["Water", "Electric", "Gas"].includes(serviceType)) {
+              mappedData.serviceType = "Water";
+            }
+            
+            if (mappedData.oldMeterReading) {
+              mappedData.oldMeterReading = parseInt(String(mappedData.oldMeterReading)) || null;
+            }
+            if (mappedData.newMeterReading) {
+              mappedData.newMeterReading = parseInt(String(mappedData.newMeterReading)) || null;
+            }
+            
+            mappedData.status = mappedData.status || "pending";
+            mappedData.priority = mappedData.priority || "medium";
+            mappedData.createdBy = currentUser.id;
+            
+            const existingWo = await workOrderStorage.getWorkOrderByCustomerWoId(mappedData.customerWoId);
+            if (existingWo) {
+              await workOrderStorage.updateWorkOrder(existingWo.id, mappedData);
+            } else {
+              const validated = insertProjectWorkOrderSchema.parse(mappedData);
+              await workOrderStorage.createWorkOrder(validated);
+            }
+            imported++;
+          } catch (rowError: any) {
+            failed++;
+            errors.push(`Row error: ${rowError.message?.slice(0, 100) || "Unknown error"}`);
+          }
+        }
+        
+        const status = failed === 0 ? "success" : (imported > 0 ? "partial" : "failed");
+        const message = `Imported ${imported} records, ${failed} failed`;
+        
+        await storage.updateImportHistoryEntry(historyEntry.id, status, imported, failed, errors.length > 0 ? errors.slice(0, 10).join("\n") : null);
+        await storage.updateImportConfigLastRun(configId, status, message, imported, null);
+        
+        res.json({
+          success: true,
+          imported,
+          failed,
+          total: queryResult.data.length,
+          historyId: historyEntry.id,
+          errors: errors.slice(0, 10),
+        });
+      } catch (importError: any) {
+        await storage.updateImportHistoryEntry(historyEntry.id, "failed", 0, 0, importError.message);
+        await storage.updateImportConfigLastRun(configId, "failed", importError.message, 0, null);
+        res.json({ success: false, error: importError.message, historyId: historyEntry.id });
+      }
+    } catch (error) {
+      console.error("Error running import:", error);
+      res.status(500).json({ message: "Failed to run import" });
+    }
+  });
+
+  // Get import history
+  app.get("/api/import-configs/:id/history", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const configId = parseInt(req.params.id);
+      const limit = parseInt(req.query.limit as string) || 50;
+      const history = await storage.getImportHistory(configId, limit);
+      res.json(history);
+    } catch (error) {
+      console.error("Error fetching import history:", error);
+      res.status(500).json({ message: "Failed to fetch import history" });
     }
   });
 
