@@ -98,7 +98,7 @@ export const databaseTypeEnum = ["postgresql", "mysql", "mssql", "oracle", "sqli
 export type DatabaseType = (typeof databaseTypeEnum)[number];
 
 // Import schedule frequency enum
-export const importScheduleFrequencyEnum = ["manual", "every_15_minutes", "every_30_minutes", "hourly", "every_2_hours", "every_6_hours", "every_12_hours", "daily", "weekly", "monthly"] as const;
+export const importScheduleFrequencyEnum = ["manual", "every_15_minutes", "every_30_minutes", "hourly", "every_2_hours", "every_6_hours", "every_12_hours", "daily", "weekly", "monthly", "custom"] as const;
 export type ImportScheduleFrequency = (typeof importScheduleFrequencyEnum)[number];
 
 // Import job status enum
@@ -133,6 +133,7 @@ export const importConfigs = pgTable("import_configs", {
   sqlQuery: text("sql_query").notNull(),
   columnMapping: jsonb("column_mapping"),
   scheduleFrequency: varchar("schedule_frequency", { length: 50 }).notNull().default("manual"),
+  customCronExpression: varchar("custom_cron_expression", { length: 100 }),
   isEnabled: boolean("is_enabled").default(true),
   lastRunAt: timestamp("last_run_at"),
   lastRunStatus: varchar("last_run_status", { length: 50 }),

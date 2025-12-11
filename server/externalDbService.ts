@@ -2,6 +2,7 @@ import mysql from "mysql2/promise";
 import mssql from "mssql";
 import { Pool as PgPool } from "pg";
 import mariadb from "mariadb";
+import oracledb from "oracledb";
 import type { DatabaseType, ExternalDatabaseConfig } from "@shared/schema";
 
 interface ConnectionResult {
@@ -56,7 +57,7 @@ export class ExternalDatabaseService {
         case "mariadb":
           return await this.testMariaDBConnection(host, port || 3306, databaseName, username, password, ssl);
         case "oracle":
-          return { success: false, message: "Oracle database connection requires additional configuration. Please contact support." };
+          return await this.testOracleConnection(host, port || 1521, databaseName, username, password, ssl);
         case "sqlite":
           return { success: false, message: "SQLite is a file-based database and cannot be accessed remotely." };
         default:
@@ -185,6 +186,30 @@ export class ExternalDatabaseService {
     }
   }
 
+  private static async testOracleConnection(
+    host: string,
+    port: number,
+    serviceName: string,
+    user: string,
+    password: string,
+    ssl?: boolean
+  ): Promise<ConnectionResult> {
+    try {
+      const connectString = `${host}:${port}/${serviceName}`;
+      const connection = await oracledb.getConnection({
+        user,
+        password,
+        connectString,
+      });
+      await connection.execute("SELECT 1 FROM DUAL");
+      await connection.close();
+      return { success: true, message: "Oracle connection successful" };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      return { success: false, message: "Oracle connection failed", error: errorMessage };
+    }
+  }
+
   static async executeQuery(config: ExternalDatabaseConfig, query: string, limit?: number): Promise<QueryResult> {
     const { databaseType, host, port, databaseName, username, password, sslEnabled } = config;
     
@@ -200,6 +225,8 @@ export class ExternalDatabaseService {
           return await this.executeMSSQLQuery(host, port, databaseName, username, password, sslEnabled || false, limitedQuery);
         case "mariadb":
           return await this.executeMariaDBQuery(host, port, databaseName, username, password, sslEnabled || false, limitedQuery);
+        case "oracle":
+          return await this.executeOracleQuery(host, port, databaseName, username, password, sslEnabled || false, limitedQuery);
         default:
           return { success: false, error: `Unsupported database type: ${databaseType}` };
       }
@@ -374,6 +401,41 @@ export class ExternalDatabaseService {
           columns.forEach(col => { cleanRow[col] = row[col]; });
           return cleanRow;
         }),
+        columns,
+        rowCount: data.length,
+      };
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      return { success: false, error: errorMessage };
+    }
+  }
+
+  private static async executeOracleQuery(
+    host: string,
+    port: number,
+    serviceName: string,
+    user: string,
+    password: string,
+    ssl: boolean,
+    query: string
+  ): Promise<QueryResult> {
+    try {
+      const connectString = `${host}:${port}/${serviceName}`;
+      const connection = await oracledb.getConnection({
+        user,
+        password,
+        connectString,
+      });
+      
+      const result = await connection.execute(query, [], { outFormat: oracledb.OUT_FORMAT_OBJECT });
+      await connection.close();
+      
+      const data = (result.rows || []) as Record<string, unknown>[];
+      const columns = result.metaData?.map(m => m.name) || [];
+      
+      return {
+        success: true,
+        data,
         columns,
         rowCount: data.length,
       };
