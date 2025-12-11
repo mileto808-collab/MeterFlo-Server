@@ -53,7 +53,6 @@ type SearchResult = {
     oldGps?: string | null;
     newGps?: string | null;
     status: string;
-    priority: string;
     assignedTo?: string | null;
     createdBy?: string | null;
     completedAt?: string | null;
@@ -76,7 +75,6 @@ export default function SearchReports() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProject, setSelectedProject] = useState<string>("all");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
-  const [selectedPriority, setSelectedPriority] = useState<string>("all");
   const [selectedServiceType, setSelectedServiceType] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -91,7 +89,6 @@ export default function SearchReports() {
     if (searchQuery) params.append("query", searchQuery);
     if (selectedProject !== "all") params.append("projectId", selectedProject);
     if (selectedStatus !== "all") params.append("status", selectedStatus);
-    if (selectedPriority !== "all") params.append("priority", selectedPriority);
     if (selectedServiceType !== "all") params.append("serviceType", selectedServiceType);
     if (dateFrom) params.append("dateFrom", dateFrom);
     if (dateTo) params.append("dateTo", dateTo);
@@ -120,7 +117,6 @@ export default function SearchReports() {
     setSearchQuery("");
     setSelectedProject("all");
     setSelectedStatus("all");
-    setSelectedPriority("all");
     setSelectedServiceType("all");
     setDateFrom("");
     setDateTo("");
@@ -156,7 +152,7 @@ export default function SearchReports() {
       return;
     }
 
-    const headers = ["Project", "WO ID", "Customer ID", "Customer Name", "Address", "City", "State", "ZIP", "Phone", "Email", "Route", "Zone", "Service Type", "Old Meter ID", "Old Meter Reading", "New Meter ID", "New Meter Reading", "Old GPS", "New GPS", "Status", "Priority", "Assigned To", "Created At", "Completed At", "Notes"];
+    const headers = ["Project", "WO ID", "Customer ID", "Customer Name", "Address", "City", "State", "ZIP", "Phone", "Email", "Route", "Zone", "Service Type", "Old Meter ID", "Old Meter Reading", "New Meter ID", "New Meter Reading", "Old GPS", "New GPS", "Status", "Assigned To", "Created At", "Completed At", "Notes"];
     const rows = searchResults.results.map(r => [
       r.projectName,
       r.workOrder.customerWoId || "",
@@ -178,7 +174,6 @@ export default function SearchReports() {
       r.workOrder.oldGps || "",
       r.workOrder.newGps || "",
       r.workOrder.status,
-      r.workOrder.priority,
       r.workOrder.assignedTo || "",
       r.workOrder.createdAt ? format(new Date(r.workOrder.createdAt), "yyyy-MM-dd HH:mm") : "",
       r.workOrder.completedAt ? format(new Date(r.workOrder.completedAt), "yyyy-MM-dd HH:mm") : "",
@@ -227,7 +222,6 @@ export default function SearchReports() {
       "Old GPS": r.workOrder.oldGps || "",
       "New GPS": r.workOrder.newGps || "",
       "Status": r.workOrder.status,
-      "Priority": r.workOrder.priority,
       "Assigned To": r.workOrder.assignedTo || "",
       "Created At": r.workOrder.createdAt ? format(new Date(r.workOrder.createdAt), "yyyy-MM-dd HH:mm") : "",
       "Completed At": r.workOrder.completedAt ? format(new Date(r.workOrder.completedAt), "yyyy-MM-dd HH:mm") : "",
@@ -392,21 +386,6 @@ export default function SearchReports() {
                   <SelectItem value="in_progress">In Progress</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
                   <SelectItem value="cancelled">Cancelled</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Priority</Label>
-              <Select value={selectedPriority} onValueChange={setSelectedPriority}>
-                <SelectTrigger data-testid="select-priority">
-                  <SelectValue placeholder="All Priorities" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Priorities</SelectItem>
-                  <SelectItem value="low">Low</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="high">High</SelectItem>
-                  <SelectItem value="urgent">Urgent</SelectItem>
                 </SelectContent>
               </Select>
             </div>
