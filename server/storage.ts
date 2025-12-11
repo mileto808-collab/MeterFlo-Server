@@ -9,6 +9,8 @@ import {
   externalDatabaseConfigs,
   importConfigs,
   importHistory,
+  fileImportConfigs,
+  fileImportHistory,
   permissionKeys,
   type User,
   type UpsertUser,
@@ -28,6 +30,10 @@ import {
   type InsertImportConfig,
   type UpdateImportConfig,
   type ImportHistory,
+  type FileImportConfig,
+  type InsertFileImportConfig,
+  type UpdateFileImportConfig,
+  type FileImportHistory,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and } from "drizzle-orm";
@@ -105,6 +111,20 @@ export interface IStorage {
   getImportHistory(importConfigId: number, limit?: number): Promise<ImportHistory[]>;
   createImportHistoryEntry(importConfigId: number, status: string): Promise<ImportHistory>;
   updateImportHistoryEntry(id: number, status: string, recordsImported: number, recordsFailed: number, errorDetails?: string | null): Promise<ImportHistory | undefined>;
+
+  // File import config operations
+  getFileImportConfigs(projectId: number): Promise<FileImportConfig[]>;
+  getAllEnabledFileImportConfigs(): Promise<FileImportConfig[]>;
+  getFileImportConfig(id: number): Promise<FileImportConfig | undefined>;
+  createFileImportConfig(config: InsertFileImportConfig): Promise<FileImportConfig>;
+  updateFileImportConfig(id: number, data: UpdateFileImportConfig): Promise<FileImportConfig | undefined>;
+  updateFileImportConfigLastRun(id: number, status: string, message: string | null, recordCount: number | null, lastProcessedFile: string | null): Promise<FileImportConfig | undefined>;
+  deleteFileImportConfig(id: number): Promise<boolean>;
+
+  // File import history operations
+  getFileImportHistory(fileImportConfigId: number, limit?: number): Promise<FileImportHistory[]>;
+  createFileImportHistoryEntry(fileImportConfigId: number, fileName: string, status: string): Promise<FileImportHistory>;
+  updateFileImportHistoryEntry(id: number, status: string, recordsImported: number, recordsFailed: number, errorDetails?: string | null): Promise<FileImportHistory | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -676,6 +696,113 @@ export class DatabaseStorage implements IStorage {
         completedAt: new Date(),
       })
       .where(eq(importHistory.id, id))
+      .returning();
+    return updated;
+  }
+
+  // File import config operations
+  async getFileImportConfigs(projectId: number): Promise<FileImportConfig[]> {
+    return await db
+      .select()
+      .from(fileImportConfigs)
+      .where(eq(fileImportConfigs.projectId, projectId))
+      .orderBy(desc(fileImportConfigs.createdAt));
+  }
+
+  async getAllEnabledFileImportConfigs(): Promise<FileImportConfig[]> {
+    return await db
+      .select()
+      .from(fileImportConfigs)
+      .where(eq(fileImportConfigs.isEnabled, true));
+  }
+
+  async getFileImportConfig(id: number): Promise<FileImportConfig | undefined> {
+    const [config] = await db
+      .select()
+      .from(fileImportConfigs)
+      .where(eq(fileImportConfigs.id, id));
+    return config;
+  }
+
+  async createFileImportConfig(config: InsertFileImportConfig): Promise<FileImportConfig> {
+    const [created] = await db
+      .insert(fileImportConfigs)
+      .values(config)
+      .returning();
+    return created;
+  }
+
+  async updateFileImportConfig(id: number, data: UpdateFileImportConfig): Promise<FileImportConfig | undefined> {
+    const [updated] = await db
+      .update(fileImportConfigs)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(fileImportConfigs.id, id))
+      .returning();
+    return updated;
+  }
+
+  async updateFileImportConfigLastRun(
+    id: number,
+    status: string,
+    message: string | null,
+    recordCount: number | null,
+    lastProcessedFile: string | null
+  ): Promise<FileImportConfig | undefined> {
+    const [updated] = await db
+      .update(fileImportConfigs)
+      .set({
+        lastRunAt: new Date(),
+        lastRunStatus: status,
+        lastRunMessage: message,
+        lastRunRecordCount: recordCount,
+        lastProcessedFile,
+        updatedAt: new Date(),
+      })
+      .where(eq(fileImportConfigs.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteFileImportConfig(id: number): Promise<boolean> {
+    await db.delete(fileImportConfigs).where(eq(fileImportConfigs.id, id));
+    return true;
+  }
+
+  // File import history operations
+  async getFileImportHistory(fileImportConfigId: number, limit: number = 50): Promise<FileImportHistory[]> {
+    return await db
+      .select()
+      .from(fileImportHistory)
+      .where(eq(fileImportHistory.fileImportConfigId, fileImportConfigId))
+      .orderBy(desc(fileImportHistory.startedAt))
+      .limit(limit);
+  }
+
+  async createFileImportHistoryEntry(fileImportConfigId: number, fileName: string, status: string): Promise<FileImportHistory> {
+    const [entry] = await db
+      .insert(fileImportHistory)
+      .values({ fileImportConfigId, fileName, status })
+      .returning();
+    return entry;
+  }
+
+  async updateFileImportHistoryEntry(
+    id: number,
+    status: string,
+    recordsImported: number,
+    recordsFailed: number,
+    errorDetails?: string | null
+  ): Promise<FileImportHistory | undefined> {
+    const [updated] = await db
+      .update(fileImportHistory)
+      .set({
+        status,
+        recordsImported,
+        recordsFailed,
+        errorDetails,
+        completedAt: new Date(),
+      })
+      .where(eq(fileImportHistory.id, id))
       .returning();
     return updated;
   }
