@@ -112,6 +112,7 @@ export default function ProjectWorkOrders() {
       newGps: "",
       notes: "",
       assignedTo: "",
+      scheduledDate: "",
     },
   });
 
@@ -139,6 +140,7 @@ export default function ProjectWorkOrders() {
       notes: "",
       status: "Open",
       assignedTo: "",
+      scheduledDate: "",
     },
   });
 
@@ -215,6 +217,7 @@ export default function ProjectWorkOrders() {
         notes: editingWorkOrder.notes || "",
         status: editingWorkOrder.status || "Open",
         assignedTo: editingWorkOrder.assignedTo || "",
+        scheduledDate: (editingWorkOrder as any).scheduledDate || "",
       });
     }
   }, [editingWorkOrder, editForm]);
@@ -1051,6 +1054,25 @@ export default function ProjectWorkOrders() {
                   />
                   <FormField
                     control={editForm.control}
+                    name="scheduledDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Scheduled Date</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="date"
+                            {...field}
+                            value={field.value || ""}
+                            data-testid="input-edit-scheduled-date"
+                          />
+                        </FormControl>
+                        <p className="text-xs text-muted-foreground">Setting a date will auto-set status to "Scheduled"</p>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editForm.control}
                     name="notes"
                     render={({ field }) => (
                       <FormItem className="md:col-span-2">
@@ -1518,6 +1540,25 @@ export default function ProjectWorkOrders() {
                             )}
                           </PopoverContent>
                         </Popover>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="scheduledDate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Scheduled Date</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="date"
+                            {...field}
+                            value={field.value || ""}
+                            data-testid="input-create-scheduled-date"
+                          />
+                        </FormControl>
+                        <p className="text-xs text-muted-foreground">Setting a date will auto-set status to "Scheduled"</p>
                         <FormMessage />
                       </FormItem>
                     )}
