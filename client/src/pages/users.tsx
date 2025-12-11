@@ -649,7 +649,7 @@ export default function Users() {
           <h1 className="text-3xl font-bold" data-testid="text-users-title">Users</h1>
           <p className="text-muted-foreground mt-1">Manage user accounts and permissions</p>
         </div>
-        <Button onClick={() => setCreateDialogOpen(true)} data-testid="button-create-user">
+        <Button onClick={() => setIsCreatingUser(true)} data-testid="button-create-user">
           <Plus className="h-4 w-4 mr-2" />
           Add User
         </Button>
@@ -821,7 +821,7 @@ export default function Users() {
                 {searchQuery ? "Try adjusting your search" : "Get started by adding your first user"}
               </p>
               {!searchQuery && (
-                <Button onClick={() => setCreateDialogOpen(true)}>
+                <Button onClick={() => setIsCreatingUser(true)}>
                   <Plus className="h-4 w-4 mr-2" />
                   Add User
                 </Button>
@@ -830,155 +830,6 @@ export default function Users() {
           )}
         </CardContent>
       </Card>
-
-      {/* Create User Dialog */}
-      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Create New User</DialogTitle>
-            <DialogDescription>Add a new user to the system</DialogDescription>
-          </DialogHeader>
-          <Form {...createForm}>
-            <form onSubmit={createForm.handleSubmit((data) => createUserMutation.mutate(data))} className="space-y-4">
-              <FormField
-                control={createForm.control}
-                name="username"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Username</FormLabel>
-                    <FormControl>
-                      <Input placeholder="johndoe" {...field} data-testid="input-create-username" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={createForm.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Password</FormLabel>
-                    <FormControl>
-                      <Input type="password" placeholder="Min 6 characters" {...field} data-testid="input-create-password" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={createForm.control}
-                  name="firstName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>First Name</FormLabel>
-                      <FormControl>
-                        <Input placeholder="John" {...field} data-testid="input-create-firstname" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={createForm.control}
-                  name="lastName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Last Name</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Doe" {...field} data-testid="input-create-lastname" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-              <FormField
-                control={createForm.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email (optional)</FormLabel>
-                    <FormControl>
-                      <Input type="email" placeholder="john@example.com" {...field} data-testid="input-create-email" />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={createForm.control}
-                name="role"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Role</FormLabel>
-                    <Select 
-                      onValueChange={(value) => {
-                        field.onChange(value);
-                        if (value === "admin") {
-                          createForm.setValue("subroleId", null);
-                        }
-                      }} 
-                      value={field.value}
-                    >
-                      <FormControl>
-                        <SelectTrigger data-testid="select-create-role">
-                          <SelectValue placeholder="Select a role" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="admin">Admin</SelectItem>
-                        <SelectItem value="user">User</SelectItem>
-                        <SelectItem value="customer">Customer</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              {(createForm.watch("role") === "user" || createForm.watch("role") === "customer") && (
-                <FormField
-                  control={createForm.control}
-                  name="subroleId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Access Level</FormLabel>
-                      <Select 
-                        onValueChange={(value) => field.onChange(value ? parseInt(value) : null)} 
-                        value={field.value?.toString() || ""}
-                      >
-                        <FormControl>
-                          <SelectTrigger data-testid="select-create-subrole">
-                            <SelectValue placeholder="Select access level" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {subroles?.filter(s => s.baseRole === createForm.watch("role")).map((subrole) => (
-                            <SelectItem key={subrole.id} value={subrole.id.toString()}>
-                              {subrole.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormDescription className="text-xs">
-                        Determines what the {createForm.watch("role")} can access within the system
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              )}
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setCreateDialogOpen(false)}>Cancel</Button>
-                <Button type="submit" disabled={createUserMutation.isPending} data-testid="button-submit-create">
-                  {createUserMutation.isPending ? "Creating..." : "Create User"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </Form>
-        </DialogContent>
-      </Dialog>
 
       {/* Reset Password Dialog */}
       <Dialog open={resetPasswordDialogOpen} onOpenChange={setResetPasswordDialogOpen}>

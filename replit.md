@@ -90,11 +90,12 @@ Users with the "user" role can be assigned a subrole that determines their speci
 
 ### Recent Changes (December 2024)
 - **User Management**: Local username/password authentication, user lock/unlock, password reset, last admin protection
+- **Inline Create Forms**: Add User and Add Work Order now use inline form views instead of popup dialogs, matching the edit experience
 - **Project Files**: Separate file storage for project-level documents (in `_project_documents` subdirectory)
 - **Import Feature**: CSV/Excel/JSON import with configurable delimiters (comma, semicolon, tab, pipe), column mapping, header toggle
 - **Scheduled File Imports**: FTP directory monitoring with automatic file renaming after processing (adds `_completed_YYYY-MM-DD` suffix)
 - **Search & Reports**: Advanced work order search across all projects with CSV/Excel/PDF export
-- **Work Orders Page**: Search functionality and sortable column headers for WO ID, Address, Service, Route, Zone, Old Meter, and Status
+- **Work Orders Page**: Search functionality, sortable column headers, advanced filters (status, service type, date range), and export buttons (CSV, Excel, PDF)
 - **Maintenance**: Per-project database backup to JSON and restore functionality
 - **File Settings**: Configurable max file size (up to 1GB) and allowed extensions in system settings
 - **Work Order Statuses**: Customizable status codes via Settings page (Open, Completed, Scheduled, Skipped by default); stored in `work_order_statuses` table with label, color, and default flag

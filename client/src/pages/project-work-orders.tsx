@@ -10,15 +10,6 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -41,11 +32,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, ArrowLeft, Search, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, ArrowLeft, Search, ArrowUpDown, ArrowUp, ArrowDown, Download, FileSpreadsheet, FileText, Filter, X } from "lucide-react";
+import * as XLSX from "xlsx";
+import { format } from "date-fns";
+import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import type { Project, WorkOrderStatus } from "@shared/schema";
 import { insertProjectWorkOrderSchema, serviceTypeEnum } from "@shared/schema";
 import type { ProjectWorkOrder } from "../../../server/projectDb";
@@ -62,12 +56,17 @@ export default function ProjectWorkOrders() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [, navigate] = useLocation();
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isCreatingWorkOrder, setIsCreatingWorkOrder] = useState(false);
   const [editingWorkOrder, setEditingWorkOrder] = useState<ProjectWorkOrder | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const [selectedStatus, setSelectedStatus] = useState<string>("all");
+  const [selectedServiceType, setSelectedServiceType] = useState<string>("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
 
   const form = useForm<WorkOrderFormData>({
     resolver: zodResolver(workOrderFormSchema),
@@ -152,6 +151,18 @@ export default function ProjectWorkOrders() {
     }
   }, [projectError, workOrdersError, statsError]);
 
+  // Reset filters when project changes
+  useEffect(() => {
+    setSearchQuery("");
+    setSelectedStatus("all");
+    setSelectedServiceType("all");
+    setDateFrom("");
+    setDateTo("");
+    setShowFilters(false);
+    setIsCreatingWorkOrder(false);
+    setEditingWorkOrder(null);
+  }, [projectId]);
+
   useEffect(() => {
     if (editingWorkOrder) {
       editForm.reset({
@@ -209,7 +220,7 @@ export default function ProjectWorkOrders() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/work-orders`] });
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/work-orders/stats`] });
-      setIsCreateOpen(false);
+      setIsCreatingWorkOrder(false);
       form.reset();
       toast({ title: "Work order created" });
     },
@@ -353,6 +364,27 @@ export default function ProjectWorkOrders() {
       });
     }
     
+    // Filter by status
+    if (selectedStatus !== "all") {
+      result = result.filter(wo => wo.status === selectedStatus);
+    }
+    
+    // Filter by service type
+    if (selectedServiceType !== "all") {
+      result = result.filter(wo => wo.serviceType === selectedServiceType);
+    }
+    
+    // Filter by date range
+    if (dateFrom) {
+      const fromDate = new Date(dateFrom);
+      result = result.filter(wo => wo.createdAt && new Date(wo.createdAt) >= fromDate);
+    }
+    if (dateTo) {
+      const toDate = new Date(dateTo);
+      toDate.setHours(23, 59, 59, 999);
+      result = result.filter(wo => wo.createdAt && new Date(wo.createdAt) <= toDate);
+    }
+    
     // Sort
     if (sortColumn) {
       result.sort((a, b) => {
@@ -364,7 +396,183 @@ export default function ProjectWorkOrders() {
     }
     
     return result;
-  }, [workOrders, searchQuery, sortColumn, sortDirection]);
+  }, [workOrders, searchQuery, sortColumn, sortDirection, selectedStatus, selectedServiceType, dateFrom, dateTo]);
+
+  const clearFilters = () => {
+    setSearchQuery("");
+    setSelectedStatus("all");
+    setSelectedServiceType("all");
+    setDateFrom("");
+    setDateTo("");
+  };
+
+  const hasActiveFilters = selectedStatus !== "all" || selectedServiceType !== "all" || dateFrom !== "" || dateTo !== "";
+
+  const exportToCSV = () => {
+    if (!filteredAndSortedWorkOrders.length) {
+      toast({ title: "No data to export", variant: "destructive" });
+      return;
+    }
+
+    const headers = ["WO ID", "Customer ID", "Customer Name", "Address", "City", "State", "ZIP", "Phone", "Email", "Route", "Zone", "Service Type", "Old Meter ID", "Old Meter Reading", "New Meter ID", "New Meter Reading", "Old GPS", "New GPS", "Status", "Assigned To", "Created At", "Completed At", "Notes"];
+    const rows = filteredAndSortedWorkOrders.map(wo => [
+      wo.customerWoId || "",
+      wo.customerId || "",
+      wo.customerName || "",
+      wo.address || "",
+      wo.city || "",
+      wo.state || "",
+      wo.zip || "",
+      wo.phone || "",
+      wo.email || "",
+      wo.route || "",
+      wo.zone || "",
+      wo.serviceType || "",
+      wo.oldMeterId || "",
+      wo.oldMeterReading ?? "",
+      wo.newMeterId || "",
+      wo.newMeterReading ?? "",
+      wo.oldGps || "",
+      wo.newGps || "",
+      wo.status,
+      wo.assignedTo || "",
+      wo.createdAt && wo.createdAt !== null ? format(new Date(wo.createdAt), "yyyy-MM-dd HH:mm") : "",
+      wo.completedAt && wo.completedAt !== null ? format(new Date(wo.completedAt), "yyyy-MM-dd HH:mm") : "",
+      wo.notes || "",
+    ]);
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(",")),
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `${project?.name || "work-orders"}-${format(new Date(), "yyyy-MM-dd")}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+
+    toast({ title: "CSV exported successfully" });
+  };
+
+  const exportToExcel = () => {
+    if (!filteredAndSortedWorkOrders.length) {
+      toast({ title: "No data to export", variant: "destructive" });
+      return;
+    }
+
+    const data = filteredAndSortedWorkOrders.map(wo => ({
+      "WO ID": wo.customerWoId || "",
+      "Customer ID": wo.customerId || "",
+      "Customer Name": wo.customerName || "",
+      "Address": wo.address || "",
+      "City": wo.city || "",
+      "State": wo.state || "",
+      "ZIP": wo.zip || "",
+      "Phone": wo.phone || "",
+      "Email": wo.email || "",
+      "Route": wo.route || "",
+      "Zone": wo.zone || "",
+      "Service Type": wo.serviceType || "",
+      "Old Meter ID": wo.oldMeterId || "",
+      "Old Meter Reading": wo.oldMeterReading ?? "",
+      "New Meter ID": wo.newMeterId || "",
+      "New Meter Reading": wo.newMeterReading ?? "",
+      "Old GPS": wo.oldGps || "",
+      "New GPS": wo.newGps || "",
+      "Status": wo.status,
+      "Assigned To": wo.assignedTo || "",
+      "Created At": wo.createdAt && wo.createdAt !== null ? format(new Date(wo.createdAt), "yyyy-MM-dd HH:mm") : "",
+      "Completed At": wo.completedAt && wo.completedAt !== null ? format(new Date(wo.completedAt), "yyyy-MM-dd HH:mm") : "",
+      "Notes": wo.notes || "",
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Work Orders");
+    XLSX.writeFile(workbook, `${project?.name || "work-orders"}-${format(new Date(), "yyyy-MM-dd")}.xlsx`);
+
+    toast({ title: "Excel file exported successfully" });
+  };
+
+  const exportToPDF = () => {
+    if (!filteredAndSortedWorkOrders.length) {
+      toast({ title: "No data to export", variant: "destructive" });
+      return;
+    }
+
+    const printContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>${project?.name || "Work Orders"} Report</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 20px; }
+          h1 { color: #333; }
+          .meta { color: #666; margin-bottom: 20px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 11px; }
+          th { background-color: #f4f4f4; font-weight: bold; }
+          tr:nth-child(even) { background-color: #fafafa; }
+          .service-water { color: #0066cc; }
+          .service-electric { color: #cc9900; }
+          .service-gas { color: #cc6600; }
+        </style>
+      </head>
+      <body>
+        <h1>${project?.name || "Work Orders"} Report</h1>
+        <div class="meta">
+          <p>Generated: ${format(new Date(), "MMMM d, yyyy 'at' h:mm a")}</p>
+          <p>Total Results: ${filteredAndSortedWorkOrders.length}</p>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>WO ID</th>
+              <th>Customer</th>
+              <th>Address</th>
+              <th>Service</th>
+              <th>Route</th>
+              <th>Zone</th>
+              <th>Old Meter</th>
+              <th>Old Reading</th>
+              <th>New Meter</th>
+              <th>New Reading</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filteredAndSortedWorkOrders.map(wo => `
+              <tr>
+                <td>${wo.customerWoId || "-"}</td>
+                <td>${wo.customerName || "-"}</td>
+                <td>${wo.address || "-"}</td>
+                <td class="service-${(wo.serviceType || "").toLowerCase()}">${wo.serviceType || "-"}</td>
+                <td>${wo.route || "-"}</td>
+                <td>${wo.zone || "-"}</td>
+                <td>${wo.oldMeterId || "-"}</td>
+                <td>${wo.oldMeterReading ?? "-"}</td>
+                <td>${wo.newMeterId || "-"}</td>
+                <td>${wo.newMeterReading ?? "-"}</td>
+                <td>${wo.status.replace("_", " ")}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </body>
+      </html>
+    `;
+
+    const printWindow = window.open("", "_blank");
+    if (printWindow) {
+      printWindow.document.write(printContent);
+      printWindow.document.close();
+      printWindow.print();
+    }
+
+    toast({ title: "PDF print dialog opened" });
+  };
 
   if (!projectId) {
     return (
@@ -791,6 +999,318 @@ export default function ProjectWorkOrders() {
     );
   }
 
+  if (isCreatingWorkOrder) {
+    return (
+      <div className="p-6 space-y-6 max-w-4xl mx-auto">
+        <div className="mb-6">
+          <Button 
+            variant="ghost" 
+            onClick={() => {
+              setIsCreatingWorkOrder(false);
+              form.reset();
+            }} 
+            className="mb-4"
+            data-testid="button-back-to-work-orders"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back to Work Orders
+          </Button>
+          <h1 className="text-2xl font-bold" data-testid="text-create-work-order-title">Create Work Order</h1>
+          <p className="text-muted-foreground mt-1">Add a new utility meter work order to {project?.name}</p>
+        </div>
+        <Card>
+          <CardContent className="pt-6">
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="customerWoId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Work Order ID *</FormLabel>
+                        <FormControl>
+                          <Input {...field} placeholder="WO-001" data-testid="input-create-customer-wo-id" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="customerId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Customer ID *</FormLabel>
+                        <FormControl>
+                          <Input {...field} placeholder="CUST-001" data-testid="input-create-customer-id" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="customerName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Customer Name *</FormLabel>
+                        <FormControl>
+                          <Input {...field} placeholder="John Doe" data-testid="input-create-customer-name" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="serviceType"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Service Type *</FormLabel>
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-create-service-type">
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {serviceTypeEnum.map((type) => (
+                              <SelectItem key={type} value={type}>{type}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="address"
+                    render={({ field }) => (
+                      <FormItem className="md:col-span-2">
+                        <FormLabel>Address *</FormLabel>
+                        <FormControl>
+                          <Input {...field} placeholder="123 Main Street" data-testid="input-create-address" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="city"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>City</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="City" data-testid="input-create-city" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="state"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>State</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="State" data-testid="input-create-state" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="zip"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>ZIP Code</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="12345" data-testid="input-create-zip" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="phone"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Phone</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="555-123-4567" data-testid="input-create-phone" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="email"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Email</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="email@example.com" data-testid="input-create-email" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="route"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Route</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="Route A" data-testid="input-create-route" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="zone"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Zone</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="Zone 1" data-testid="input-create-zone" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="oldMeterId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Old Meter ID</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="OLD-12345" data-testid="input-create-old-meter-id" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="oldMeterReading"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Old Meter Reading</FormLabel>
+                        <FormControl>
+                          <Input 
+                            type="number" 
+                            {...field} 
+                            value={field.value ?? ""} 
+                            onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                            placeholder="12345" 
+                            data-testid="input-create-old-meter-reading" 
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="newMeterId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>New Meter ID</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="NEW-67890" data-testid="input-create-new-meter-id" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="newMeterReading"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>New Meter Reading</FormLabel>
+                        <FormControl>
+                          <Input 
+                            type="number" 
+                            {...field} 
+                            value={field.value ?? ""} 
+                            onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                            placeholder="67890" 
+                            data-testid="input-create-new-meter-reading" 
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="oldGps"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Old GPS Coordinates</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="40.7128,-74.0060" data-testid="input-create-old-gps" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="newGps"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>New GPS Coordinates</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value || ""} placeholder="40.7128,-74.0060" data-testid="input-create-new-gps" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="notes"
+                    render={({ field }) => (
+                      <FormItem className="md:col-span-2">
+                        <FormLabel>Notes</FormLabel>
+                        <FormControl>
+                          <Textarea {...field} value={field.value || ""} placeholder="Additional notes..." data-testid="input-create-notes" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+                <div className="flex gap-4 pt-4">
+                  <Button type="button" variant="outline" onClick={() => {
+                    setIsCreatingWorkOrder(false);
+                    form.reset();
+                  }}>Cancel</Button>
+                  <Button type="submit" disabled={createMutation.isPending} data-testid="button-submit-create-work-order">
+                    {createMutation.isPending ? "Creating..." : "Create Work Order"}
+                  </Button>
+                </div>
+              </form>
+            </Form>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   const WorkOrderFormFields = ({ formInstance }: { formInstance: typeof form }) => (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       <FormField
@@ -1081,32 +1601,10 @@ export default function ProjectWorkOrders() {
                 Project Files
               </Button>
             </Link>
-            <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-              <DialogTrigger asChild>
-                <Button data-testid="button-create-work-order">
-                  <Plus className="h-4 w-4 mr-2" />
-                  New Work Order
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-3xl max-h-[90vh]">
-                <DialogHeader>
-                  <DialogTitle>Create Work Order</DialogTitle>
-                  <DialogDescription>Add a new utility meter work order</DialogDescription>
-                </DialogHeader>
-                <ScrollArea className="max-h-[60vh] pr-4">
-                  <Form {...form}>
-                    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                      <WorkOrderFormFields formInstance={form} />
-                      <DialogFooter className="pt-4">
-                        <Button type="submit" disabled={createMutation.isPending} data-testid="button-submit-work-order">
-                          {createMutation.isPending ? "Creating..." : "Create"}
-                        </Button>
-                      </DialogFooter>
-                    </form>
-                  </Form>
-                </ScrollArea>
-              </DialogContent>
-            </Dialog>
+            <Button onClick={() => setIsCreatingWorkOrder(true)} data-testid="button-create-work-order">
+              <Plus className="h-4 w-4 mr-2" />
+              New Work Order
+            </Button>
           </div>
         )}
       </div>
@@ -1146,24 +1644,113 @@ export default function ProjectWorkOrders() {
         </div>
       )}
 
-      {/* Search Input */}
-      <div className="flex items-center gap-2">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search work orders..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
-            data-testid="input-search-work-orders"
-          />
+      {/* Search and Filters */}
+      <Card>
+        <CardContent className="pt-4">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative flex-1 min-w-[200px] max-w-md">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search work orders..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+                data-testid="input-search-work-orders"
+              />
+            </div>
+            <Button 
+              variant={showFilters ? "secondary" : "outline"} 
+              onClick={() => setShowFilters(!showFilters)}
+              data-testid="button-toggle-filters"
+            >
+              <Filter className="h-4 w-4 mr-2" />
+              Filters
+              {hasActiveFilters && <Badge variant="secondary" className="ml-2">{[selectedStatus !== "all", selectedServiceType !== "all", dateFrom, dateTo].filter(Boolean).length}</Badge>}
+            </Button>
+            {hasActiveFilters && (
+              <Button variant="ghost" onClick={clearFilters} data-testid="button-clear-filters">
+                <X className="h-4 w-4 mr-1" />
+                Clear
+              </Button>
+            )}
+            <div className="flex-1" />
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={exportToCSV} data-testid="button-export-csv">
+                <Download className="h-4 w-4 mr-2" />
+                CSV
+              </Button>
+              <Button variant="outline" onClick={exportToExcel} data-testid="button-export-excel">
+                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                Excel
+              </Button>
+              <Button variant="outline" onClick={exportToPDF} data-testid="button-export-pdf">
+                <FileText className="h-4 w-4 mr-2" />
+                PDF
+              </Button>
+            </div>
+          </div>
+          
+          {showFilters && (
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4 pt-4 border-t">
+              <div>
+                <Label htmlFor="filter-status">Status</Label>
+                <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                  <SelectTrigger id="filter-status" data-testid="select-filter-status">
+                    <SelectValue placeholder="All statuses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    {workOrderStatuses.map((status) => (
+                      <SelectItem key={status.id} value={status.label}>{status.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="filter-service-type">Service Type</Label>
+                <Select value={selectedServiceType} onValueChange={setSelectedServiceType}>
+                  <SelectTrigger id="filter-service-type" data-testid="select-filter-service-type">
+                    <SelectValue placeholder="All types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Service Types</SelectItem>
+                    {serviceTypeEnum.map((type) => (
+                      <SelectItem key={type} value={type}>{type}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="filter-date-from">Created From</Label>
+                <Input
+                  id="filter-date-from"
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  data-testid="input-filter-date-from"
+                />
+              </div>
+              <div>
+                <Label htmlFor="filter-date-to">Created To</Label>
+                <Input
+                  id="filter-date-to"
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  data-testid="input-filter-date-to"
+                />
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Results count */}
+      {(searchQuery || hasActiveFilters) && (
+        <div className="text-sm text-muted-foreground">
+          Showing {filteredAndSortedWorkOrders.length} of {workOrders.length} work orders
         </div>
-        {searchQuery && (
-          <Button variant="ghost" size="sm" onClick={() => setSearchQuery("")}>
-            Clear
-          </Button>
-        )}
-      </div>
+      )}
 
       {workOrders.length === 0 ? (
         <Card>
@@ -1171,7 +1758,7 @@ export default function ProjectWorkOrders() {
             <ClipboardList className="h-12 w-12 text-muted-foreground mb-4" />
             <p className="text-muted-foreground">No work orders yet</p>
             {user?.role !== "customer" && (
-              <Button variant="outline" className="mt-4" onClick={() => setIsCreateOpen(true)}>
+              <Button variant="outline" className="mt-4" onClick={() => setIsCreatingWorkOrder(true)}>
                 <Plus className="h-4 w-4 mr-2" />
                 Create First Work Order
               </Button>
