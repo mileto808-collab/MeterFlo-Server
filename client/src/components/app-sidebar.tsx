@@ -29,6 +29,7 @@ import {
   Search,
   Wrench,
   FileText,
+  Database,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -284,10 +285,24 @@ export function AppSidebar() {
                                 data-testid={`nav-project-${project.id}-import`}
                               >
                                 <Link href={`/projects/${project.id}/import`}>
-                                  <span>Import Data</span>
+                                  <span>File Import</span>
                                 </Link>
                               </SidebarMenuSubButton>
                             </SidebarMenuSubItem>
+                            {role === "admin" && (
+                              <SidebarMenuSubItem>
+                                <SidebarMenuSubButton
+                                  asChild
+                                  isActive={location === `/projects/${project.id}/db-import`}
+                                  data-testid={`nav-project-${project.id}-db-import`}
+                                >
+                                  <Link href={`/projects/${project.id}/db-import`}>
+                                    <Database className="h-3 w-3" />
+                                    <span>Database Import</span>
+                                  </Link>
+                                </SidebarMenuSubButton>
+                              </SidebarMenuSubItem>
+                            )}
                           </SidebarMenuSub>
                         </CollapsibleContent>
                       </SidebarMenuItem>

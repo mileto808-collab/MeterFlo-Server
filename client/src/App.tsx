@@ -16,6 +16,7 @@ import Projects from "@/pages/projects";
 import ProjectForm from "@/pages/project-form";
 import ProjectWorkOrders from "@/pages/project-work-orders";
 import ProjectImport from "@/pages/project-import";
+import ProjectDbImport from "@/pages/project-db-import";
 import ProjectFiles from "@/pages/project-files";
 import WorkOrderFiles from "@/pages/work-order-files";
 import SearchReports from "@/pages/search-reports";
@@ -52,6 +53,7 @@ function AuthenticatedRouter() {
           <Route path="/projects" component={Projects} />
           <Route path="/projects/new" component={ProjectForm} />
           <Route path="/projects/:id/edit" component={ProjectForm} />
+          <Route path="/projects/:projectId/db-import" component={ProjectDbImport} />
           <Route path="/users" component={Users} />
           <Route path="/maintenance" component={Maintenance} />
           <Route path="/settings" component={Settings} />
