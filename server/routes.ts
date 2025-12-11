@@ -1315,6 +1315,146 @@ export async function registerRoutes(
     }
   });
 
+  // === FILE IMPORT CONFIG ROUTES ===
+
+  // Get file import configs for a project
+  app.get("/api/projects/:projectId/file-import-configs", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      
+      if (currentUser?.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      const configs = await storage.getFileImportConfigs(projectId);
+      res.json(configs);
+    } catch (error) {
+      console.error("Error getting file import configs:", error);
+      res.status(500).json({ message: "Failed to get file import configs" });
+    }
+  });
+
+  // Get single file import config
+  app.get("/api/file-import-configs/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const config = await storage.getFileImportConfig(parseInt(req.params.id));
+      if (!config) {
+        return res.status(404).json({ message: "Config not found" });
+      }
+      
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, config.projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      res.json(config);
+    } catch (error) {
+      console.error("Error getting file import config:", error);
+      res.status(500).json({ message: "Failed to get file import config" });
+    }
+  });
+
+  // Create file import config
+  app.post("/api/projects/:projectId/file-import-configs", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      
+      if (currentUser?.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      const config = await storage.createFileImportConfig({
+        ...req.body,
+        projectId,
+      });
+      
+      res.status(201).json(config);
+    } catch (error) {
+      console.error("Error creating file import config:", error);
+      res.status(500).json({ message: "Failed to create file import config" });
+    }
+  });
+
+  // Update file import config
+  app.patch("/api/file-import-configs/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const config = await storage.getFileImportConfig(parseInt(req.params.id));
+      if (!config) {
+        return res.status(404).json({ message: "Config not found" });
+      }
+      
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, config.projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      const updated = await storage.updateFileImportConfig(parseInt(req.params.id), req.body);
+      res.json(updated);
+    } catch (error) {
+      console.error("Error updating file import config:", error);
+      res.status(500).json({ message: "Failed to update file import config" });
+    }
+  });
+
+  // Delete file import config
+  app.delete("/api/file-import-configs/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const config = await storage.getFileImportConfig(parseInt(req.params.id));
+      if (!config) {
+        return res.status(404).json({ message: "Config not found" });
+      }
+      
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+      
+      await storage.deleteFileImportConfig(parseInt(req.params.id));
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error deleting file import config:", error);
+      res.status(500).json({ message: "Failed to delete file import config" });
+    }
+  });
+
+  // Get file import history
+  app.get("/api/file-import-configs/:id/history", isAuthenticated, async (req: any, res) => {
+    try {
+      const config = await storage.getFileImportConfig(parseInt(req.params.id));
+      if (!config) {
+        return res.status(404).json({ message: "Config not found" });
+      }
+      
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, config.projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      const history = await storage.getFileImportHistory(parseInt(req.params.id));
+      res.json(history);
+    } catch (error) {
+      console.error("Error getting file import history:", error);
+      res.status(500).json({ message: "Failed to get file import history" });
+    }
+  });
+
   // Global Work Order Search (across all accessible projects)
   app.get("/api/search/work-orders", isAuthenticated, async (req: any, res) => {
     try {
