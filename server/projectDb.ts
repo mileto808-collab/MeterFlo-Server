@@ -164,6 +164,19 @@ export class ProjectWorkOrderStorage {
     }
   }
 
+  async getWorkOrderByCustomerWoId(customerWoId: string): Promise<ProjectWorkOrder | undefined> {
+    const client = await pool.connect();
+    try {
+      const result = await client.query(
+        `SELECT * FROM "${this.schemaName}".work_orders WHERE customer_wo_id = $1`,
+        [customerWoId]
+      );
+      return result.rows[0] ? this.mapRowToWorkOrder(result.rows[0]) : undefined;
+    } finally {
+      client.release();
+    }
+  }
+
   async createWorkOrder(workOrder: Omit<InsertProjectWorkOrder, "id" | "createdAt" | "updatedAt">): Promise<ProjectWorkOrder> {
     const client = await pool.connect();
     try {
