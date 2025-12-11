@@ -16,8 +16,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Checkbox } from "@/components/ui/checkbox";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Moon, Sun, User, Shield, FolderOpen, Save, FileUp, Users, Plus, Pencil, Trash2 } from "lucide-react";
-import type { Subrole, Permission, WorkOrderStatus } from "@shared/schema";
+import { Moon, Sun, User as UserIcon, Shield, FolderOpen, Save, FileUp, Users, Plus, Pencil, Trash2, UsersRound } from "lucide-react";
+import type { Subrole, Permission, WorkOrderStatus, UserGroup, User } from "@shared/schema";
 
 interface FileSettings {
   maxFileSizeMB: number;
@@ -76,6 +76,16 @@ export default function Settings() {
     isDefault: false,
   });
 
+  // User Groups state
+  const [userGroupDialogOpen, setUserGroupDialogOpen] = useState(false);
+  const [deleteUserGroupDialogOpen, setDeleteUserGroupDialogOpen] = useState(false);
+  const [membersDialogOpen, setMembersDialogOpen] = useState(false);
+  const [selectedUserGroup, setSelectedUserGroup] = useState<UserGroup | null>(null);
+  const [userGroupForm, setUserGroupForm] = useState({
+    name: "",
+    description: "",
+  });
+
   const { data: subroles, isLoading: loadingSubroles } = useQuery<Subrole[]>({
     queryKey: ["/api/subroles"],
     enabled: user?.role === "admin",
@@ -109,6 +119,27 @@ export default function Settings() {
   const { data: workOrderStatusList, isLoading: loadingStatuses } = useQuery<WorkOrderStatus[]>({
     queryKey: ["/api/work-order-statuses"],
     enabled: user?.role === "admin",
+  });
+
+  // User Groups queries
+  const { data: userGroups, isLoading: loadingUserGroups } = useQuery<UserGroup[]>({
+    queryKey: ["/api/user-groups"],
+    enabled: user?.role === "admin",
+  });
+
+  const { data: groupMembers, isLoading: loadingGroupMembers } = useQuery<User[]>({
+    queryKey: ["/api/user-groups", selectedUserGroup?.id, "members"],
+    queryFn: async () => {
+      if (!selectedUserGroup) return [];
+      const res = await fetch(`/api/user-groups/${selectedUserGroup.id}/members`, { credentials: "include" });
+      return res.json();
+    },
+    enabled: !!selectedUserGroup && membersDialogOpen,
+  });
+
+  const { data: allUsers } = useQuery<User[]>({
+    queryKey: ["/api/users"],
+    enabled: user?.role === "admin" && membersDialogOpen,
   });
 
   useEffect(() => {
@@ -225,6 +256,79 @@ export default function Settings() {
     },
   });
 
+  // User Groups mutations
+  const createUserGroupMutation = useMutation({
+    mutationFn: async (data: { name: string; description?: string }) => {
+      return apiRequest("POST", "/api/user-groups", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/user-groups"] });
+      toast({ title: "User group created successfully" });
+      setUserGroupDialogOpen(false);
+      resetUserGroupForm();
+    },
+    onError: () => {
+      toast({ title: "Failed to create user group", variant: "destructive" });
+    },
+  });
+
+  const updateUserGroupMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: { name?: string; description?: string } }) => {
+      return apiRequest("PATCH", `/api/user-groups/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/user-groups"] });
+      toast({ title: "User group updated successfully" });
+      setUserGroupDialogOpen(false);
+      setSelectedUserGroup(null);
+      resetUserGroupForm();
+    },
+    onError: () => {
+      toast({ title: "Failed to update user group", variant: "destructive" });
+    },
+  });
+
+  const deleteUserGroupMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return apiRequest("DELETE", `/api/user-groups/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/user-groups"] });
+      toast({ title: "User group deleted successfully" });
+      setDeleteUserGroupDialogOpen(false);
+      setSelectedUserGroup(null);
+    },
+    onError: () => {
+      toast({ title: "Failed to delete user group", variant: "destructive" });
+    },
+  });
+
+  const addUserToGroupMutation = useMutation({
+    mutationFn: async ({ groupId, userId }: { groupId: number; userId: string }) => {
+      return apiRequest("POST", `/api/user-groups/${groupId}/members`, { userId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/user-groups", selectedUserGroup?.id, "members"] });
+      toast({ title: "User added to group" });
+    },
+    onError: () => {
+      toast({ title: "Failed to add user to group", variant: "destructive" });
+    },
+  });
+
+  const removeUserFromGroupMutation = useMutation({
+    mutationFn: async ({ groupId, userId }: { groupId: number; userId: string }) => {
+      return apiRequest("DELETE", `/api/user-groups/${groupId}/members/${userId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/user-groups", selectedUserGroup?.id, "members"] });
+      toast({ title: "User removed from group" });
+    },
+    onError: () => {
+      toast({ title: "Failed to remove user from group", variant: "destructive" });
+    },
+  });
+
   const resetStatusForm = () => {
     setStatusForm({
       code: "",
@@ -337,6 +441,60 @@ export default function Settings() {
     }));
   };
 
+  // User Group helper functions
+  const resetUserGroupForm = () => {
+    setUserGroupForm({
+      name: "",
+      description: "",
+    });
+  };
+
+  const openCreateUserGroupDialog = () => {
+    setSelectedUserGroup(null);
+    resetUserGroupForm();
+    setUserGroupDialogOpen(true);
+  };
+
+  const openEditUserGroupDialog = (group: UserGroup) => {
+    setSelectedUserGroup(group);
+    setUserGroupForm({
+      name: group.name,
+      description: group.description || "",
+    });
+    setUserGroupDialogOpen(true);
+  };
+
+  const openMembersDialog = (group: UserGroup) => {
+    setSelectedUserGroup(group);
+    setMembersDialogOpen(true);
+  };
+
+  const handleUserGroupSubmit = () => {
+    if (selectedUserGroup) {
+      updateUserGroupMutation.mutate({
+        id: selectedUserGroup.id,
+        data: {
+          name: userGroupForm.name,
+          description: userGroupForm.description || undefined,
+        },
+      });
+    } else {
+      createUserGroupMutation.mutate({
+        name: userGroupForm.name,
+        description: userGroupForm.description || undefined,
+      });
+    }
+  };
+
+  const getUserDisplayName = (u: User) => {
+    if (u.firstName && u.lastName) return `${u.firstName} ${u.lastName}`;
+    return u.username || u.email || u.id;
+  };
+
+  const availableUsersForGroup = allUsers?.filter(
+    u => !groupMembers?.some(m => m.id === u.id)
+  ) || [];
+
   const groupedPermissions = allPermissions?.reduce((acc, perm) => {
     if (!acc[perm.category]) acc[perm.category] = [];
     acc[perm.category].push(perm);
@@ -387,7 +545,7 @@ export default function Settings() {
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
-              <User className="h-5 w-5 text-muted-foreground" />
+              <UserIcon className="h-5 w-5 text-muted-foreground" />
               <CardTitle>Profile</CardTitle>
             </div>
             <CardDescription>Your account information</CardDescription>
@@ -696,6 +854,81 @@ export default function Settings() {
                 )}
               </CardContent>
             </Card>
+
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <UsersRound className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <CardTitle>User Groups</CardTitle>
+                      <CardDescription className="mt-1">Organize users into groups for work order assignment</CardDescription>
+                    </div>
+                  </div>
+                  <Button onClick={openCreateUserGroupDialog} data-testid="button-add-user-group">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Group
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {loadingUserGroups ? (
+                  <p className="text-muted-foreground">Loading...</p>
+                ) : userGroups && userGroups.length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {userGroups.map((group) => (
+                        <TableRow key={group.id} data-testid={`row-user-group-${group.id}`}>
+                          <TableCell className="font-medium">{group.name}</TableCell>
+                          <TableCell className="text-muted-foreground">{group.description || "—"}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={() => openMembersDialog(group)}
+                                data-testid={`button-members-group-${group.id}`}
+                              >
+                                <Users className="h-4 w-4 mr-1" />
+                                Members
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={() => openEditUserGroupDialog(group)}
+                                data-testid={`button-edit-group-${group.id}`}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={() => {
+                                  setSelectedUserGroup(group);
+                                  setDeleteUserGroupDialogOpen(true);
+                                }}
+                                data-testid={`button-delete-group-${group.id}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <p className="text-muted-foreground text-center py-4">No user groups defined yet.</p>
+                )}
+              </CardContent>
+            </Card>
           </>
         )}
 
@@ -953,6 +1186,171 @@ export default function Settings() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* User Group Create/Edit Dialog */}
+      <Dialog open={userGroupDialogOpen} onOpenChange={setUserGroupDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{selectedUserGroup ? "Edit User Group" : "Create User Group"}</DialogTitle>
+            <DialogDescription>
+              {selectedUserGroup ? "Update the group settings" : "Create a new group to organize users for work order assignment"}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="group-name">Group Name</Label>
+              <Input
+                id="group-name"
+                value={userGroupForm.name}
+                onChange={(e) => setUserGroupForm(prev => ({ ...prev, name: e.target.value }))}
+                placeholder="e.g. Field Technicians, Inspectors"
+                className="mt-2"
+                data-testid="input-group-name"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="group-description">Description (optional)</Label>
+              <Input
+                id="group-description"
+                value={userGroupForm.description}
+                onChange={(e) => setUserGroupForm(prev => ({ ...prev, description: e.target.value }))}
+                placeholder="Brief description of this group"
+                className="mt-2"
+                data-testid="input-group-description"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUserGroupDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleUserGroupSubmit}
+              disabled={!userGroupForm.name || createUserGroupMutation.isPending || updateUserGroupMutation.isPending}
+              data-testid="button-save-user-group"
+            >
+              {createUserGroupMutation.isPending || updateUserGroupMutation.isPending ? "Saving..." : selectedUserGroup ? "Update" : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* User Group Delete Dialog */}
+      <AlertDialog open={deleteUserGroupDialogOpen} onOpenChange={setDeleteUserGroupDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete User Group</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{selectedUserGroup?.name}"? This action cannot be undone.
+              Work orders assigned to this group will need to be reassigned.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => selectedUserGroup && deleteUserGroupMutation.mutate(selectedUserGroup.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete-group"
+            >
+              {deleteUserGroupMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* User Group Members Dialog */}
+      <Dialog open={membersDialogOpen} onOpenChange={setMembersDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Manage Group Members</DialogTitle>
+            <DialogDescription>
+              Add or remove users from "{selectedUserGroup?.name}"
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            {/* Add User Section */}
+            <div>
+              <Label>Add User to Group</Label>
+              <div className="flex gap-2 mt-2">
+                <Select
+                  onValueChange={(userId) => {
+                    if (selectedUserGroup) {
+                      addUserToGroupMutation.mutate({ groupId: selectedUserGroup.id, userId });
+                    }
+                  }}
+                  disabled={addUserToGroupMutation.isPending}
+                >
+                  <SelectTrigger className="flex-1" data-testid="select-add-user-to-group">
+                    <SelectValue placeholder="Select a user to add" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableUsersForGroup.length > 0 ? (
+                      availableUsersForGroup.map((u) => (
+                        <SelectItem key={u.id} value={u.id}>
+                          {getUserDisplayName(u)}
+                        </SelectItem>
+                      ))
+                    ) : (
+                      <SelectItem value="_none" disabled>No users available</SelectItem>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Current Members Section */}
+            <div>
+              <Label>Current Members</Label>
+              {loadingGroupMembers ? (
+                <p className="text-muted-foreground mt-2">Loading...</p>
+              ) : groupMembers && groupMembers.length > 0 ? (
+                <div className="mt-2 border rounded-md">
+                  <Table>
+                    <TableBody>
+                      {groupMembers.map((member) => (
+                        <TableRow key={member.id} data-testid={`row-group-member-${member.id}`}>
+                          <TableCell>{getUserDisplayName(member)}</TableCell>
+                          <TableCell className="text-muted-foreground">{member.email || "—"}</TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                if (selectedUserGroup) {
+                                  removeUserFromGroupMutation.mutate({ 
+                                    groupId: selectedUserGroup.id, 
+                                    userId: member.id 
+                                  });
+                                }
+                              }}
+                              disabled={removeUserFromGroupMutation.isPending}
+                              data-testid={`button-remove-member-${member.id}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <p className="text-muted-foreground mt-2 text-center py-4">No members in this group yet.</p>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMembersDialogOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

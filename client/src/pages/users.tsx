@@ -20,7 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import type { User, Project, Subrole } from "@shared/schema";
-import { Search, Users as UsersIcon, Plus, MoreHorizontal, Pencil, Lock, Unlock, Key, Trash2, FolderPlus, X, Folder, ArrowLeft } from "lucide-react";
+import { Search, Users as UsersIcon, Plus, MoreHorizontal, Pencil, Lock, Unlock, Key, Trash2, FolderPlus, X, Folder, ArrowLeft, ArrowUpDown, ArrowUp, ArrowDown, Filter } from "lucide-react";
 import { format } from "date-fns";
 
 type UserWithProjects = User & { assignedProjects?: Project[] };
@@ -62,9 +62,17 @@ type CreateUserForm = z.infer<typeof createUserSchema>;
 type EditUserForm = z.infer<typeof editUserSchema>;
 type ResetPasswordForm = z.infer<typeof resetPasswordSchema>;
 
+type SortField = "name" | "email" | "role" | "status" | "createdAt";
+type SortOrder = "asc" | "desc";
+
 export default function Users() {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [subroleFilter, setSubroleFilter] = useState<string>("all");
+  const [sortField, setSortField] = useState<SortField>("name");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
   const [isCreatingUser, setIsCreatingUser] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [resetPasswordDialogOpen, setResetPasswordDialogOpen] = useState(false);
@@ -256,12 +264,79 @@ export default function Users() {
     },
   });
 
-  const filteredUsers = users?.filter((u) =>
-    u.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.firstName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.lastName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.username?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Filter users based on search and filter criteria
+  const filteredUsers = users?.filter((u) => {
+    // Text search filter
+    const matchesSearch = searchQuery === "" || 
+      u.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      u.firstName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      u.lastName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      u.username?.toLowerCase().includes(searchQuery.toLowerCase());
+    
+    // Role filter
+    const matchesRole = roleFilter === "all" || u.role === roleFilter;
+    
+    // Status filter
+    const matchesStatus = statusFilter === "all" || 
+      (statusFilter === "active" && !u.isLocked) ||
+      (statusFilter === "locked" && u.isLocked);
+    
+    // Subrole/Access level filter
+    const matchesSubrole = subroleFilter === "all" || 
+      (subroleFilter === "none" && !u.subroleId) ||
+      (u.subroleId && String(u.subroleId) === subroleFilter);
+    
+    return matchesSearch && matchesRole && matchesStatus && matchesSubrole;
+  }).sort((a, b) => {
+    let comparison = 0;
+    
+    switch (sortField) {
+      case "name":
+        const nameA = (a.firstName && a.lastName) ? `${a.firstName} ${a.lastName}` : (a.username || "");
+        const nameB = (b.firstName && b.lastName) ? `${b.firstName} ${b.lastName}` : (b.username || "");
+        comparison = nameA.localeCompare(nameB);
+        break;
+      case "email":
+        comparison = (a.email || "").localeCompare(b.email || "");
+        break;
+      case "role":
+        comparison = (a.role || "").localeCompare(b.role || "");
+        break;
+      case "status":
+        comparison = (a.isLocked ? 1 : 0) - (b.isLocked ? 1 : 0);
+        break;
+      case "createdAt":
+        comparison = new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
+        break;
+    }
+    
+    return sortOrder === "asc" ? comparison : -comparison;
+  });
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortOrder("asc");
+    }
+  };
+
+  const getSortIcon = (field: SortField) => {
+    if (sortField !== field) {
+      return <ArrowUpDown className="h-4 w-4 ml-1" />;
+    }
+    return sortOrder === "asc" ? <ArrowUp className="h-4 w-4 ml-1" /> : <ArrowDown className="h-4 w-4 ml-1" />;
+  };
+
+  const clearFilters = () => {
+    setSearchQuery("");
+    setRoleFilter("all");
+    setStatusFilter("all");
+    setSubroleFilter("all");
+  };
+
+  const hasActiveFilters = searchQuery !== "" || roleFilter !== "all" || statusFilter !== "all" || subroleFilter !== "all";
 
   const getInitials = (user: User) => {
     if (user.firstName && user.lastName) return `${user.firstName[0]}${user.lastName[0]}`.toUpperCase();
@@ -657,10 +732,59 @@ export default function Users() {
 
       <Card>
         <CardHeader className="pb-4">
-          <div className="relative max-w-md">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Search users..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9" data-testid="input-search-users" />
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative flex-1 min-w-[200px] max-w-md">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input placeholder="Search users..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9" data-testid="input-search-users" />
+            </div>
+            <Select value={roleFilter} onValueChange={setRoleFilter}>
+              <SelectTrigger className="w-[140px]" data-testid="select-filter-role">
+                <SelectValue placeholder="All Roles" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Roles</SelectItem>
+                <SelectItem value="admin">Admin</SelectItem>
+                <SelectItem value="user">User</SelectItem>
+                <SelectItem value="customer">Customer</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-[140px]" data-testid="select-filter-status">
+                <SelectValue placeholder="All Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="locked">Locked</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={subroleFilter} onValueChange={setSubroleFilter}>
+              <SelectTrigger className="w-[160px]" data-testid="select-filter-subrole">
+                <SelectValue placeholder="All Access Levels" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Access Levels</SelectItem>
+                <SelectItem value="none">No Access Level</SelectItem>
+                {subroles?.map((subrole) => (
+                  <SelectItem key={subrole.id} value={String(subrole.id)}>
+                    {subrole.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {hasActiveFilters && (
+              <Button variant="ghost" size="sm" onClick={clearFilters} data-testid="button-clear-filters">
+                <X className="h-4 w-4 mr-1" />
+                Clear
+              </Button>
+            )}
           </div>
+          {hasActiveFilters && (
+            <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
+              <Filter className="h-4 w-4" />
+              <span>Showing {filteredUsers?.length || 0} of {users?.length || 0} users</span>
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -680,13 +804,68 @@ export default function Users() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>User</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Role</TableHead>
+                    <TableHead>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="flex items-center p-0 h-auto hover:bg-transparent"
+                        onClick={() => handleSort("name")}
+                        data-testid="sort-name"
+                      >
+                        User
+                        {getSortIcon("name")}
+                      </Button>
+                    </TableHead>
+                    <TableHead>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="flex items-center p-0 h-auto hover:bg-transparent"
+                        onClick={() => handleSort("email")}
+                        data-testid="sort-email"
+                      >
+                        Email
+                        {getSortIcon("email")}
+                      </Button>
+                    </TableHead>
+                    <TableHead>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="flex items-center p-0 h-auto hover:bg-transparent"
+                        onClick={() => handleSort("role")}
+                        data-testid="sort-role"
+                      >
+                        Role
+                        {getSortIcon("role")}
+                      </Button>
+                    </TableHead>
                     <TableHead>Access Level</TableHead>
                     <TableHead>Projects</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Joined</TableHead>
+                    <TableHead>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="flex items-center p-0 h-auto hover:bg-transparent"
+                        onClick={() => handleSort("status")}
+                        data-testid="sort-status"
+                      >
+                        Status
+                        {getSortIcon("status")}
+                      </Button>
+                    </TableHead>
+                    <TableHead>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="flex items-center p-0 h-auto hover:bg-transparent"
+                        onClick={() => handleSort("createdAt")}
+                        data-testid="sort-joined"
+                      >
+                        Joined
+                        {getSortIcon("createdAt")}
+                      </Button>
+                    </TableHead>
                     <TableHead>Last Login</TableHead>
                     <TableHead className="w-[80px]">Actions</TableHead>
                   </TableRow>
