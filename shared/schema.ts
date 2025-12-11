@@ -336,6 +336,7 @@ export const insertProjectWorkOrderSchema = z.object({
   oldGps: z.string().max(100).optional().nullable(),
   newGps: z.string().max(100).optional().nullable(),
   status: z.string().max(50).optional().nullable(),
+  scheduledDate: z.string().optional().nullable(),
   assignedTo: z.string().optional().nullable(),
   createdBy: z.string().optional().nullable(),
   notes: z.string().optional().nullable(),
