@@ -640,8 +640,8 @@ export async function registerRoutes(
       // Get users assigned to this project
       const projectUsers = await storage.getProjectUsers(projectId);
       
-      // Get all subroles (groups)
-      const subroles = await storage.getAllSubroles();
+      // Get all user groups
+      const userGroupsList = await storage.getAllUserGroups();
       
       // Format users for dropdown
       const users = projectUsers.map(user => ({
@@ -653,12 +653,12 @@ export async function registerRoutes(
         username: user.username,
       }));
       
-      // Format subroles as groups for dropdown
-      const groups = subroles.map(subrole => ({
+      // Format user groups for dropdown
+      const groups = userGroupsList.map(group => ({
         type: "group" as const,
-        id: `group:${subrole.key}`,
-        label: subrole.label,
-        key: subrole.key,
+        id: `group:${group.id}`,
+        label: group.name,
+        key: group.name,
       }));
       
       res.json({ users, groups });
@@ -2419,6 +2419,178 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error deleting work order status:", error);
       res.status(500).json({ message: "Failed to delete work order status" });
+    }
+  });
+
+  // User Groups API Routes
+  app.get("/api/user-groups", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const groups = await storage.getAllUserGroups();
+      res.json(groups);
+    } catch (error) {
+      console.error("Error fetching user groups:", error);
+      res.status(500).json({ message: "Failed to fetch user groups" });
+    }
+  });
+
+  app.get("/api/user-groups/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const id = parseInt(req.params.id);
+      const group = await storage.getUserGroup(id);
+      
+      if (!group) {
+        return res.status(404).json({ message: "Group not found" });
+      }
+      
+      res.json(group);
+    } catch (error) {
+      console.error("Error fetching user group:", error);
+      res.status(500).json({ message: "Failed to fetch user group" });
+    }
+  });
+
+  app.post("/api/user-groups", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const { name, description } = req.body;
+      
+      if (!name || !name.trim()) {
+        return res.status(400).json({ message: "Group name is required" });
+      }
+      
+      const group = await storage.createUserGroup({ name: name.trim(), description });
+      res.status(201).json(group);
+    } catch (error: any) {
+      console.error("Error creating user group:", error);
+      if (error.code === "23505") {
+        return res.status(400).json({ message: "Group name already exists" });
+      }
+      res.status(500).json({ message: "Failed to create user group" });
+    }
+  });
+
+  app.patch("/api/user-groups/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const id = parseInt(req.params.id);
+      const { name, description } = req.body;
+      
+      const group = await storage.updateUserGroup(id, { 
+        ...(name !== undefined && { name: name.trim() }),
+        ...(description !== undefined && { description }),
+      });
+      
+      if (!group) {
+        return res.status(404).json({ message: "Group not found" });
+      }
+      
+      res.json(group);
+    } catch (error: any) {
+      console.error("Error updating user group:", error);
+      if (error.code === "23505") {
+        return res.status(400).json({ message: "Group name already exists" });
+      }
+      res.status(500).json({ message: "Failed to update user group" });
+    }
+  });
+
+  app.delete("/api/user-groups/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const id = parseInt(req.params.id);
+      const group = await storage.getUserGroup(id);
+      
+      if (!group) {
+        return res.status(404).json({ message: "Group not found" });
+      }
+      
+      await storage.deleteUserGroup(id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting user group:", error);
+      res.status(500).json({ message: "Failed to delete user group" });
+    }
+  });
+
+  // User Group Members API Routes
+  app.get("/api/user-groups/:id/members", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const groupId = parseInt(req.params.id);
+      const members = await storage.getGroupMembers(groupId);
+      res.json(members);
+    } catch (error) {
+      console.error("Error fetching group members:", error);
+      res.status(500).json({ message: "Failed to fetch group members" });
+    }
+  });
+
+  app.post("/api/user-groups/:id/members", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const groupId = parseInt(req.params.id);
+      const { userId } = req.body;
+      
+      if (!userId) {
+        return res.status(400).json({ message: "User ID is required" });
+      }
+      
+      const member = await storage.addUserToGroup(groupId, userId);
+      res.status(201).json(member);
+    } catch (error: any) {
+      console.error("Error adding user to group:", error);
+      if (error.code === "23505") {
+        return res.status(400).json({ message: "User is already a member of this group" });
+      }
+      res.status(500).json({ message: "Failed to add user to group" });
+    }
+  });
+
+  app.delete("/api/user-groups/:groupId/members/:userId", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const groupId = parseInt(req.params.groupId);
+      const userId = req.params.userId;
+      
+      await storage.removeUserFromGroup(groupId, userId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error removing user from group:", error);
+      res.status(500).json({ message: "Failed to remove user from group" });
     }
   });
 
