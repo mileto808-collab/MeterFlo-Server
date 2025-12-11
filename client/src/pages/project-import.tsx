@@ -26,7 +26,25 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { FileUp, CheckCircle, AlertCircle, ShieldAlert, Upload, FileSpreadsheet, FileJson, Info, Clock, Play, Trash2, Edit, Plus, Calendar, FolderSync } from "lucide-react";
+import { FileUp, CheckCircle, AlertCircle, ShieldAlert, Upload, FileSpreadsheet, FileJson, Info, Clock, Play, Trash2, Edit, Plus, Calendar, FolderSync, Settings } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import type { Project, FileImportConfig } from "@shared/schema";
 import { Link } from "wouter";
 import { format } from "date-fns";
@@ -135,6 +153,20 @@ export default function ProjectImport() {
   const [previewData, setPreviewData] = useState<ParsedWorkOrder[]>([]);
   const [fileName, setFileName] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Scheduled import dialog state
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [editingConfig, setEditingConfig] = useState<FileImportConfig | null>(null);
+  const [deleteConfigId, setDeleteConfigId] = useState<number | null>(null);
+  const [scheduleForm, setScheduleForm] = useState({
+    name: "",
+    delimiter: ",",
+    hasHeader: true,
+    scheduleFrequency: "daily",
+    customCronExpression: "",
+    isEnabled: true,
+    columnMapping: { ...defaultColumnMapping } as Record<string, string>,
+  });
 
   const { data: project, isLoading, error: projectError } = useQuery<Project>({
     queryKey: ["/api/projects", projectId],
@@ -181,6 +213,104 @@ export default function ProjectImport() {
       }
     },
   });
+
+  const createConfigMutation = useMutation({
+    mutationFn: async (data: typeof scheduleForm) => {
+      const response = await apiRequest("POST", `/api/projects/${projectId}/file-import-configs`, data);
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Schedule created successfully" });
+      refetchConfigs();
+      setScheduleDialogOpen(false);
+      resetScheduleForm();
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to create schedule", description: error?.message, variant: "destructive" });
+    },
+  });
+
+  const updateConfigMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: typeof scheduleForm }) => {
+      const response = await apiRequest("PATCH", `/api/file-import-configs/${id}`, data);
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Schedule updated successfully" });
+      refetchConfigs();
+      setScheduleDialogOpen(false);
+      resetScheduleForm();
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to update schedule", description: error?.message, variant: "destructive" });
+    },
+  });
+
+  const deleteConfigMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiRequest("DELETE", `/api/file-import-configs/${id}`);
+    },
+    onSuccess: () => {
+      toast({ title: "Schedule deleted successfully" });
+      refetchConfigs();
+      setDeleteConfigId(null);
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to delete schedule", description: error?.message, variant: "destructive" });
+    },
+  });
+
+  const toggleConfigMutation = useMutation({
+    mutationFn: async ({ id, isEnabled }: { id: number; isEnabled: boolean }) => {
+      const response = await apiRequest("PATCH", `/api/file-import-configs/${id}`, { isEnabled });
+      return response.json();
+    },
+    onSuccess: () => {
+      refetchConfigs();
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to update schedule", description: error?.message, variant: "destructive" });
+    },
+  });
+
+  const resetScheduleForm = () => {
+    setEditingConfig(null);
+    setScheduleForm({
+      name: "",
+      delimiter: ",",
+      hasHeader: true,
+      scheduleFrequency: "daily",
+      customCronExpression: "",
+      isEnabled: true,
+      columnMapping: { ...defaultColumnMapping } as Record<string, string>,
+    });
+  };
+
+  const openEditConfig = (config: FileImportConfig) => {
+    setEditingConfig(config);
+    setScheduleForm({
+      name: config.name,
+      delimiter: config.delimiter || ",",
+      hasHeader: config.hasHeader !== false,
+      scheduleFrequency: config.scheduleFrequency || "daily",
+      customCronExpression: config.customCronExpression || "",
+      isEnabled: config.isEnabled !== false,
+      columnMapping: { ...defaultColumnMapping, ...(config.columnMapping as Record<string, string>) },
+    });
+    setScheduleDialogOpen(true);
+  };
+
+  const handleScheduleSubmit = () => {
+    if (!scheduleForm.name.trim()) {
+      toast({ title: "Name is required", variant: "destructive" });
+      return;
+    }
+    if (editingConfig) {
+      updateConfigMutation.mutate({ id: editingConfig.id, data: scheduleForm });
+    } else {
+      createConfigMutation.mutate(scheduleForm);
+    }
+  };
 
   const resetFileState = () => {
     setRawData([]);
@@ -819,6 +949,17 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,M
                       View FTP Files
                     </Button>
                   </Link>
+                  <Button 
+                    size="sm" 
+                    onClick={() => {
+                      resetScheduleForm();
+                      setScheduleDialogOpen(true);
+                    }}
+                    data-testid="button-new-schedule"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    New Schedule
+                  </Button>
                 </div>
               </div>
             </CardHeader>
@@ -827,8 +968,18 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,M
                 <div className="text-center py-8 text-muted-foreground">
                   <Clock className="h-12 w-12 mx-auto mb-4 opacity-50" />
                   <p>No scheduled imports configured</p>
-                  <p className="text-sm mb-4">Upload files to the FTP directory and they will be available for manual import above.</p>
-                  <p className="text-sm">Scheduled import configuration is coming soon.</p>
+                  <p className="text-sm mb-4">Upload files to the FTP directory and configure a schedule to automate imports.</p>
+                  <Button 
+                    variant="outline"
+                    onClick={() => {
+                      resetScheduleForm();
+                      setScheduleDialogOpen(true);
+                    }}
+                    data-testid="button-create-first-schedule"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Create Your First Schedule
+                  </Button>
                 </div>
               ) : (
                 <Table>
@@ -868,32 +1019,53 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,M
                           )}
                         </TableCell>
                         <TableCell>
-                          <Badge variant={config.isEnabled ? "default" : "secondary"}>
-                            {config.isEnabled ? "Active" : "Disabled"}
-                          </Badge>
+                          <Switch
+                            checked={config.isEnabled === true}
+                            onCheckedChange={(checked) => toggleConfigMutation.mutate({ id: config.id, isEnabled: checked })}
+                            disabled={toggleConfigMutation.isPending}
+                            data-testid={`switch-enabled-${config.id}`}
+                          />
                         </TableCell>
                         <TableCell className="text-right">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={async () => {
-                              try {
-                                const response = await apiRequest("POST", `/api/file-import-configs/${config.id}/run`);
-                                const result = await response.json();
-                                if (result.success) {
-                                  toast({ title: `Import completed: ${result.imported} imported, ${result.failed} failed` });
-                                } else {
-                                  toast({ title: "Import failed", description: result.error, variant: "destructive" });
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={async () => {
+                                try {
+                                  const response = await apiRequest("POST", `/api/file-import-configs/${config.id}/run`);
+                                  const result = await response.json();
+                                  if (result.success) {
+                                    toast({ title: `Import completed: ${result.imported} imported, ${result.failed} failed` });
+                                  } else {
+                                    toast({ title: "Import failed", description: result.error, variant: "destructive" });
+                                  }
+                                  refetchConfigs();
+                                } catch (error: any) {
+                                  toast({ title: "Failed to run import", variant: "destructive" });
                                 }
-                                refetchConfigs();
-                              } catch (error: any) {
-                                toast({ title: "Failed to run import", variant: "destructive" });
-                              }
-                            }}
-                            data-testid={`button-run-${config.id}`}
-                          >
-                            <Play className="h-4 w-4" />
-                          </Button>
+                              }}
+                              data-testid={`button-run-${config.id}`}
+                            >
+                              <Play className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => openEditConfig(config)}
+                              data-testid={`button-edit-${config.id}`}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setDeleteConfigId(config.id)}
+                              data-testid={`button-delete-${config.id}`}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -946,6 +1118,175 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,M
           </CardContent>
         </Card>
       )}
+
+      {/* Schedule Dialog */}
+      <Dialog open={scheduleDialogOpen} onOpenChange={(open) => {
+        if (!open) resetScheduleForm();
+        setScheduleDialogOpen(open);
+      }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingConfig ? "Edit Schedule" : "Create Schedule"}</DialogTitle>
+            <DialogDescription>
+              Configure an automatic import schedule for files in the FTP directory
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="schedule-name">Name</Label>
+              <Input
+                id="schedule-name"
+                value={scheduleForm.name}
+                onChange={(e) => setScheduleForm(prev => ({ ...prev, name: e.target.value }))}
+                placeholder="Daily Import"
+                data-testid="input-schedule-name"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="schedule-delimiter">Delimiter</Label>
+                <Select
+                  value={scheduleForm.delimiter}
+                  onValueChange={(value) => setScheduleForm(prev => ({ ...prev, delimiter: value }))}
+                >
+                  <SelectTrigger id="schedule-delimiter" data-testid="select-schedule-delimiter">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value=",">Comma (,)</SelectItem>
+                    <SelectItem value=";">Semicolon (;)</SelectItem>
+                    <SelectItem value="\t">Tab</SelectItem>
+                    <SelectItem value="|">Pipe (|)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="schedule-frequency">Frequency</Label>
+                <Select
+                  value={scheduleForm.scheduleFrequency}
+                  onValueChange={(value) => setScheduleForm(prev => ({ ...prev, scheduleFrequency: value }))}
+                >
+                  <SelectTrigger id="schedule-frequency" data-testid="select-schedule-frequency">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="manual">Manual Only</SelectItem>
+                    <SelectItem value="hourly">Hourly</SelectItem>
+                    <SelectItem value="every_6_hours">Every 6 Hours</SelectItem>
+                    <SelectItem value="every_12_hours">Every 12 Hours</SelectItem>
+                    <SelectItem value="daily">Daily</SelectItem>
+                    <SelectItem value="weekly">Weekly</SelectItem>
+                    <SelectItem value="custom">Custom Cron</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {scheduleForm.scheduleFrequency === "custom" && (
+              <div className="space-y-2">
+                <Label htmlFor="cron-expression">Cron Expression</Label>
+                <Input
+                  id="cron-expression"
+                  value={scheduleForm.customCronExpression}
+                  onChange={(e) => setScheduleForm(prev => ({ ...prev, customCronExpression: e.target.value }))}
+                  placeholder="0 */6 * * *"
+                  data-testid="input-cron-expression"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Example: 0 9 * * * (daily at 9am), */30 * * * * (every 30 minutes)
+                </p>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={scheduleForm.hasHeader}
+                onCheckedChange={(checked) => setScheduleForm(prev => ({ ...prev, hasHeader: checked }))}
+                id="schedule-has-header"
+                data-testid="switch-schedule-has-header"
+              />
+              <Label htmlFor="schedule-has-header">First row contains headers</Label>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Switch
+                checked={scheduleForm.isEnabled}
+                onCheckedChange={(checked) => setScheduleForm(prev => ({ ...prev, isEnabled: checked }))}
+                id="schedule-enabled"
+                data-testid="switch-schedule-enabled"
+              />
+              <Label htmlFor="schedule-enabled">Enable schedule</Label>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Column Mapping</Label>
+              <p className="text-xs text-muted-foreground mb-2">
+                Enter the column names from your CSV/Excel files that map to each field
+              </p>
+              <div className="grid grid-cols-2 gap-2 max-h-[300px] overflow-y-auto">
+                {Object.keys(defaultColumnMapping).map((field) => (
+                  <div key={field} className="flex items-center gap-2">
+                    <Label className="min-w-[120px] text-sm">{field}</Label>
+                    <Input
+                      value={scheduleForm.columnMapping[field] || ""}
+                      onChange={(e) => setScheduleForm(prev => ({
+                        ...prev,
+                        columnMapping: { ...prev.columnMapping, [field]: e.target.value }
+                      }))}
+                      placeholder={field}
+                      className="h-8 text-sm"
+                      data-testid={`input-mapping-${field}`}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setScheduleDialogOpen(false);
+                resetScheduleForm();
+              }}
+              data-testid="button-cancel-schedule"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleScheduleSubmit}
+              disabled={createConfigMutation.isPending || updateConfigMutation.isPending}
+              data-testid="button-save-schedule"
+            >
+              {(createConfigMutation.isPending || updateConfigMutation.isPending) ? "Saving..." : "Save Schedule"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteConfigId !== null} onOpenChange={(open) => !open && setDeleteConfigId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Schedule</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this scheduled import? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteConfigId && deleteConfigMutation.mutate(deleteConfigId)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
