@@ -27,7 +27,7 @@ class ImportScheduler {
     }
   }
 
-  private getCronExpression(frequency: string): string | null {
+  private getCronExpression(frequency: string, customCron?: string | null): string | null {
     switch (frequency) {
       case "manual":
         return null;
@@ -49,6 +49,8 @@ class ImportScheduler {
         return "0 0 * * 0";
       case "monthly":
         return "0 0 1 * *";
+      case "custom":
+        return customCron || null;
       default:
         return null;
     }
@@ -58,6 +60,7 @@ class ImportScheduler {
     id: number;
     name: string;
     scheduleFrequency: string | null;
+    customCronExpression?: string | null;
     externalDbConfigId: number;
   }) {
     this.cancelSchedule(config.id);
@@ -66,7 +69,7 @@ class ImportScheduler {
       return;
     }
 
-    const cronExpression = this.getCronExpression(config.scheduleFrequency);
+    const cronExpression = this.getCronExpression(config.scheduleFrequency, config.customCronExpression);
     if (!cronExpression) {
       console.warn(`[ImportScheduler] Invalid schedule frequency for config ${config.id}: ${config.scheduleFrequency}`);
       return;

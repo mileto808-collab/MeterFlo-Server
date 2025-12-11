@@ -83,6 +83,7 @@ type ImportConfigForm = {
   sqlQuery: string;
   columnMapping: Record<string, string>;
   scheduleFrequency: string;
+  customCronExpression: string;
   isEnabled: boolean;
 };
 
@@ -131,6 +132,7 @@ const scheduleFrequencies = [
   { value: "daily", label: "Daily" },
   { value: "weekly", label: "Weekly" },
   { value: "monthly", label: "Monthly" },
+  { value: "custom", label: "Custom Cron Expression" },
 ];
 
 const defaultConnectionForm: ConnectionForm = {
@@ -149,6 +151,7 @@ const defaultImportConfigForm: ImportConfigForm = {
   sqlQuery: "SELECT * FROM your_table LIMIT 100",
   columnMapping: {},
   scheduleFrequency: "manual",
+  customCronExpression: "",
   isEnabled: true,
 };
 
@@ -433,6 +436,7 @@ export default function ProjectDbImport() {
       sqlQuery: config.sqlQuery,
       columnMapping: (config.columnMapping as Record<string, string>) || {},
       scheduleFrequency: config.scheduleFrequency,
+      customCronExpression: config.customCronExpression || "",
       isEnabled: config.isEnabled || false,
     });
     setSelectedDbConfigId(config.externalDbConfigId);
@@ -970,6 +974,22 @@ export default function ProjectDbImport() {
                 <Label htmlFor="import-enabled">Enabled</Label>
               </div>
             </div>
+            
+            {importConfigForm.scheduleFrequency === "custom" && (
+              <div className="grid gap-2">
+                <Label htmlFor="custom-cron">Custom Cron Expression</Label>
+                <Input
+                  id="custom-cron"
+                  value={importConfigForm.customCronExpression}
+                  onChange={(e) => setImportConfigForm({ ...importConfigForm, customCronExpression: e.target.value })}
+                  placeholder="*/5 * * * * (every 5 minutes)"
+                  data-testid="input-custom-cron"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Format: minute hour day-of-month month day-of-week. Examples: "0 */2 * * *" (every 2 hours), "30 8 * * 1-5" (8:30 AM weekdays)
+                </p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowImportConfigDialog(false)}>Cancel</Button>
