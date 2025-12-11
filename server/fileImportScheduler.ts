@@ -145,6 +145,9 @@ class FileImportScheduler {
 
       const historyEntry = await storage.createFileImportHistoryEntry(configId, latestFile.name, "running");
 
+      // Track the actual filename (might be renamed after processing)
+      let processedFileName = latestFile.name;
+
       try {
         const fileContent = fs.readFileSync(filePath);
         let rows: Record<string, any>[] = [];
@@ -155,7 +158,31 @@ class FileImportScheduler {
           const sheetName = workbook.SheetNames[0];
           const sheet = workbook.Sheets[sheetName];
           rows = XLSX.utils.sheet_to_json(sheet, { raw: false });
+        } else if (ext === 'json') {
+          // Parse JSON file
+          const text = fileContent.toString("utf-8");
+          try {
+            const parsed = JSON.parse(text);
+            // Handle both array of objects and object with data array
+            if (Array.isArray(parsed)) {
+              rows = parsed;
+            } else if (parsed.data && Array.isArray(parsed.data)) {
+              rows = parsed.data;
+            } else if (parsed.workOrders && Array.isArray(parsed.workOrders)) {
+              rows = parsed.workOrders;
+            } else if (parsed.records && Array.isArray(parsed.records)) {
+              rows = parsed.records;
+            } else {
+              // Single object - wrap in array
+              rows = [parsed];
+            }
+          } catch (parseError: any) {
+            await storage.updateFileImportHistoryEntry(historyEntry.id, "failed", 0, 0, "Invalid JSON format");
+            await storage.updateFileImportConfigLastRun(configId, "failed", "Invalid JSON format", 0, latestFile.name);
+            return { success: false, imported: 0, failed: 0, error: "Invalid JSON format", fileName: latestFile.name };
+          }
         } else {
+          // CSV parsing
           const delimiter = importConfig.delimiter || ",";
           const hasHeader = importConfig.hasHeader !== false;
           const text = fileContent.toString("utf-8");
@@ -222,15 +249,26 @@ class FileImportScheduler {
               mappedData.newMeterReading = parseInt(String(mappedData.newMeterReading)) || null;
             }
 
-            mappedData.status = mappedData.status || "pending";
-            mappedData.priority = mappedData.priority || "medium";
+            // Set default status and createdBy
             mappedData.createdBy = "file_import";
 
             const existingWo = await workOrderStorage.getWorkOrderByCustomerWoId(mappedData.customerWoId);
             if (existingWo) {
               await workOrderStorage.updateWorkOrder(existingWo.id, mappedData);
             } else {
-              const validated = insertProjectWorkOrderSchema.parse(mappedData);
+              // Create clean data with explicit status (must be string, not null)
+              const cleanedData: Record<string, any> = { ...mappedData };
+              // Ensure status is a string
+              cleanedData.status = typeof cleanedData.status === 'string' && cleanedData.status.length > 0 
+                ? cleanedData.status 
+                : "Open";
+              // Remove any null values that might cause validation issues
+              Object.keys(cleanedData).forEach(key => {
+                if (cleanedData[key] === null) {
+                  delete cleanedData[key];
+                }
+              });
+              const validated = insertProjectWorkOrderSchema.parse(cleanedData);
               await workOrderStorage.createWorkOrder(validated);
             }
             imported++;
@@ -241,19 +279,38 @@ class FileImportScheduler {
         }
 
         const status = failed === 0 ? "success" : (imported > 0 ? "partial" : "failed");
-        const message = `Imported ${imported} records, ${failed} failed from ${latestFile.name}`;
         const duration = Date.now() - startTime;
 
+        // Rename processed file with _completed_YYYY-MM-DD suffix if any records were imported
+        if (imported > 0) {
+          try {
+            const dateStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+            const fileExt = latestFile.name.includes('.') ? '.' + latestFile.name.split('.').pop() : '';
+            const baseName = latestFile.name.replace(/\.[^.]+$/, '');
+            const newFileName = `${baseName}_completed_${dateStr}${fileExt}`;
+            const newFilePath = filePath.replace(latestFile.name, newFileName);
+            
+            fs.renameSync(filePath, newFilePath);
+            processedFileName = newFileName; // Update the tracked filename after successful rename
+            console.log(`[FileImportScheduler] Renamed processed file to: ${newFileName}`);
+          } catch (renameError: any) {
+            // If rename fails, still use original filename to prevent reprocessing
+            console.warn(`[FileImportScheduler] Could not rename file (will still mark as processed): ${renameError.message}`);
+          }
+        }
+
+        const message = `Imported ${imported} records, ${failed} failed from ${processedFileName}`;
         await storage.updateFileImportHistoryEntry(historyEntry.id, status, imported, failed, errors.length > 0 ? errors.slice(0, 10).join("\n") : null);
-        await storage.updateFileImportConfigLastRun(configId, status, message, imported, latestFile.name);
+        await storage.updateFileImportConfigLastRun(configId, status, message, imported, processedFileName);
 
         console.log(`[FileImportScheduler] File import "${importConfig.name}" completed: ${message} (${duration}ms)`);
 
         return { success: true, imported, failed, fileName: latestFile.name };
       } catch (importError: any) {
+        // Use processedFileName (which may have been renamed) to ensure we don't reprocess
         await storage.updateFileImportHistoryEntry(historyEntry.id, "failed", 0, 0, importError.message);
-        await storage.updateFileImportConfigLastRun(configId, "failed", importError.message, 0, latestFile.name);
-        return { success: false, imported: 0, failed: 0, error: importError.message, fileName: latestFile.name };
+        await storage.updateFileImportConfigLastRun(configId, "failed", importError.message, 0, processedFileName);
+        return { success: false, imported: 0, failed: 0, error: importError.message, fileName: processedFileName };
       }
     } catch (error: any) {
       console.error(`[FileImportScheduler] Error running file import ${configId}:`, error);

@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, Link, useLocation } from "wouter";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -45,7 +45,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, ArrowLeft } from "lucide-react";
+import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, ArrowLeft, Search, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import type { Project, WorkOrderStatus } from "@shared/schema";
 import { insertProjectWorkOrderSchema, serviceTypeEnum } from "@shared/schema";
 import type { ProjectWorkOrder } from "../../../server/projectDb";
@@ -65,6 +65,9 @@ export default function ProjectWorkOrders() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingWorkOrder, setEditingWorkOrder] = useState<ProjectWorkOrder | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortColumn, setSortColumn] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
   const form = useForm<WorkOrderFormData>({
     resolver: zodResolver(workOrderFormSchema),
@@ -113,6 +116,7 @@ export default function ProjectWorkOrders() {
       oldGps: "",
       newGps: "",
       notes: "",
+      status: "Open",
     },
   });
 
@@ -170,6 +174,7 @@ export default function ProjectWorkOrders() {
         oldGps: editingWorkOrder.oldGps || "",
         newGps: editingWorkOrder.newGps || "",
         notes: editingWorkOrder.notes || "",
+        status: editingWorkOrder.status || "Open",
       });
     }
   }, [editingWorkOrder, editForm]);
@@ -304,6 +309,62 @@ export default function ProjectWorkOrders() {
         return <Badge variant="outline">{serviceType || "Unknown"}</Badge>;
     }
   };
+
+  const handleSort = (column: string) => {
+    if (sortColumn === column) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortColumn(column);
+      setSortDirection("asc");
+    }
+  };
+
+  const getSortIcon = (column: string) => {
+    if (sortColumn !== column) {
+      return <ArrowUpDown className="ml-1 h-3 w-3 inline opacity-50" />;
+    }
+    return sortDirection === "asc" 
+      ? <ArrowUp className="ml-1 h-3 w-3 inline" />
+      : <ArrowDown className="ml-1 h-3 w-3 inline" />;
+  };
+
+  const filteredAndSortedWorkOrders = useMemo(() => {
+    let result = [...workOrders];
+    
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter(wo => {
+        const fields = [
+          wo.customerWoId,
+          wo.customerName,
+          wo.address,
+          wo.city,
+          wo.route,
+          wo.zone,
+          wo.oldMeterId,
+          wo.newMeterId,
+          wo.status,
+          wo.serviceType
+        ];
+        return fields.some(field => 
+          field && String(field).toLowerCase().includes(query)
+        );
+      });
+    }
+    
+    // Sort
+    if (sortColumn) {
+      result.sort((a, b) => {
+        const aVal = (a as any)[sortColumn] || "";
+        const bVal = (b as any)[sortColumn] || "";
+        const comparison = String(aVal).localeCompare(String(bVal));
+        return sortDirection === "asc" ? comparison : -comparison;
+      });
+    }
+    
+    return result;
+  }, [workOrders, searchQuery, sortColumn, sortDirection]);
 
   if (!projectId) {
     return (
@@ -654,6 +715,68 @@ export default function ProjectWorkOrders() {
                     )}
                   />
                 </div>
+                
+                {/* Audit Fields (Read-Only) */}
+                <div className="border-t pt-4 mt-4">
+                  <h3 className="text-sm font-medium text-muted-foreground mb-3">Audit Information</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">Assigned To</label>
+                      <Input 
+                        value={editingWorkOrder.assignedTo || "-"} 
+                        disabled 
+                        className="mt-1 bg-muted"
+                        data-testid="text-assigned-to"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">Created By</label>
+                      <Input 
+                        value={editingWorkOrder.createdBy || "-"} 
+                        disabled 
+                        className="mt-1 bg-muted"
+                        data-testid="text-created-by"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">Created At</label>
+                      <Input 
+                        value={editingWorkOrder.createdAt ? new Date(editingWorkOrder.createdAt).toLocaleString() : "-"} 
+                        disabled 
+                        className="mt-1 bg-muted"
+                        data-testid="text-created-at"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">Updated By</label>
+                      <Input 
+                        value={editingWorkOrder.updatedBy || "-"} 
+                        disabled 
+                        className="mt-1 bg-muted"
+                        data-testid="text-updated-by"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">Updated At</label>
+                      <Input 
+                        value={editingWorkOrder.updatedAt ? new Date(editingWorkOrder.updatedAt).toLocaleString() : "-"} 
+                        disabled 
+                        className="mt-1 bg-muted"
+                        data-testid="text-updated-at"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">Completed At</label>
+                      <Input 
+                        value={editingWorkOrder.completedAt ? new Date(editingWorkOrder.completedAt).toLocaleString() : "-"} 
+                        disabled 
+                        className="mt-1 bg-muted"
+                        data-testid="text-completed-at"
+                      />
+                    </div>
+                  </div>
+                </div>
+                
                 <div className="flex gap-4 pt-4">
                   <Button type="button" variant="outline" onClick={() => setEditingWorkOrder(null)}>Cancel</Button>
                   <Button type="submit" disabled={updateMutation.isPending} data-testid="button-update-work-order">
@@ -1023,6 +1146,25 @@ export default function ProjectWorkOrders() {
         </div>
       )}
 
+      {/* Search Input */}
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search work orders..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10"
+            data-testid="input-search-work-orders"
+          />
+        </div>
+        {searchQuery && (
+          <Button variant="ghost" size="sm" onClick={() => setSearchQuery("")}>
+            Clear
+          </Button>
+        )}
+      </div>
+
       {workOrders.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
@@ -1043,18 +1185,38 @@ export default function ProjectWorkOrders() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>WO ID</TableHead>
-                    <TableHead>Address</TableHead>
-                    <TableHead>Service</TableHead>
-                    <TableHead>Route</TableHead>
-                    <TableHead>Zone</TableHead>
-                    <TableHead>Old Meter</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort("customerWoId")}>
+                      WO ID {getSortIcon("customerWoId")}
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort("address")}>
+                      Address {getSortIcon("address")}
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort("serviceType")}>
+                      Service {getSortIcon("serviceType")}
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort("route")}>
+                      Route {getSortIcon("route")}
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort("zone")}>
+                      Zone {getSortIcon("zone")}
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort("oldMeterId")}>
+                      Old Meter {getSortIcon("oldMeterId")}
+                    </TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort("status")}>
+                      Status {getSortIcon("status")}
+                    </TableHead>
                     {user?.role !== "customer" && <TableHead>Actions</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {workOrders.map((workOrder) => (
+                  {filteredAndSortedWorkOrders.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                        No work orders match your search
+                      </TableCell>
+                    </TableRow>
+                  ) : filteredAndSortedWorkOrders.map((workOrder) => (
                     <TableRow key={workOrder.id} data-testid={`row-work-order-${workOrder.id}`}>
                       <TableCell className="font-medium" data-testid={`text-wo-id-${workOrder.id}`}>
                         {workOrder.customerWoId || "-"}
