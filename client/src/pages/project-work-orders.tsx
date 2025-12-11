@@ -43,9 +43,30 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import type { Project, WorkOrderStatus } from "@shared/schema";
 import { insertProjectWorkOrderSchema, serviceTypeEnum } from "@shared/schema";
 import type { ProjectWorkOrder } from "../../../server/projectDb";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Users, ChevronDown } from "lucide-react";
+
+type Assignee = {
+  type: "user" | "group";
+  id: string;
+  label: string;
+  username?: string;
+  key?: string;
+};
+
+type AssigneesResponse = {
+  users: Assignee[];
+  groups: Assignee[];
+};
 
 const workOrderFormSchema = insertProjectWorkOrderSchema.extend({
   email: z.string().optional().nullable().or(z.literal("")),
+  assignedTo: z.string().optional().nullable(),
 });
 
 type WorkOrderFormData = z.infer<typeof workOrderFormSchema>;
@@ -90,6 +111,7 @@ export default function ProjectWorkOrders() {
       oldGps: "",
       newGps: "",
       notes: "",
+      assignedTo: "",
     },
   });
 
@@ -116,6 +138,7 @@ export default function ProjectWorkOrders() {
       newGps: "",
       notes: "",
       status: "Open",
+      assignedTo: "",
     },
   });
 
@@ -139,6 +162,11 @@ export default function ProjectWorkOrders() {
 
   const { data: workOrderStatuses = [] } = useQuery<WorkOrderStatus[]>({
     queryKey: ["/api/work-order-statuses"],
+  });
+
+  const { data: assigneesData } = useQuery<AssigneesResponse>({
+    queryKey: [`/api/projects/${projectId}/assignees`],
+    enabled: !!projectId && !accessDenied,
   });
 
   useEffect(() => {
@@ -186,6 +214,7 @@ export default function ProjectWorkOrders() {
         newGps: editingWorkOrder.newGps || "",
         notes: editingWorkOrder.notes || "",
         status: editingWorkOrder.status || "Open",
+        assignedTo: editingWorkOrder.assignedTo || "",
       });
     }
   }, [editingWorkOrder, editForm]);
@@ -887,6 +916,116 @@ export default function ProjectWorkOrders() {
                   />
                   <FormField
                     control={editForm.control}
+                    name="assignedTo"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Assigned To</FormLabel>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <FormControl>
+                              <Button
+                                variant="outline"
+                                role="combobox"
+                                className="w-full justify-between font-normal"
+                                data-testid="select-edit-assigned-to"
+                              >
+                                <span className="truncate">
+                                  {field.value || "Select assignee(s)..."}
+                                </span>
+                                <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                              </Button>
+                            </FormControl>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-[300px] p-0" align="start">
+                            <div className="p-2 border-b">
+                              <Input
+                                placeholder="Search users or groups..."
+                                className="h-8"
+                                data-testid="input-search-assignees"
+                              />
+                            </div>
+                            <ScrollArea className="h-[200px]">
+                              <div className="p-2">
+                                {assigneesData?.groups && assigneesData.groups.length > 0 && (
+                                  <>
+                                    <div className="text-xs font-medium text-muted-foreground mb-1 px-2">Groups</div>
+                                    {assigneesData.groups.map((group) => (
+                                      <div
+                                        key={group.id}
+                                        className="flex items-center gap-2 px-2 py-1.5 rounded-md hover-elevate cursor-pointer"
+                                        onClick={() => {
+                                          const current = field.value || "";
+                                          const items = current.split(",").map(s => s.trim()).filter(Boolean);
+                                          if (items.includes(group.label)) {
+                                            field.onChange(items.filter(i => i !== group.label).join(", "));
+                                          } else {
+                                            field.onChange([...items, group.label].join(", "));
+                                          }
+                                        }}
+                                        data-testid={`option-group-${group.key}`}
+                                      >
+                                        <Checkbox
+                                          checked={(field.value || "").split(",").map(s => s.trim()).includes(group.label)}
+                                        />
+                                        <Users className="h-4 w-4 text-muted-foreground" />
+                                        <span className="text-sm">{group.label}</span>
+                                      </div>
+                                    ))}
+                                  </>
+                                )}
+                                {assigneesData?.users && assigneesData.users.length > 0 && (
+                                  <>
+                                    <div className="text-xs font-medium text-muted-foreground mb-1 mt-2 px-2">Users</div>
+                                    {assigneesData.users.map((user) => (
+                                      <div
+                                        key={user.id}
+                                        className="flex items-center gap-2 px-2 py-1.5 rounded-md hover-elevate cursor-pointer"
+                                        onClick={() => {
+                                          const current = field.value || "";
+                                          const items = current.split(",").map(s => s.trim()).filter(Boolean);
+                                          if (items.includes(user.label)) {
+                                            field.onChange(items.filter(i => i !== user.label).join(", "));
+                                          } else {
+                                            field.onChange([...items, user.label].join(", "));
+                                          }
+                                        }}
+                                        data-testid={`option-user-${user.id}`}
+                                      >
+                                        <Checkbox
+                                          checked={(field.value || "").split(",").map(s => s.trim()).includes(user.label)}
+                                        />
+                                        <span className="text-sm">{user.label}</span>
+                                      </div>
+                                    ))}
+                                  </>
+                                )}
+                                {(!assigneesData?.users?.length && !assigneesData?.groups?.length) && (
+                                  <div className="text-sm text-muted-foreground text-center py-4">
+                                    No users or groups available
+                                  </div>
+                                )}
+                              </div>
+                            </ScrollArea>
+                            {field.value && (
+                              <div className="border-t p-2">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="w-full"
+                                  onClick={() => field.onChange("")}
+                                >
+                                  Clear selection
+                                </Button>
+                              </div>
+                            )}
+                          </PopoverContent>
+                        </Popover>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editForm.control}
                     name="status"
                     render={({ field }) => (
                       <FormItem>
@@ -928,15 +1067,6 @@ export default function ProjectWorkOrders() {
                 <div className="border-t pt-4 mt-4">
                   <h3 className="text-sm font-medium text-muted-foreground mb-3">Audit Information</h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    <div>
-                      <label className="text-sm font-medium text-muted-foreground">Assigned To</label>
-                      <Input 
-                        value={editingWorkOrder.assignedTo || "-"} 
-                        disabled 
-                        className="mt-1 bg-muted"
-                        data-testid="text-assigned-to"
-                      />
-                    </div>
                     <div>
                       <label className="text-sm font-medium text-muted-foreground">Created By</label>
                       <Input 
@@ -1276,6 +1406,116 @@ export default function ProjectWorkOrders() {
                         <FormControl>
                           <Input {...field} value={field.value || ""} placeholder="40.7128,-74.0060" data-testid="input-create-new-gps" />
                         </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="assignedTo"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Assigned To</FormLabel>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <FormControl>
+                              <Button
+                                variant="outline"
+                                role="combobox"
+                                className="w-full justify-between font-normal"
+                                data-testid="select-create-assigned-to"
+                              >
+                                <span className="truncate">
+                                  {field.value || "Select assignee(s)..."}
+                                </span>
+                                <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                              </Button>
+                            </FormControl>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-[300px] p-0" align="start">
+                            <div className="p-2 border-b">
+                              <Input
+                                placeholder="Search users or groups..."
+                                className="h-8"
+                                data-testid="input-search-create-assignees"
+                              />
+                            </div>
+                            <ScrollArea className="h-[200px]">
+                              <div className="p-2">
+                                {assigneesData?.groups && assigneesData.groups.length > 0 && (
+                                  <>
+                                    <div className="text-xs font-medium text-muted-foreground mb-1 px-2">Groups</div>
+                                    {assigneesData.groups.map((group) => (
+                                      <div
+                                        key={group.id}
+                                        className="flex items-center gap-2 px-2 py-1.5 rounded-md hover-elevate cursor-pointer"
+                                        onClick={() => {
+                                          const current = field.value || "";
+                                          const items = current.split(",").map(s => s.trim()).filter(Boolean);
+                                          if (items.includes(group.label)) {
+                                            field.onChange(items.filter(i => i !== group.label).join(", "));
+                                          } else {
+                                            field.onChange([...items, group.label].join(", "));
+                                          }
+                                        }}
+                                        data-testid={`option-create-group-${group.key}`}
+                                      >
+                                        <Checkbox
+                                          checked={(field.value || "").split(",").map(s => s.trim()).includes(group.label)}
+                                        />
+                                        <Users className="h-4 w-4 text-muted-foreground" />
+                                        <span className="text-sm">{group.label}</span>
+                                      </div>
+                                    ))}
+                                  </>
+                                )}
+                                {assigneesData?.users && assigneesData.users.length > 0 && (
+                                  <>
+                                    <div className="text-xs font-medium text-muted-foreground mb-1 mt-2 px-2">Users</div>
+                                    {assigneesData.users.map((user) => (
+                                      <div
+                                        key={user.id}
+                                        className="flex items-center gap-2 px-2 py-1.5 rounded-md hover-elevate cursor-pointer"
+                                        onClick={() => {
+                                          const current = field.value || "";
+                                          const items = current.split(",").map(s => s.trim()).filter(Boolean);
+                                          if (items.includes(user.label)) {
+                                            field.onChange(items.filter(i => i !== user.label).join(", "));
+                                          } else {
+                                            field.onChange([...items, user.label].join(", "));
+                                          }
+                                        }}
+                                        data-testid={`option-create-user-${user.id}`}
+                                      >
+                                        <Checkbox
+                                          checked={(field.value || "").split(",").map(s => s.trim()).includes(user.label)}
+                                        />
+                                        <span className="text-sm">{user.label}</span>
+                                      </div>
+                                    ))}
+                                  </>
+                                )}
+                                {(!assigneesData?.users?.length && !assigneesData?.groups?.length) && (
+                                  <div className="text-sm text-muted-foreground text-center py-4">
+                                    No users or groups available
+                                  </div>
+                                )}
+                              </div>
+                            </ScrollArea>
+                            {field.value && (
+                              <div className="border-t p-2">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="w-full"
+                                  onClick={() => field.onChange("")}
+                                >
+                                  Clear selection
+                                </Button>
+                              </div>
+                            )}
+                          </PopoverContent>
+                        </Popover>
                         <FormMessage />
                       </FormItem>
                     )}

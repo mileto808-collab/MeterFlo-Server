@@ -623,6 +623,51 @@ export async function registerRoutes(
     }
   });
 
+  // Get assignable users and groups for a project (for work order assignment dropdown)
+  app.get("/api/projects/:id/assignees", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.id);
+      
+      // Check if user has access to this project
+      if (currentUser?.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
+        }
+      }
+      
+      // Get users assigned to this project
+      const projectUsers = await storage.getProjectUsers(projectId);
+      
+      // Get all subroles (groups)
+      const subroles = await storage.getAllSubroles();
+      
+      // Format users for dropdown
+      const users = projectUsers.map(user => ({
+        type: "user" as const,
+        id: user.id,
+        label: user.firstName && user.lastName 
+          ? `${user.firstName} ${user.lastName}`
+          : user.username || user.email || user.id,
+        username: user.username,
+      }));
+      
+      // Format subroles as groups for dropdown
+      const groups = subroles.map(subrole => ({
+        type: "group" as const,
+        id: `group:${subrole.key}`,
+        label: subrole.label,
+        key: subrole.key,
+      }));
+      
+      res.json({ users, groups });
+    } catch (error) {
+      console.error("Error fetching project assignees:", error);
+      res.status(500).json({ message: "Failed to fetch assignees" });
+    }
+  });
+
   app.post("/api/projects", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
@@ -931,13 +976,14 @@ export async function registerRoutes(
       }
       
       const toImport = workOrdersData.map((wo: any) => ({
-        title: wo.title,
-        description: wo.description || null,
+        customerWoId: wo.customerWoId || wo.title,
+        customerId: wo.customerId || "",
+        customerName: wo.customerName || "",
+        address: wo.address || "",
+        serviceType: wo.serviceType || "Water",
         status: wo.status || "pending",
-        priority: wo.priority || "medium",
         assignedTo: wo.assignedTo || null,
         createdBy: currentUser!.id,
-        dueDate: wo.dueDate ? new Date(wo.dueDate) : null,
         notes: wo.notes || null,
         attachments: wo.attachments || null,
       }));
@@ -1508,7 +1554,6 @@ export async function registerRoutes(
         query,
         projectId,
         status,
-        priority,
         serviceType,
         dateFrom,
         dateTo,
@@ -1561,9 +1606,6 @@ export async function registerRoutes(
               if (!matchesWoId && !matchesName && !matchesAddress && !matchesNotes && 
                   !matchesOldMeter && !matchesNewMeter && !matchesRoute && !matchesZone) return false;
             }
-            
-            // Priority filter
-            if (priority && wo.priority !== priority) return false;
             
             // Service type filter
             if (serviceType && wo.serviceType !== serviceType) return false;
@@ -2245,16 +2287,15 @@ export async function registerRoutes(
               mappedData.newMeterReading = parseInt(String(mappedData.newMeterReading)) || null;
             }
             
-            mappedData.status = mappedData.status || "pending";
-            mappedData.priority = mappedData.priority || "medium";
+            mappedData.status = String(mappedData.status || "pending");
             mappedData.createdBy = currentUser.id;
             
             const existingWo = await workOrderStorage.getWorkOrderByCustomerWoId(mappedData.customerWoId);
             if (existingWo) {
-              await workOrderStorage.updateWorkOrder(existingWo.id, mappedData);
+              await workOrderStorage.updateWorkOrder(existingWo.id, mappedData as any);
             } else {
               const validated = insertProjectWorkOrderSchema.parse(mappedData);
-              await workOrderStorage.createWorkOrder(validated);
+              await workOrderStorage.createWorkOrder(validated as any);
             }
             imported++;
           } catch (rowError: any) {
