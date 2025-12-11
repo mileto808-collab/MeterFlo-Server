@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { importScheduler } from "./importScheduler";
+import { fileImportScheduler } from "./fileImportScheduler";
 
 const app = express();
 const httpServer = createServer(app);
@@ -96,6 +97,9 @@ app.use((req, res, next) => {
       log(`serving on port ${port}`);
       importScheduler.initialize().catch(err => {
         log(`Failed to initialize import scheduler: ${err.message}`);
+      });
+      fileImportScheduler.initialize().catch(err => {
+        log(`Failed to initialize file import scheduler: ${err.message}`);
       });
     },
   );
