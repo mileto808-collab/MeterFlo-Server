@@ -2650,7 +2650,8 @@ export async function registerRoutes(
         mainTablesRestored: dbResult.mainTablesRestored,
         projectsRestored: dbResult.projectsRestored,
         filesRestored: filesResult.filesRestored,
-        errors: [...dbResult.errors, ...filesResult.errors],
+        errors: [...dbResult.errors, ...dbResult.projectErrors, ...filesResult.errors],
+        warnings: dbResult.warnings,
       });
     } catch (error) {
       console.error("Error restoring full system backup:", error);
