@@ -9,6 +9,7 @@ import multer from "multer";
 import { createProjectSchema, deleteProjectSchema, getProjectWorkOrderStorage, sanitizeSchemaName, backupProjectDatabase, restoreProjectDatabase, getProjectDatabaseStats } from "./projectDb";
 import { ensureProjectDirectory, saveWorkOrderFile, getWorkOrderFiles, deleteWorkOrderFile, getFilePath, getProjectFilesPath, setProjectFilesPath, deleteProjectDirectory, saveProjectFile, getProjectFiles, deleteProjectFile, getProjectFilePath, ensureProjectFtpDirectory, getProjectFtpFiles, deleteProjectFtpFile, getProjectFtpFilePath, saveProjectFtpFile } from "./fileStorage";
 import { ExternalDatabaseService } from "./externalDbService";
+import { createBackupArchive, extractDatabaseBackupFromArchive, restoreFullSystem, restoreFilesFromArchive } from "./systemBackup";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -2591,6 +2592,69 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error removing user from group:", error);
       res.status(500).json({ message: "Failed to remove user from group" });
+    }
+  });
+
+  // Full System Backup/Restore API Routes
+  app.get("/api/system/backup", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      await createBackupArchive(res);
+    } catch (error) {
+      console.error("Error creating full system backup:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ message: "Failed to create full system backup" });
+      }
+    }
+  });
+
+  const largeUpload = multer({ 
+    storage: multer.memoryStorage(), 
+    limits: { fileSize: 1024 * 1024 * 1024 } 
+  });
+
+  app.post("/api/system/restore", isAuthenticated, largeUpload.single("backup"), async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      if (!req.file) {
+        return res.status(400).json({ message: "No backup file provided" });
+      }
+      
+      const clearExisting = req.body.clearExisting === "true";
+      const restoreFiles = req.body.restoreFiles !== "false";
+      
+      const backupData = await extractDatabaseBackupFromArchive(req.file.buffer);
+      
+      if (!backupData) {
+        return res.status(400).json({ message: "Invalid backup archive: could not find database_backup.json" });
+      }
+      
+      const dbResult = await restoreFullSystem(backupData, { clearExisting });
+      
+      let filesResult = { filesRestored: 0, errors: [] as string[] };
+      if (restoreFiles) {
+        const filesPath = await getProjectFilesPath();
+        filesResult = await restoreFilesFromArchive(req.file.buffer, filesPath);
+      }
+      
+      res.json({
+        message: "Full system restore completed",
+        mainTablesRestored: dbResult.mainTablesRestored,
+        projectsRestored: dbResult.projectsRestored,
+        filesRestored: filesResult.filesRestored,
+        errors: [...dbResult.errors, ...filesResult.errors],
+      });
+    } catch (error) {
+      console.error("Error restoring full system backup:", error);
+      res.status(500).json({ message: "Failed to restore full system backup" });
     }
   });
 

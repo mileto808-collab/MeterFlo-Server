@@ -32,6 +32,9 @@ import {
   HardDrive,
   AlertTriangle,
   Wrench,
+  Archive,
+  FolderArchive,
+  Server,
 } from "lucide-react";
 import { format } from "date-fns";
 import type { Project } from "@shared/schema";
@@ -47,10 +50,16 @@ interface ProjectWithStats extends Project {
 export default function Maintenance() {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const systemFileInputRef = useRef<HTMLInputElement>(null);
   const [restoreDialogOpen, setRestoreDialogOpen] = useState(false);
+  const [systemRestoreDialogOpen, setSystemRestoreDialogOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState<ProjectWithStats | null>(null);
   const [clearExisting, setClearExisting] = useState(false);
+  const [systemClearExisting, setSystemClearExisting] = useState(false);
+  const [restoreFiles, setRestoreFiles] = useState(true);
   const [isRestoring, setIsRestoring] = useState(false);
+  const [isSystemBackup, setIsSystemBackup] = useState(false);
+  const [isSystemRestoring, setIsSystemRestoring] = useState(false);
 
   const { data: projects = [], isLoading, refetch } = useQuery<ProjectWithStats[]>({
     queryKey: ["/api/maintenance/projects"],
@@ -149,6 +158,104 @@ export default function Maintenance() {
     }
   };
 
+  const handleFullSystemBackup = async () => {
+    setIsSystemBackup(true);
+    try {
+      const response = await fetch("/api/system/backup", {
+        credentials: "include",
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to create full system backup");
+      }
+      
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `full_backup_${new Date().toISOString().slice(0, 10)}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      toast({
+        title: "Full System Backup Created",
+        description: "Successfully backed up all databases and project files",
+      });
+    } catch (error) {
+      toast({
+        title: "Backup failed",
+        description: error instanceof Error ? error.message : "Failed to create full system backup",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSystemBackup(false);
+    }
+  };
+
+  const openSystemRestoreDialog = () => {
+    setSystemClearExisting(false);
+    setRestoreFiles(true);
+    setSystemRestoreDialogOpen(true);
+  };
+
+  const handleSystemRestoreFileSelect = () => {
+    systemFileInputRef.current?.click();
+  };
+
+  const handleSystemFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsSystemRestoring(true);
+    
+    try {
+      const formData = new FormData();
+      formData.append("backup", file);
+      formData.append("clearExisting", String(systemClearExisting));
+      formData.append("restoreFiles", String(restoreFiles));
+
+      const response = await fetch("/api/system/restore", {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || "Failed to restore full system backup");
+      }
+
+      const mainTablesCount = Object.values(result.mainTablesRestored as Record<string, number>).reduce((a, b) => a + b, 0);
+      
+      toast({
+        title: "Full System Restore Completed",
+        description: `Restored ${mainTablesCount} main database records, ${result.projectsRestored} project databases, and ${result.filesRestored} files${result.errors.length > 0 ? ` with ${result.errors.length} errors` : ""}`,
+      });
+
+      if (result.errors.length > 0) {
+        console.error("Restore errors:", result.errors);
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["/api/maintenance/projects"] });
+      setSystemRestoreDialogOpen(false);
+    } catch (error) {
+      toast({
+        title: "Restore failed",
+        description: error instanceof Error ? error.message : "Failed to restore full system backup",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSystemRestoring(false);
+      if (systemFileInputRef.current) {
+        systemFileInputRef.current.value = "";
+      }
+    }
+  };
+
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -170,11 +277,65 @@ export default function Maintenance() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
+            <Server className="h-5 w-5" />
+            Full System Backup
+          </CardTitle>
+          <CardDescription>
+            Create or restore a complete backup of the entire system including the main database, all project databases, and all project files
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="flex-1 p-4 border rounded-md bg-muted/30">
+              <div className="flex items-center gap-2 mb-2">
+                <FolderArchive className="h-5 w-5 text-primary" />
+                <span className="font-medium">Backup Contents</span>
+              </div>
+              <ul className="text-sm text-muted-foreground space-y-1 ml-7">
+                <li>Main database (users, projects, settings, groups, permissions)</li>
+                <li>All project databases ({projects.length} projects)</li>
+                <li>All project files and documents</li>
+              </ul>
+            </div>
+            <div className="flex flex-col gap-2 justify-center">
+              <Button 
+                onClick={handleFullSystemBackup}
+                disabled={isSystemBackup}
+                data-testid="button-full-system-backup"
+              >
+                {isSystemBackup ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Creating Backup...
+                  </>
+                ) : (
+                  <>
+                    <Download className="h-4 w-4 mr-2" />
+                    Download Full Backup
+                  </>
+                )}
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={openSystemRestoreDialog}
+                data-testid="button-full-system-restore"
+              >
+                <Upload className="h-4 w-4 mr-2" />
+                Restore from Backup
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
             <Database className="h-5 w-5" />
             Project Databases
           </CardTitle>
           <CardDescription>
-            View database statistics and perform backup/restore operations
+            View database statistics and perform individual project backup/restore operations
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -345,6 +506,92 @@ export default function Maintenance() {
                 <>
                   <Upload className="h-4 w-4 mr-2" />
                   Select Backup File
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={systemRestoreDialogOpen} onOpenChange={setSystemRestoreDialogOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Archive className="h-5 w-5" />
+              Restore Full System Backup
+            </DialogTitle>
+            <DialogDescription>
+              Restore the entire system from a backup archive
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="flex items-center gap-2 p-4 rounded-md bg-destructive/10 text-destructive">
+              <AlertTriangle className="h-5 w-5 flex-shrink-0" />
+              <p className="text-sm">
+                This will restore the main database, all project databases, and optionally all project files.
+                This is a major operation that may overwrite existing data.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="system-clear-existing"
+                  checked={systemClearExisting}
+                  onCheckedChange={(checked) => setSystemClearExisting(checked === true)}
+                  data-testid="checkbox-system-clear-existing"
+                />
+                <Label htmlFor="system-clear-existing" className="text-sm font-medium">
+                  Clear existing data before restore (recommended for full replacement)
+                </Label>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="restore-files"
+                  checked={restoreFiles}
+                  onCheckedChange={(checked) => setRestoreFiles(checked === true)}
+                  data-testid="checkbox-restore-files"
+                />
+                <Label htmlFor="restore-files" className="text-sm font-medium">
+                  Restore project files and documents
+                </Label>
+              </div>
+            </div>
+
+            <input
+              type="file"
+              ref={systemFileInputRef}
+              className="hidden"
+              accept=".zip"
+              onChange={handleSystemFileChange}
+              data-testid="input-system-restore-file"
+            />
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setSystemRestoreDialogOpen(false)}
+              data-testid="button-cancel-system-restore"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSystemRestoreFileSelect}
+              disabled={isSystemRestoring}
+              data-testid="button-select-system-file"
+            >
+              {isSystemRestoring ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Restoring System...
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Select Backup Archive
                 </>
               )}
             </Button>
