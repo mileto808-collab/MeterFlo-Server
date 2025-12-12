@@ -137,32 +137,73 @@ export async function createBackupArchive(res: any): Promise<void> {
   await archive.finalize();
 }
 
+async function getPrimaryKeyColumns(client: any, tableName: string): Promise<string[]> {
+  try {
+    const result = await client.query(`
+      SELECT a.attname
+      FROM pg_index i
+      JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+      WHERE i.indrelid = $1::regclass AND i.indisprimary
+      ORDER BY array_position(i.indkey, a.attnum)
+    `, [tableName]);
+    return result.rows.map((r: any) => r.attname);
+  } catch {
+    return TABLE_PRIMARY_KEYS[tableName] || ["id"];
+  }
+}
+
+async function getExistingTables(client: any): Promise<string[]> {
+  const result = await client.query(`
+    SELECT tablename FROM pg_tables 
+    WHERE schemaname = 'public' AND tablename NOT IN ('sessions', 'drizzle_migrations')
+  `);
+  return result.rows.map((r: any) => r.tablename);
+}
+
 export async function restoreFullSystem(
   backupData: FullSystemBackup,
   options: { clearExisting?: boolean } = {}
 ): Promise<{ 
   mainTablesRestored: Record<string, number>;
   projectsRestored: number;
+  projectErrors: string[];
   errors: string[];
+  warnings: string[];
 }> {
   const client = await pool.connect();
   const errors: string[] = [];
+  const warnings: string[] = [];
+  const projectErrors: string[] = [];
   const mainTablesRestored: Record<string, number> = {};
   let projectsRestored = 0;
   
   try {
+    const existingTables = await getExistingTables(client);
+    const backupTables = Object.keys(backupData.mainDatabase);
+    
+    for (const table of existingTables) {
+      if (!backupTables.includes(table) && !["sessions", "drizzle_migrations"].includes(table)) {
+        warnings.push(`Table "${table}" exists in database but not in backup`);
+      }
+    }
+    for (const table of backupTables) {
+      if (!existingTables.includes(table)) {
+        warnings.push(`Table "${table}" exists in backup but not in database`);
+      }
+    }
+    
     await client.query("BEGIN");
     
     if (options.clearExisting) {
       for (const tableName of TABLE_DELETE_ORDER) {
-        if (tableName !== "sessions") {
+        if (existingTables.includes(tableName)) {
           try {
             await client.query(`TRUNCATE TABLE "${tableName}" CASCADE`);
           } catch (error: any) {
             try {
               await client.query(`DELETE FROM "${tableName}"`);
             } catch (deleteError) {
-              console.warn(`Failed to clear table ${tableName}:`, deleteError);
+              warnings.push(`Could not clear table ${tableName}`);
             }
           }
         }
@@ -170,6 +211,8 @@ export async function restoreFullSystem(
     }
     
     for (const tableName of TABLE_RESTORE_ORDER) {
+      if (!existingTables.includes(tableName)) continue;
+      
       const rows = backupData.mainDatabase[tableName];
       if (!rows || rows.length === 0) {
         mainTablesRestored[tableName] = 0;
@@ -177,7 +220,7 @@ export async function restoreFullSystem(
       }
       
       let restoredCount = 0;
-      const primaryKeys = TABLE_PRIMARY_KEYS[tableName] || ["id"];
+      const primaryKeys = await getPrimaryKeyColumns(client, tableName);
       
       for (const row of rows) {
         try {
@@ -222,6 +265,14 @@ export async function restoreFullSystem(
       mainTablesRestored[tableName] = restoredCount;
     }
     
+    const criticalErrors = errors.filter(e => 
+      e.includes("users:") || e.includes("projects:") || e.includes("subroles:")
+    );
+    if (criticalErrors.length > 0) {
+      await client.query("ROLLBACK");
+      throw new Error(`Critical restore errors: ${criticalErrors.join("; ")}`);
+    }
+    
     await client.query("COMMIT");
     
     for (const projectBackup of backupData.projectDatabases) {
@@ -233,16 +284,18 @@ export async function restoreFullSystem(
         );
         projectsRestored++;
         if (result.errors.length > 0) {
-          errors.push(...result.errors.map((e) => `${projectBackup.projectName}: ${e}`));
+          projectErrors.push(...result.errors.map((e) => `${projectBackup.projectName}: ${e}`));
         }
       } catch (error: any) {
-        errors.push(`Project ${projectBackup.projectName}: ${error.message}`);
+        projectErrors.push(`Project ${projectBackup.projectName}: ${error.message}`);
       }
     }
     
-    return { mainTablesRestored, projectsRestored, errors };
+    return { mainTablesRestored, projectsRestored, projectErrors, errors, warnings };
   } catch (error: any) {
-    await client.query("ROLLBACK");
+    try {
+      await client.query("ROLLBACK");
+    } catch {}
     throw error;
   } finally {
     client.release();
