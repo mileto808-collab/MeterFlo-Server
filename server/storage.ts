@@ -12,6 +12,7 @@ import {
   fileImportConfigs,
   fileImportHistory,
   workOrderStatuses,
+  troubleCodes,
   defaultWorkOrderStatuses,
   permissionKeys,
   userGroups,
@@ -41,6 +42,9 @@ import {
   type WorkOrderStatus,
   type InsertWorkOrderStatus,
   type UpdateWorkOrderStatus,
+  type TroubleCode,
+  type InsertTroubleCode,
+  type UpdateTroubleCode,
   type UserGroup,
   type InsertUserGroup,
   type UserGroupMember,
@@ -143,6 +147,13 @@ export interface IStorage {
   updateWorkOrderStatus(id: number, data: UpdateWorkOrderStatus): Promise<WorkOrderStatus | undefined>;
   deleteWorkOrderStatus(id: number): Promise<boolean>;
   seedDefaultWorkOrderStatuses(): Promise<void>;
+
+  // Trouble code operations
+  getTroubleCodes(): Promise<TroubleCode[]>;
+  getTroubleCode(id: number): Promise<TroubleCode | undefined>;
+  createTroubleCode(data: InsertTroubleCode): Promise<TroubleCode>;
+  updateTroubleCode(id: number, data: UpdateTroubleCode): Promise<TroubleCode | undefined>;
+  deleteTroubleCode(id: number): Promise<boolean>;
 
   // User group operations
   getAllUserGroups(): Promise<UserGroup[]>;
@@ -895,6 +906,44 @@ export class DatabaseStorage implements IStorage {
       }
       console.log("[Storage] Seeded default work order statuses");
     }
+  }
+
+  // Trouble code operations
+  async getTroubleCodes(): Promise<TroubleCode[]> {
+    return await db
+      .select()
+      .from(troubleCodes)
+      .orderBy(troubleCodes.sortOrder);
+  }
+
+  async getTroubleCode(id: number): Promise<TroubleCode | undefined> {
+    const [code] = await db
+      .select()
+      .from(troubleCodes)
+      .where(eq(troubleCodes.id, id));
+    return code;
+  }
+
+  async createTroubleCode(data: InsertTroubleCode): Promise<TroubleCode> {
+    const [code] = await db
+      .insert(troubleCodes)
+      .values(data)
+      .returning();
+    return code;
+  }
+
+  async updateTroubleCode(id: number, data: UpdateTroubleCode): Promise<TroubleCode | undefined> {
+    const [code] = await db
+      .update(troubleCodes)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(troubleCodes.id, id))
+      .returning();
+    return code;
+  }
+
+  async deleteTroubleCode(id: number): Promise<boolean> {
+    const result = await db.delete(troubleCodes).where(eq(troubleCodes.id, id));
+    return result.rowCount > 0;
   }
 
   // User group operations
