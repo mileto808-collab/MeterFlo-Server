@@ -396,7 +396,7 @@ export default function SearchReports() {
                 <SelectContent>
                   <SelectItem value="all">All Service Types</SelectItem>
                   {serviceTypes.map((st) => (
-                    <SelectItem key={st.id} value={st.code}>{st.label}</SelectItem>
+                    <SelectItem key={st.id} value={st.label}>{st.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
