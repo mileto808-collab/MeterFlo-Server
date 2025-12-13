@@ -198,18 +198,22 @@ export class ProjectWorkOrderStorage {
       if (troubleCode) {
         status = "Trouble";
         const troubleCodeDetails = await this.getTroubleCodeDetails(troubleCode);
+        const timestamp = new Date().toLocaleString('en-US', {
+          month: '2-digit',
+          day: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        });
+        let troubleNote: string;
         if (troubleCodeDetails) {
-          const timestamp = new Date().toLocaleString('en-US', {
-            month: '2-digit',
-            day: '2-digit',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: true
-          });
-          const troubleNote = `Trouble Code: ${troubleCodeDetails.code} - ${troubleCodeDetails.label} - ${timestamp}`;
-          notes = notes ? `${notes}\n${troubleNote}` : troubleNote;
+          troubleNote = `Trouble Code: ${troubleCodeDetails.code} - ${troubleCodeDetails.label} - ${timestamp}`;
+        } else {
+          // Fallback: use the code value directly if lookup fails
+          troubleNote = `Trouble Code: ${troubleCode} - ${timestamp}`;
         }
+        notes = notes ? `${notes}\n${troubleNote}` : troubleNote;
       }
       
       const result = await client.query(
@@ -279,18 +283,21 @@ export class ProjectWorkOrderStorage {
       let forceStatusToTrouble = false;
       
       if (troubleCode) {
+        forceStatusToTrouble = true;
         const troubleCodeDetails = await this.getTroubleCodeDetails(troubleCode);
+        const timestamp = new Date().toLocaleString('en-US', {
+          month: '2-digit',
+          day: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+        });
         if (troubleCodeDetails) {
-          forceStatusToTrouble = true;
-          const timestamp = new Date().toLocaleString('en-US', {
-            month: '2-digit',
-            day: '2-digit',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: true
-          });
           troubleNoteToAdd = `Trouble Code: ${troubleCodeDetails.code} - ${troubleCodeDetails.label} - ${timestamp}`;
+        } else {
+          // Fallback: use the code value directly if lookup fails
+          troubleNoteToAdd = `Trouble Code: ${troubleCode} - ${timestamp}`;
         }
       }
 
