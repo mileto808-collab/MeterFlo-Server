@@ -747,7 +747,7 @@ export default function ProjectWorkOrders() {
                           </FormControl>
                           <SelectContent>
                             {serviceTypes.map((type) => (
-                              <SelectItem key={type.id} value={type.code}>{type.label}</SelectItem>
+                              <SelectItem key={type.id} value={type.label}>{type.label}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -1288,7 +1288,7 @@ export default function ProjectWorkOrders() {
                           </FormControl>
                           <SelectContent>
                             {serviceTypes.map((type) => (
-                              <SelectItem key={type.id} value={type.code}>{type.label}</SelectItem>
+                              <SelectItem key={type.id} value={type.label}>{type.label}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
