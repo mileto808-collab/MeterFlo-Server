@@ -241,6 +241,7 @@ export const serviceTypes = pgTable("service_types", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   code: varchar("code", { length: 50 }).notNull().unique(),
   label: varchar("label", { length: 100 }).notNull(),
+  color: varchar("color", { length: 20 }),
   isDefault: boolean("is_default").default(false),
   sortOrder: integer("sort_order").default(0),
   createdAt: timestamp("created_at").defaultNow(),
@@ -435,6 +436,7 @@ export const updateTroubleCodeSchema = z.object({
 export const insertServiceTypeSchema = z.object({
   code: z.string().min(1).max(50),
   label: z.string().min(1).max(100),
+  color: z.string().max(20).optional(),
   isDefault: z.boolean().optional(),
   sortOrder: z.number().int().optional(),
 });
@@ -442,6 +444,7 @@ export const insertServiceTypeSchema = z.object({
 export const updateServiceTypeSchema = z.object({
   code: z.string().min(1).max(50).optional(),
   label: z.string().min(1).max(100).optional(),
+  color: z.string().max(20).optional(),
   isDefault: z.boolean().optional(),
   sortOrder: z.number().int().optional(),
 });
