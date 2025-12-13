@@ -16,7 +16,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Checkbox } from "@/components/ui/checkbox";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Moon, Sun, User as UserIcon, Shield, FolderOpen, Save, FileUp, Users, Plus, Pencil, Trash2, UsersRound } from "lucide-react";
+import { Moon, Sun, User as UserIcon, Shield, FolderOpen, Save, FileUp, Users, Plus, Pencil, Trash2, UsersRound, Clock } from "lucide-react";
 import type { Subrole, Permission, WorkOrderStatus, UserGroup, User, TroubleCode } from "@shared/schema";
 import { AlertTriangle } from "lucide-react";
 
@@ -33,6 +33,17 @@ const statusColors = [
   { value: "yellow", label: "Yellow" },
   { value: "purple", label: "Purple" },
   { value: "gray", label: "Gray" },
+];
+
+const timezoneOptions = [
+  { value: "America/New_York", label: "Eastern Time (ET)" },
+  { value: "America/Chicago", label: "Central Time (CT)" },
+  { value: "America/Denver", label: "Mountain Time (MT)" },
+  { value: "America/Phoenix", label: "Arizona Time (AZ)" },
+  { value: "America/Los_Angeles", label: "Pacific Time (PT)" },
+  { value: "America/Anchorage", label: "Alaska Time (AK)" },
+  { value: "America/Honolulu", label: "Hawaii Time (HI)" },
+  { value: "UTC", label: "UTC (Coordinated Universal Time)" },
 ];
 
 function getStatusColorHex(color: string): string {
@@ -55,6 +66,7 @@ export default function Settings() {
   const [projectFilesPath, setProjectFilesPath] = useState("");
   const [maxFileSizeMB, setMaxFileSizeMB] = useState("100");
   const [allowedExtensions, setAllowedExtensions] = useState("");
+  const [selectedTimezone, setSelectedTimezone] = useState("America/Denver");
   
   const [subroleDialogOpen, setSubroleDialogOpen] = useState(false);
   const [deleteSubroleDialogOpen, setDeleteSubroleDialogOpen] = useState(false);
@@ -127,6 +139,11 @@ export default function Settings() {
     enabled: user?.role === "admin",
   });
 
+  const { data: timezoneData } = useQuery<{ timezone: string }>({
+    queryKey: ["/api/settings/timezone"],
+    enabled: user?.role === "admin",
+  });
+
   const { data: workOrderStatusList, isLoading: loadingStatuses } = useQuery<WorkOrderStatus[]>({
     queryKey: ["/api/work-order-statuses"],
     enabled: user?.role === "admin",
@@ -171,6 +188,12 @@ export default function Settings() {
       setAllowedExtensions(fileSettingsData.allowedExtensions || "");
     }
   }, [fileSettingsData]);
+
+  useEffect(() => {
+    if (timezoneData?.timezone) {
+      setSelectedTimezone(timezoneData.timezone);
+    }
+  }, [timezoneData]);
 
   useEffect(() => {
     if (selectedSubrolePermissions && subroleDialogOpen) {
@@ -635,6 +658,19 @@ export default function Settings() {
     },
   });
 
+  const updateTimezoneMutation = useMutation({
+    mutationFn: async (timezone: string) => {
+      return apiRequest("PUT", "/api/settings/timezone", { timezone });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/timezone"] });
+      toast({ title: "Timezone updated successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to update timezone", variant: "destructive" });
+    },
+  });
+
   const getInitials = () => {
     if (user?.firstName && user?.lastName) return `${user.firstName[0]}${user.lastName[0]}`.toUpperCase();
     if (user?.username) return user.username[0].toUpperCase();
@@ -807,6 +843,49 @@ export default function Settings() {
                   <Save className="h-4 w-4 mr-2" />
                   Save File Settings
                 </Button>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <Clock className="h-5 w-5 text-muted-foreground" />
+                  <CardTitle>Timezone</CardTitle>
+                </div>
+                <CardDescription>Set the timezone used for timestamps in trouble code notes</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div>
+                  <Label htmlFor="timezone">System Timezone</Label>
+                  <div className="flex gap-2 mt-2 items-center">
+                    <Select
+                      value={selectedTimezone}
+                      onValueChange={setSelectedTimezone}
+                    >
+                      <SelectTrigger className="w-72" data-testid="select-timezone">
+                        <SelectValue placeholder="Select timezone" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {timezoneOptions.map((tz) => (
+                          <SelectItem key={tz.value} value={tz.value}>
+                            {tz.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      onClick={() => updateTimezoneMutation.mutate(selectedTimezone)}
+                      disabled={updateTimezoneMutation.isPending || selectedTimezone === timezoneData?.timezone}
+                      data-testid="button-save-timezone"
+                    >
+                      <Save className="h-4 w-4 mr-2" />
+                      Save
+                    </Button>
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-2">
+                    This timezone will be used when recording timestamps for trouble codes on work orders.
+                  </p>
+                </div>
               </CardContent>
             </Card>
 
