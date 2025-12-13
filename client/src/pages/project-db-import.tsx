@@ -521,7 +521,7 @@ export default function ProjectDbImport() {
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div>
-          <h1 className="text-2xl font-semibold" data-testid="text-page-title">External Database Import</h1>
+          <h1 className="text-2xl font-semibold" data-testid="text-page-title">External Database Import/Export</h1>
           <p className="text-muted-foreground">{project?.name}</p>
         </div>
       </div>
@@ -540,7 +540,7 @@ export default function ProjectDbImport() {
 
         <TabsContent value="connections" className="space-y-4">
           <div className="flex justify-between items-center">
-            <p className="text-muted-foreground">Configure connections to external databases for importing work orders</p>
+            <p className="text-muted-foreground">Configure connections to external databases for importing/exporting work orders</p>
             <Button onClick={openNewConnection} data-testid="button-add-connection">
               <Plus className="h-4 w-4 mr-2" />
               Add Connection
