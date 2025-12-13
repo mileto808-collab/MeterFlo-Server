@@ -2,6 +2,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { pgTable, text, varchar, timestamp, integer } from "drizzle-orm/pg-core";
 import { pool } from "./db";
 import { sql } from "drizzle-orm";
+import { storage } from "./storage";
 
 // Service type enum for work orders
 export const serviceTypeEnum = ["Water", "Electric", "Gas"] as const;
@@ -190,6 +191,27 @@ export class ProjectWorkOrderStorage {
         status = "Scheduled";
       }
       
+      let notes = workOrder.notes || null;
+      const troubleCode = (workOrder as any).trouble;
+      
+      // If trouble code is set, auto-set status to "Trouble" and add note
+      if (troubleCode) {
+        status = "Trouble";
+        const troubleCodeDetails = await this.getTroubleCodeDetails(troubleCode);
+        if (troubleCodeDetails) {
+          const timestamp = new Date().toLocaleString('en-US', {
+            month: '2-digit',
+            day: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+          });
+          const troubleNote = `Trouble Code: ${troubleCodeDetails.code} - ${troubleCodeDetails.label} - ${timestamp}`;
+          notes = notes ? `${notes}\n${troubleNote}` : troubleNote;
+        }
+      }
+      
       const result = await client.query(
         `INSERT INTO "${this.schemaName}".work_orders 
          (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, scheduled_date, assigned_to, created_by, updated_by, trouble, notes, attachments)
@@ -219,14 +241,28 @@ export class ProjectWorkOrderStorage {
           workOrder.assignedTo || null,
           createdBy || workOrder.createdBy || null,
           createdBy || null,
-          (workOrder as any).trouble || null,
-          workOrder.notes || null,
+          troubleCode || null,
+          notes,
           workOrder.attachments || null,
         ]
       );
       return this.mapRowToWorkOrder(result.rows[0]);
     } finally {
       client.release();
+    }
+  }
+  
+  private async getTroubleCodeDetails(troubleCodeValue: string): Promise<{ code: string; label: string } | null> {
+    try {
+      const troubleCodes = await storage.getTroubleCodes();
+      const found = troubleCodes.find(tc => tc.code === troubleCodeValue);
+      if (found) {
+        return { code: found.code, label: found.label };
+      }
+      return null;
+    } catch (error) {
+      console.error("Error fetching trouble code details:", error);
+      return null;
     }
   }
 
@@ -236,6 +272,27 @@ export class ProjectWorkOrderStorage {
       const setClauses: string[] = [];
       const values: any[] = [];
       let paramCount = 1;
+      
+      // Check if trouble code is being set - we'll handle status and notes later
+      const troubleCode = (updates as any).trouble;
+      let troubleNoteToAdd: string | null = null;
+      let forceStatusToTrouble = false;
+      
+      if (troubleCode) {
+        const troubleCodeDetails = await this.getTroubleCodeDetails(troubleCode);
+        if (troubleCodeDetails) {
+          forceStatusToTrouble = true;
+          const timestamp = new Date().toLocaleString('en-US', {
+            month: '2-digit',
+            day: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+          });
+          troubleNoteToAdd = `Trouble Code: ${troubleCodeDetails.code} - ${troubleCodeDetails.label} - ${timestamp}`;
+        }
+      }
 
       if (updates.customerWoId !== undefined) {
         setClauses.push(`customer_wo_id = $${paramCount++}`);
@@ -317,7 +374,11 @@ export class ProjectWorkOrderStorage {
           setClauses.push(`status = 'Scheduled'`);
         }
       }
-      if (updates.status !== undefined) {
+      // Handle status - if trouble code is set, force status to "Trouble"
+      if (forceStatusToTrouble) {
+        setClauses.push(`status = $${paramCount++}`);
+        values.push("Trouble");
+      } else if (updates.status !== undefined) {
         setClauses.push(`status = $${paramCount++}`);
         values.push(updates.status);
         if (updates.status === "Completed") {
@@ -332,7 +393,19 @@ export class ProjectWorkOrderStorage {
         setClauses.push(`trouble = $${paramCount++}`);
         values.push((updates as any).trouble);
       }
-      if (updates.notes !== undefined) {
+      // Handle notes - append trouble note if needed
+      if (troubleNoteToAdd) {
+        // We need to get existing notes and append the trouble note
+        const existingResult = await client.query(
+          `SELECT notes FROM "${this.schemaName}".work_orders WHERE id = $1`,
+          [id]
+        );
+        const existingNotes = existingResult.rows[0]?.notes || "";
+        const updatedNotes = updates.notes !== undefined ? updates.notes : existingNotes;
+        const finalNotes = updatedNotes ? `${updatedNotes}\n${troubleNoteToAdd}` : troubleNoteToAdd;
+        setClauses.push(`notes = $${paramCount++}`);
+        values.push(finalNotes);
+      } else if (updates.notes !== undefined) {
         setClauses.push(`notes = $${paramCount++}`);
         values.push(updates.notes);
       }

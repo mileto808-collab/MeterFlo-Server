@@ -893,6 +893,7 @@ export class DatabaseStorage implements IStorage {
         Completed: "green",
         Scheduled: "orange",
         Skipped: "gray",
+        Trouble: "red",
       };
       for (let i = 0; i < defaultWorkOrderStatuses.length; i++) {
         const code = defaultWorkOrderStatuses[i];
