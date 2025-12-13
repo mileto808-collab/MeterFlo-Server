@@ -119,15 +119,53 @@ export async function deleteProjectSchema(schemaName: string): Promise<void> {
   }
 }
 
+// Migrate existing project schema to add missing columns
+export async function migrateProjectSchema(schemaName: string): Promise<void> {
+  const client = await pool.connect();
+  try {
+    // Check if trouble column exists
+    const columnCheck = await client.query(`
+      SELECT column_name 
+      FROM information_schema.columns 
+      WHERE table_schema = $1 
+        AND table_name = 'work_orders' 
+        AND column_name = 'trouble'
+    `, [schemaName]);
+    
+    if (columnCheck.rows.length === 0) {
+      // Add trouble column if it doesn't exist
+      await client.query(`
+        ALTER TABLE "${schemaName}".work_orders 
+        ADD COLUMN IF NOT EXISTS trouble VARCHAR(100)
+      `);
+      console.log(`Added 'trouble' column to ${schemaName}.work_orders`);
+    }
+  } catch (error) {
+    // Log but don't fail - table might not exist yet
+    console.log(`Migration check for ${schemaName}: ${error}`);
+  } finally {
+    client.release();
+  }
+}
+
 // Project work order storage class with schema-based isolation
 export class ProjectWorkOrderStorage {
   private schemaName: string;
+  private migrationPromise: Promise<void>;
 
   constructor(schemaName: string) {
     this.schemaName = schemaName;
+    // Run migration on instantiation
+    this.migrationPromise = migrateProjectSchema(schemaName);
+  }
+  
+  // Ensure migration has completed before any operation
+  private async ensureMigrated(): Promise<void> {
+    await this.migrationPromise;
   }
 
   async getWorkOrders(filters?: { status?: string; assignedTo?: string }): Promise<ProjectWorkOrder[]> {
+    await this.ensureMigrated();
     const client = await pool.connect();
     try {
       let query = `SELECT * FROM "${this.schemaName}".work_orders`;
@@ -157,6 +195,7 @@ export class ProjectWorkOrderStorage {
   }
 
   async getWorkOrder(id: number): Promise<ProjectWorkOrder | undefined> {
+    await this.ensureMigrated();
     const client = await pool.connect();
     try {
       const result = await client.query(
@@ -170,6 +209,7 @@ export class ProjectWorkOrderStorage {
   }
 
   async getWorkOrderByCustomerWoId(customerWoId: string): Promise<ProjectWorkOrder | undefined> {
+    await this.ensureMigrated();
     const client = await pool.connect();
     try {
       const result = await client.query(
@@ -183,6 +223,7 @@ export class ProjectWorkOrderStorage {
   }
 
   async createWorkOrder(workOrder: Omit<InsertProjectWorkOrder, "id" | "createdAt" | "updatedAt">, createdBy?: string): Promise<ProjectWorkOrder> {
+    await this.ensureMigrated();
     const client = await pool.connect();
     try {
       // If scheduledDate is set, auto-set status to "Scheduled"
@@ -271,6 +312,7 @@ export class ProjectWorkOrderStorage {
   }
 
   async updateWorkOrder(id: number, updates: Partial<InsertProjectWorkOrder>, updatedBy?: string): Promise<ProjectWorkOrder | undefined> {
+    await this.ensureMigrated();
     const client = await pool.connect();
     try {
       const setClauses: string[] = [];
