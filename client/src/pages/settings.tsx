@@ -117,6 +117,7 @@ export default function Settings() {
   const [serviceTypeForm, setServiceTypeForm] = useState({
     code: "",
     label: "",
+    color: "blue",
     isDefault: false,
   });
 
@@ -686,6 +687,7 @@ export default function Settings() {
     setServiceTypeForm({
       code: "",
       label: "",
+      color: "blue",
       isDefault: false,
     });
   };
@@ -701,6 +703,7 @@ export default function Settings() {
     setServiceTypeForm({
       code: serviceType.code,
       label: serviceType.label,
+      color: serviceType.color || "blue",
       isDefault: serviceType.isDefault || false,
     });
     setServiceTypeDialogOpen(true);
@@ -713,6 +716,7 @@ export default function Settings() {
         data: {
           code: serviceTypeForm.code,
           label: serviceTypeForm.label,
+          color: serviceTypeForm.color,
           isDefault: serviceTypeForm.isDefault,
         },
       });
@@ -720,6 +724,7 @@ export default function Settings() {
       createServiceTypeMutation.mutate({
         code: serviceTypeForm.code,
         label: serviceTypeForm.label,
+        color: serviceTypeForm.color,
         isDefault: serviceTypeForm.isDefault,
       });
     }
@@ -1318,6 +1323,7 @@ export default function Settings() {
                       <TableRow>
                         <TableHead>Code</TableHead>
                         <TableHead>Label</TableHead>
+                        <TableHead>Color</TableHead>
                         <TableHead>Default</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
@@ -1327,6 +1333,18 @@ export default function Settings() {
                         <TableRow key={serviceType.id} data-testid={`row-service-type-${serviceType.id}`}>
                           <TableCell className="font-medium">{serviceType.code}</TableCell>
                           <TableCell>{serviceType.label}</TableCell>
+                          <TableCell>
+                            <Badge 
+                              variant="outline" 
+                              style={{ 
+                                backgroundColor: getStatusColorHex(serviceType.color || "gray"),
+                                color: ['yellow', 'orange'].includes(serviceType.color || "") ? '#000' : '#fff',
+                                borderColor: getStatusColorHex(serviceType.color || "gray")
+                              }}
+                            >
+                              {serviceType.color || "gray"}
+                            </Badge>
+                          </TableCell>
                           <TableCell>{serviceType.isDefault ? "Yes" : "—"}</TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">
@@ -1905,6 +1923,31 @@ export default function Settings() {
                 data-testid="input-service-type-label"
               />
               <p className="text-sm text-muted-foreground mt-1">Display name for the service type</p>
+            </div>
+
+            <div>
+              <Label htmlFor="service-type-color">Color</Label>
+              <Select
+                value={serviceTypeForm.color}
+                onValueChange={(value) => setServiceTypeForm(prev => ({ ...prev, color: value }))}
+              >
+                <SelectTrigger className="mt-2" data-testid="select-service-type-color">
+                  <SelectValue placeholder="Select a color" />
+                </SelectTrigger>
+                <SelectContent>
+                  {statusColors.map((color) => (
+                    <SelectItem key={color.value} value={color.value}>
+                      <div className="flex items-center gap-2">
+                        <div 
+                          className="w-4 h-4 rounded-full" 
+                          style={{ backgroundColor: getStatusColorHex(color.value) }} 
+                        />
+                        {color.label}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="flex items-center space-x-2">
