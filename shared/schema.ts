@@ -225,6 +225,17 @@ export const workOrderStatuses = pgTable("work_order_statuses", {
 export const defaultWorkOrderStatuses = ["Open", "Completed", "Scheduled", "Skipped"] as const;
 export type DefaultWorkOrderStatus = (typeof defaultWorkOrderStatuses)[number];
 
+// Trouble codes table - configurable trouble/issue codes for work orders
+export const troubleCodes = pgTable("trouble_codes", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  code: varchar("code", { length: 50 }).notNull().unique(),
+  label: varchar("label", { length: 100 }).notNull(),
+  description: text("description"),
+  sortOrder: integer("sort_order").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // Service type enum for utility work orders
 export const serviceTypeEnum = ["Water", "Electric", "Gas"] as const;
 export type ServiceType = (typeof serviceTypeEnum)[number];
@@ -389,6 +400,21 @@ export const updateWorkOrderStatusSchema = z.object({
   sortOrder: z.number().int().optional(),
 });
 
+// Schema for trouble code management
+export const insertTroubleCodeSchema = z.object({
+  code: z.string().min(1).max(50),
+  label: z.string().min(1).max(100),
+  description: z.string().optional().nullable(),
+  sortOrder: z.number().int().optional(),
+});
+
+export const updateTroubleCodeSchema = z.object({
+  code: z.string().min(1).max(50).optional(),
+  label: z.string().min(1).max(100).optional(),
+  description: z.string().optional().nullable(),
+  sortOrder: z.number().int().optional(),
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -515,6 +541,11 @@ export type FileImportHistory = typeof fileImportHistory.$inferSelect;
 export type WorkOrderStatus = typeof workOrderStatuses.$inferSelect;
 export type InsertWorkOrderStatus = z.infer<typeof insertWorkOrderStatusSchema>;
 export type UpdateWorkOrderStatus = z.infer<typeof updateWorkOrderStatusSchema>;
+
+// Trouble code types
+export type TroubleCode = typeof troubleCodes.$inferSelect;
+export type InsertTroubleCode = z.infer<typeof insertTroubleCodeSchema>;
+export type UpdateTroubleCode = z.infer<typeof updateTroubleCodeSchema>;
 
 // Default permission keys
 export const permissionKeys = {

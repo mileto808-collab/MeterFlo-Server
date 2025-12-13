@@ -2423,6 +2423,81 @@ export async function registerRoutes(
     }
   });
 
+  // Trouble Codes API Routes
+  app.get("/api/trouble-codes", isAuthenticated, async (req: any, res) => {
+    try {
+      const codes = await storage.getTroubleCodes();
+      res.json(codes);
+    } catch (error) {
+      console.error("Error fetching trouble codes:", error);
+      res.status(500).json({ message: "Failed to fetch trouble codes" });
+    }
+  });
+
+  app.post("/api/trouble-codes", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const code = await storage.createTroubleCode(req.body);
+      res.status(201).json(code);
+    } catch (error: any) {
+      console.error("Error creating trouble code:", error);
+      if (error.code === "23505") {
+        return res.status(400).json({ message: "Trouble code already exists" });
+      }
+      res.status(500).json({ message: "Failed to create trouble code" });
+    }
+  });
+
+  app.patch("/api/trouble-codes/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const id = parseInt(req.params.id);
+      const code = await storage.updateTroubleCode(id, req.body);
+      
+      if (!code) {
+        return res.status(404).json({ message: "Trouble code not found" });
+      }
+      
+      res.json(code);
+    } catch (error: any) {
+      console.error("Error updating trouble code:", error);
+      if (error.code === "23505") {
+        return res.status(400).json({ message: "Trouble code already exists" });
+      }
+      res.status(500).json({ message: "Failed to update trouble code" });
+    }
+  });
+
+  app.delete("/api/trouble-codes/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const id = parseInt(req.params.id);
+      const code = await storage.getTroubleCode(id);
+      
+      if (!code) {
+        return res.status(404).json({ message: "Trouble code not found" });
+      }
+      
+      await storage.deleteTroubleCode(id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting trouble code:", error);
+      res.status(500).json({ message: "Failed to delete trouble code" });
+    }
+  });
+
   // User Groups API Routes
   app.get("/api/user-groups", isAuthenticated, async (req: any, res) => {
     try {
