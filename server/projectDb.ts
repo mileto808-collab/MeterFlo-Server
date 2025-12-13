@@ -239,14 +239,7 @@ export class ProjectWorkOrderStorage {
       if (troubleCode) {
         status = "Trouble";
         const troubleCodeDetails = await this.getTroubleCodeDetails(troubleCode);
-        const timestamp = new Date().toLocaleString('en-US', {
-          month: '2-digit',
-          day: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: true
-        });
+        const timestamp = await this.getTimezoneFormattedTimestamp();
         let troubleNote: string;
         if (troubleCodeDetails) {
           troubleNote = `Trouble Code: ${troubleCodeDetails.code} - ${troubleCodeDetails.label} - ${timestamp}`;
@@ -311,6 +304,19 @@ export class ProjectWorkOrderStorage {
     }
   }
 
+  private async getTimezoneFormattedTimestamp(): Promise<string> {
+    const timezone = await storage.getSetting("default_timezone") || "America/Denver";
+    return new Date().toLocaleString('en-US', {
+      month: '2-digit',
+      day: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: timezone
+    });
+  }
+
   async updateWorkOrder(id: number, updates: Partial<InsertProjectWorkOrder>, updatedBy?: string): Promise<ProjectWorkOrder | undefined> {
     await this.ensureMigrated();
     const client = await pool.connect();
@@ -327,14 +333,7 @@ export class ProjectWorkOrderStorage {
       if (troubleCode) {
         forceStatusToTrouble = true;
         const troubleCodeDetails = await this.getTroubleCodeDetails(troubleCode);
-        const timestamp = new Date().toLocaleString('en-US', {
-          month: '2-digit',
-          day: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: true
-        });
+        const timestamp = await this.getTimezoneFormattedTimestamp();
         if (troubleCodeDetails) {
           troubleNoteToAdd = `Trouble Code: ${troubleCodeDetails.code} - ${troubleCodeDetails.label} - ${timestamp}`;
         } else {
