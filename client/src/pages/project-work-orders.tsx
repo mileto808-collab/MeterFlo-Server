@@ -40,7 +40,7 @@ import * as XLSX from "xlsx";
 import { format } from "date-fns";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { Project, WorkOrderStatus } from "@shared/schema";
+import type { Project, WorkOrderStatus, TroubleCode } from "@shared/schema";
 import { insertProjectWorkOrderSchema, serviceTypeEnum } from "@shared/schema";
 import type { ProjectWorkOrder } from "../../../server/projectDb";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -113,6 +113,7 @@ export default function ProjectWorkOrders() {
       notes: "",
       assignedTo: "",
       scheduledDate: "",
+      trouble: "",
     },
   });
 
@@ -141,6 +142,7 @@ export default function ProjectWorkOrders() {
       status: "Open",
       assignedTo: "",
       scheduledDate: "",
+      trouble: "",
     },
   });
 
@@ -169,6 +171,10 @@ export default function ProjectWorkOrders() {
   const { data: assigneesData } = useQuery<AssigneesResponse>({
     queryKey: [`/api/projects/${projectId}/assignees`],
     enabled: !!projectId && !accessDenied,
+  });
+
+  const { data: troubleCodes = [] } = useQuery<TroubleCode[]>({
+    queryKey: ["/api/trouble-codes"],
   });
 
   useEffect(() => {
@@ -218,6 +224,7 @@ export default function ProjectWorkOrders() {
         status: editingWorkOrder.status || "Open",
         assignedTo: editingWorkOrder.assignedTo || "",
         scheduledDate: (editingWorkOrder as any).scheduledDate || "",
+        trouble: (editingWorkOrder as any).trouble || "",
       });
     }
   }, [editingWorkOrder, editForm]);
@@ -238,6 +245,7 @@ export default function ProjectWorkOrders() {
     oldGps: data.oldGps || null,
     newGps: data.newGps || null,
     notes: data.notes || null,
+    trouble: (data as any).trouble || null,
   });
 
   const createMutation = useMutation({
@@ -1073,6 +1081,31 @@ export default function ProjectWorkOrders() {
                   />
                   <FormField
                     control={editForm.control}
+                    name="trouble"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Trouble Code</FormLabel>
+                        <Select value={(field.value as string) || ""} onValueChange={field.onChange}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-edit-trouble">
+                              <SelectValue placeholder="Select trouble code..." />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="">None</SelectItem>
+                            {troubleCodes.map((tc) => (
+                              <SelectItem key={tc.id} value={tc.code}>
+                                {tc.code} - {tc.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editForm.control}
                     name="notes"
                     render={({ field }) => (
                       <FormItem className="md:col-span-2">
@@ -1559,6 +1592,31 @@ export default function ProjectWorkOrders() {
                           />
                         </FormControl>
                         <p className="text-xs text-muted-foreground">Setting a date will auto-set status to "Scheduled"</p>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="trouble"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Trouble Code</FormLabel>
+                        <Select value={(field.value as string) || ""} onValueChange={field.onChange}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-create-trouble">
+                              <SelectValue placeholder="Select trouble code..." />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="">None</SelectItem>
+                            {troubleCodes.map((tc) => (
+                              <SelectItem key={tc.id} value={tc.code}>
+                                {tc.code} - {tc.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <FormMessage />
                       </FormItem>
                     )}
