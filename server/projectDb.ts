@@ -34,6 +34,7 @@ export const projectWorkOrders = pgTable("work_orders", {
   createdBy: varchar("created_by"),
   updatedBy: varchar("updated_by"),
   completedAt: timestamp("completed_at"),
+  trouble: varchar("trouble", { length: 100 }),
   notes: text("notes"),
   attachments: text("attachments").array(),
   createdAt: timestamp("created_at").defaultNow(),
@@ -91,6 +92,7 @@ export async function createProjectSchema(projectName: string, projectId: number
         created_by VARCHAR,
         updated_by VARCHAR,
         completed_at TIMESTAMP,
+        trouble VARCHAR(100),
         notes TEXT,
         attachments TEXT[],
         created_at TIMESTAMP DEFAULT NOW(),
@@ -190,8 +192,8 @@ export class ProjectWorkOrderStorage {
       
       const result = await client.query(
         `INSERT INTO "${this.schemaName}".work_orders 
-         (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, scheduled_date, assigned_to, created_by, updated_by, notes, attachments)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
+         (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, scheduled_date, assigned_to, created_by, updated_by, trouble, notes, attachments)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
          RETURNING *`,
         [
           workOrder.customerWoId,
@@ -217,6 +219,7 @@ export class ProjectWorkOrderStorage {
           workOrder.assignedTo || null,
           createdBy || workOrder.createdBy || null,
           createdBy || null,
+          (workOrder as any).trouble || null,
           workOrder.notes || null,
           workOrder.attachments || null,
         ]
@@ -325,6 +328,10 @@ export class ProjectWorkOrderStorage {
           setClauses.push(`scheduled_date = NULL`);
         }
       }
+      if ((updates as any).trouble !== undefined) {
+        setClauses.push(`trouble = $${paramCount++}`);
+        values.push((updates as any).trouble);
+      }
       if (updates.notes !== undefined) {
         setClauses.push(`notes = $${paramCount++}`);
         values.push(updates.notes);
@@ -430,6 +437,7 @@ export class ProjectWorkOrderStorage {
       createdBy: row.created_by,
       updatedBy: row.updated_by,
       completedAt: row.completed_at,
+      trouble: row.trouble,
       notes: row.notes,
       attachments: row.attachments,
       createdAt: row.created_at,
@@ -487,6 +495,7 @@ export async function backupProjectDatabase(schemaName: string): Promise<{
       createdBy: row.created_by,
       updatedBy: row.updated_by,
       completedAt: row.completed_at,
+      trouble: row.trouble,
       notes: row.notes,
       attachments: row.attachments,
       createdAt: row.created_at,
@@ -524,8 +533,8 @@ export async function restoreProjectDatabase(
       try {
         await client.query(
           `INSERT INTO "${schemaName}".work_orders 
-           (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, scheduled_date, assigned_to, created_by, updated_by, completed_at, notes, attachments)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)`,
+           (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, scheduled_date, assigned_to, created_by, updated_by, completed_at, trouble, notes, attachments)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)`,
           [
             wo.customerWoId || null,
             wo.customerId || null,
@@ -551,6 +560,7 @@ export async function restoreProjectDatabase(
             wo.createdBy || null,
             wo.updatedBy || null,
             wo.completedAt || null,
+            wo.trouble || null,
             wo.notes || null,
             wo.attachments || null,
           ]
@@ -592,6 +602,28 @@ export async function getProjectDatabaseStats(schemaName: string): Promise<{
       tableSize: sizeResult.rows[0].size,
       lastModified: lastModifiedResult.rows[0].last_modified?.toISOString() || null,
     };
+  } finally {
+    client.release();
+  }
+}
+
+// Migrate project schema to add trouble column if it doesn't exist
+export async function migrateProjectSchemaAddTrouble(schemaName: string): Promise<boolean> {
+  const client = await pool.connect();
+  try {
+    // Check if trouble column exists
+    const checkResult = await client.query(`
+      SELECT column_name FROM information_schema.columns 
+      WHERE table_schema = $1 AND table_name = 'work_orders' AND column_name = 'trouble'
+    `, [schemaName]);
+    
+    if (checkResult.rows.length === 0) {
+      // Add trouble column
+      await client.query(`ALTER TABLE "${schemaName}".work_orders ADD COLUMN trouble VARCHAR(100)`);
+      console.log(`Added trouble column to ${schemaName}.work_orders`);
+      return true;
+    }
+    return false;
   } finally {
     client.release();
   }
