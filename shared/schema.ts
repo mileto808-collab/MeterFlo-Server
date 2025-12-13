@@ -222,7 +222,7 @@ export const workOrderStatuses = pgTable("work_order_statuses", {
 });
 
 // Default work order status values (for seeding)
-export const defaultWorkOrderStatuses = ["Open", "Completed", "Scheduled", "Skipped"] as const;
+export const defaultWorkOrderStatuses = ["Open", "Completed", "Scheduled", "Skipped", "Trouble"] as const;
 export type DefaultWorkOrderStatus = (typeof defaultWorkOrderStatuses)[number];
 
 // Trouble codes table - configurable trouble/issue codes for work orders
