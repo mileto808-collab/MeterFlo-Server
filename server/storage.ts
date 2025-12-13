@@ -13,6 +13,7 @@ import {
   fileImportHistory,
   workOrderStatuses,
   troubleCodes,
+  serviceTypes,
   defaultWorkOrderStatuses,
   permissionKeys,
   userGroups,
@@ -45,6 +46,9 @@ import {
   type TroubleCode,
   type InsertTroubleCode,
   type UpdateTroubleCode,
+  type ServiceTypeRecord,
+  type InsertServiceType,
+  type UpdateServiceType,
   type UserGroup,
   type InsertUserGroup,
   type UserGroupMember,
@@ -154,6 +158,13 @@ export interface IStorage {
   createTroubleCode(data: InsertTroubleCode): Promise<TroubleCode>;
   updateTroubleCode(id: number, data: UpdateTroubleCode): Promise<TroubleCode | undefined>;
   deleteTroubleCode(id: number): Promise<boolean>;
+
+  // Service type operations
+  getServiceTypes(): Promise<ServiceTypeRecord[]>;
+  getServiceType(id: number): Promise<ServiceTypeRecord | undefined>;
+  createServiceType(data: InsertServiceType): Promise<ServiceTypeRecord>;
+  updateServiceType(id: number, data: UpdateServiceType): Promise<ServiceTypeRecord | undefined>;
+  deleteServiceType(id: number): Promise<boolean>;
 
   // User group operations
   getAllUserGroups(): Promise<UserGroup[]>;
@@ -944,6 +955,44 @@ export class DatabaseStorage implements IStorage {
 
   async deleteTroubleCode(id: number): Promise<boolean> {
     const result = await db.delete(troubleCodes).where(eq(troubleCodes.id, id));
+    return result.rowCount > 0;
+  }
+
+  // Service type operations
+  async getServiceTypes(): Promise<ServiceTypeRecord[]> {
+    return await db
+      .select()
+      .from(serviceTypes)
+      .orderBy(serviceTypes.sortOrder);
+  }
+
+  async getServiceType(id: number): Promise<ServiceTypeRecord | undefined> {
+    const [serviceType] = await db
+      .select()
+      .from(serviceTypes)
+      .where(eq(serviceTypes.id, id));
+    return serviceType;
+  }
+
+  async createServiceType(data: InsertServiceType): Promise<ServiceTypeRecord> {
+    const [serviceType] = await db
+      .insert(serviceTypes)
+      .values(data)
+      .returning();
+    return serviceType;
+  }
+
+  async updateServiceType(id: number, data: UpdateServiceType): Promise<ServiceTypeRecord | undefined> {
+    const [serviceType] = await db
+      .update(serviceTypes)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(serviceTypes.id, id))
+      .returning();
+    return serviceType;
+  }
+
+  async deleteServiceType(id: number): Promise<boolean> {
+    const result = await db.delete(serviceTypes).where(eq(serviceTypes.id, id));
     return result.rowCount > 0;
   }
 

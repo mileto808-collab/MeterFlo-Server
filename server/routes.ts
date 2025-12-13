@@ -2546,6 +2546,81 @@ export async function registerRoutes(
     }
   });
 
+  // Service Types API Routes
+  app.get("/api/service-types", isAuthenticated, async (req: any, res) => {
+    try {
+      const serviceTypes = await storage.getServiceTypes();
+      res.json(serviceTypes);
+    } catch (error) {
+      console.error("Error fetching service types:", error);
+      res.status(500).json({ message: "Failed to fetch service types" });
+    }
+  });
+
+  app.post("/api/service-types", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const serviceType = await storage.createServiceType(req.body);
+      res.status(201).json(serviceType);
+    } catch (error: any) {
+      console.error("Error creating service type:", error);
+      if (error.code === "23505") {
+        return res.status(400).json({ message: "Service type already exists" });
+      }
+      res.status(500).json({ message: "Failed to create service type" });
+    }
+  });
+
+  app.patch("/api/service-types/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const id = parseInt(req.params.id);
+      const serviceType = await storage.updateServiceType(id, req.body);
+      
+      if (!serviceType) {
+        return res.status(404).json({ message: "Service type not found" });
+      }
+      
+      res.json(serviceType);
+    } catch (error: any) {
+      console.error("Error updating service type:", error);
+      if (error.code === "23505") {
+        return res.status(400).json({ message: "Service type already exists" });
+      }
+      res.status(500).json({ message: "Failed to update service type" });
+    }
+  });
+
+  app.delete("/api/service-types/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const id = parseInt(req.params.id);
+      const serviceType = await storage.getServiceType(id);
+      
+      if (!serviceType) {
+        return res.status(404).json({ message: "Service type not found" });
+      }
+      
+      await storage.deleteServiceType(id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting service type:", error);
+      res.status(500).json({ message: "Failed to delete service type" });
+    }
+  });
+
   // User Groups API Routes
   app.get("/api/user-groups", isAuthenticated, async (req: any, res) => {
     try {
