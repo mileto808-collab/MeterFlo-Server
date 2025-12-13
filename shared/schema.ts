@@ -236,7 +236,22 @@ export const troubleCodes = pgTable("trouble_codes", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// Service type enum for utility work orders
+// Service types table - configurable service type codes
+export const serviceTypes = pgTable("service_types", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  code: varchar("code", { length: 50 }).notNull().unique(),
+  label: varchar("label", { length: 100 }).notNull(),
+  isDefault: boolean("is_default").default(false),
+  sortOrder: integer("sort_order").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Default service type values (for backward compatibility and seeding)
+export const defaultServiceTypes = ["Water", "Electric", "Gas"] as const;
+export type DefaultServiceType = (typeof defaultServiceTypes)[number];
+
+// Service type enum for utility work orders (kept for backward compatibility)
 export const serviceTypeEnum = ["Water", "Electric", "Gas"] as const;
 export type ServiceType = (typeof serviceTypeEnum)[number];
 
@@ -416,6 +431,21 @@ export const updateTroubleCodeSchema = z.object({
   sortOrder: z.number().int().optional(),
 });
 
+// Schema for service type management
+export const insertServiceTypeSchema = z.object({
+  code: z.string().min(1).max(50),
+  label: z.string().min(1).max(100),
+  isDefault: z.boolean().optional(),
+  sortOrder: z.number().int().optional(),
+});
+
+export const updateServiceTypeSchema = z.object({
+  code: z.string().min(1).max(50).optional(),
+  label: z.string().min(1).max(100).optional(),
+  isDefault: z.boolean().optional(),
+  sortOrder: z.number().int().optional(),
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -547,6 +577,11 @@ export type UpdateWorkOrderStatus = z.infer<typeof updateWorkOrderStatusSchema>;
 export type TroubleCode = typeof troubleCodes.$inferSelect;
 export type InsertTroubleCode = z.infer<typeof insertTroubleCodeSchema>;
 export type UpdateTroubleCode = z.infer<typeof updateTroubleCodeSchema>;
+
+// Service type types
+export type ServiceTypeRecord = typeof serviceTypes.$inferSelect;
+export type InsertServiceType = z.infer<typeof insertServiceTypeSchema>;
+export type UpdateServiceType = z.infer<typeof updateServiceTypeSchema>;
 
 // Default permission keys
 export const permissionKeys = {
