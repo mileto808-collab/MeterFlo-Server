@@ -269,10 +269,12 @@ export default function ProjectWorkOrders() {
   const createMutation = useMutation({
     mutationFn: async (data: WorkOrderFormData) => {
       if (accessDenied) throw new Error("403: Access denied");
-      const defaultStatus = workOrderStatuses.find(s => s.isDefault)?.code || "Open";
+      const troubleStatus = workOrderStatuses.find(s => s.label === "Trouble")?.label || "Trouble";
+      const defaultStatus = workOrderStatuses.find(s => s.isDefault)?.label || "Open";
+      const status = (data as any).trouble ? troubleStatus : defaultStatus;
       return apiRequest("POST", `/api/projects/${projectId}/work-orders`, {
         ...normalizeOptionalFields(data),
-        status: defaultStatus,
+        status,
       });
     },
     onSuccess: () => {
@@ -296,8 +298,15 @@ export default function ProjectWorkOrders() {
   const updateMutation = useMutation({
     mutationFn: async ({ id, ...data }: { id: number } & Partial<WorkOrderFormData>) => {
       if (accessDenied) throw new Error("403: Access denied");
-      return apiRequest("PATCH", `/api/projects/${projectId}/work-orders/${id}`, 
-        normalizeOptionalFields(data as WorkOrderFormData));
+      const normalizedData = normalizeOptionalFields(data as WorkOrderFormData);
+      const troubleStatus = workOrderStatuses.find(s => s.label === "Trouble")?.label || "Trouble";
+      const openStatus = workOrderStatuses.find(s => s.isDefault)?.label || "Open";
+      if ((data as any).trouble) {
+        (normalizedData as any).status = troubleStatus;
+      } else if ((data as any).trouble === "" || (data as any).trouble === null) {
+        (normalizedData as any).status = openStatus;
+      }
+      return apiRequest("PATCH", `/api/projects/${projectId}/work-orders/${id}`, normalizedData);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/work-orders`] });
