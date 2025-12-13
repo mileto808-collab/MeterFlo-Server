@@ -313,7 +313,7 @@ export function AppSidebar() {
                                 >
                                   <Link href={`/projects/${project.id}/db-import`}>
                                     <Database className="h-3 w-3" />
-                                    <span>Database Import</span>
+                                    <span>Database Import/Export</span>
                                   </Link>
                                 </SidebarMenuSubButton>
                               </SidebarMenuSubItem>
