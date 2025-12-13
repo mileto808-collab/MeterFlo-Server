@@ -351,19 +351,38 @@ export default function ProjectWorkOrders() {
     setEditingWorkOrder(workOrder);
   };
 
+  const getStatusColorHex = (color: string): string => {
+    const colorMap: Record<string, string> = {
+      blue: "#3b82f6",
+      green: "#22c55e",
+      orange: "#f97316",
+      red: "#ef4444",
+      yellow: "#eab308",
+      purple: "#a855f7",
+      gray: "#6b7280",
+    };
+    return colorMap[color] || colorMap.gray;
+  };
+
   const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "pending":
-        return <Badge variant="outline">Pending</Badge>;
-      case "in_progress":
-        return <Badge variant="default">In Progress</Badge>;
-      case "completed":
-        return <Badge variant="secondary">Completed</Badge>;
-      case "cancelled":
-        return <Badge variant="destructive">Cancelled</Badge>;
-      default:
-        return <Badge variant="outline">{status}</Badge>;
+    if (!status) {
+      return <Badge variant="outline">Unknown</Badge>;
     }
+    const statusRecord = workOrderStatuses.find(
+      s => s.code === status || s.label === status
+    );
+    if (statusRecord && statusRecord.color) {
+      const bgColor = getStatusColorHex(statusRecord.color);
+      const textColor = ['yellow', 'orange'].includes(statusRecord.color) ? '#000' : '#fff';
+      return (
+        <Badge 
+          style={{ backgroundColor: bgColor, color: textColor, borderColor: bgColor }}
+        >
+          {statusRecord.label}
+        </Badge>
+      );
+    }
+    return <Badge variant="outline">{status}</Badge>;
   };
 
   const getServiceTypeBadge = (serviceType: string | null) => {
