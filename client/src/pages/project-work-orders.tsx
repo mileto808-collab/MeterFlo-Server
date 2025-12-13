@@ -40,8 +40,8 @@ import * as XLSX from "xlsx";
 import { format } from "date-fns";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { Project, WorkOrderStatus, TroubleCode } from "@shared/schema";
-import { insertProjectWorkOrderSchema, serviceTypeEnum } from "@shared/schema";
+import type { Project, WorkOrderStatus, TroubleCode, ServiceTypeRecord } from "@shared/schema";
+import { insertProjectWorkOrderSchema } from "@shared/schema";
 import type { ProjectWorkOrder } from "../../../server/projectDb";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -176,6 +176,24 @@ export default function ProjectWorkOrders() {
   const { data: troubleCodes = [] } = useQuery<TroubleCode[]>({
     queryKey: ["/api/trouble-codes"],
   });
+
+  const { data: serviceTypes = [] } = useQuery<ServiceTypeRecord[]>({
+    queryKey: ["/api/service-types"],
+  });
+
+  // Helper to get color hex from service type color name
+  const getServiceTypeColorHex = (color: string): string => {
+    const colorMap: Record<string, string> = {
+      blue: "#3b82f6",
+      green: "#22c55e",
+      orange: "#f97316",
+      red: "#ef4444",
+      yellow: "#eab308",
+      purple: "#a855f7",
+      gray: "#6b7280",
+    };
+    return colorMap[color] || colorMap.gray;
+  };
 
   useEffect(() => {
     const error = projectError || workOrdersError || statsError;
@@ -349,16 +367,24 @@ export default function ProjectWorkOrders() {
   };
 
   const getServiceTypeBadge = (serviceType: string | null) => {
-    switch (serviceType) {
-      case "Water":
-        return <Badge className="bg-blue-500 text-white">Water</Badge>;
-      case "Electric":
-        return <Badge className="bg-yellow-500 text-black">Electric</Badge>;
-      case "Gas":
-        return <Badge className="bg-orange-500 text-white">Gas</Badge>;
-      default:
-        return <Badge variant="outline">{serviceType || "Unknown"}</Badge>;
+    if (!serviceType) {
+      return <Badge variant="outline">Unknown</Badge>;
     }
+    const serviceTypeRecord = serviceTypes.find(
+      st => st.code === serviceType || st.label === serviceType
+    );
+    if (serviceTypeRecord && serviceTypeRecord.color) {
+      const bgColor = getServiceTypeColorHex(serviceTypeRecord.color);
+      const textColor = ['yellow', 'orange'].includes(serviceTypeRecord.color) ? '#000' : '#fff';
+      return (
+        <Badge 
+          style={{ backgroundColor: bgColor, color: textColor, borderColor: bgColor }}
+        >
+          {serviceTypeRecord.label}
+        </Badge>
+      );
+    }
+    return <Badge variant="outline">{serviceType}</Badge>;
   };
 
   const handleSort = (column: string) => {
@@ -720,8 +746,8 @@ export default function ProjectWorkOrders() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {serviceTypeEnum.map((type) => (
-                              <SelectItem key={type} value={type}>{type}</SelectItem>
+                            {serviceTypes.map((type) => (
+                              <SelectItem key={type.id} value={type.code}>{type.label}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -1261,8 +1287,8 @@ export default function ProjectWorkOrders() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            {serviceTypeEnum.map((type) => (
-                              <SelectItem key={type} value={type}>{type}</SelectItem>
+                            {serviceTypes.map((type) => (
+                              <SelectItem key={type.id} value={type.code}>{type.label}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -1706,8 +1732,8 @@ export default function ProjectWorkOrders() {
                 </SelectTrigger>
               </FormControl>
               <SelectContent>
-                {serviceTypeEnum.map((type) => (
-                  <SelectItem key={type} value={type}>{type}</SelectItem>
+                {serviceTypes.map((type) => (
+                  <SelectItem key={type.id} value={type.code}>{type.label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -2055,8 +2081,8 @@ export default function ProjectWorkOrders() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Service Types</SelectItem>
-                    {serviceTypeEnum.map((type) => (
-                      <SelectItem key={type} value={type}>{type}</SelectItem>
+                    {serviceTypes.map((type) => (
+                      <SelectItem key={type.id} value={type.code}>{type.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
