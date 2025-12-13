@@ -1752,6 +1752,54 @@ export async function registerRoutes(
     }
   });
 
+  // Timezone settings (Admin only)
+  const validTimezones = [
+    "America/New_York",      // Eastern
+    "America/Chicago",       // Central
+    "America/Denver",        // Mountain
+    "America/Phoenix",       // Arizona (no DST)
+    "America/Los_Angeles",   // Pacific
+    "America/Anchorage",     // Alaska
+    "America/Honolulu",      // Hawaii
+    "UTC"
+  ];
+
+  app.get("/api/settings/timezone", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const timezone = await storage.getSetting("default_timezone");
+      res.json({ timezone: timezone || "America/Denver" });
+    } catch (error) {
+      console.error("Error fetching timezone:", error);
+      res.status(500).json({ message: "Failed to fetch timezone setting" });
+    }
+  });
+
+  app.put("/api/settings/timezone", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const { timezone } = req.body;
+      
+      if (!timezone || !validTimezones.includes(timezone)) {
+        return res.status(400).json({ message: "Invalid timezone. Must be a valid IANA timezone." });
+      }
+      
+      await storage.setSetting("default_timezone", timezone, "Default timezone for timestamps");
+      res.json({ message: "Timezone updated", timezone });
+    } catch (error) {
+      console.error("Error updating timezone:", error);
+      res.status(500).json({ message: "Failed to update timezone" });
+    }
+  });
+
   // Database backup/restore endpoints (Admin only)
   
   // Get database stats for a project
