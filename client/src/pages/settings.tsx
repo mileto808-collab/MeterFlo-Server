@@ -17,7 +17,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Moon, Sun, User as UserIcon, Shield, FolderOpen, Save, FileUp, Users, Plus, Pencil, Trash2, UsersRound, Clock } from "lucide-react";
-import type { Subrole, Permission, WorkOrderStatus, UserGroup, User, TroubleCode } from "@shared/schema";
+import type { Subrole, Permission, WorkOrderStatus, UserGroup, User, TroubleCode, ServiceTypeRecord } from "@shared/schema";
+import { Wrench } from "lucide-react";
 import { AlertTriangle } from "lucide-react";
 
 interface FileSettings {
@@ -109,6 +110,16 @@ export default function Settings() {
     description: "",
   });
 
+  // Service Types state
+  const [serviceTypeDialogOpen, setServiceTypeDialogOpen] = useState(false);
+  const [deleteServiceTypeDialogOpen, setDeleteServiceTypeDialogOpen] = useState(false);
+  const [selectedServiceType, setSelectedServiceType] = useState<ServiceTypeRecord | null>(null);
+  const [serviceTypeForm, setServiceTypeForm] = useState({
+    code: "",
+    label: "",
+    isDefault: false,
+  });
+
   const { data: subroles, isLoading: loadingSubroles } = useQuery<Subrole[]>({
     queryKey: ["/api/subroles"],
     enabled: user?.role === "admin",
@@ -174,6 +185,12 @@ export default function Settings() {
   const { data: allUsers } = useQuery<User[]>({
     queryKey: ["/api/users"],
     enabled: user?.role === "admin" && membersDialogOpen,
+  });
+
+  // Service Types query
+  const { data: serviceTypesList, isLoading: loadingServiceTypes } = useQuery<ServiceTypeRecord[]>({
+    queryKey: ["/api/service-types"],
+    enabled: user?.role === "admin",
   });
 
   useEffect(() => {
@@ -416,6 +433,53 @@ export default function Settings() {
     },
   });
 
+  // Service Types mutations
+  const createServiceTypeMutation = useMutation({
+    mutationFn: async (data: { code: string; label: string; isDefault?: boolean }) => {
+      return apiRequest("POST", "/api/service-types", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/service-types"] });
+      toast({ title: "Service type created successfully" });
+      setServiceTypeDialogOpen(false);
+      resetServiceTypeForm();
+    },
+    onError: () => {
+      toast({ title: "Failed to create service type", variant: "destructive" });
+    },
+  });
+
+  const updateServiceTypeMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: { code?: string; label?: string; isDefault?: boolean } }) => {
+      return apiRequest("PATCH", `/api/service-types/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/service-types"] });
+      toast({ title: "Service type updated successfully" });
+      setServiceTypeDialogOpen(false);
+      setSelectedServiceType(null);
+      resetServiceTypeForm();
+    },
+    onError: () => {
+      toast({ title: "Failed to update service type", variant: "destructive" });
+    },
+  });
+
+  const deleteServiceTypeMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return apiRequest("DELETE", `/api/service-types/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/service-types"] });
+      toast({ title: "Service type deleted successfully" });
+      setDeleteServiceTypeDialogOpen(false);
+      setSelectedServiceType(null);
+    },
+    onError: () => {
+      toast({ title: "Failed to delete service type", variant: "destructive" });
+    },
+  });
+
   const resetStatusForm = () => {
     setStatusForm({
       code: "",
@@ -613,6 +677,50 @@ export default function Settings() {
       createUserGroupMutation.mutate({
         name: userGroupForm.name,
         description: userGroupForm.description || undefined,
+      });
+    }
+  };
+
+  // Service Type helper functions
+  const resetServiceTypeForm = () => {
+    setServiceTypeForm({
+      code: "",
+      label: "",
+      isDefault: false,
+    });
+  };
+
+  const openCreateServiceTypeDialog = () => {
+    setSelectedServiceType(null);
+    resetServiceTypeForm();
+    setServiceTypeDialogOpen(true);
+  };
+
+  const openEditServiceTypeDialog = (serviceType: ServiceTypeRecord) => {
+    setSelectedServiceType(serviceType);
+    setServiceTypeForm({
+      code: serviceType.code,
+      label: serviceType.label,
+      isDefault: serviceType.isDefault || false,
+    });
+    setServiceTypeDialogOpen(true);
+  };
+
+  const handleServiceTypeSubmit = () => {
+    if (selectedServiceType) {
+      updateServiceTypeMutation.mutate({
+        id: selectedServiceType.id,
+        data: {
+          code: serviceTypeForm.code,
+          label: serviceTypeForm.label,
+          isDefault: serviceTypeForm.isDefault,
+        },
+      });
+    } else {
+      createServiceTypeMutation.mutate({
+        code: serviceTypeForm.code,
+        label: serviceTypeForm.label,
+        isDefault: serviceTypeForm.isDefault,
       });
     }
   };
@@ -1184,6 +1292,74 @@ export default function Settings() {
                 )}
               </CardContent>
             </Card>
+
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <Wrench className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <CardTitle>Service Types</CardTitle>
+                      <CardDescription className="mt-1">Define service types for work orders (e.g., Water, Electric, Gas)</CardDescription>
+                    </div>
+                  </div>
+                  <Button onClick={openCreateServiceTypeDialog} data-testid="button-add-service-type">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Service Type
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {loadingServiceTypes ? (
+                  <p className="text-muted-foreground">Loading...</p>
+                ) : serviceTypesList && serviceTypesList.length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Code</TableHead>
+                        <TableHead>Label</TableHead>
+                        <TableHead>Default</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {serviceTypesList.map((serviceType) => (
+                        <TableRow key={serviceType.id} data-testid={`row-service-type-${serviceType.id}`}>
+                          <TableCell className="font-medium">{serviceType.code}</TableCell>
+                          <TableCell>{serviceType.label}</TableCell>
+                          <TableCell>{serviceType.isDefault ? "Yes" : "—"}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={() => openEditServiceTypeDialog(serviceType)}
+                                data-testid={`button-edit-service-type-${serviceType.id}`}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={() => {
+                                  setSelectedServiceType(serviceType);
+                                  setDeleteServiceTypeDialogOpen(true);
+                                }}
+                                data-testid={`button-delete-service-type-${serviceType.id}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <p className="text-muted-foreground text-center py-4">No service types defined yet.</p>
+                )}
+              </CardContent>
+            </Card>
           </>
         )}
 
@@ -1693,6 +1869,93 @@ export default function Settings() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Service Type Create/Edit Dialog */}
+      <Dialog open={serviceTypeDialogOpen} onOpenChange={setServiceTypeDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{selectedServiceType ? "Edit Service Type" : "Create Service Type"}</DialogTitle>
+            <DialogDescription>
+              {selectedServiceType ? "Update the service type settings" : "Define a new service type for work orders"}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="service-type-code">Code</Label>
+              <Input
+                id="service-type-code"
+                value={serviceTypeForm.code}
+                onChange={(e) => setServiceTypeForm(prev => ({ ...prev, code: e.target.value }))}
+                placeholder="e.g. WATER, ELECTRIC"
+                className="mt-2"
+                data-testid="input-service-type-code"
+              />
+              <p className="text-sm text-muted-foreground mt-1">A unique identifier for the service type</p>
+            </div>
+
+            <div>
+              <Label htmlFor="service-type-label">Label</Label>
+              <Input
+                id="service-type-label"
+                value={serviceTypeForm.label}
+                onChange={(e) => setServiceTypeForm(prev => ({ ...prev, label: e.target.value }))}
+                placeholder="e.g. Water, Electric"
+                className="mt-2"
+                data-testid="input-service-type-label"
+              />
+              <p className="text-sm text-muted-foreground mt-1">Display name for the service type</p>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="service-type-default"
+                checked={serviceTypeForm.isDefault}
+                onCheckedChange={(checked) => setServiceTypeForm(prev => ({ ...prev, isDefault: !!checked }))}
+                data-testid="checkbox-service-type-default"
+              />
+              <Label htmlFor="service-type-default" className="cursor-pointer">
+                Default service type for new work orders
+              </Label>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setServiceTypeDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleServiceTypeSubmit}
+              disabled={!serviceTypeForm.code || !serviceTypeForm.label || createServiceTypeMutation.isPending || updateServiceTypeMutation.isPending}
+              data-testid="button-save-service-type"
+            >
+              {createServiceTypeMutation.isPending || updateServiceTypeMutation.isPending ? "Saving..." : selectedServiceType ? "Update" : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={deleteServiceTypeDialogOpen} onOpenChange={setDeleteServiceTypeDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Service Type</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{selectedServiceType?.label}"? This action cannot be undone.
+              Work orders with this service type may need to be updated.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => selectedServiceType && deleteServiceTypeMutation.mutate(selectedServiceType.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete-service-type"
+            >
+              {deleteServiceTypeMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
