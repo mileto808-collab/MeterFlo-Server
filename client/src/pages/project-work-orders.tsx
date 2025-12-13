@@ -1085,14 +1085,14 @@ export default function ProjectWorkOrders() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Trouble Code</FormLabel>
-                        <Select value={(field.value as string) || ""} onValueChange={field.onChange}>
+                        <Select value={(field.value as string) || "__none__"} onValueChange={(val) => field.onChange(val === "__none__" ? "" : val)}>
                           <FormControl>
                             <SelectTrigger data-testid="select-edit-trouble">
                               <SelectValue placeholder="Select trouble code..." />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="">None</SelectItem>
+                            <SelectItem value="__none__">None</SelectItem>
                             {troubleCodes.map((tc) => (
                               <SelectItem key={tc.id} value={tc.code}>
                                 {tc.code} - {tc.label}
@@ -1602,14 +1602,14 @@ export default function ProjectWorkOrders() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Trouble Code</FormLabel>
-                        <Select value={(field.value as string) || ""} onValueChange={field.onChange}>
+                        <Select value={(field.value as string) || "__none__"} onValueChange={(val) => field.onChange(val === "__none__" ? "" : val)}>
                           <FormControl>
                             <SelectTrigger data-testid="select-create-trouble">
                               <SelectValue placeholder="Select trouble code..." />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="">None</SelectItem>
+                            <SelectItem value="__none__">None</SelectItem>
                             {troubleCodes.map((tc) => (
                               <SelectItem key={tc.id} value={tc.code}>
                                 {tc.code} - {tc.label}
