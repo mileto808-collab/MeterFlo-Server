@@ -17,7 +17,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Moon, Sun, User as UserIcon, Shield, FolderOpen, Save, FileUp, Users, Plus, Pencil, Trash2, UsersRound } from "lucide-react";
-import type { Subrole, Permission, WorkOrderStatus, UserGroup, User } from "@shared/schema";
+import type { Subrole, Permission, WorkOrderStatus, UserGroup, User, TroubleCode } from "@shared/schema";
+import { AlertTriangle } from "lucide-react";
 
 interface FileSettings {
   maxFileSizeMB: number;
@@ -76,6 +77,16 @@ export default function Settings() {
     isDefault: false,
   });
 
+  // Trouble Codes state
+  const [troubleCodeDialogOpen, setTroubleCodeDialogOpen] = useState(false);
+  const [deleteTroubleCodeDialogOpen, setDeleteTroubleCodeDialogOpen] = useState(false);
+  const [selectedTroubleCode, setSelectedTroubleCode] = useState<TroubleCode | null>(null);
+  const [troubleCodeForm, setTroubleCodeForm] = useState({
+    code: "",
+    label: "",
+    description: "",
+  });
+
   // User Groups state
   const [userGroupDialogOpen, setUserGroupDialogOpen] = useState(false);
   const [deleteUserGroupDialogOpen, setDeleteUserGroupDialogOpen] = useState(false);
@@ -118,6 +129,12 @@ export default function Settings() {
 
   const { data: workOrderStatusList, isLoading: loadingStatuses } = useQuery<WorkOrderStatus[]>({
     queryKey: ["/api/work-order-statuses"],
+    enabled: user?.role === "admin",
+  });
+
+  // Trouble Codes query
+  const { data: troubleCodesList, isLoading: loadingTroubleCodes } = useQuery<TroubleCode[]>({
+    queryKey: ["/api/trouble-codes"],
     enabled: user?.role === "admin",
   });
 
@@ -253,6 +270,53 @@ export default function Settings() {
     },
     onError: () => {
       toast({ title: "Failed to delete status", variant: "destructive" });
+    },
+  });
+
+  // Trouble Codes mutations
+  const createTroubleCodeMutation = useMutation({
+    mutationFn: async (data: { code: string; label: string; description?: string }) => {
+      return apiRequest("POST", "/api/trouble-codes", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/trouble-codes"] });
+      toast({ title: "Trouble code created successfully" });
+      setTroubleCodeDialogOpen(false);
+      resetTroubleCodeForm();
+    },
+    onError: () => {
+      toast({ title: "Failed to create trouble code", variant: "destructive" });
+    },
+  });
+
+  const updateTroubleCodeMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: { code?: string; label?: string; description?: string } }) => {
+      return apiRequest("PATCH", `/api/trouble-codes/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/trouble-codes"] });
+      toast({ title: "Trouble code updated successfully" });
+      setTroubleCodeDialogOpen(false);
+      setSelectedTroubleCode(null);
+      resetTroubleCodeForm();
+    },
+    onError: () => {
+      toast({ title: "Failed to update trouble code", variant: "destructive" });
+    },
+  });
+
+  const deleteTroubleCodeMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return apiRequest("DELETE", `/api/trouble-codes/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/trouble-codes"] });
+      toast({ title: "Trouble code deleted successfully" });
+      setDeleteTroubleCodeDialogOpen(false);
+      setSelectedTroubleCode(null);
+    },
+    onError: () => {
+      toast({ title: "Failed to delete trouble code", variant: "destructive" });
     },
   });
 
@@ -439,6 +503,50 @@ export default function Settings() {
         ? prev.permissions.filter(p => p !== permKey)
         : [...prev.permissions, permKey],
     }));
+  };
+
+  // Trouble Code helper functions
+  const resetTroubleCodeForm = () => {
+    setTroubleCodeForm({
+      code: "",
+      label: "",
+      description: "",
+    });
+  };
+
+  const openCreateTroubleCodeDialog = () => {
+    setSelectedTroubleCode(null);
+    resetTroubleCodeForm();
+    setTroubleCodeDialogOpen(true);
+  };
+
+  const openEditTroubleCodeDialog = (troubleCode: TroubleCode) => {
+    setSelectedTroubleCode(troubleCode);
+    setTroubleCodeForm({
+      code: troubleCode.code,
+      label: troubleCode.label,
+      description: troubleCode.description || "",
+    });
+    setTroubleCodeDialogOpen(true);
+  };
+
+  const handleTroubleCodeSubmit = () => {
+    if (selectedTroubleCode) {
+      updateTroubleCodeMutation.mutate({
+        id: selectedTroubleCode.id,
+        data: {
+          code: troubleCodeForm.code,
+          label: troubleCodeForm.label,
+          description: troubleCodeForm.description || undefined,
+        },
+      });
+    } else {
+      createTroubleCodeMutation.mutate({
+        code: troubleCodeForm.code,
+        label: troubleCodeForm.label,
+        description: troubleCodeForm.description || undefined,
+      });
+    }
   };
 
   // User Group helper functions
@@ -859,6 +967,74 @@ export default function Settings() {
               <CardHeader>
                 <div className="flex items-center justify-between gap-4 flex-wrap">
                   <div className="flex items-center gap-2">
+                    <AlertTriangle className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <CardTitle>Trouble Codes</CardTitle>
+                      <CardDescription className="mt-1">Define trouble/issue codes that can be assigned to work orders</CardDescription>
+                    </div>
+                  </div>
+                  <Button onClick={openCreateTroubleCodeDialog} data-testid="button-add-trouble-code">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Trouble Code
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {loadingTroubleCodes ? (
+                  <p className="text-muted-foreground">Loading...</p>
+                ) : troubleCodesList && troubleCodesList.length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Code</TableHead>
+                        <TableHead>Label</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {troubleCodesList.map((troubleCode) => (
+                        <TableRow key={troubleCode.id} data-testid={`row-trouble-code-${troubleCode.id}`}>
+                          <TableCell className="font-medium">{troubleCode.code}</TableCell>
+                          <TableCell>{troubleCode.label}</TableCell>
+                          <TableCell className="text-muted-foreground">{troubleCode.description || "—"}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={() => openEditTroubleCodeDialog(troubleCode)}
+                                data-testid={`button-edit-trouble-code-${troubleCode.id}`}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={() => {
+                                  setSelectedTroubleCode(troubleCode);
+                                  setDeleteTroubleCodeDialogOpen(true);
+                                }}
+                                data-testid={`button-delete-trouble-code-${troubleCode.id}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <p className="text-muted-foreground text-center py-4">No trouble codes defined yet.</p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-2">
                     <UsersRound className="h-5 w-5 text-muted-foreground" />
                     <div>
                       <CardTitle>User Groups</CardTitle>
@@ -1182,6 +1358,93 @@ export default function Settings() {
               data-testid="button-confirm-delete-status"
             >
               {deleteStatusMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Trouble Code Create/Edit Dialog */}
+      <Dialog open={troubleCodeDialogOpen} onOpenChange={setTroubleCodeDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{selectedTroubleCode ? "Edit Trouble Code" : "Create Trouble Code"}</DialogTitle>
+            <DialogDescription>
+              {selectedTroubleCode ? "Update the trouble code settings" : "Define a new trouble code for work orders"}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="trouble-code-code">Code</Label>
+              <Input
+                id="trouble-code-code"
+                value={troubleCodeForm.code}
+                onChange={(e) => setTroubleCodeForm(prev => ({ ...prev, code: e.target.value }))}
+                placeholder="e.g. DAMAGED, NO_ACCESS"
+                className="mt-2"
+                data-testid="input-trouble-code-code"
+              />
+              <p className="text-sm text-muted-foreground mt-1">A unique identifier for the trouble code</p>
+            </div>
+
+            <div>
+              <Label htmlFor="trouble-code-label">Label</Label>
+              <Input
+                id="trouble-code-label"
+                value={troubleCodeForm.label}
+                onChange={(e) => setTroubleCodeForm(prev => ({ ...prev, label: e.target.value }))}
+                placeholder="e.g. Damaged Meter, No Access"
+                className="mt-2"
+                data-testid="input-trouble-code-label"
+              />
+              <p className="text-sm text-muted-foreground mt-1">Display name for the trouble code</p>
+            </div>
+
+            <div>
+              <Label htmlFor="trouble-code-description">Description (optional)</Label>
+              <Textarea
+                id="trouble-code-description"
+                value={troubleCodeForm.description}
+                onChange={(e) => setTroubleCodeForm(prev => ({ ...prev, description: e.target.value }))}
+                placeholder="Describe when this trouble code should be used"
+                className="mt-2"
+                rows={3}
+                data-testid="input-trouble-code-description"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTroubleCodeDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleTroubleCodeSubmit}
+              disabled={!troubleCodeForm.code || !troubleCodeForm.label || createTroubleCodeMutation.isPending || updateTroubleCodeMutation.isPending}
+              data-testid="button-save-trouble-code"
+            >
+              {createTroubleCodeMutation.isPending || updateTroubleCodeMutation.isPending ? "Saving..." : selectedTroubleCode ? "Update" : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={deleteTroubleCodeDialogOpen} onOpenChange={setDeleteTroubleCodeDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Trouble Code</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{selectedTroubleCode?.label}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => selectedTroubleCode && deleteTroubleCodeMutation.mutate(selectedTroubleCode.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete-trouble-code"
+            >
+              {deleteTroubleCodeMutation.isPending ? "Deleting..." : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
