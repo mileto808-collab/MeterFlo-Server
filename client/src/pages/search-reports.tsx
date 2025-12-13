@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -24,7 +24,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { Search, Download, FileSpreadsheet, FileText, FileDown, Filter, X } from "lucide-react";
+import { Search, Download, FileSpreadsheet, FileText, FileDown, Filter, X, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import type { Project, ServiceTypeRecord, WorkOrderStatus } from "@shared/schema";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
@@ -79,6 +79,8 @@ export default function SearchReports() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [isSearchActive, setIsSearchActive] = useState(false);
+  const [sortColumn, setSortColumn] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
@@ -143,7 +145,47 @@ export default function SearchReports() {
     setDateFrom("");
     setDateTo("");
     setIsSearchActive(false);
+    setSortColumn(null);
+    setSortDirection("asc");
   };
+
+  const handleSort = (column: string) => {
+    if (sortColumn === column) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortColumn(column);
+      setSortDirection("asc");
+    }
+  };
+
+  const getSortIcon = (column: string) => {
+    if (sortColumn !== column) {
+      return <ArrowUpDown className="ml-1 h-3 w-3 inline opacity-50" />;
+    }
+    return sortDirection === "asc" 
+      ? <ArrowUp className="ml-1 h-3 w-3 inline" />
+      : <ArrowDown className="ml-1 h-3 w-3 inline" />;
+  };
+
+  const sortedResults = useMemo(() => {
+    if (!searchResults?.results) return [];
+    let results = [...searchResults.results];
+    if (sortColumn) {
+      results.sort((a, b) => {
+        let aVal, bVal;
+        if (sortColumn === 'projectName') {
+          aVal = a.projectName || '';
+          bVal = b.projectName || '';
+        } else {
+          aVal = (a.workOrder as any)[sortColumn] || '';
+          bVal = (b.workOrder as any)[sortColumn] || '';
+        }
+        const comparison = String(aVal).localeCompare(String(bVal));
+        return sortDirection === 'asc' ? comparison : -comparison;
+      });
+    }
+    return results;
+  }, [searchResults?.results, sortColumn, sortDirection]);
 
   const getStatusColorHex = (color: string): string => {
     const colorMap: Record<string, string> = {
@@ -519,19 +561,35 @@ export default function SearchReports() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Project</TableHead>
-                        <TableHead>WO ID</TableHead>
-                        <TableHead>Address</TableHead>
-                        <TableHead>Service</TableHead>
-                        <TableHead>Route</TableHead>
-                        <TableHead>Zone</TableHead>
-                        <TableHead>Old Meter</TableHead>
-                        <TableHead>Status</TableHead>
+                        <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('projectName')} data-testid="header-project">
+                          Project{getSortIcon('projectName')}
+                        </TableHead>
+                        <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('customerWoId')} data-testid="header-wo-id">
+                          WO ID{getSortIcon('customerWoId')}
+                        </TableHead>
+                        <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('address')} data-testid="header-address">
+                          Address{getSortIcon('address')}
+                        </TableHead>
+                        <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('serviceType')} data-testid="header-service">
+                          Service{getSortIcon('serviceType')}
+                        </TableHead>
+                        <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('route')} data-testid="header-route">
+                          Route{getSortIcon('route')}
+                        </TableHead>
+                        <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('zone')} data-testid="header-zone">
+                          Zone{getSortIcon('zone')}
+                        </TableHead>
+                        <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('oldMeterId')} data-testid="header-old-meter">
+                          Old Meter{getSortIcon('oldMeterId')}
+                        </TableHead>
+                        <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('status')} data-testid="header-status">
+                          Status{getSortIcon('status')}
+                        </TableHead>
                         <TableHead>Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {searchResults.results.map((result, index) => (
+                      {sortedResults.map((result, index) => (
                         <TableRow key={`${result.projectId}-${result.workOrder.id}-${index}`} data-testid={`row-result-${index}`}>
                           <TableCell>{result.projectName}</TableCell>
                           <TableCell className="font-medium">{result.workOrder.customerWoId || "-"}</TableCell>
