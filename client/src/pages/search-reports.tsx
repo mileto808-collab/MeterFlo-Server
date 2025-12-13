@@ -25,7 +25,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Search, Download, FileSpreadsheet, FileText, FileDown, Filter, X } from "lucide-react";
-import type { Project, ServiceTypeRecord } from "@shared/schema";
+import type { Project, ServiceTypeRecord, WorkOrderStatus } from "@shared/schema";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
 
@@ -88,7 +88,11 @@ export default function SearchReports() {
     queryKey: ["/api/service-types"],
   });
 
-  // Helper to get color hex from service type color name
+  const { data: workOrderStatuses = [] } = useQuery<WorkOrderStatus[]>({
+    queryKey: ["/api/work-order-statuses"],
+  });
+
+  // Helper to get color hex from color name
   const getServiceTypeColorHex = (color: string): string => {
     const colorMap: Record<string, string> = {
       blue: "#3b82f6",
@@ -141,14 +145,39 @@ export default function SearchReports() {
     setIsSearchActive(false);
   };
 
-  const getStatusBadge = (status: string) => {
-    const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-      pending: "secondary",
-      in_progress: "default",
-      completed: "outline",
-      cancelled: "destructive",
+  const getStatusColorHex = (color: string): string => {
+    const colorMap: Record<string, string> = {
+      blue: "#3b82f6",
+      green: "#22c55e",
+      orange: "#f97316",
+      red: "#ef4444",
+      yellow: "#eab308",
+      purple: "#a855f7",
+      gray: "#6b7280",
     };
-    return <Badge variant={variants[status] || "default"} className="text-xs">{status.replace("_", " ")}</Badge>;
+    return colorMap[color] || colorMap.gray;
+  };
+
+  const getStatusBadge = (status: string) => {
+    if (!status) {
+      return <Badge variant="outline" className="text-xs">Unknown</Badge>;
+    }
+    const statusRecord = workOrderStatuses.find(
+      s => s.code === status || s.label === status
+    );
+    if (statusRecord && statusRecord.color) {
+      const bgColor = getStatusColorHex(statusRecord.color);
+      const textColor = ['yellow', 'orange'].includes(statusRecord.color) ? '#000' : '#fff';
+      return (
+        <Badge 
+          className="text-xs"
+          style={{ backgroundColor: bgColor, color: textColor, borderColor: bgColor }}
+        >
+          {statusRecord.label}
+        </Badge>
+      );
+    }
+    return <Badge variant="outline" className="text-xs">{status}</Badge>;
   };
 
   const getServiceTypeBadge = (serviceType: string | null | undefined) => {
