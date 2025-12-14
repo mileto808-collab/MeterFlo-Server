@@ -428,7 +428,10 @@ export default function ProjectWorkOrders() {
     setNewMeterTypeProductId("");
     setNewMeterTypeLabel("");
     setNewMeterTypeDescription("");
-    setCreateMeterTypeOpen(true);
+    // Use setTimeout to allow the Select dropdown to close before opening the Dialog
+    setTimeout(() => {
+      setCreateMeterTypeOpen(true);
+    }, 0);
   };
 
   const onSubmit = (data: WorkOrderFormData) => {
