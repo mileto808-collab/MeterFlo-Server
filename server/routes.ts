@@ -2783,14 +2783,14 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Meter type not found" });
       }
       
-      const { targetProjectId } = req.body;
-      const projectId = targetProjectId || existing.projectId;
+      const { targetProjectIds } = req.body;
+      const projectIds = targetProjectIds || existing.projectIds;
       
       const newMeterType = await storage.createMeterType({
         productId: existing.productId,
         productLabel: `Copy of ${existing.productLabel}`,
         productDescription: existing.productDescription,
-        projectId: projectId,
+        projectIds: projectIds,
       });
       
       res.status(201).json(newMeterType);

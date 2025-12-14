@@ -15,6 +15,7 @@ import {
   troubleCodes,
   serviceTypes,
   meterTypes,
+  meterTypeProjects,
   defaultWorkOrderStatuses,
   permissionKeys,
   userGroups,
@@ -53,6 +54,7 @@ import {
   type MeterType,
   type InsertMeterType,
   type UpdateMeterType,
+  type MeterTypeWithProjects,
   type UserGroup,
   type InsertUserGroup,
   type UserGroupMember,
@@ -182,11 +184,13 @@ export interface IStorage {
   getUserGroupMemberships(userId: string): Promise<UserGroup[]>;
 
   // Meter type operations
-  getMeterTypes(projectId?: number): Promise<MeterType[]>;
-  getMeterType(id: number): Promise<MeterType | undefined>;
-  createMeterType(data: InsertMeterType): Promise<MeterType>;
-  updateMeterType(id: number, data: UpdateMeterType): Promise<MeterType | undefined>;
+  getMeterTypes(projectId?: number): Promise<MeterTypeWithProjects[]>;
+  getMeterType(id: number): Promise<MeterTypeWithProjects | undefined>;
+  createMeterType(data: InsertMeterType): Promise<MeterTypeWithProjects>;
+  updateMeterType(id: number, data: UpdateMeterType): Promise<MeterTypeWithProjects | undefined>;
   deleteMeterType(id: number): Promise<boolean>;
+  getMeterTypeProjectIds(meterTypeId: number): Promise<number[]>;
+  setMeterTypeProjects(meterTypeId: number, projectIds: number[]): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1070,48 +1074,120 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Meter type operations
-  async getMeterTypes(projectId?: number): Promise<MeterType[]> {
+  async getMeterTypes(projectId?: number): Promise<MeterTypeWithProjects[]> {
+    let allMeterTypes: MeterType[];
+    
     if (projectId) {
-      return await db
+      // Get meter types that are assigned to this project
+      const meterTypeIds = await db
+        .select({ meterTypeId: meterTypeProjects.meterTypeId })
+        .from(meterTypeProjects)
+        .where(eq(meterTypeProjects.projectId, projectId));
+      
+      if (meterTypeIds.length === 0) {
+        return [];
+      }
+      
+      const ids = meterTypeIds.map(r => r.meterTypeId);
+      allMeterTypes = await db
         .select()
         .from(meterTypes)
-        .where(eq(meterTypes.projectId, projectId))
+        .where(eq(meterTypes.id, ids[0])) // First ID filter
+        .orderBy(meterTypes.productLabel);
+      
+      // If there are more IDs, we need to filter properly
+      if (ids.length > 1) {
+        allMeterTypes = await db
+          .select()
+          .from(meterTypes)
+          .orderBy(meterTypes.productLabel);
+        allMeterTypes = allMeterTypes.filter(mt => ids.includes(mt.id));
+      }
+    } else {
+      allMeterTypes = await db
+        .select()
+        .from(meterTypes)
         .orderBy(meterTypes.productLabel);
     }
-    return await db
-      .select()
-      .from(meterTypes)
-      .orderBy(meterTypes.productLabel);
+    
+    // Get project IDs for each meter type
+    const result: MeterTypeWithProjects[] = [];
+    for (const mt of allMeterTypes) {
+      const projectIds = await this.getMeterTypeProjectIds(mt.id);
+      result.push({ ...mt, projectIds });
+    }
+    return result;
   }
 
-  async getMeterType(id: number): Promise<MeterType | undefined> {
+  async getMeterType(id: number): Promise<MeterTypeWithProjects | undefined> {
     const [meterType] = await db
       .select()
       .from(meterTypes)
       .where(eq(meterTypes.id, id));
-    return meterType;
+    
+    if (!meterType) return undefined;
+    
+    const projectIds = await this.getMeterTypeProjectIds(id);
+    return { ...meterType, projectIds };
   }
 
-  async createMeterType(data: InsertMeterType): Promise<MeterType> {
+  async createMeterType(data: InsertMeterType): Promise<MeterTypeWithProjects> {
+    const { projectIds, ...meterTypeData } = data;
     const [meterType] = await db
       .insert(meterTypes)
-      .values(data)
+      .values(meterTypeData)
       .returning();
-    return meterType;
+    
+    // Assign to projects if provided
+    if (projectIds && projectIds.length > 0) {
+      await this.setMeterTypeProjects(meterType.id, projectIds);
+    }
+    
+    return { ...meterType, projectIds: projectIds || [] };
   }
 
-  async updateMeterType(id: number, data: UpdateMeterType): Promise<MeterType | undefined> {
-    const [meterType] = await db
-      .update(meterTypes)
-      .set({ ...data, updatedAt: new Date() })
-      .where(eq(meterTypes.id, id))
-      .returning();
-    return meterType;
+  async updateMeterType(id: number, data: UpdateMeterType): Promise<MeterTypeWithProjects | undefined> {
+    const { projectIds, ...meterTypeData } = data;
+    
+    // Only update meter type fields if there are any
+    if (Object.keys(meterTypeData).length > 0) {
+      await db
+        .update(meterTypes)
+        .set({ ...meterTypeData, updatedAt: new Date() })
+        .where(eq(meterTypes.id, id));
+    }
+    
+    // Update project assignments if provided
+    if (projectIds !== undefined) {
+      await this.setMeterTypeProjects(id, projectIds);
+    }
+    
+    return await this.getMeterType(id);
   }
 
   async deleteMeterType(id: number): Promise<boolean> {
     await db.delete(meterTypes).where(eq(meterTypes.id, id));
     return true;
+  }
+
+  async getMeterTypeProjectIds(meterTypeId: number): Promise<number[]> {
+    const rows = await db
+      .select({ projectId: meterTypeProjects.projectId })
+      .from(meterTypeProjects)
+      .where(eq(meterTypeProjects.meterTypeId, meterTypeId));
+    return rows.map(r => r.projectId);
+  }
+
+  async setMeterTypeProjects(meterTypeId: number, projectIds: number[]): Promise<void> {
+    // Delete existing assignments
+    await db.delete(meterTypeProjects).where(eq(meterTypeProjects.meterTypeId, meterTypeId));
+    
+    // Add new assignments
+    if (projectIds.length > 0) {
+      await db.insert(meterTypeProjects).values(
+        projectIds.map(projectId => ({ meterTypeId, projectId }))
+      );
+    }
   }
 }
 

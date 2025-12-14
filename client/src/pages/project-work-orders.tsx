@@ -184,7 +184,11 @@ export default function ProjectWorkOrders() {
   });
 
   const { data: meterTypes = [] } = useQuery<MeterType[]>({
-    queryKey: ["/api/meter-types", { projectId }],
+    queryKey: ["/api/meter-types", projectId],
+    queryFn: async () => {
+      const res = await fetch(`/api/meter-types?projectId=${projectId}`, { credentials: "include" });
+      return res.json();
+    },
     enabled: !!projectId && !accessDenied,
   });
 
@@ -807,7 +811,7 @@ export default function ProjectWorkOrders() {
                           <SelectContent>
                             <SelectItem value="__none__">None</SelectItem>
                             {meterTypes.map((mt) => (
-                              <SelectItem key={mt.id} value={mt.productLabel}>{mt.productLabel}</SelectItem>
+                              <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -1371,7 +1375,7 @@ export default function ProjectWorkOrders() {
                           <SelectContent>
                             <SelectItem value="__none__">None</SelectItem>
                             {meterTypes.map((mt) => (
-                              <SelectItem key={mt.id} value={mt.productLabel}>{mt.productLabel}</SelectItem>
+                              <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
