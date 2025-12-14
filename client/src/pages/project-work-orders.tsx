@@ -40,7 +40,7 @@ import * as XLSX from "xlsx";
 import { format } from "date-fns";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import type { Project, WorkOrderStatus, TroubleCode, ServiceTypeRecord } from "@shared/schema";
+import type { Project, WorkOrderStatus, TroubleCode, ServiceTypeRecord, MeterType } from "@shared/schema";
 import { insertProjectWorkOrderSchema } from "@shared/schema";
 import type { ProjectWorkOrder } from "../../../server/projectDb";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -114,6 +114,7 @@ export default function ProjectWorkOrders() {
       assignedTo: "",
       scheduledDate: "",
       trouble: "",
+      meterType: "",
     },
   });
 
@@ -143,6 +144,7 @@ export default function ProjectWorkOrders() {
       assignedTo: "",
       scheduledDate: "",
       trouble: "",
+      meterType: "",
     },
   });
 
@@ -179,6 +181,11 @@ export default function ProjectWorkOrders() {
 
   const { data: serviceTypes = [] } = useQuery<ServiceTypeRecord[]>({
     queryKey: ["/api/service-types"],
+  });
+
+  const { data: meterTypes = [] } = useQuery<MeterType[]>({
+    queryKey: ["/api/meter-types", { projectId }],
+    enabled: !!projectId && !accessDenied,
   });
 
   // Helper to get color hex from service type color name
@@ -243,6 +250,7 @@ export default function ProjectWorkOrders() {
         assignedTo: editingWorkOrder.assignedTo || "",
         scheduledDate: (editingWorkOrder as any).scheduledDate || "",
         trouble: (editingWorkOrder as any).trouble || "",
+        meterType: (editingWorkOrder as any).meterType || "",
       });
     }
   }, [editingWorkOrder, editForm]);
@@ -264,6 +272,7 @@ export default function ProjectWorkOrders() {
     newGps: data.newGps || null,
     notes: data.notes || null,
     trouble: (data as any).trouble || null,
+    meterType: (data as any).meterType || null,
   });
 
   const createMutation = useMutation({
@@ -776,6 +785,29 @@ export default function ProjectWorkOrders() {
                           <SelectContent>
                             {serviceTypes.map((type) => (
                               <SelectItem key={type.id} value={type.label}>{type.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editForm.control}
+                    name="meterType"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Meter Type</FormLabel>
+                        <Select value={(field.value as string) || "__none__"} onValueChange={(val) => field.onChange(val === "__none__" ? "" : val)}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-edit-meter-type">
+                              <SelectValue placeholder="Select meter type..." />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="__none__">None</SelectItem>
+                            {meterTypes.map((mt) => (
+                              <SelectItem key={mt.id} value={mt.productLabel}>{mt.productLabel}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -1317,6 +1349,29 @@ export default function ProjectWorkOrders() {
                           <SelectContent>
                             {serviceTypes.map((type) => (
                               <SelectItem key={type.id} value={type.label}>{type.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="meterType"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Meter Type</FormLabel>
+                        <Select value={(field.value as string) || "__none__"} onValueChange={(val) => field.onChange(val === "__none__" ? "" : val)}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-create-meter-type">
+                              <SelectValue placeholder="Select meter type..." />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="__none__">None</SelectItem>
+                            {meterTypes.map((mt) => (
+                              <SelectItem key={mt.id} value={mt.productLabel}>{mt.productLabel}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
