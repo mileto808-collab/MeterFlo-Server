@@ -2673,6 +2673,129 @@ export async function registerRoutes(
     }
   });
 
+  // Meter Types API Routes
+  app.get("/api/meter-types", isAuthenticated, async (req: any, res) => {
+    try {
+      const projectId = req.query.projectId ? parseInt(req.query.projectId) : undefined;
+      const meterTypes = await storage.getMeterTypes(projectId);
+      res.json(meterTypes);
+    } catch (error) {
+      console.error("Error fetching meter types:", error);
+      res.status(500).json({ message: "Failed to fetch meter types" });
+    }
+  });
+
+  app.get("/api/meter-types/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const meterType = await storage.getMeterType(id);
+      
+      if (!meterType) {
+        return res.status(404).json({ message: "Meter type not found" });
+      }
+      
+      res.json(meterType);
+    } catch (error) {
+      console.error("Error fetching meter type:", error);
+      res.status(500).json({ message: "Failed to fetch meter type" });
+    }
+  });
+
+  app.post("/api/meter-types", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const meterType = await storage.createMeterType(req.body);
+      res.status(201).json(meterType);
+    } catch (error: any) {
+      console.error("Error creating meter type:", error);
+      if (error.code === "23505") {
+        return res.status(400).json({ message: "Meter type already exists" });
+      }
+      res.status(500).json({ message: "Failed to create meter type" });
+    }
+  });
+
+  app.patch("/api/meter-types/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const id = parseInt(req.params.id);
+      const meterType = await storage.updateMeterType(id, req.body);
+      
+      if (!meterType) {
+        return res.status(404).json({ message: "Meter type not found" });
+      }
+      
+      res.json(meterType);
+    } catch (error: any) {
+      console.error("Error updating meter type:", error);
+      if (error.code === "23505") {
+        return res.status(400).json({ message: "Meter type already exists" });
+      }
+      res.status(500).json({ message: "Failed to update meter type" });
+    }
+  });
+
+  app.delete("/api/meter-types/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const id = parseInt(req.params.id);
+      const meterType = await storage.getMeterType(id);
+      
+      if (!meterType) {
+        return res.status(404).json({ message: "Meter type not found" });
+      }
+      
+      await storage.deleteMeterType(id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting meter type:", error);
+      res.status(500).json({ message: "Failed to delete meter type" });
+    }
+  });
+
+  app.post("/api/meter-types/:id/copy", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const id = parseInt(req.params.id);
+      const existing = await storage.getMeterType(id);
+      
+      if (!existing) {
+        return res.status(404).json({ message: "Meter type not found" });
+      }
+      
+      const { targetProjectId } = req.body;
+      const projectId = targetProjectId || existing.projectId;
+      
+      const newMeterType = await storage.createMeterType({
+        productId: existing.productId,
+        productLabel: `Copy of ${existing.productLabel}`,
+        productDescription: existing.productDescription,
+        projectId: projectId,
+      });
+      
+      res.status(201).json(newMeterType);
+    } catch (error) {
+      console.error("Error copying meter type:", error);
+      res.status(500).json({ message: "Failed to copy meter type" });
+    }
+  });
+
   // User Groups API Routes
   app.get("/api/user-groups", isAuthenticated, async (req: any, res) => {
     try {
