@@ -14,6 +14,7 @@ import {
   workOrderStatuses,
   troubleCodes,
   serviceTypes,
+  meterTypes,
   defaultWorkOrderStatuses,
   permissionKeys,
   userGroups,
@@ -49,6 +50,9 @@ import {
   type ServiceTypeRecord,
   type InsertServiceType,
   type UpdateServiceType,
+  type MeterType,
+  type InsertMeterType,
+  type UpdateMeterType,
   type UserGroup,
   type InsertUserGroup,
   type UserGroupMember,
@@ -176,6 +180,13 @@ export interface IStorage {
   addUserToGroup(groupId: number, userId: string): Promise<UserGroupMember>;
   removeUserFromGroup(groupId: number, userId: string): Promise<boolean>;
   getUserGroupMemberships(userId: string): Promise<UserGroup[]>;
+
+  // Meter type operations
+  getMeterTypes(projectId?: number): Promise<MeterType[]>;
+  getMeterType(id: number): Promise<MeterType | undefined>;
+  createMeterType(data: InsertMeterType): Promise<MeterType>;
+  updateMeterType(id: number, data: UpdateMeterType): Promise<MeterType | undefined>;
+  deleteMeterType(id: number): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1056,6 +1067,51 @@ export class DatabaseStorage implements IStorage {
       .innerJoin(userGroups, eq(userGroupMembers.groupId, userGroups.id))
       .where(eq(userGroupMembers.userId, userId));
     return memberships.map((m) => m.group);
+  }
+
+  // Meter type operations
+  async getMeterTypes(projectId?: number): Promise<MeterType[]> {
+    if (projectId) {
+      return await db
+        .select()
+        .from(meterTypes)
+        .where(eq(meterTypes.projectId, projectId))
+        .orderBy(meterTypes.productLabel);
+    }
+    return await db
+      .select()
+      .from(meterTypes)
+      .orderBy(meterTypes.productLabel);
+  }
+
+  async getMeterType(id: number): Promise<MeterType | undefined> {
+    const [meterType] = await db
+      .select()
+      .from(meterTypes)
+      .where(eq(meterTypes.id, id));
+    return meterType;
+  }
+
+  async createMeterType(data: InsertMeterType): Promise<MeterType> {
+    const [meterType] = await db
+      .insert(meterTypes)
+      .values(data)
+      .returning();
+    return meterType;
+  }
+
+  async updateMeterType(id: number, data: UpdateMeterType): Promise<MeterType | undefined> {
+    const [meterType] = await db
+      .update(meterTypes)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(meterTypes.id, id))
+      .returning();
+    return meterType;
+  }
+
+  async deleteMeterType(id: number): Promise<boolean> {
+    await db.delete(meterTypes).where(eq(meterTypes.id, id));
+    return true;
   }
 }
 
