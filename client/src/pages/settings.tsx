@@ -127,14 +127,14 @@ export default function Settings() {
   const [meterTypeDialogOpen, setMeterTypeDialogOpen] = useState(false);
   const [deleteMeterTypeDialogOpen, setDeleteMeterTypeDialogOpen] = useState(false);
   const [copyMeterTypeDialogOpen, setCopyMeterTypeDialogOpen] = useState(false);
-  const [copyMeterTypeProjectId, setCopyMeterTypeProjectId] = useState<number | null>(null);
+  const [copyMeterTypeProjectIds, setCopyMeterTypeProjectIds] = useState<number[]>([]);
   const [selectedMeterType, setSelectedMeterType] = useState<MeterType | null>(null);
   const [meterTypeProjectFilter, setMeterTypeProjectFilter] = useState<string>("all");
   const [meterTypeForm, setMeterTypeForm] = useState({
     productId: "",
     productLabel: "",
     productDescription: "",
-    projectId: 0,
+    projectIds: [] as number[],
   });
 
   const { data: subroles, isLoading: loadingSubroles } = useQuery<Subrole[]>({
@@ -533,7 +533,7 @@ export default function Settings() {
 
   // Meter Types mutations
   const createMeterTypeMutation = useMutation({
-    mutationFn: async (data: { productId: string; productLabel: string; productDescription?: string; projectId: number }) => {
+    mutationFn: async (data: { productId: string; productLabel: string; productDescription?: string; projectIds: number[] }) => {
       return apiRequest("POST", "/api/meter-types", data);
     },
     onSuccess: () => {
@@ -548,7 +548,7 @@ export default function Settings() {
   });
 
   const updateMeterTypeMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: { productId?: string; productLabel?: string; productDescription?: string; projectId?: number } }) => {
+    mutationFn: async ({ id, data }: { id: number; data: { productId?: string; productLabel?: string; productDescription?: string; projectIds?: number[] } }) => {
       return apiRequest("PATCH", `/api/meter-types/${id}`, data);
     },
     onSuccess: () => {
@@ -579,14 +579,14 @@ export default function Settings() {
   });
 
   const copyMeterTypeMutation = useMutation({
-    mutationFn: async ({ id, targetProjectId }: { id: number; targetProjectId?: number }) => {
-      return apiRequest("POST", `/api/meter-types/${id}/copy`, targetProjectId ? { targetProjectId } : {});
+    mutationFn: async ({ id, projectIds }: { id: number; projectIds?: number[] }) => {
+      return apiRequest("POST", `/api/meter-types/${id}/copy`, projectIds && projectIds.length > 0 ? { projectIds } : {});
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/meter-types"] });
       toast({ title: "Meter type copied successfully" });
       setCopyMeterTypeDialogOpen(false);
-      setCopyMeterTypeProjectId(null);
+      setCopyMeterTypeProjectIds([]);
       setSelectedMeterType(null);
     },
     onError: () => {
@@ -849,7 +849,7 @@ export default function Settings() {
       productId: "",
       productLabel: "",
       productDescription: "",
-      projectId: 0,
+      projectIds: [],
     });
   };
 
@@ -859,13 +859,13 @@ export default function Settings() {
     setMeterTypeDialogOpen(true);
   };
 
-  const openEditMeterTypeDialog = (meterType: MeterType) => {
+  const openEditMeterTypeDialog = (meterType: MeterType & { projectIds?: number[] }) => {
     setSelectedMeterType(meterType);
     setMeterTypeForm({
       productId: meterType.productId,
       productLabel: meterType.productLabel,
       productDescription: meterType.productDescription || "",
-      projectId: meterType.projectId,
+      projectIds: meterType.projectIds || [],
     });
     setMeterTypeDialogOpen(true);
   };
@@ -878,7 +878,7 @@ export default function Settings() {
           productId: meterTypeForm.productId,
           productLabel: meterTypeForm.productLabel,
           productDescription: meterTypeForm.productDescription || undefined,
-          projectId: meterTypeForm.projectId,
+          projectIds: meterTypeForm.projectIds,
         },
       });
     } else {
@@ -886,7 +886,7 @@ export default function Settings() {
         productId: meterTypeForm.productId,
         productLabel: meterTypeForm.productLabel,
         productDescription: meterTypeForm.productDescription || undefined,
-        projectId: meterTypeForm.projectId,
+        projectIds: meterTypeForm.projectIds,
       });
     }
   };
@@ -894,6 +894,28 @@ export default function Settings() {
   const getProjectName = (projectId: number) => {
     const project = projectsList?.find(p => p.id === projectId);
     return project?.name || `Project ${projectId}`;
+  };
+
+  const getProjectNames = (projectIds: number[]) => {
+    if (!projectIds || projectIds.length === 0) return "No projects";
+    return projectIds.map(id => getProjectName(id)).join(", ");
+  };
+
+  const toggleMeterTypeProject = (projectId: number) => {
+    setMeterTypeForm(prev => ({
+      ...prev,
+      projectIds: prev.projectIds.includes(projectId)
+        ? prev.projectIds.filter(id => id !== projectId)
+        : [...prev.projectIds, projectId],
+    }));
+  };
+
+  const toggleCopyMeterTypeProject = (projectId: number) => {
+    setCopyMeterTypeProjectIds(prev => 
+      prev.includes(projectId)
+        ? prev.filter(id => id !== projectId)
+        : [...prev, projectId]
+    );
   };
 
   const getUserDisplayName = (u: User) => {
@@ -1598,18 +1620,26 @@ export default function Settings() {
                         <TableHead>Product ID</TableHead>
                         <TableHead>Product Label</TableHead>
                         <TableHead>Description</TableHead>
-                        <TableHead>Project</TableHead>
+                        <TableHead>Projects</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {meterTypesList.map((meterType) => (
+                      {meterTypesList.map((meterType: MeterType & { projectIds?: number[] }) => (
                         <TableRow key={meterType.id} data-testid={`row-meter-type-${meterType.id}`}>
                           <TableCell className="font-medium">{meterType.productId}</TableCell>
                           <TableCell>{meterType.productLabel}</TableCell>
                           <TableCell className="text-muted-foreground">{meterType.productDescription || "—"}</TableCell>
                           <TableCell>
-                            <Badge variant="outline">{getProjectName(meterType.projectId)}</Badge>
+                            <div className="flex flex-wrap gap-1">
+                              {(meterType.projectIds && meterType.projectIds.length > 0) ? (
+                                meterType.projectIds.map(pId => (
+                                  <Badge key={pId} variant="outline">{getProjectName(pId)}</Badge>
+                                ))
+                              ) : (
+                                <span className="text-muted-foreground">No projects</span>
+                              )}
+                            </div>
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">
@@ -1626,7 +1656,7 @@ export default function Settings() {
                                 size="icon" 
                                 onClick={() => {
                                   setSelectedMeterType(meterType);
-                                  setCopyMeterTypeProjectId(null);
+                                  setCopyMeterTypeProjectIds([]);
                                   setCopyMeterTypeDialogOpen(true);
                                 }}
                                 data-testid={`button-copy-meter-type-${meterType.id}`}
@@ -2360,22 +2390,31 @@ export default function Settings() {
             </div>
 
             <div>
-              <Label htmlFor="meter-type-project">Project</Label>
-              <Select
-                value={meterTypeForm.projectId ? String(meterTypeForm.projectId) : ""}
-                onValueChange={(value) => setMeterTypeForm(prev => ({ ...prev, projectId: parseInt(value) }))}
-              >
-                <SelectTrigger className="mt-2" data-testid="select-meter-type-project">
-                  <SelectValue placeholder="Select a project" />
-                </SelectTrigger>
-                <SelectContent>
-                  {projectsList?.map((project) => (
-                    <SelectItem key={project.id} value={String(project.id)}>
-                      {project.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label>Projects</Label>
+              <div className="mt-2 border rounded-md p-3 max-h-48 overflow-y-auto space-y-2">
+                {projectsList && projectsList.length > 0 ? (
+                  projectsList.map((project) => (
+                    <div key={project.id} className="flex items-center gap-2">
+                      <Checkbox
+                        id={`meter-type-project-${project.id}`}
+                        checked={meterTypeForm.projectIds.includes(project.id)}
+                        onCheckedChange={() => toggleMeterTypeProject(project.id)}
+                        data-testid={`checkbox-meter-type-project-${project.id}`}
+                      />
+                      <Label htmlFor={`meter-type-project-${project.id}`} className="text-sm font-normal cursor-pointer">
+                        {project.name}
+                      </Label>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-muted-foreground text-sm">No projects available</p>
+                )}
+              </div>
+              {meterTypeForm.projectIds.length > 0 && (
+                <p className="text-sm text-muted-foreground mt-2">
+                  Selected: {meterTypeForm.projectIds.length} project(s)
+                </p>
+              )}
             </div>
           </div>
 
@@ -2385,7 +2424,7 @@ export default function Settings() {
             </Button>
             <Button
               onClick={handleMeterTypeSubmit}
-              disabled={!meterTypeForm.productId || !meterTypeForm.productLabel || !meterTypeForm.projectId || createMeterTypeMutation.isPending || updateMeterTypeMutation.isPending}
+              disabled={!meterTypeForm.productId || !meterTypeForm.productLabel || createMeterTypeMutation.isPending || updateMeterTypeMutation.isPending}
               data-testid="button-save-meter-type"
             >
               {createMeterTypeMutation.isPending || updateMeterTypeMutation.isPending ? "Saving..." : selectedMeterType ? "Update" : "Create"}
@@ -2420,29 +2459,34 @@ export default function Settings() {
           <DialogHeader>
             <DialogTitle>Copy Meter Type</DialogTitle>
             <DialogDescription>
-              Copy this meter type to the same project or a different project.
+              Copy this meter type to additional projects (optional).
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
-            <Label htmlFor="copy-meter-target-project">Target Project (optional)</Label>
-            <Select
-              value={copyMeterTypeProjectId ? String(copyMeterTypeProjectId) : "same"}
-              onValueChange={(value) => setCopyMeterTypeProjectId(value === "same" ? null : parseInt(value))}
-            >
-              <SelectTrigger className="mt-2" data-testid="select-copy-meter-target-project">
-                <SelectValue placeholder="Same project" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="same">Same project</SelectItem>
-                {projectsList?.map((project) => (
-                  <SelectItem key={project.id} value={String(project.id)}>
-                    {project.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label>Target Projects (optional)</Label>
+            <div className="mt-2 border rounded-md p-3 max-h-48 overflow-y-auto space-y-2">
+              {projectsList && projectsList.length > 0 ? (
+                projectsList.map((project) => (
+                  <div key={project.id} className="flex items-center gap-2">
+                    <Checkbox
+                      id={`copy-meter-type-project-${project.id}`}
+                      checked={copyMeterTypeProjectIds.includes(project.id)}
+                      onCheckedChange={() => toggleCopyMeterTypeProject(project.id)}
+                      data-testid={`checkbox-copy-meter-type-project-${project.id}`}
+                    />
+                    <Label htmlFor={`copy-meter-type-project-${project.id}`} className="text-sm font-normal cursor-pointer">
+                      {project.name}
+                    </Label>
+                  </div>
+                ))
+              ) : (
+                <p className="text-muted-foreground text-sm">No projects available</p>
+              )}
+            </div>
             <p className="text-sm text-muted-foreground mt-2">
-              Leave as "Same project" to create a copy in the current project.
+              {copyMeterTypeProjectIds.length > 0 
+                ? `Selected: ${copyMeterTypeProjectIds.length} project(s)` 
+                : "Leave empty to copy with same project assignments."}
             </p>
           </div>
           <DialogFooter>
@@ -2452,7 +2496,7 @@ export default function Settings() {
             <Button
               onClick={() => selectedMeterType && copyMeterTypeMutation.mutate({ 
                 id: selectedMeterType.id, 
-                targetProjectId: copyMeterTypeProjectId || undefined 
+                projectIds: copyMeterTypeProjectIds.length > 0 ? copyMeterTypeProjectIds : undefined 
               })}
               disabled={copyMeterTypeMutation.isPending}
               data-testid="button-confirm-copy-meter-type"

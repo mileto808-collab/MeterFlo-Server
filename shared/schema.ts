@@ -248,15 +248,22 @@ export const serviceTypes = pgTable("service_types", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// Meter types table - product types associated with projects
+// Meter types table - product types (no longer tied to a single project)
 export const meterTypes = pgTable("meter_types", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   productId: varchar("product_id", { length: 100 }).notNull(),
   productLabel: varchar("product_label", { length: 255 }).notNull(),
   productDescription: text("product_description"),
-  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Junction table for meter types to projects (many-to-many)
+export const meterTypeProjects = pgTable("meter_type_projects", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  meterTypeId: integer("meter_type_id").notNull().references(() => meterTypes.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // Default service type values (for backward compatibility and seeding)
@@ -466,14 +473,20 @@ export const insertMeterTypeSchema = z.object({
   productId: z.string().min(1).max(100),
   productLabel: z.string().min(1).max(255),
   productDescription: z.string().optional().nullable(),
-  projectId: z.number(),
+  projectIds: z.array(z.number()).optional(),
 });
 
 export const updateMeterTypeSchema = z.object({
   productId: z.string().min(1).max(100).optional(),
   productLabel: z.string().min(1).max(255).optional(),
   productDescription: z.string().optional().nullable(),
-  projectId: z.number().optional(),
+  projectIds: z.array(z.number()).optional(),
+});
+
+// Schema for meter type project assignment
+export const insertMeterTypeProjectSchema = z.object({
+  meterTypeId: z.number(),
+  projectId: z.number(),
 });
 
 // Types
@@ -513,6 +526,12 @@ export type InsertSubrolePermission = z.infer<typeof insertSubrolePermissionSche
 export type MeterType = typeof meterTypes.$inferSelect;
 export type InsertMeterType = z.infer<typeof insertMeterTypeSchema>;
 export type UpdateMeterType = z.infer<typeof updateMeterTypeSchema>;
+
+export type MeterTypeProject = typeof meterTypeProjects.$inferSelect;
+export type InsertMeterTypeProject = z.infer<typeof insertMeterTypeProjectSchema>;
+
+// Extended meter type with project associations
+export type MeterTypeWithProjects = MeterType & { projectIds: number[] };
 
 // External database config schemas and types
 export const insertExternalDatabaseConfigSchema = z.object({
