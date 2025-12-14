@@ -38,7 +38,8 @@ export const projectWorkOrders = pgTable("work_orders", {
   trouble: varchar("trouble", { length: 100 }),
   notes: text("notes"),
   attachments: text("attachments").array(),
-  meterType: varchar("meter_type", { length: 255 }),
+  oldMeterType: varchar("old_meter_type", { length: 255 }),
+  newMeterType: varchar("new_meter_type", { length: 255 }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -97,7 +98,8 @@ export async function createProjectSchema(projectName: string, projectId: number
         trouble VARCHAR(100),
         notes TEXT,
         attachments TEXT[],
-        meter_type VARCHAR(255),
+        old_meter_type VARCHAR(255),
+        new_meter_type VARCHAR(255),
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       )
@@ -131,10 +133,34 @@ export async function migrateProjectSchema(schemaName: string): Promise<void> {
       ADD COLUMN IF NOT EXISTS trouble VARCHAR(100)
     `);
     
-    // Add meter_type column if it doesn't exist
+    // Rename meter_type to old_meter_type if needed, then add new_meter_type
+    // First check if meter_type exists and old_meter_type doesn't
+    const columnCheck = await client.query(`
+      SELECT column_name FROM information_schema.columns 
+      WHERE table_schema = $1 AND table_name = 'work_orders' 
+      AND column_name IN ('meter_type', 'old_meter_type')
+    `, [schemaName]);
+    
+    const existingColumns = columnCheck.rows.map(r => r.column_name);
+    
+    if (existingColumns.includes('meter_type') && !existingColumns.includes('old_meter_type')) {
+      // Rename meter_type to old_meter_type
+      await client.query(`
+        ALTER TABLE "${schemaName}".work_orders 
+        RENAME COLUMN meter_type TO old_meter_type
+      `);
+    } else if (!existingColumns.includes('old_meter_type')) {
+      // Add old_meter_type if neither exists
+      await client.query(`
+        ALTER TABLE "${schemaName}".work_orders 
+        ADD COLUMN IF NOT EXISTS old_meter_type VARCHAR(255)
+      `);
+    }
+    
+    // Add new_meter_type column if it doesn't exist
     await client.query(`
       ALTER TABLE "${schemaName}".work_orders 
-      ADD COLUMN IF NOT EXISTS meter_type VARCHAR(255)
+      ADD COLUMN IF NOT EXISTS new_meter_type VARCHAR(255)
     `);
     
     console.log(`Migration completed for ${schemaName}.work_orders`);
@@ -250,8 +276,8 @@ export class ProjectWorkOrderStorage {
       
       const result = await client.query(
         `INSERT INTO "${this.schemaName}".work_orders 
-         (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, scheduled_date, assigned_to, created_by, updated_by, trouble, notes, attachments, meter_type)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
+         (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, scheduled_date, assigned_to, created_by, updated_by, trouble, notes, attachments, old_meter_type, new_meter_type)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
          RETURNING *`,
         [
           workOrder.customerWoId,
@@ -280,7 +306,8 @@ export class ProjectWorkOrderStorage {
           troubleCode || null,
           notes,
           workOrder.attachments || null,
-          (workOrder as any).meterType || null,
+          (workOrder as any).oldMeterType || null,
+          (workOrder as any).newMeterType || null,
         ]
       );
       return this.mapRowToWorkOrder(result.rows[0]);
@@ -460,9 +487,13 @@ export class ProjectWorkOrderStorage {
         setClauses.push(`attachments = $${paramCount++}`);
         values.push(updates.attachments);
       }
-      if ((updates as any).meterType !== undefined) {
-        setClauses.push(`meter_type = $${paramCount++}`);
-        values.push((updates as any).meterType);
+      if ((updates as any).oldMeterType !== undefined) {
+        setClauses.push(`old_meter_type = $${paramCount++}`);
+        values.push((updates as any).oldMeterType);
+      }
+      if ((updates as any).newMeterType !== undefined) {
+        setClauses.push(`new_meter_type = $${paramCount++}`);
+        values.push((updates as any).newMeterType);
       }
 
       // Always set updatedBy and updated_at
@@ -564,7 +595,8 @@ export class ProjectWorkOrderStorage {
       trouble: row.trouble,
       notes: row.notes,
       attachments: row.attachments,
-      meterType: row.meter_type,
+      oldMeterType: row.old_meter_type,
+      newMeterType: row.new_meter_type,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -623,7 +655,8 @@ export async function backupProjectDatabase(schemaName: string): Promise<{
       trouble: row.trouble,
       notes: row.notes,
       attachments: row.attachments,
-      meterType: row.meter_type,
+      oldMeterType: row.old_meter_type,
+      newMeterType: row.new_meter_type,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }));
@@ -632,7 +665,7 @@ export async function backupProjectDatabase(schemaName: string): Promise<{
       schemaName,
       backupDate: new Date().toISOString(),
       workOrders,
-      version: "2.1",
+      version: "2.2",
     };
   } finally {
     client.release();
@@ -659,8 +692,8 @@ export async function restoreProjectDatabase(
       try {
         await client.query(
           `INSERT INTO "${schemaName}".work_orders 
-           (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, scheduled_date, assigned_to, created_by, updated_by, completed_at, trouble, notes, attachments, meter_type)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)`,
+           (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, scheduled_date, assigned_to, created_by, updated_by, completed_at, trouble, notes, attachments, old_meter_type, new_meter_type)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)`,
           [
             wo.customerWoId || null,
             wo.customerId || null,
@@ -689,7 +722,8 @@ export async function restoreProjectDatabase(
             wo.trouble || null,
             wo.notes || null,
             wo.attachments || null,
-            wo.meterType || null,
+            wo.oldMeterType || wo.meterType || null,
+            wo.newMeterType || null,
           ]
         );
         restored++;

@@ -414,7 +414,8 @@ export const insertProjectWorkOrderSchema = z.object({
   trouble: z.string().max(100).optional().nullable(),
   notes: z.string().optional().nullable(),
   attachments: z.array(z.string()).optional().nullable(),
-  meterType: z.string().max(255).optional().nullable(),
+  oldMeterType: z.string().max(255).optional().nullable(),
+  newMeterType: z.string().max(255).optional().nullable(),
 });
 
 // Schema for work order status management
