@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, Link, useLocation } from "wouter";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -58,6 +58,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Users, ChevronDown } from "lucide-react";
+import SignaturePad, { SignaturePadRef } from "@/components/signature-pad";
 
 type Assignee = {
   type: "user" | "group";
@@ -101,6 +102,9 @@ export default function ProjectWorkOrders() {
   const [newMeterTypeProductId, setNewMeterTypeProductId] = useState("");
   const [newMeterTypeLabel, setNewMeterTypeLabel] = useState("");
   const [newMeterTypeDescription, setNewMeterTypeDescription] = useState("");
+
+  const signaturePadRef = useRef<SignaturePadRef>(null);
+  const editSignaturePadRef = useRef<SignaturePadRef>(null);
 
   const form = useForm<WorkOrderFormData>({
     resolver: zodResolver(workOrderFormSchema),
@@ -272,6 +276,13 @@ export default function ProjectWorkOrders() {
         oldMeterType: (editingWorkOrder as any).oldMeterType || "",
         newMeterType: (editingWorkOrder as any).newMeterType || "",
       });
+      // Set signature data after a brief delay to ensure the ref is ready
+      setTimeout(() => {
+        if (editSignaturePadRef.current) {
+          editSignaturePadRef.current.setSignatureData((editingWorkOrder as any).signatureData || null);
+          editSignaturePadRef.current.setSignatureName((editingWorkOrder as any).signatureName || "");
+        }
+      }, 100);
     }
   }, [editingWorkOrder, editForm]);
 
@@ -302,9 +313,13 @@ export default function ProjectWorkOrders() {
       const troubleStatus = workOrderStatuses.find(s => s.label === "Trouble")?.label || "Trouble";
       const defaultStatus = workOrderStatuses.find(s => s.isDefault)?.label || "Open";
       const status = (data as any).trouble ? troubleStatus : defaultStatus;
+      const signatureData = signaturePadRef.current?.getSignatureData() || null;
+      const signatureName = signaturePadRef.current?.getSignatureName() || "";
       return apiRequest("POST", `/api/projects/${projectId}/work-orders`, {
         ...normalizeOptionalFields(data),
         status,
+        signatureData,
+        signatureName: signatureName || null,
       });
     },
     onSuccess: () => {
@@ -312,6 +327,7 @@ export default function ProjectWorkOrders() {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/work-orders/stats`] });
       setIsCreatingWorkOrder(false);
       form.reset();
+      signaturePadRef.current?.clear();
       toast({ title: "Work order created" });
     },
     onError: (error: any) => {
@@ -336,7 +352,13 @@ export default function ProjectWorkOrders() {
       } else if ((data as any).trouble === "" || (data as any).trouble === null) {
         (normalizedData as any).status = openStatus;
       }
-      return apiRequest("PATCH", `/api/projects/${projectId}/work-orders/${id}`, normalizedData);
+      const signatureData = editSignaturePadRef.current?.getSignatureData() || null;
+      const signatureName = editSignaturePadRef.current?.getSignatureName() || "";
+      return apiRequest("PATCH", `/api/projects/${projectId}/work-orders/${id}`, {
+        ...normalizedData,
+        signatureData,
+        signatureName: signatureName || null,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/work-orders`] });
@@ -954,6 +976,13 @@ export default function ProjectWorkOrders() {
                       </FormItem>
                     )}
                   />
+                  <div className="md:col-span-2">
+                    <SignaturePad 
+                      ref={editSignaturePadRef}
+                      initialSignatureData={(editingWorkOrder as any)?.signatureData}
+                      initialSignatureName={(editingWorkOrder as any)?.signatureName}
+                    />
+                  </div>
                   <FormField
                     control={editForm.control}
                     name="address"
@@ -1581,6 +1610,9 @@ export default function ProjectWorkOrders() {
                       </FormItem>
                     )}
                   />
+                  <div className="md:col-span-2">
+                    <SignaturePad ref={signaturePadRef} />
+                  </div>
                   <FormField
                     control={form.control}
                     name="address"
