@@ -912,10 +912,15 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Project not found" });
       }
       
+      // Get the user's display name for createdBy
+      const createdByName = currentUser?.firstName 
+        ? `${currentUser.firstName}${currentUser.lastName ? ' ' + currentUser.lastName : ''}`
+        : currentUser?.username || currentUser?.id;
+      
       const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
       const workOrder = await workOrderStorage.createWorkOrder({
         ...req.body,
-        createdBy: currentUser!.id,
+        createdBy: createdByName,
       });
       
       res.status(201).json(workOrder);
@@ -1018,6 +1023,11 @@ export async function registerRoutes(
         return res.status(400).json({ message: "workOrders must be an array" });
       }
       
+      // Get the user's display name for createdBy
+      const createdByName = currentUser?.firstName 
+        ? `${currentUser.firstName}${currentUser.lastName ? ' ' + currentUser.lastName : ''}`
+        : currentUser?.username || currentUser?.id;
+      
       const toImport = workOrdersData.map((wo: any) => ({
         customerWoId: wo.customerWoId || wo.title,
         customerId: wo.customerId || "",
@@ -1026,7 +1036,7 @@ export async function registerRoutes(
         serviceType: wo.serviceType || "Water",
         status: wo.status || "pending",
         assignedTo: wo.assignedTo || null,
-        createdBy: currentUser!.id,
+        createdBy: createdByName,
         notes: wo.notes || null,
         attachments: wo.attachments || null,
       }));
