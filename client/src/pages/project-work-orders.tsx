@@ -2282,7 +2282,7 @@ export default function ProjectWorkOrders() {
             <Link href={`/projects/${projectId}/files`}>
               <Button variant="outline" data-testid="button-project-files">
                 <Folder className="h-4 w-4 mr-2" />
-                Project Files
+                Project Documents
               </Button>
             </Link>
             <Button onClick={() => setIsCreatingWorkOrder(true)} data-testid="button-create-work-order">
