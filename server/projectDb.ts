@@ -40,6 +40,8 @@ export const projectWorkOrders = pgTable("work_orders", {
   attachments: text("attachments").array(),
   oldMeterType: varchar("old_meter_type", { length: 255 }),
   newMeterType: varchar("new_meter_type", { length: 255 }),
+  signatureData: text("signature_data"),
+  signatureName: varchar("signature_name", { length: 255 }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -100,6 +102,8 @@ export async function createProjectSchema(projectName: string, projectId: number
         attachments TEXT[],
         old_meter_type VARCHAR(255),
         new_meter_type VARCHAR(255),
+        signature_data TEXT,
+        signature_name VARCHAR(255),
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       )
@@ -161,6 +165,16 @@ export async function migrateProjectSchema(schemaName: string): Promise<void> {
     await client.query(`
       ALTER TABLE "${schemaName}".work_orders 
       ADD COLUMN IF NOT EXISTS new_meter_type VARCHAR(255)
+    `);
+    
+    // Add signature columns if they don't exist
+    await client.query(`
+      ALTER TABLE "${schemaName}".work_orders 
+      ADD COLUMN IF NOT EXISTS signature_data TEXT
+    `);
+    await client.query(`
+      ALTER TABLE "${schemaName}".work_orders 
+      ADD COLUMN IF NOT EXISTS signature_name VARCHAR(255)
     `);
     
     console.log(`Migration completed for ${schemaName}.work_orders`);
@@ -276,8 +290,8 @@ export class ProjectWorkOrderStorage {
       
       const result = await client.query(
         `INSERT INTO "${this.schemaName}".work_orders 
-         (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, scheduled_date, assigned_to, created_by, updated_by, trouble, notes, attachments, old_meter_type, new_meter_type)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
+         (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, scheduled_date, assigned_to, created_by, updated_by, trouble, notes, attachments, old_meter_type, new_meter_type, signature_data, signature_name)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
          RETURNING *`,
         [
           workOrder.customerWoId,
@@ -308,6 +322,8 @@ export class ProjectWorkOrderStorage {
           workOrder.attachments || null,
           (workOrder as any).oldMeterType || null,
           (workOrder as any).newMeterType || null,
+          (workOrder as any).signatureData || null,
+          (workOrder as any).signatureName || null,
         ]
       );
       return this.mapRowToWorkOrder(result.rows[0]);
@@ -495,6 +511,14 @@ export class ProjectWorkOrderStorage {
         setClauses.push(`new_meter_type = $${paramCount++}`);
         values.push((updates as any).newMeterType);
       }
+      if ((updates as any).signatureData !== undefined) {
+        setClauses.push(`signature_data = $${paramCount++}`);
+        values.push((updates as any).signatureData);
+      }
+      if ((updates as any).signatureName !== undefined) {
+        setClauses.push(`signature_name = $${paramCount++}`);
+        values.push((updates as any).signatureName);
+      }
 
       // Always set updatedBy and updated_at
       if (updatedBy) {
@@ -597,6 +621,8 @@ export class ProjectWorkOrderStorage {
       attachments: row.attachments,
       oldMeterType: row.old_meter_type,
       newMeterType: row.new_meter_type,
+      signatureData: row.signature_data,
+      signatureName: row.signature_name,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
