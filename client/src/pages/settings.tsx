@@ -16,7 +16,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Checkbox } from "@/components/ui/checkbox";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Moon, Sun, User as UserIcon, Shield, FolderOpen, Save, FileUp, Users, Plus, Pencil, Trash2, UsersRound, Clock } from "lucide-react";
+import { Moon, Sun, User as UserIcon, Shield, FolderOpen, Save, FileUp, Users, Plus, Pencil, Trash2, UsersRound, Clock, Copy } from "lucide-react";
 import type { Subrole, Permission, WorkOrderStatus, UserGroup, User, TroubleCode, ServiceTypeRecord } from "@shared/schema";
 import { Wrench } from "lucide-react";
 import { AlertTriangle } from "lucide-react";
@@ -265,6 +265,19 @@ export default function Settings() {
     },
     onError: () => {
       toast({ title: "Failed to delete access level", variant: "destructive" });
+    },
+  });
+
+  const copySubroleMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return apiRequest("POST", `/api/subroles/${id}/copy`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/subroles"] });
+      toast({ title: "Access level copied successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to copy access level", variant: "destructive" });
     },
   });
 
@@ -1050,6 +1063,15 @@ export default function Settings() {
                                 data-testid={`button-edit-subrole-${subrole.id}`}
                               >
                                 <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={() => copySubroleMutation.mutate(subrole.id)}
+                                disabled={copySubroleMutation.isPending}
+                                data-testid={`button-copy-subrole-${subrole.id}`}
+                              >
+                                <Copy className="h-4 w-4" />
                               </Button>
                               <Button 
                                 variant="ghost" 
