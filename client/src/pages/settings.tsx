@@ -71,6 +71,8 @@ export default function Settings() {
   
   const [subroleDialogOpen, setSubroleDialogOpen] = useState(false);
   const [deleteSubroleDialogOpen, setDeleteSubroleDialogOpen] = useState(false);
+  const [copySubroleDialogOpen, setCopySubroleDialogOpen] = useState(false);
+  const [copySubroleName, setCopySubroleName] = useState("");
   const [selectedSubrole, setSelectedSubrole] = useState<Subrole | null>(null);
   const [subroleForm, setSubroleForm] = useState({
     label: "",
@@ -269,12 +271,15 @@ export default function Settings() {
   });
 
   const copySubroleMutation = useMutation({
-    mutationFn: async (id: number) => {
-      return apiRequest("POST", `/api/subroles/${id}/copy`);
+    mutationFn: async ({ id, label }: { id: number; label: string }) => {
+      return apiRequest("POST", `/api/subroles/${id}/copy`, { label });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/subroles"] });
       toast({ title: "Access level copied successfully" });
+      setCopySubroleDialogOpen(false);
+      setCopySubroleName("");
+      setSelectedSubrole(null);
     },
     onError: () => {
       toast({ title: "Failed to copy access level", variant: "destructive" });
@@ -1067,8 +1072,11 @@ export default function Settings() {
                               <Button 
                                 variant="ghost" 
                                 size="icon" 
-                                onClick={() => copySubroleMutation.mutate(subrole.id)}
-                                disabled={copySubroleMutation.isPending}
+                                onClick={() => {
+                                  setSelectedSubrole(subrole);
+                                  setCopySubroleName(`Copy of ${subrole.label}`);
+                                  setCopySubroleDialogOpen(true);
+                                }}
                                 data-testid={`button-copy-subrole-${subrole.id}`}
                               >
                                 <Copy className="h-4 w-4" />
@@ -1546,6 +1554,40 @@ export default function Settings() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={copySubroleDialogOpen} onOpenChange={setCopySubroleDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Copy Access Level</DialogTitle>
+            <DialogDescription>
+              Enter a name for the copied access level. All permissions will be copied.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="copy-name">Name</Label>
+            <Input
+              id="copy-name"
+              value={copySubroleName}
+              onChange={(e) => setCopySubroleName(e.target.value)}
+              placeholder="Enter name for copy"
+              className="mt-2"
+              data-testid="input-copy-subrole-name"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCopySubroleDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => selectedSubrole && copySubroleMutation.mutate({ id: selectedSubrole.id, label: copySubroleName })}
+              disabled={!copySubroleName.trim() || copySubroleMutation.isPending}
+              data-testid="button-confirm-copy-subrole"
+            >
+              {copySubroleMutation.isPending ? "Copying..." : "Copy"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>
         <DialogContent>

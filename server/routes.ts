@@ -500,12 +500,14 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Subrole not found" });
       }
       
-      // Get the permissions of the original subrole
-      const permissions = await storage.getSubrolePermissions(id);
+      // Get the permissions of the original subrole (returns array of permission key strings)
+      const permissionKeys = await storage.getSubrolePermissions(id);
       
-      // Create a unique key for the copy
-      const copyKey = `${existing.key}_copy_${Date.now()}`;
-      const copyLabel = `Copy of ${existing.label}`;
+      // Use provided label/key or generate defaults
+      const { label: providedLabel, key: providedKey } = req.body;
+      const randomSuffix = Math.random().toString(36).substring(2, 8);
+      const copyKey = providedKey || `${existing.key.substring(0, 30)}_${randomSuffix}`;
+      const copyLabel = providedLabel || `Copy of ${existing.label}`;
       
       // Create the new subrole
       const newSubrole = await storage.createSubrole({
@@ -516,8 +518,7 @@ export async function registerRoutes(
       });
       
       // Copy the permissions to the new subrole
-      if (permissions.length > 0) {
-        const permissionKeys = permissions.map((p: any) => p.key);
+      if (permissionKeys.length > 0) {
         await storage.setSubrolePermissions(newSubrole.id, permissionKeys);
       }
       
