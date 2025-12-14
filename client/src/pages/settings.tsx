@@ -16,8 +16,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Checkbox } from "@/components/ui/checkbox";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Moon, Sun, User as UserIcon, Shield, FolderOpen, Save, FileUp, Users, Plus, Pencil, Trash2, UsersRound, Clock, Copy } from "lucide-react";
-import type { Subrole, Permission, WorkOrderStatus, UserGroup, User, TroubleCode, ServiceTypeRecord } from "@shared/schema";
+import { Moon, Sun, User as UserIcon, Shield, FolderOpen, Save, FileUp, Users, Plus, Pencil, Trash2, UsersRound, Clock, Copy, Gauge } from "lucide-react";
+import type { Subrole, Permission, WorkOrderStatus, UserGroup, User, TroubleCode, ServiceTypeRecord, MeterType, Project } from "@shared/schema";
 import { Wrench } from "lucide-react";
 import { AlertTriangle } from "lucide-react";
 
@@ -123,6 +123,20 @@ export default function Settings() {
     isDefault: false,
   });
 
+  // Meter Types state
+  const [meterTypeDialogOpen, setMeterTypeDialogOpen] = useState(false);
+  const [deleteMeterTypeDialogOpen, setDeleteMeterTypeDialogOpen] = useState(false);
+  const [copyMeterTypeDialogOpen, setCopyMeterTypeDialogOpen] = useState(false);
+  const [copyMeterTypeProjectId, setCopyMeterTypeProjectId] = useState<number | null>(null);
+  const [selectedMeterType, setSelectedMeterType] = useState<MeterType | null>(null);
+  const [meterTypeProjectFilter, setMeterTypeProjectFilter] = useState<string>("all");
+  const [meterTypeForm, setMeterTypeForm] = useState({
+    productId: "",
+    productLabel: "",
+    productDescription: "",
+    projectId: 0,
+  });
+
   const { data: subroles, isLoading: loadingSubroles } = useQuery<Subrole[]>({
     queryKey: ["/api/subroles"],
     enabled: user?.role === "admin",
@@ -193,6 +207,24 @@ export default function Settings() {
   // Service Types query
   const { data: serviceTypesList, isLoading: loadingServiceTypes } = useQuery<ServiceTypeRecord[]>({
     queryKey: ["/api/service-types"],
+    enabled: user?.role === "admin",
+  });
+
+  // Meter Types queries
+  const { data: meterTypesList, isLoading: loadingMeterTypes } = useQuery<MeterType[]>({
+    queryKey: ["/api/meter-types", meterTypeProjectFilter],
+    queryFn: async () => {
+      const url = meterTypeProjectFilter !== "all" 
+        ? `/api/meter-types?projectId=${meterTypeProjectFilter}` 
+        : "/api/meter-types";
+      const res = await fetch(url, { credentials: "include" });
+      return res.json();
+    },
+    enabled: user?.role === "admin",
+  });
+
+  const { data: projectsList } = useQuery<Project[]>({
+    queryKey: ["/api/projects"],
     enabled: user?.role === "admin",
   });
 
@@ -499,6 +531,69 @@ export default function Settings() {
     },
   });
 
+  // Meter Types mutations
+  const createMeterTypeMutation = useMutation({
+    mutationFn: async (data: { productId: string; productLabel: string; productDescription?: string; projectId: number }) => {
+      return apiRequest("POST", "/api/meter-types", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/meter-types"] });
+      toast({ title: "Meter type created successfully" });
+      setMeterTypeDialogOpen(false);
+      resetMeterTypeForm();
+    },
+    onError: () => {
+      toast({ title: "Failed to create meter type", variant: "destructive" });
+    },
+  });
+
+  const updateMeterTypeMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: { productId?: string; productLabel?: string; productDescription?: string; projectId?: number } }) => {
+      return apiRequest("PATCH", `/api/meter-types/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/meter-types"] });
+      toast({ title: "Meter type updated successfully" });
+      setMeterTypeDialogOpen(false);
+      setSelectedMeterType(null);
+      resetMeterTypeForm();
+    },
+    onError: () => {
+      toast({ title: "Failed to update meter type", variant: "destructive" });
+    },
+  });
+
+  const deleteMeterTypeMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return apiRequest("DELETE", `/api/meter-types/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/meter-types"] });
+      toast({ title: "Meter type deleted successfully" });
+      setDeleteMeterTypeDialogOpen(false);
+      setSelectedMeterType(null);
+    },
+    onError: () => {
+      toast({ title: "Failed to delete meter type", variant: "destructive" });
+    },
+  });
+
+  const copyMeterTypeMutation = useMutation({
+    mutationFn: async ({ id, targetProjectId }: { id: number; targetProjectId?: number }) => {
+      return apiRequest("POST", `/api/meter-types/${id}/copy`, targetProjectId ? { targetProjectId } : {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/meter-types"] });
+      toast({ title: "Meter type copied successfully" });
+      setCopyMeterTypeDialogOpen(false);
+      setCopyMeterTypeProjectId(null);
+      setSelectedMeterType(null);
+    },
+    onError: () => {
+      toast({ title: "Failed to copy meter type", variant: "destructive" });
+    },
+  });
+
   const resetStatusForm = () => {
     setStatusForm({
       code: "",
@@ -746,6 +841,59 @@ export default function Settings() {
         isDefault: serviceTypeForm.isDefault,
       });
     }
+  };
+
+  // Meter Type helper functions
+  const resetMeterTypeForm = () => {
+    setMeterTypeForm({
+      productId: "",
+      productLabel: "",
+      productDescription: "",
+      projectId: 0,
+    });
+  };
+
+  const openCreateMeterTypeDialog = () => {
+    setSelectedMeterType(null);
+    resetMeterTypeForm();
+    setMeterTypeDialogOpen(true);
+  };
+
+  const openEditMeterTypeDialog = (meterType: MeterType) => {
+    setSelectedMeterType(meterType);
+    setMeterTypeForm({
+      productId: meterType.productId,
+      productLabel: meterType.productLabel,
+      productDescription: meterType.productDescription || "",
+      projectId: meterType.projectId,
+    });
+    setMeterTypeDialogOpen(true);
+  };
+
+  const handleMeterTypeSubmit = () => {
+    if (selectedMeterType) {
+      updateMeterTypeMutation.mutate({
+        id: selectedMeterType.id,
+        data: {
+          productId: meterTypeForm.productId,
+          productLabel: meterTypeForm.productLabel,
+          productDescription: meterTypeForm.productDescription || undefined,
+          projectId: meterTypeForm.projectId,
+        },
+      });
+    } else {
+      createMeterTypeMutation.mutate({
+        productId: meterTypeForm.productId,
+        productLabel: meterTypeForm.productLabel,
+        productDescription: meterTypeForm.productDescription || undefined,
+        projectId: meterTypeForm.projectId,
+      });
+    }
+  };
+
+  const getProjectName = (projectId: number) => {
+    const project = projectsList?.find(p => p.id === projectId);
+    return project?.name || `Project ${projectId}`;
   };
 
   const getUserDisplayName = (u: User) => {
@@ -1408,6 +1556,105 @@ export default function Settings() {
                 )}
               </CardContent>
             </Card>
+
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <Gauge className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <CardTitle>Meter Types</CardTitle>
+                      <CardDescription className="mt-1">Define meter types for work orders by project</CardDescription>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Select value={meterTypeProjectFilter} onValueChange={setMeterTypeProjectFilter}>
+                      <SelectTrigger className="w-48" data-testid="select-meter-type-filter">
+                        <SelectValue placeholder="Filter by project" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Projects</SelectItem>
+                        {projectsList?.map((project) => (
+                          <SelectItem key={project.id} value={String(project.id)}>
+                            {project.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button onClick={openCreateMeterTypeDialog} data-testid="button-add-meter-type">
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Meter Type
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {loadingMeterTypes ? (
+                  <p className="text-muted-foreground">Loading...</p>
+                ) : meterTypesList && meterTypesList.length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Product ID</TableHead>
+                        <TableHead>Product Label</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead>Project</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {meterTypesList.map((meterType) => (
+                        <TableRow key={meterType.id} data-testid={`row-meter-type-${meterType.id}`}>
+                          <TableCell className="font-medium">{meterType.productId}</TableCell>
+                          <TableCell>{meterType.productLabel}</TableCell>
+                          <TableCell className="text-muted-foreground">{meterType.productDescription || "—"}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{getProjectName(meterType.projectId)}</Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={() => openEditMeterTypeDialog(meterType)}
+                                data-testid={`button-edit-meter-type-${meterType.id}`}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={() => {
+                                  setSelectedMeterType(meterType);
+                                  setCopyMeterTypeProjectId(null);
+                                  setCopyMeterTypeDialogOpen(true);
+                                }}
+                                data-testid={`button-copy-meter-type-${meterType.id}`}
+                              >
+                                <Copy className="h-4 w-4" />
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={() => {
+                                  setSelectedMeterType(meterType);
+                                  setDeleteMeterTypeDialogOpen(true);
+                                }}
+                                data-testid={`button-delete-meter-type-${meterType.id}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <p className="text-muted-foreground text-center py-4">No meter types defined yet.</p>
+                )}
+              </CardContent>
+            </Card>
           </>
         )}
 
@@ -2063,6 +2310,158 @@ export default function Settings() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Meter Type Create/Edit Dialog */}
+      <Dialog open={meterTypeDialogOpen} onOpenChange={setMeterTypeDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{selectedMeterType ? "Edit Meter Type" : "Create Meter Type"}</DialogTitle>
+            <DialogDescription>
+              {selectedMeterType ? "Update the meter type settings" : "Define a new meter type for work orders"}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div>
+              <Label htmlFor="meter-type-product-id">Product ID</Label>
+              <Input
+                id="meter-type-product-id"
+                value={meterTypeForm.productId}
+                onChange={(e) => setMeterTypeForm(prev => ({ ...prev, productId: e.target.value }))}
+                placeholder="e.g. MTR-001"
+                className="mt-2"
+                data-testid="input-meter-type-product-id"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="meter-type-product-label">Product Label</Label>
+              <Input
+                id="meter-type-product-label"
+                value={meterTypeForm.productLabel}
+                onChange={(e) => setMeterTypeForm(prev => ({ ...prev, productLabel: e.target.value }))}
+                placeholder="e.g. Standard Water Meter"
+                className="mt-2"
+                data-testid="input-meter-type-product-label"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="meter-type-description">Description (optional)</Label>
+              <Textarea
+                id="meter-type-description"
+                value={meterTypeForm.productDescription}
+                onChange={(e) => setMeterTypeForm(prev => ({ ...prev, productDescription: e.target.value }))}
+                placeholder="Brief description of this meter type"
+                className="mt-2"
+                rows={2}
+                data-testid="input-meter-type-description"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="meter-type-project">Project</Label>
+              <Select
+                value={meterTypeForm.projectId ? String(meterTypeForm.projectId) : ""}
+                onValueChange={(value) => setMeterTypeForm(prev => ({ ...prev, projectId: parseInt(value) }))}
+              >
+                <SelectTrigger className="mt-2" data-testid="select-meter-type-project">
+                  <SelectValue placeholder="Select a project" />
+                </SelectTrigger>
+                <SelectContent>
+                  {projectsList?.map((project) => (
+                    <SelectItem key={project.id} value={String(project.id)}>
+                      {project.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMeterTypeDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleMeterTypeSubmit}
+              disabled={!meterTypeForm.productId || !meterTypeForm.productLabel || !meterTypeForm.projectId || createMeterTypeMutation.isPending || updateMeterTypeMutation.isPending}
+              data-testid="button-save-meter-type"
+            >
+              {createMeterTypeMutation.isPending || updateMeterTypeMutation.isPending ? "Saving..." : selectedMeterType ? "Update" : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={deleteMeterTypeDialogOpen} onOpenChange={setDeleteMeterTypeDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Meter Type</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{selectedMeterType?.productLabel}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => selectedMeterType && deleteMeterTypeMutation.mutate(selectedMeterType.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete-meter-type"
+            >
+              {deleteMeterTypeMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={copyMeterTypeDialogOpen} onOpenChange={setCopyMeterTypeDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Copy Meter Type</DialogTitle>
+            <DialogDescription>
+              Copy this meter type to the same project or a different project.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label htmlFor="copy-meter-target-project">Target Project (optional)</Label>
+            <Select
+              value={copyMeterTypeProjectId ? String(copyMeterTypeProjectId) : "same"}
+              onValueChange={(value) => setCopyMeterTypeProjectId(value === "same" ? null : parseInt(value))}
+            >
+              <SelectTrigger className="mt-2" data-testid="select-copy-meter-target-project">
+                <SelectValue placeholder="Same project" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="same">Same project</SelectItem>
+                {projectsList?.map((project) => (
+                  <SelectItem key={project.id} value={String(project.id)}>
+                    {project.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-sm text-muted-foreground mt-2">
+              Leave as "Same project" to create a copy in the current project.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCopyMeterTypeDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => selectedMeterType && copyMeterTypeMutation.mutate({ 
+                id: selectedMeterType.id, 
+                targetProjectId: copyMeterTypeProjectId || undefined 
+              })}
+              disabled={copyMeterTypeMutation.isPending}
+              data-testid="button-confirm-copy-meter-type"
+            >
+              {copyMeterTypeMutation.isPending ? "Copying..." : "Copy"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
