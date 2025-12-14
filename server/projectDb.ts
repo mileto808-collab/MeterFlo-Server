@@ -38,6 +38,7 @@ export const projectWorkOrders = pgTable("work_orders", {
   trouble: varchar("trouble", { length: 100 }),
   notes: text("notes"),
   attachments: text("attachments").array(),
+  meterType: varchar("meter_type", { length: 255 }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -96,6 +97,7 @@ export async function createProjectSchema(projectName: string, projectId: number
         trouble VARCHAR(100),
         notes TEXT,
         attachments TEXT[],
+        meter_type VARCHAR(255),
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW()
       )
@@ -123,23 +125,19 @@ export async function deleteProjectSchema(schemaName: string): Promise<void> {
 export async function migrateProjectSchema(schemaName: string): Promise<void> {
   const client = await pool.connect();
   try {
-    // Check if trouble column exists
-    const columnCheck = await client.query(`
-      SELECT column_name 
-      FROM information_schema.columns 
-      WHERE table_schema = $1 
-        AND table_name = 'work_orders' 
-        AND column_name = 'trouble'
-    `, [schemaName]);
+    // Add trouble column if it doesn't exist
+    await client.query(`
+      ALTER TABLE "${schemaName}".work_orders 
+      ADD COLUMN IF NOT EXISTS trouble VARCHAR(100)
+    `);
     
-    if (columnCheck.rows.length === 0) {
-      // Add trouble column if it doesn't exist
-      await client.query(`
-        ALTER TABLE "${schemaName}".work_orders 
-        ADD COLUMN IF NOT EXISTS trouble VARCHAR(100)
-      `);
-      console.log(`Added 'trouble' column to ${schemaName}.work_orders`);
-    }
+    // Add meter_type column if it doesn't exist
+    await client.query(`
+      ALTER TABLE "${schemaName}".work_orders 
+      ADD COLUMN IF NOT EXISTS meter_type VARCHAR(255)
+    `);
+    
+    console.log(`Migration completed for ${schemaName}.work_orders`);
   } catch (error) {
     // Log but don't fail - table might not exist yet
     console.log(`Migration check for ${schemaName}: ${error}`);
@@ -252,8 +250,8 @@ export class ProjectWorkOrderStorage {
       
       const result = await client.query(
         `INSERT INTO "${this.schemaName}".work_orders 
-         (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, scheduled_date, assigned_to, created_by, updated_by, trouble, notes, attachments)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
+         (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, scheduled_date, assigned_to, created_by, updated_by, trouble, notes, attachments, meter_type)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)
          RETURNING *`,
         [
           workOrder.customerWoId,
@@ -282,6 +280,7 @@ export class ProjectWorkOrderStorage {
           troubleCode || null,
           notes,
           workOrder.attachments || null,
+          (workOrder as any).meterType || null,
         ]
       );
       return this.mapRowToWorkOrder(result.rows[0]);
@@ -461,6 +460,10 @@ export class ProjectWorkOrderStorage {
         setClauses.push(`attachments = $${paramCount++}`);
         values.push(updates.attachments);
       }
+      if ((updates as any).meterType !== undefined) {
+        setClauses.push(`meter_type = $${paramCount++}`);
+        values.push((updates as any).meterType);
+      }
 
       // Always set updatedBy and updated_at
       if (updatedBy) {
@@ -561,6 +564,7 @@ export class ProjectWorkOrderStorage {
       trouble: row.trouble,
       notes: row.notes,
       attachments: row.attachments,
+      meterType: row.meter_type,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -619,6 +623,7 @@ export async function backupProjectDatabase(schemaName: string): Promise<{
       trouble: row.trouble,
       notes: row.notes,
       attachments: row.attachments,
+      meterType: row.meter_type,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }));
@@ -627,7 +632,7 @@ export async function backupProjectDatabase(schemaName: string): Promise<{
       schemaName,
       backupDate: new Date().toISOString(),
       workOrders,
-      version: "2.0",
+      version: "2.1",
     };
   } finally {
     client.release();
@@ -654,8 +659,8 @@ export async function restoreProjectDatabase(
       try {
         await client.query(
           `INSERT INTO "${schemaName}".work_orders 
-           (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, scheduled_date, assigned_to, created_by, updated_by, completed_at, trouble, notes, attachments)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)`,
+           (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, scheduled_date, assigned_to, created_by, updated_by, completed_at, trouble, notes, attachments, meter_type)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)`,
           [
             wo.customerWoId || null,
             wo.customerId || null,
@@ -684,6 +689,7 @@ export async function restoreProjectDatabase(
             wo.trouble || null,
             wo.notes || null,
             wo.attachments || null,
+            wo.meterType || null,
           ]
         );
         restored++;
