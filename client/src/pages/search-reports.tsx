@@ -652,7 +652,7 @@ export default function SearchReports() {
                           <TableCell>{result.workOrder.newMeterType || "-"}</TableCell>
                           <TableCell>{getStatusBadge(result.workOrder.status)}</TableCell>
                           <TableCell>
-                            <Link href={`/projects/${result.projectId}/work-orders`}>
+                            <Link href={`/projects/${result.projectId}/work-orders?edit=${result.workOrder.id}`}>
                               <Button variant="ghost" size="sm" data-testid={`button-view-${index}`}>
                                 View
                               </Button>
