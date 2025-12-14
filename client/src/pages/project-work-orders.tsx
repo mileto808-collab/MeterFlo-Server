@@ -428,10 +428,7 @@ export default function ProjectWorkOrders() {
     setNewMeterTypeProductId("");
     setNewMeterTypeLabel("");
     setNewMeterTypeDescription("");
-    // Use setTimeout to allow the Select dropdown to close before opening the Dialog
-    setTimeout(() => {
-      setCreateMeterTypeOpen(true);
-    }, 0);
+    setCreateMeterTypeOpen(true);
   };
 
   const onSubmit = (data: WorkOrderFormData) => {
@@ -900,7 +897,11 @@ export default function ProjectWorkOrders() {
                             type="button"
                             size="icon"
                             variant="outline"
-                            onClick={() => openCreateMeterTypeDialog("editOldMeterType")}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              openCreateMeterTypeDialog("editOldMeterType");
+                            }}
                             data-testid="button-create-edit-old-meter-type"
                           >
                             <Plus className="h-4 w-4" />
@@ -939,7 +940,11 @@ export default function ProjectWorkOrders() {
                             type="button"
                             size="icon"
                             variant="outline"
-                            onClick={() => openCreateMeterTypeDialog("editNewMeterType")}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              openCreateMeterTypeDialog("editNewMeterType");
+                            }}
                             data-testid="button-create-edit-new-meter-type"
                           >
                             <Plus className="h-4 w-4" />
@@ -1519,7 +1524,11 @@ export default function ProjectWorkOrders() {
                             type="button"
                             size="icon"
                             variant="outline"
-                            onClick={() => openCreateMeterTypeDialog("oldMeterType")}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              openCreateMeterTypeDialog("oldMeterType");
+                            }}
                             data-testid="button-create-old-meter-type"
                           >
                             <Plus className="h-4 w-4" />
@@ -1558,7 +1567,11 @@ export default function ProjectWorkOrders() {
                             type="button"
                             size="icon"
                             variant="outline"
-                            onClick={() => openCreateMeterTypeDialog("newMeterType")}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              openCreateMeterTypeDialog("newMeterType");
+                            }}
                             data-testid="button-create-new-meter-type"
                           >
                             <Plus className="h-4 w-4" />
