@@ -832,7 +832,7 @@ export default function ProjectWorkOrders() {
       <div className="p-6 space-y-6 max-w-4xl mx-auto">
         <div className="mb-6">
           {cameFromSearch ? (
-            <Link href="/search-reports">
+            <Link href="/search">
               <Button 
                 variant="ghost" 
                 className="mb-4"
