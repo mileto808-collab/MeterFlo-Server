@@ -247,6 +247,20 @@ export default function ProjectWorkOrders() {
     setEditingWorkOrder(null);
   }, [projectId]);
 
+  // Handle ?edit=workOrderId query parameter to auto-open a work order
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const editId = searchParams.get("edit");
+    if (editId && workOrders.length > 0) {
+      const workOrderToEdit = workOrders.find((wo) => wo.id === parseInt(editId));
+      if (workOrderToEdit) {
+        setEditingWorkOrder(workOrderToEdit);
+        // Clear the query parameter from URL without refreshing
+        window.history.replaceState({}, "", window.location.pathname);
+      }
+    }
+  }, [workOrders]);
+
   useEffect(() => {
     if (editingWorkOrder) {
       editForm.reset({
