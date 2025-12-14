@@ -548,26 +548,25 @@ export class ProjectWorkOrderStorage {
     }
   }
 
-  async getWorkOrderStats(): Promise<{ open: number; completed: number; scheduled: number; skipped: number; total: number }> {
+  async getWorkOrderStats(): Promise<{ statusCounts: Record<string, number>; total: number }> {
     const client = await pool.connect();
     try {
       const result = await client.query(`
-        SELECT 
-          COUNT(*) FILTER (WHERE status = 'Open') as open,
-          COUNT(*) FILTER (WHERE status = 'Completed') as completed,
-          COUNT(*) FILTER (WHERE status = 'Scheduled') as scheduled,
-          COUNT(*) FILTER (WHERE status = 'Skipped') as skipped,
-          COUNT(*) as total
+        SELECT status, COUNT(*) as count
         FROM "${this.schemaName}".work_orders
+        GROUP BY status
       `);
-      const row = result.rows[0];
-      return {
-        open: parseInt(row.open) || 0,
-        completed: parseInt(row.completed) || 0,
-        scheduled: parseInt(row.scheduled) || 0,
-        skipped: parseInt(row.skipped) || 0,
-        total: parseInt(row.total) || 0,
-      };
+      
+      const statusCounts: Record<string, number> = {};
+      let total = 0;
+      
+      for (const row of result.rows) {
+        const count = parseInt(row.count) || 0;
+        statusCounts[row.status] = count;
+        total += count;
+      }
+      
+      return { statusCounts, total };
     } finally {
       client.release();
     }
