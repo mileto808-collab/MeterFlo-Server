@@ -179,7 +179,7 @@ export default function ProjectWorkOrders() {
     retry: false,
   });
 
-  const { data: stats, error: statsError } = useQuery<{ open: number; completed: number; scheduled: number; skipped: number; total: number }>({
+  const { data: stats, error: statsError } = useQuery<{ statusCounts: Record<string, number>; total: number }>({
     queryKey: [`/api/projects/${projectId}/work-orders/stats`],
     enabled: !!projectId && !accessDenied,
     retry: false,
@@ -2295,30 +2295,19 @@ export default function ProjectWorkOrders() {
 
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>Open</CardDescription>
-              <CardTitle className="text-2xl" data-testid="stat-open">{stats.open}</CardTitle>
-            </CardHeader>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>Scheduled</CardDescription>
-              <CardTitle className="text-2xl" data-testid="stat-scheduled">{stats.scheduled}</CardTitle>
-            </CardHeader>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>Completed</CardDescription>
-              <CardTitle className="text-2xl" data-testid="stat-completed">{stats.completed}</CardTitle>
-            </CardHeader>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>Skipped</CardDescription>
-              <CardTitle className="text-2xl" data-testid="stat-skipped">{stats.skipped}</CardTitle>
-            </CardHeader>
-          </Card>
+          {workOrderStatuses
+            .slice()
+            .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+            .map((status) => (
+              <Card key={status.id}>
+                <CardHeader className="pb-2">
+                  <CardDescription>{status.label}</CardDescription>
+                  <CardTitle className="text-2xl" data-testid={`stat-${status.label.toLowerCase().replace(/\s+/g, '-')}`}>
+                    {stats.statusCounts[status.label] || 0}
+                  </CardTitle>
+                </CardHeader>
+              </Card>
+            ))}
           <Card>
             <CardHeader className="pb-2">
               <CardDescription>Total</CardDescription>
