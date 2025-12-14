@@ -114,7 +114,8 @@ export default function ProjectWorkOrders() {
       assignedTo: "",
       scheduledDate: "",
       trouble: "",
-      meterType: "",
+      oldMeterType: "",
+      newMeterType: "",
     },
   });
 
@@ -144,7 +145,8 @@ export default function ProjectWorkOrders() {
       assignedTo: "",
       scheduledDate: "",
       trouble: "",
-      meterType: "",
+      oldMeterType: "",
+      newMeterType: "",
     },
   });
 
@@ -254,7 +256,8 @@ export default function ProjectWorkOrders() {
         assignedTo: editingWorkOrder.assignedTo || "",
         scheduledDate: (editingWorkOrder as any).scheduledDate || "",
         trouble: (editingWorkOrder as any).trouble || "",
-        meterType: (editingWorkOrder as any).meterType || "",
+        oldMeterType: (editingWorkOrder as any).oldMeterType || "",
+        newMeterType: (editingWorkOrder as any).newMeterType || "",
       });
     }
   }, [editingWorkOrder, editForm]);
@@ -276,7 +279,8 @@ export default function ProjectWorkOrders() {
     newGps: data.newGps || null,
     notes: data.notes || null,
     trouble: (data as any).trouble || null,
-    meterType: (data as any).meterType || null,
+    oldMeterType: (data as any).oldMeterType || null,
+    newMeterType: (data as any).newMeterType || null,
   });
 
   const createMutation = useMutation({
@@ -798,14 +802,37 @@ export default function ProjectWorkOrders() {
                   />
                   <FormField
                     control={editForm.control}
-                    name="meterType"
+                    name="oldMeterType"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Meter Type</FormLabel>
+                        <FormLabel>Old Meter Type</FormLabel>
                         <Select value={(field.value as string) || "__none__"} onValueChange={(val) => field.onChange(val === "__none__" ? "" : val)}>
                           <FormControl>
-                            <SelectTrigger data-testid="select-edit-meter-type">
-                              <SelectValue placeholder="Select meter type..." />
+                            <SelectTrigger data-testid="select-edit-old-meter-type">
+                              <SelectValue placeholder="Select old meter type..." />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="__none__">None</SelectItem>
+                            {meterTypes.map((mt) => (
+                              <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editForm.control}
+                    name="newMeterType"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>New Meter Type</FormLabel>
+                        <Select value={(field.value as string) || "__none__"} onValueChange={(val) => field.onChange(val === "__none__" ? "" : val)}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-edit-new-meter-type">
+                              <SelectValue placeholder="Select new meter type..." />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
@@ -1362,14 +1389,37 @@ export default function ProjectWorkOrders() {
                   />
                   <FormField
                     control={form.control}
-                    name="meterType"
+                    name="oldMeterType"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Meter Type</FormLabel>
+                        <FormLabel>Old Meter Type</FormLabel>
                         <Select value={(field.value as string) || "__none__"} onValueChange={(val) => field.onChange(val === "__none__" ? "" : val)}>
                           <FormControl>
-                            <SelectTrigger data-testid="select-create-meter-type">
-                              <SelectValue placeholder="Select meter type..." />
+                            <SelectTrigger data-testid="select-create-old-meter-type">
+                              <SelectValue placeholder="Select old meter type..." />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="__none__">None</SelectItem>
+                            {meterTypes.map((mt) => (
+                              <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="newMeterType"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>New Meter Type</FormLabel>
+                        <Select value={(field.value as string) || "__none__"} onValueChange={(val) => field.onChange(val === "__none__" ? "" : val)}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-create-new-meter-type">
+                              <SelectValue placeholder="Select new meter type..." />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
