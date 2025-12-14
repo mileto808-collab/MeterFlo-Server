@@ -99,6 +99,7 @@ export default function ProjectWorkOrders() {
   const [showFilters, setShowFilters] = useState(false);
   const [createMeterTypeOpen, setCreateMeterTypeOpen] = useState(false);
   const [meterTypeField, setMeterTypeField] = useState<"oldMeterType" | "newMeterType" | "editOldMeterType" | "editNewMeterType" | null>(null);
+  const [cameFromSearch, setCameFromSearch] = useState(false);
   const [newMeterTypeProductId, setNewMeterTypeProductId] = useState("");
   const [newMeterTypeLabel, setNewMeterTypeLabel] = useState("");
   const [newMeterTypeDescription, setNewMeterTypeDescription] = useState("");
@@ -245,16 +246,21 @@ export default function ProjectWorkOrders() {
     setShowFilters(false);
     setIsCreatingWorkOrder(false);
     setEditingWorkOrder(null);
+    setCameFromSearch(false);
   }, [projectId]);
 
-  // Handle ?edit=workOrderId query parameter to auto-open a work order
+  // Handle ?edit=workOrderId&from=search query parameters to auto-open a work order
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
     const editId = searchParams.get("edit");
+    const fromSearch = searchParams.get("from") === "search";
     if (editId && workOrders.length > 0) {
       const workOrderToEdit = workOrders.find((wo) => wo.id === parseInt(editId));
       if (workOrderToEdit) {
         setEditingWorkOrder(workOrderToEdit);
+        if (fromSearch) {
+          setCameFromSearch(true);
+        }
         // Clear the query parameter from URL without refreshing
         window.history.replaceState({}, "", window.location.pathname);
       }
@@ -378,6 +384,7 @@ export default function ProjectWorkOrders() {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/work-orders`] });
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/work-orders/stats`] });
       setEditingWorkOrder(null);
+      setCameFromSearch(false);
       toast({ title: "Work order updated" });
     },
     onError: (error: any) => {
@@ -824,15 +831,32 @@ export default function ProjectWorkOrders() {
     return (
       <div className="p-6 space-y-6 max-w-4xl mx-auto">
         <div className="mb-6">
-          <Button 
-            variant="ghost" 
-            onClick={() => setEditingWorkOrder(null)} 
-            className="mb-4"
-            data-testid="button-back-to-work-orders"
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Work Orders
-          </Button>
+          {cameFromSearch ? (
+            <Link href="/search-reports">
+              <Button 
+                variant="ghost" 
+                className="mb-4"
+                data-testid="button-back-to-search"
+                onClick={() => setCameFromSearch(false)}
+              >
+                <ArrowLeft className="h-4 w-4 mr-2" />
+                Back to Search
+              </Button>
+            </Link>
+          ) : (
+            <Button 
+              variant="ghost" 
+              onClick={() => {
+                setEditingWorkOrder(null);
+                setCameFromSearch(false);
+              }} 
+              className="mb-4"
+              data-testid="button-back-to-work-orders"
+            >
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Work Orders
+            </Button>
+          )}
           <h1 className="text-2xl font-bold" data-testid="text-edit-work-order-title">Edit Work Order</h1>
           <p className="text-muted-foreground mt-1">
             Update work order {editingWorkOrder.customerWoId || `#${editingWorkOrder.id}`}
@@ -1440,7 +1464,7 @@ export default function ProjectWorkOrders() {
                 </div>
                 
                 <div className="flex gap-4 pt-4">
-                  <Button type="button" variant="outline" onClick={() => setEditingWorkOrder(null)}>Cancel</Button>
+                  <Button type="button" variant="outline" onClick={() => { setEditingWorkOrder(null); setCameFromSearch(false); }}>Cancel</Button>
                   <Button type="submit" disabled={updateMutation.isPending} data-testid="button-update-work-order">
                     {updateMutation.isPending ? "Updating..." : "Update Work Order"}
                   </Button>
