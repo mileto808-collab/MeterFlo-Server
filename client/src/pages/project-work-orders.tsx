@@ -49,6 +49,14 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Users, ChevronDown } from "lucide-react";
 
 type Assignee = {
@@ -88,6 +96,11 @@ export default function ProjectWorkOrders() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [showFilters, setShowFilters] = useState(false);
+  const [createMeterTypeOpen, setCreateMeterTypeOpen] = useState(false);
+  const [meterTypeField, setMeterTypeField] = useState<"oldMeterType" | "newMeterType" | "editOldMeterType" | "editNewMeterType" | null>(null);
+  const [newMeterTypeProductId, setNewMeterTypeProductId] = useState("");
+  const [newMeterTypeLabel, setNewMeterTypeLabel] = useState("");
+  const [newMeterTypeDescription, setNewMeterTypeDescription] = useState("");
 
   const form = useForm<WorkOrderFormData>({
     resolver: zodResolver(workOrderFormSchema),
@@ -362,6 +375,61 @@ export default function ProjectWorkOrders() {
       }
     },
   });
+
+  const createMeterTypeMutation = useMutation({
+    mutationFn: async (data: { productId: string; productLabel: string; productDescription?: string }): Promise<MeterType> => {
+      const res = await apiRequest("POST", "/api/meter-types", {
+        ...data,
+        projectIds: [projectId],
+      });
+      return res.json();
+    },
+    onSuccess: (newMeterType: MeterType) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/meter-types", projectId] });
+      if (meterTypeField === "oldMeterType") {
+        form.setValue("oldMeterType", newMeterType.productId);
+      } else if (meterTypeField === "newMeterType") {
+        form.setValue("newMeterType", newMeterType.productId);
+      } else if (meterTypeField === "editOldMeterType") {
+        editForm.setValue("oldMeterType", newMeterType.productId);
+      } else if (meterTypeField === "editNewMeterType") {
+        editForm.setValue("newMeterType", newMeterType.productId);
+      }
+      setCreateMeterTypeOpen(false);
+      setNewMeterTypeProductId("");
+      setNewMeterTypeLabel("");
+      setNewMeterTypeDescription("");
+      setMeterTypeField(null);
+      toast({ title: "Meter type created" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to create meter type", description: error?.message, variant: "destructive" });
+    },
+  });
+
+  const handleCreateMeterTypeSubmit = () => {
+    if (!newMeterTypeProductId.trim() || !newMeterTypeLabel.trim()) {
+      toast({ title: "Product ID and Label are required", variant: "destructive" });
+      return;
+    }
+    createMeterTypeMutation.mutate({
+      productId: newMeterTypeProductId.trim(),
+      productLabel: newMeterTypeLabel.trim(),
+      productDescription: newMeterTypeDescription.trim() || undefined,
+    });
+  };
+
+  const openCreateMeterTypeDialog = (field: "oldMeterType" | "newMeterType" | "editOldMeterType" | "editNewMeterType") => {
+    if (!projectId) {
+      toast({ title: "Project not loaded", description: "Please wait for the project to load", variant: "destructive" });
+      return;
+    }
+    setMeterTypeField(field);
+    setNewMeterTypeProductId("");
+    setNewMeterTypeLabel("");
+    setNewMeterTypeDescription("");
+    setCreateMeterTypeOpen(true);
+  };
 
   const onSubmit = (data: WorkOrderFormData) => {
     createMutation.mutate(data);
@@ -806,7 +874,16 @@ export default function ProjectWorkOrders() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Old Meter Type</FormLabel>
-                        <Select value={(field.value as string) || "__none__"} onValueChange={(val) => field.onChange(val === "__none__" ? "" : val)}>
+                        <Select 
+                          value={(field.value as string) || "__none__"} 
+                          onValueChange={(val) => {
+                            if (val === "__create_new__") {
+                              openCreateMeterTypeDialog("editOldMeterType");
+                            } else {
+                              field.onChange(val === "__none__" ? "" : val);
+                            }
+                          }}
+                        >
                           <FormControl>
                             <SelectTrigger data-testid="select-edit-old-meter-type">
                               <SelectValue placeholder="Select old meter type..." />
@@ -817,6 +894,9 @@ export default function ProjectWorkOrders() {
                             {meterTypes.map((mt) => (
                               <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
                             ))}
+                            <SelectItem value="__create_new__" className="text-primary font-medium">
+                              <span className="flex items-center gap-1"><Plus className="h-3 w-3" /> Create New</span>
+                            </SelectItem>
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -829,7 +909,16 @@ export default function ProjectWorkOrders() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>New Meter Type</FormLabel>
-                        <Select value={(field.value as string) || "__none__"} onValueChange={(val) => field.onChange(val === "__none__" ? "" : val)}>
+                        <Select 
+                          value={(field.value as string) || "__none__"} 
+                          onValueChange={(val) => {
+                            if (val === "__create_new__") {
+                              openCreateMeterTypeDialog("editNewMeterType");
+                            } else {
+                              field.onChange(val === "__none__" ? "" : val);
+                            }
+                          }}
+                        >
                           <FormControl>
                             <SelectTrigger data-testid="select-edit-new-meter-type">
                               <SelectValue placeholder="Select new meter type..." />
@@ -840,6 +929,9 @@ export default function ProjectWorkOrders() {
                             {meterTypes.map((mt) => (
                               <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
                             ))}
+                            <SelectItem value="__create_new__" className="text-primary font-medium">
+                              <span className="flex items-center gap-1"><Plus className="h-3 w-3" /> Create New</span>
+                            </SelectItem>
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -1393,7 +1485,16 @@ export default function ProjectWorkOrders() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Old Meter Type</FormLabel>
-                        <Select value={(field.value as string) || "__none__"} onValueChange={(val) => field.onChange(val === "__none__" ? "" : val)}>
+                        <Select 
+                          value={(field.value as string) || "__none__"} 
+                          onValueChange={(val) => {
+                            if (val === "__create_new__") {
+                              openCreateMeterTypeDialog("oldMeterType");
+                            } else {
+                              field.onChange(val === "__none__" ? "" : val);
+                            }
+                          }}
+                        >
                           <FormControl>
                             <SelectTrigger data-testid="select-create-old-meter-type">
                               <SelectValue placeholder="Select old meter type..." />
@@ -1404,6 +1505,9 @@ export default function ProjectWorkOrders() {
                             {meterTypes.map((mt) => (
                               <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
                             ))}
+                            <SelectItem value="__create_new__" className="text-primary font-medium">
+                              <span className="flex items-center gap-1"><Plus className="h-3 w-3" /> Create New</span>
+                            </SelectItem>
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -1416,7 +1520,16 @@ export default function ProjectWorkOrders() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>New Meter Type</FormLabel>
-                        <Select value={(field.value as string) || "__none__"} onValueChange={(val) => field.onChange(val === "__none__" ? "" : val)}>
+                        <Select 
+                          value={(field.value as string) || "__none__"} 
+                          onValueChange={(val) => {
+                            if (val === "__create_new__") {
+                              openCreateMeterTypeDialog("newMeterType");
+                            } else {
+                              field.onChange(val === "__none__" ? "" : val);
+                            }
+                          }}
+                        >
                           <FormControl>
                             <SelectTrigger data-testid="select-create-new-meter-type">
                               <SelectValue placeholder="Select new meter type..." />
@@ -1427,6 +1540,9 @@ export default function ProjectWorkOrders() {
                             {meterTypes.map((mt) => (
                               <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
                             ))}
+                            <SelectItem value="__create_new__" className="text-primary font-medium">
+                              <span className="flex items-center gap-1"><Plus className="h-3 w-3" /> Create New</span>
+                            </SelectItem>
                           </SelectContent>
                         </Select>
                         <FormMessage />
@@ -2368,6 +2484,61 @@ export default function ProjectWorkOrders() {
           </CardContent>
         </Card>
       )}
+
+      <Dialog open={createMeterTypeOpen} onOpenChange={setCreateMeterTypeOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create New Meter Type</DialogTitle>
+            <DialogDescription>
+              Add a new meter type to this project.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="product-id">Product ID *</Label>
+              <Input
+                id="product-id"
+                value={newMeterTypeProductId}
+                onChange={(e) => setNewMeterTypeProductId(e.target.value)}
+                placeholder="e.g. MTR-001"
+                data-testid="input-new-meter-type-product-id"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="product-label">Product Label *</Label>
+              <Input
+                id="product-label"
+                value={newMeterTypeLabel}
+                onChange={(e) => setNewMeterTypeLabel(e.target.value)}
+                placeholder="e.g. 5/8 Inch Water Meter"
+                data-testid="input-new-meter-type-label"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="product-description">Description (optional)</Label>
+              <Textarea
+                id="product-description"
+                value={newMeterTypeDescription}
+                onChange={(e) => setNewMeterTypeDescription(e.target.value)}
+                placeholder="Optional description..."
+                data-testid="input-new-meter-type-description"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreateMeterTypeOpen(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleCreateMeterTypeSubmit}
+              disabled={createMeterTypeMutation.isPending}
+              data-testid="button-create-meter-type-submit"
+            >
+              {createMeterTypeMutation.isPending ? "Creating..." : "Create Meter Type"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
