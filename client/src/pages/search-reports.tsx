@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -89,6 +89,30 @@ export default function SearchReports() {
   const [isSearchActive, setIsSearchActive] = useState(false);
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const [stateRestored, setStateRestored] = useState(false);
+
+  // Restore search state from sessionStorage if returning from work order edit
+  useEffect(() => {
+    const savedState = sessionStorage.getItem('searchReportsState');
+    if (savedState && !stateRestored) {
+      try {
+        const state = JSON.parse(savedState);
+        setSearchQuery(state.searchQuery || "");
+        setSelectedProjectState(state.selectedProject || "all");
+        setSelectedStatus(state.selectedStatus || "all");
+        setSelectedServiceType(state.selectedServiceType || "all");
+        setSelectedMeterType(state.selectedMeterType || "all");
+        setDateFrom(state.dateFrom || "");
+        setDateTo(state.dateTo || "");
+        setIsSearchActive(state.isSearchActive || false);
+        setStateRestored(true);
+        // Clear the stored state after restoring
+        sessionStorage.removeItem('searchReportsState');
+      } catch (e) {
+        console.error("Failed to restore search state:", e);
+      }
+    }
+  }, [stateRestored]);
 
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
@@ -652,7 +676,23 @@ export default function SearchReports() {
                           <TableCell>{result.workOrder.newMeterType || "-"}</TableCell>
                           <TableCell>{getStatusBadge(result.workOrder.status)}</TableCell>
                           <TableCell>
-                            <Link href={`/projects/${result.projectId}/work-orders?edit=${result.workOrder.id}`}>
+                            <Link 
+                              href={`/projects/${result.projectId}/work-orders?edit=${result.workOrder.id}&from=search`}
+                              onClick={() => {
+                                // Store search state in sessionStorage before navigating
+                                const searchState = {
+                                  searchQuery,
+                                  selectedProject,
+                                  selectedStatus,
+                                  selectedServiceType,
+                                  selectedMeterType,
+                                  dateFrom,
+                                  dateTo,
+                                  isSearchActive,
+                                };
+                                sessionStorage.setItem('searchReportsState', JSON.stringify(searchState));
+                              }}
+                            >
                               <Button variant="ghost" size="sm" data-testid={`button-view-${index}`}>
                                 View
                               </Button>
