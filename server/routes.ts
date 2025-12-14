@@ -487,6 +487,47 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/subroles/:id/copy", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const id = parseInt(req.params.id);
+      const existing = await storage.getSubrole(id);
+      if (!existing) {
+        return res.status(404).json({ message: "Subrole not found" });
+      }
+      
+      // Get the permissions of the original subrole
+      const permissions = await storage.getSubrolePermissions(id);
+      
+      // Create a unique key for the copy
+      const copyKey = `${existing.key}_copy_${Date.now()}`;
+      const copyLabel = `Copy of ${existing.label}`;
+      
+      // Create the new subrole
+      const newSubrole = await storage.createSubrole({
+        key: copyKey,
+        label: copyLabel,
+        baseRole: existing.baseRole,
+        description: existing.description,
+      });
+      
+      // Copy the permissions to the new subrole
+      if (permissions.length > 0) {
+        const permissionKeys = permissions.map((p: any) => p.key);
+        await storage.setSubrolePermissions(newSubrole.id, permissionKeys);
+      }
+      
+      res.status(201).json(newSubrole);
+    } catch (error) {
+      console.error("Error copying subrole:", error);
+      res.status(500).json({ message: "Failed to copy subrole" });
+    }
+  });
+
   app.put("/api/subroles/:id/permissions", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
