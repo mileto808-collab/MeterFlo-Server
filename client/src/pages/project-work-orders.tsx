@@ -877,31 +877,35 @@ export default function ProjectWorkOrders() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Old Meter Type</FormLabel>
-                        <Select 
-                          value={(field.value as string) || "__none__"} 
-                          onValueChange={(val) => {
-                            if (val === "__create_new__") {
-                              openCreateMeterTypeDialog("editOldMeterType");
-                            } else {
+                        <div className="flex gap-1">
+                          <Select 
+                            value={(field.value as string) || "__none__"} 
+                            onValueChange={(val) => {
                               field.onChange(val === "__none__" ? "" : val);
-                            }
-                          }}
-                        >
-                          <FormControl>
-                            <SelectTrigger data-testid="select-edit-old-meter-type">
-                              <SelectValue placeholder="Select old meter type..." />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="__none__">None</SelectItem>
-                            {meterTypes.map((mt) => (
-                              <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
-                            ))}
-                            <SelectItem value="__create_new__" className="text-primary font-medium">
-                              <span className="flex items-center gap-1"><Plus className="h-3 w-3" /> Create New</span>
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
+                            }}
+                          >
+                            <FormControl>
+                              <SelectTrigger data-testid="select-edit-old-meter-type" className="flex-1">
+                                <SelectValue placeholder="Select old meter type..." />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="__none__">None</SelectItem>
+                              {meterTypes.map((mt) => (
+                                <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="outline"
+                            onClick={() => openCreateMeterTypeDialog("editOldMeterType")}
+                            data-testid="button-create-edit-old-meter-type"
+                          >
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                        </div>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -912,31 +916,35 @@ export default function ProjectWorkOrders() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>New Meter Type</FormLabel>
-                        <Select 
-                          value={(field.value as string) || "__none__"} 
-                          onValueChange={(val) => {
-                            if (val === "__create_new__") {
-                              openCreateMeterTypeDialog("editNewMeterType");
-                            } else {
+                        <div className="flex gap-1">
+                          <Select 
+                            value={(field.value as string) || "__none__"} 
+                            onValueChange={(val) => {
                               field.onChange(val === "__none__" ? "" : val);
-                            }
-                          }}
-                        >
-                          <FormControl>
-                            <SelectTrigger data-testid="select-edit-new-meter-type">
-                              <SelectValue placeholder="Select new meter type..." />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="__none__">None</SelectItem>
-                            {meterTypes.map((mt) => (
-                              <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
-                            ))}
-                            <SelectItem value="__create_new__" className="text-primary font-medium">
-                              <span className="flex items-center gap-1"><Plus className="h-3 w-3" /> Create New</span>
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
+                            }}
+                          >
+                            <FormControl>
+                              <SelectTrigger data-testid="select-edit-new-meter-type" className="flex-1">
+                                <SelectValue placeholder="Select new meter type..." />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="__none__">None</SelectItem>
+                              {meterTypes.map((mt) => (
+                                <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="outline"
+                            onClick={() => openCreateMeterTypeDialog("editNewMeterType")}
+                            data-testid="button-create-edit-new-meter-type"
+                          >
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                        </div>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -1488,31 +1496,35 @@ export default function ProjectWorkOrders() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Old Meter Type</FormLabel>
-                        <Select 
-                          value={(field.value as string) || "__none__"} 
-                          onValueChange={(val) => {
-                            if (val === "__create_new__") {
-                              openCreateMeterTypeDialog("oldMeterType");
-                            } else {
+                        <div className="flex gap-1">
+                          <Select 
+                            value={(field.value as string) || "__none__"} 
+                            onValueChange={(val) => {
                               field.onChange(val === "__none__" ? "" : val);
-                            }
-                          }}
-                        >
-                          <FormControl>
-                            <SelectTrigger data-testid="select-create-old-meter-type">
-                              <SelectValue placeholder="Select old meter type..." />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="__none__">None</SelectItem>
-                            {meterTypes.map((mt) => (
-                              <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
-                            ))}
-                            <SelectItem value="__create_new__" className="text-primary font-medium">
-                              <span className="flex items-center gap-1"><Plus className="h-3 w-3" /> Create New</span>
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
+                            }}
+                          >
+                            <FormControl>
+                              <SelectTrigger data-testid="select-create-old-meter-type" className="flex-1">
+                                <SelectValue placeholder="Select old meter type..." />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="__none__">None</SelectItem>
+                              {meterTypes.map((mt) => (
+                                <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="outline"
+                            onClick={() => openCreateMeterTypeDialog("oldMeterType")}
+                            data-testid="button-create-old-meter-type"
+                          >
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                        </div>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -1523,31 +1535,35 @@ export default function ProjectWorkOrders() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>New Meter Type</FormLabel>
-                        <Select 
-                          value={(field.value as string) || "__none__"} 
-                          onValueChange={(val) => {
-                            if (val === "__create_new__") {
-                              openCreateMeterTypeDialog("newMeterType");
-                            } else {
+                        <div className="flex gap-1">
+                          <Select 
+                            value={(field.value as string) || "__none__"} 
+                            onValueChange={(val) => {
                               field.onChange(val === "__none__" ? "" : val);
-                            }
-                          }}
-                        >
-                          <FormControl>
-                            <SelectTrigger data-testid="select-create-new-meter-type">
-                              <SelectValue placeholder="Select new meter type..." />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="__none__">None</SelectItem>
-                            {meterTypes.map((mt) => (
-                              <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
-                            ))}
-                            <SelectItem value="__create_new__" className="text-primary font-medium">
-                              <span className="flex items-center gap-1"><Plus className="h-3 w-3" /> Create New</span>
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
+                            }}
+                          >
+                            <FormControl>
+                              <SelectTrigger data-testid="select-create-new-meter-type" className="flex-1">
+                                <SelectValue placeholder="Select new meter type..." />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="__none__">None</SelectItem>
+                              {meterTypes.map((mt) => (
+                                <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="outline"
+                            onClick={() => openCreateMeterTypeDialog("newMeterType")}
+                            data-testid="button-create-new-meter-type"
+                          >
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                        </div>
                         <FormMessage />
                       </FormItem>
                     )}
