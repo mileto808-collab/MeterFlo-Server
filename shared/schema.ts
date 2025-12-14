@@ -248,6 +248,17 @@ export const serviceTypes = pgTable("service_types", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Meter types table - product types associated with projects
+export const meterTypes = pgTable("meter_types", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  productId: varchar("product_id", { length: 100 }).notNull(),
+  productLabel: varchar("product_label", { length: 255 }).notNull(),
+  productDescription: text("product_description"),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // Default service type values (for backward compatibility and seeding)
 export const defaultServiceTypes = ["Water", "Electric", "Gas"] as const;
 export type DefaultServiceType = (typeof defaultServiceTypes)[number];
@@ -396,6 +407,7 @@ export const insertProjectWorkOrderSchema = z.object({
   trouble: z.string().max(100).optional().nullable(),
   notes: z.string().optional().nullable(),
   attachments: z.array(z.string()).optional().nullable(),
+  meterType: z.string().max(255).optional().nullable(),
 });
 
 // Schema for work order status management
@@ -449,6 +461,21 @@ export const updateServiceTypeSchema = z.object({
   sortOrder: z.number().int().optional(),
 });
 
+// Schema for meter type management
+export const insertMeterTypeSchema = z.object({
+  productId: z.string().min(1).max(100),
+  productLabel: z.string().min(1).max(255),
+  productDescription: z.string().optional().nullable(),
+  projectId: z.number(),
+});
+
+export const updateMeterTypeSchema = z.object({
+  productId: z.string().min(1).max(100).optional(),
+  productLabel: z.string().min(1).max(255).optional(),
+  productDescription: z.string().optional().nullable(),
+  projectId: z.number().optional(),
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -482,6 +509,10 @@ export type InsertPermission = z.infer<typeof insertPermissionSchema>;
 
 export type SubrolePermission = typeof subrolePermissions.$inferSelect;
 export type InsertSubrolePermission = z.infer<typeof insertSubrolePermissionSchema>;
+
+export type MeterType = typeof meterTypes.$inferSelect;
+export type InsertMeterType = z.infer<typeof insertMeterTypeSchema>;
+export type UpdateMeterType = z.infer<typeof updateMeterTypeSchema>;
 
 // External database config schemas and types
 export const insertExternalDatabaseConfigSchema = z.object({
