@@ -1608,7 +1608,7 @@ export async function registerRoutes(
         projectId,
         status,
         serviceType,
-        meterType,
+        oldMeterType,
         dateFrom,
         dateTo,
         assignedTo,
@@ -1664,8 +1664,8 @@ export async function registerRoutes(
             // Service type filter
             if (serviceType && wo.serviceType !== serviceType) return false;
             
-            // Meter type filter
-            if (meterType && (wo as any).meterType !== meterType) return false;
+            // Old meter type filter
+            if (oldMeterType && (wo as any).oldMeterType !== oldMeterType) return false;
             
             // Date range filter
             if (dateFrom) {
