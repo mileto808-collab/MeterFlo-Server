@@ -25,7 +25,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Search, Download, FileSpreadsheet, FileText, FileDown, Filter, X, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
-import type { Project, ServiceTypeRecord, WorkOrderStatus } from "@shared/schema";
+import type { Project, ServiceTypeRecord, WorkOrderStatus, MeterType } from "@shared/schema";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
 
@@ -59,6 +59,7 @@ type SearchResult = {
     notes?: string | null;
     createdAt?: string | null;
     updatedAt?: string | null;
+    meterType?: string | null;
   };
 };
 
@@ -73,9 +74,15 @@ export default function SearchReports() {
   const { toast } = useToast();
   
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedProject, setSelectedProject] = useState<string>("all");
+  const [selectedProject, setSelectedProjectState] = useState<string>("all");
+  
+  const setSelectedProject = (value: string) => {
+    setSelectedProjectState(value);
+    setSelectedMeterType("all");
+  };
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [selectedServiceType, setSelectedServiceType] = useState<string>("all");
+  const [selectedMeterType, setSelectedMeterType] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [isSearchActive, setIsSearchActive] = useState(false);
@@ -92,6 +99,18 @@ export default function SearchReports() {
 
   const { data: workOrderStatuses = [] } = useQuery<WorkOrderStatus[]>({
     queryKey: ["/api/work-order-statuses"],
+  });
+
+  const { data: meterTypes = [] } = useQuery<MeterType[]>({
+    queryKey: ["/api/meter-types", { projectId: selectedProject !== "all" ? selectedProject : undefined }],
+    queryFn: async () => {
+      const url = selectedProject !== "all" 
+        ? `/api/meter-types?projectId=${selectedProject}`
+        : "/api/meter-types";
+      const response = await fetch(url, { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to fetch meter types");
+      return response.json();
+    },
   });
 
   // Helper to get color hex from color name
@@ -114,6 +133,7 @@ export default function SearchReports() {
     if (selectedProject !== "all") params.append("projectId", selectedProject);
     if (selectedStatus !== "all") params.append("status", selectedStatus);
     if (selectedServiceType !== "all") params.append("serviceType", selectedServiceType);
+    if (selectedMeterType !== "all") params.append("meterType", selectedMeterType);
     if (dateFrom) params.append("dateFrom", dateFrom);
     if (dateTo) params.append("dateTo", dateTo);
     return params.toString();
@@ -142,6 +162,7 @@ export default function SearchReports() {
     setSelectedProject("all");
     setSelectedStatus("all");
     setSelectedServiceType("all");
+    setSelectedMeterType("all");
     setDateFrom("");
     setDateTo("");
     setIsSearchActive(false);
@@ -250,7 +271,7 @@ export default function SearchReports() {
       return;
     }
 
-    const headers = ["Project", "WO ID", "Customer ID", "Customer Name", "Address", "City", "State", "ZIP", "Phone", "Email", "Route", "Zone", "Service Type", "Old Meter ID", "Old Meter Reading", "New Meter ID", "New Meter Reading", "Old GPS", "New GPS", "Status", "Assigned To", "Created At", "Completed At", "Notes"];
+    const headers = ["Project", "WO ID", "Customer ID", "Customer Name", "Address", "City", "State", "ZIP", "Phone", "Email", "Route", "Zone", "Service Type", "Meter Type", "Old Meter ID", "Old Meter Reading", "New Meter ID", "New Meter Reading", "Old GPS", "New GPS", "Status", "Assigned To", "Created At", "Completed At", "Notes"];
     const rows = searchResults.results.map(r => [
       r.projectName,
       r.workOrder.customerWoId || "",
@@ -265,6 +286,7 @@ export default function SearchReports() {
       r.workOrder.route || "",
       r.workOrder.zone || "",
       r.workOrder.serviceType || "",
+      r.workOrder.meterType || "",
       r.workOrder.oldMeterId || "",
       r.workOrder.oldMeterReading ?? "",
       r.workOrder.newMeterId || "",
@@ -313,6 +335,7 @@ export default function SearchReports() {
       "Route": r.workOrder.route || "",
       "Zone": r.workOrder.zone || "",
       "Service Type": r.workOrder.serviceType || "",
+      "Meter Type": r.workOrder.meterType || "",
       "Old Meter ID": r.workOrder.oldMeterId || "",
       "Old Meter Reading": r.workOrder.oldMeterReading ?? "",
       "New Meter ID": r.workOrder.newMeterId || "",
@@ -376,6 +399,7 @@ export default function SearchReports() {
               <th>Route</th>
               <th>Zone</th>
               <th>Old Meter</th>
+              <th>Meter Type</th>
               <th>Old Reading</th>
               <th>New Meter</th>
               <th>New Reading</th>
@@ -393,6 +417,7 @@ export default function SearchReports() {
                 <td>${r.workOrder.route || "-"}</td>
                 <td>${r.workOrder.zone || "-"}</td>
                 <td>${r.workOrder.oldMeterId || "-"}</td>
+                <td>${r.workOrder.meterType || "-"}</td>
                 <td>${r.workOrder.oldMeterReading ?? "-"}</td>
                 <td>${r.workOrder.newMeterId || "-"}</td>
                 <td>${r.workOrder.newMeterReading ?? "-"}</td>
@@ -484,6 +509,20 @@ export default function SearchReports() {
                   <SelectItem value="in_progress">In Progress</SelectItem>
                   <SelectItem value="completed">Completed</SelectItem>
                   <SelectItem value="cancelled">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Meter Type</Label>
+              <Select value={selectedMeterType} onValueChange={setSelectedMeterType}>
+                <SelectTrigger data-testid="select-meter-type">
+                  <SelectValue placeholder="All Meter Types" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Meter Types</SelectItem>
+                  {meterTypes.map((mt) => (
+                    <SelectItem key={mt.id} value={mt.productLabel}>{mt.productLabel}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -582,6 +621,9 @@ export default function SearchReports() {
                         <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('oldMeterId')} data-testid="header-old-meter">
                           Old Meter{getSortIcon('oldMeterId')}
                         </TableHead>
+                        <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('meterType')} data-testid="header-meter-type">
+                          Meter Type{getSortIcon('meterType')}
+                        </TableHead>
                         <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('status')} data-testid="header-status">
                           Status{getSortIcon('status')}
                         </TableHead>
@@ -598,6 +640,7 @@ export default function SearchReports() {
                           <TableCell>{result.workOrder.route || "-"}</TableCell>
                           <TableCell>{result.workOrder.zone || "-"}</TableCell>
                           <TableCell>{result.workOrder.oldMeterId || "-"}</TableCell>
+                          <TableCell>{result.workOrder.meterType || "-"}</TableCell>
                           <TableCell>{getStatusBadge(result.workOrder.status)}</TableCell>
                           <TableCell>
                             <Link href={`/projects/${result.projectId}/work-orders`}>
