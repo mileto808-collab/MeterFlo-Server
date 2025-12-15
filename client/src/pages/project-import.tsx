@@ -71,8 +71,11 @@ type ParsedWorkOrder = {
   newMeterReading?: number;
   oldGps?: string;
   newGps?: string;
-  priority?: string;
+  oldMeterType?: string;
+  newMeterType?: string;
   status?: string;
+  scheduledDate?: string;
+  trouble?: string;
   notes?: string;
   assignedTo?: string;
 };
@@ -96,8 +99,11 @@ type ColumnMapping = {
   newMeterReading: string;
   oldGps: string;
   newGps: string;
-  priority: string;
+  oldMeterType: string;
+  newMeterType: string;
   status: string;
+  scheduledDate: string;
+  trouble: string;
   notes: string;
   assignedTo: string;
 };
@@ -121,8 +127,11 @@ const defaultColumnMapping: ColumnMapping = {
   newMeterReading: "",
   oldGps: "",
   newGps: "",
-  priority: "",
+  oldMeterType: "",
+  newMeterType: "",
   status: "",
+  scheduledDate: "",
+  trouble: "",
   notes: "",
   assignedTo: "",
 };
@@ -448,8 +457,11 @@ export default function ProjectImport() {
       { field: "newMeterReading", variants: ["new meter reading", "new reading", "newmeterreading", "new_meter_reading", "replacement reading"] },
       { field: "oldGps", variants: ["old gps", "old_gps", "oldgps", "current gps", "existing gps", "old coordinates"] },
       { field: "newGps", variants: ["new gps", "new_gps", "newgps", "new coordinates"] },
-      { field: "priority", variants: ["priority", "urgency", "importance"] },
+      { field: "oldMeterType", variants: ["old meter type", "old_meter_type", "oldmetertype", "current meter type", "existing meter type"] },
+      { field: "newMeterType", variants: ["new meter type", "new_meter_type", "newmetertype", "replacement meter type"] },
       { field: "status", variants: ["status", "state", "condition", "wo status"] },
+      { field: "scheduledDate", variants: ["scheduled date", "scheduled_date", "scheduleddate", "schedule date", "schedule", "due date", "due_date"] },
+      { field: "trouble", variants: ["trouble", "issue", "problem", "trouble code", "trouble_code"] },
       { field: "notes", variants: ["notes", "comments", "remarks", "description"] },
       { field: "assignedTo", variants: ["assigned", "assignedto", "assigned to", "technician", "worker", "assignee", "tech"] },
     ];
@@ -500,8 +512,11 @@ export default function ProjectImport() {
         newMeterReading: columnMapping.newMeterReading ? parseIntOrUndefined(getValueByHeader(columnMapping.newMeterReading)) : undefined,
         oldGps: getValueByHeader(columnMapping.oldGps) || undefined,
         newGps: getValueByHeader(columnMapping.newGps) || undefined,
-        priority: getValueByHeader(columnMapping.priority) || undefined,
+        oldMeterType: getValueByHeader(columnMapping.oldMeterType) || undefined,
+        newMeterType: getValueByHeader(columnMapping.newMeterType) || undefined,
         status: getValueByHeader(columnMapping.status) || undefined,
+        scheduledDate: getValueByHeader(columnMapping.scheduledDate) || undefined,
+        trouble: getValueByHeader(columnMapping.trouble) || undefined,
         notes: getValueByHeader(columnMapping.notes) || undefined,
         assignedTo: getValueByHeader(columnMapping.assignedTo) || undefined,
       };
@@ -539,8 +554,7 @@ export default function ProjectImport() {
         return index >= 0 ? String(row[index] || "") : "";
       };
 
-      const priority = getValueByHeader(columnMapping.priority).toLowerCase();
-      const status = getValueByHeader(columnMapping.status).toLowerCase();
+      const status = getValueByHeader(columnMapping.status);
       const serviceTypeRaw = getValueByHeader(columnMapping.serviceType);
       const serviceType = ["Water", "Electric", "Gas"].find(
         t => t.toLowerCase() === serviceTypeRaw.toLowerCase()
@@ -565,8 +579,11 @@ export default function ProjectImport() {
         newMeterReading: columnMapping.newMeterReading ? parseIntOrUndefined(getValueByHeader(columnMapping.newMeterReading)) : undefined,
         oldGps: getValueByHeader(columnMapping.oldGps) || undefined,
         newGps: getValueByHeader(columnMapping.newGps) || undefined,
-        priority: ["low", "medium", "high", "urgent"].includes(priority) ? priority : "medium",
-        status: ["pending", "in_progress", "completed", "cancelled"].includes(status) ? status : "pending",
+        oldMeterType: getValueByHeader(columnMapping.oldMeterType) || undefined,
+        newMeterType: getValueByHeader(columnMapping.newMeterType) || undefined,
+        status: status || undefined,
+        scheduledDate: getValueByHeader(columnMapping.scheduledDate) || undefined,
+        trouble: getValueByHeader(columnMapping.trouble) || undefined,
         notes: getValueByHeader(columnMapping.notes) || undefined,
         assignedTo: getValueByHeader(columnMapping.assignedTo) || undefined,
       };
@@ -779,7 +796,8 @@ export default function ProjectImport() {
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">route, zone</span> - Service routing</div>
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">old_meter_id, new_meter_id</span> - Meter IDs</div>
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">old_gps, new_gps</span> - GPS coordinates</div>
-                    <div><span className="font-mono bg-muted px-2 py-1 rounded">priority, status, notes</span> - Work order details</div>
+                    <div><span className="font-mono bg-muted px-2 py-1 rounded">old_meter_type, new_meter_type</span> - Meter types</div>
+                    <div><span className="font-mono bg-muted px-2 py-1 rounded">status, scheduled_date, trouble, notes</span> - Work order details</div>
                   </div>
                 </div>
                 
@@ -824,8 +842,11 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,M
                   <MappingSelect field="newMeterReading" label="New Meter Reading" />
                   <MappingSelect field="oldGps" label="Old GPS" />
                   <MappingSelect field="newGps" label="New GPS" />
-                  <MappingSelect field="priority" label="Priority" />
+                  <MappingSelect field="oldMeterType" label="Old Meter Type" />
+                  <MappingSelect field="newMeterType" label="New Meter Type" />
                   <MappingSelect field="status" label="Status" />
+                  <MappingSelect field="scheduledDate" label="Scheduled Date" />
+                  <MappingSelect field="trouble" label="Trouble" />
                   <MappingSelect field="notes" label="Notes" />
                   <MappingSelect field="assignedTo" label="Assigned To" />
                 </div>

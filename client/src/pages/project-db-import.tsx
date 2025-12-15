@@ -106,8 +106,11 @@ const workOrderFields = [
   { key: "newMeterReading", label: "New Meter Reading", required: false },
   { key: "oldGps", label: "Old GPS", required: false },
   { key: "newGps", label: "New GPS", required: false },
+  { key: "oldMeterType", label: "Old Meter Type", required: false },
+  { key: "newMeterType", label: "New Meter Type", required: false },
   { key: "status", label: "Status", required: false },
-  { key: "priority", label: "Priority", required: false },
+  { key: "scheduledDate", label: "Scheduled Date", required: false },
+  { key: "trouble", label: "Trouble", required: false },
   { key: "notes", label: "Notes", required: false },
   { key: "assignedTo", label: "Assigned To", required: false },
 ];
