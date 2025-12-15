@@ -1095,7 +1095,7 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,M
               <CardTitle>How Scheduled Imports Work</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-muted-foreground">
-              <p>1. Upload CSV or Excel files to the Project FTP Files directory.</p>
+              <p>1. Upload CSV, Excel, or JSON files to the Project FTP Files directory.</p>
               <p>2. The scheduler will automatically pick up the latest file in that directory when the scheduled time arrives.</p>
               <p>3. Files are processed using the configured column mapping and import settings.</p>
               <p>4. Only new files (not previously processed) will be imported on scheduled runs.</p>
@@ -1126,6 +1126,27 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,M
                 <div className="text-sm text-muted-foreground space-y-1">
                   <p>The delimiter setting is ignored for Excel files - they are parsed automatically.</p>
                   <p>Enable "Has Header Row" if your file includes column headers in the first row.</p>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="font-medium mb-2">JSON Files (.json)</h4>
+                <div className="text-sm text-muted-foreground space-y-1">
+                  <p>JSON files should contain an array of work order objects. The delimiter and header settings are ignored for JSON files.</p>
+                  <p>Example format:</p>
+                  <pre className="mt-2 p-3 bg-muted rounded-md text-xs overflow-x-auto">
+{`[
+  {
+    "customerWoId": "WO-001",
+    "customerId": "CUST-123",
+    "customerName": "John Smith",
+    "address": "123 Main St",
+    "serviceType": "Water",
+    "city": "Springfield",
+    "state": "IL"
+  }
+]`}
+                  </pre>
                 </div>
               </div>
 

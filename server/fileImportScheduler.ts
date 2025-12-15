@@ -269,7 +269,8 @@ class FileImportScheduler {
                 }
               });
               const validated = insertProjectWorkOrderSchema.parse(cleanedData);
-              await workOrderStorage.createWorkOrder(validated);
+              // Cast to bypass type issue - we've already ensured status is a string
+              await workOrderStorage.createWorkOrder(validated as any);
             }
             imported++;
           } catch (rowError: any) {
