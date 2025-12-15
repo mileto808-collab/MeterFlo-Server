@@ -16,8 +16,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Checkbox } from "@/components/ui/checkbox";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Moon, Sun, User as UserIcon, Shield, FolderOpen, Save, FileUp, Users, Plus, Pencil, Trash2, UsersRound, Clock, Copy, Gauge } from "lucide-react";
-import type { Subrole, Permission, WorkOrderStatus, UserGroup, User, TroubleCode, ServiceTypeRecord, MeterType, Project } from "@shared/schema";
+import { Moon, Sun, User as UserIcon, Shield, FolderOpen, Save, FileUp, Users, Plus, Pencil, Trash2, UsersRound, Clock, Copy, Gauge, Download, History } from "lucide-react";
+import type { Subrole, Permission, WorkOrderStatus, UserGroup, User, TroubleCode, ServiceTypeRecord, MeterType, Project, FileImportHistory } from "@shared/schema";
 import { Wrench } from "lucide-react";
 import { AlertTriangle } from "lucide-react";
 
@@ -225,6 +225,12 @@ export default function Settings() {
 
   const { data: projectsList } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
+    enabled: user?.role === "admin",
+  });
+
+  // File Import History query
+  const { data: fileImportHistoryList, isLoading: loadingImportHistory } = useQuery<(FileImportHistory & { projectName?: string })[]>({
+    queryKey: ["/api/file-import-history"],
     enabled: user?.role === "admin",
   });
 
@@ -1187,6 +1193,81 @@ export default function Settings() {
                     This timezone will be used when recording timestamps for trouble codes on work orders.
                   </p>
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <History className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <CardTitle>File Import History</CardTitle>
+                      <CardDescription className="mt-1">View all file import attempts and their results</CardDescription>
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={() => window.location.href = "/api/file-import-history/download"}
+                    data-testid="button-download-import-history"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Download CSV
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {loadingImportHistory ? (
+                  <p className="text-muted-foreground">Loading...</p>
+                ) : fileImportHistoryList && fileImportHistoryList.length > 0 ? (
+                  <div className="max-h-96 overflow-y-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Source</TableHead>
+                          <TableHead>File Name</TableHead>
+                          <TableHead>Project</TableHead>
+                          <TableHead>User</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="text-right">Imported</TableHead>
+                          <TableHead className="text-right">Failed</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {fileImportHistoryList.slice(0, 50).map((entry) => (
+                          <TableRow key={entry.id} data-testid={`row-import-history-${entry.id}`}>
+                            <TableCell className="text-sm">
+                              {entry.startedAt ? new Date(entry.startedAt).toLocaleString() : "—"}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="capitalize">
+                                {entry.importSource?.replace("_", " ") || "scheduled"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="max-w-32 truncate" title={entry.fileName}>
+                              {entry.fileName}
+                            </TableCell>
+                            <TableCell>{entry.projectName || "—"}</TableCell>
+                            <TableCell>{entry.userName || "—"}</TableCell>
+                            <TableCell>
+                              <Badge 
+                                variant={entry.status === "success" ? "default" : entry.status === "failed" ? "destructive" : "secondary"}
+                                className="capitalize"
+                              >
+                                {entry.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">{entry.recordsImported || 0}</TableCell>
+                            <TableCell className="text-right">{entry.recordsFailed || 0}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground">No import history found.</p>
+                )}
               </CardContent>
             </Card>
 
