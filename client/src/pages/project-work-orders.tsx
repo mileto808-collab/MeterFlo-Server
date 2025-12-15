@@ -114,12 +114,35 @@ export default function ProjectWorkOrders() {
   // Column configuration for the work orders table
   const workOrderColumns: ColumnConfig[] = useMemo(() => [
     { key: "customerWoId", label: "WO ID", required: true },
+    { key: "customerId", label: "Customer ID" },
+    { key: "customerName", label: "Customer Name" },
     { key: "address", label: "Address" },
-    { key: "serviceType", label: "Service" },
+    { key: "city", label: "City" },
+    { key: "state", label: "State" },
+    { key: "zip", label: "ZIP" },
+    { key: "phone", label: "Phone" },
+    { key: "email", label: "Email" },
     { key: "route", label: "Route" },
     { key: "zone", label: "Zone" },
-    { key: "oldMeterId", label: "Old Meter" },
+    { key: "serviceType", label: "Service" },
+    { key: "oldMeterId", label: "Old Meter ID" },
+    { key: "oldMeterReading", label: "Old Meter Reading" },
+    { key: "oldMeterType", label: "Old Meter Type" },
+    { key: "newMeterId", label: "New Meter ID" },
+    { key: "newMeterReading", label: "New Meter Reading" },
+    { key: "newMeterType", label: "New Meter Type" },
+    { key: "oldGps", label: "Old GPS" },
+    { key: "newGps", label: "New GPS" },
     { key: "status", label: "Status" },
+    { key: "scheduledDate", label: "Scheduled Date" },
+    { key: "assignedTo", label: "Assigned To" },
+    { key: "createdBy", label: "Created By" },
+    { key: "updatedBy", label: "Updated By" },
+    { key: "completedAt", label: "Completed At" },
+    { key: "trouble", label: "Trouble" },
+    { key: "notes", label: "Notes" },
+    { key: "createdAt", label: "Created At" },
+    { key: "updatedAt", label: "Updated At" },
   ], []);
 
   const { visibleColumns, setVisibleColumns, isColumnVisible, isLoading: columnPrefsLoading } = useColumnPreferences("work_orders", workOrderColumns);
@@ -2511,14 +2534,44 @@ export default function ProjectWorkOrders() {
                         WO ID {getSortIcon("customerWoId")}
                       </TableHead>
                     )}
+                    {isColumnVisible("customerId") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("customerId")}>
+                        Customer ID {getSortIcon("customerId")}
+                      </TableHead>
+                    )}
+                    {isColumnVisible("customerName") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("customerName")}>
+                        Customer Name {getSortIcon("customerName")}
+                      </TableHead>
+                    )}
                     {isColumnVisible("address") && (
                       <TableHead className="cursor-pointer select-none" onClick={() => handleSort("address")}>
                         Address {getSortIcon("address")}
                       </TableHead>
                     )}
-                    {isColumnVisible("serviceType") && (
-                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("serviceType")}>
-                        Service {getSortIcon("serviceType")}
+                    {isColumnVisible("city") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("city")}>
+                        City {getSortIcon("city")}
+                      </TableHead>
+                    )}
+                    {isColumnVisible("state") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("state")}>
+                        State {getSortIcon("state")}
+                      </TableHead>
+                    )}
+                    {isColumnVisible("zip") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("zip")}>
+                        ZIP {getSortIcon("zip")}
+                      </TableHead>
+                    )}
+                    {isColumnVisible("phone") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("phone")}>
+                        Phone {getSortIcon("phone")}
+                      </TableHead>
+                    )}
+                    {isColumnVisible("email") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("email")}>
+                        Email {getSortIcon("email")}
                       </TableHead>
                     )}
                     {isColumnVisible("route") && (
@@ -2531,14 +2584,99 @@ export default function ProjectWorkOrders() {
                         Zone {getSortIcon("zone")}
                       </TableHead>
                     )}
+                    {isColumnVisible("serviceType") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("serviceType")}>
+                        Service {getSortIcon("serviceType")}
+                      </TableHead>
+                    )}
                     {isColumnVisible("oldMeterId") && (
                       <TableHead className="cursor-pointer select-none" onClick={() => handleSort("oldMeterId")}>
-                        Old Meter {getSortIcon("oldMeterId")}
+                        Old Meter ID {getSortIcon("oldMeterId")}
+                      </TableHead>
+                    )}
+                    {isColumnVisible("oldMeterReading") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("oldMeterReading")}>
+                        Old Meter Reading {getSortIcon("oldMeterReading")}
+                      </TableHead>
+                    )}
+                    {isColumnVisible("oldMeterType") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("oldMeterType")}>
+                        Old Meter Type {getSortIcon("oldMeterType")}
+                      </TableHead>
+                    )}
+                    {isColumnVisible("newMeterId") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("newMeterId")}>
+                        New Meter ID {getSortIcon("newMeterId")}
+                      </TableHead>
+                    )}
+                    {isColumnVisible("newMeterReading") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("newMeterReading")}>
+                        New Meter Reading {getSortIcon("newMeterReading")}
+                      </TableHead>
+                    )}
+                    {isColumnVisible("newMeterType") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("newMeterType")}>
+                        New Meter Type {getSortIcon("newMeterType")}
+                      </TableHead>
+                    )}
+                    {isColumnVisible("oldGps") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("oldGps")}>
+                        Old GPS {getSortIcon("oldGps")}
+                      </TableHead>
+                    )}
+                    {isColumnVisible("newGps") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("newGps")}>
+                        New GPS {getSortIcon("newGps")}
                       </TableHead>
                     )}
                     {isColumnVisible("status") && (
                       <TableHead className="cursor-pointer select-none" onClick={() => handleSort("status")}>
                         Status {getSortIcon("status")}
+                      </TableHead>
+                    )}
+                    {isColumnVisible("scheduledDate") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("scheduledDate")}>
+                        Scheduled Date {getSortIcon("scheduledDate")}
+                      </TableHead>
+                    )}
+                    {isColumnVisible("assignedTo") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("assignedTo")}>
+                        Assigned To {getSortIcon("assignedTo")}
+                      </TableHead>
+                    )}
+                    {isColumnVisible("createdBy") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("createdBy")}>
+                        Created By {getSortIcon("createdBy")}
+                      </TableHead>
+                    )}
+                    {isColumnVisible("updatedBy") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("updatedBy")}>
+                        Updated By {getSortIcon("updatedBy")}
+                      </TableHead>
+                    )}
+                    {isColumnVisible("completedAt") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("completedAt")}>
+                        Completed At {getSortIcon("completedAt")}
+                      </TableHead>
+                    )}
+                    {isColumnVisible("trouble") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("trouble")}>
+                        Trouble {getSortIcon("trouble")}
+                      </TableHead>
+                    )}
+                    {isColumnVisible("notes") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("notes")}>
+                        Notes {getSortIcon("notes")}
+                      </TableHead>
+                    )}
+                    {isColumnVisible("createdAt") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("createdAt")}>
+                        Created At {getSortIcon("createdAt")}
+                      </TableHead>
+                    )}
+                    {isColumnVisible("updatedAt") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("updatedAt")}>
+                        Updated At {getSortIcon("updatedAt")}
                       </TableHead>
                     )}
                     {user?.role !== "customer" && <TableHead>Actions</TableHead>}
@@ -2558,15 +2696,31 @@ export default function ProjectWorkOrders() {
                           {workOrder.customerWoId || "-"}
                         </TableCell>
                       )}
+                      {isColumnVisible("customerId") && (
+                        <TableCell>{workOrder.customerId || "-"}</TableCell>
+                      )}
+                      {isColumnVisible("customerName") && (
+                        <TableCell>{workOrder.customerName || "-"}</TableCell>
+                      )}
                       {isColumnVisible("address") && (
                         <TableCell data-testid={`text-address-${workOrder.id}`}>
                           {workOrder.address || "-"}
                         </TableCell>
                       )}
-                      {isColumnVisible("serviceType") && (
-                        <TableCell data-testid={`text-service-${workOrder.id}`}>
-                          {getServiceTypeBadge(workOrder.serviceType)}
-                        </TableCell>
+                      {isColumnVisible("city") && (
+                        <TableCell>{workOrder.city || "-"}</TableCell>
+                      )}
+                      {isColumnVisible("state") && (
+                        <TableCell>{workOrder.state || "-"}</TableCell>
+                      )}
+                      {isColumnVisible("zip") && (
+                        <TableCell>{workOrder.zip || "-"}</TableCell>
+                      )}
+                      {isColumnVisible("phone") && (
+                        <TableCell>{workOrder.phone || "-"}</TableCell>
+                      )}
+                      {isColumnVisible("email") && (
+                        <TableCell>{workOrder.email || "-"}</TableCell>
                       )}
                       {isColumnVisible("route") && (
                         <TableCell data-testid={`text-route-${workOrder.id}`}>
@@ -2578,15 +2732,68 @@ export default function ProjectWorkOrders() {
                           {workOrder.zone || "-"}
                         </TableCell>
                       )}
+                      {isColumnVisible("serviceType") && (
+                        <TableCell data-testid={`text-service-${workOrder.id}`}>
+                          {getServiceTypeBadge(workOrder.serviceType)}
+                        </TableCell>
+                      )}
                       {isColumnVisible("oldMeterId") && (
                         <TableCell data-testid={`text-old-meter-${workOrder.id}`}>
                           {workOrder.oldMeterId || "-"}
                         </TableCell>
                       )}
+                      {isColumnVisible("oldMeterReading") && (
+                        <TableCell>{workOrder.oldMeterReading ?? "-"}</TableCell>
+                      )}
+                      {isColumnVisible("oldMeterType") && (
+                        <TableCell>{(workOrder as any).oldMeterType || "-"}</TableCell>
+                      )}
+                      {isColumnVisible("newMeterId") && (
+                        <TableCell>{workOrder.newMeterId || "-"}</TableCell>
+                      )}
+                      {isColumnVisible("newMeterReading") && (
+                        <TableCell>{workOrder.newMeterReading ?? "-"}</TableCell>
+                      )}
+                      {isColumnVisible("newMeterType") && (
+                        <TableCell>{(workOrder as any).newMeterType || "-"}</TableCell>
+                      )}
+                      {isColumnVisible("oldGps") && (
+                        <TableCell>{workOrder.oldGps || "-"}</TableCell>
+                      )}
+                      {isColumnVisible("newGps") && (
+                        <TableCell>{workOrder.newGps || "-"}</TableCell>
+                      )}
                       {isColumnVisible("status") && (
                         <TableCell data-testid={`text-status-${workOrder.id}`}>
                           {getStatusBadge(workOrder.status)}
                         </TableCell>
+                      )}
+                      {isColumnVisible("scheduledDate") && (
+                        <TableCell>{(workOrder as any).scheduledDate ? formatDateTime((workOrder as any).scheduledDate) : "-"}</TableCell>
+                      )}
+                      {isColumnVisible("assignedTo") && (
+                        <TableCell>{workOrder.assignedTo || "-"}</TableCell>
+                      )}
+                      {isColumnVisible("createdBy") && (
+                        <TableCell>{(workOrder as any).createdBy || "-"}</TableCell>
+                      )}
+                      {isColumnVisible("updatedBy") && (
+                        <TableCell>{(workOrder as any).updatedBy || "-"}</TableCell>
+                      )}
+                      {isColumnVisible("completedAt") && (
+                        <TableCell>{workOrder.completedAt ? formatDateTime(workOrder.completedAt) : "-"}</TableCell>
+                      )}
+                      {isColumnVisible("trouble") && (
+                        <TableCell>{(workOrder as any).trouble || "-"}</TableCell>
+                      )}
+                      {isColumnVisible("notes") && (
+                        <TableCell className="max-w-xs truncate">{workOrder.notes || "-"}</TableCell>
+                      )}
+                      {isColumnVisible("createdAt") && (
+                        <TableCell>{workOrder.createdAt ? formatDateTime(workOrder.createdAt) : "-"}</TableCell>
+                      )}
+                      {isColumnVisible("updatedAt") && (
+                        <TableCell>{workOrder.updatedAt ? formatDateTime(workOrder.updatedAt) : "-"}</TableCell>
                       )}
                       {user?.role !== "customer" && (
                         <TableCell>
