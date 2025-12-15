@@ -22,6 +22,7 @@ import {
   userGroupMembers,
   userGroupProjects,
   userColumnPreferences,
+  userFilterPreferences,
   type User,
   type UpsertUser,
   type Project,
@@ -62,6 +63,7 @@ import {
   type UserGroupMember,
   type UserGroupWithProjects,
   type UserColumnPreferences,
+  type UserFilterPreferences,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and } from "drizzle-orm";
@@ -205,6 +207,10 @@ export interface IStorage {
   // User column preferences operations
   getUserColumnPreferences(userId: string, pageKey: string): Promise<UserColumnPreferences | undefined>;
   setUserColumnPreferences(userId: string, pageKey: string, visibleColumns: string[]): Promise<UserColumnPreferences>;
+
+  // User filter preferences operations
+  getUserFilterPreferences(userId: string, pageKey: string): Promise<UserFilterPreferences | undefined>;
+  setUserFilterPreferences(userId: string, pageKey: string, visibleFilters: string[]): Promise<UserFilterPreferences>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1299,6 +1305,34 @@ export class DatabaseStorage implements IStorage {
     const [created] = await db
       .insert(userColumnPreferences)
       .values({ userId, pageKey, visibleColumns })
+      .returning();
+    return created;
+  }
+
+  // User filter preferences operations
+  async getUserFilterPreferences(userId: string, pageKey: string): Promise<UserFilterPreferences | undefined> {
+    const [pref] = await db
+      .select()
+      .from(userFilterPreferences)
+      .where(and(eq(userFilterPreferences.userId, userId), eq(userFilterPreferences.pageKey, pageKey)));
+    return pref;
+  }
+
+  async setUserFilterPreferences(userId: string, pageKey: string, visibleFilters: string[]): Promise<UserFilterPreferences> {
+    const existing = await this.getUserFilterPreferences(userId, pageKey);
+    
+    if (existing) {
+      const [updated] = await db
+        .update(userFilterPreferences)
+        .set({ visibleFilters, updatedAt: new Date() })
+        .where(and(eq(userFilterPreferences.userId, userId), eq(userFilterPreferences.pageKey, pageKey)))
+        .returning();
+      return updated;
+    }
+    
+    const [created] = await db
+      .insert(userFilterPreferences)
+      .values({ userId, pageKey, visibleFilters })
       .returning();
     return created;
   }

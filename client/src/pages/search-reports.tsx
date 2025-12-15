@@ -27,6 +27,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useTimezone } from "@/hooks/use-timezone";
 import { ColumnSelector, type ColumnConfig } from "@/components/column-selector";
 import { useColumnPreferences } from "@/hooks/use-column-preferences";
+import { FilterSelector, type FilterConfig } from "@/components/filter-selector";
+import { useFilterPreferences } from "@/hooks/use-filter-preferences";
 import { Search, Download, FileSpreadsheet, FileText, FileDown, Filter, X, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import type { Project, ServiceTypeRecord, WorkOrderStatus, MeterType } from "@shared/schema";
 import * as XLSX from "xlsx";
@@ -131,6 +133,19 @@ export default function SearchReports() {
   ], []);
 
   const { visibleColumns, setVisibleColumns, isColumnVisible, isLoading: columnPrefsLoading } = useColumnPreferences("search_reports", columns);
+
+  // Filter configuration for search & reports page
+  const searchFilters: FilterConfig[] = useMemo(() => [
+    { key: "searchQuery", label: "Search Text" },
+    { key: "project", label: "Project" },
+    { key: "serviceType", label: "Service Type" },
+    { key: "status", label: "Status" },
+    { key: "meterType", label: "Meter Type" },
+    { key: "dateFrom", label: "Created From" },
+    { key: "dateTo", label: "Created To" },
+  ], []);
+
+  const { visibleFilters, setVisibleFilters, isFilterVisible, isLoading: filterPrefsLoading } = useFilterPreferences("search-reports", searchFilters);
 
   // Restore search state from sessionStorage if returning from work order edit
   useEffect(() => {
@@ -528,93 +543,115 @@ export default function SearchReports() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            <div>
-              <Label htmlFor="search-query">Search Text</Label>
-              <Input
-                id="search-query"
-                placeholder="Search in WO ID, name, address, meter ID..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                data-testid="input-search-query"
-              />
-            </div>
-            <div>
-              <Label>Project</Label>
-              <Select value={selectedProject} onValueChange={setSelectedProject}>
-                <SelectTrigger data-testid="select-project">
-                  <SelectValue placeholder="All Projects" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Projects</SelectItem>
-                  {projects.map((p) => (
-                    <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Service Type</Label>
-              <Select value={selectedServiceType} onValueChange={setSelectedServiceType}>
-                <SelectTrigger data-testid="select-service-type">
-                  <SelectValue placeholder="All Service Types" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Service Types</SelectItem>
-                  {serviceTypes.map((st) => (
-                    <SelectItem key={st.id} value={st.label}>{st.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Status</Label>
-              <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-                <SelectTrigger data-testid="select-status">
-                  <SelectValue placeholder="All Statuses" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  {workOrderStatuses.map((status) => (
-                    <SelectItem key={status.id} value={status.label}>{status.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Meter Type</Label>
-              <Select value={selectedMeterType} onValueChange={setSelectedMeterType}>
-                <SelectTrigger data-testid="select-meter-type">
-                  <SelectValue placeholder="All Meter Types" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Meter Types</SelectItem>
-                  {meterTypes.map((mt) => (
-                    <SelectItem key={mt.id} value={mt.productLabel}>{mt.productLabel}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="date-from">Created From</Label>
-              <Input
-                id="date-from"
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                data-testid="input-date-from"
-              />
-            </div>
-            <div>
-              <Label htmlFor="date-to">Created To</Label>
-              <Input
-                id="date-to"
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                data-testid="input-date-to"
-              />
-            </div>
+          <div className="flex justify-end mb-2">
+            <FilterSelector
+              allFilters={searchFilters}
+              visibleFilters={visibleFilters}
+              onChange={setVisibleFilters}
+              disabled={filterPrefsLoading}
+            />
+          </div>
+          <div className="flex flex-wrap gap-4">
+            {isFilterVisible("searchQuery") && (
+              <div className="min-w-[200px] flex-1 max-w-md">
+                <Label htmlFor="search-query">Search Text</Label>
+                <Input
+                  id="search-query"
+                  placeholder="Search in WO ID, name, address, meter ID..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  data-testid="input-search-query"
+                />
+              </div>
+            )}
+            {isFilterVisible("project") && (
+              <div className="min-w-[180px]">
+                <Label>Project</Label>
+                <Select value={selectedProject} onValueChange={setSelectedProject}>
+                  <SelectTrigger data-testid="select-project">
+                    <SelectValue placeholder="All Projects" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Projects</SelectItem>
+                    {projects.map((p) => (
+                      <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {isFilterVisible("serviceType") && (
+              <div className="min-w-[180px]">
+                <Label>Service Type</Label>
+                <Select value={selectedServiceType} onValueChange={setSelectedServiceType}>
+                  <SelectTrigger data-testid="select-service-type">
+                    <SelectValue placeholder="All Service Types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Service Types</SelectItem>
+                    {serviceTypes.map((st) => (
+                      <SelectItem key={st.id} value={st.label}>{st.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {isFilterVisible("status") && (
+              <div className="min-w-[180px]">
+                <Label>Status</Label>
+                <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                  <SelectTrigger data-testid="select-status">
+                    <SelectValue placeholder="All Statuses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    {workOrderStatuses.map((status) => (
+                      <SelectItem key={status.id} value={status.label}>{status.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {isFilterVisible("meterType") && (
+              <div className="min-w-[180px]">
+                <Label>Meter Type</Label>
+                <Select value={selectedMeterType} onValueChange={setSelectedMeterType}>
+                  <SelectTrigger data-testid="select-meter-type">
+                    <SelectValue placeholder="All Meter Types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Meter Types</SelectItem>
+                    {meterTypes.map((mt) => (
+                      <SelectItem key={mt.id} value={mt.productLabel}>{mt.productLabel}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {isFilterVisible("dateFrom") && (
+              <div className="min-w-[180px]">
+                <Label htmlFor="date-from">Created From</Label>
+                <Input
+                  id="date-from"
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => setDateFrom(e.target.value)}
+                  data-testid="input-date-from"
+                />
+              </div>
+            )}
+            {isFilterVisible("dateTo") && (
+              <div className="min-w-[180px]">
+                <Label htmlFor="date-to">Created To</Label>
+                <Input
+                  id="date-to"
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => setDateTo(e.target.value)}
+                  data-testid="input-date-to"
+                />
+              </div>
+            )}
           </div>
           <div className="flex gap-2 flex-wrap">
             <Button onClick={handleSearch} disabled={searchLoading} data-testid="button-search">

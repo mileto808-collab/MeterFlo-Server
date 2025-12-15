@@ -6,6 +6,8 @@ import { z } from "zod";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ColumnSelector, type ColumnConfig } from "@/components/column-selector";
 import { useColumnPreferences } from "@/hooks/use-column-preferences";
+import { FilterSelector, type FilterConfig } from "@/components/filter-selector";
+import { useFilterPreferences } from "@/hooks/use-filter-preferences";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -128,6 +130,15 @@ export default function Users() {
   ], []);
 
   const { visibleColumns, setVisibleColumns, isColumnVisible, isLoading: columnPrefsLoading } = useColumnPreferences("users", userColumns);
+
+  // Filter configuration for users page
+  const userFilters: FilterConfig[] = useMemo(() => [
+    { key: "role", label: "Role" },
+    { key: "status", label: "Status" },
+    { key: "subrole", label: "Access Level" },
+  ], []);
+
+  const { visibleFilters, setVisibleFilters, isFilterVisible, isLoading: filterPrefsLoading } = useFilterPreferences("users", userFilters);
   
   // Fetch assigned projects for selected user
   const { data: selectedUserProjects, isLoading: loadingUserProjects } = useQuery<Project[]>({
@@ -994,41 +1005,47 @@ export default function Users() {
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input placeholder="Search users..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9" data-testid="input-search-users" />
             </div>
-            <Select value={roleFilter} onValueChange={setRoleFilter}>
-              <SelectTrigger className="w-[140px]" data-testid="select-filter-role">
-                <SelectValue placeholder="All Roles" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Roles</SelectItem>
-                <SelectItem value="admin">Admin</SelectItem>
-                <SelectItem value="user">User</SelectItem>
-                <SelectItem value="customer">Customer</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[140px]" data-testid="select-filter-status">
-                <SelectValue placeholder="All Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="locked">Locked</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={subroleFilter} onValueChange={setSubroleFilter}>
-              <SelectTrigger className="w-[160px]" data-testid="select-filter-subrole">
-                <SelectValue placeholder="All Access Levels" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Access Levels</SelectItem>
-                <SelectItem value="none">No Access Level</SelectItem>
-                {subroles?.map((subrole) => (
-                  <SelectItem key={subrole.id} value={String(subrole.id)}>
-                    {subrole.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {isFilterVisible("role") && (
+              <Select value={roleFilter} onValueChange={setRoleFilter}>
+                <SelectTrigger className="w-[140px]" data-testid="select-filter-role">
+                  <SelectValue placeholder="All Roles" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Roles</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="user">User</SelectItem>
+                  <SelectItem value="customer">Customer</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+            {isFilterVisible("status") && (
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[140px]" data-testid="select-filter-status">
+                  <SelectValue placeholder="All Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="locked">Locked</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+            {isFilterVisible("subrole") && (
+              <Select value={subroleFilter} onValueChange={setSubroleFilter}>
+                <SelectTrigger className="w-[160px]" data-testid="select-filter-subrole">
+                  <SelectValue placeholder="All Access Levels" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Access Levels</SelectItem>
+                  <SelectItem value="none">No Access Level</SelectItem>
+                  {subroles?.map((subrole) => (
+                    <SelectItem key={subrole.id} value={String(subrole.id)}>
+                      {subrole.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             {hasActiveFilters && (
               <Button variant="ghost" size="sm" onClick={clearFilters} data-testid="button-clear-filters">
                 <X className="h-4 w-4 mr-1" />
@@ -1036,6 +1053,12 @@ export default function Users() {
               </Button>
             )}
             <div className="flex-1" />
+            <FilterSelector
+              allFilters={userFilters}
+              visibleFilters={visibleFilters}
+              onChange={setVisibleFilters}
+              disabled={filterPrefsLoading}
+            />
             <ColumnSelector
               allColumns={userColumns}
               visibleColumns={visibleColumns}
