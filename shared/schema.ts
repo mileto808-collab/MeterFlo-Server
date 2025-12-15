@@ -131,6 +131,7 @@ export const userFilterPreferences = pgTable("user_filter_preferences", {
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   pageKey: varchar("page_key", { length: 50 }).notNull(),
   visibleFilters: jsonb("visible_filters").notNull(),
+  knownFilters: jsonb("known_filters"),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 

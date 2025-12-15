@@ -210,7 +210,7 @@ export interface IStorage {
 
   // User filter preferences operations
   getUserFilterPreferences(userId: string, pageKey: string): Promise<UserFilterPreferences | undefined>;
-  setUserFilterPreferences(userId: string, pageKey: string, visibleFilters: string[]): Promise<UserFilterPreferences>;
+  setUserFilterPreferences(userId: string, pageKey: string, visibleFilters: string[], knownFilters?: string[]): Promise<UserFilterPreferences>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1318,13 +1318,13 @@ export class DatabaseStorage implements IStorage {
     return pref;
   }
 
-  async setUserFilterPreferences(userId: string, pageKey: string, visibleFilters: string[]): Promise<UserFilterPreferences> {
+  async setUserFilterPreferences(userId: string, pageKey: string, visibleFilters: string[], knownFilters?: string[]): Promise<UserFilterPreferences> {
     const existing = await this.getUserFilterPreferences(userId, pageKey);
     
     if (existing) {
       const [updated] = await db
         .update(userFilterPreferences)
-        .set({ visibleFilters, updatedAt: new Date() })
+        .set({ visibleFilters, knownFilters: knownFilters || null, updatedAt: new Date() })
         .where(and(eq(userFilterPreferences.userId, userId), eq(userFilterPreferences.pageKey, pageKey)))
         .returning();
       return updated;
@@ -1332,7 +1332,7 @@ export class DatabaseStorage implements IStorage {
     
     const [created] = await db
       .insert(userFilterPreferences)
-      .values({ userId, pageKey, visibleFilters })
+      .values({ userId, pageKey, visibleFilters, knownFilters: knownFilters || null })
       .returning();
     return created;
   }

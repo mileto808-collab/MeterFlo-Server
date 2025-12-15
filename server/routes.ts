@@ -658,7 +658,10 @@ export async function registerRoutes(
       }
       
       const prefs = await storage.getUserFilterPreferences(targetUserId, req.params.pageKey);
-      res.json(prefs || { visibleFilters: [] });
+      if (!prefs) {
+        return res.status(404).json({ message: "No preferences found" });
+      }
+      res.json(prefs);
     } catch (error) {
       console.error("Error fetching filter preferences:", error);
       res.status(500).json({ message: "Failed to fetch filter preferences" });
@@ -674,12 +677,12 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Forbidden" });
       }
       
-      const { visibleFilters } = req.body;
+      const { visibleFilters, knownFilters } = req.body;
       if (!Array.isArray(visibleFilters)) {
         return res.status(400).json({ message: "visibleFilters must be an array" });
       }
       
-      const prefs = await storage.setUserFilterPreferences(targetUserId, req.params.pageKey, visibleFilters);
+      const prefs = await storage.setUserFilterPreferences(targetUserId, req.params.pageKey, visibleFilters, knownFilters);
       res.json(prefs);
     } catch (error) {
       console.error("Error saving filter preferences:", error);
