@@ -101,6 +101,7 @@ Users with the "user" role can be assigned a subrole that determines their speci
 - **Work Order Statuses**: Customizable status codes via Settings page (Open, Completed, Scheduled, Skipped by default); stored in `work_order_statuses` table with label, color, and default flag
 - **Schema Changes**: Removed priority field from work orders; added updatedBy field to track who last modified a work order (stores user's display name)
 - **Audit Fields**: Read-only display of assigned_to, created_by, created_at, updated_by, updated_at, completed_at in work order edit form
+- **Filter Preferences**: Users can customize which filter fields are visible on Work Orders, Search & Reports, and Users pages; preferences stored per user per page in `user_filter_preferences` table; uses FilterSelector component similar to ColumnSelector
 
 ### Key Design Patterns
 - **Storage Interface**: `IStorage` interface in `storage.ts` abstracts database operations, making it testable and swappable
