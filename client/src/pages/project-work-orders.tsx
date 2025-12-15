@@ -107,6 +107,29 @@ export default function ProjectWorkOrders() {
   const [selectedOldMeterType, setSelectedOldMeterType] = useState<string>("all");
   const [selectedNewMeterType, setSelectedNewMeterType] = useState<string>("all");
   const [showFilters, setShowFilters] = useState(false);
+  const [filterCustomerId, setFilterCustomerId] = useState("");
+  const [filterCustomerName, setFilterCustomerName] = useState("");
+  const [filterAddress, setFilterAddress] = useState("");
+  const [filterCity, setFilterCity] = useState("");
+  const [filterState, setFilterState] = useState("");
+  const [filterZip, setFilterZip] = useState("");
+  const [filterPhone, setFilterPhone] = useState("");
+  const [filterEmail, setFilterEmail] = useState("");
+  const [filterRoute, setFilterRoute] = useState("");
+  const [filterZone, setFilterZone] = useState("");
+  const [filterOldMeterId, setFilterOldMeterId] = useState("");
+  const [filterOldMeterReading, setFilterOldMeterReading] = useState("");
+  const [filterNewMeterId, setFilterNewMeterId] = useState("");
+  const [filterNewMeterReading, setFilterNewMeterReading] = useState("");
+  const [filterOldGps, setFilterOldGps] = useState("");
+  const [filterNewGps, setFilterNewGps] = useState("");
+  const [filterScheduledDate, setFilterScheduledDate] = useState("");
+  const [filterCreatedBy, setFilterCreatedBy] = useState("");
+  const [filterUpdatedBy, setFilterUpdatedBy] = useState("");
+  const [filterCompletedAt, setFilterCompletedAt] = useState("");
+  const [filterNotes, setFilterNotes] = useState("");
+  const [filterCreatedAt, setFilterCreatedAt] = useState("");
+  const [filterUpdatedAt, setFilterUpdatedAt] = useState("");
   const [createMeterTypeOpen, setCreateMeterTypeOpen] = useState(false);
   const [meterTypeField, setMeterTypeField] = useState<"oldMeterType" | "newMeterType" | "editOldMeterType" | "editNewMeterType" | null>(null);
   const [cameFromSearch, setCameFromSearch] = useState(false);
@@ -757,6 +780,77 @@ export default function ProjectWorkOrders() {
       });
     }
     
+    // Filter by text fields
+    if (filterCustomerId.trim()) {
+      result = result.filter(wo => wo.customerId?.toLowerCase().includes(filterCustomerId.toLowerCase()));
+    }
+    if (filterCustomerName.trim()) {
+      result = result.filter(wo => wo.customerName?.toLowerCase().includes(filterCustomerName.toLowerCase()));
+    }
+    if (filterAddress.trim()) {
+      result = result.filter(wo => wo.address?.toLowerCase().includes(filterAddress.toLowerCase()));
+    }
+    if (filterCity.trim()) {
+      result = result.filter(wo => wo.city?.toLowerCase().includes(filterCity.toLowerCase()));
+    }
+    if (filterState.trim()) {
+      result = result.filter(wo => wo.state?.toLowerCase().includes(filterState.toLowerCase()));
+    }
+    if (filterZip.trim()) {
+      result = result.filter(wo => wo.zip?.toLowerCase().includes(filterZip.toLowerCase()));
+    }
+    if (filterPhone.trim()) {
+      result = result.filter(wo => wo.phone?.toLowerCase().includes(filterPhone.toLowerCase()));
+    }
+    if (filterEmail.trim()) {
+      result = result.filter(wo => wo.email?.toLowerCase().includes(filterEmail.toLowerCase()));
+    }
+    if (filterRoute.trim()) {
+      result = result.filter(wo => wo.route?.toLowerCase().includes(filterRoute.toLowerCase()));
+    }
+    if (filterZone.trim()) {
+      result = result.filter(wo => wo.zone?.toLowerCase().includes(filterZone.toLowerCase()));
+    }
+    if (filterOldMeterId.trim()) {
+      result = result.filter(wo => wo.oldMeterId?.toLowerCase().includes(filterOldMeterId.toLowerCase()));
+    }
+    if (filterOldMeterReading.trim()) {
+      result = result.filter(wo => wo.oldMeterReading != null && String(wo.oldMeterReading).includes(filterOldMeterReading));
+    }
+    if (filterNewMeterId.trim()) {
+      result = result.filter(wo => wo.newMeterId?.toLowerCase().includes(filterNewMeterId.toLowerCase()));
+    }
+    if (filterNewMeterReading.trim()) {
+      result = result.filter(wo => wo.newMeterReading != null && String(wo.newMeterReading).includes(filterNewMeterReading));
+    }
+    if (filterOldGps.trim()) {
+      result = result.filter(wo => wo.oldGps?.toLowerCase().includes(filterOldGps.toLowerCase()));
+    }
+    if (filterNewGps.trim()) {
+      result = result.filter(wo => wo.newGps?.toLowerCase().includes(filterNewGps.toLowerCase()));
+    }
+    if (filterScheduledDate) {
+      result = result.filter(wo => (wo as any).scheduledDate?.includes(filterScheduledDate));
+    }
+    if (filterCreatedBy.trim()) {
+      result = result.filter(wo => (wo as any).createdBy?.toLowerCase().includes(filterCreatedBy.toLowerCase()));
+    }
+    if (filterUpdatedBy.trim()) {
+      result = result.filter(wo => (wo as any).updatedBy?.toLowerCase().includes(filterUpdatedBy.toLowerCase()));
+    }
+    if (filterCompletedAt) {
+      result = result.filter(wo => wo.completedAt?.includes(filterCompletedAt));
+    }
+    if (filterNotes.trim()) {
+      result = result.filter(wo => wo.notes?.toLowerCase().includes(filterNotes.toLowerCase()));
+    }
+    if (filterCreatedAt) {
+      result = result.filter(wo => wo.createdAt?.includes(filterCreatedAt));
+    }
+    if (filterUpdatedAt) {
+      result = result.filter(wo => wo.updatedAt?.includes(filterUpdatedAt));
+    }
+    
     // Sort
     if (sortColumn) {
       result.sort((a, b) => {
@@ -768,7 +862,7 @@ export default function ProjectWorkOrders() {
     }
     
     return result;
-  }, [workOrders, searchQuery, sortColumn, sortDirection, selectedStatus, selectedServiceType, dateFrom, dateTo, selectedAssignedTo, selectedTrouble, selectedOldMeterType, selectedNewMeterType, meterTypes]);
+  }, [workOrders, searchQuery, sortColumn, sortDirection, selectedStatus, selectedServiceType, dateFrom, dateTo, selectedAssignedTo, selectedTrouble, selectedOldMeterType, selectedNewMeterType, meterTypes, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterOldMeterReading, filterNewMeterId, filterNewMeterReading, filterOldGps, filterNewGps, filterScheduledDate, filterCreatedBy, filterUpdatedBy, filterCompletedAt, filterNotes, filterCreatedAt, filterUpdatedAt]);
 
   const clearFilters = () => {
     setSearchQuery("");
@@ -780,9 +874,32 @@ export default function ProjectWorkOrders() {
     setSelectedTrouble("all");
     setSelectedOldMeterType("all");
     setSelectedNewMeterType("all");
+    setFilterCustomerId("");
+    setFilterCustomerName("");
+    setFilterAddress("");
+    setFilterCity("");
+    setFilterState("");
+    setFilterZip("");
+    setFilterPhone("");
+    setFilterEmail("");
+    setFilterRoute("");
+    setFilterZone("");
+    setFilterOldMeterId("");
+    setFilterOldMeterReading("");
+    setFilterNewMeterId("");
+    setFilterNewMeterReading("");
+    setFilterOldGps("");
+    setFilterNewGps("");
+    setFilterScheduledDate("");
+    setFilterCreatedBy("");
+    setFilterUpdatedBy("");
+    setFilterCompletedAt("");
+    setFilterNotes("");
+    setFilterCreatedAt("");
+    setFilterUpdatedAt("");
   };
 
-  const hasActiveFilters = selectedStatus !== "all" || selectedServiceType !== "all" || dateFrom !== "" || dateTo !== "" || selectedAssignedTo !== "all" || selectedTrouble !== "all" || selectedOldMeterType !== "all" || selectedNewMeterType !== "all";
+  const hasActiveFilters = selectedStatus !== "all" || selectedServiceType !== "all" || dateFrom !== "" || dateTo !== "" || selectedAssignedTo !== "all" || selectedTrouble !== "all" || selectedOldMeterType !== "all" || selectedNewMeterType !== "all" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldMeterId !== "" || filterOldMeterReading !== "" || filterNewMeterId !== "" || filterNewMeterReading !== "" || filterOldGps !== "" || filterNewGps !== "" || filterScheduledDate !== "" || filterCreatedBy !== "" || filterUpdatedBy !== "" || filterCompletedAt !== "" || filterNotes !== "" || filterCreatedAt !== "" || filterUpdatedAt !== "";
 
   const exportToCSV = () => {
     if (!filteredAndSortedWorkOrders.length) {
@@ -2703,6 +2820,144 @@ export default function ProjectWorkOrders() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+              )}
+              {isFilterVisible("customerId") && (
+                <div className="min-w-[150px]">
+                  <Label htmlFor="filter-customer-id">Customer ID</Label>
+                  <Input id="filter-customer-id" placeholder="Filter..." value={filterCustomerId} onChange={(e) => setFilterCustomerId(e.target.value)} data-testid="input-filter-customer-id" />
+                </div>
+              )}
+              {isFilterVisible("customerName") && (
+                <div className="min-w-[150px]">
+                  <Label htmlFor="filter-customer-name">Customer Name</Label>
+                  <Input id="filter-customer-name" placeholder="Filter..." value={filterCustomerName} onChange={(e) => setFilterCustomerName(e.target.value)} data-testid="input-filter-customer-name" />
+                </div>
+              )}
+              {isFilterVisible("address") && (
+                <div className="min-w-[150px]">
+                  <Label htmlFor="filter-address">Address</Label>
+                  <Input id="filter-address" placeholder="Filter..." value={filterAddress} onChange={(e) => setFilterAddress(e.target.value)} data-testid="input-filter-address" />
+                </div>
+              )}
+              {isFilterVisible("city") && (
+                <div className="min-w-[120px]">
+                  <Label htmlFor="filter-city">City</Label>
+                  <Input id="filter-city" placeholder="Filter..." value={filterCity} onChange={(e) => setFilterCity(e.target.value)} data-testid="input-filter-city" />
+                </div>
+              )}
+              {isFilterVisible("state") && (
+                <div className="min-w-[100px]">
+                  <Label htmlFor="filter-state">State</Label>
+                  <Input id="filter-state" placeholder="Filter..." value={filterState} onChange={(e) => setFilterState(e.target.value)} data-testid="input-filter-state" />
+                </div>
+              )}
+              {isFilterVisible("zip") && (
+                <div className="min-w-[100px]">
+                  <Label htmlFor="filter-zip">ZIP</Label>
+                  <Input id="filter-zip" placeholder="Filter..." value={filterZip} onChange={(e) => setFilterZip(e.target.value)} data-testid="input-filter-zip" />
+                </div>
+              )}
+              {isFilterVisible("phone") && (
+                <div className="min-w-[120px]">
+                  <Label htmlFor="filter-phone">Phone</Label>
+                  <Input id="filter-phone" placeholder="Filter..." value={filterPhone} onChange={(e) => setFilterPhone(e.target.value)} data-testid="input-filter-phone" />
+                </div>
+              )}
+              {isFilterVisible("email") && (
+                <div className="min-w-[150px]">
+                  <Label htmlFor="filter-email">Email</Label>
+                  <Input id="filter-email" placeholder="Filter..." value={filterEmail} onChange={(e) => setFilterEmail(e.target.value)} data-testid="input-filter-email" />
+                </div>
+              )}
+              {isFilterVisible("route") && (
+                <div className="min-w-[100px]">
+                  <Label htmlFor="filter-route">Route</Label>
+                  <Input id="filter-route" placeholder="Filter..." value={filterRoute} onChange={(e) => setFilterRoute(e.target.value)} data-testid="input-filter-route" />
+                </div>
+              )}
+              {isFilterVisible("zone") && (
+                <div className="min-w-[100px]">
+                  <Label htmlFor="filter-zone">Zone</Label>
+                  <Input id="filter-zone" placeholder="Filter..." value={filterZone} onChange={(e) => setFilterZone(e.target.value)} data-testid="input-filter-zone" />
+                </div>
+              )}
+              {isFilterVisible("oldMeterId") && (
+                <div className="min-w-[120px]">
+                  <Label htmlFor="filter-old-meter-id">Old Meter ID</Label>
+                  <Input id="filter-old-meter-id" placeholder="Filter..." value={filterOldMeterId} onChange={(e) => setFilterOldMeterId(e.target.value)} data-testid="input-filter-old-meter-id" />
+                </div>
+              )}
+              {isFilterVisible("oldMeterReading") && (
+                <div className="min-w-[120px]">
+                  <Label htmlFor="filter-old-meter-reading">Old Meter Reading</Label>
+                  <Input id="filter-old-meter-reading" placeholder="Filter..." value={filterOldMeterReading} onChange={(e) => setFilterOldMeterReading(e.target.value)} data-testid="input-filter-old-meter-reading" />
+                </div>
+              )}
+              {isFilterVisible("newMeterId") && (
+                <div className="min-w-[120px]">
+                  <Label htmlFor="filter-new-meter-id">New Meter ID</Label>
+                  <Input id="filter-new-meter-id" placeholder="Filter..." value={filterNewMeterId} onChange={(e) => setFilterNewMeterId(e.target.value)} data-testid="input-filter-new-meter-id" />
+                </div>
+              )}
+              {isFilterVisible("newMeterReading") && (
+                <div className="min-w-[120px]">
+                  <Label htmlFor="filter-new-meter-reading">New Meter Reading</Label>
+                  <Input id="filter-new-meter-reading" placeholder="Filter..." value={filterNewMeterReading} onChange={(e) => setFilterNewMeterReading(e.target.value)} data-testid="input-filter-new-meter-reading" />
+                </div>
+              )}
+              {isFilterVisible("oldGps") && (
+                <div className="min-w-[150px]">
+                  <Label htmlFor="filter-old-gps">Old GPS</Label>
+                  <Input id="filter-old-gps" placeholder="Filter..." value={filterOldGps} onChange={(e) => setFilterOldGps(e.target.value)} data-testid="input-filter-old-gps" />
+                </div>
+              )}
+              {isFilterVisible("newGps") && (
+                <div className="min-w-[150px]">
+                  <Label htmlFor="filter-new-gps">New GPS</Label>
+                  <Input id="filter-new-gps" placeholder="Filter..." value={filterNewGps} onChange={(e) => setFilterNewGps(e.target.value)} data-testid="input-filter-new-gps" />
+                </div>
+              )}
+              {isFilterVisible("scheduledDate") && (
+                <div className="min-w-[150px]">
+                  <Label htmlFor="filter-scheduled-date">Scheduled Date</Label>
+                  <Input id="filter-scheduled-date" type="date" value={filterScheduledDate} onChange={(e) => setFilterScheduledDate(e.target.value)} data-testid="input-filter-scheduled-date" />
+                </div>
+              )}
+              {isFilterVisible("createdBy") && (
+                <div className="min-w-[120px]">
+                  <Label htmlFor="filter-created-by">Created By</Label>
+                  <Input id="filter-created-by" placeholder="Filter..." value={filterCreatedBy} onChange={(e) => setFilterCreatedBy(e.target.value)} data-testid="input-filter-created-by" />
+                </div>
+              )}
+              {isFilterVisible("updatedBy") && (
+                <div className="min-w-[120px]">
+                  <Label htmlFor="filter-updated-by">Updated By</Label>
+                  <Input id="filter-updated-by" placeholder="Filter..." value={filterUpdatedBy} onChange={(e) => setFilterUpdatedBy(e.target.value)} data-testid="input-filter-updated-by" />
+                </div>
+              )}
+              {isFilterVisible("completedAt") && (
+                <div className="min-w-[150px]">
+                  <Label htmlFor="filter-completed-at">Completed At</Label>
+                  <Input id="filter-completed-at" type="date" value={filterCompletedAt} onChange={(e) => setFilterCompletedAt(e.target.value)} data-testid="input-filter-completed-at" />
+                </div>
+              )}
+              {isFilterVisible("notes") && (
+                <div className="min-w-[150px]">
+                  <Label htmlFor="filter-notes">Notes</Label>
+                  <Input id="filter-notes" placeholder="Filter..." value={filterNotes} onChange={(e) => setFilterNotes(e.target.value)} data-testid="input-filter-notes" />
+                </div>
+              )}
+              {isFilterVisible("createdAt") && (
+                <div className="min-w-[150px]">
+                  <Label htmlFor="filter-created-at">Created At</Label>
+                  <Input id="filter-created-at" type="date" value={filterCreatedAt} onChange={(e) => setFilterCreatedAt(e.target.value)} data-testid="input-filter-created-at" />
+                </div>
+              )}
+              {isFilterVisible("updatedAt") && (
+                <div className="min-w-[150px]">
+                  <Label htmlFor="filter-updated-at">Updated At</Label>
+                  <Input id="filter-updated-at" type="date" value={filterUpdatedAt} onChange={(e) => setFilterUpdatedAt(e.target.value)} data-testid="input-filter-updated-at" />
                 </div>
               )}
             </div>

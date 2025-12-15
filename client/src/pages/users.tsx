@@ -92,6 +92,20 @@ export default function Users() {
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [subroleFilter, setSubroleFilter] = useState<string>("all");
+  const [filterUsername, setFilterUsername] = useState("");
+  const [filterEmail, setFilterEmail] = useState("");
+  const [filterFirstName, setFilterFirstName] = useState("");
+  const [filterLastName, setFilterLastName] = useState("");
+  const [filterProjects, setFilterProjects] = useState("");
+  const [filterIsLocked, setFilterIsLocked] = useState<string>("all");
+  const [filterLockedReason, setFilterLockedReason] = useState("");
+  const [filterLastLogin, setFilterLastLogin] = useState("");
+  const [filterAddress, setFilterAddress] = useState("");
+  const [filterCity, setFilterCity] = useState("");
+  const [filterState, setFilterState] = useState("");
+  const [filterZip, setFilterZip] = useState("");
+  const [filterPhone, setFilterPhone] = useState("");
+  const [filterWebsite, setFilterWebsite] = useState("");
   const [sortField, setSortField] = useState<SortField>("name");
   const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
   const [isCreatingUser, setIsCreatingUser] = useState(false);
@@ -134,14 +148,12 @@ export default function Users() {
   // Filter configuration - matches columns (excluding password_hash and locked_at)
   const userFilters: FilterConfig[] = useMemo(() => [
     { key: "searchQuery", label: "Search Text" },
-    { key: "user", label: "User" },
     { key: "username", label: "Username" },
     { key: "email", label: "Email" },
     { key: "firstName", label: "First Name" },
     { key: "lastName", label: "Last Name" },
     { key: "role", label: "Role" },
-    { key: "accessLevel", label: "Access Level" },
-    { key: "subrole", label: "Subrole" },
+    { key: "subrole", label: "Access Level" },
     { key: "projects", label: "Projects" },
     { key: "status", label: "Status" },
     { key: "isLocked", label: "Is Locked" },
@@ -412,9 +424,23 @@ export default function Users() {
     setRoleFilter("all");
     setStatusFilter("all");
     setSubroleFilter("all");
+    setFilterUsername("");
+    setFilterEmail("");
+    setFilterFirstName("");
+    setFilterLastName("");
+    setFilterProjects("");
+    setFilterIsLocked("all");
+    setFilterLockedReason("");
+    setFilterLastLogin("");
+    setFilterAddress("");
+    setFilterCity("");
+    setFilterState("");
+    setFilterZip("");
+    setFilterPhone("");
+    setFilterWebsite("");
   };
 
-  const hasActiveFilters = searchQuery !== "" || roleFilter !== "all" || statusFilter !== "all" || subroleFilter !== "all";
+  const hasActiveFilters = searchQuery !== "" || roleFilter !== "all" || statusFilter !== "all" || subroleFilter !== "all" || filterUsername !== "" || filterEmail !== "" || filterFirstName !== "" || filterLastName !== "" || filterProjects !== "" || filterIsLocked !== "all" || filterLockedReason !== "" || filterLastLogin !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterWebsite !== "";
 
   const getInitials = (user: User) => {
     if (user.firstName && user.lastName) return `${user.firstName[0]}${user.lastName[0]}`.toUpperCase();
@@ -1064,6 +1090,57 @@ export default function Users() {
                   ))}
                 </SelectContent>
               </Select>
+            )}
+            {isFilterVisible("username") && (
+              <Input className="w-[140px]" placeholder="Username..." value={filterUsername} onChange={(e) => setFilterUsername(e.target.value)} data-testid="input-filter-username" />
+            )}
+            {isFilterVisible("email") && (
+              <Input className="w-[160px]" placeholder="Email..." value={filterEmail} onChange={(e) => setFilterEmail(e.target.value)} data-testid="input-filter-email" />
+            )}
+            {isFilterVisible("firstName") && (
+              <Input className="w-[140px]" placeholder="First Name..." value={filterFirstName} onChange={(e) => setFilterFirstName(e.target.value)} data-testid="input-filter-first-name" />
+            )}
+            {isFilterVisible("lastName") && (
+              <Input className="w-[140px]" placeholder="Last Name..." value={filterLastName} onChange={(e) => setFilterLastName(e.target.value)} data-testid="input-filter-last-name" />
+            )}
+            {isFilterVisible("projects") && (
+              <Input className="w-[140px]" placeholder="Projects..." value={filterProjects} onChange={(e) => setFilterProjects(e.target.value)} data-testid="input-filter-projects" />
+            )}
+            {isFilterVisible("isLocked") && (
+              <Select value={filterIsLocked} onValueChange={setFilterIsLocked}>
+                <SelectTrigger className="w-[120px]" data-testid="select-filter-is-locked">
+                  <SelectValue placeholder="Locked" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="yes">Locked</SelectItem>
+                  <SelectItem value="no">Not Locked</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+            {isFilterVisible("lockedReason") && (
+              <Input className="w-[140px]" placeholder="Locked Reason..." value={filterLockedReason} onChange={(e) => setFilterLockedReason(e.target.value)} data-testid="input-filter-locked-reason" />
+            )}
+            {isFilterVisible("lastLogin") && (
+              <Input className="w-[140px]" type="date" placeholder="Last Login" value={filterLastLogin} onChange={(e) => setFilterLastLogin(e.target.value)} data-testid="input-filter-last-login" />
+            )}
+            {isFilterVisible("address") && (
+              <Input className="w-[140px]" placeholder="Address..." value={filterAddress} onChange={(e) => setFilterAddress(e.target.value)} data-testid="input-filter-address" />
+            )}
+            {isFilterVisible("city") && (
+              <Input className="w-[120px]" placeholder="City..." value={filterCity} onChange={(e) => setFilterCity(e.target.value)} data-testid="input-filter-city" />
+            )}
+            {isFilterVisible("state") && (
+              <Input className="w-[100px]" placeholder="State..." value={filterState} onChange={(e) => setFilterState(e.target.value)} data-testid="input-filter-state" />
+            )}
+            {isFilterVisible("zip") && (
+              <Input className="w-[100px]" placeholder="ZIP..." value={filterZip} onChange={(e) => setFilterZip(e.target.value)} data-testid="input-filter-zip" />
+            )}
+            {isFilterVisible("phone") && (
+              <Input className="w-[130px]" placeholder="Phone..." value={filterPhone} onChange={(e) => setFilterPhone(e.target.value)} data-testid="input-filter-phone" />
+            )}
+            {isFilterVisible("website") && (
+              <Input className="w-[140px]" placeholder="Website..." value={filterWebsite} onChange={(e) => setFilterWebsite(e.target.value)} data-testid="input-filter-website" />
             )}
             {hasActiveFilters && (
               <Button variant="ghost" size="sm" onClick={clearFilters} data-testid="button-clear-filters">
