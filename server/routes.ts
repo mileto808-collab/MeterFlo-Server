@@ -1018,7 +1018,7 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Project not found" });
       }
       
-      const { workOrders: workOrdersData } = req.body;
+      const { workOrders: workOrdersData, fileName, importSource } = req.body;
       if (!Array.isArray(workOrdersData)) {
         return res.status(400).json({ message: "workOrders must be an array" });
       }
@@ -1027,6 +1027,16 @@ export async function registerRoutes(
       const createdByName = currentUser?.firstName 
         ? `${currentUser.firstName}${currentUser.lastName ? ' ' + currentUser.lastName : ''}`
         : currentUser?.username || currentUser?.id;
+      
+      // Create import history entry
+      const historyEntry = await storage.createFileImportHistoryEntry(
+        null,
+        fileName || "manual_import",
+        "running",
+        projectId,
+        importSource || "manual_file",
+        createdByName
+      );
       
       const toImport = workOrdersData.map((wo: any) => ({
         customerWoId: wo.customerWoId || wo.title,
@@ -1043,8 +1053,21 @@ export async function registerRoutes(
       
       const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
       const result = await workOrderStorage.importWorkOrders(toImport);
+      
+      // Update history entry with results
+      const status = result.errors && result.errors.length > 0 
+        ? (result.imported > 0 ? "partial" : "failed") 
+        : "success";
+      await storage.updateFileImportHistoryEntry(
+        historyEntry.id,
+        status,
+        result.imported || 0,
+        result.errors?.length || 0,
+        result.errors?.slice(0, 10).join("\n") || null
+      );
+      
       res.json(result);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error importing work orders:", error);
       res.status(500).json({ message: "Failed to import work orders" });
     }

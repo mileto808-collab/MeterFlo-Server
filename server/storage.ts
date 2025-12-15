@@ -147,7 +147,8 @@ export interface IStorage {
 
   // File import history operations
   getFileImportHistory(fileImportConfigId: number, limit?: number): Promise<FileImportHistory[]>;
-  createFileImportHistoryEntry(fileImportConfigId: number, fileName: string, status: string): Promise<FileImportHistory>;
+  getAllFileImportHistory(limit?: number): Promise<FileImportHistory[]>;
+  createFileImportHistoryEntry(fileImportConfigId: number | null, fileName: string, status: string, projectId?: number, importSource?: string, userName?: string): Promise<FileImportHistory>;
   updateFileImportHistoryEntry(id: number, status: string, recordsImported: number, recordsFailed: number, errorDetails?: string | null): Promise<FileImportHistory | undefined>;
 
   // Work order status operations
@@ -844,10 +845,32 @@ export class DatabaseStorage implements IStorage {
       .limit(limit);
   }
 
-  async createFileImportHistoryEntry(fileImportConfigId: number, fileName: string, status: string): Promise<FileImportHistory> {
+  async getAllFileImportHistory(limit: number = 500): Promise<FileImportHistory[]> {
+    return await db
+      .select()
+      .from(fileImportHistory)
+      .orderBy(desc(fileImportHistory.startedAt))
+      .limit(limit);
+  }
+
+  async createFileImportHistoryEntry(
+    fileImportConfigId: number | null, 
+    fileName: string, 
+    status: string,
+    projectId?: number,
+    importSource: string = "scheduled",
+    userName?: string
+  ): Promise<FileImportHistory> {
     const [entry] = await db
       .insert(fileImportHistory)
-      .values({ fileImportConfigId, fileName, status })
+      .values({ 
+        fileImportConfigId, 
+        fileName, 
+        status,
+        projectId: projectId ?? null,
+        importSource,
+        userName: userName ?? null,
+      })
       .returning();
     return entry;
   }
