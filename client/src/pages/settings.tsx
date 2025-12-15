@@ -17,7 +17,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Moon, Sun, User as UserIcon, Shield, FolderOpen, Save, FileUp, Users, Plus, Pencil, Trash2, UsersRound, Clock, Copy, Gauge, Download, History } from "lucide-react";
-import type { Subrole, Permission, WorkOrderStatus, UserGroup, User, TroubleCode, ServiceTypeRecord, MeterType, Project, FileImportHistory, ImportHistory } from "@shared/schema";
+import type { Subrole, Permission, WorkOrderStatus, UserGroup, UserGroupWithProjects, User, TroubleCode, ServiceTypeRecord, MeterType, Project, FileImportHistory, ImportHistory } from "@shared/schema";
 import { Database } from "lucide-react";
 import { Wrench } from "lucide-react";
 import { AlertTriangle } from "lucide-react";
@@ -107,10 +107,11 @@ export default function Settings() {
   const [userGroupDialogOpen, setUserGroupDialogOpen] = useState(false);
   const [deleteUserGroupDialogOpen, setDeleteUserGroupDialogOpen] = useState(false);
   const [membersDialogOpen, setMembersDialogOpen] = useState(false);
-  const [selectedUserGroup, setSelectedUserGroup] = useState<UserGroup | null>(null);
+  const [selectedUserGroup, setSelectedUserGroup] = useState<UserGroupWithProjects | null>(null);
   const [userGroupForm, setUserGroupForm] = useState({
     name: "",
     description: "",
+    projectIds: [] as number[],
   });
 
   // Service Types state
@@ -185,7 +186,7 @@ export default function Settings() {
   });
 
   // User Groups queries
-  const { data: userGroups, isLoading: loadingUserGroups } = useQuery<UserGroup[]>({
+  const { data: userGroups, isLoading: loadingUserGroups } = useQuery<UserGroupWithProjects[]>({
     queryKey: ["/api/user-groups"],
     enabled: user?.role === "admin",
   });
@@ -426,7 +427,7 @@ export default function Settings() {
 
   // User Groups mutations
   const createUserGroupMutation = useMutation({
-    mutationFn: async (data: { name: string; description?: string }) => {
+    mutationFn: async (data: { name: string; description?: string; projectIds: number[] }) => {
       return apiRequest("POST", "/api/user-groups", data);
     },
     onSuccess: () => {
@@ -441,7 +442,7 @@ export default function Settings() {
   });
 
   const updateUserGroupMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: { name?: string; description?: string } }) => {
+    mutationFn: async ({ id, data }: { id: number; data: { name?: string; description?: string; projectIds?: number[] } }) => {
       return apiRequest("PATCH", `/api/user-groups/${id}`, data);
     },
     onSuccess: () => {
@@ -768,6 +769,7 @@ export default function Settings() {
     setUserGroupForm({
       name: "",
       description: "",
+      projectIds: [],
     });
   };
 
@@ -777,16 +779,17 @@ export default function Settings() {
     setUserGroupDialogOpen(true);
   };
 
-  const openEditUserGroupDialog = (group: UserGroup) => {
+  const openEditUserGroupDialog = (group: UserGroupWithProjects) => {
     setSelectedUserGroup(group);
     setUserGroupForm({
       name: group.name,
       description: group.description || "",
+      projectIds: group.projectIds || [],
     });
     setUserGroupDialogOpen(true);
   };
 
-  const openMembersDialog = (group: UserGroup) => {
+  const openMembersDialog = (group: UserGroupWithProjects) => {
     setSelectedUserGroup(group);
     setMembersDialogOpen(true);
   };
@@ -798,12 +801,14 @@ export default function Settings() {
         data: {
           name: userGroupForm.name,
           description: userGroupForm.description || undefined,
+          projectIds: userGroupForm.projectIds,
         },
       });
     } else {
       createUserGroupMutation.mutate({
         name: userGroupForm.name,
         description: userGroupForm.description || undefined,
+        projectIds: userGroupForm.projectIds,
       });
     }
   };
@@ -1605,6 +1610,7 @@ export default function Settings() {
                       <TableRow>
                         <TableHead>Name</TableHead>
                         <TableHead>Description</TableHead>
+                        <TableHead>Projects</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -1613,6 +1619,22 @@ export default function Settings() {
                         <TableRow key={group.id} data-testid={`row-user-group-${group.id}`}>
                           <TableCell className="font-medium">{group.name}</TableCell>
                           <TableCell className="text-muted-foreground">{group.description || "—"}</TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1">
+                              {group.projectIds && group.projectIds.length > 0 ? (
+                                group.projectIds.map((projectId) => {
+                                  const project = projectsList?.find(p => p.id === projectId);
+                                  return project ? (
+                                    <Badge key={projectId} variant="secondary" className="text-xs">
+                                      {project.name}
+                                    </Badge>
+                                  ) : null;
+                                })
+                              ) : (
+                                <span className="text-muted-foreground text-sm">No projects</span>
+                              )}
+                            </div>
+                          </TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">
                               <Button 
@@ -2255,6 +2277,45 @@ export default function Settings() {
                 data-testid="input-group-description"
               />
             </div>
+
+            <div>
+              <Label>Projects <span className="text-destructive">*</span></Label>
+              <p className="text-sm text-muted-foreground mt-1 mb-2">
+                Select which projects this group can access
+              </p>
+              <div className="border rounded-md p-3 max-h-48 overflow-y-auto space-y-2">
+                {projectsList && projectsList.length > 0 ? (
+                  projectsList.map((project) => (
+                    <div key={project.id} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={`group-project-${project.id}`}
+                        checked={userGroupForm.projectIds.includes(project.id)}
+                        onCheckedChange={(checked) => {
+                          setUserGroupForm(prev => ({
+                            ...prev,
+                            projectIds: checked
+                              ? [...prev.projectIds, project.id]
+                              : prev.projectIds.filter(id => id !== project.id)
+                          }));
+                        }}
+                        data-testid={`checkbox-group-project-${project.id}`}
+                      />
+                      <label
+                        htmlFor={`group-project-${project.id}`}
+                        className="text-sm cursor-pointer"
+                      >
+                        {project.name}
+                      </label>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">No projects available</p>
+                )}
+              </div>
+              {userGroupForm.projectIds.length === 0 && (
+                <p className="text-sm text-destructive mt-1">At least one project is required</p>
+              )}
+            </div>
           </div>
 
           <DialogFooter>
@@ -2263,7 +2324,7 @@ export default function Settings() {
             </Button>
             <Button
               onClick={handleUserGroupSubmit}
-              disabled={!userGroupForm.name || createUserGroupMutation.isPending || updateUserGroupMutation.isPending}
+              disabled={!userGroupForm.name || userGroupForm.projectIds.length === 0 || createUserGroupMutation.isPending || updateUserGroupMutation.isPending}
               data-testid="button-save-user-group"
             >
               {createUserGroupMutation.isPending || updateUserGroupMutation.isPending ? "Saving..." : selectedUserGroup ? "Update" : "Create"}

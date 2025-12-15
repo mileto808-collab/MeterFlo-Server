@@ -3013,7 +3013,7 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Forbidden: Admin access required" });
       }
       
-      const groups = await storage.getAllUserGroups();
+      const groups = await storage.getAllUserGroupsWithProjects();
       res.json(groups);
     } catch (error) {
       console.error("Error fetching user groups:", error);
@@ -3029,7 +3029,7 @@ export async function registerRoutes(
       }
       
       const id = parseInt(req.params.id);
-      const group = await storage.getUserGroup(id);
+      const group = await storage.getUserGroupWithProjects(id);
       
       if (!group) {
         return res.status(404).json({ message: "Group not found" });
@@ -3049,13 +3049,17 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Forbidden: Admin access required" });
       }
       
-      const { name, description } = req.body;
+      const { name, description, projectIds } = req.body;
       
       if (!name || !name.trim()) {
         return res.status(400).json({ message: "Group name is required" });
       }
       
-      const group = await storage.createUserGroup({ name: name.trim(), description });
+      if (!projectIds || !Array.isArray(projectIds) || projectIds.length === 0) {
+        return res.status(400).json({ message: "At least one project must be assigned" });
+      }
+      
+      const group = await storage.createUserGroup({ name: name.trim(), description }, projectIds);
       res.status(201).json(group);
     } catch (error: any) {
       console.error("Error creating user group:", error);
@@ -3074,12 +3078,17 @@ export async function registerRoutes(
       }
       
       const id = parseInt(req.params.id);
-      const { name, description } = req.body;
+      const { name, description, projectIds } = req.body;
+      
+      // Validate projectIds if provided
+      if (projectIds !== undefined && (!Array.isArray(projectIds) || projectIds.length === 0)) {
+        return res.status(400).json({ message: "At least one project must be assigned" });
+      }
       
       const group = await storage.updateUserGroup(id, { 
         ...(name !== undefined && { name: name.trim() }),
         ...(description !== undefined && { description }),
-      });
+      }, projectIds);
       
       if (!group) {
         return res.status(404).json({ message: "Group not found" });
