@@ -85,11 +85,9 @@ export default function SearchReports() {
   
   const setSelectedProject = (value: string) => {
     setSelectedProjectState(value);
-    setSelectedMeterType("all");
   };
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [selectedServiceType, setSelectedServiceType] = useState<string>("all");
-  const [selectedMeterType, setSelectedMeterType] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [filterCustomerWoId, setFilterCustomerWoId] = useState("");
@@ -204,7 +202,6 @@ export default function SearchReports() {
         setSelectedProjectState(state.selectedProject || "all");
         setSelectedStatus(state.selectedStatus || "all");
         setSelectedServiceType(state.selectedServiceType || "all");
-        setSelectedMeterType(state.selectedMeterType || "all");
         setDateFrom(state.dateFrom || "");
         setDateTo(state.dateTo || "");
         setIsSearchActive(state.isSearchActive || false);
@@ -273,7 +270,6 @@ export default function SearchReports() {
     if (selectedProject !== "all") params.append("projectId", selectedProject);
     if (selectedStatus !== "all") params.append("status", selectedStatus);
     if (selectedServiceType !== "all") params.append("serviceType", selectedServiceType);
-    if (selectedMeterType !== "all") params.append("oldMeterType", selectedMeterType);
     if (dateFrom) params.append("dateFrom", dateFrom);
     if (dateTo) params.append("dateTo", dateTo);
     return params.toString();
@@ -302,7 +298,6 @@ export default function SearchReports() {
     setSelectedProject("all");
     setSelectedStatus("all");
     setSelectedServiceType("all");
-    setSelectedMeterType("all");
     setDateFrom("");
     setDateTo("");
     setFilterCustomerWoId("");
@@ -352,9 +347,115 @@ export default function SearchReports() {
       : <ArrowDown className="ml-1 h-3 w-3 inline" />;
   };
 
-  const sortedResults = useMemo(() => {
+  const filteredAndSortedResults = useMemo(() => {
     if (!searchResults?.results) return [];
     let results = [...searchResults.results];
+
+    // Apply client-side filters
+    if (filterCustomerWoId) {
+      results = results.filter(r => (r.workOrder.customerWoId || '').toLowerCase().includes(filterCustomerWoId.toLowerCase()));
+    }
+    if (filterCustomerId) {
+      results = results.filter(r => (r.workOrder.customerId || '').toLowerCase().includes(filterCustomerId.toLowerCase()));
+    }
+    if (filterCustomerName) {
+      results = results.filter(r => (r.workOrder.customerName || '').toLowerCase().includes(filterCustomerName.toLowerCase()));
+    }
+    if (filterAddress) {
+      results = results.filter(r => (r.workOrder.address || '').toLowerCase().includes(filterAddress.toLowerCase()));
+    }
+    if (filterCity) {
+      results = results.filter(r => (r.workOrder.city || '').toLowerCase().includes(filterCity.toLowerCase()));
+    }
+    if (filterState) {
+      results = results.filter(r => (r.workOrder.state || '').toLowerCase().includes(filterState.toLowerCase()));
+    }
+    if (filterZip) {
+      results = results.filter(r => (r.workOrder.zip || '').toLowerCase().includes(filterZip.toLowerCase()));
+    }
+    if (filterPhone) {
+      results = results.filter(r => (r.workOrder.phone || '').toLowerCase().includes(filterPhone.toLowerCase()));
+    }
+    if (filterEmail) {
+      results = results.filter(r => (r.workOrder.email || '').toLowerCase().includes(filterEmail.toLowerCase()));
+    }
+    if (filterRoute) {
+      results = results.filter(r => (r.workOrder.route || '').toLowerCase().includes(filterRoute.toLowerCase()));
+    }
+    if (filterZone) {
+      results = results.filter(r => (r.workOrder.zone || '').toLowerCase().includes(filterZone.toLowerCase()));
+    }
+    if (filterOldMeterId) {
+      results = results.filter(r => (r.workOrder.oldMeterId || '').toLowerCase().includes(filterOldMeterId.toLowerCase()));
+    }
+    if (filterOldMeterType !== "all") {
+      results = results.filter(r => (r.workOrder.oldMeterType || '') === filterOldMeterType);
+    }
+    if (filterNewMeterId) {
+      results = results.filter(r => (r.workOrder.newMeterId || '').toLowerCase().includes(filterNewMeterId.toLowerCase()));
+    }
+    if (filterNewMeterType !== "all") {
+      results = results.filter(r => (r.workOrder.newMeterType || '') === filterNewMeterType);
+    }
+    if (filterAssignedTo !== "all") {
+      results = results.filter(r => {
+        const assignedTo = r.workOrder.assignedTo || '';
+        return assignedTo === filterAssignedTo || assignedTo.toLowerCase().includes(filterAssignedTo.toLowerCase());
+      });
+    }
+    if (filterCreatedBy !== "all") {
+      results = results.filter(r => {
+        const createdBy = r.workOrder.createdBy || '';
+        return createdBy === filterCreatedBy || createdBy.toLowerCase().includes(filterCreatedBy.toLowerCase());
+      });
+    }
+    if (filterUpdatedBy !== "all") {
+      results = results.filter(r => {
+        const updatedBy = (r.workOrder as any).updatedBy || '';
+        return updatedBy === filterUpdatedBy || updatedBy.toLowerCase().includes(filterUpdatedBy.toLowerCase());
+      });
+    }
+    if (filterTroubleCode !== "all") {
+      if (filterTroubleCode === "none") {
+        results = results.filter(r => !((r.workOrder as any).trouble) && !((r.workOrder as any).troubleCode));
+      } else {
+        results = results.filter(r => {
+          const trouble = (r.workOrder as any).trouble || '';
+          const troubleCode = (r.workOrder as any).troubleCode || '';
+          return trouble === filterTroubleCode || troubleCode === filterTroubleCode;
+        });
+      }
+    }
+    if (filterNotes) {
+      results = results.filter(r => (r.workOrder.notes || '').toLowerCase().includes(filterNotes.toLowerCase()));
+    }
+    if (filterScheduledDate) {
+      results = results.filter(r => {
+        const scheduledDate = (r.workOrder as any).scheduledDate;
+        if (!scheduledDate) return false;
+        return scheduledDate.startsWith(filterScheduledDate);
+      });
+    }
+    if (filterCompletedAt) {
+      results = results.filter(r => {
+        if (!r.workOrder.completedAt) return false;
+        return r.workOrder.completedAt.startsWith(filterCompletedAt);
+      });
+    }
+    if (filterCreatedAt) {
+      results = results.filter(r => {
+        if (!r.workOrder.createdAt) return false;
+        return r.workOrder.createdAt.startsWith(filterCreatedAt);
+      });
+    }
+    if (filterUpdatedAt) {
+      results = results.filter(r => {
+        if (!r.workOrder.updatedAt) return false;
+        return r.workOrder.updatedAt.startsWith(filterUpdatedAt);
+      });
+    }
+
+    // Apply sorting
     if (sortColumn) {
       results.sort((a, b) => {
         let aVal, bVal;
@@ -370,7 +471,7 @@ export default function SearchReports() {
       });
     }
     return results;
-  }, [searchResults?.results, sortColumn, sortDirection]);
+  }, [searchResults?.results, sortColumn, sortDirection, filterCustomerWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterOldMeterType, filterNewMeterId, filterNewMeterType, filterAssignedTo, filterCreatedBy, filterUpdatedBy, filterTroubleCode, filterNotes, filterScheduledDate, filterCompletedAt, filterCreatedAt, filterUpdatedAt]);
 
   const getStatusColorHex = (color: string): string => {
     const colorMap: Record<string, string> = {
@@ -690,22 +791,6 @@ export default function SearchReports() {
                     <SelectItem value="all">All Statuses</SelectItem>
                     {workOrderStatuses.map((status) => (
                       <SelectItem key={status.id} value={status.label}>{status.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-            {isFilterVisible("meterType") && (
-              <div className="min-w-[180px]">
-                <Label>Meter Type</Label>
-                <Select value={selectedMeterType} onValueChange={setSelectedMeterType}>
-                  <SelectTrigger data-testid="select-meter-type">
-                    <SelectValue placeholder="All Meter Types" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Meter Types</SelectItem>
-                    {meterTypes.map((mt) => (
-                      <SelectItem key={mt.id} value={mt.productLabel}>{mt.productLabel}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -1168,7 +1253,7 @@ export default function SearchReports() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {sortedResults.map((result, index) => (
+                      {filteredAndSortedResults.map((result, index) => (
                         <TableRow key={`${result.projectId}-${result.workOrder.id}-${index}`} data-testid={`row-result-${index}`}>
                           {isColumnVisible("projectName") && <TableCell>{result.projectName}</TableCell>}
                           {isColumnVisible("customerWoId") && <TableCell className="font-medium">{result.workOrder.customerWoId || "-"}</TableCell>}
@@ -1211,7 +1296,6 @@ export default function SearchReports() {
                                     selectedProject,
                                     selectedStatus,
                                     selectedServiceType,
-                                    selectedMeterType,
                                     dateFrom,
                                     dateTo,
                                     isSearchActive,
