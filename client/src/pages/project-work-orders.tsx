@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { ColumnSelector, type ColumnConfig } from "@/components/column-selector";
 import { useColumnPreferences } from "@/hooks/use-column-preferences";
+import { FilterSelector, type FilterConfig } from "@/components/filter-selector";
+import { useFilterPreferences } from "@/hooks/use-filter-preferences";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -146,6 +148,16 @@ export default function ProjectWorkOrders() {
   ], []);
 
   const { visibleColumns, setVisibleColumns, isColumnVisible, isLoading: columnPrefsLoading } = useColumnPreferences("work_orders", workOrderColumns);
+
+  // Filter configuration for the work orders page
+  const workOrderFilters: FilterConfig[] = useMemo(() => [
+    { key: "status", label: "Status" },
+    { key: "serviceType", label: "Service Type" },
+    { key: "dateFrom", label: "Created From" },
+    { key: "dateTo", label: "Created To" },
+  ], []);
+
+  const { visibleFilters, setVisibleFilters, isFilterVisible, isLoading: filterPrefsLoading } = useFilterPreferences("work-orders", workOrderFilters);
 
   const form = useForm<WorkOrderFormData>({
     resolver: zodResolver(workOrderFormSchema),
@@ -2432,6 +2444,12 @@ export default function ProjectWorkOrders() {
                 onChange={setVisibleColumns}
                 disabled={columnPrefsLoading}
               />
+              <FilterSelector
+                allFilters={workOrderFilters}
+                visibleFilters={visibleFilters}
+                onChange={setVisibleFilters}
+                disabled={filterPrefsLoading}
+              />
               <Button variant="outline" onClick={exportToCSV} data-testid="button-export-csv">
                 <Download className="h-4 w-4 mr-2" />
                 CSV
@@ -2448,55 +2466,63 @@ export default function ProjectWorkOrders() {
           </div>
           
           {showFilters && (
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4 pt-4 border-t">
-              <div>
-                <Label htmlFor="filter-status">Status</Label>
-                <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-                  <SelectTrigger id="filter-status" data-testid="select-filter-status">
-                    <SelectValue placeholder="All statuses" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Statuses</SelectItem>
-                    {workOrderStatuses.map((status) => (
-                      <SelectItem key={status.id} value={status.label}>{status.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="filter-service-type">Service Type</Label>
-                <Select value={selectedServiceType} onValueChange={setSelectedServiceType}>
-                  <SelectTrigger id="filter-service-type" data-testid="select-filter-service-type">
-                    <SelectValue placeholder="All types" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Service Types</SelectItem>
-                    {serviceTypes.map((type) => (
-                      <SelectItem key={type.id} value={type.code}>{type.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="filter-date-from">Created From</Label>
-                <Input
-                  id="filter-date-from"
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                  data-testid="input-filter-date-from"
-                />
-              </div>
-              <div>
-                <Label htmlFor="filter-date-to">Created To</Label>
-                <Input
-                  id="filter-date-to"
-                  type="date"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                  data-testid="input-filter-date-to"
-                />
-              </div>
+            <div className="flex flex-wrap gap-4 mt-4 pt-4 border-t">
+              {isFilterVisible("status") && (
+                <div className="min-w-[180px]">
+                  <Label htmlFor="filter-status">Status</Label>
+                  <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                    <SelectTrigger id="filter-status" data-testid="select-filter-status">
+                      <SelectValue placeholder="All statuses" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Statuses</SelectItem>
+                      {workOrderStatuses.map((status) => (
+                        <SelectItem key={status.id} value={status.label}>{status.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {isFilterVisible("serviceType") && (
+                <div className="min-w-[180px]">
+                  <Label htmlFor="filter-service-type">Service Type</Label>
+                  <Select value={selectedServiceType} onValueChange={setSelectedServiceType}>
+                    <SelectTrigger id="filter-service-type" data-testid="select-filter-service-type">
+                      <SelectValue placeholder="All types" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Service Types</SelectItem>
+                      {serviceTypes.map((type) => (
+                        <SelectItem key={type.id} value={type.code}>{type.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {isFilterVisible("dateFrom") && (
+                <div className="min-w-[180px]">
+                  <Label htmlFor="filter-date-from">Created From</Label>
+                  <Input
+                    id="filter-date-from"
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    data-testid="input-filter-date-from"
+                  />
+                </div>
+              )}
+              {isFilterVisible("dateTo") && (
+                <div className="min-w-[180px]">
+                  <Label htmlFor="filter-date-to">Created To</Label>
+                  <Input
+                    id="filter-date-to"
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    data-testid="input-filter-date-to"
+                  />
+                </div>
+              )}
             </div>
           )}
         </CardContent>

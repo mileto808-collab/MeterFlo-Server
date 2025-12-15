@@ -647,6 +647,46 @@ export async function registerRoutes(
     }
   });
 
+  // User filter preferences endpoints
+  app.get("/api/users/:id/filter-preferences/:pageKey", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const targetUserId = req.params.id;
+      
+      if (currentUser?.id !== targetUserId && currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      
+      const prefs = await storage.getUserFilterPreferences(targetUserId, req.params.pageKey);
+      res.json(prefs || { visibleFilters: [] });
+    } catch (error) {
+      console.error("Error fetching filter preferences:", error);
+      res.status(500).json({ message: "Failed to fetch filter preferences" });
+    }
+  });
+
+  app.put("/api/users/:id/filter-preferences/:pageKey", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const targetUserId = req.params.id;
+      
+      if (currentUser?.id !== targetUserId && currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      
+      const { visibleFilters } = req.body;
+      if (!Array.isArray(visibleFilters)) {
+        return res.status(400).json({ message: "visibleFilters must be an array" });
+      }
+      
+      const prefs = await storage.setUserFilterPreferences(targetUserId, req.params.pageKey, visibleFilters);
+      res.json(prefs);
+    } catch (error) {
+      console.error("Error saving filter preferences:", error);
+      res.status(500).json({ message: "Failed to save filter preferences" });
+    }
+  });
+
   // Project endpoints
   app.get("/api/projects", isAuthenticated, async (req: any, res) => {
     try {
