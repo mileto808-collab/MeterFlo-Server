@@ -1,4 +1,4 @@
-import { parseISO } from "date-fns";
+import { parseISO, formatDistanceToNow as fdfFormatDistanceToNow } from "date-fns";
 import { toZonedTime, format as formatTz } from "date-fns-tz";
 
 let cachedTimezone: string | null = null;
@@ -79,4 +79,19 @@ export function formatForExport(
   timezone: string
 ): string {
   return formatInTimezone(date, timezone, "yyyy-MM-dd HH:mm:ss");
+}
+
+export function formatRelativeTime(
+  date: string | Date | null | undefined,
+  options?: { addSuffix?: boolean }
+): string {
+  if (!date) return "";
+  
+  try {
+    const dateObj = typeof date === "string" ? parseISO(date) : date;
+    return fdfFormatDistanceToNow(dateObj, { addSuffix: options?.addSuffix ?? true });
+  } catch (error) {
+    console.error("Error formatting relative time:", error);
+    return typeof date === "string" ? date : String(date);
+  }
 }

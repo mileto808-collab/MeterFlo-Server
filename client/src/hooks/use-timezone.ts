@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { formatInTimezone, formatDateInTimezone, formatDateTimeInTimezone, formatForExport } from "@/lib/timezone";
+import { formatInTimezone, formatDateInTimezone, formatDateTimeInTimezone, formatForExport, formatRelativeTime as formatRelative } from "@/lib/timezone";
 
 const DEFAULT_TIMEZONE = "America/Denver";
 
@@ -27,11 +27,16 @@ export function useTimezone() {
     return formatForExport(date, timezone);
   };
 
+  const formatRelativeTime = (date: string | Date | null | undefined, options?: { addSuffix?: boolean }): string => {
+    return formatRelative(date, options);
+  };
+
   return {
     timezone,
     formatDate,
     formatDateTime,
     formatCustom,
     formatExport,
+    formatRelativeTime,
   };
 }
