@@ -29,11 +29,12 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import type { Project } from "@shared/schema";
 import { Plus, Search, FolderOpen, Eye, Edit, Trash2 } from "lucide-react";
-import { format } from "date-fns";
+import { useTimezone } from "@/hooks/use-timezone";
 
 export default function Projects() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { formatDate } = useTimezone();
   const role = user?.role || "user";
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -141,7 +142,7 @@ export default function Projects() {
                       </TableCell>
                       <TableCell>{project.customerEmail || "—"}</TableCell>
                       <TableCell>
-                        {project.createdAt ? format(new Date(project.createdAt), "MMM d, yyyy") : "—"}
+                        {project.createdAt ? formatDate(project.createdAt) : "—"}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">

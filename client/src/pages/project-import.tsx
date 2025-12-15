@@ -47,7 +47,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import type { Project, FileImportConfig } from "@shared/schema";
 import { Link } from "wouter";
-import { format } from "date-fns";
+import { useTimezone } from "@/hooks/use-timezone";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import * as XLSX from "xlsx";
@@ -141,6 +141,7 @@ const parseIntOrUndefined = (value: string): number | undefined => {
 };
 
 export default function ProjectImport() {
+  const { formatDateTime } = useTimezone();
   const [, params] = useRoute("/projects/:projectId/import");
   const projectId = params?.projectId ? parseInt(params.projectId) : null;
   const { user } = useAuth();
@@ -1022,7 +1023,7 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,M
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          {config.lastRunAt ? format(new Date(config.lastRunAt), "MMM d, h:mm a") : "Never"}
+                          {config.lastRunAt ? formatDateTime(config.lastRunAt) : "Never"}
                         </TableCell>
                         <TableCell>
                           {config.lastRunStatus && (

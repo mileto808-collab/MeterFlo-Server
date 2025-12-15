@@ -9,7 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import { Upload, File, Trash2, ArrowLeft, ShieldAlert, Download, Folder } from "lucide-react";
 import type { Project } from "@shared/schema";
-import { format } from "date-fns";
+import { useTimezone } from "@/hooks/use-timezone";
 
 interface ProjectFile {
   name: string;
@@ -26,6 +26,7 @@ function formatFileSize(bytes: number): string {
 }
 
 export default function ProjectFiles() {
+  const { formatDateTime } = useTimezone();
   const [, params] = useRoute("/projects/:projectId/files");
   const projectId = params?.projectId ? parseInt(params.projectId) : null;
   const { user } = useAuth();
@@ -248,7 +249,7 @@ export default function ProjectFiles() {
                       {formatFileSize(file.size)}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {format(new Date(file.modifiedAt), "MMM d, yyyy h:mm a")}
+                      {formatDateTime(file.modifiedAt)}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
