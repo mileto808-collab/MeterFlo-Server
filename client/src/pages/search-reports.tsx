@@ -92,6 +92,34 @@ export default function SearchReports() {
   const [selectedMeterType, setSelectedMeterType] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [filterCustomerWoId, setFilterCustomerWoId] = useState("");
+  const [filterCustomerId, setFilterCustomerId] = useState("");
+  const [filterCustomerName, setFilterCustomerName] = useState("");
+  const [filterAddress, setFilterAddress] = useState("");
+  const [filterCity, setFilterCity] = useState("");
+  const [filterState, setFilterState] = useState("");
+  const [filterZip, setFilterZip] = useState("");
+  const [filterPhone, setFilterPhone] = useState("");
+  const [filterEmail, setFilterEmail] = useState("");
+  const [filterRoute, setFilterRoute] = useState("");
+  const [filterZone, setFilterZone] = useState("");
+  const [filterOldMeterId, setFilterOldMeterId] = useState("");
+  const [filterOldMeterReading, setFilterOldMeterReading] = useState("");
+  const [filterOldMeterType, setFilterOldMeterType] = useState("");
+  const [filterNewMeterId, setFilterNewMeterId] = useState("");
+  const [filterNewMeterReading, setFilterNewMeterReading] = useState("");
+  const [filterNewMeterType, setFilterNewMeterType] = useState("");
+  const [filterOldGps, setFilterOldGps] = useState("");
+  const [filterNewGps, setFilterNewGps] = useState("");
+  const [filterScheduledDate, setFilterScheduledDate] = useState("");
+  const [filterAssignedTo, setFilterAssignedTo] = useState("");
+  const [filterCreatedBy, setFilterCreatedBy] = useState("");
+  const [filterUpdatedBy, setFilterUpdatedBy] = useState("");
+  const [filterCompletedAt, setFilterCompletedAt] = useState("");
+  const [filterTrouble, setFilterTrouble] = useState("");
+  const [filterNotes, setFilterNotes] = useState("");
+  const [filterCreatedAt, setFilterCreatedAt] = useState("");
+  const [filterUpdatedAt, setFilterUpdatedAt] = useState("");
   const [isSearchActive, setIsSearchActive] = useState(false);
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
@@ -274,6 +302,34 @@ export default function SearchReports() {
     setSelectedMeterType("all");
     setDateFrom("");
     setDateTo("");
+    setFilterCustomerWoId("");
+    setFilterCustomerId("");
+    setFilterCustomerName("");
+    setFilterAddress("");
+    setFilterCity("");
+    setFilterState("");
+    setFilterZip("");
+    setFilterPhone("");
+    setFilterEmail("");
+    setFilterRoute("");
+    setFilterZone("");
+    setFilterOldMeterId("");
+    setFilterOldMeterReading("");
+    setFilterOldMeterType("");
+    setFilterNewMeterId("");
+    setFilterNewMeterReading("");
+    setFilterNewMeterType("");
+    setFilterOldGps("");
+    setFilterNewGps("");
+    setFilterScheduledDate("");
+    setFilterAssignedTo("");
+    setFilterCreatedBy("");
+    setFilterUpdatedBy("");
+    setFilterCompletedAt("");
+    setFilterTrouble("");
+    setFilterNotes("");
+    setFilterCreatedAt("");
+    setFilterUpdatedAt("");
     setIsSearchActive(false);
     setSortColumn(null);
     setSortDirection("asc");
@@ -678,6 +734,174 @@ export default function SearchReports() {
                   onChange={(e) => setDateTo(e.target.value)}
                   data-testid="input-date-to"
                 />
+              </div>
+            )}
+            {isFilterVisible("customerWoId") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-customer-wo-id">WO ID</Label>
+                <Input id="filter-customer-wo-id" placeholder="Filter..." value={filterCustomerWoId} onChange={(e) => setFilterCustomerWoId(e.target.value)} data-testid="input-filter-customer-wo-id" />
+              </div>
+            )}
+            {isFilterVisible("customerId") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-customer-id">Customer ID</Label>
+                <Input id="filter-customer-id" placeholder="Filter..." value={filterCustomerId} onChange={(e) => setFilterCustomerId(e.target.value)} data-testid="input-filter-customer-id" />
+              </div>
+            )}
+            {isFilterVisible("customerName") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-customer-name">Customer Name</Label>
+                <Input id="filter-customer-name" placeholder="Filter..." value={filterCustomerName} onChange={(e) => setFilterCustomerName(e.target.value)} data-testid="input-filter-customer-name" />
+              </div>
+            )}
+            {isFilterVisible("address") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-address">Address</Label>
+                <Input id="filter-address" placeholder="Filter..." value={filterAddress} onChange={(e) => setFilterAddress(e.target.value)} data-testid="input-filter-address" />
+              </div>
+            )}
+            {isFilterVisible("city") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-city">City</Label>
+                <Input id="filter-city" placeholder="Filter..." value={filterCity} onChange={(e) => setFilterCity(e.target.value)} data-testid="input-filter-city" />
+              </div>
+            )}
+            {isFilterVisible("state") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-state">State</Label>
+                <Input id="filter-state" placeholder="Filter..." value={filterState} onChange={(e) => setFilterState(e.target.value)} data-testid="input-filter-state" />
+              </div>
+            )}
+            {isFilterVisible("zip") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-zip">ZIP</Label>
+                <Input id="filter-zip" placeholder="Filter..." value={filterZip} onChange={(e) => setFilterZip(e.target.value)} data-testid="input-filter-zip" />
+              </div>
+            )}
+            {isFilterVisible("phone") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-phone">Phone</Label>
+                <Input id="filter-phone" placeholder="Filter..." value={filterPhone} onChange={(e) => setFilterPhone(e.target.value)} data-testid="input-filter-phone" />
+              </div>
+            )}
+            {isFilterVisible("email") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-email">Email</Label>
+                <Input id="filter-email" placeholder="Filter..." value={filterEmail} onChange={(e) => setFilterEmail(e.target.value)} data-testid="input-filter-email" />
+              </div>
+            )}
+            {isFilterVisible("route") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-route">Route</Label>
+                <Input id="filter-route" placeholder="Filter..." value={filterRoute} onChange={(e) => setFilterRoute(e.target.value)} data-testid="input-filter-route" />
+              </div>
+            )}
+            {isFilterVisible("zone") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-zone">Zone</Label>
+                <Input id="filter-zone" placeholder="Filter..." value={filterZone} onChange={(e) => setFilterZone(e.target.value)} data-testid="input-filter-zone" />
+              </div>
+            )}
+            {isFilterVisible("oldMeterId") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-old-meter-id">Old Meter ID</Label>
+                <Input id="filter-old-meter-id" placeholder="Filter..." value={filterOldMeterId} onChange={(e) => setFilterOldMeterId(e.target.value)} data-testid="input-filter-old-meter-id" />
+              </div>
+            )}
+            {isFilterVisible("oldMeterReading") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-old-meter-reading">Old Meter Reading</Label>
+                <Input id="filter-old-meter-reading" placeholder="Filter..." value={filterOldMeterReading} onChange={(e) => setFilterOldMeterReading(e.target.value)} data-testid="input-filter-old-meter-reading" />
+              </div>
+            )}
+            {isFilterVisible("oldMeterType") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-old-meter-type">Old Meter Type</Label>
+                <Input id="filter-old-meter-type" placeholder="Filter..." value={filterOldMeterType} onChange={(e) => setFilterOldMeterType(e.target.value)} data-testid="input-filter-old-meter-type" />
+              </div>
+            )}
+            {isFilterVisible("newMeterId") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-new-meter-id">New Meter ID</Label>
+                <Input id="filter-new-meter-id" placeholder="Filter..." value={filterNewMeterId} onChange={(e) => setFilterNewMeterId(e.target.value)} data-testid="input-filter-new-meter-id" />
+              </div>
+            )}
+            {isFilterVisible("newMeterReading") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-new-meter-reading">New Meter Reading</Label>
+                <Input id="filter-new-meter-reading" placeholder="Filter..." value={filterNewMeterReading} onChange={(e) => setFilterNewMeterReading(e.target.value)} data-testid="input-filter-new-meter-reading" />
+              </div>
+            )}
+            {isFilterVisible("newMeterType") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-new-meter-type">New Meter Type</Label>
+                <Input id="filter-new-meter-type" placeholder="Filter..." value={filterNewMeterType} onChange={(e) => setFilterNewMeterType(e.target.value)} data-testid="input-filter-new-meter-type" />
+              </div>
+            )}
+            {isFilterVisible("oldGps") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-old-gps">Old GPS</Label>
+                <Input id="filter-old-gps" placeholder="Filter..." value={filterOldGps} onChange={(e) => setFilterOldGps(e.target.value)} data-testid="input-filter-old-gps" />
+              </div>
+            )}
+            {isFilterVisible("newGps") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-new-gps">New GPS</Label>
+                <Input id="filter-new-gps" placeholder="Filter..." value={filterNewGps} onChange={(e) => setFilterNewGps(e.target.value)} data-testid="input-filter-new-gps" />
+              </div>
+            )}
+            {isFilterVisible("scheduledDate") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-scheduled-date">Scheduled Date</Label>
+                <Input id="filter-scheduled-date" type="date" value={filterScheduledDate} onChange={(e) => setFilterScheduledDate(e.target.value)} data-testid="input-filter-scheduled-date" />
+              </div>
+            )}
+            {isFilterVisible("assignedTo") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-assigned-to">Assigned To</Label>
+                <Input id="filter-assigned-to" placeholder="Filter..." value={filterAssignedTo} onChange={(e) => setFilterAssignedTo(e.target.value)} data-testid="input-filter-assigned-to" />
+              </div>
+            )}
+            {isFilterVisible("createdBy") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-created-by">Created By</Label>
+                <Input id="filter-created-by" placeholder="Filter..." value={filterCreatedBy} onChange={(e) => setFilterCreatedBy(e.target.value)} data-testid="input-filter-created-by" />
+              </div>
+            )}
+            {isFilterVisible("updatedBy") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-updated-by">Updated By</Label>
+                <Input id="filter-updated-by" placeholder="Filter..." value={filterUpdatedBy} onChange={(e) => setFilterUpdatedBy(e.target.value)} data-testid="input-filter-updated-by" />
+              </div>
+            )}
+            {isFilterVisible("completedAt") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-completed-at">Completed At</Label>
+                <Input id="filter-completed-at" type="date" value={filterCompletedAt} onChange={(e) => setFilterCompletedAt(e.target.value)} data-testid="input-filter-completed-at" />
+              </div>
+            )}
+            {isFilterVisible("trouble") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-trouble">Trouble</Label>
+                <Input id="filter-trouble" placeholder="Filter..." value={filterTrouble} onChange={(e) => setFilterTrouble(e.target.value)} data-testid="input-filter-trouble" />
+              </div>
+            )}
+            {isFilterVisible("notes") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-notes">Notes</Label>
+                <Input id="filter-notes" placeholder="Filter..." value={filterNotes} onChange={(e) => setFilterNotes(e.target.value)} data-testid="input-filter-notes" />
+              </div>
+            )}
+            {isFilterVisible("createdAt") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-created-at">Created At</Label>
+                <Input id="filter-created-at" type="date" value={filterCreatedAt} onChange={(e) => setFilterCreatedAt(e.target.value)} data-testid="input-filter-created-at" />
+              </div>
+            )}
+            {isFilterVisible("updatedAt") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-updated-at">Updated At</Label>
+                <Input id="filter-updated-at" type="date" value={filterUpdatedAt} onChange={(e) => setFilterUpdatedAt(e.target.value)} data-testid="input-filter-updated-at" />
               </div>
             )}
           </div>
