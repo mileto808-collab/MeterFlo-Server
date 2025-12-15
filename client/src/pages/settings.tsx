@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Moon, Sun, User as UserIcon, Shield, FolderOpen, Save, FileUp, Users, Plus, Pencil, Trash2, UsersRound, Clock, Copy, Gauge, Download, History } from "lucide-react";
@@ -72,6 +73,7 @@ export default function Settings() {
   const [maxFileSizeMB, setMaxFileSizeMB] = useState("100");
   const [allowedExtensions, setAllowedExtensions] = useState("");
   const [selectedTimezone, setSelectedTimezone] = useState("America/Denver");
+  const [timezoneEnabled, setTimezoneEnabled] = useState(true);
   
   const [subroleDialogOpen, setSubroleDialogOpen] = useState(false);
   const [deleteSubroleDialogOpen, setDeleteSubroleDialogOpen] = useState(false);
@@ -172,7 +174,7 @@ export default function Settings() {
     enabled: user?.role === "admin",
   });
 
-  const { data: timezoneData } = useQuery<{ timezone: string }>({
+  const { data: timezoneData } = useQuery<{ timezone: string; isEnabled: boolean }>({
     queryKey: ["/api/settings/timezone"],
     enabled: user?.role === "admin",
   });
@@ -261,6 +263,9 @@ export default function Settings() {
   useEffect(() => {
     if (timezoneData?.timezone) {
       setSelectedTimezone(timezoneData.timezone);
+    }
+    if (timezoneData !== undefined) {
+      setTimezoneEnabled(timezoneData.isEnabled ?? true);
     }
   }, [timezoneData]);
 
@@ -981,16 +986,16 @@ export default function Settings() {
   });
 
   const updateTimezoneMutation = useMutation({
-    mutationFn: async (timezone: string) => {
-      return apiRequest("PUT", "/api/settings/timezone", { timezone });
+    mutationFn: async (data: { timezone: string; isEnabled: boolean }) => {
+      return apiRequest("PUT", "/api/settings/timezone", data);
     },
     onSuccess: () => {
       clearTimezoneCache();
       queryClient.invalidateQueries({ queryKey: ["/api/settings/timezone"] });
-      toast({ title: "Timezone updated successfully" });
+      toast({ title: "Timezone settings updated successfully" });
     },
     onError: () => {
-      toast({ title: "Failed to update timezone", variant: "destructive" });
+      toast({ title: "Failed to update timezone settings", variant: "destructive" });
     },
   });
 
@@ -1175,15 +1180,31 @@ export default function Settings() {
                   <Clock className="h-5 w-5 text-muted-foreground" />
                   <CardTitle>Timezone</CardTitle>
                 </div>
-                <CardDescription>Set the timezone used for timestamps in trouble code notes</CardDescription>
+                <CardDescription>Set the timezone used for how timestamps to be displayed in the user interface.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div>
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <Label htmlFor="timezone-enabled">Enable Timezone Conversion</Label>
+                    <p className="text-sm text-muted-foreground">
+                      This will display the selected local timezone in the UI. If disabled, the application will display all timestamps in UTC time.
+                    </p>
+                  </div>
+                  <Switch
+                    id="timezone-enabled"
+                    checked={timezoneEnabled}
+                    onCheckedChange={setTimezoneEnabled}
+                    data-testid="switch-timezone-enabled"
+                  />
+                </div>
+                
+                <div className={timezoneEnabled ? "" : "opacity-50 pointer-events-none"}>
                   <Label htmlFor="timezone">System Timezone</Label>
                   <div className="flex gap-2 mt-2 items-center">
                     <Select
                       value={selectedTimezone}
                       onValueChange={setSelectedTimezone}
+                      disabled={!timezoneEnabled}
                     >
                       <SelectTrigger className="w-72" data-testid="select-timezone">
                         <SelectValue placeholder="Select timezone" />
@@ -1196,19 +1217,20 @@ export default function Settings() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <Button
-                      onClick={() => updateTimezoneMutation.mutate(selectedTimezone)}
-                      disabled={updateTimezoneMutation.isPending || selectedTimezone === timezoneData?.timezone}
-                      data-testid="button-save-timezone"
-                    >
-                      <Save className="h-4 w-4 mr-2" />
-                      Save
-                    </Button>
                   </div>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    This timezone will be used when recording timestamps for trouble codes on work orders.
-                  </p>
                 </div>
+                
+                <Button
+                  onClick={() => updateTimezoneMutation.mutate({ 
+                    timezone: selectedTimezone || timezoneData?.timezone || "America/Denver", 
+                    isEnabled: timezoneEnabled 
+                  })}
+                  disabled={updateTimezoneMutation.isPending || (selectedTimezone === timezoneData?.timezone && timezoneEnabled === timezoneData?.isEnabled)}
+                  data-testid="button-save-timezone"
+                >
+                  <Save className="h-4 w-4 mr-2" />
+                  Save Timezone Settings
+                </Button>
               </CardContent>
             </Card>
 

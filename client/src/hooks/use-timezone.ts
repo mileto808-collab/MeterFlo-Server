@@ -4,12 +4,13 @@ import { formatInTimezone, formatDateInTimezone, formatDateTimeInTimezone, forma
 const DEFAULT_TIMEZONE = "America/Denver";
 
 export function useTimezone() {
-  const { data: timezoneData } = useQuery<{ timezone: string }>({
+  const { data: timezoneData } = useQuery<{ timezone: string; isEnabled: boolean }>({
     queryKey: ["/api/settings/timezone"],
     staleTime: 5 * 60 * 1000,
   });
 
-  const timezone = timezoneData?.timezone || DEFAULT_TIMEZONE;
+  const isEnabled = timezoneData?.isEnabled ?? true;
+  const timezone = isEnabled ? (timezoneData?.timezone || DEFAULT_TIMEZONE) : "UTC";
 
   const formatDate = (date: string | Date | null | undefined): string => {
     return formatDateInTimezone(date, timezone);
@@ -33,6 +34,7 @@ export function useTimezone() {
 
   return {
     timezone,
+    isEnabled,
     formatDate,
     formatDateTime,
     formatCustom,
