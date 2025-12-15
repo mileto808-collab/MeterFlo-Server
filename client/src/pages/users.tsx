@@ -1096,6 +1096,9 @@ export default function Users() {
                         </Button>
                       </TableHead>
                     )}
+                    {isColumnVisible("username") && <TableHead>Username</TableHead>}
+                    {isColumnVisible("firstName") && <TableHead>First Name</TableHead>}
+                    {isColumnVisible("lastName") && <TableHead>Last Name</TableHead>}
                     {isColumnVisible("role") && (
                       <TableHead>
                         <Button
@@ -1140,7 +1143,15 @@ export default function Users() {
                         </Button>
                       </TableHead>
                     )}
+                    {isColumnVisible("isLocked") && <TableHead>Is Locked</TableHead>}
+                    {isColumnVisible("lockedReason") && <TableHead>Locked Reason</TableHead>}
                     {isColumnVisible("lastLogin") && <TableHead>Last Login</TableHead>}
+                    {isColumnVisible("address") && <TableHead>Address</TableHead>}
+                    {isColumnVisible("city") && <TableHead>City</TableHead>}
+                    {isColumnVisible("state") && <TableHead>State</TableHead>}
+                    {isColumnVisible("zip") && <TableHead>ZIP</TableHead>}
+                    {isColumnVisible("phone") && <TableHead>Phone</TableHead>}
+                    {isColumnVisible("website") && <TableHead>Website</TableHead>}
                     <TableHead className="w-[80px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -1167,6 +1178,15 @@ export default function Users() {
                       )}
                       {isColumnVisible("email") && (
                         <TableCell className="text-muted-foreground">{user.email || "—"}</TableCell>
+                      )}
+                      {isColumnVisible("username") && (
+                        <TableCell>{user.username || "—"}</TableCell>
+                      )}
+                      {isColumnVisible("firstName") && (
+                        <TableCell>{user.firstName || "—"}</TableCell>
+                      )}
+                      {isColumnVisible("lastName") && (
+                        <TableCell>{user.lastName || "—"}</TableCell>
                       )}
                       {isColumnVisible("role") && (
                         <TableCell>
@@ -1234,8 +1254,32 @@ export default function Users() {
                       {isColumnVisible("createdAt") && (
                         <TableCell>{user.createdAt ? formatCustom(user.createdAt, "MMM d, yyyy") : "—"}</TableCell>
                       )}
+                      {isColumnVisible("isLocked") && (
+                        <TableCell>{user.isLocked ? "Yes" : "No"}</TableCell>
+                      )}
+                      {isColumnVisible("lockedReason") && (
+                        <TableCell className="max-w-xs truncate">{user.lockedReason || "—"}</TableCell>
+                      )}
                       {isColumnVisible("lastLogin") && (
                         <TableCell>{user.lastLoginAt ? formatDateTime(user.lastLoginAt) : "Never"}</TableCell>
+                      )}
+                      {isColumnVisible("address") && (
+                        <TableCell className="max-w-xs truncate">{user.address || "—"}</TableCell>
+                      )}
+                      {isColumnVisible("city") && (
+                        <TableCell>{user.city || "—"}</TableCell>
+                      )}
+                      {isColumnVisible("state") && (
+                        <TableCell>{user.state || "—"}</TableCell>
+                      )}
+                      {isColumnVisible("zip") && (
+                        <TableCell>{user.zip || "—"}</TableCell>
+                      )}
+                      {isColumnVisible("phone") && (
+                        <TableCell>{user.phone || "—"}</TableCell>
+                      )}
+                      {isColumnVisible("website") && (
+                        <TableCell>{user.website || "—"}</TableCell>
                       )}
                       <TableCell>
                         <DropdownMenu>
