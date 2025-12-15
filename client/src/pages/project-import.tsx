@@ -67,10 +67,7 @@ type ParsedWorkOrder = {
   serviceType: string;
   oldMeterId?: string;
   oldMeterReading?: number;
-  newMeterId?: string;
-  newMeterReading?: number;
   oldGps?: string;
-  newGps?: string;
   oldMeterType?: string;
   newMeterType?: string;
   status?: string;
@@ -78,6 +75,8 @@ type ParsedWorkOrder = {
   trouble?: string;
   notes?: string;
   assignedTo?: string;
+  createdBy?: string;
+  completedAt?: string;
 };
 
 type ColumnMapping = {
@@ -95,10 +94,7 @@ type ColumnMapping = {
   serviceType: string;
   oldMeterId: string;
   oldMeterReading: string;
-  newMeterId: string;
-  newMeterReading: string;
   oldGps: string;
-  newGps: string;
   oldMeterType: string;
   newMeterType: string;
   status: string;
@@ -106,6 +102,8 @@ type ColumnMapping = {
   trouble: string;
   notes: string;
   assignedTo: string;
+  createdBy: string;
+  completedAt: string;
 };
 
 const defaultColumnMapping: ColumnMapping = {
@@ -123,10 +121,7 @@ const defaultColumnMapping: ColumnMapping = {
   serviceType: "",
   oldMeterId: "",
   oldMeterReading: "",
-  newMeterId: "",
-  newMeterReading: "",
   oldGps: "",
-  newGps: "",
   oldMeterType: "",
   newMeterType: "",
   status: "",
@@ -134,6 +129,8 @@ const defaultColumnMapping: ColumnMapping = {
   trouble: "",
   notes: "",
   assignedTo: "",
+  createdBy: "",
+  completedAt: "",
 };
 
 const parseIntOrUndefined = (value: string): number | undefined => {
@@ -453,17 +450,16 @@ export default function ProjectImport() {
       { field: "serviceType", variants: ["service type", "servicetype", "service_type", "type", "utility", "utility type", "meter type"] },
       { field: "oldMeterId", variants: ["old meter", "old meter id", "oldmeterid", "old_meter_id", "current meter", "existing meter", "old_meter"] },
       { field: "oldMeterReading", variants: ["old meter reading", "old reading", "oldmeterreading", "old_meter_reading", "current reading", "existing reading"] },
-      { field: "newMeterId", variants: ["new meter", "new meter id", "newmeterid", "new_meter_id", "replacement meter", "new_meter"] },
-      { field: "newMeterReading", variants: ["new meter reading", "new reading", "newmeterreading", "new_meter_reading", "replacement reading"] },
       { field: "oldGps", variants: ["old gps", "old_gps", "oldgps", "current gps", "existing gps", "old coordinates"] },
-      { field: "newGps", variants: ["new gps", "new_gps", "newgps", "new coordinates"] },
       { field: "oldMeterType", variants: ["old meter type", "old_meter_type", "oldmetertype", "current meter type", "existing meter type"] },
       { field: "newMeterType", variants: ["new meter type", "new_meter_type", "newmetertype", "replacement meter type"] },
       { field: "status", variants: ["status", "state", "condition", "wo status"] },
-      { field: "scheduledDate", variants: ["scheduled date", "scheduled_date", "scheduleddate", "schedule date", "schedule", "due date", "due_date"] },
+      { field: "scheduledDate", variants: ["scheduled date", "scheduled_date", "scheduleddate", "schedule date", "schedule", "due date", "due_date", "scheduled datetime", "scheduled_datetime"] },
       { field: "trouble", variants: ["trouble", "issue", "problem", "trouble code", "trouble_code"] },
       { field: "notes", variants: ["notes", "comments", "remarks", "description"] },
       { field: "assignedTo", variants: ["assigned", "assignedto", "assigned to", "technician", "worker", "assignee", "tech"] },
+      { field: "createdBy", variants: ["created by", "created_by", "createdby", "creator", "created by user"] },
+      { field: "completedAt", variants: ["completed at", "completed_at", "completedat", "completion date", "completion_date", "completed date", "completed_date"] },
     ];
 
     headerRow.forEach((header) => {
@@ -508,10 +504,7 @@ export default function ProjectImport() {
         serviceType: getValueByHeader(columnMapping.serviceType) || "Water",
         oldMeterId: getValueByHeader(columnMapping.oldMeterId) || undefined,
         oldMeterReading: columnMapping.oldMeterReading ? parseIntOrUndefined(getValueByHeader(columnMapping.oldMeterReading)) : undefined,
-        newMeterId: getValueByHeader(columnMapping.newMeterId) || undefined,
-        newMeterReading: columnMapping.newMeterReading ? parseIntOrUndefined(getValueByHeader(columnMapping.newMeterReading)) : undefined,
         oldGps: getValueByHeader(columnMapping.oldGps) || undefined,
-        newGps: getValueByHeader(columnMapping.newGps) || undefined,
         oldMeterType: getValueByHeader(columnMapping.oldMeterType) || undefined,
         newMeterType: getValueByHeader(columnMapping.newMeterType) || undefined,
         status: getValueByHeader(columnMapping.status) || undefined,
@@ -519,6 +512,8 @@ export default function ProjectImport() {
         trouble: getValueByHeader(columnMapping.trouble) || undefined,
         notes: getValueByHeader(columnMapping.notes) || undefined,
         assignedTo: getValueByHeader(columnMapping.assignedTo) || undefined,
+        createdBy: getValueByHeader(columnMapping.createdBy) || undefined,
+        completedAt: getValueByHeader(columnMapping.completedAt) || undefined,
       };
 
       return workOrder;
@@ -575,10 +570,7 @@ export default function ProjectImport() {
         serviceType,
         oldMeterId: getValueByHeader(columnMapping.oldMeterId) || undefined,
         oldMeterReading: columnMapping.oldMeterReading ? parseIntOrUndefined(getValueByHeader(columnMapping.oldMeterReading)) : undefined,
-        newMeterId: getValueByHeader(columnMapping.newMeterId) || undefined,
-        newMeterReading: columnMapping.newMeterReading ? parseIntOrUndefined(getValueByHeader(columnMapping.newMeterReading)) : undefined,
         oldGps: getValueByHeader(columnMapping.oldGps) || undefined,
-        newGps: getValueByHeader(columnMapping.newGps) || undefined,
         oldMeterType: getValueByHeader(columnMapping.oldMeterType) || undefined,
         newMeterType: getValueByHeader(columnMapping.newMeterType) || undefined,
         status: status || undefined,
@@ -586,6 +578,8 @@ export default function ProjectImport() {
         trouble: getValueByHeader(columnMapping.trouble) || undefined,
         notes: getValueByHeader(columnMapping.notes) || undefined,
         assignedTo: getValueByHeader(columnMapping.assignedTo) || undefined,
+        createdBy: getValueByHeader(columnMapping.createdBy) || undefined,
+        completedAt: getValueByHeader(columnMapping.completedAt) || undefined,
       };
 
       return workOrder;
@@ -794,10 +788,11 @@ export default function ProjectImport() {
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">city, state, zip</span> - Location details</div>
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">phone, email</span> - Contact information</div>
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">route, zone</span> - Service routing</div>
-                    <div><span className="font-mono bg-muted px-2 py-1 rounded">old_meter_id, new_meter_id</span> - Meter IDs</div>
-                    <div><span className="font-mono bg-muted px-2 py-1 rounded">old_gps, new_gps</span> - GPS coordinates</div>
+                    <div><span className="font-mono bg-muted px-2 py-1 rounded">old_meter_id, old_meter_reading</span> - Old meter info</div>
+                    <div><span className="font-mono bg-muted px-2 py-1 rounded">old_gps</span> - GPS coordinates</div>
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">old_meter_type, new_meter_type</span> - Meter types</div>
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">status, scheduled_date, trouble, notes</span> - Work order details</div>
+                    <div><span className="font-mono bg-muted px-2 py-1 rounded">assigned_to, created_by, completed_at</span> - Assignment and tracking</div>
                   </div>
                 </div>
                 
@@ -838,17 +833,16 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,M
                   <MappingSelect field="zone" label="Zone" />
                   <MappingSelect field="oldMeterId" label="Old Meter ID" />
                   <MappingSelect field="oldMeterReading" label="Old Meter Reading" />
-                  <MappingSelect field="newMeterId" label="New Meter ID" />
-                  <MappingSelect field="newMeterReading" label="New Meter Reading" />
                   <MappingSelect field="oldGps" label="Old GPS" />
-                  <MappingSelect field="newGps" label="New GPS" />
                   <MappingSelect field="oldMeterType" label="Old Meter Type" />
                   <MappingSelect field="newMeterType" label="New Meter Type" />
                   <MappingSelect field="status" label="Status" />
-                  <MappingSelect field="scheduledDate" label="Scheduled Date" />
+                  <MappingSelect field="scheduledDate" label="Scheduled Date & Time" />
                   <MappingSelect field="trouble" label="Trouble" />
                   <MappingSelect field="notes" label="Notes" />
                   <MappingSelect field="assignedTo" label="Assigned To" />
+                  <MappingSelect field="createdBy" label="Created By" />
+                  <MappingSelect field="completedAt" label="Completed At" />
                 </div>
               </CardContent>
             </Card>
@@ -1105,6 +1099,53 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,M
               <p>2. The scheduler will automatically pick up the latest file in that directory when the scheduled time arrives.</p>
               <p>3. Files are processed using the configured column mapping and import settings.</p>
               <p>4. Only new files (not previously processed) will be imported on scheduled runs.</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Info className="h-5 w-5" />
+                Expected Data Format
+              </CardTitle>
+              <CardDescription>
+                Prepare your files with the correct column structure
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <h4 className="font-medium mb-2">CSV Files</h4>
+                <div className="text-sm text-muted-foreground space-y-1">
+                  <p>Set the appropriate delimiter in your schedule configuration (comma, semicolon, tab, or pipe).</p>
+                  <p>Enable "Has Header Row" if your file includes column headers in the first row.</p>
+                </div>
+              </div>
+              
+              <div>
+                <h4 className="font-medium mb-2">Excel Files (.xlsx/.xls)</h4>
+                <div className="text-sm text-muted-foreground space-y-1">
+                  <p>The delimiter setting is ignored for Excel files - they are parsed automatically.</p>
+                  <p>Enable "Has Header Row" if your file includes column headers in the first row.</p>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="font-medium mb-2">Required Columns</h4>
+                <div className="text-sm">
+                  <span className="font-mono bg-muted px-2 py-1 rounded">customer_wo_id</span>,{" "}
+                  <span className="font-mono bg-muted px-2 py-1 rounded">customer_id</span>,{" "}
+                  <span className="font-mono bg-muted px-2 py-1 rounded">customer_name</span>,{" "}
+                  <span className="font-mono bg-muted px-2 py-1 rounded">address</span>,{" "}
+                  <span className="font-mono bg-muted px-2 py-1 rounded">service_type</span>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="font-medium mb-2">Optional Columns</h4>
+                <div className="text-sm text-muted-foreground">
+                  city, state, zip, phone, email, route, zone, old_meter_id, old_meter_reading, old_gps, old_meter_type, new_meter_type, status, scheduled_date, trouble, notes, assigned_to, created_by, completed_at
+                </div>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

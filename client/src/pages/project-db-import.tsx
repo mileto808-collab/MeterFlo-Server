@@ -102,17 +102,16 @@ const workOrderFields = [
   { key: "serviceType", label: "Service Type", required: true },
   { key: "oldMeterId", label: "Old Meter ID", required: false },
   { key: "oldMeterReading", label: "Old Meter Reading", required: false },
-  { key: "newMeterId", label: "New Meter ID", required: false },
-  { key: "newMeterReading", label: "New Meter Reading", required: false },
   { key: "oldGps", label: "Old GPS", required: false },
-  { key: "newGps", label: "New GPS", required: false },
   { key: "oldMeterType", label: "Old Meter Type", required: false },
   { key: "newMeterType", label: "New Meter Type", required: false },
   { key: "status", label: "Status", required: false },
-  { key: "scheduledDate", label: "Scheduled Date", required: false },
+  { key: "scheduledDate", label: "Scheduled Date & Time", required: false },
   { key: "trouble", label: "Trouble", required: false },
   { key: "notes", label: "Notes", required: false },
   { key: "assignedTo", label: "Assigned To", required: false },
+  { key: "createdBy", label: "Created By", required: false },
+  { key: "completedAt", label: "Completed At", required: false },
 ];
 
 const databaseTypes = [
