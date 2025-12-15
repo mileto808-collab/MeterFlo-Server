@@ -108,13 +108,23 @@ export default function Users() {
   // Column configuration for the users table
   const userColumns: ColumnConfig[] = useMemo(() => [
     { key: "user", label: "User", required: true },
+    { key: "username", label: "Username" },
     { key: "email", label: "Email" },
+    { key: "firstName", label: "First Name" },
+    { key: "lastName", label: "Last Name" },
     { key: "role", label: "Role" },
     { key: "accessLevel", label: "Access Level" },
     { key: "projects", label: "Projects" },
     { key: "status", label: "Status" },
-    { key: "createdAt", label: "Joined" },
+    { key: "isLocked", label: "Is Locked" },
+    { key: "lockedReason", label: "Locked Reason" },
     { key: "lastLogin", label: "Last Login" },
+    { key: "address", label: "Address" },
+    { key: "city", label: "City" },
+    { key: "state", label: "State" },
+    { key: "zip", label: "ZIP" },
+    { key: "phone", label: "Phone" },
+    { key: "website", label: "Website" },
   ], []);
 
   const { visibleColumns, setVisibleColumns, isColumnVisible, isLoading: columnPrefsLoading } = useColumnPreferences("users", userColumns);
