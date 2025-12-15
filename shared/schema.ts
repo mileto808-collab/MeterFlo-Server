@@ -116,6 +116,15 @@ export const userGroupProjects = pgTable("user_group_projects", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// User column preferences - stores which columns each user wants visible per page
+export const userColumnPreferences = pgTable("user_column_preferences", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  pageKey: varchar("page_key", { length: 50 }).notNull(),
+  visibleColumns: jsonb("visible_columns").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // System settings table for application-wide configuration
 export const systemSettings = pgTable("system_settings", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -425,6 +434,12 @@ export const insertUserGroupProjectSchema = z.object({
   projectId: z.number(),
 });
 
+export const insertUserColumnPreferencesSchema = z.object({
+  userId: z.string(),
+  pageKey: z.string().max(50),
+  visibleColumns: z.array(z.string()),
+});
+
 export const insertSystemSettingSchema = z.object({
   key: z.string().min(1).max(100),
   value: z.string().optional().nullable(),
@@ -558,6 +573,9 @@ export type InsertUserGroupMember = z.infer<typeof insertUserGroupMemberSchema>;
 
 export type UserGroupProject = typeof userGroupProjects.$inferSelect;
 export type InsertUserGroupProject = z.infer<typeof insertUserGroupProjectSchema>;
+
+export type UserColumnPreferences = typeof userColumnPreferences.$inferSelect;
+export type InsertUserColumnPreferences = z.infer<typeof insertUserColumnPreferencesSchema>;
 
 // Extended user group with project associations
 export type UserGroupWithProjects = UserGroup & { projectIds: number[] };
