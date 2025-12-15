@@ -26,8 +26,9 @@ import { useTimezone } from "@/hooks/use-timezone";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import type { User, Project, Subrole } from "@shared/schema";
-import { Search, Users as UsersIcon, Plus, MoreHorizontal, Pencil, Lock, Unlock, Key, Trash2, FolderPlus, X, Folder, ArrowLeft, ArrowUpDown, ArrowUp, ArrowDown, Filter } from "lucide-react";
+import { Search, Users as UsersIcon, Plus, MoreHorizontal, Pencil, Lock, Unlock, Key, Trash2, FolderPlus, X, Folder, ArrowLeft, ArrowUpDown, ArrowUp, ArrowDown, Filter, Download, FileSpreadsheet, FileText } from "lucide-react";
 import { format } from "date-fns";
+import * as XLSX from "xlsx";
 
 type UserWithProjects = User & { assignedProjects?: Project[] };
 
@@ -441,6 +442,162 @@ export default function Users() {
   };
 
   const hasActiveFilters = searchQuery !== "" || roleFilter !== "all" || statusFilter !== "all" || subroleFilter !== "all" || filterUsername !== "" || filterEmail !== "" || filterFirstName !== "" || filterLastName !== "" || filterProjects !== "" || filterIsLocked !== "all" || filterLockedReason !== "" || filterLastLogin !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterWebsite !== "";
+
+  const getSubroleName = (subroleId: number | null | undefined) => {
+    if (!subroleId) return "";
+    const subrole = subroles?.find(s => s.id === subroleId);
+    return subrole?.label || "";
+  };
+
+  const getUserProjects = (userId: string) => {
+    const userProjects = allUsersProjects?.[userId] || [];
+    return userProjects.map(p => p.name).join(", ");
+  };
+
+  const exportToCSV = () => {
+    if (!filteredUsers?.length) {
+      toast({ title: "No data to export", variant: "destructive" });
+      return;
+    }
+
+    const headers = ["Username", "First Name", "Last Name", "Email", "Role", "Access Level", "Projects", "Status", "Address", "City", "State", "ZIP", "Phone", "Website", "Last Login", "Created At"];
+    const rows = filteredUsers.map(u => [
+      u.username || "",
+      u.firstName || "",
+      u.lastName || "",
+      u.email || "",
+      u.role || "",
+      getSubroleName(u.subroleId),
+      getUserProjects(u.id),
+      u.isLocked ? "Locked" : "Active",
+      u.address || "",
+      u.city || "",
+      u.state || "",
+      u.zip || "",
+      u.phone || "",
+      u.website || "",
+      u.lastLoginAt ? formatDateTime(u.lastLoginAt) : "",
+      u.createdAt ? formatDateTime(u.createdAt) : "",
+    ]);
+
+    const csvContent = [
+      headers.join(","),
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(",")),
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `users-${formatCustom(new Date(), "yyyy-MM-dd")}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+
+    toast({ title: "CSV exported successfully" });
+  };
+
+  const exportToExcel = () => {
+    if (!filteredUsers?.length) {
+      toast({ title: "No data to export", variant: "destructive" });
+      return;
+    }
+
+    const data = filteredUsers.map(u => ({
+      "Username": u.username || "",
+      "First Name": u.firstName || "",
+      "Last Name": u.lastName || "",
+      "Email": u.email || "",
+      "Role": u.role || "",
+      "Access Level": getSubroleName(u.subroleId),
+      "Projects": getUserProjects(u.id),
+      "Status": u.isLocked ? "Locked" : "Active",
+      "Address": u.address || "",
+      "City": u.city || "",
+      "State": u.state || "",
+      "ZIP": u.zip || "",
+      "Phone": u.phone || "",
+      "Website": u.website || "",
+      "Last Login": u.lastLoginAt ? formatDateTime(u.lastLoginAt) : "",
+      "Created At": u.createdAt ? formatDateTime(u.createdAt) : "",
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Users");
+    XLSX.writeFile(workbook, `users-${formatCustom(new Date(), "yyyy-MM-dd")}.xlsx`);
+
+    toast({ title: "Excel file exported successfully" });
+  };
+
+  const exportToPDF = () => {
+    if (!filteredUsers?.length) {
+      toast({ title: "No data to export", variant: "destructive" });
+      return;
+    }
+
+    const printContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Users Report</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 20px; }
+          h1 { color: #333; }
+          .meta { color: #666; margin-bottom: 20px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 11px; }
+          th { background-color: #f4f4f4; font-weight: bold; }
+          tr:nth-child(even) { background-color: #fafafa; }
+          .status-active { color: #22c55e; }
+          .status-locked { color: #ef4444; }
+        </style>
+      </head>
+      <body>
+        <h1>Users Report</h1>
+        <div class="meta">
+          <p>Generated: ${formatCustom(new Date(), "MMMM d, yyyy 'at' h:mm a")}</p>
+          <p>Total Users: ${filteredUsers.length}</p>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Username</th>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Role</th>
+              <th>Access Level</th>
+              <th>Projects</th>
+              <th>Status</th>
+              <th>Phone</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filteredUsers.map(u => `
+              <tr>
+                <td>${u.username || "-"}</td>
+                <td>${[u.firstName, u.lastName].filter(Boolean).join(" ") || "-"}</td>
+                <td>${u.email || "-"}</td>
+                <td>${u.role || "-"}</td>
+                <td>${getSubroleName(u.subroleId) || "-"}</td>
+                <td>${getUserProjects(u.id) || "-"}</td>
+                <td class="${u.isLocked ? 'status-locked' : 'status-active'}">${u.isLocked ? "Locked" : "Active"}</td>
+                <td>${u.phone || "-"}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </body>
+      </html>
+    `;
+
+    const printWindow = window.open("", "_blank");
+    if (printWindow) {
+      printWindow.document.write(printContent);
+      printWindow.document.close();
+      printWindow.print();
+    }
+
+    toast({ title: "PDF export ready for printing" });
+  };
 
   const getInitials = (user: User) => {
     if (user.firstName && user.lastName) return `${user.firstName[0]}${user.lastName[0]}`.toUpperCase();
@@ -1161,6 +1318,18 @@ export default function Users() {
               onChange={setVisibleColumns}
               disabled={columnPrefsLoading}
             />
+            <Button variant="outline" size="sm" onClick={exportToCSV} data-testid="button-export-csv">
+              <Download className="h-4 w-4 mr-2" />
+              CSV
+            </Button>
+            <Button variant="outline" size="sm" onClick={exportToExcel} data-testid="button-export-excel">
+              <FileSpreadsheet className="h-4 w-4 mr-2" />
+              Excel
+            </Button>
+            <Button variant="outline" size="sm" onClick={exportToPDF} data-testid="button-export-pdf">
+              <FileText className="h-4 w-4 mr-2" />
+              PDF
+            </Button>
           </div>
           {hasActiveFilters && (
             <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
