@@ -134,40 +134,13 @@ export default function SearchReports() {
 
   const { visibleColumns, setVisibleColumns, isColumnVisible, isLoading: columnPrefsLoading } = useColumnPreferences("search_reports", columns);
 
-  // Filter configuration for search & reports page - matches column configuration
+  // Filter configuration - only includes filters that have actual UI controls
   const searchFilters: FilterConfig[] = useMemo(() => [
     { key: "searchQuery", label: "Search Text" },
     { key: "projectName", label: "Project" },
-    { key: "customerWoId", label: "WO ID" },
-    { key: "customerId", label: "Customer ID" },
-    { key: "customerName", label: "Customer Name" },
-    { key: "address", label: "Address" },
-    { key: "city", label: "City" },
-    { key: "state", label: "State" },
-    { key: "zip", label: "ZIP" },
-    { key: "phone", label: "Phone" },
-    { key: "email", label: "Email" },
-    { key: "route", label: "Route" },
-    { key: "zone", label: "Zone" },
     { key: "serviceType", label: "Service Type" },
-    { key: "oldMeterId", label: "Old Meter ID" },
-    { key: "oldMeterReading", label: "Old Meter Reading" },
-    { key: "oldMeterType", label: "Old Meter Type" },
-    { key: "newMeterId", label: "New Meter ID" },
-    { key: "newMeterReading", label: "New Meter Reading" },
-    { key: "newMeterType", label: "New Meter Type" },
-    { key: "oldGps", label: "Old GPS" },
-    { key: "newGps", label: "New GPS" },
     { key: "status", label: "Status" },
-    { key: "scheduledDate", label: "Scheduled Date" },
-    { key: "assignedTo", label: "Assigned To" },
-    { key: "createdBy", label: "Created By" },
-    { key: "updatedBy", label: "Updated By" },
-    { key: "completedAt", label: "Completed At" },
-    { key: "trouble", label: "Trouble" },
-    { key: "notes", label: "Notes" },
-    { key: "createdAt", label: "Created At" },
-    { key: "updatedAt", label: "Updated At" },
+    { key: "meterType", label: "Meter Type" },
     { key: "dateFrom", label: "Date From" },
     { key: "dateTo", label: "Date To" },
   ], []);
