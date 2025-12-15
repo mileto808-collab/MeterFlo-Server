@@ -30,7 +30,7 @@ export const projectWorkOrders = pgTable("work_orders", {
   oldGps: varchar("old_gps", { length: 100 }),
   newGps: varchar("new_gps", { length: 100 }),
   status: varchar("status", { length: 50 }).notNull().default("Open"),
-  scheduledDate: varchar("scheduled_date"),
+  scheduledDate: timestamp("scheduled_date"),
   assignedTo: varchar("assigned_to"),
   createdBy: varchar("created_by"),
   updatedBy: varchar("updated_by"),
@@ -92,7 +92,7 @@ export async function createProjectSchema(projectName: string, projectId: number
         old_gps VARCHAR(100),
         new_gps VARCHAR(100),
         status VARCHAR(50) NOT NULL DEFAULT 'Open',
-        scheduled_date DATE,
+        scheduled_date TIMESTAMP,
         assigned_to VARCHAR,
         created_by VARCHAR,
         updated_by VARCHAR,
@@ -176,6 +176,30 @@ export async function migrateProjectSchema(schemaName: string): Promise<void> {
       ALTER TABLE "${schemaName}".work_orders 
       ADD COLUMN IF NOT EXISTS signature_name VARCHAR(255)
     `);
+    
+    // Migrate scheduled_date from VARCHAR/DATE to TIMESTAMP if needed
+    const scheduledDateCheck = await client.query(`
+      SELECT data_type FROM information_schema.columns 
+      WHERE table_schema = $1 AND table_name = 'work_orders' 
+      AND column_name = 'scheduled_date'
+    `, [schemaName]);
+    
+    if (scheduledDateCheck.rows.length > 0) {
+      const currentType = scheduledDateCheck.rows[0].data_type;
+      if (currentType !== 'timestamp without time zone' && currentType !== 'timestamp with time zone') {
+        // Convert to TIMESTAMP - handles both VARCHAR and DATE types
+        await client.query(`
+          ALTER TABLE "${schemaName}".work_orders 
+          ALTER COLUMN scheduled_date TYPE TIMESTAMP USING 
+            CASE 
+              WHEN scheduled_date IS NULL THEN NULL
+              WHEN scheduled_date ~ '^\\d{4}-\\d{2}-\\d{2}' THEN scheduled_date::timestamp
+              ELSE NULL
+            END
+        `);
+        console.log(`Migrated scheduled_date to TIMESTAMP for ${schemaName}`);
+      }
+    }
     
     console.log(`Migration completed for ${schemaName}.work_orders`);
   } catch (error) {
