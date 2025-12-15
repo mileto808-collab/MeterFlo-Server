@@ -195,9 +195,13 @@ export default function ProjectImport() {
   }, [projectError]);
 
   const importMutation = useMutation({
-    mutationFn: async (workOrders: any[]) => {
+    mutationFn: async ({ workOrders, fileName: importFileName, importSource }: { workOrders: any[]; fileName?: string; importSource?: string }) => {
       if (accessDenied) throw new Error("403: Access denied");
-      const response = await apiRequest("POST", `/api/projects/${projectId}/import`, { workOrders });
+      const response = await apiRequest("POST", `/api/projects/${projectId}/import`, { 
+        workOrders, 
+        fileName: importFileName,
+        importSource 
+      });
       return response.json();
     },
     onSuccess: (data) => {
@@ -529,7 +533,7 @@ export default function ProjectImport() {
         toast({ title: "Invalid format: expected an array of work orders", variant: "destructive" });
         return;
       }
-      importMutation.mutate(workOrders);
+      importMutation.mutate({ workOrders, fileName: "json_text_input", importSource: "json_text" });
     } catch (error) {
       toast({ title: "Invalid JSON format", variant: "destructive" });
     }
@@ -590,7 +594,7 @@ export default function ProjectImport() {
       return;
     }
 
-    importMutation.mutate(workOrders);
+    importMutation.mutate({ workOrders, fileName: fileName || "file_import", importSource: "manual_file" });
   };
 
   const reprocessWithDelimiter = (newDelimiter: string) => {
