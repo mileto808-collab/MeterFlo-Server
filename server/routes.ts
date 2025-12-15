@@ -1956,6 +1956,111 @@ export async function registerRoutes(
     }
   });
 
+  // External Database Import History endpoints (Admin only)
+  app.get("/api/import-history", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const limit = parseInt(req.query.limit as string) || 500;
+      const history = await storage.getAllImportHistory(limit);
+      
+      // Enrich with config name, database name, and project name
+      const enrichedHistory = await Promise.all(history.map(async (entry) => {
+        let configName = null;
+        let databaseName = null;
+        let projectName = null;
+        
+        if (entry.importConfigId) {
+          const importConfig = await storage.getImportConfig(entry.importConfigId);
+          if (importConfig) {
+            configName = importConfig.name;
+            
+            const dbConfig = await storage.getExternalDatabaseConfig(importConfig.externalDbConfigId);
+            if (dbConfig) {
+              databaseName = dbConfig.name;
+              
+              const project = await storage.getProject(dbConfig.projectId);
+              projectName = project?.name || null;
+            }
+          }
+        }
+        
+        return { ...entry, configName, databaseName, projectName };
+      }));
+      
+      res.json(enrichedHistory);
+    } catch (error) {
+      console.error("Error fetching import history:", error);
+      res.status(500).json({ message: "Failed to fetch import history" });
+    }
+  });
+
+  app.get("/api/import-history/download", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const history = await storage.getAllImportHistory(10000);
+      
+      // Enrich with config name, database name, and project name
+      const enrichedHistory = await Promise.all(history.map(async (entry) => {
+        let configName = "";
+        let databaseName = "";
+        let projectName = "";
+        
+        if (entry.importConfigId) {
+          const importConfig = await storage.getImportConfig(entry.importConfigId);
+          if (importConfig) {
+            configName = importConfig.name;
+            
+            const dbConfig = await storage.getExternalDatabaseConfig(importConfig.externalDbConfigId);
+            if (dbConfig) {
+              databaseName = dbConfig.name;
+              
+              const project = await storage.getProject(dbConfig.projectId);
+              projectName = project?.name || "";
+            }
+          }
+        }
+        
+        return { ...entry, configName, databaseName, projectName };
+      }));
+      
+      // Create CSV content
+      const csvHeaders = ["ID", "Date", "Project", "Database", "Import Config", "Status", "Records Imported", "Records Failed", "Completed At", "Error Details"];
+      const csvRows = enrichedHistory.map(entry => [
+        entry.id,
+        entry.startedAt ? new Date(entry.startedAt).toISOString() : "",
+        entry.projectName || "",
+        entry.databaseName || "",
+        entry.configName || "",
+        entry.status || "",
+        entry.recordsImported || 0,
+        entry.recordsFailed || 0,
+        entry.completedAt ? new Date(entry.completedAt).toISOString() : "",
+        (entry.errorDetails || "").replace(/"/g, '""').replace(/\n/g, " ")
+      ]);
+      
+      const csvContent = [
+        csvHeaders.join(","),
+        ...csvRows.map(row => row.map(cell => `"${cell}"`).join(","))
+      ].join("\n");
+      
+      const filename = `external_db_import_history_${new Date().toISOString().slice(0, 10)}.csv`;
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(csvContent);
+    } catch (error) {
+      console.error("Error downloading import history:", error);
+      res.status(500).json({ message: "Failed to download import history" });
+    }
+  });
+
   // Database backup/restore endpoints (Admin only)
   
   // Get database stats for a project

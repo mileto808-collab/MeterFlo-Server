@@ -17,7 +17,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Moon, Sun, User as UserIcon, Shield, FolderOpen, Save, FileUp, Users, Plus, Pencil, Trash2, UsersRound, Clock, Copy, Gauge, Download, History } from "lucide-react";
-import type { Subrole, Permission, WorkOrderStatus, UserGroup, User, TroubleCode, ServiceTypeRecord, MeterType, Project, FileImportHistory } from "@shared/schema";
+import type { Subrole, Permission, WorkOrderStatus, UserGroup, User, TroubleCode, ServiceTypeRecord, MeterType, Project, FileImportHistory, ImportHistory } from "@shared/schema";
+import { Database } from "lucide-react";
 import { Wrench } from "lucide-react";
 import { AlertTriangle } from "lucide-react";
 
@@ -231,6 +232,12 @@ export default function Settings() {
   // File Import History query
   const { data: fileImportHistoryList, isLoading: loadingImportHistory } = useQuery<(FileImportHistory & { projectName?: string })[]>({
     queryKey: ["/api/file-import-history"],
+    enabled: user?.role === "admin",
+  });
+
+  // External Database Import History query
+  const { data: externalDbImportHistoryList, isLoading: loadingExternalDbImportHistory } = useQuery<(ImportHistory & { configName?: string; databaseName?: string; projectName?: string })[]>({
+    queryKey: ["/api/import-history"],
     enabled: user?.role === "admin",
   });
 
@@ -1267,6 +1274,75 @@ export default function Settings() {
                   </div>
                 ) : (
                   <p className="text-muted-foreground">No import history found.</p>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <Database className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <CardTitle>External Database Import History</CardTitle>
+                      <CardDescription className="mt-1">View all external database import attempts and their results</CardDescription>
+                    </div>
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={() => window.location.href = "/api/import-history/download"}
+                    data-testid="button-download-external-db-import-history"
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Download CSV
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {loadingExternalDbImportHistory ? (
+                  <p className="text-muted-foreground">Loading...</p>
+                ) : externalDbImportHistoryList && externalDbImportHistoryList.length > 0 ? (
+                  <div className="max-h-96 overflow-y-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Project</TableHead>
+                          <TableHead>Database</TableHead>
+                          <TableHead>Config</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="text-right">Imported</TableHead>
+                          <TableHead className="text-right">Failed</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {externalDbImportHistoryList.slice(0, 50).map((entry) => (
+                          <TableRow key={entry.id} data-testid={`row-external-db-import-history-${entry.id}`}>
+                            <TableCell className="text-sm">
+                              {entry.startedAt ? new Date(entry.startedAt).toLocaleString() : "—"}
+                            </TableCell>
+                            <TableCell>{entry.projectName || "—"}</TableCell>
+                            <TableCell>{entry.databaseName || "—"}</TableCell>
+                            <TableCell className="max-w-32 truncate" title={entry.configName || ""}>
+                              {entry.configName || "—"}
+                            </TableCell>
+                            <TableCell>
+                              <Badge 
+                                variant={entry.status === "success" ? "default" : entry.status === "failed" ? "destructive" : "secondary"}
+                                className="capitalize"
+                              >
+                                {entry.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">{entry.recordsImported || 0}</TableCell>
+                            <TableCell className="text-right">{entry.recordsFailed || 0}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground">No external database import history found.</p>
                 )}
               </CardContent>
             </Card>

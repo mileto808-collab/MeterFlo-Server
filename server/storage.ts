@@ -133,6 +133,7 @@ export interface IStorage {
 
   // Import history operations
   getImportHistory(importConfigId: number, limit?: number): Promise<ImportHistory[]>;
+  getAllImportHistory(limit?: number): Promise<ImportHistory[]>;
   createImportHistoryEntry(importConfigId: number, status: string): Promise<ImportHistory>;
   updateImportHistoryEntry(id: number, status: string, recordsImported: number, recordsFailed: number, errorDetails?: string | null): Promise<ImportHistory | undefined>;
 
@@ -734,6 +735,14 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(importHistory)
       .where(eq(importHistory.importConfigId, importConfigId))
+      .orderBy(desc(importHistory.startedAt))
+      .limit(limit);
+  }
+
+  async getAllImportHistory(limit: number = 500): Promise<ImportHistory[]> {
+    return await db
+      .select()
+      .from(importHistory)
       .orderBy(desc(importHistory.startedAt))
       .limit(limit);
   }
