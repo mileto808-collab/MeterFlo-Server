@@ -131,11 +131,27 @@ export default function Users() {
 
   const { visibleColumns, setVisibleColumns, isColumnVisible, isLoading: columnPrefsLoading } = useColumnPreferences("users", userColumns);
 
-  // Filter configuration for users page
+  // Filter configuration for users page - matches column configuration
   const userFilters: FilterConfig[] = useMemo(() => [
+    { key: "searchQuery", label: "Search Text" },
+    { key: "user", label: "User" },
+    { key: "username", label: "Username" },
+    { key: "email", label: "Email" },
+    { key: "firstName", label: "First Name" },
+    { key: "lastName", label: "Last Name" },
     { key: "role", label: "Role" },
+    { key: "accessLevel", label: "Access Level" },
+    { key: "projects", label: "Projects" },
     { key: "status", label: "Status" },
-    { key: "subrole", label: "Access Level" },
+    { key: "isLocked", label: "Is Locked" },
+    { key: "lockedReason", label: "Locked Reason" },
+    { key: "lastLogin", label: "Last Login" },
+    { key: "address", label: "Address" },
+    { key: "city", label: "City" },
+    { key: "state", label: "State" },
+    { key: "zip", label: "ZIP" },
+    { key: "phone", label: "Phone" },
+    { key: "website", label: "Website" },
   ], []);
 
   const { visibleFilters, setVisibleFilters, isFilterVisible, isLoading: filterPrefsLoading } = useFilterPreferences("users", userFilters);
@@ -1001,10 +1017,12 @@ export default function Users() {
       <Card>
         <CardHeader className="pb-4">
           <div className="flex flex-wrap items-center gap-3">
-            <div className="relative flex-1 min-w-[200px] max-w-md">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Search users..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9" data-testid="input-search-users" />
-            </div>
+            {isFilterVisible("searchQuery") && (
+              <div className="relative flex-1 min-w-[200px] max-w-md">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input placeholder="Search users..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9" data-testid="input-search-users" />
+              </div>
+            )}
             {isFilterVisible("role") && (
               <Select value={roleFilter} onValueChange={setRoleFilter}>
                 <SelectTrigger className="w-[140px]" data-testid="select-filter-role">

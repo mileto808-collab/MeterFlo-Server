@@ -102,6 +102,10 @@ export default function ProjectWorkOrders() {
   const [selectedServiceType, setSelectedServiceType] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [selectedAssignedTo, setSelectedAssignedTo] = useState<string>("all");
+  const [selectedTrouble, setSelectedTrouble] = useState<string>("all");
+  const [selectedOldMeterType, setSelectedOldMeterType] = useState<string>("all");
+  const [selectedNewMeterType, setSelectedNewMeterType] = useState<string>("all");
   const [showFilters, setShowFilters] = useState(false);
   const [createMeterTypeOpen, setCreateMeterTypeOpen] = useState(false);
   const [meterTypeField, setMeterTypeField] = useState<"oldMeterType" | "newMeterType" | "editOldMeterType" | "editNewMeterType" | null>(null);
@@ -149,12 +153,40 @@ export default function ProjectWorkOrders() {
 
   const { visibleColumns, setVisibleColumns, isColumnVisible, isLoading: columnPrefsLoading } = useColumnPreferences("work_orders", workOrderColumns);
 
-  // Filter configuration for the work orders page
+  // Filter configuration for the work orders page - matches column configuration
   const workOrderFilters: FilterConfig[] = useMemo(() => [
-    { key: "status", label: "Status" },
+    { key: "customerWoId", label: "WO ID" },
+    { key: "customerId", label: "Customer ID" },
+    { key: "customerName", label: "Customer Name" },
+    { key: "address", label: "Address" },
+    { key: "city", label: "City" },
+    { key: "state", label: "State" },
+    { key: "zip", label: "ZIP" },
+    { key: "phone", label: "Phone" },
+    { key: "email", label: "Email" },
+    { key: "route", label: "Route" },
+    { key: "zone", label: "Zone" },
     { key: "serviceType", label: "Service Type" },
-    { key: "dateFrom", label: "Created From" },
-    { key: "dateTo", label: "Created To" },
+    { key: "oldMeterId", label: "Old Meter ID" },
+    { key: "oldMeterReading", label: "Old Meter Reading" },
+    { key: "oldMeterType", label: "Old Meter Type" },
+    { key: "newMeterId", label: "New Meter ID" },
+    { key: "newMeterReading", label: "New Meter Reading" },
+    { key: "newMeterType", label: "New Meter Type" },
+    { key: "oldGps", label: "Old GPS" },
+    { key: "newGps", label: "New GPS" },
+    { key: "status", label: "Status" },
+    { key: "scheduledDate", label: "Scheduled Date" },
+    { key: "assignedTo", label: "Assigned To" },
+    { key: "createdBy", label: "Created By" },
+    { key: "updatedBy", label: "Updated By" },
+    { key: "completedAt", label: "Completed At" },
+    { key: "trouble", label: "Trouble" },
+    { key: "notes", label: "Notes" },
+    { key: "createdAt", label: "Created At" },
+    { key: "updatedAt", label: "Updated At" },
+    { key: "dateFrom", label: "Date From" },
+    { key: "dateTo", label: "Date To" },
   ], []);
 
   const { visibleFilters, setVisibleFilters, isFilterVisible, isLoading: filterPrefsLoading } = useFilterPreferences("work-orders", workOrderFilters);
@@ -659,6 +691,72 @@ export default function ProjectWorkOrders() {
       result = result.filter(wo => wo.createdAt && new Date(wo.createdAt) <= toDate);
     }
     
+    // Filter by assigned to (exact match - both dropdown and work order use display label)
+    if (selectedAssignedTo !== "all") {
+      result = result.filter(wo => wo.assignedTo === selectedAssignedTo);
+    }
+    
+    // Filter by trouble code (handle null, empty, whitespace, array/JSON, and comma-delimited values)
+    if (selectedTrouble !== "all") {
+      if (selectedTrouble === "none") {
+        result = result.filter(wo => {
+          const trouble = (wo as any).trouble;
+          if (!trouble || trouble === null) return true;
+          const troubleStr = String(trouble).trim();
+          if (troubleStr === "" || troubleStr === "[]" || troubleStr === "null") return true;
+          return false;
+        });
+      } else {
+        result = result.filter(wo => {
+          const trouble = (wo as any).trouble;
+          if (!trouble) return false;
+          const troubleStr = String(trouble);
+          // Handle JSON array format
+          if (troubleStr.startsWith("[")) {
+            try {
+              const troubleArray = JSON.parse(troubleStr);
+              if (Array.isArray(troubleArray)) {
+                return troubleArray.some(t => String(t).trim() === selectedTrouble);
+              }
+            } catch {
+              // Not valid JSON, fall through to comma-split
+            }
+          }
+          // Handle comma-delimited format
+          const troubleValues = troubleStr.split(",").map(t => t.trim());
+          return troubleValues.includes(selectedTrouble);
+        });
+      }
+    }
+    
+    // Filter by old meter type (handle both productId and productLabel formats)
+    if (selectedOldMeterType !== "all") {
+      result = result.filter(wo => {
+        const oldMeterType = (wo as any).oldMeterType;
+        if (!oldMeterType) return false;
+        // Direct match with productId
+        if (oldMeterType === selectedOldMeterType) return true;
+        // Check if it matches the productLabel of the selected meter type
+        const selectedMeterType = meterTypes.find(mt => mt.productId === selectedOldMeterType);
+        if (selectedMeterType && oldMeterType === selectedMeterType.productLabel) return true;
+        return false;
+      });
+    }
+    
+    // Filter by new meter type (handle both productId and productLabel formats)
+    if (selectedNewMeterType !== "all") {
+      result = result.filter(wo => {
+        const newMeterType = (wo as any).newMeterType;
+        if (!newMeterType) return false;
+        // Direct match with productId
+        if (newMeterType === selectedNewMeterType) return true;
+        // Check if it matches the productLabel of the selected meter type
+        const selectedMeterType = meterTypes.find(mt => mt.productId === selectedNewMeterType);
+        if (selectedMeterType && newMeterType === selectedMeterType.productLabel) return true;
+        return false;
+      });
+    }
+    
     // Sort
     if (sortColumn) {
       result.sort((a, b) => {
@@ -670,7 +768,7 @@ export default function ProjectWorkOrders() {
     }
     
     return result;
-  }, [workOrders, searchQuery, sortColumn, sortDirection, selectedStatus, selectedServiceType, dateFrom, dateTo]);
+  }, [workOrders, searchQuery, sortColumn, sortDirection, selectedStatus, selectedServiceType, dateFrom, dateTo, selectedAssignedTo, selectedTrouble, selectedOldMeterType, selectedNewMeterType, meterTypes]);
 
   const clearFilters = () => {
     setSearchQuery("");
@@ -678,9 +776,13 @@ export default function ProjectWorkOrders() {
     setSelectedServiceType("all");
     setDateFrom("");
     setDateTo("");
+    setSelectedAssignedTo("all");
+    setSelectedTrouble("all");
+    setSelectedOldMeterType("all");
+    setSelectedNewMeterType("all");
   };
 
-  const hasActiveFilters = selectedStatus !== "all" || selectedServiceType !== "all" || dateFrom !== "" || dateTo !== "";
+  const hasActiveFilters = selectedStatus !== "all" || selectedServiceType !== "all" || dateFrom !== "" || dateTo !== "" || selectedAssignedTo !== "all" || selectedTrouble !== "all" || selectedOldMeterType !== "all" || selectedNewMeterType !== "all";
 
   const exportToCSV = () => {
     if (!filteredAndSortedWorkOrders.length) {
@@ -2467,6 +2569,18 @@ export default function ProjectWorkOrders() {
           
           {showFilters && (
             <div className="flex flex-wrap gap-4 mt-4 pt-4 border-t">
+              {isFilterVisible("customerWoId") && (
+                <div className="min-w-[200px] flex-1 max-w-md">
+                  <Label htmlFor="filter-search">Search</Label>
+                  <Input
+                    id="filter-search"
+                    placeholder="Search WO ID, name, address, meter..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    data-testid="input-filter-search"
+                  />
+                </div>
+              )}
               {isFilterVisible("status") && (
                 <div className="min-w-[180px]">
                   <Label htmlFor="filter-status">Status</Label>
@@ -2521,6 +2635,74 @@ export default function ProjectWorkOrders() {
                     onChange={(e) => setDateTo(e.target.value)}
                     data-testid="input-filter-date-to"
                   />
+                </div>
+              )}
+              {isFilterVisible("assignedTo") && assigneesData && (
+                <div className="min-w-[180px]">
+                  <Label htmlFor="filter-assigned-to">Assigned To</Label>
+                  <Select value={selectedAssignedTo} onValueChange={setSelectedAssignedTo}>
+                    <SelectTrigger id="filter-assigned-to" data-testid="select-filter-assigned-to">
+                      <SelectValue placeholder="All Assignees" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Assignees</SelectItem>
+                      {assigneesData.users.map((user) => (
+                        <SelectItem key={user.id} value={user.label}>{user.label}</SelectItem>
+                      ))}
+                      {assigneesData.groups.map((group) => (
+                        <SelectItem key={group.id} value={group.label}>{group.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {isFilterVisible("trouble") && troubleCodes.length > 0 && (
+                <div className="min-w-[180px]">
+                  <Label htmlFor="filter-trouble">Trouble Code</Label>
+                  <Select value={selectedTrouble} onValueChange={setSelectedTrouble}>
+                    <SelectTrigger id="filter-trouble" data-testid="select-filter-trouble">
+                      <SelectValue placeholder="All Trouble Codes" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Trouble Codes</SelectItem>
+                      <SelectItem value="none">No Trouble</SelectItem>
+                      {troubleCodes.map((tc) => (
+                        <SelectItem key={tc.id} value={tc.code}>{tc.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {isFilterVisible("oldMeterType") && meterTypes.length > 0 && (
+                <div className="min-w-[180px]">
+                  <Label htmlFor="filter-old-meter-type">Old Meter Type</Label>
+                  <Select value={selectedOldMeterType} onValueChange={setSelectedOldMeterType}>
+                    <SelectTrigger id="filter-old-meter-type" data-testid="select-filter-old-meter-type">
+                      <SelectValue placeholder="All Meter Types" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Meter Types</SelectItem>
+                      {meterTypes.map((mt) => (
+                        <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {isFilterVisible("newMeterType") && meterTypes.length > 0 && (
+                <div className="min-w-[180px]">
+                  <Label htmlFor="filter-new-meter-type">New Meter Type</Label>
+                  <Select value={selectedNewMeterType} onValueChange={setSelectedNewMeterType}>
+                    <SelectTrigger id="filter-new-meter-type" data-testid="select-filter-new-meter-type">
+                      <SelectValue placeholder="All Meter Types" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Meter Types</SelectItem>
+                      {meterTypes.map((mt) => (
+                        <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               )}
             </div>
