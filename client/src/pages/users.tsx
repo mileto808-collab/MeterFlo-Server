@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ColumnSelector, type ColumnConfig } from "@/components/column-selector";
+import { useColumnPreferences } from "@/hooks/use-column-preferences";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -102,6 +104,20 @@ export default function Users() {
   const { data: users, isLoading } = useQuery<User[]>({ queryKey: ["/api/users"] });
   const { data: projects } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
   const { data: subroles } = useQuery<Subrole[]>({ queryKey: ["/api/subroles"] });
+
+  // Column configuration for the users table
+  const userColumns: ColumnConfig[] = useMemo(() => [
+    { key: "user", label: "User", required: true },
+    { key: "email", label: "Email" },
+    { key: "role", label: "Role" },
+    { key: "accessLevel", label: "Access Level" },
+    { key: "projects", label: "Projects" },
+    { key: "status", label: "Status" },
+    { key: "createdAt", label: "Joined" },
+    { key: "lastLogin", label: "Last Login" },
+  ], []);
+
+  const { visibleColumns, setVisibleColumns, isColumnVisible, isLoading: columnPrefsLoading } = useColumnPreferences("users", userColumns);
   
   // Fetch assigned projects for selected user
   const { data: selectedUserProjects, isLoading: loadingUserProjects } = useQuery<Project[]>({
@@ -1009,6 +1025,13 @@ export default function Users() {
                 Clear
               </Button>
             )}
+            <div className="flex-1" />
+            <ColumnSelector
+              allColumns={userColumns}
+              visibleColumns={visibleColumns}
+              onChange={setVisibleColumns}
+              disabled={columnPrefsLoading}
+            />
           </div>
           {hasActiveFilters && (
             <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
@@ -1035,149 +1058,175 @@ export default function Users() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="flex items-center p-0 h-auto hover:bg-transparent"
-                        onClick={() => handleSort("name")}
-                        data-testid="sort-name"
-                      >
-                        User
-                        {getSortIcon("name")}
-                      </Button>
-                    </TableHead>
-                    <TableHead>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="flex items-center p-0 h-auto hover:bg-transparent"
-                        onClick={() => handleSort("email")}
-                        data-testid="sort-email"
-                      >
-                        Email
-                        {getSortIcon("email")}
-                      </Button>
-                    </TableHead>
-                    <TableHead>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="flex items-center p-0 h-auto hover:bg-transparent"
-                        onClick={() => handleSort("role")}
-                        data-testid="sort-role"
-                      >
-                        Role
-                        {getSortIcon("role")}
-                      </Button>
-                    </TableHead>
-                    <TableHead>Access Level</TableHead>
-                    <TableHead>Projects</TableHead>
-                    <TableHead>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="flex items-center p-0 h-auto hover:bg-transparent"
-                        onClick={() => handleSort("status")}
-                        data-testid="sort-status"
-                      >
-                        Status
-                        {getSortIcon("status")}
-                      </Button>
-                    </TableHead>
-                    <TableHead>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="flex items-center p-0 h-auto hover:bg-transparent"
-                        onClick={() => handleSort("createdAt")}
-                        data-testid="sort-joined"
-                      >
-                        Joined
-                        {getSortIcon("createdAt")}
-                      </Button>
-                    </TableHead>
-                    <TableHead>Last Login</TableHead>
+                    {isColumnVisible("user") && (
+                      <TableHead>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="flex items-center p-0 h-auto hover:bg-transparent"
+                          onClick={() => handleSort("name")}
+                          data-testid="sort-name"
+                        >
+                          User
+                          {getSortIcon("name")}
+                        </Button>
+                      </TableHead>
+                    )}
+                    {isColumnVisible("email") && (
+                      <TableHead>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="flex items-center p-0 h-auto hover:bg-transparent"
+                          onClick={() => handleSort("email")}
+                          data-testid="sort-email"
+                        >
+                          Email
+                          {getSortIcon("email")}
+                        </Button>
+                      </TableHead>
+                    )}
+                    {isColumnVisible("role") && (
+                      <TableHead>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="flex items-center p-0 h-auto hover:bg-transparent"
+                          onClick={() => handleSort("role")}
+                          data-testid="sort-role"
+                        >
+                          Role
+                          {getSortIcon("role")}
+                        </Button>
+                      </TableHead>
+                    )}
+                    {isColumnVisible("accessLevel") && <TableHead>Access Level</TableHead>}
+                    {isColumnVisible("projects") && <TableHead>Projects</TableHead>}
+                    {isColumnVisible("status") && (
+                      <TableHead>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="flex items-center p-0 h-auto hover:bg-transparent"
+                          onClick={() => handleSort("status")}
+                          data-testid="sort-status"
+                        >
+                          Status
+                          {getSortIcon("status")}
+                        </Button>
+                      </TableHead>
+                    )}
+                    {isColumnVisible("createdAt") && (
+                      <TableHead>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="flex items-center p-0 h-auto hover:bg-transparent"
+                          onClick={() => handleSort("createdAt")}
+                          data-testid="sort-joined"
+                        >
+                          Joined
+                          {getSortIcon("createdAt")}
+                        </Button>
+                      </TableHead>
+                    )}
+                    {isColumnVisible("lastLogin") && <TableHead>Last Login</TableHead>}
                     <TableHead className="w-[80px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredUsers.map((user) => (
                     <TableRow key={user.id} data-testid={`row-user-${user.id}`}>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <Avatar className="h-8 w-8">
-                            <AvatarImage src={user.profileImageUrl || undefined} className="object-cover" />
-                            <AvatarFallback>{getInitials(user)}</AvatarFallback>
-                          </Avatar>
-                          <div>
-                            <span className="font-medium block">
-                              {user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.username || "Unknown"}
-                            </span>
-                            {user.username && (
-                              <span className="text-sm text-muted-foreground">@{user.username}</span>
-                            )}
+                      {isColumnVisible("user") && (
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <Avatar className="h-8 w-8">
+                              <AvatarImage src={user.profileImageUrl || undefined} className="object-cover" />
+                              <AvatarFallback>{getInitials(user)}</AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <span className="font-medium block">
+                                {user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.username || "Unknown"}
+                              </span>
+                              {user.username && (
+                                <span className="text-sm text-muted-foreground">@{user.username}</span>
+                              )}
+                            </div>
                           </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">{user.email || "—"}</TableCell>
-                      <TableCell>
-                        <Badge variant={getRoleBadgeVariant(user.role)} data-testid={`badge-role-${user.id}`}>
-                          {user.role}
-                        </Badge>
-                      </TableCell>
-                      <TableCell data-testid={`cell-access-level-${user.id}`}>
-                        {(user.role === "user" || user.role === "customer") && user.subroleId ? (
-                          <Badge variant="outline" className="capitalize">
-                            {subroles?.find(s => s.id === user.subroleId)?.label || "—"}
+                        </TableCell>
+                      )}
+                      {isColumnVisible("email") && (
+                        <TableCell className="text-muted-foreground">{user.email || "—"}</TableCell>
+                      )}
+                      {isColumnVisible("role") && (
+                        <TableCell>
+                          <Badge variant={getRoleBadgeVariant(user.role)} data-testid={`badge-role-${user.id}`}>
+                            {user.role}
                           </Badge>
-                        ) : user.role === "admin" ? (
-                          <span className="text-muted-foreground text-sm">Full Access</span>
-                        ) : user.role === "customer" ? (
-                          <span className="text-muted-foreground text-sm">Read Only</span>
-                        ) : user.role === "user" ? (
-                          <span className="text-muted-foreground text-sm">View Only</span>
-                        ) : (
-                          <span className="text-muted-foreground text-sm">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell data-testid={`cell-projects-${user.id}`}>
-                        {allUsersProjects && allUsersProjects[user.id]?.length > 0 ? (
-                          <div className="flex flex-wrap gap-1 max-w-[200px]">
-                            {allUsersProjects[user.id].slice(0, 3).map((project) => (
-                              <Badge 
-                                key={project.id} 
-                                variant="secondary" 
-                                className="text-xs"
-                                data-testid={`badge-project-${user.id}-${project.id}`}
-                              >
-                                {project.name}
-                              </Badge>
-                            ))}
-                            {allUsersProjects[user.id].length > 3 && (
-                              <Badge variant="outline" className="text-xs">
-                                +{allUsersProjects[user.id].length - 3} more
-                              </Badge>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground text-sm">None</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {user.isLocked ? (
-                          <Badge variant="destructive" data-testid={`badge-status-${user.id}`}>
-                            <Lock className="h-3 w-3 mr-1" />
-                            Locked
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-green-600 border-green-600" data-testid={`badge-status-${user.id}`}>
-                            Active
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>{user.createdAt ? formatCustom(user.createdAt, "MMM d, yyyy") : "—"}</TableCell>
-                      <TableCell>{user.lastLoginAt ? formatDateTime(user.lastLoginAt) : "Never"}</TableCell>
+                        </TableCell>
+                      )}
+                      {isColumnVisible("accessLevel") && (
+                        <TableCell data-testid={`cell-access-level-${user.id}`}>
+                          {(user.role === "user" || user.role === "customer") && user.subroleId ? (
+                            <Badge variant="outline" className="capitalize">
+                              {subroles?.find(s => s.id === user.subroleId)?.label || "—"}
+                            </Badge>
+                          ) : user.role === "admin" ? (
+                            <span className="text-muted-foreground text-sm">Full Access</span>
+                          ) : user.role === "customer" ? (
+                            <span className="text-muted-foreground text-sm">Read Only</span>
+                          ) : user.role === "user" ? (
+                            <span className="text-muted-foreground text-sm">View Only</span>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">—</span>
+                          )}
+                        </TableCell>
+                      )}
+                      {isColumnVisible("projects") && (
+                        <TableCell data-testid={`cell-projects-${user.id}`}>
+                          {allUsersProjects && allUsersProjects[user.id]?.length > 0 ? (
+                            <div className="flex flex-wrap gap-1 max-w-[200px]">
+                              {allUsersProjects[user.id].slice(0, 3).map((project) => (
+                                <Badge 
+                                  key={project.id} 
+                                  variant="secondary" 
+                                  className="text-xs"
+                                  data-testid={`badge-project-${user.id}-${project.id}`}
+                                >
+                                  {project.name}
+                                </Badge>
+                              ))}
+                              {allUsersProjects[user.id].length > 3 && (
+                                <Badge variant="outline" className="text-xs">
+                                  +{allUsersProjects[user.id].length - 3} more
+                                </Badge>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">None</span>
+                          )}
+                        </TableCell>
+                      )}
+                      {isColumnVisible("status") && (
+                        <TableCell>
+                          {user.isLocked ? (
+                            <Badge variant="destructive" data-testid={`badge-status-${user.id}`}>
+                              <Lock className="h-3 w-3 mr-1" />
+                              Locked
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-green-600 border-green-600" data-testid={`badge-status-${user.id}`}>
+                              Active
+                            </Badge>
+                          )}
+                        </TableCell>
+                      )}
+                      {isColumnVisible("createdAt") && (
+                        <TableCell>{user.createdAt ? formatCustom(user.createdAt, "MMM d, yyyy") : "—"}</TableCell>
+                      )}
+                      {isColumnVisible("lastLogin") && (
+                        <TableCell>{user.lastLoginAt ? formatDateTime(user.lastLoginAt) : "Never"}</TableCell>
+                      )}
                       <TableCell>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
