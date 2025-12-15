@@ -25,6 +25,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useTimezone } from "@/hooks/use-timezone";
+import { ColumnSelector, type ColumnConfig } from "@/components/column-selector";
+import { useColumnPreferences } from "@/hooks/use-column-preferences";
 import { Search, Download, FileSpreadsheet, FileText, FileDown, Filter, X, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import type { Project, ServiceTypeRecord, WorkOrderStatus, MeterType } from "@shared/schema";
 import * as XLSX from "xlsx";
@@ -92,6 +94,22 @@ export default function SearchReports() {
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [stateRestored, setStateRestored] = useState(false);
+
+  const columns: ColumnConfig[] = useMemo(() => [
+    { key: "projectName", label: "Project", required: true },
+    { key: "customerWoId", label: "WO ID" },
+    { key: "address", label: "Address" },
+    { key: "serviceType", label: "Service" },
+    { key: "route", label: "Route" },
+    { key: "zone", label: "Zone" },
+    { key: "oldMeterId", label: "Old Meter" },
+    { key: "oldMeterType", label: "Old Meter Type" },
+    { key: "newMeterType", label: "New Meter Type" },
+    { key: "status", label: "Status" },
+    { key: "actions", label: "Actions", required: true },
+  ], []);
+
+  const { visibleColumns, setVisibleColumns, isColumnVisible, isLoading: columnPrefsLoading } = useColumnPreferences("search_reports", columns);
 
   // Restore search state from sessionStorage if returning from work order edit
   useEffect(() => {
@@ -603,6 +621,12 @@ export default function SearchReports() {
                 </div>
                 {searchResults.results.length > 0 && (
                   <div className="flex gap-2 flex-wrap">
+                    <ColumnSelector
+                      allColumns={columns}
+                      visibleColumns={visibleColumns}
+                      onChange={setVisibleColumns}
+                      disabled={columnPrefsLoading}
+                    />
                     <Button variant="outline" size="sm" onClick={exportToCSV} data-testid="button-export-csv">
                       <FileText className="h-4 w-4 mr-2" />
                       CSV
@@ -630,75 +654,96 @@ export default function SearchReports() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('projectName')} data-testid="header-project">
-                          Project{getSortIcon('projectName')}
-                        </TableHead>
-                        <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('customerWoId')} data-testid="header-wo-id">
-                          WO ID{getSortIcon('customerWoId')}
-                        </TableHead>
-                        <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('address')} data-testid="header-address">
-                          Address{getSortIcon('address')}
-                        </TableHead>
-                        <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('serviceType')} data-testid="header-service">
-                          Service{getSortIcon('serviceType')}
-                        </TableHead>
-                        <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('route')} data-testid="header-route">
-                          Route{getSortIcon('route')}
-                        </TableHead>
-                        <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('zone')} data-testid="header-zone">
-                          Zone{getSortIcon('zone')}
-                        </TableHead>
-                        <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('oldMeterId')} data-testid="header-old-meter">
-                          Old Meter{getSortIcon('oldMeterId')}
-                        </TableHead>
-                        <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('oldMeterType')} data-testid="header-old-meter-type">
-                          Old Meter Type{getSortIcon('oldMeterType')}
-                        </TableHead>
-                        <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('newMeterType')} data-testid="header-new-meter-type">
-                          New Meter Type{getSortIcon('newMeterType')}
-                        </TableHead>
-                        <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('status')} data-testid="header-status">
-                          Status{getSortIcon('status')}
-                        </TableHead>
-                        <TableHead>Actions</TableHead>
+                        {isColumnVisible("projectName") && (
+                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('projectName')} data-testid="header-project">
+                            Project{getSortIcon('projectName')}
+                          </TableHead>
+                        )}
+                        {isColumnVisible("customerWoId") && (
+                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('customerWoId')} data-testid="header-wo-id">
+                            WO ID{getSortIcon('customerWoId')}
+                          </TableHead>
+                        )}
+                        {isColumnVisible("address") && (
+                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('address')} data-testid="header-address">
+                            Address{getSortIcon('address')}
+                          </TableHead>
+                        )}
+                        {isColumnVisible("serviceType") && (
+                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('serviceType')} data-testid="header-service">
+                            Service{getSortIcon('serviceType')}
+                          </TableHead>
+                        )}
+                        {isColumnVisible("route") && (
+                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('route')} data-testid="header-route">
+                            Route{getSortIcon('route')}
+                          </TableHead>
+                        )}
+                        {isColumnVisible("zone") && (
+                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('zone')} data-testid="header-zone">
+                            Zone{getSortIcon('zone')}
+                          </TableHead>
+                        )}
+                        {isColumnVisible("oldMeterId") && (
+                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('oldMeterId')} data-testid="header-old-meter">
+                            Old Meter{getSortIcon('oldMeterId')}
+                          </TableHead>
+                        )}
+                        {isColumnVisible("oldMeterType") && (
+                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('oldMeterType')} data-testid="header-old-meter-type">
+                            Old Meter Type{getSortIcon('oldMeterType')}
+                          </TableHead>
+                        )}
+                        {isColumnVisible("newMeterType") && (
+                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('newMeterType')} data-testid="header-new-meter-type">
+                            New Meter Type{getSortIcon('newMeterType')}
+                          </TableHead>
+                        )}
+                        {isColumnVisible("status") && (
+                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('status')} data-testid="header-status">
+                            Status{getSortIcon('status')}
+                          </TableHead>
+                        )}
+                        {isColumnVisible("actions") && <TableHead>Actions</TableHead>}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {sortedResults.map((result, index) => (
                         <TableRow key={`${result.projectId}-${result.workOrder.id}-${index}`} data-testid={`row-result-${index}`}>
-                          <TableCell>{result.projectName}</TableCell>
-                          <TableCell className="font-medium">{result.workOrder.customerWoId || "-"}</TableCell>
-                          <TableCell className="max-w-xs truncate">{result.workOrder.address || "-"}</TableCell>
-                          <TableCell>{getServiceTypeBadge(result.workOrder.serviceType)}</TableCell>
-                          <TableCell>{result.workOrder.route || "-"}</TableCell>
-                          <TableCell>{result.workOrder.zone || "-"}</TableCell>
-                          <TableCell>{result.workOrder.oldMeterId || "-"}</TableCell>
-                          <TableCell>{result.workOrder.oldMeterType || "-"}</TableCell>
-                          <TableCell>{result.workOrder.newMeterType || "-"}</TableCell>
-                          <TableCell>{getStatusBadge(result.workOrder.status)}</TableCell>
-                          <TableCell>
-                            <Link 
-                              href={`/projects/${result.projectId}/work-orders?edit=${result.workOrder.id}&from=search`}
-                              onClick={() => {
-                                // Store search state in sessionStorage before navigating
-                                const searchState = {
-                                  searchQuery,
-                                  selectedProject,
-                                  selectedStatus,
-                                  selectedServiceType,
-                                  selectedMeterType,
-                                  dateFrom,
-                                  dateTo,
-                                  isSearchActive,
-                                };
-                                sessionStorage.setItem('searchReportsState', JSON.stringify(searchState));
-                              }}
-                            >
-                              <Button variant="ghost" size="sm" data-testid={`button-view-${index}`}>
-                                View
-                              </Button>
-                            </Link>
-                          </TableCell>
+                          {isColumnVisible("projectName") && <TableCell>{result.projectName}</TableCell>}
+                          {isColumnVisible("customerWoId") && <TableCell className="font-medium">{result.workOrder.customerWoId || "-"}</TableCell>}
+                          {isColumnVisible("address") && <TableCell className="max-w-xs truncate">{result.workOrder.address || "-"}</TableCell>}
+                          {isColumnVisible("serviceType") && <TableCell>{getServiceTypeBadge(result.workOrder.serviceType)}</TableCell>}
+                          {isColumnVisible("route") && <TableCell>{result.workOrder.route || "-"}</TableCell>}
+                          {isColumnVisible("zone") && <TableCell>{result.workOrder.zone || "-"}</TableCell>}
+                          {isColumnVisible("oldMeterId") && <TableCell>{result.workOrder.oldMeterId || "-"}</TableCell>}
+                          {isColumnVisible("oldMeterType") && <TableCell>{result.workOrder.oldMeterType || "-"}</TableCell>}
+                          {isColumnVisible("newMeterType") && <TableCell>{result.workOrder.newMeterType || "-"}</TableCell>}
+                          {isColumnVisible("status") && <TableCell>{getStatusBadge(result.workOrder.status)}</TableCell>}
+                          {isColumnVisible("actions") && (
+                            <TableCell>
+                              <Link 
+                                href={`/projects/${result.projectId}/work-orders?edit=${result.workOrder.id}&from=search`}
+                                onClick={() => {
+                                  const searchState = {
+                                    searchQuery,
+                                    selectedProject,
+                                    selectedStatus,
+                                    selectedServiceType,
+                                    selectedMeterType,
+                                    dateFrom,
+                                    dateTo,
+                                    isSearchActive,
+                                  };
+                                  sessionStorage.setItem('searchReportsState', JSON.stringify(searchState));
+                                }}
+                              >
+                                <Button variant="ghost" size="sm" data-testid={`button-view-${index}`}>
+                                  View
+                                </Button>
+                              </Link>
+                            </TableCell>
+                          )}
                         </TableRow>
                       ))}
                     </TableBody>

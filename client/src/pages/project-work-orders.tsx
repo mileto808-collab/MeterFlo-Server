@@ -6,6 +6,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
+import { ColumnSelector, type ColumnConfig } from "@/components/column-selector";
+import { useColumnPreferences } from "@/hooks/use-column-preferences";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -108,6 +110,19 @@ export default function ProjectWorkOrders() {
 
   const signaturePadRef = useRef<SignaturePadRef>(null);
   const editSignaturePadRef = useRef<SignaturePadRef>(null);
+
+  // Column configuration for the work orders table
+  const workOrderColumns: ColumnConfig[] = useMemo(() => [
+    { key: "customerWoId", label: "WO ID", required: true },
+    { key: "address", label: "Address" },
+    { key: "serviceType", label: "Service" },
+    { key: "route", label: "Route" },
+    { key: "zone", label: "Zone" },
+    { key: "oldMeterId", label: "Old Meter" },
+    { key: "status", label: "Status" },
+  ], []);
+
+  const { visibleColumns, setVisibleColumns, isColumnVisible, isLoading: columnPrefsLoading } = useColumnPreferences("work_orders", workOrderColumns);
 
   const form = useForm<WorkOrderFormData>({
     resolver: zodResolver(workOrderFormSchema),
@@ -2388,6 +2403,12 @@ export default function ProjectWorkOrders() {
             )}
             <div className="flex-1" />
             <div className="flex items-center gap-2">
+              <ColumnSelector
+                allColumns={workOrderColumns}
+                visibleColumns={visibleColumns}
+                onChange={setVisibleColumns}
+                disabled={columnPrefsLoading}
+              />
               <Button variant="outline" onClick={exportToCSV} data-testid="button-export-csv">
                 <Download className="h-4 w-4 mr-2" />
                 CSV
@@ -2485,60 +2506,88 @@ export default function ProjectWorkOrders() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort("customerWoId")}>
-                      WO ID {getSortIcon("customerWoId")}
-                    </TableHead>
-                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort("address")}>
-                      Address {getSortIcon("address")}
-                    </TableHead>
-                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort("serviceType")}>
-                      Service {getSortIcon("serviceType")}
-                    </TableHead>
-                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort("route")}>
-                      Route {getSortIcon("route")}
-                    </TableHead>
-                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort("zone")}>
-                      Zone {getSortIcon("zone")}
-                    </TableHead>
-                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort("oldMeterId")}>
-                      Old Meter {getSortIcon("oldMeterId")}
-                    </TableHead>
-                    <TableHead className="cursor-pointer select-none" onClick={() => handleSort("status")}>
-                      Status {getSortIcon("status")}
-                    </TableHead>
+                    {isColumnVisible("customerWoId") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("customerWoId")}>
+                        WO ID {getSortIcon("customerWoId")}
+                      </TableHead>
+                    )}
+                    {isColumnVisible("address") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("address")}>
+                        Address {getSortIcon("address")}
+                      </TableHead>
+                    )}
+                    {isColumnVisible("serviceType") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("serviceType")}>
+                        Service {getSortIcon("serviceType")}
+                      </TableHead>
+                    )}
+                    {isColumnVisible("route") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("route")}>
+                        Route {getSortIcon("route")}
+                      </TableHead>
+                    )}
+                    {isColumnVisible("zone") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("zone")}>
+                        Zone {getSortIcon("zone")}
+                      </TableHead>
+                    )}
+                    {isColumnVisible("oldMeterId") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("oldMeterId")}>
+                        Old Meter {getSortIcon("oldMeterId")}
+                      </TableHead>
+                    )}
+                    {isColumnVisible("status") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("status")}>
+                        Status {getSortIcon("status")}
+                      </TableHead>
+                    )}
                     {user?.role !== "customer" && <TableHead>Actions</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredAndSortedWorkOrders.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={visibleColumns.length + 1} className="text-center py-8 text-muted-foreground">
                         No work orders match your search
                       </TableCell>
                     </TableRow>
                   ) : filteredAndSortedWorkOrders.map((workOrder) => (
                     <TableRow key={workOrder.id} data-testid={`row-work-order-${workOrder.id}`}>
-                      <TableCell className="font-medium" data-testid={`text-wo-id-${workOrder.id}`}>
-                        {workOrder.customerWoId || "-"}
-                      </TableCell>
-                      <TableCell data-testid={`text-address-${workOrder.id}`}>
-                        {workOrder.address || "-"}
-                      </TableCell>
-                      <TableCell data-testid={`text-service-${workOrder.id}`}>
-                        {getServiceTypeBadge(workOrder.serviceType)}
-                      </TableCell>
-                      <TableCell data-testid={`text-route-${workOrder.id}`}>
-                        {workOrder.route || "-"}
-                      </TableCell>
-                      <TableCell data-testid={`text-zone-${workOrder.id}`}>
-                        {workOrder.zone || "-"}
-                      </TableCell>
-                      <TableCell data-testid={`text-old-meter-${workOrder.id}`}>
-                        {workOrder.oldMeterId || "-"}
-                      </TableCell>
-                      <TableCell data-testid={`text-status-${workOrder.id}`}>
-                        {getStatusBadge(workOrder.status)}
-                      </TableCell>
+                      {isColumnVisible("customerWoId") && (
+                        <TableCell className="font-medium" data-testid={`text-wo-id-${workOrder.id}`}>
+                          {workOrder.customerWoId || "-"}
+                        </TableCell>
+                      )}
+                      {isColumnVisible("address") && (
+                        <TableCell data-testid={`text-address-${workOrder.id}`}>
+                          {workOrder.address || "-"}
+                        </TableCell>
+                      )}
+                      {isColumnVisible("serviceType") && (
+                        <TableCell data-testid={`text-service-${workOrder.id}`}>
+                          {getServiceTypeBadge(workOrder.serviceType)}
+                        </TableCell>
+                      )}
+                      {isColumnVisible("route") && (
+                        <TableCell data-testid={`text-route-${workOrder.id}`}>
+                          {workOrder.route || "-"}
+                        </TableCell>
+                      )}
+                      {isColumnVisible("zone") && (
+                        <TableCell data-testid={`text-zone-${workOrder.id}`}>
+                          {workOrder.zone || "-"}
+                        </TableCell>
+                      )}
+                      {isColumnVisible("oldMeterId") && (
+                        <TableCell data-testid={`text-old-meter-${workOrder.id}`}>
+                          {workOrder.oldMeterId || "-"}
+                        </TableCell>
+                      )}
+                      {isColumnVisible("status") && (
+                        <TableCell data-testid={`text-status-${workOrder.id}`}>
+                          {getStatusBadge(workOrder.status)}
+                        </TableCell>
+                      )}
                       {user?.role !== "customer" && (
                         <TableCell>
                           <div className="flex gap-1">
