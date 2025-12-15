@@ -195,10 +195,13 @@ export const fileImportConfigs = pgTable("file_import_configs", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// File import history - tracks each file import execution
+// File import history - tracks each file import execution (both scheduled and manual)
 export const fileImportHistory = pgTable("file_import_history", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  fileImportConfigId: integer("file_import_config_id").notNull().references(() => fileImportConfigs.id, { onDelete: "cascade" }),
+  fileImportConfigId: integer("file_import_config_id").references(() => fileImportConfigs.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  importSource: varchar("import_source", { length: 50 }).notNull().default("scheduled"),
+  userName: varchar("user_name", { length: 255 }),
   fileName: varchar("file_name", { length: 500 }).notNull(),
   status: varchar("status", { length: 50 }).notNull(),
   recordsImported: integer("records_imported").default(0),
