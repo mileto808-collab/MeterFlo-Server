@@ -17,6 +17,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
+import { useTimezone } from "@/hooks/use-timezone";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import type { User, Project, Subrole } from "@shared/schema";
@@ -67,6 +68,7 @@ type SortOrder = "asc" | "desc";
 
 export default function Users() {
   const { toast } = useToast();
+  const { formatDateTime, formatCustom } = useTimezone();
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -945,8 +947,8 @@ export default function Users() {
                           </Badge>
                         )}
                       </TableCell>
-                      <TableCell>{user.createdAt ? format(new Date(user.createdAt), "MMM d, yyyy") : "—"}</TableCell>
-                      <TableCell>{user.lastLoginAt ? format(new Date(user.lastLoginAt), "MMM d, yyyy HH:mm") : "Never"}</TableCell>
+                      <TableCell>{user.createdAt ? formatCustom(user.createdAt, "MMM d, yyyy") : "—"}</TableCell>
+                      <TableCell>{user.lastLoginAt ? formatDateTime(user.lastLoginAt) : "Never"}</TableCell>
                       <TableCell>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>

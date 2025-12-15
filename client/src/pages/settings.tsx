@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useTheme } from "@/hooks/use-theme";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { useTimezone } from "@/hooks/use-timezone";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -65,6 +66,7 @@ export default function Settings() {
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
   const { toast } = useToast();
+  const { formatDateTime } = useTimezone();
   const [projectFilesPath, setProjectFilesPath] = useState("");
   const [maxFileSizeMB, setMaxFileSizeMB] = useState("100");
   const [allowedExtensions, setAllowedExtensions] = useState("");
@@ -1250,7 +1252,7 @@ export default function Settings() {
                         {fileImportHistoryList.slice(0, 50).map((entry) => (
                           <TableRow key={entry.id} data-testid={`row-import-history-${entry.id}`}>
                             <TableCell className="text-sm">
-                              {entry.startedAt ? new Date(entry.startedAt).toLocaleString() : "—"}
+                              {entry.startedAt ? formatDateTime(entry.startedAt) : "—"}
                             </TableCell>
                             <TableCell>
                               <Badge variant="outline" className="capitalize">
@@ -1324,7 +1326,7 @@ export default function Settings() {
                         {externalDbImportHistoryList.slice(0, 50).map((entry) => (
                           <TableRow key={entry.id} data-testid={`row-external-db-import-history-${entry.id}`}>
                             <TableCell className="text-sm">
-                              {entry.startedAt ? new Date(entry.startedAt).toLocaleString() : "—"}
+                              {entry.startedAt ? formatDateTime(entry.startedAt) : "—"}
                             </TableCell>
                             <TableCell>{entry.projectName || "—"}</TableCell>
                             <TableCell>{entry.databaseName || "—"}</TableCell>

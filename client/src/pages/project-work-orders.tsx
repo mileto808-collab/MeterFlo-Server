@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/table";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { useTimezone } from "@/hooks/use-timezone";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, ArrowLeft, Search, ArrowUpDown, ArrowUp, ArrowDown, Download, FileSpreadsheet, FileText, Filter, X } from "lucide-react";
 import * as XLSX from "xlsx";
@@ -85,6 +86,7 @@ export default function ProjectWorkOrders() {
   const projectId = params?.projectId ? parseInt(params.projectId) : null;
   const { user } = useAuth();
   const { toast } = useToast();
+  const { formatDateTime, formatExport, formatCustom } = useTimezone();
   const [, navigate] = useLocation();
   const [isCreatingWorkOrder, setIsCreatingWorkOrder] = useState(false);
   const [editingWorkOrder, setEditingWorkOrder] = useState<ProjectWorkOrder | null>(null);
@@ -658,8 +660,8 @@ export default function ProjectWorkOrders() {
       wo.newGps || "",
       wo.status,
       wo.assignedTo || "",
-      wo.createdAt && wo.createdAt !== null ? format(new Date(wo.createdAt), "yyyy-MM-dd HH:mm") : "",
-      wo.completedAt && wo.completedAt !== null ? format(new Date(wo.completedAt), "yyyy-MM-dd HH:mm") : "",
+      wo.createdAt ? formatExport(wo.createdAt) : "",
+      wo.completedAt ? formatExport(wo.completedAt) : "",
       wo.notes || "",
     ]);
 
@@ -671,7 +673,7 @@ export default function ProjectWorkOrders() {
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = `${project?.name || "work-orders"}-${format(new Date(), "yyyy-MM-dd")}.csv`;
+    link.download = `${project?.name || "work-orders"}-${formatCustom(new Date(), "yyyy-MM-dd")}.csv`;
     link.click();
     URL.revokeObjectURL(link.href);
 
@@ -705,15 +707,15 @@ export default function ProjectWorkOrders() {
       "New GPS": wo.newGps || "",
       "Status": wo.status,
       "Assigned To": wo.assignedTo || "",
-      "Created At": wo.createdAt && wo.createdAt !== null ? format(new Date(wo.createdAt), "yyyy-MM-dd HH:mm") : "",
-      "Completed At": wo.completedAt && wo.completedAt !== null ? format(new Date(wo.completedAt), "yyyy-MM-dd HH:mm") : "",
+      "Created At": wo.createdAt ? formatExport(wo.createdAt) : "",
+      "Completed At": wo.completedAt ? formatExport(wo.completedAt) : "",
       "Notes": wo.notes || "",
     }));
 
     const worksheet = XLSX.utils.json_to_sheet(data);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Work Orders");
-    XLSX.writeFile(workbook, `${project?.name || "work-orders"}-${format(new Date(), "yyyy-MM-dd")}.xlsx`);
+    XLSX.writeFile(workbook, `${project?.name || "work-orders"}-${formatCustom(new Date(), "yyyy-MM-dd")}.xlsx`);
 
     toast({ title: "Excel file exported successfully" });
   };
@@ -745,7 +747,7 @@ export default function ProjectWorkOrders() {
       <body>
         <h1>${project?.name || "Work Orders"} Report</h1>
         <div class="meta">
-          <p>Generated: ${format(new Date(), "MMMM d, yyyy 'at' h:mm a")}</p>
+          <p>Generated: ${formatCustom(new Date(), "MMMM d, yyyy 'at' h:mm a")}</p>
           <p>Total Results: ${filteredAndSortedWorkOrders.length}</p>
         </div>
         <table>
@@ -1427,7 +1429,7 @@ export default function ProjectWorkOrders() {
                     <div>
                       <label className="text-sm font-medium text-muted-foreground">Created At</label>
                       <Input 
-                        value={editingWorkOrder.createdAt ? new Date(editingWorkOrder.createdAt).toLocaleString() : "-"} 
+                        value={editingWorkOrder.createdAt ? formatDateTime(editingWorkOrder.createdAt) : "-"} 
                         disabled 
                         className="mt-1 bg-muted"
                         data-testid="text-created-at"
@@ -1445,7 +1447,7 @@ export default function ProjectWorkOrders() {
                     <div>
                       <label className="text-sm font-medium text-muted-foreground">Updated At</label>
                       <Input 
-                        value={editingWorkOrder.updatedAt ? new Date(editingWorkOrder.updatedAt).toLocaleString() : "-"} 
+                        value={editingWorkOrder.updatedAt ? formatDateTime(editingWorkOrder.updatedAt) : "-"} 
                         disabled 
                         className="mt-1 bg-muted"
                         data-testid="text-updated-at"
@@ -1454,7 +1456,7 @@ export default function ProjectWorkOrders() {
                     <div>
                       <label className="text-sm font-medium text-muted-foreground">Completed At</label>
                       <Input 
-                        value={editingWorkOrder.completedAt ? new Date(editingWorkOrder.completedAt).toLocaleString() : "-"} 
+                        value={editingWorkOrder.completedAt ? formatDateTime(editingWorkOrder.completedAt) : "-"} 
                         disabled 
                         className="mt-1 bg-muted"
                         data-testid="text-completed-at"
