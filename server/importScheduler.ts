@@ -170,8 +170,7 @@ class ImportScheduler {
               mappedData.newMeterReading = parseInt(String(mappedData.newMeterReading)) || null;
             }
 
-            mappedData.status = mappedData.status || "pending";
-            mappedData.priority = mappedData.priority || "medium";
+            mappedData.status = mappedData.status || "Open";
             mappedData.createdBy = "system_import";
 
             const existingWo = await workOrderStorage.getWorkOrderByCustomerWoId(mappedData.customerWoId);
