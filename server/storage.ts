@@ -20,6 +20,7 @@ import {
   permissionKeys,
   userGroups,
   userGroupMembers,
+  userGroupProjects,
   type User,
   type UpsertUser,
   type Project,
@@ -58,6 +59,7 @@ import {
   type UserGroup,
   type InsertUserGroup,
   type UserGroupMember,
+  type UserGroupWithProjects,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and } from "drizzle-orm";
@@ -176,14 +178,18 @@ export interface IStorage {
 
   // User group operations
   getAllUserGroups(): Promise<UserGroup[]>;
+  getAllUserGroupsWithProjects(): Promise<UserGroupWithProjects[]>;
   getUserGroup(id: number): Promise<UserGroup | undefined>;
-  createUserGroup(data: InsertUserGroup): Promise<UserGroup>;
-  updateUserGroup(id: number, data: Partial<InsertUserGroup>): Promise<UserGroup | undefined>;
+  getUserGroupWithProjects(id: number): Promise<UserGroupWithProjects | undefined>;
+  createUserGroup(data: InsertUserGroup, projectIds: number[]): Promise<UserGroupWithProjects>;
+  updateUserGroup(id: number, data: Partial<InsertUserGroup>, projectIds?: number[]): Promise<UserGroupWithProjects | undefined>;
   deleteUserGroup(id: number): Promise<boolean>;
   getGroupMembers(groupId: number): Promise<User[]>;
   addUserToGroup(groupId: number, userId: string): Promise<UserGroupMember>;
   removeUserFromGroup(groupId: number, userId: string): Promise<boolean>;
   getUserGroupMemberships(userId: string): Promise<UserGroup[]>;
+  getGroupProjectIds(groupId: number): Promise<number[]>;
+  setGroupProjects(groupId: number, projectIds: number[]): Promise<void>;
 
   // Meter type operations
   getMeterTypes(projectId?: number): Promise<MeterTypeWithProjects[]>;
@@ -1048,23 +1054,47 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(userGroups).orderBy(userGroups.name);
   }
 
+  async getAllUserGroupsWithProjects(): Promise<UserGroupWithProjects[]> {
+    const groups = await db.select().from(userGroups).orderBy(userGroups.name);
+    const result: UserGroupWithProjects[] = [];
+    for (const group of groups) {
+      const projectIds = await this.getGroupProjectIds(group.id);
+      result.push({ ...group, projectIds });
+    }
+    return result;
+  }
+
   async getUserGroup(id: number): Promise<UserGroup | undefined> {
     const [group] = await db.select().from(userGroups).where(eq(userGroups.id, id));
     return group;
   }
 
-  async createUserGroup(data: InsertUserGroup): Promise<UserGroup> {
-    const [group] = await db.insert(userGroups).values(data).returning();
-    return group;
+  async getUserGroupWithProjects(id: number): Promise<UserGroupWithProjects | undefined> {
+    const [group] = await db.select().from(userGroups).where(eq(userGroups.id, id));
+    if (!group) return undefined;
+    const projectIds = await this.getGroupProjectIds(id);
+    return { ...group, projectIds };
   }
 
-  async updateUserGroup(id: number, data: Partial<InsertUserGroup>): Promise<UserGroup | undefined> {
-    const [updated] = await db
-      .update(userGroups)
-      .set({ ...data, updatedAt: new Date() })
-      .where(eq(userGroups.id, id))
-      .returning();
-    return updated;
+  async createUserGroup(data: InsertUserGroup, projectIds: number[]): Promise<UserGroupWithProjects> {
+    const [group] = await db.insert(userGroups).values(data).returning();
+    if (projectIds && projectIds.length > 0) {
+      await this.setGroupProjects(group.id, projectIds);
+    }
+    return { ...group, projectIds: projectIds || [] };
+  }
+
+  async updateUserGroup(id: number, data: Partial<InsertUserGroup>, projectIds?: number[]): Promise<UserGroupWithProjects | undefined> {
+    if (Object.keys(data).length > 0) {
+      await db
+        .update(userGroups)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(userGroups.id, id));
+    }
+    if (projectIds !== undefined) {
+      await this.setGroupProjects(id, projectIds);
+    }
+    return await this.getUserGroupWithProjects(id);
   }
 
   async deleteUserGroup(id: number): Promise<boolean> {
@@ -1103,6 +1133,23 @@ export class DatabaseStorage implements IStorage {
       .innerJoin(userGroups, eq(userGroupMembers.groupId, userGroups.id))
       .where(eq(userGroupMembers.userId, userId));
     return memberships.map((m) => m.group);
+  }
+
+  async getGroupProjectIds(groupId: number): Promise<number[]> {
+    const rows = await db
+      .select({ projectId: userGroupProjects.projectId })
+      .from(userGroupProjects)
+      .where(eq(userGroupProjects.groupId, groupId));
+    return rows.map(r => r.projectId);
+  }
+
+  async setGroupProjects(groupId: number, projectIds: number[]): Promise<void> {
+    await db.delete(userGroupProjects).where(eq(userGroupProjects.groupId, groupId));
+    if (projectIds.length > 0) {
+      await db.insert(userGroupProjects).values(
+        projectIds.map(projectId => ({ groupId, projectId }))
+      );
+    }
   }
 
   // Meter type operations
