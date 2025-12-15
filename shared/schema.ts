@@ -101,6 +101,14 @@ export const userGroupMembers = pgTable("user_group_members", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// User Group Projects - many-to-many relationship between user groups and projects
+export const userGroupProjects = pgTable("user_group_projects", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  groupId: integer("group_id").notNull().references(() => userGroups.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // System settings table for application-wide configuration
 export const systemSettings = pgTable("system_settings", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -384,6 +392,11 @@ export const insertUserGroupMemberSchema = z.object({
   userId: z.string(),
 });
 
+export const insertUserGroupProjectSchema = z.object({
+  groupId: z.number(),
+  projectId: z.number(),
+});
+
 export const insertSystemSettingSchema = z.object({
   key: z.string().min(1).max(100),
   value: z.string().optional().nullable(),
@@ -514,6 +527,12 @@ export type InsertUserGroup = z.infer<typeof insertUserGroupSchema>;
 
 export type UserGroupMember = typeof userGroupMembers.$inferSelect;
 export type InsertUserGroupMember = z.infer<typeof insertUserGroupMemberSchema>;
+
+export type UserGroupProject = typeof userGroupProjects.$inferSelect;
+export type InsertUserGroupProject = z.infer<typeof insertUserGroupProjectSchema>;
+
+// Extended user group with project associations
+export type UserGroupWithProjects = UserGroup & { projectIds: number[] };
 
 export type SystemSetting = typeof systemSettings.$inferSelect;
 export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;
