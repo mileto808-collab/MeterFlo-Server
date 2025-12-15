@@ -131,12 +131,28 @@ export default function Users() {
 
   const { visibleColumns, setVisibleColumns, isColumnVisible, isLoading: columnPrefsLoading } = useColumnPreferences("users", userColumns);
 
-  // Filter configuration - only includes filters that have actual UI controls
+  // Filter configuration - matches columns (excluding password_hash and locked_at)
   const userFilters: FilterConfig[] = useMemo(() => [
     { key: "searchQuery", label: "Search Text" },
+    { key: "user", label: "User" },
+    { key: "username", label: "Username" },
+    { key: "email", label: "Email" },
+    { key: "firstName", label: "First Name" },
+    { key: "lastName", label: "Last Name" },
     { key: "role", label: "Role" },
+    { key: "accessLevel", label: "Access Level" },
+    { key: "subrole", label: "Subrole" },
+    { key: "projects", label: "Projects" },
     { key: "status", label: "Status" },
-    { key: "subrole", label: "Access Level" },
+    { key: "isLocked", label: "Is Locked" },
+    { key: "lockedReason", label: "Locked Reason" },
+    { key: "lastLogin", label: "Last Login" },
+    { key: "address", label: "Address" },
+    { key: "city", label: "City" },
+    { key: "state", label: "State" },
+    { key: "zip", label: "ZIP" },
+    { key: "phone", label: "Phone" },
+    { key: "website", label: "Website" },
   ], []);
 
   const { visibleFilters, setVisibleFilters, isFilterVisible, isLoading: filterPrefsLoading } = useFilterPreferences("users", userFilters);
