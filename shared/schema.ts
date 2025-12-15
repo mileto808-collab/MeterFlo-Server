@@ -60,6 +60,13 @@ export const users = pgTable("users", {
   lockedAt: timestamp("locked_at"),
   lockedReason: varchar("locked_reason", { length: 255 }),
   lastLoginAt: timestamp("last_login_at"),
+  address: varchar("address", { length: 255 }),
+  city: varchar("city", { length: 100 }),
+  state: varchar("state", { length: 50 }),
+  zip: varchar("zip", { length: 20 }),
+  phone: varchar("phone", { length: 50 }),
+  website: varchar("website", { length: 255 }),
+  notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -316,6 +323,13 @@ export const insertUserSchema = z.object({
   role: z.enum(userRoleEnum).optional(),
   isLocked: z.boolean().optional(),
   lockedReason: z.string().optional().nullable(),
+  address: z.string().max(255).optional().nullable(),
+  city: z.string().max(100).optional().nullable(),
+  state: z.string().max(50).optional().nullable(),
+  zip: z.string().max(20).optional().nullable(),
+  phone: z.string().max(50).optional().nullable(),
+  website: z.string().max(255).optional().nullable(),
+  notes: z.string().optional().nullable(),
 });
 
 // Schema for creating a new user
@@ -330,6 +344,13 @@ export const createUserSchema = z.object({
   email: z.string().email().optional().nullable(),
   role: z.enum(userRoleEnum).default("user"),
   subroleId: z.number().nullable().optional(),
+  address: z.string().max(255).optional().nullable(),
+  city: z.string().max(100).optional().nullable(),
+  state: z.string().max(50).optional().nullable(),
+  zip: z.string().max(20).optional().nullable(),
+  phone: z.string().max(50).optional().nullable(),
+  website: z.string().max(255).optional().nullable(),
+  notes: z.string().optional().nullable(),
 });
 
 // Schema for updating a user
@@ -342,6 +363,13 @@ export const updateUserSchema = z.object({
   subroleId: z.number().optional().nullable(),
   isLocked: z.boolean().optional(),
   lockedReason: z.string().optional().nullable(),
+  address: z.string().max(255).optional().nullable(),
+  city: z.string().max(100).optional().nullable(),
+  state: z.string().max(50).optional().nullable(),
+  zip: z.string().max(20).optional().nullable(),
+  phone: z.string().max(50).optional().nullable(),
+  website: z.string().max(255).optional().nullable(),
+  notes: z.string().optional().nullable(),
 });
 
 // Schema for password reset
