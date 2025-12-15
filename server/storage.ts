@@ -21,6 +21,7 @@ import {
   userGroups,
   userGroupMembers,
   userGroupProjects,
+  userColumnPreferences,
   type User,
   type UpsertUser,
   type Project,
@@ -60,6 +61,7 @@ import {
   type InsertUserGroup,
   type UserGroupMember,
   type UserGroupWithProjects,
+  type UserColumnPreferences,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and } from "drizzle-orm";
@@ -199,6 +201,10 @@ export interface IStorage {
   deleteMeterType(id: number): Promise<boolean>;
   getMeterTypeProjectIds(meterTypeId: number): Promise<number[]>;
   setMeterTypeProjects(meterTypeId: number, projectIds: number[]): Promise<void>;
+
+  // User column preferences operations
+  getUserColumnPreferences(userId: string, pageKey: string): Promise<UserColumnPreferences | undefined>;
+  setUserColumnPreferences(userId: string, pageKey: string, visibleColumns: string[]): Promise<UserColumnPreferences>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1267,6 +1273,34 @@ export class DatabaseStorage implements IStorage {
         projectIds.map(projectId => ({ meterTypeId, projectId }))
       );
     }
+  }
+
+  // User column preferences operations
+  async getUserColumnPreferences(userId: string, pageKey: string): Promise<UserColumnPreferences | undefined> {
+    const [pref] = await db
+      .select()
+      .from(userColumnPreferences)
+      .where(and(eq(userColumnPreferences.userId, userId), eq(userColumnPreferences.pageKey, pageKey)));
+    return pref;
+  }
+
+  async setUserColumnPreferences(userId: string, pageKey: string, visibleColumns: string[]): Promise<UserColumnPreferences> {
+    const existing = await this.getUserColumnPreferences(userId, pageKey);
+    
+    if (existing) {
+      const [updated] = await db
+        .update(userColumnPreferences)
+        .set({ visibleColumns, updatedAt: new Date() })
+        .where(and(eq(userColumnPreferences.userId, userId), eq(userColumnPreferences.pageKey, pageKey)))
+        .returning();
+      return updated;
+    }
+    
+    const [created] = await db
+      .insert(userColumnPreferences)
+      .values({ userId, pageKey, visibleColumns })
+      .returning();
+    return created;
   }
 }
 
