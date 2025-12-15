@@ -1879,6 +1879,83 @@ export async function registerRoutes(
     }
   });
 
+  // File Import History endpoints (Admin only)
+  app.get("/api/file-import-history", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const limit = parseInt(req.query.limit as string) || 500;
+      const history = await storage.getAllFileImportHistory(limit);
+      
+      // Enrich with project names
+      const enrichedHistory = await Promise.all(history.map(async (entry) => {
+        let projectName = null;
+        if (entry.projectId) {
+          const project = await storage.getProject(entry.projectId);
+          projectName = project?.name || null;
+        }
+        return { ...entry, projectName };
+      }));
+      
+      res.json(enrichedHistory);
+    } catch (error) {
+      console.error("Error fetching file import history:", error);
+      res.status(500).json({ message: "Failed to fetch file import history" });
+    }
+  });
+
+  app.get("/api/file-import-history/download", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const history = await storage.getAllFileImportHistory(10000);
+      
+      // Enrich with project names
+      const enrichedHistory = await Promise.all(history.map(async (entry) => {
+        let projectName = "";
+        if (entry.projectId) {
+          const project = await storage.getProject(entry.projectId);
+          projectName = project?.name || "";
+        }
+        return { ...entry, projectName };
+      }));
+      
+      // Create CSV content
+      const csvHeaders = ["ID", "Date", "Source", "File Name", "Project", "User", "Status", "Records Imported", "Records Failed", "Error Details"];
+      const csvRows = enrichedHistory.map(entry => [
+        entry.id,
+        entry.startedAt ? new Date(entry.startedAt).toISOString() : "",
+        entry.importSource || "scheduled",
+        entry.fileName || "",
+        entry.projectName || "",
+        entry.userName || "",
+        entry.status || "",
+        entry.recordsImported || 0,
+        entry.recordsFailed || 0,
+        (entry.errorDetails || "").replace(/"/g, '""').replace(/\n/g, " ")
+      ]);
+      
+      const csvContent = [
+        csvHeaders.join(","),
+        ...csvRows.map(row => row.map(cell => `"${cell}"`).join(","))
+      ].join("\n");
+      
+      const filename = `file_import_history_${new Date().toISOString().slice(0, 10)}.csv`;
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(csvContent);
+    } catch (error) {
+      console.error("Error downloading file import history:", error);
+      res.status(500).json({ message: "Failed to download file import history" });
+    }
+  });
+
   // Database backup/restore endpoints (Admin only)
   
   // Get database stats for a project
