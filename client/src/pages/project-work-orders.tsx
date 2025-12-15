@@ -1357,16 +1357,16 @@ export default function ProjectWorkOrders() {
                     name="scheduledDate"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Scheduled Date</FormLabel>
+                        <FormLabel>Scheduled Date & Time</FormLabel>
                         <FormControl>
                           <Input
-                            type="date"
+                            type="datetime-local"
                             {...field}
                             value={field.value || ""}
                             data-testid="input-edit-scheduled-date"
                           />
                         </FormControl>
-                        <p className="text-xs text-muted-foreground">Setting a date will auto-set status to "Scheduled"</p>
+                        <p className="text-xs text-muted-foreground">Setting a date/time will auto-set status to "Scheduled"</p>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -1963,16 +1963,16 @@ export default function ProjectWorkOrders() {
                     name="scheduledDate"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Scheduled Date</FormLabel>
+                        <FormLabel>Scheduled Date & Time</FormLabel>
                         <FormControl>
                           <Input
-                            type="date"
+                            type="datetime-local"
                             {...field}
                             value={field.value || ""}
                             data-testid="input-create-scheduled-date"
                           />
                         </FormControl>
-                        <p className="text-xs text-muted-foreground">Setting a date will auto-set status to "Scheduled"</p>
+                        <p className="text-xs text-muted-foreground">Setting a date/time will auto-set status to "Scheduled"</p>
                         <FormMessage />
                       </FormItem>
                     )}
