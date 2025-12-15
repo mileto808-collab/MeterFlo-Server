@@ -118,11 +118,7 @@ export default function ProjectWorkOrders() {
   const [filterRoute, setFilterRoute] = useState("");
   const [filterZone, setFilterZone] = useState("");
   const [filterOldMeterId, setFilterOldMeterId] = useState("");
-  const [filterOldMeterReading, setFilterOldMeterReading] = useState("");
   const [filterNewMeterId, setFilterNewMeterId] = useState("");
-  const [filterNewMeterReading, setFilterNewMeterReading] = useState("");
-  const [filterOldGps, setFilterOldGps] = useState("");
-  const [filterNewGps, setFilterNewGps] = useState("");
   const [filterScheduledDate, setFilterScheduledDate] = useState("");
   const [filterCreatedBy, setFilterCreatedBy] = useState("all");
   const [filterUpdatedBy, setFilterUpdatedBy] = useState("all");
@@ -191,13 +187,9 @@ export default function ProjectWorkOrders() {
     { key: "zone", label: "Zone" },
     { key: "serviceType", label: "Service Type" },
     { key: "oldMeterId", label: "Old Meter ID" },
-    { key: "oldMeterReading", label: "Old Meter Reading" },
     { key: "oldMeterType", label: "Old Meter Type" },
     { key: "newMeterId", label: "New Meter ID" },
-    { key: "newMeterReading", label: "New Meter Reading" },
     { key: "newMeterType", label: "New Meter Type" },
-    { key: "oldGps", label: "Old GPS" },
-    { key: "newGps", label: "New GPS" },
     { key: "status", label: "Status" },
     { key: "scheduledDate", label: "Scheduled Date" },
     { key: "assignedTo", label: "Assigned To" },
@@ -814,20 +806,8 @@ export default function ProjectWorkOrders() {
     if (filterOldMeterId.trim()) {
       result = result.filter(wo => wo.oldMeterId?.toLowerCase().includes(filterOldMeterId.toLowerCase()));
     }
-    if (filterOldMeterReading.trim()) {
-      result = result.filter(wo => wo.oldMeterReading != null && String(wo.oldMeterReading).includes(filterOldMeterReading));
-    }
     if (filterNewMeterId.trim()) {
       result = result.filter(wo => wo.newMeterId?.toLowerCase().includes(filterNewMeterId.toLowerCase()));
-    }
-    if (filterNewMeterReading.trim()) {
-      result = result.filter(wo => wo.newMeterReading != null && String(wo.newMeterReading).includes(filterNewMeterReading));
-    }
-    if (filterOldGps.trim()) {
-      result = result.filter(wo => wo.oldGps?.toLowerCase().includes(filterOldGps.toLowerCase()));
-    }
-    if (filterNewGps.trim()) {
-      result = result.filter(wo => wo.newGps?.toLowerCase().includes(filterNewGps.toLowerCase()));
     }
     if (filterScheduledDate) {
       result = result.filter(wo => (wo as any).scheduledDate?.includes(filterScheduledDate));
@@ -862,7 +842,7 @@ export default function ProjectWorkOrders() {
     }
     
     return result;
-  }, [workOrders, searchQuery, sortColumn, sortDirection, selectedStatus, selectedServiceType, dateFrom, dateTo, selectedAssignedTo, selectedTrouble, selectedOldMeterType, selectedNewMeterType, meterTypes, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterOldMeterReading, filterNewMeterId, filterNewMeterReading, filterOldGps, filterNewGps, filterScheduledDate, filterCreatedBy, filterUpdatedBy, filterCompletedAt, filterNotes, filterCreatedAt, filterUpdatedAt]);
+  }, [workOrders, searchQuery, sortColumn, sortDirection, selectedStatus, selectedServiceType, dateFrom, dateTo, selectedAssignedTo, selectedTrouble, selectedOldMeterType, selectedNewMeterType, meterTypes, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterNewMeterId, filterScheduledDate, filterCreatedBy, filterUpdatedBy, filterCompletedAt, filterNotes, filterCreatedAt, filterUpdatedAt]);
 
   const clearFilters = () => {
     setSearchQuery("");
@@ -885,11 +865,7 @@ export default function ProjectWorkOrders() {
     setFilterRoute("");
     setFilterZone("");
     setFilterOldMeterId("");
-    setFilterOldMeterReading("");
     setFilterNewMeterId("");
-    setFilterNewMeterReading("");
-    setFilterOldGps("");
-    setFilterNewGps("");
     setFilterScheduledDate("");
     setFilterCreatedBy("all");
     setFilterUpdatedBy("all");
@@ -899,7 +875,7 @@ export default function ProjectWorkOrders() {
     setFilterUpdatedAt("");
   };
 
-  const hasActiveFilters = selectedStatus !== "all" || selectedServiceType !== "all" || dateFrom !== "" || dateTo !== "" || selectedAssignedTo !== "all" || selectedTrouble !== "all" || selectedOldMeterType !== "all" || selectedNewMeterType !== "all" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldMeterId !== "" || filterOldMeterReading !== "" || filterNewMeterId !== "" || filterNewMeterReading !== "" || filterOldGps !== "" || filterNewGps !== "" || filterScheduledDate !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterCompletedAt !== "" || filterNotes !== "" || filterCreatedAt !== "" || filterUpdatedAt !== "";
+  const hasActiveFilters = selectedStatus !== "all" || selectedServiceType !== "all" || dateFrom !== "" || dateTo !== "" || selectedAssignedTo !== "all" || selectedTrouble !== "all" || selectedOldMeterType !== "all" || selectedNewMeterType !== "all" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldMeterId !== "" || filterNewMeterId !== "" || filterScheduledDate !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterCompletedAt !== "" || filterNotes !== "" || filterCreatedAt !== "" || filterUpdatedAt !== "";
 
   const exportToCSV = () => {
     if (!filteredAndSortedWorkOrders.length) {
@@ -2888,34 +2864,10 @@ export default function ProjectWorkOrders() {
                   <Input id="filter-old-meter-id" placeholder="Filter..." value={filterOldMeterId} onChange={(e) => setFilterOldMeterId(e.target.value)} data-testid="input-filter-old-meter-id" />
                 </div>
               )}
-              {isFilterVisible("oldMeterReading") && (
-                <div className="min-w-[120px]">
-                  <Label htmlFor="filter-old-meter-reading">Old Meter Reading</Label>
-                  <Input id="filter-old-meter-reading" placeholder="Filter..." value={filterOldMeterReading} onChange={(e) => setFilterOldMeterReading(e.target.value)} data-testid="input-filter-old-meter-reading" />
-                </div>
-              )}
               {isFilterVisible("newMeterId") && (
                 <div className="min-w-[120px]">
                   <Label htmlFor="filter-new-meter-id">New Meter ID</Label>
                   <Input id="filter-new-meter-id" placeholder="Filter..." value={filterNewMeterId} onChange={(e) => setFilterNewMeterId(e.target.value)} data-testid="input-filter-new-meter-id" />
-                </div>
-              )}
-              {isFilterVisible("newMeterReading") && (
-                <div className="min-w-[120px]">
-                  <Label htmlFor="filter-new-meter-reading">New Meter Reading</Label>
-                  <Input id="filter-new-meter-reading" placeholder="Filter..." value={filterNewMeterReading} onChange={(e) => setFilterNewMeterReading(e.target.value)} data-testid="input-filter-new-meter-reading" />
-                </div>
-              )}
-              {isFilterVisible("oldGps") && (
-                <div className="min-w-[150px]">
-                  <Label htmlFor="filter-old-gps">Old GPS</Label>
-                  <Input id="filter-old-gps" placeholder="Filter..." value={filterOldGps} onChange={(e) => setFilterOldGps(e.target.value)} data-testid="input-filter-old-gps" />
-                </div>
-              )}
-              {isFilterVisible("newGps") && (
-                <div className="min-w-[150px]">
-                  <Label htmlFor="filter-new-gps">New GPS</Label>
-                  <Input id="filter-new-gps" placeholder="Filter..." value={filterNewGps} onChange={(e) => setFilterNewGps(e.target.value)} data-testid="input-filter-new-gps" />
                 </div>
               )}
               {isFilterVisible("scheduledDate") && (
@@ -2929,12 +2881,15 @@ export default function ProjectWorkOrders() {
                   <Label htmlFor="filter-created-by">Created By</Label>
                   <Select value={filterCreatedBy} onValueChange={setFilterCreatedBy}>
                     <SelectTrigger id="filter-created-by" data-testid="select-filter-created-by">
-                      <SelectValue placeholder="All Users" />
+                      <SelectValue placeholder="All" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All Users</SelectItem>
+                      <SelectItem value="all">All</SelectItem>
                       {assigneesData.users.map((user) => (
                         <SelectItem key={user.id} value={user.label}>{user.label}</SelectItem>
+                      ))}
+                      {assigneesData.groups.map((group) => (
+                        <SelectItem key={`group-${group.id}`} value={group.label}>{group.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -2945,12 +2900,15 @@ export default function ProjectWorkOrders() {
                   <Label htmlFor="filter-updated-by">Updated By</Label>
                   <Select value={filterUpdatedBy} onValueChange={setFilterUpdatedBy}>
                     <SelectTrigger id="filter-updated-by" data-testid="select-filter-updated-by">
-                      <SelectValue placeholder="All Users" />
+                      <SelectValue placeholder="All" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All Users</SelectItem>
+                      <SelectItem value="all">All</SelectItem>
                       {assigneesData.users.map((user) => (
                         <SelectItem key={user.id} value={user.label}>{user.label}</SelectItem>
+                      ))}
+                      {assigneesData.groups.map((group) => (
+                        <SelectItem key={`group-${group.id}`} value={group.label}>{group.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
