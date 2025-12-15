@@ -8,7 +8,6 @@ import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/hooks/useAuth";
 import type { WorkOrder, Project, User } from "@shared/schema";
 import { ArrowLeft, Edit, Calendar, User as UserIcon, FolderOpen, Clock } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
 import { useTimezone } from "@/hooks/use-timezone";
 
 export default function WorkOrderDetail() {
@@ -16,7 +15,7 @@ export default function WorkOrderDetail() {
   const id = params?.id;
 
   const { user } = useAuth();
-  const { formatDate, formatDateTime } = useTimezone();
+  const { formatDate, formatDateTime, formatRelativeTime } = useTimezone();
   const role = user?.role || "user";
 
   const { data: workOrder, isLoading } = useQuery<WorkOrder>({
@@ -279,9 +278,7 @@ export default function WorkOrderDetail() {
                   <p className="text-xs text-muted-foreground">Created</p>
                   <p className="text-sm font-medium" data-testid="text-created">
                     {workOrder.createdAt
-                      ? formatDistanceToNow(new Date(workOrder.createdAt), {
-                          addSuffix: true,
-                        })
+                      ? formatRelativeTime(workOrder.createdAt)
                       : "Unknown"}
                   </p>
                 </div>
