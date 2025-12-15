@@ -24,6 +24,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { useTimezone } from "@/hooks/use-timezone";
 import { Search, Download, FileSpreadsheet, FileText, FileDown, Filter, X, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import type { Project, ServiceTypeRecord, WorkOrderStatus, MeterType } from "@shared/schema";
 import * as XLSX from "xlsx";
@@ -73,6 +74,7 @@ type SearchResponse = {
 export default function SearchReports() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { formatExport, formatCustom } = useTimezone();
   
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProject, setSelectedProjectState] = useState<string>("all");
@@ -321,8 +323,8 @@ export default function SearchReports() {
       r.workOrder.newGps || "",
       r.workOrder.status,
       r.workOrder.assignedTo || "",
-      r.workOrder.createdAt ? format(new Date(r.workOrder.createdAt), "yyyy-MM-dd HH:mm") : "",
-      r.workOrder.completedAt ? format(new Date(r.workOrder.completedAt), "yyyy-MM-dd HH:mm") : "",
+      r.workOrder.createdAt ? formatExport(r.workOrder.createdAt) : "",
+      r.workOrder.completedAt ? formatExport(r.workOrder.completedAt) : "",
       r.workOrder.notes || "",
     ]);
 
@@ -334,7 +336,7 @@ export default function SearchReports() {
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = `work-orders-${format(new Date(), "yyyy-MM-dd")}.csv`;
+    link.download = `work-orders-${formatCustom(new Date(), "yyyy-MM-dd")}.csv`;
     link.click();
     URL.revokeObjectURL(link.href);
 
@@ -371,15 +373,15 @@ export default function SearchReports() {
       "New GPS": r.workOrder.newGps || "",
       "Status": r.workOrder.status,
       "Assigned To": r.workOrder.assignedTo || "",
-      "Created At": r.workOrder.createdAt ? format(new Date(r.workOrder.createdAt), "yyyy-MM-dd HH:mm") : "",
-      "Completed At": r.workOrder.completedAt ? format(new Date(r.workOrder.completedAt), "yyyy-MM-dd HH:mm") : "",
+      "Created At": r.workOrder.createdAt ? formatExport(r.workOrder.createdAt) : "",
+      "Completed At": r.workOrder.completedAt ? formatExport(r.workOrder.completedAt) : "",
       "Notes": r.workOrder.notes || "",
     }));
 
     const worksheet = XLSX.utils.json_to_sheet(data);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Work Orders");
-    XLSX.writeFile(workbook, `work-orders-${format(new Date(), "yyyy-MM-dd")}.xlsx`);
+    XLSX.writeFile(workbook, `work-orders-${formatCustom(new Date(), "yyyy-MM-dd")}.xlsx`);
 
     toast({ title: "Excel file exported successfully" });
   };
@@ -411,7 +413,7 @@ export default function SearchReports() {
       <body>
         <h1>Utility Meter Work Orders Report</h1>
         <div class="meta">
-          <p>Generated: ${format(new Date(), "MMMM d, yyyy 'at' h:mm a")}</p>
+          <p>Generated: ${formatCustom(new Date(), "MMMM d, yyyy 'at' h:mm a")}</p>
           <p>Total Results: ${searchResults.total}</p>
           <p>Projects Searched: ${searchResults.projectsSearched}</p>
         </div>
