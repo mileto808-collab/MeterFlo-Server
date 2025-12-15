@@ -607,6 +607,46 @@ export async function registerRoutes(
     }
   });
 
+  // User column preferences endpoints
+  app.get("/api/users/:id/column-preferences/:pageKey", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const targetUserId = req.params.id;
+      
+      if (currentUser?.id !== targetUserId && currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      
+      const prefs = await storage.getUserColumnPreferences(targetUserId, req.params.pageKey);
+      res.json(prefs || { visibleColumns: [] });
+    } catch (error) {
+      console.error("Error fetching column preferences:", error);
+      res.status(500).json({ message: "Failed to fetch column preferences" });
+    }
+  });
+
+  app.put("/api/users/:id/column-preferences/:pageKey", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const targetUserId = req.params.id;
+      
+      if (currentUser?.id !== targetUserId && currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      
+      const { visibleColumns } = req.body;
+      if (!Array.isArray(visibleColumns)) {
+        return res.status(400).json({ message: "visibleColumns must be an array" });
+      }
+      
+      const prefs = await storage.setUserColumnPreferences(targetUserId, req.params.pageKey, visibleColumns);
+      res.json(prefs);
+    } catch (error) {
+      console.error("Error saving column preferences:", error);
+      res.status(500).json({ message: "Failed to save column preferences" });
+    }
+  });
+
   // Project endpoints
   app.get("/api/projects", isAuthenticated, async (req: any, res) => {
     try {
