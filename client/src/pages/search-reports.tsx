@@ -534,10 +534,9 @@ export default function SearchReports() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="in_progress">In Progress</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                  {workOrderStatuses.map((status) => (
+                    <SelectItem key={status.id} value={status.label}>{status.label}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
