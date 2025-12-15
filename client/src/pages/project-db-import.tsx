@@ -66,6 +66,7 @@ import {
   Loader2
 } from "lucide-react";
 import type { Project, ExternalDatabaseConfig, ImportConfig, ImportHistory } from "@shared/schema";
+import { useTimezone } from "@/hooks/use-timezone";
 
 type ConnectionForm = {
   name: string;
@@ -158,6 +159,7 @@ const defaultImportConfigForm: ImportConfigForm = {
 };
 
 export default function ProjectDbImport() {
+  const { formatDate, formatDateTime } = useTimezone();
   const [, params] = useRoute("/projects/:projectId/db-import");
   const projectId = params?.projectId ? parseInt(params.projectId) : null;
   const { user } = useAuth();
@@ -606,7 +608,7 @@ export default function ProjectDbImport() {
                               ) : (
                                 <XCircle className="h-4 w-4 text-red-500" />
                               )}
-                              {new Date(config.lastTestedAt).toLocaleDateString()}
+                              {formatDate(config.lastTestedAt)}
                             </span>
                           ) : (
                             <span className="text-muted-foreground">Never</span>
@@ -698,7 +700,7 @@ export default function ProjectDbImport() {
                                 {config.lastRunStatus === "success" && <CheckCircle className="h-4 w-4 text-green-500" />}
                                 {config.lastRunStatus === "partial" && <AlertCircle className="h-4 w-4 text-yellow-500" />}
                                 {config.lastRunStatus === "failed" && <XCircle className="h-4 w-4 text-red-500" />}
-                                {new Date(config.lastRunAt).toLocaleString()}
+                                {formatDateTime(config.lastRunAt)}
                               </span>
                             ) : (
                               <span className="text-muted-foreground">Never</span>
@@ -1035,7 +1037,7 @@ export default function ProjectDbImport() {
                 <TableBody>
                   {importHistory.map((entry) => (
                     <TableRow key={entry.id}>
-                      <TableCell>{entry.startedAt ? new Date(entry.startedAt).toLocaleString() : "-"}</TableCell>
+                      <TableCell>{entry.startedAt ? formatDateTime(entry.startedAt) : "-"}</TableCell>
                       <TableCell>
                         <Badge variant={
                           entry.status === "success" ? "default" :
@@ -1047,7 +1049,7 @@ export default function ProjectDbImport() {
                       </TableCell>
                       <TableCell>{entry.recordsImported ?? 0}</TableCell>
                       <TableCell>{entry.recordsFailed ?? 0}</TableCell>
-                      <TableCell>{entry.completedAt ? new Date(entry.completedAt).toLocaleString() : "-"}</TableCell>
+                      <TableCell>{entry.completedAt ? formatDateTime(entry.completedAt) : "-"}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

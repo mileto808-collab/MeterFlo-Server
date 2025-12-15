@@ -45,11 +45,12 @@ import {
   Trash2,
   Filter,
 } from "lucide-react";
-import { format } from "date-fns";
+import { useTimezone } from "@/hooks/use-timezone";
 
 export default function WorkOrders() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { formatDate } = useTimezone();
   const role = user?.role || "user";
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -272,7 +273,7 @@ export default function WorkOrders() {
                       </TableCell>
                       <TableCell>
                         {workOrder.dueDate
-                          ? format(new Date(workOrder.dueDate), "MMM d, yyyy")
+                          ? formatDate(workOrder.dueDate)
                           : "—"}
                       </TableCell>
                       <TableCell className="text-right">

@@ -8,13 +8,15 @@ import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/hooks/useAuth";
 import type { WorkOrder, Project, User } from "@shared/schema";
 import { ArrowLeft, Edit, Calendar, User as UserIcon, FolderOpen, Clock } from "lucide-react";
-import { format, formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
+import { useTimezone } from "@/hooks/use-timezone";
 
 export default function WorkOrderDetail() {
   const [, params] = useRoute("/work-orders/:id");
   const id = params?.id;
 
   const { user } = useAuth();
+  const { formatDate, formatDateTime } = useTimezone();
   const role = user?.role || "user";
 
   const { data: workOrder, isLoading } = useQuery<WorkOrder>({
@@ -263,7 +265,7 @@ export default function WorkOrderDetail() {
                   <div>
                     <p className="text-xs text-muted-foreground">Due Date</p>
                     <p className="text-sm font-medium" data-testid="text-due-date">
-                      {format(new Date(workOrder.dueDate), "MMMM d, yyyy")}
+                      {formatDate(workOrder.dueDate)}
                     </p>
                   </div>
                 </div>
@@ -291,7 +293,7 @@ export default function WorkOrderDetail() {
                   <div>
                     <p className="text-xs text-muted-foreground">Completed</p>
                     <p className="text-sm font-medium text-green-600 dark:text-green-400">
-                      {format(new Date(workOrder.completedAt), "MMMM d, yyyy 'at' h:mm a")}
+                      {formatDateTime(workOrder.completedAt)}
                     </p>
                   </div>
                 </div>

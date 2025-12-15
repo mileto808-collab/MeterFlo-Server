@@ -36,7 +36,7 @@ import {
   FolderArchive,
   Server,
 } from "lucide-react";
-import { format } from "date-fns";
+import { useTimezone } from "@/hooks/use-timezone";
 import type { Project } from "@shared/schema";
 
 interface ProjectWithStats extends Project {
@@ -49,6 +49,7 @@ interface ProjectWithStats extends Project {
 
 export default function Maintenance() {
   const { toast } = useToast();
+  const { formatDateTime } = useTimezone();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const systemFileInputRef = useRef<HTMLInputElement>(null);
   const [restoreDialogOpen, setRestoreDialogOpen] = useState(false);
@@ -403,7 +404,7 @@ export default function Maintenance() {
                     <TableCell>
                       {project.stats?.lastModified ? (
                         <span data-testid={`text-modified-${project.id}`}>
-                          {format(new Date(project.stats.lastModified), "MMM d, yyyy h:mm a")}
+                          {formatDateTime(project.stats.lastModified)}
                         </span>
                       ) : (
                         <span className="text-muted-foreground">Never</span>
