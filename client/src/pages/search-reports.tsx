@@ -30,7 +30,7 @@ import { useColumnPreferences } from "@/hooks/use-column-preferences";
 import { FilterSelector, type FilterConfig } from "@/components/filter-selector";
 import { useFilterPreferences } from "@/hooks/use-filter-preferences";
 import { Search, Download, FileSpreadsheet, FileText, FileDown, Filter, X, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
-import type { Project, ServiceTypeRecord, WorkOrderStatus, MeterType } from "@shared/schema";
+import type { Project, ServiceTypeRecord, WorkOrderStatus, MeterType, TroubleCode, User, UserGroup } from "@shared/schema";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
 
@@ -104,19 +104,15 @@ export default function SearchReports() {
   const [filterRoute, setFilterRoute] = useState("");
   const [filterZone, setFilterZone] = useState("");
   const [filterOldMeterId, setFilterOldMeterId] = useState("");
-  const [filterOldMeterReading, setFilterOldMeterReading] = useState("");
-  const [filterOldMeterType, setFilterOldMeterType] = useState("");
+  const [filterOldMeterType, setFilterOldMeterType] = useState("all");
   const [filterNewMeterId, setFilterNewMeterId] = useState("");
-  const [filterNewMeterReading, setFilterNewMeterReading] = useState("");
-  const [filterNewMeterType, setFilterNewMeterType] = useState("");
-  const [filterOldGps, setFilterOldGps] = useState("");
-  const [filterNewGps, setFilterNewGps] = useState("");
+  const [filterNewMeterType, setFilterNewMeterType] = useState("all");
   const [filterScheduledDate, setFilterScheduledDate] = useState("");
-  const [filterAssignedTo, setFilterAssignedTo] = useState("");
-  const [filterCreatedBy, setFilterCreatedBy] = useState("");
-  const [filterUpdatedBy, setFilterUpdatedBy] = useState("");
+  const [filterAssignedTo, setFilterAssignedTo] = useState("all");
+  const [filterCreatedBy, setFilterCreatedBy] = useState("all");
+  const [filterUpdatedBy, setFilterUpdatedBy] = useState("all");
   const [filterCompletedAt, setFilterCompletedAt] = useState("");
-  const [filterTrouble, setFilterTrouble] = useState("");
+  const [filterTroubleCode, setFilterTroubleCode] = useState("all");
   const [filterNotes, setFilterNotes] = useState("");
   const [filterCreatedAt, setFilterCreatedAt] = useState("");
   const [filterUpdatedAt, setFilterUpdatedAt] = useState("");
@@ -179,24 +175,19 @@ export default function SearchReports() {
     { key: "zone", label: "Zone" },
     { key: "serviceType", label: "Service Type" },
     { key: "oldMeterId", label: "Old Meter ID" },
-    { key: "oldMeterReading", label: "Old Meter Reading" },
     { key: "oldMeterType", label: "Old Meter Type" },
     { key: "newMeterId", label: "New Meter ID" },
-    { key: "newMeterReading", label: "New Meter Reading" },
     { key: "newMeterType", label: "New Meter Type" },
-    { key: "oldGps", label: "Old GPS" },
-    { key: "newGps", label: "New GPS" },
     { key: "status", label: "Status" },
     { key: "scheduledDate", label: "Scheduled Date" },
     { key: "assignedTo", label: "Assigned To" },
     { key: "createdBy", label: "Created By" },
     { key: "updatedBy", label: "Updated By" },
     { key: "completedAt", label: "Completed At" },
-    { key: "trouble", label: "Trouble" },
+    { key: "troubleCode", label: "Trouble Code" },
     { key: "notes", label: "Notes" },
     { key: "createdAt", label: "Created At" },
     { key: "updatedAt", label: "Updated At" },
-    { key: "meterType", label: "Meter Type" },
     { key: "dateFrom", label: "Date From" },
     { key: "dateTo", label: "Date To" },
   ], []);
@@ -248,6 +239,18 @@ export default function SearchReports() {
       if (!response.ok) throw new Error("Failed to fetch meter types");
       return response.json();
     },
+  });
+
+  const { data: troubleCodes = [] } = useQuery<TroubleCode[]>({
+    queryKey: ["/api/trouble-codes"],
+  });
+
+  const { data: users = [] } = useQuery<User[]>({
+    queryKey: ["/api/users"],
+  });
+
+  const { data: userGroups = [] } = useQuery<UserGroup[]>({
+    queryKey: ["/api/user-groups"],
   });
 
   // Helper to get color hex from color name
@@ -314,19 +317,15 @@ export default function SearchReports() {
     setFilterRoute("");
     setFilterZone("");
     setFilterOldMeterId("");
-    setFilterOldMeterReading("");
-    setFilterOldMeterType("");
+    setFilterOldMeterType("all");
     setFilterNewMeterId("");
-    setFilterNewMeterReading("");
-    setFilterNewMeterType("");
-    setFilterOldGps("");
-    setFilterNewGps("");
+    setFilterNewMeterType("all");
     setFilterScheduledDate("");
-    setFilterAssignedTo("");
-    setFilterCreatedBy("");
-    setFilterUpdatedBy("");
+    setFilterAssignedTo("all");
+    setFilterCreatedBy("all");
+    setFilterUpdatedBy("all");
     setFilterCompletedAt("");
-    setFilterTrouble("");
+    setFilterTroubleCode("all");
     setFilterNotes("");
     setFilterCreatedAt("");
     setFilterUpdatedAt("");
@@ -808,16 +807,20 @@ export default function SearchReports() {
                 <Input id="filter-old-meter-id" placeholder="Filter..." value={filterOldMeterId} onChange={(e) => setFilterOldMeterId(e.target.value)} data-testid="input-filter-old-meter-id" />
               </div>
             )}
-            {isFilterVisible("oldMeterReading") && (
-              <div className="min-w-[150px]">
-                <Label htmlFor="filter-old-meter-reading">Old Meter Reading</Label>
-                <Input id="filter-old-meter-reading" placeholder="Filter..." value={filterOldMeterReading} onChange={(e) => setFilterOldMeterReading(e.target.value)} data-testid="input-filter-old-meter-reading" />
-              </div>
-            )}
-            {isFilterVisible("oldMeterType") && (
-              <div className="min-w-[150px]">
+            {isFilterVisible("oldMeterType") && meterTypes.length > 0 && (
+              <div className="min-w-[180px]">
                 <Label htmlFor="filter-old-meter-type">Old Meter Type</Label>
-                <Input id="filter-old-meter-type" placeholder="Filter..." value={filterOldMeterType} onChange={(e) => setFilterOldMeterType(e.target.value)} data-testid="input-filter-old-meter-type" />
+                <Select value={filterOldMeterType} onValueChange={setFilterOldMeterType}>
+                  <SelectTrigger id="filter-old-meter-type" data-testid="select-filter-old-meter-type">
+                    <SelectValue placeholder="All Meter Types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Meter Types</SelectItem>
+                    {meterTypes.map((mt) => (
+                      <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             )}
             {isFilterVisible("newMeterId") && (
@@ -826,28 +829,20 @@ export default function SearchReports() {
                 <Input id="filter-new-meter-id" placeholder="Filter..." value={filterNewMeterId} onChange={(e) => setFilterNewMeterId(e.target.value)} data-testid="input-filter-new-meter-id" />
               </div>
             )}
-            {isFilterVisible("newMeterReading") && (
-              <div className="min-w-[150px]">
-                <Label htmlFor="filter-new-meter-reading">New Meter Reading</Label>
-                <Input id="filter-new-meter-reading" placeholder="Filter..." value={filterNewMeterReading} onChange={(e) => setFilterNewMeterReading(e.target.value)} data-testid="input-filter-new-meter-reading" />
-              </div>
-            )}
-            {isFilterVisible("newMeterType") && (
-              <div className="min-w-[150px]">
+            {isFilterVisible("newMeterType") && meterTypes.length > 0 && (
+              <div className="min-w-[180px]">
                 <Label htmlFor="filter-new-meter-type">New Meter Type</Label>
-                <Input id="filter-new-meter-type" placeholder="Filter..." value={filterNewMeterType} onChange={(e) => setFilterNewMeterType(e.target.value)} data-testid="input-filter-new-meter-type" />
-              </div>
-            )}
-            {isFilterVisible("oldGps") && (
-              <div className="min-w-[150px]">
-                <Label htmlFor="filter-old-gps">Old GPS</Label>
-                <Input id="filter-old-gps" placeholder="Filter..." value={filterOldGps} onChange={(e) => setFilterOldGps(e.target.value)} data-testid="input-filter-old-gps" />
-              </div>
-            )}
-            {isFilterVisible("newGps") && (
-              <div className="min-w-[150px]">
-                <Label htmlFor="filter-new-gps">New GPS</Label>
-                <Input id="filter-new-gps" placeholder="Filter..." value={filterNewGps} onChange={(e) => setFilterNewGps(e.target.value)} data-testid="input-filter-new-gps" />
+                <Select value={filterNewMeterType} onValueChange={setFilterNewMeterType}>
+                  <SelectTrigger id="filter-new-meter-type" data-testid="select-filter-new-meter-type">
+                    <SelectValue placeholder="All Meter Types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Meter Types</SelectItem>
+                    {meterTypes.map((mt) => (
+                      <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             )}
             {isFilterVisible("scheduledDate") && (
@@ -856,22 +851,61 @@ export default function SearchReports() {
                 <Input id="filter-scheduled-date" type="date" value={filterScheduledDate} onChange={(e) => setFilterScheduledDate(e.target.value)} data-testid="input-filter-scheduled-date" />
               </div>
             )}
-            {isFilterVisible("assignedTo") && (
-              <div className="min-w-[150px]">
+            {isFilterVisible("assignedTo") && (users.length > 0 || userGroups.length > 0) && (
+              <div className="min-w-[180px]">
                 <Label htmlFor="filter-assigned-to">Assigned To</Label>
-                <Input id="filter-assigned-to" placeholder="Filter..." value={filterAssignedTo} onChange={(e) => setFilterAssignedTo(e.target.value)} data-testid="input-filter-assigned-to" />
+                <Select value={filterAssignedTo} onValueChange={setFilterAssignedTo}>
+                  <SelectTrigger id="filter-assigned-to" data-testid="select-filter-assigned-to">
+                    <SelectValue placeholder="All" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    {users.map((u) => (
+                      <SelectItem key={u.id} value={u.username || String(u.id)}>{u.username || `${u.firstName} ${u.lastName}`}</SelectItem>
+                    ))}
+                    {userGroups.map((g) => (
+                      <SelectItem key={`group-${g.id}`} value={g.name}>{g.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             )}
-            {isFilterVisible("createdBy") && (
-              <div className="min-w-[150px]">
+            {isFilterVisible("createdBy") && (users.length > 0 || userGroups.length > 0) && (
+              <div className="min-w-[180px]">
                 <Label htmlFor="filter-created-by">Created By</Label>
-                <Input id="filter-created-by" placeholder="Filter..." value={filterCreatedBy} onChange={(e) => setFilterCreatedBy(e.target.value)} data-testid="input-filter-created-by" />
+                <Select value={filterCreatedBy} onValueChange={setFilterCreatedBy}>
+                  <SelectTrigger id="filter-created-by" data-testid="select-filter-created-by">
+                    <SelectValue placeholder="All" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    {users.map((u) => (
+                      <SelectItem key={u.id} value={u.username || String(u.id)}>{u.username || `${u.firstName} ${u.lastName}`}</SelectItem>
+                    ))}
+                    {userGroups.map((g) => (
+                      <SelectItem key={`group-${g.id}`} value={g.name}>{g.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             )}
-            {isFilterVisible("updatedBy") && (
-              <div className="min-w-[150px]">
+            {isFilterVisible("updatedBy") && (users.length > 0 || userGroups.length > 0) && (
+              <div className="min-w-[180px]">
                 <Label htmlFor="filter-updated-by">Updated By</Label>
-                <Input id="filter-updated-by" placeholder="Filter..." value={filterUpdatedBy} onChange={(e) => setFilterUpdatedBy(e.target.value)} data-testid="input-filter-updated-by" />
+                <Select value={filterUpdatedBy} onValueChange={setFilterUpdatedBy}>
+                  <SelectTrigger id="filter-updated-by" data-testid="select-filter-updated-by">
+                    <SelectValue placeholder="All" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    {users.map((u) => (
+                      <SelectItem key={u.id} value={u.username || String(u.id)}>{u.username || `${u.firstName} ${u.lastName}`}</SelectItem>
+                    ))}
+                    {userGroups.map((g) => (
+                      <SelectItem key={`group-${g.id}`} value={g.name}>{g.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             )}
             {isFilterVisible("completedAt") && (
@@ -880,10 +914,21 @@ export default function SearchReports() {
                 <Input id="filter-completed-at" type="date" value={filterCompletedAt} onChange={(e) => setFilterCompletedAt(e.target.value)} data-testid="input-filter-completed-at" />
               </div>
             )}
-            {isFilterVisible("trouble") && (
-              <div className="min-w-[150px]">
-                <Label htmlFor="filter-trouble">Trouble</Label>
-                <Input id="filter-trouble" placeholder="Filter..." value={filterTrouble} onChange={(e) => setFilterTrouble(e.target.value)} data-testid="input-filter-trouble" />
+            {isFilterVisible("troubleCode") && troubleCodes.length > 0 && (
+              <div className="min-w-[180px]">
+                <Label htmlFor="filter-trouble-code">Trouble Code</Label>
+                <Select value={filterTroubleCode} onValueChange={setFilterTroubleCode}>
+                  <SelectTrigger id="filter-trouble-code" data-testid="select-filter-trouble-code">
+                    <SelectValue placeholder="All Trouble Codes" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Trouble Codes</SelectItem>
+                    <SelectItem value="none">No Trouble</SelectItem>
+                    {troubleCodes.map((tc) => (
+                      <SelectItem key={tc.id} value={tc.code}>{tc.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             )}
             {isFilterVisible("notes") && (

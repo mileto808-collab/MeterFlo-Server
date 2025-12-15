@@ -124,8 +124,8 @@ export default function ProjectWorkOrders() {
   const [filterOldGps, setFilterOldGps] = useState("");
   const [filterNewGps, setFilterNewGps] = useState("");
   const [filterScheduledDate, setFilterScheduledDate] = useState("");
-  const [filterCreatedBy, setFilterCreatedBy] = useState("");
-  const [filterUpdatedBy, setFilterUpdatedBy] = useState("");
+  const [filterCreatedBy, setFilterCreatedBy] = useState("all");
+  const [filterUpdatedBy, setFilterUpdatedBy] = useState("all");
   const [filterCompletedAt, setFilterCompletedAt] = useState("");
   const [filterNotes, setFilterNotes] = useState("");
   const [filterCreatedAt, setFilterCreatedAt] = useState("");
@@ -832,11 +832,11 @@ export default function ProjectWorkOrders() {
     if (filterScheduledDate) {
       result = result.filter(wo => (wo as any).scheduledDate?.includes(filterScheduledDate));
     }
-    if (filterCreatedBy.trim()) {
-      result = result.filter(wo => (wo as any).createdBy?.toLowerCase().includes(filterCreatedBy.toLowerCase()));
+    if (filterCreatedBy !== "all") {
+      result = result.filter(wo => (wo as any).createdBy === filterCreatedBy);
     }
-    if (filterUpdatedBy.trim()) {
-      result = result.filter(wo => (wo as any).updatedBy?.toLowerCase().includes(filterUpdatedBy.toLowerCase()));
+    if (filterUpdatedBy !== "all") {
+      result = result.filter(wo => (wo as any).updatedBy === filterUpdatedBy);
     }
     if (filterCompletedAt) {
       result = result.filter(wo => wo.completedAt?.includes(filterCompletedAt));
@@ -891,15 +891,15 @@ export default function ProjectWorkOrders() {
     setFilterOldGps("");
     setFilterNewGps("");
     setFilterScheduledDate("");
-    setFilterCreatedBy("");
-    setFilterUpdatedBy("");
+    setFilterCreatedBy("all");
+    setFilterUpdatedBy("all");
     setFilterCompletedAt("");
     setFilterNotes("");
     setFilterCreatedAt("");
     setFilterUpdatedAt("");
   };
 
-  const hasActiveFilters = selectedStatus !== "all" || selectedServiceType !== "all" || dateFrom !== "" || dateTo !== "" || selectedAssignedTo !== "all" || selectedTrouble !== "all" || selectedOldMeterType !== "all" || selectedNewMeterType !== "all" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldMeterId !== "" || filterOldMeterReading !== "" || filterNewMeterId !== "" || filterNewMeterReading !== "" || filterOldGps !== "" || filterNewGps !== "" || filterScheduledDate !== "" || filterCreatedBy !== "" || filterUpdatedBy !== "" || filterCompletedAt !== "" || filterNotes !== "" || filterCreatedAt !== "" || filterUpdatedAt !== "";
+  const hasActiveFilters = selectedStatus !== "all" || selectedServiceType !== "all" || dateFrom !== "" || dateTo !== "" || selectedAssignedTo !== "all" || selectedTrouble !== "all" || selectedOldMeterType !== "all" || selectedNewMeterType !== "all" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldMeterId !== "" || filterOldMeterReading !== "" || filterNewMeterId !== "" || filterNewMeterReading !== "" || filterOldGps !== "" || filterNewGps !== "" || filterScheduledDate !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterCompletedAt !== "" || filterNotes !== "" || filterCreatedAt !== "" || filterUpdatedAt !== "";
 
   const exportToCSV = () => {
     if (!filteredAndSortedWorkOrders.length) {
@@ -2924,16 +2924,36 @@ export default function ProjectWorkOrders() {
                   <Input id="filter-scheduled-date" type="date" value={filterScheduledDate} onChange={(e) => setFilterScheduledDate(e.target.value)} data-testid="input-filter-scheduled-date" />
                 </div>
               )}
-              {isFilterVisible("createdBy") && (
-                <div className="min-w-[120px]">
+              {isFilterVisible("createdBy") && assigneesData && (
+                <div className="min-w-[180px]">
                   <Label htmlFor="filter-created-by">Created By</Label>
-                  <Input id="filter-created-by" placeholder="Filter..." value={filterCreatedBy} onChange={(e) => setFilterCreatedBy(e.target.value)} data-testid="input-filter-created-by" />
+                  <Select value={filterCreatedBy} onValueChange={setFilterCreatedBy}>
+                    <SelectTrigger id="filter-created-by" data-testid="select-filter-created-by">
+                      <SelectValue placeholder="All Users" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Users</SelectItem>
+                      {assigneesData.users.map((user) => (
+                        <SelectItem key={user.id} value={user.label}>{user.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               )}
-              {isFilterVisible("updatedBy") && (
-                <div className="min-w-[120px]">
+              {isFilterVisible("updatedBy") && assigneesData && (
+                <div className="min-w-[180px]">
                   <Label htmlFor="filter-updated-by">Updated By</Label>
-                  <Input id="filter-updated-by" placeholder="Filter..." value={filterUpdatedBy} onChange={(e) => setFilterUpdatedBy(e.target.value)} data-testid="input-filter-updated-by" />
+                  <Select value={filterUpdatedBy} onValueChange={setFilterUpdatedBy}>
+                    <SelectTrigger id="filter-updated-by" data-testid="select-filter-updated-by">
+                      <SelectValue placeholder="All Users" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Users</SelectItem>
+                      {assigneesData.users.map((user) => (
+                        <SelectItem key={user.id} value={user.label}>{user.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               )}
               {isFilterVisible("completedAt") && (
