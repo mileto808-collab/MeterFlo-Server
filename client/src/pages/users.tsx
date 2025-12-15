@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -37,6 +38,13 @@ const createUserSchema = z.object({
   email: z.string().email("Invalid email address").optional().or(z.literal("")),
   role: z.enum(["admin", "user", "customer"]),
   subroleId: z.number().nullable().optional(),
+  address: z.string().max(255).optional().or(z.literal("")),
+  city: z.string().max(100).optional().or(z.literal("")),
+  state: z.string().max(50).optional().or(z.literal("")),
+  zip: z.string().max(20).optional().or(z.literal("")),
+  phone: z.string().max(50).optional().or(z.literal("")),
+  website: z.string().max(255).optional().or(z.literal("")),
+  notes: z.string().optional().or(z.literal("")),
 });
 
 const editUserSchema = z.object({
@@ -46,6 +54,13 @@ const editUserSchema = z.object({
   email: z.string().email("Invalid email address").optional().or(z.literal("")),
   role: z.enum(["admin", "user", "customer"]),
   subroleId: z.number().nullable().optional(),
+  address: z.string().max(255).optional().or(z.literal("")),
+  city: z.string().max(100).optional().or(z.literal("")),
+  state: z.string().max(50).optional().or(z.literal("")),
+  zip: z.string().max(20).optional().or(z.literal("")),
+  phone: z.string().max(50).optional().or(z.literal("")),
+  website: z.string().max(255).optional().or(z.literal("")),
+  notes: z.string().optional().or(z.literal("")),
 });
 
 const resetPasswordSchema = z.object({
@@ -123,12 +138,12 @@ export default function Users() {
 
   const createForm = useForm<CreateUserForm>({
     resolver: zodResolver(createUserSchema),
-    defaultValues: { username: "", password: "", firstName: "", lastName: "", email: "", role: "user", subroleId: null },
+    defaultValues: { username: "", password: "", firstName: "", lastName: "", email: "", role: "user", subroleId: null, address: "", city: "", state: "", zip: "", phone: "", website: "", notes: "" },
   });
 
   const editForm = useForm<EditUserForm>({
     resolver: zodResolver(editUserSchema),
-    defaultValues: { username: "", firstName: "", lastName: "", email: "", role: "user", subroleId: null },
+    defaultValues: { username: "", firstName: "", lastName: "", email: "", role: "user", subroleId: null, address: "", city: "", state: "", zip: "", phone: "", website: "", notes: "" },
   });
 
   const resetPasswordForm = useForm<ResetPasswordForm>({
@@ -268,12 +283,19 @@ export default function Users() {
 
   // Filter users based on search and filter criteria
   const filteredUsers = users?.filter((u) => {
-    // Text search filter
+    // Text search filter - includes new contact fields
+    const searchLower = searchQuery.toLowerCase();
     const matchesSearch = searchQuery === "" || 
-      u.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.firstName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.lastName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.username?.toLowerCase().includes(searchQuery.toLowerCase());
+      (u.email || "").toLowerCase().includes(searchLower) ||
+      (u.firstName || "").toLowerCase().includes(searchLower) ||
+      (u.lastName || "").toLowerCase().includes(searchLower) ||
+      (u.username || "").toLowerCase().includes(searchLower) ||
+      (u.address || "").toLowerCase().includes(searchLower) ||
+      (u.city || "").toLowerCase().includes(searchLower) ||
+      (u.state || "").toLowerCase().includes(searchLower) ||
+      (u.zip || "").toLowerCase().includes(searchLower) ||
+      (u.phone || "").toLowerCase().includes(searchLower) ||
+      (u.website || "").toLowerCase().includes(searchLower);
     
     // Role filter
     const matchesRole = roleFilter === "all" || u.role === roleFilter;
@@ -363,6 +385,13 @@ export default function Users() {
       email: user.email || "",
       role: (user.role as "admin" | "user" | "customer") || "user",
       subroleId: user.subroleId ?? null,
+      address: user.address || "",
+      city: user.city || "",
+      state: user.state || "",
+      zip: user.zip || "",
+      phone: user.phone || "",
+      website: user.website || "",
+      notes: user.notes || "",
     });
     setEditingUser(user);
   };
@@ -546,6 +575,106 @@ export default function Users() {
                     )}
                   />
                 )}
+                
+                <div className="border-t pt-4 mt-4">
+                  <h3 className="text-sm font-medium mb-3">Contact Information</h3>
+                  <div className="space-y-4">
+                    <FormField
+                      control={createForm.control}
+                      name="phone"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Phone</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="(555) 123-4567" data-testid="input-create-phone" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={createForm.control}
+                      name="website"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Website</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="https://example.com" data-testid="input-create-website" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={createForm.control}
+                      name="address"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Address</FormLabel>
+                          <FormControl>
+                            <Input {...field} placeholder="123 Main Street" data-testid="input-create-address" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <div className="grid grid-cols-3 gap-4">
+                      <FormField
+                        control={createForm.control}
+                        name="city"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>City</FormLabel>
+                            <FormControl>
+                              <Input {...field} placeholder="Anytown" data-testid="input-create-city" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={createForm.control}
+                        name="state"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>State</FormLabel>
+                            <FormControl>
+                              <Input {...field} placeholder="CA" data-testid="input-create-state" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={createForm.control}
+                        name="zip"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Zip</FormLabel>
+                            <FormControl>
+                              <Input {...field} placeholder="12345" data-testid="input-create-zip" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                    <FormField
+                      control={createForm.control}
+                      name="notes"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Notes</FormLabel>
+                          <FormControl>
+                            <Textarea {...field} placeholder="Additional notes about this user..." rows={3} data-testid="input-create-notes" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                </div>
+
                 <div className="flex gap-4 pt-4">
                   <Button type="button" variant="outline" onClick={() => {
                     setIsCreatingUser(false);
@@ -705,6 +834,106 @@ export default function Users() {
                     )}
                   />
                 )}
+                
+                <div className="border-t pt-4 mt-4">
+                  <h3 className="text-sm font-medium mb-3">Contact Information</h3>
+                  <div className="space-y-4">
+                    <FormField
+                      control={editForm.control}
+                      name="phone"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Phone</FormLabel>
+                          <FormControl>
+                            <Input {...field} value={field.value || ""} placeholder="(555) 123-4567" data-testid="input-edit-phone" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={editForm.control}
+                      name="website"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Website</FormLabel>
+                          <FormControl>
+                            <Input {...field} value={field.value || ""} placeholder="https://example.com" data-testid="input-edit-website" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={editForm.control}
+                      name="address"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Address</FormLabel>
+                          <FormControl>
+                            <Input {...field} value={field.value || ""} placeholder="123 Main Street" data-testid="input-edit-address" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <div className="grid grid-cols-3 gap-4">
+                      <FormField
+                        control={editForm.control}
+                        name="city"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>City</FormLabel>
+                            <FormControl>
+                              <Input {...field} value={field.value || ""} placeholder="Anytown" data-testid="input-edit-city" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={editForm.control}
+                        name="state"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>State</FormLabel>
+                            <FormControl>
+                              <Input {...field} value={field.value || ""} placeholder="CA" data-testid="input-edit-state" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={editForm.control}
+                        name="zip"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Zip</FormLabel>
+                            <FormControl>
+                              <Input {...field} value={field.value || ""} placeholder="12345" data-testid="input-edit-zip" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                    <FormField
+                      control={editForm.control}
+                      name="notes"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Notes</FormLabel>
+                          <FormControl>
+                            <Textarea {...field} value={field.value || ""} placeholder="Additional notes about this user..." rows={3} data-testid="input-edit-notes" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                </div>
+
                 <div className="flex gap-4 pt-4">
                   <Button type="button" variant="outline" onClick={() => setEditingUser(null)}>Cancel</Button>
                   <Button type="submit" disabled={updateUserMutation.isPending} data-testid="button-submit-edit">
