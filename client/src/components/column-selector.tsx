@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Columns3 } from "lucide-react";
 
 export interface ColumnConfig {
@@ -24,24 +25,6 @@ export function ColumnSelector({
   disabled = false 
 }: ColumnSelectorProps) {
   const [open, setOpen] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el || !open) return;
-
-    const handleWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      el.scrollTop += e.deltaY;
-    };
-
-    el.addEventListener('wheel', handleWheel, { passive: false });
-    
-    return () => {
-      el.removeEventListener('wheel', handleWheel);
-    };
-  }, [open]);
 
   const handleToggleColumn = (key: string, checked: boolean) => {
     const column = allColumns.find(c => c.key === key);
@@ -102,33 +85,31 @@ export function ColumnSelector({
             </div>
           </div>
         </div>
-        <div 
-          ref={scrollRef}
-          className="max-h-[300px] overflow-y-auto p-3 space-y-2"
-          style={{ overscrollBehavior: 'contain' }}
-        >
-          {allColumns.map((column) => (
-            <div 
-              key={column.key} 
-              className="flex items-center gap-2"
-            >
-              <Checkbox
-                id={`col-${column.key}`}
-                checked={visibleColumns.includes(column.key)}
-                onCheckedChange={(checked) => handleToggleColumn(column.key, !!checked)}
-                disabled={column.required}
-                data-testid={`checkbox-column-${column.key}`}
-              />
-              <label 
-                htmlFor={`col-${column.key}`}
-                className={`text-sm cursor-pointer flex-1 ${column.required ? 'text-muted-foreground' : ''}`}
+        <ScrollArea className="h-[300px]">
+          <div className="p-3 space-y-2">
+            {allColumns.map((column) => (
+              <div 
+                key={column.key} 
+                className="flex items-center gap-2"
               >
-                {column.label}
-                {column.required && <span className="text-xs ml-1">(required)</span>}
-              </label>
-            </div>
-          ))}
-        </div>
+                <Checkbox
+                  id={`col-${column.key}`}
+                  checked={visibleColumns.includes(column.key)}
+                  onCheckedChange={(checked) => handleToggleColumn(column.key, !!checked)}
+                  disabled={column.required}
+                  data-testid={`checkbox-column-${column.key}`}
+                />
+                <label 
+                  htmlFor={`col-${column.key}`}
+                  className={`text-sm cursor-pointer flex-1 ${column.required ? 'text-muted-foreground' : ''}`}
+                >
+                  {column.label}
+                  {column.required && <span className="text-xs ml-1">(required)</span>}
+                </label>
+              </div>
+            ))}
+          </div>
+        </ScrollArea>
       </PopoverContent>
     </Popover>
   );
