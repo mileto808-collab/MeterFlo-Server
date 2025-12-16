@@ -409,6 +409,20 @@ export default function ProjectWorkOrders() {
     }
   }, [editingWorkOrder, editForm]);
 
+  // Validation for Completed status - requires all work order fields to be filled
+  const validateCompletedStatus = (data: any, signatureData: string | null, signatureName: string): string[] => {
+    const missingFields: string[] = [];
+    if (!data.oldMeterId) missingFields.push("Old Meter ID");
+    if (data.oldMeterReading === null || data.oldMeterReading === undefined || data.oldMeterReading === "") missingFields.push("Old Meter Reading");
+    if (!data.newMeterId) missingFields.push("New Meter ID");
+    if (data.newMeterReading === null || data.newMeterReading === undefined || data.newMeterReading === "") missingFields.push("New Meter Reading");
+    if (!data.newGps) missingFields.push("New GPS");
+    if (!signatureData) missingFields.push("Signature");
+    if (!signatureName) missingFields.push("Signature Name");
+    if (!data.attachments || (Array.isArray(data.attachments) && data.attachments.length === 0)) missingFields.push("Attachments");
+    return missingFields;
+  };
+
   const normalizeOptionalFields = (data: WorkOrderFormData) => ({
     ...data,
     city: data.city || null,
@@ -474,12 +488,32 @@ export default function ProjectWorkOrders() {
       if ((data as any).trouble) {
         (normalizedData as any).status = troubleStatus;
       }
-      const signatureData = editSignaturePadRef.current?.getSignatureData() || null;
-      const signatureName = editSignaturePadRef.current?.getSignatureName() || "";
+      const signatureDataFromPad = editSignaturePadRef.current?.getSignatureData() || null;
+      const signatureNameFromPad = editSignaturePadRef.current?.getSignatureName() || "";
+      const existingWo = editingWorkOrder as any;
+      
+      // Use new signature data if provided, otherwise fall back to existing
+      const finalSignatureData = signatureDataFromPad || existingWo?.signatureData || null;
+      const finalSignatureName = signatureNameFromPad || existingWo?.signatureName || "";
+      
+      // Validate required fields for Completed status
+      const completedStatus = workOrderStatuses.find(s => s.label === "Completed")?.label || "Completed";
+      if ((data as any).status === completedStatus || (normalizedData as any).status === completedStatus) {
+        const checkData = {
+          ...existingWo,
+          ...normalizedData,
+          attachments: existingWo?.attachments || normalizedData.attachments,
+        };
+        const missingFields = validateCompletedStatus(checkData, finalSignatureData, finalSignatureName);
+        if (missingFields.length > 0) {
+          throw new Error(`Cannot set status to Completed. Missing required fields: ${missingFields.join(", ")}`);
+        }
+      }
+      
       return apiRequest("PATCH", `/api/projects/${projectId}/work-orders/${id}`, {
         ...normalizedData,
-        signatureData,
-        signatureName: signatureName || null,
+        signatureData: finalSignatureData,
+        signatureName: finalSignatureName || null,
       });
     },
     onSuccess: () => {
