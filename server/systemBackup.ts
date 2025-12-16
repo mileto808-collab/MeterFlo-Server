@@ -188,6 +188,7 @@ export async function restoreFullSystem(
   const projectErrors: string[] = [];
   const mainTablesRestored: Record<string, number> = {};
   let projectsRestored = 0;
+  let fkConstraintsDisabled = false;
   
   try {
     const existingTables = await getExistingTables(client);
@@ -205,6 +206,15 @@ export async function restoreFullSystem(
     }
     
     await client.query("BEGIN");
+    
+    // Try to disable foreign key constraint checking during restore
+    // This requires superuser privileges - if it fails, we continue without it
+    try {
+      await client.query("SET session_replication_role = 'replica'");
+      fkConstraintsDisabled = true;
+    } catch (e: any) {
+      warnings.push("Could not disable FK constraints during restore (requires superuser). Restore will proceed with constraints enabled.");
+    }
     
     if (options.clearExisting) {
       for (const tableName of TABLE_DELETE_ORDER) {
@@ -292,10 +302,17 @@ export async function restoreFullSystem(
       e.includes("users:") || e.includes("projects:") || e.includes("subroles:")
     );
     if (criticalErrors.length > 0) {
+      if (fkConstraintsDisabled) {
+        await client.query("SET session_replication_role = 'origin'");
+      }
       await client.query("ROLLBACK");
       throw new Error(`Critical restore errors: ${criticalErrors.join("; ")}`);
     }
     
+    // Re-enable foreign key constraint checking if it was disabled
+    if (fkConstraintsDisabled) {
+      await client.query("SET session_replication_role = 'origin'");
+    }
     await client.query("COMMIT");
     
     for (const projectBackup of backupData.projectDatabases) {
@@ -317,10 +334,19 @@ export async function restoreFullSystem(
     return { mainTablesRestored, projectsRestored, projectErrors, errors, warnings };
   } catch (error: any) {
     try {
+      if (fkConstraintsDisabled) {
+        await client.query("SET session_replication_role = 'origin'");
+      }
       await client.query("ROLLBACK");
     } catch {}
     throw error;
   } finally {
+    // Ensure session_replication_role is reset even if something goes wrong
+    if (fkConstraintsDisabled) {
+      try {
+        await client.query("SET session_replication_role = 'origin'");
+      } catch {}
+    }
     client.release();
   }
 }
