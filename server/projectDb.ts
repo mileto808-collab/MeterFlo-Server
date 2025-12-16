@@ -78,7 +78,7 @@ export async function createProjectSchema(projectName: string, projectId: number
     // Create schema
     await client.query(`CREATE SCHEMA IF NOT EXISTS "${schemaName}"`);
     
-    // Create work_orders table in the project schema
+    // Create work_orders table in the project schema with foreign key constraints
     await client.query(`
       CREATE TABLE IF NOT EXISTS "${schemaName}".work_orders (
         id SERIAL PRIMARY KEY,
@@ -94,7 +94,7 @@ export async function createProjectSchema(projectName: string, projectId: number
         route VARCHAR(100),
         zone VARCHAR(100),
         service_type VARCHAR(20),
-        service_type_id INTEGER,
+        service_type_id INTEGER REFERENCES public.service_types(id) ON DELETE SET NULL,
         old_meter_id VARCHAR(100),
         old_meter_reading INTEGER,
         new_meter_id VARCHAR(100),
@@ -102,24 +102,24 @@ export async function createProjectSchema(projectName: string, projectId: number
         old_gps VARCHAR(100),
         new_gps VARCHAR(100),
         status VARCHAR(50) NOT NULL DEFAULT 'Open',
-        status_id INTEGER,
+        status_id INTEGER REFERENCES public.work_order_statuses(id) ON DELETE SET NULL,
         scheduled_date TIMESTAMP,
         assigned_to VARCHAR,
-        assigned_user_id VARCHAR,
-        assigned_group_id INTEGER,
+        assigned_user_id VARCHAR REFERENCES public.users(id) ON DELETE SET NULL,
+        assigned_group_id INTEGER REFERENCES public.user_groups(id) ON DELETE SET NULL,
         created_by VARCHAR,
-        created_by_id VARCHAR,
+        created_by_id VARCHAR REFERENCES public.users(id) ON DELETE SET NULL,
         updated_by VARCHAR,
-        updated_by_id VARCHAR,
+        updated_by_id VARCHAR REFERENCES public.users(id) ON DELETE SET NULL,
         completed_at TIMESTAMP,
         trouble VARCHAR(100),
-        trouble_code_id INTEGER,
+        trouble_code_id INTEGER REFERENCES public.trouble_codes(id) ON DELETE SET NULL,
         notes TEXT,
         attachments TEXT[],
         old_meter_type VARCHAR(255),
-        old_meter_type_id INTEGER,
+        old_meter_type_id INTEGER REFERENCES public.meter_types(id) ON DELETE SET NULL,
         new_meter_type VARCHAR(255),
-        new_meter_type_id INTEGER,
+        new_meter_type_id INTEGER REFERENCES public.meter_types(id) ON DELETE SET NULL,
         signature_data TEXT,
         signature_name VARCHAR(255),
         created_at TIMESTAMP DEFAULT NOW(),
@@ -232,6 +232,43 @@ export async function migrateProjectSchema(schemaName: string): Promise<void> {
       ALTER TABLE "${schemaName}".work_orders 
       ADD COLUMN IF NOT EXISTS new_meter_type_id INTEGER
     `);
+    
+    // Add foreign key constraints if they don't exist
+    // Each constraint is added in a try-catch to handle cases where it already exists
+    const fkConstraints = [
+      { column: 'service_type_id', ref_table: 'public.service_types', ref_column: 'id', constraint_name: 'fk_service_type' },
+      { column: 'status_id', ref_table: 'public.work_order_statuses', ref_column: 'id', constraint_name: 'fk_status' },
+      { column: 'assigned_user_id', ref_table: 'public.users', ref_column: 'id', constraint_name: 'fk_assigned_user' },
+      { column: 'assigned_group_id', ref_table: 'public.user_groups', ref_column: 'id', constraint_name: 'fk_assigned_group' },
+      { column: 'created_by_id', ref_table: 'public.users', ref_column: 'id', constraint_name: 'fk_created_by' },
+      { column: 'updated_by_id', ref_table: 'public.users', ref_column: 'id', constraint_name: 'fk_updated_by' },
+      { column: 'trouble_code_id', ref_table: 'public.trouble_codes', ref_column: 'id', constraint_name: 'fk_trouble_code' },
+      { column: 'old_meter_type_id', ref_table: 'public.meter_types', ref_column: 'id', constraint_name: 'fk_old_meter_type' },
+      { column: 'new_meter_type_id', ref_table: 'public.meter_types', ref_column: 'id', constraint_name: 'fk_new_meter_type' },
+    ];
+    
+    for (const fk of fkConstraints) {
+      try {
+        // Check if constraint already exists
+        const constraintExists = await client.query(`
+          SELECT 1 FROM information_schema.table_constraints 
+          WHERE table_schema = $1 AND table_name = 'work_orders' 
+          AND constraint_name = $2
+        `, [schemaName, fk.constraint_name]);
+        
+        if (constraintExists.rows.length === 0) {
+          await client.query(`
+            ALTER TABLE "${schemaName}".work_orders 
+            ADD CONSTRAINT ${fk.constraint_name} 
+            FOREIGN KEY (${fk.column}) REFERENCES ${fk.ref_table}(${fk.ref_column}) ON DELETE SET NULL
+          `);
+          console.log(`Added FK constraint ${fk.constraint_name} to ${schemaName}.work_orders`);
+        }
+      } catch (fkError) {
+        // Constraint might already exist or other error, log and continue
+        console.log(`FK constraint ${fk.constraint_name} for ${schemaName}: ${fkError}`);
+      }
+    }
     
     // Migrate scheduled_date from VARCHAR/DATE to TIMESTAMP if needed
     const scheduledDateCheck = await client.query(`

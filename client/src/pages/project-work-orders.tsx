@@ -103,6 +103,7 @@ export default function ProjectWorkOrders() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [selectedAssignedTo, setSelectedAssignedTo] = useState<string>("all");
+  const [selectedAssignedGroup, setSelectedAssignedGroup] = useState<string>("all");
   const [selectedTrouble, setSelectedTrouble] = useState<string>("all");
   const [selectedOldMeterType, setSelectedOldMeterType] = useState<string>("all");
   const [selectedNewMeterType, setSelectedNewMeterType] = useState<string>("all");
@@ -192,7 +193,8 @@ export default function ProjectWorkOrders() {
     { key: "newMeterType", label: "New Meter Type" },
     { key: "status", label: "Status" },
     { key: "scheduledDate", label: "Scheduled Date" },
-    { key: "assignedTo", label: "Assigned To" },
+    { key: "assignedTo", label: "Assigned To (User)" },
+    { key: "assignedGroup", label: "Assigned To (Group)" },
     { key: "createdBy", label: "Created By" },
     { key: "updatedBy", label: "Updated By" },
     { key: "completedAt", label: "Completed At" },
@@ -706,9 +708,34 @@ export default function ProjectWorkOrders() {
       result = result.filter(wo => wo.createdAt && new Date(wo.createdAt) <= toDate);
     }
     
-    // Filter by assigned to (exact match - both dropdown and work order use display label)
+    // Filter by assigned to user (using ID when available, falling back to user name)
     if (selectedAssignedTo !== "all") {
-      result = result.filter(wo => wo.assignedTo === selectedAssignedTo);
+      // Look up user label from selected ID for fallback comparison
+      const selectedUser = assigneesData?.users?.find(u => u.id === selectedAssignedTo);
+      const selectedUserLabel = selectedUser?.label;
+      result = result.filter(wo => {
+        const woAny = wo as any;
+        // First try ID-based match (normalize both to strings for comparison)
+        if (woAny.assignedUserId && String(woAny.assignedUserId) === String(selectedAssignedTo)) return true;
+        // Fall back to user name match in assignedTo
+        if (selectedUserLabel && wo.assignedTo === selectedUserLabel) return true;
+        return false;
+      });
+    }
+    
+    // Filter by assigned to group (using ID when available, falling back to group name)
+    if (selectedAssignedGroup !== "all") {
+      // Look up group name from selected ID for fallback comparison
+      const selectedGroup = assigneesData?.groups?.find(g => String(g.id) === selectedAssignedGroup);
+      const selectedGroupName = selectedGroup?.label;
+      result = result.filter(wo => {
+        const woAny = wo as any;
+        // First try ID-based match
+        if (woAny.assignedGroupId && String(woAny.assignedGroupId) === selectedAssignedGroup) return true;
+        // Fall back to group name match in assignedTo
+        if (selectedGroupName && wo.assignedTo === selectedGroupName) return true;
+        return false;
+      });
     }
     
     // Filter by trouble code (handle null, empty, whitespace, array/JSON, and comma-delimited values)
@@ -813,10 +840,30 @@ export default function ProjectWorkOrders() {
       result = result.filter(wo => (wo as any).scheduledDate?.includes(filterScheduledDate));
     }
     if (filterCreatedBy !== "all") {
-      result = result.filter(wo => (wo as any).createdBy === filterCreatedBy);
+      // Look up user label from selected ID for fallback comparison
+      const selectedUser = assigneesData?.users?.find(u => u.id === filterCreatedBy);
+      const selectedUserLabel = selectedUser?.label;
+      result = result.filter(wo => {
+        const woAny = wo as any;
+        // First try ID-based match (normalize both to strings for comparison)
+        if (woAny.createdById && String(woAny.createdById) === String(filterCreatedBy)) return true;
+        // Fall back to user name match
+        if (selectedUserLabel && woAny.createdBy === selectedUserLabel) return true;
+        return false;
+      });
     }
     if (filterUpdatedBy !== "all") {
-      result = result.filter(wo => (wo as any).updatedBy === filterUpdatedBy);
+      // Look up user label from selected ID for fallback comparison
+      const selectedUser = assigneesData?.users?.find(u => u.id === filterUpdatedBy);
+      const selectedUserLabel = selectedUser?.label;
+      result = result.filter(wo => {
+        const woAny = wo as any;
+        // First try ID-based match (normalize both to strings for comparison)
+        if (woAny.updatedById && String(woAny.updatedById) === String(filterUpdatedBy)) return true;
+        // Fall back to user name match
+        if (selectedUserLabel && woAny.updatedBy === selectedUserLabel) return true;
+        return false;
+      });
     }
     if (filterCompletedAt) {
       result = result.filter(wo => wo.completedAt?.includes(filterCompletedAt));
@@ -842,7 +889,7 @@ export default function ProjectWorkOrders() {
     }
     
     return result;
-  }, [workOrders, searchQuery, sortColumn, sortDirection, selectedStatus, selectedServiceType, dateFrom, dateTo, selectedAssignedTo, selectedTrouble, selectedOldMeterType, selectedNewMeterType, meterTypes, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterNewMeterId, filterScheduledDate, filterCreatedBy, filterUpdatedBy, filterCompletedAt, filterNotes, filterCreatedAt, filterUpdatedAt]);
+  }, [workOrders, searchQuery, sortColumn, sortDirection, selectedStatus, selectedServiceType, dateFrom, dateTo, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldMeterType, selectedNewMeterType, meterTypes, assigneesData, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterNewMeterId, filterScheduledDate, filterCreatedBy, filterUpdatedBy, filterCompletedAt, filterNotes, filterCreatedAt, filterUpdatedAt]);
 
   const clearFilters = () => {
     setSearchQuery("");
@@ -851,6 +898,7 @@ export default function ProjectWorkOrders() {
     setDateFrom("");
     setDateTo("");
     setSelectedAssignedTo("all");
+    setSelectedAssignedGroup("all");
     setSelectedTrouble("all");
     setSelectedOldMeterType("all");
     setSelectedNewMeterType("all");
@@ -875,7 +923,7 @@ export default function ProjectWorkOrders() {
     setFilterUpdatedAt("");
   };
 
-  const hasActiveFilters = selectedStatus !== "all" || selectedServiceType !== "all" || dateFrom !== "" || dateTo !== "" || selectedAssignedTo !== "all" || selectedTrouble !== "all" || selectedOldMeterType !== "all" || selectedNewMeterType !== "all" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldMeterId !== "" || filterNewMeterId !== "" || filterScheduledDate !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterCompletedAt !== "" || filterNotes !== "" || filterCreatedAt !== "" || filterUpdatedAt !== "";
+  const hasActiveFilters = selectedStatus !== "all" || selectedServiceType !== "all" || dateFrom !== "" || dateTo !== "" || selectedAssignedTo !== "all" || selectedAssignedGroup !== "all" || selectedTrouble !== "all" || selectedOldMeterType !== "all" || selectedNewMeterType !== "all" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldMeterId !== "" || filterNewMeterId !== "" || filterScheduledDate !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterCompletedAt !== "" || filterNotes !== "" || filterCreatedAt !== "" || filterUpdatedAt !== "";
 
   const exportToCSV = () => {
     if (!filteredAndSortedWorkOrders.length) {
@@ -2732,18 +2780,31 @@ export default function ProjectWorkOrders() {
               )}
               {isFilterVisible("assignedTo") && assigneesData && (
                 <div className="min-w-[180px]">
-                  <Label htmlFor="filter-assigned-to">Assigned To</Label>
+                  <Label htmlFor="filter-assigned-to">Assigned To (User)</Label>
                   <Select value={selectedAssignedTo} onValueChange={setSelectedAssignedTo}>
                     <SelectTrigger id="filter-assigned-to" data-testid="select-filter-assigned-to">
-                      <SelectValue placeholder="All Assignees" />
+                      <SelectValue placeholder="All Users" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All Assignees</SelectItem>
+                      <SelectItem value="all">All Users</SelectItem>
                       {assigneesData.users.map((user) => (
-                        <SelectItem key={user.id} value={user.label}>{user.label}</SelectItem>
+                        <SelectItem key={user.id} value={user.id}>{user.label}</SelectItem>
                       ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {isFilterVisible("assignedGroup") && assigneesData && (
+                <div className="min-w-[180px]">
+                  <Label htmlFor="filter-assigned-group">Assigned To (Group)</Label>
+                  <Select value={selectedAssignedGroup} onValueChange={setSelectedAssignedGroup}>
+                    <SelectTrigger id="filter-assigned-group" data-testid="select-filter-assigned-group">
+                      <SelectValue placeholder="All Groups" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Groups</SelectItem>
                       {assigneesData.groups.map((group) => (
-                        <SelectItem key={group.id} value={group.label}>{group.label}</SelectItem>
+                        <SelectItem key={group.id} value={String(group.id)}>{group.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -2886,10 +2947,7 @@ export default function ProjectWorkOrders() {
                     <SelectContent>
                       <SelectItem value="all">All</SelectItem>
                       {assigneesData.users.map((user) => (
-                        <SelectItem key={user.id} value={user.label}>{user.label}</SelectItem>
-                      ))}
-                      {assigneesData.groups.map((group) => (
-                        <SelectItem key={`group-${group.id}`} value={group.label}>{group.label}</SelectItem>
+                        <SelectItem key={user.id} value={user.id}>{user.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -2905,10 +2963,7 @@ export default function ProjectWorkOrders() {
                     <SelectContent>
                       <SelectItem value="all">All</SelectItem>
                       {assigneesData.users.map((user) => (
-                        <SelectItem key={user.id} value={user.label}>{user.label}</SelectItem>
-                      ))}
-                      {assigneesData.groups.map((group) => (
-                        <SelectItem key={`group-${group.id}`} value={group.label}>{group.label}</SelectItem>
+                        <SelectItem key={user.id} value={user.id}>{user.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
