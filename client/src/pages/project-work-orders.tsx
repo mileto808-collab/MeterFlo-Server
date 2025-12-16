@@ -44,7 +44,6 @@ import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, Arrow
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
 import { Label } from "@/components/ui/label";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import type { Project, WorkOrderStatus, TroubleCode, ServiceTypeRecord, MeterType } from "@shared/schema";
 import { insertProjectWorkOrderSchema } from "@shared/schema";
 import type { ProjectWorkOrder } from "../../../server/projectDb";
@@ -2914,7 +2913,7 @@ export default function ProjectWorkOrders() {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <ScrollArea className="w-full">
+            <div className="overflow-x-auto w-full">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -3226,7 +3225,7 @@ export default function ProjectWorkOrders() {
                   ))}
                 </TableBody>
               </Table>
-            </ScrollArea>
+            </div>
           </CardContent>
         </Card>
       )}
