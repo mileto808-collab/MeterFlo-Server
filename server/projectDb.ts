@@ -94,6 +94,7 @@ export async function createProjectSchema(projectName: string, projectId: number
         route VARCHAR(100),
         zone VARCHAR(100),
         service_type VARCHAR(20),
+        service_type_id INTEGER,
         old_meter_id VARCHAR(100),
         old_meter_reading INTEGER,
         new_meter_id VARCHAR(100),
@@ -101,16 +102,24 @@ export async function createProjectSchema(projectName: string, projectId: number
         old_gps VARCHAR(100),
         new_gps VARCHAR(100),
         status VARCHAR(50) NOT NULL DEFAULT 'Open',
+        status_id INTEGER,
         scheduled_date TIMESTAMP,
         assigned_to VARCHAR,
+        assigned_user_id VARCHAR,
+        assigned_group_id INTEGER,
         created_by VARCHAR,
+        created_by_id VARCHAR,
         updated_by VARCHAR,
+        updated_by_id VARCHAR,
         completed_at TIMESTAMP,
         trouble VARCHAR(100),
+        trouble_code_id INTEGER,
         notes TEXT,
         attachments TEXT[],
         old_meter_type VARCHAR(255),
+        old_meter_type_id INTEGER,
         new_meter_type VARCHAR(255),
+        new_meter_type_id INTEGER,
         signature_data TEXT,
         signature_name VARCHAR(255),
         created_at TIMESTAMP DEFAULT NOW(),
@@ -184,6 +193,44 @@ export async function migrateProjectSchema(schemaName: string): Promise<void> {
     await client.query(`
       ALTER TABLE "${schemaName}".work_orders 
       ADD COLUMN IF NOT EXISTS signature_name VARCHAR(255)
+    `);
+    
+    // Add foreign key ID columns for data integrity
+    await client.query(`
+      ALTER TABLE "${schemaName}".work_orders 
+      ADD COLUMN IF NOT EXISTS service_type_id INTEGER
+    `);
+    await client.query(`
+      ALTER TABLE "${schemaName}".work_orders 
+      ADD COLUMN IF NOT EXISTS status_id INTEGER
+    `);
+    await client.query(`
+      ALTER TABLE "${schemaName}".work_orders 
+      ADD COLUMN IF NOT EXISTS assigned_user_id VARCHAR
+    `);
+    await client.query(`
+      ALTER TABLE "${schemaName}".work_orders 
+      ADD COLUMN IF NOT EXISTS assigned_group_id INTEGER
+    `);
+    await client.query(`
+      ALTER TABLE "${schemaName}".work_orders 
+      ADD COLUMN IF NOT EXISTS created_by_id VARCHAR
+    `);
+    await client.query(`
+      ALTER TABLE "${schemaName}".work_orders 
+      ADD COLUMN IF NOT EXISTS updated_by_id VARCHAR
+    `);
+    await client.query(`
+      ALTER TABLE "${schemaName}".work_orders 
+      ADD COLUMN IF NOT EXISTS trouble_code_id INTEGER
+    `);
+    await client.query(`
+      ALTER TABLE "${schemaName}".work_orders 
+      ADD COLUMN IF NOT EXISTS old_meter_type_id INTEGER
+    `);
+    await client.query(`
+      ALTER TABLE "${schemaName}".work_orders 
+      ADD COLUMN IF NOT EXISTS new_meter_type_id INTEGER
     `);
     
     // Migrate scheduled_date from VARCHAR/DATE to TIMESTAMP if needed
@@ -305,6 +352,7 @@ export class ProjectWorkOrderStorage {
       
       let notes = workOrder.notes || null;
       const troubleCode = (workOrder as any).trouble;
+      let troubleCodeId: number | null = null;
       
       // If trouble code is set, auto-set status to "Trouble" and add note
       if (troubleCode) {
@@ -314,6 +362,7 @@ export class ProjectWorkOrderStorage {
         let troubleNote: string;
         if (troubleCodeDetails) {
           troubleNote = `Trouble Code: ${troubleCodeDetails.code} - ${troubleCodeDetails.label} - ${timestamp}`;
+          troubleCodeId = troubleCodeDetails.id;
         } else {
           // Fallback: use the code value directly if lookup fails
           troubleNote = `Trouble Code: ${troubleCode} - ${timestamp}`;
@@ -321,10 +370,31 @@ export class ProjectWorkOrderStorage {
         notes = notes ? `${notes}\n${troubleNote}` : troubleNote;
       }
       
+      // Resolve text values to IDs for foreign key integrity
+      const statusId = await this.resolveStatusId(status);
+      const serviceTypeId = workOrder.serviceType ? await this.resolveServiceTypeId(workOrder.serviceType) : null;
+      const oldMeterTypeId = (workOrder as any).oldMeterType ? await this.resolveMeterTypeId((workOrder as any).oldMeterType) : null;
+      const newMeterTypeId = (workOrder as any).newMeterType ? await this.resolveMeterTypeId((workOrder as any).newMeterType) : null;
+      
+      // Resolve assigned_to - check if it's a user or group
+      const assignedToValue = workOrder.assignedTo || null;
+      let assignedUserId: string | null = null;
+      let assignedGroupId: number | null = null;
+      if (assignedToValue) {
+        assignedUserId = await this.resolveUserId(assignedToValue);
+        if (!assignedUserId) {
+          assignedGroupId = await this.resolveGroupId(assignedToValue);
+        }
+      }
+      
+      // Resolve created_by to user ID
+      const createdByValue = createdBy || workOrder.createdBy || null;
+      const createdById = createdByValue ? await this.resolveUserId(createdByValue) : null;
+      
       const result = await client.query(
         `INSERT INTO "${this.schemaName}".work_orders 
-         (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, scheduled_date, assigned_to, created_by, updated_by, trouble, notes, attachments, old_meter_type, new_meter_type, signature_data, signature_name)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
+         (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, service_type_id, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, status_id, scheduled_date, assigned_to, assigned_user_id, assigned_group_id, created_by, created_by_id, updated_by, updated_by_id, trouble, trouble_code_id, notes, attachments, old_meter_type, old_meter_type_id, new_meter_type, new_meter_type_id, signature_data, signature_name)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39)
          RETURNING *`,
         [
           workOrder.customerWoId,
@@ -339,6 +409,7 @@ export class ProjectWorkOrderStorage {
           workOrder.route || null,
           workOrder.zone || null,
           workOrder.serviceType,
+          serviceTypeId,
           workOrder.oldMeterId || null,
           workOrder.oldMeterReading ?? null,
           workOrder.newMeterId || null,
@@ -346,15 +417,23 @@ export class ProjectWorkOrderStorage {
           workOrder.oldGps || null,
           workOrder.newGps || null,
           status,
+          statusId,
           workOrder.scheduledDate || null,
-          workOrder.assignedTo || null,
-          createdBy || workOrder.createdBy || null,
-          createdBy || null,
+          assignedToValue,
+          assignedUserId,
+          assignedGroupId,
+          createdByValue,
+          createdById,
+          createdByValue,
+          createdById,
           troubleCode || null,
+          troubleCodeId,
           notes,
           workOrder.attachments || null,
           (workOrder as any).oldMeterType || null,
+          oldMeterTypeId,
           (workOrder as any).newMeterType || null,
+          newMeterTypeId,
           (workOrder as any).signatureData || null,
           (workOrder as any).signatureName || null,
         ]
@@ -365,16 +444,70 @@ export class ProjectWorkOrderStorage {
     }
   }
   
-  private async getTroubleCodeDetails(troubleCodeValue: string): Promise<{ code: string; label: string } | null> {
+  private async getTroubleCodeDetails(troubleCodeValue: string): Promise<{ id: number; code: string; label: string } | null> {
     try {
       const troubleCodes = await storage.getTroubleCodes();
       const found = troubleCodes.find(tc => tc.code === troubleCodeValue);
       if (found) {
-        return { code: found.code, label: found.label };
+        return { id: found.id, code: found.code, label: found.label };
       }
       return null;
     } catch (error) {
       console.error("Error fetching trouble code details:", error);
+      return null;
+    }
+  }
+  
+  private async resolveStatusId(statusLabel: string): Promise<number | null> {
+    try {
+      const statuses = await storage.getWorkOrderStatuses();
+      const found = statuses.find(s => s.label === statusLabel || s.code === statusLabel);
+      return found?.id || null;
+    } catch {
+      return null;
+    }
+  }
+  
+  private async resolveServiceTypeId(serviceTypeLabel: string): Promise<number | null> {
+    try {
+      const serviceTypes = await storage.getServiceTypes();
+      const found = serviceTypes.find(s => s.label === serviceTypeLabel || s.code === serviceTypeLabel);
+      return found?.id || null;
+    } catch {
+      return null;
+    }
+  }
+  
+  private async resolveMeterTypeId(meterTypeLabel: string): Promise<number | null> {
+    try {
+      const meterTypes = await storage.getMeterTypes();
+      const found = meterTypes.find(m => m.productLabel === meterTypeLabel || m.productId === meterTypeLabel);
+      return found?.id || null;
+    } catch {
+      return null;
+    }
+  }
+  
+  private async resolveUserId(userIdentifier: string): Promise<string | null> {
+    try {
+      const users = await storage.getAllUsers();
+      const found = users.find(u => 
+        u.id === userIdentifier || 
+        u.username === userIdentifier ||
+        `${u.firstName} ${u.lastName}`.trim() === userIdentifier
+      );
+      return found?.id || null;
+    } catch {
+      return null;
+    }
+  }
+  
+  private async resolveGroupId(groupName: string): Promise<number | null> {
+    try {
+      const groups = await storage.getAllUserGroups();
+      const found = groups.find(g => g.name === groupName);
+      return found?.id || null;
+    } catch {
       return null;
     }
   }
@@ -463,7 +596,14 @@ export class ProjectWorkOrderStorage {
       }
       if (updates.serviceType !== undefined) {
         setClauses.push(`service_type = $${paramCount++}`);
-        values.push(updates.serviceType);
+        values.push(updates.serviceType || null);
+        if (updates.serviceType) {
+          const serviceTypeId = await this.resolveServiceTypeId(updates.serviceType);
+          setClauses.push(`service_type_id = $${paramCount++}`);
+          values.push(serviceTypeId);
+        } else {
+          setClauses.push(`service_type_id = NULL`);
+        }
       }
       if (updates.oldMeterId !== undefined) {
         setClauses.push(`old_meter_id = $${paramCount++}`);
@@ -492,29 +632,51 @@ export class ProjectWorkOrderStorage {
       if (updates.scheduledDate !== undefined) {
         setClauses.push(`scheduled_date = $${paramCount++}`);
         values.push(updates.scheduledDate || null);
-        // If scheduledDate is being set, auto-set status to "Scheduled"
+        // If scheduledDate is being set, auto-set status to "Scheduled" with corresponding ID
         if (updates.scheduledDate && updates.status === undefined) {
-          setClauses.push(`status = 'Scheduled'`);
+          setClauses.push(`status = $${paramCount++}`);
+          values.push("Scheduled");
+          const scheduledStatusId = await this.resolveStatusId("Scheduled");
+          setClauses.push(`status_id = $${paramCount++}`);
+          values.push(scheduledStatusId);
         }
       }
       // Handle status - if trouble code is set, force status to "Trouble"
       if (forceStatusToTrouble) {
         setClauses.push(`status = $${paramCount++}`);
         values.push("Trouble");
+        const statusId = await this.resolveStatusId("Trouble");
+        setClauses.push(`status_id = $${paramCount++}`);
+        values.push(statusId);
       } else if (updates.status !== undefined) {
         setClauses.push(`status = $${paramCount++}`);
         values.push(updates.status);
+        const statusId = await this.resolveStatusId(updates.status);
+        setClauses.push(`status_id = $${paramCount++}`);
+        values.push(statusId);
         if (updates.status === "Completed") {
           setClauses.push(`completed_at = NOW()`);
         }
-        // If status is changing away from "Scheduled", clear scheduledDate
+        // If status is changing away from "Scheduled", clear scheduledDate and related fields
         if (updates.status !== "Scheduled" && updates.scheduledDate === undefined) {
           setClauses.push(`scheduled_date = NULL`);
         }
       }
+      // Handle clearing scheduled_date without explicit status change - preserve status_id
+      if (updates.scheduledDate === null && updates.status === undefined) {
+        // Just clearing the date, don't change status
+      }
       if ((updates as any).trouble !== undefined) {
         setClauses.push(`trouble = $${paramCount++}`);
-        values.push((updates as any).trouble);
+        values.push((updates as any).trouble || null);
+        if ((updates as any).trouble) {
+          const troubleCodeDetails = await this.getTroubleCodeDetails((updates as any).trouble);
+          setClauses.push(`trouble_code_id = $${paramCount++}`);
+          values.push(troubleCodeDetails?.id || null);
+        } else {
+          // Clear trouble_code_id when clearing trouble text
+          setClauses.push(`trouble_code_id = NULL`);
+        }
       }
       // Handle notes - append trouble note if needed
       if (troubleNoteToAdd) {
@@ -538,11 +700,25 @@ export class ProjectWorkOrderStorage {
       }
       if ((updates as any).oldMeterType !== undefined) {
         setClauses.push(`old_meter_type = $${paramCount++}`);
-        values.push((updates as any).oldMeterType);
+        values.push((updates as any).oldMeterType || null);
+        if ((updates as any).oldMeterType) {
+          const oldMeterTypeId = await this.resolveMeterTypeId((updates as any).oldMeterType);
+          setClauses.push(`old_meter_type_id = $${paramCount++}`);
+          values.push(oldMeterTypeId);
+        } else {
+          setClauses.push(`old_meter_type_id = NULL`);
+        }
       }
       if ((updates as any).newMeterType !== undefined) {
         setClauses.push(`new_meter_type = $${paramCount++}`);
-        values.push((updates as any).newMeterType);
+        values.push((updates as any).newMeterType || null);
+        if ((updates as any).newMeterType) {
+          const newMeterTypeId = await this.resolveMeterTypeId((updates as any).newMeterType);
+          setClauses.push(`new_meter_type_id = $${paramCount++}`);
+          values.push(newMeterTypeId);
+        } else {
+          setClauses.push(`new_meter_type_id = NULL`);
+        }
       }
       if ((updates as any).signatureData !== undefined) {
         setClauses.push(`signature_data = $${paramCount++}`);
@@ -553,10 +729,36 @@ export class ProjectWorkOrderStorage {
         values.push((updates as any).signatureName);
       }
 
+      // Handle assignedTo if provided - resolve to user or group ID
+      if (updates.assignedTo !== undefined) {
+        setClauses.push(`assigned_to = $${paramCount++}`);
+        values.push(updates.assignedTo);
+        
+        if (updates.assignedTo) {
+          const assignedUserId = await this.resolveUserId(updates.assignedTo);
+          if (assignedUserId) {
+            setClauses.push(`assigned_user_id = $${paramCount++}`);
+            values.push(assignedUserId);
+            setClauses.push(`assigned_group_id = NULL`);
+          } else {
+            const assignedGroupId = await this.resolveGroupId(updates.assignedTo);
+            setClauses.push(`assigned_user_id = NULL`);
+            setClauses.push(`assigned_group_id = $${paramCount++}`);
+            values.push(assignedGroupId);
+          }
+        } else {
+          setClauses.push(`assigned_user_id = NULL`);
+          setClauses.push(`assigned_group_id = NULL`);
+        }
+      }
+
       // Always set updatedBy and updated_at
       if (updatedBy) {
         setClauses.push(`updated_by = $${paramCount++}`);
         values.push(updatedBy);
+        const updatedById = await this.resolveUserId(updatedBy);
+        setClauses.push(`updated_by_id = $${paramCount++}`);
+        values.push(updatedById);
       }
       setClauses.push(`updated_at = NOW()`);
       values.push(id);
@@ -636,6 +838,7 @@ export class ProjectWorkOrderStorage {
       route: row.route,
       zone: row.zone,
       serviceType: row.service_type,
+      serviceTypeId: row.service_type_id,
       oldMeterId: row.old_meter_id,
       oldMeterReading: row.old_meter_reading,
       newMeterId: row.new_meter_id,
@@ -643,16 +846,24 @@ export class ProjectWorkOrderStorage {
       oldGps: row.old_gps,
       newGps: row.new_gps,
       status: row.status,
+      statusId: row.status_id,
       scheduledDate: row.scheduled_date,
       assignedTo: row.assigned_to,
+      assignedUserId: row.assigned_user_id,
+      assignedGroupId: row.assigned_group_id,
       createdBy: row.created_by,
+      createdById: row.created_by_id,
       updatedBy: row.updated_by,
+      updatedById: row.updated_by_id,
       completedAt: row.completed_at,
       trouble: row.trouble,
+      troubleCodeId: row.trouble_code_id,
       notes: row.notes,
       attachments: row.attachments,
       oldMeterType: row.old_meter_type,
+      oldMeterTypeId: row.old_meter_type_id,
       newMeterType: row.new_meter_type,
+      newMeterTypeId: row.new_meter_type_id,
       signatureData: row.signature_data,
       signatureName: row.signature_name,
       createdAt: row.created_at,
@@ -698,6 +909,7 @@ export async function backupProjectDatabase(schemaName: string): Promise<{
       route: row.route,
       zone: row.zone,
       serviceType: row.service_type,
+      serviceTypeId: row.service_type_id,
       oldMeterId: row.old_meter_id,
       oldMeterReading: row.old_meter_reading,
       newMeterId: row.new_meter_id,
@@ -705,16 +917,26 @@ export async function backupProjectDatabase(schemaName: string): Promise<{
       oldGps: row.old_gps,
       newGps: row.new_gps,
       status: row.status,
+      statusId: row.status_id,
       scheduledDate: row.scheduled_date,
       assignedTo: row.assigned_to,
+      assignedUserId: row.assigned_user_id,
+      assignedGroupId: row.assigned_group_id,
       createdBy: row.created_by,
+      createdById: row.created_by_id,
       updatedBy: row.updated_by,
+      updatedById: row.updated_by_id,
       completedAt: row.completed_at,
       trouble: row.trouble,
+      troubleCodeId: row.trouble_code_id,
       notes: row.notes,
       attachments: row.attachments,
       oldMeterType: row.old_meter_type,
+      oldMeterTypeId: row.old_meter_type_id,
       newMeterType: row.new_meter_type,
+      newMeterTypeId: row.new_meter_type_id,
+      signatureData: row.signature_data,
+      signatureName: row.signature_name,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }));
@@ -750,8 +972,8 @@ export async function restoreProjectDatabase(
       try {
         await client.query(
           `INSERT INTO "${schemaName}".work_orders 
-           (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, scheduled_date, assigned_to, created_by, updated_by, completed_at, trouble, notes, attachments, old_meter_type, new_meter_type)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)`,
+           (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, service_type_id, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, status_id, scheduled_date, assigned_to, assigned_user_id, assigned_group_id, created_by, created_by_id, updated_by, updated_by_id, completed_at, trouble, trouble_code_id, notes, attachments, old_meter_type, old_meter_type_id, new_meter_type, new_meter_type_id, signature_data, signature_name)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40)`,
           [
             wo.customerWoId || null,
             wo.customerId || null,
@@ -765,6 +987,7 @@ export async function restoreProjectDatabase(
             wo.route || null,
             wo.zone || null,
             wo.serviceType || null,
+            wo.serviceTypeId || null,
             wo.oldMeterId || null,
             wo.oldMeterReading ?? null,
             wo.newMeterId || null,
@@ -772,16 +995,26 @@ export async function restoreProjectDatabase(
             wo.oldGps || null,
             wo.newGps || null,
             wo.status || "Open",
+            wo.statusId || null,
             wo.scheduledDate || null,
             wo.assignedTo || null,
+            wo.assignedUserId || null,
+            wo.assignedGroupId || null,
             wo.createdBy || null,
+            wo.createdById || null,
             wo.updatedBy || null,
+            wo.updatedById || null,
             wo.completedAt || null,
             wo.trouble || null,
+            wo.troubleCodeId || null,
             wo.notes || null,
             wo.attachments || null,
             wo.oldMeterType || wo.meterType || null,
+            wo.oldMeterTypeId || null,
             wo.newMeterType || null,
+            wo.newMeterTypeId || null,
+            wo.signatureData || null,
+            wo.signatureName || null,
           ]
         );
         restored++;
