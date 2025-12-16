@@ -1037,6 +1037,34 @@ export async function registerRoutes(
       
       const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
       
+      // Get existing work order to merge with updates for validation
+      const existingWorkOrder = await workOrderStorage.getWorkOrder(workOrderId);
+      if (!existingWorkOrder) {
+        return res.status(404).json({ message: "Work order not found" });
+      }
+      
+      // Check if status is being set to "Completed" and validate required fields
+      const finalStatus = req.body.status || existingWorkOrder.status;
+      if (finalStatus === "Completed") {
+        const mergedData = { ...existingWorkOrder, ...req.body };
+        const missingFields: string[] = [];
+        
+        if (!mergedData.oldMeterId) missingFields.push("Old Meter ID");
+        if (mergedData.oldMeterReading === null || mergedData.oldMeterReading === undefined) missingFields.push("Old Meter Reading");
+        if (!mergedData.newMeterId) missingFields.push("New Meter ID");
+        if (mergedData.newMeterReading === null || mergedData.newMeterReading === undefined) missingFields.push("New Meter Reading");
+        if (!mergedData.newGps) missingFields.push("New GPS");
+        if (!mergedData.signatureData && !req.body.signatureData) missingFields.push("Signature");
+        if (!mergedData.signatureName && !req.body.signatureName) missingFields.push("Signature Name");
+        if (!mergedData.attachments || (Array.isArray(mergedData.attachments) && mergedData.attachments.length === 0)) missingFields.push("Attachments");
+        
+        if (missingFields.length > 0) {
+          return res.status(400).json({ 
+            message: `Cannot set status to Completed. Missing required fields: ${missingFields.join(", ")}` 
+          });
+        }
+      }
+      
       // Get the user's display name for updatedBy
       const updatedByName = currentUser?.firstName 
         ? `${currentUser.firstName}${currentUser.lastName ? ' ' + currentUser.lastName : ''}`
