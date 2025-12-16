@@ -234,8 +234,13 @@ export async function restoreFullSystem(
       let restoredCount = 0;
       const primaryKeys = await getPrimaryKeyColumns(client, tableName);
       
-      for (const row of rows) {
+      for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+        const row = rows[rowIndex];
+        const savepointName = `sp_${tableName}_${rowIndex}`;
+        
         try {
+          await client.query(`SAVEPOINT ${savepointName}`);
+          
           const columns = Object.keys(row);
           const values = Object.values(row);
           const placeholders = columns.map((_, i) => `$${i + 1}`).join(", ");
@@ -268,9 +273,15 @@ export async function restoreFullSystem(
               );
             }
           }
+          
+          await client.query(`RELEASE SAVEPOINT ${savepointName}`);
           restoredCount++;
         } catch (error: any) {
-          errors.push(`${tableName}: ${error.message}`);
+          try {
+            await client.query(`ROLLBACK TO SAVEPOINT ${savepointName}`);
+          } catch {}
+          const pkValues = primaryKeys.map(pk => row[pk]).join(", ");
+          errors.push(`${tableName} (pk: ${pkValues}): ${error.message}`);
         }
       }
       
