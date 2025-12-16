@@ -1203,7 +1203,7 @@ export async function registerRoutes(
       }
       
       const project = await storage.getProject(projectId);
-      if (!project) {
+      if (!project || !project.databaseName) {
         return res.status(404).json({ message: "Project not found" });
       }
       
@@ -1211,12 +1211,23 @@ export async function registerRoutes(
         return res.status(400).json({ message: "No file uploaded" });
       }
       
+      // Fetch the work order to get customer_wo_id for folder naming
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      const workOrder = await workOrderStorage.getWorkOrder(workOrderId);
+      if (!workOrder) {
+        return res.status(404).json({ message: "Work order not found" });
+      }
+      
+      // Use customerWoId if available, otherwise fall back to legacy numeric ID
+      const folderName = workOrder.customerWoId || String(workOrder.id);
+      
       const filePath = await saveWorkOrderFile(
         project.name,
         project.id,
-        workOrderId,
+        folderName,
         req.file.originalname,
-        req.file.buffer
+        req.file.buffer,
+        workOrder.id // Legacy ID for backward compatibility
       );
       
       res.status(201).json({ message: "File uploaded", path: filePath });
@@ -1240,11 +1251,21 @@ export async function registerRoutes(
       }
       
       const project = await storage.getProject(projectId);
-      if (!project) {
+      if (!project || !project.databaseName) {
         return res.status(404).json({ message: "Project not found" });
       }
       
-      const files = await getWorkOrderFiles(project.name, project.id, workOrderId);
+      // Fetch the work order to get customer_wo_id for folder naming
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      const workOrder = await workOrderStorage.getWorkOrder(workOrderId);
+      if (!workOrder) {
+        return res.status(404).json({ message: "Work order not found" });
+      }
+      
+      // Use customerWoId if available, otherwise fall back to legacy numeric ID
+      const folderName = workOrder.customerWoId || String(workOrder.id);
+      
+      const files = await getWorkOrderFiles(project.name, project.id, folderName, workOrder.id);
       res.json(files);
     } catch (error) {
       console.error("Error fetching files:", error);
@@ -1262,15 +1283,26 @@ export async function registerRoutes(
       }
       
       const project = await storage.getProject(projectId);
-      if (!project) {
+      if (!project || !project.databaseName) {
         return res.status(404).json({ message: "Project not found" });
       }
+      
+      // Fetch the work order to get customer_wo_id for folder naming
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      const workOrder = await workOrderStorage.getWorkOrder(parseInt(req.params.workOrderId));
+      if (!workOrder) {
+        return res.status(404).json({ message: "Work order not found" });
+      }
+      
+      // Use customerWoId if available, otherwise fall back to legacy numeric ID
+      const folderName = workOrder.customerWoId || String(workOrder.id);
       
       await deleteWorkOrderFile(
         project.name,
         project.id,
-        parseInt(req.params.workOrderId),
-        req.params.filename
+        folderName,
+        req.params.filename,
+        workOrder.id // Legacy ID for backward compatibility
       );
       
       res.status(204).send();

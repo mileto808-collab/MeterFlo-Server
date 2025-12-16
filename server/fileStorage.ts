@@ -57,23 +57,38 @@ export async function ensureProjectDirectory(projectName: string, projectId: num
 
 // Ensure a work order directory exists within a project
 // Uses customerWoId (the customer's work order identifier) for the folder name
+// If legacyWorkOrderId is provided, checks for legacy folder first for backward compatibility
 export async function ensureWorkOrderDirectory(
   projectName: string,
   projectId: number,
-  customerWoId: string
+  customerWoId: string,
+  legacyWorkOrderId?: number
 ): Promise<string> {
   const projectPath = await ensureProjectDirectory(projectName, projectId);
+  
   // Sanitize customerWoId for use as folder name
   const sanitizedWoId = customerWoId.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const workOrderDir = path.join(projectPath, sanitizedWoId);
+  const newWorkOrderDir = path.join(projectPath, sanitizedWoId);
+  
+  // Check if legacy folder exists (for backward compatibility)
+  if (legacyWorkOrderId !== undefined) {
+    const legacyWorkOrderDir = path.join(projectPath, String(legacyWorkOrderId));
+    try {
+      await fs.access(legacyWorkOrderDir);
+      // Legacy folder exists, use it for backward compatibility
+      return legacyWorkOrderDir;
+    } catch {
+      // Legacy folder doesn't exist, continue with new folder name
+    }
+  }
   
   try {
-    await fs.mkdir(workOrderDir, { recursive: true });
+    await fs.mkdir(newWorkOrderDir, { recursive: true });
   } catch (error) {
     // Directory might already exist
   }
   
-  return workOrderDir;
+  return newWorkOrderDir;
 }
 
 // Save a file to a work order directory
@@ -82,9 +97,10 @@ export async function saveWorkOrderFile(
   projectId: number,
   customerWoId: string,
   filename: string,
-  buffer: Buffer
+  buffer: Buffer,
+  legacyWorkOrderId?: number
 ): Promise<string> {
-  const workOrderDir = await ensureWorkOrderDirectory(projectName, projectId, customerWoId);
+  const workOrderDir = await ensureWorkOrderDirectory(projectName, projectId, customerWoId, legacyWorkOrderId);
   const sanitizedFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
   const filePath = path.join(workOrderDir, sanitizedFilename);
   
@@ -97,9 +113,10 @@ export async function saveWorkOrderFile(
 export async function getWorkOrderFiles(
   projectName: string,
   projectId: number,
-  customerWoId: string
+  customerWoId: string,
+  legacyWorkOrderId?: number
 ): Promise<string[]> {
-  const workOrderDir = await ensureWorkOrderDirectory(projectName, projectId, customerWoId);
+  const workOrderDir = await ensureWorkOrderDirectory(projectName, projectId, customerWoId, legacyWorkOrderId);
   
   try {
     const files = await fs.readdir(workOrderDir);
@@ -114,9 +131,10 @@ export async function deleteWorkOrderFile(
   projectName: string,
   projectId: number,
   customerWoId: string,
-  filename: string
+  filename: string,
+  legacyWorkOrderId?: number
 ): Promise<boolean> {
-  const workOrderDir = await ensureWorkOrderDirectory(projectName, projectId, customerWoId);
+  const workOrderDir = await ensureWorkOrderDirectory(projectName, projectId, customerWoId, legacyWorkOrderId);
   const filePath = path.join(workOrderDir, filename);
   
   try {
@@ -146,9 +164,10 @@ export async function getFilePath(
   projectName: string,
   projectId: number,
   customerWoId: string,
-  filename: string
+  filename: string,
+  legacyWorkOrderId?: number
 ): Promise<string | null> {
-  const workOrderDir = await ensureWorkOrderDirectory(projectName, projectId, customerWoId);
+  const workOrderDir = await ensureWorkOrderDirectory(projectName, projectId, customerWoId, legacyWorkOrderId);
   const filePath = path.join(workOrderDir, filename);
   
   try {
