@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -26,18 +26,22 @@ export function ColumnSelector({
   const [open, setOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const handleScrollWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
+  useEffect(() => {
     const el = scrollRef.current;
-    if (!el) return;
+    if (!el || !open) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      el.scrollTop += e.deltaY;
+    };
+
+    el.addEventListener('wheel', handleWheel, { passive: false });
     
-    e.stopPropagation();
-    
-    const { scrollTop, scrollHeight, clientHeight } = el;
-    const canScroll = scrollHeight > clientHeight;
-    if (!canScroll) return;
-    
-    el.scrollTop += e.deltaY;
-  }, []);
+    return () => {
+      el.removeEventListener('wheel', handleWheel);
+    };
+  }, [open]);
 
   const handleToggleColumn = (key: string, checked: boolean) => {
     const column = allColumns.find(c => c.key === key);
@@ -102,7 +106,6 @@ export function ColumnSelector({
           ref={scrollRef}
           className="max-h-[300px] overflow-y-auto p-3 space-y-2"
           style={{ overscrollBehavior: 'contain' }}
-          onWheel={handleScrollWheel}
         >
           {allColumns.map((column) => (
             <div 
