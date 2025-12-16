@@ -31,13 +31,13 @@ const TABLE_PRIMARY_KEYS: Record<string, string[]> = {
 const MAIN_TABLES = Object.keys(TABLE_PRIMARY_KEYS);
 
 const TABLE_RESTORE_ORDER = [
-  "users",
   "subroles",
   "permissions",
   "subrole_permissions",
+  "user_groups",
+  "users",
   "projects",
   "user_projects",
-  "user_groups",
   "user_group_members",
   "system_settings",
   "work_order_statuses",
