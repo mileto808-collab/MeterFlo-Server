@@ -58,7 +58,7 @@ Users with the "user" role can be assigned a subrole that determines their speci
 ### Multi-Tenant Architecture
 - **Per-Project Database Schemas**: Each project gets its own PostgreSQL schema (format: `projectName_projectID`) for data isolation
 - **User-Project Assignments**: Many-to-many relationship via `user_projects` junction table
-- **File Storage**: Configurable root directory with structure `Project Files/projectName_projectID/workOrderID/`
+- **File Storage**: Configurable root directory with structure `Project Files/projectName_projectID/customerWoId/` (uses customer work order ID for folder names; legacy folders using numeric work order ID are still supported for backward compatibility)
 - **System Settings**: Stored in `system_settings` table (includes configurable project files path)
 
 ### Project Structure
@@ -106,6 +106,8 @@ Users with the "user" role can be assigned a subrole that determines their speci
 - **ID-Based Filtering**: Work Orders and Search & Reports filters for Assigned To, Assigned Group, Created By, and Updated By now use ID-based matching for more reliable filtering. Assigned To and Assigned Group are now separate filters - Assigned To shows only users, Assigned Group shows only groups. Filters use ID-first matching with fallback to display label for backward compatibility.
 - **Referential Integrity with ON DELETE RESTRICT**: All foreign key constraints on work order tables now use ON DELETE RESTRICT instead of SET NULL. This prevents deletion of referenced records (service types, statuses, trouble codes, meter types, users, groups) while they are still associated with work orders. Affected columns: service_type_id, status_id, trouble_code_id, old_meter_type_id, new_meter_type_id, assigned_user_id, assigned_group_id, created_by_id, updated_by_id.
 - **Assignment Field Migration**: Removed legacy `assigned_to` text column from database schema. Assignment is now handled by two separate ID-based fields: `assigned_user_id` (references users table) and `assigned_group_id` (references user_groups table). Work order forms use separate dropdowns for user and group assignment. Schema updated in projectDb.ts and shared/schema.ts. Frontend updated in project-work-orders.tsx and search-reports.tsx to display assigned names from IDs.
+- **File Storage Folder Naming**: Work order file uploads now create folders named after the customer work order ID (`customer_wo_id`) instead of the internal work order ID. Backward compatibility maintained: if a legacy folder exists (using numeric ID), files continue to be stored there. Implemented in `server/fileStorage.ts` with `legacyWorkOrderId` fallback parameter.
+- **Completed Status Validation**: Work orders cannot be set to "Completed" status unless all required fields are filled: Old Meter ID, Old Meter Reading, New Meter ID, New Meter Reading, New GPS, Signature, Signature Name, and Attachments. Validation enforced on both frontend and backend.
 
 ### Key Design Patterns
 - **Storage Interface**: `IStorage` interface in `storage.ts` abstracts database operations, making it testable and swappable
