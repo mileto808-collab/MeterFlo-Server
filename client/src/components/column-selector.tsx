@@ -58,8 +58,8 @@ export function ColumnSelector({
           Columns
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-56" align="end">
-        <div className="space-y-3">
+      <PopoverContent className="w-56 p-0" align="end">
+        <div className="p-3 border-b sticky top-0 bg-popover z-10">
           <div className="flex items-center justify-between gap-2">
             <span className="text-sm font-medium">Show Columns</span>
             <div className="flex gap-1">
@@ -83,29 +83,29 @@ export function ColumnSelector({
               </Button>
             </div>
           </div>
-          <div className="space-y-2 max-h-64 overflow-y-auto">
-            {allColumns.map((column) => (
-              <div 
-                key={column.key} 
-                className="flex items-center gap-2"
+        </div>
+        <div className="p-3 space-y-2 max-h-[50vh] overflow-y-auto">
+          {allColumns.map((column) => (
+            <div 
+              key={column.key} 
+              className="flex items-center gap-2"
+            >
+              <Checkbox
+                id={`col-${column.key}`}
+                checked={visibleColumns.includes(column.key)}
+                onCheckedChange={(checked) => handleToggleColumn(column.key, !!checked)}
+                disabled={column.required}
+                data-testid={`checkbox-column-${column.key}`}
+              />
+              <label 
+                htmlFor={`col-${column.key}`}
+                className={`text-sm cursor-pointer flex-1 ${column.required ? 'text-muted-foreground' : ''}`}
               >
-                <Checkbox
-                  id={`col-${column.key}`}
-                  checked={visibleColumns.includes(column.key)}
-                  onCheckedChange={(checked) => handleToggleColumn(column.key, !!checked)}
-                  disabled={column.required}
-                  data-testid={`checkbox-column-${column.key}`}
-                />
-                <label 
-                  htmlFor={`col-${column.key}`}
-                  className={`text-sm cursor-pointer flex-1 ${column.required ? 'text-muted-foreground' : ''}`}
-                >
-                  {column.label}
-                  {column.required && <span className="text-xs ml-1">(required)</span>}
-                </label>
-              </div>
-            ))}
-          </div>
+                {column.label}
+                {column.required && <span className="text-xs ml-1">(required)</span>}
+              </label>
+            </div>
+          ))}
         </div>
       </PopoverContent>
     </Popover>
