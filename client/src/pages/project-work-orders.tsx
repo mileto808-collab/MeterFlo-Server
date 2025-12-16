@@ -471,11 +471,8 @@ export default function ProjectWorkOrders() {
       if (accessDenied) throw new Error("403: Access denied");
       const normalizedData = normalizeOptionalFields(data as WorkOrderFormData);
       const troubleStatus = workOrderStatuses.find(s => s.label === "Trouble")?.label || "Trouble";
-      const openStatus = workOrderStatuses.find(s => s.isDefault)?.label || "Open";
       if ((data as any).trouble) {
         (normalizedData as any).status = troubleStatus;
-      } else if ((data as any).trouble === "" || (data as any).trouble === null) {
-        (normalizedData as any).status = openStatus;
       }
       const signatureData = editSignaturePadRef.current?.getSignatureData() || null;
       const signatureName = editSignaturePadRef.current?.getSignatureName() || "";
