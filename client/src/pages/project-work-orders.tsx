@@ -937,39 +937,56 @@ export default function ProjectWorkOrders() {
 
   const hasActiveFilters = selectedStatus !== "all" || selectedServiceType !== "all" || dateFrom !== "" || dateTo !== "" || selectedAssignedTo !== "all" || selectedAssignedGroup !== "all" || selectedTrouble !== "all" || selectedOldMeterType !== "all" || selectedNewMeterType !== "all" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldMeterId !== "" || filterNewMeterId !== "" || filterScheduledDate !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterCompletedAt !== "" || filterNotes !== "" || filterCreatedAt !== "" || filterUpdatedAt !== "";
 
+  // Helper to get export value for a column key
+  const getExportValue = (wo: ProjectWorkOrder, key: string): string => {
+    switch (key) {
+      case "customerWoId": return wo.customerWoId || "";
+      case "customerId": return wo.customerId || "";
+      case "customerName": return wo.customerName || "";
+      case "address": return wo.address || "";
+      case "city": return wo.city || "";
+      case "state": return wo.state || "";
+      case "zip": return wo.zip || "";
+      case "phone": return wo.phone || "";
+      case "email": return wo.email || "";
+      case "route": return wo.route || "";
+      case "zone": return wo.zone || "";
+      case "serviceType": return wo.serviceType || "";
+      case "oldMeterId": return wo.oldMeterId || "";
+      case "oldMeterType": return wo.oldMeterType || "";
+      case "oldMeterReading": return wo.oldMeterReading?.toString() ?? "";
+      case "newMeterId": return wo.newMeterId || "";
+      case "newMeterReading": return wo.newMeterReading?.toString() ?? "";
+      case "newMeterType": return wo.newMeterType || "";
+      case "oldGps": return wo.oldGps || "";
+      case "newGps": return wo.newGps || "";
+      case "status": return wo.status;
+      case "scheduledDate": return (wo as any).scheduledDate ? formatExport((wo as any).scheduledDate) : "";
+      case "assignedTo": return getAssignedUserName((wo as any).assignedUserId) || "";
+      case "assignedGroup": return getAssignedGroupName((wo as any).assignedGroupId) || "";
+      case "createdBy": return wo.createdBy || "";
+      case "updatedBy": return wo.updatedBy || "";
+      case "completedAt": return wo.completedAt ? formatExport(wo.completedAt) : "";
+      case "trouble": return wo.trouble || "";
+      case "notes": return wo.notes || "";
+      case "createdAt": return wo.createdAt ? formatExport(wo.createdAt) : "";
+      case "updatedAt": return wo.updatedAt ? formatExport(wo.updatedAt) : "";
+      default: return "";
+    }
+  };
+
   const exportToCSV = () => {
     if (!filteredAndSortedWorkOrders.length) {
       toast({ title: "No data to export", variant: "destructive" });
       return;
     }
 
-    const headers = ["WO ID", "Customer ID", "Customer Name", "Address", "City", "State", "ZIP", "Phone", "Email", "Route", "Zone", "Service Type", "Old Meter ID", "Old Meter Reading", "New Meter ID", "New Meter Reading", "Old GPS", "New GPS", "Status", "Assigned User", "Assigned Group", "Created At", "Completed At", "Notes"];
-    const rows = filteredAndSortedWorkOrders.map(wo => [
-      wo.customerWoId || "",
-      wo.customerId || "",
-      wo.customerName || "",
-      wo.address || "",
-      wo.city || "",
-      wo.state || "",
-      wo.zip || "",
-      wo.phone || "",
-      wo.email || "",
-      wo.route || "",
-      wo.zone || "",
-      wo.serviceType || "",
-      wo.oldMeterId || "",
-      wo.oldMeterReading ?? "",
-      wo.newMeterId || "",
-      wo.newMeterReading ?? "",
-      wo.oldGps || "",
-      wo.newGps || "",
-      wo.status,
-      getAssignedUserName((wo as any).assignedUserId),
-      getAssignedGroupName((wo as any).assignedGroupId),
-      wo.createdAt ? formatExport(wo.createdAt) : "",
-      wo.completedAt ? formatExport(wo.completedAt) : "",
-      wo.notes || "",
-    ]);
+    // Filter columns for export (exclude 'actions' as it's not a data column)
+    const exportColumns = workOrderColumns.filter(col => col.key !== "actions" && visibleColumns.includes(col.key));
+    const headers = exportColumns.map(col => col.label);
+    const rows = filteredAndSortedWorkOrders.map(wo => 
+      exportColumns.map(col => getExportValue(wo, col.key))
+    );
 
     const csvContent = [
       headers.join(","),
@@ -992,32 +1009,16 @@ export default function ProjectWorkOrders() {
       return;
     }
 
-    const data = filteredAndSortedWorkOrders.map(wo => ({
-      "WO ID": wo.customerWoId || "",
-      "Customer ID": wo.customerId || "",
-      "Customer Name": wo.customerName || "",
-      "Address": wo.address || "",
-      "City": wo.city || "",
-      "State": wo.state || "",
-      "ZIP": wo.zip || "",
-      "Phone": wo.phone || "",
-      "Email": wo.email || "",
-      "Route": wo.route || "",
-      "Zone": wo.zone || "",
-      "Service Type": wo.serviceType || "",
-      "Old Meter ID": wo.oldMeterId || "",
-      "Old Meter Reading": wo.oldMeterReading ?? "",
-      "New Meter ID": wo.newMeterId || "",
-      "New Meter Reading": wo.newMeterReading ?? "",
-      "Old GPS": wo.oldGps || "",
-      "New GPS": wo.newGps || "",
-      "Status": wo.status,
-      "Assigned User": getAssignedUserName((wo as any).assignedUserId),
-      "Assigned Group": getAssignedGroupName((wo as any).assignedGroupId),
-      "Created At": wo.createdAt ? formatExport(wo.createdAt) : "",
-      "Completed At": wo.completedAt ? formatExport(wo.completedAt) : "",
-      "Notes": wo.notes || "",
-    }));
+    // Filter columns for export (exclude 'actions' as it's not a data column)
+    const exportColumns = workOrderColumns.filter(col => col.key !== "actions" && visibleColumns.includes(col.key));
+    
+    const data = filteredAndSortedWorkOrders.map(wo => {
+      const row: Record<string, string> = {};
+      exportColumns.forEach(col => {
+        row[col.label] = getExportValue(wo, col.key);
+      });
+      return row;
+    });
 
     const worksheet = XLSX.utils.json_to_sheet(data);
     const workbook = XLSX.utils.book_new();
