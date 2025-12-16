@@ -642,6 +642,13 @@ export default function ProjectWorkOrders() {
     return group?.label || String(groupId);
   };
 
+  // Helper to get trouble code label from code
+  const getTroubleCodeLabel = (code: string | null | undefined): string => {
+    if (!code) return "";
+    const troubleCode = troubleCodes.find(tc => tc.code === code);
+    return troubleCode?.label || code;
+  };
+
   // Helper to get combined assignment display (for exports and legacy display)
   const getAssignmentDisplay = (workOrder: ProjectWorkOrder): string => {
     const woAny = workOrder as any;
@@ -800,7 +807,7 @@ export default function ProjectWorkOrders() {
       case "completedAt":
         return <TableCell key={key}>{workOrder.completedAt ? formatDateTime(workOrder.completedAt) : "-"}</TableCell>;
       case "trouble":
-        return <TableCell key={key}>{woAny.trouble || "-"}</TableCell>;
+        return <TableCell key={key}>{getTroubleCodeLabel(woAny.trouble) || "-"}</TableCell>;
       case "notes":
         return <TableCell key={key} className="max-w-xs truncate">{workOrder.notes || "-"}</TableCell>;
       case "createdAt":
@@ -1091,7 +1098,7 @@ export default function ProjectWorkOrders() {
       case "createdBy": return wo.createdBy || "";
       case "updatedBy": return wo.updatedBy || "";
       case "completedAt": return wo.completedAt ? formatExport(wo.completedAt) : "";
-      case "trouble": return wo.trouble || "";
+      case "trouble": return getTroubleCodeLabel(wo.trouble) || "";
       case "notes": return wo.notes || "";
       case "createdAt": return wo.createdAt ? formatExport(wo.createdAt) : "";
       case "updatedAt": return wo.updatedAt ? formatExport(wo.updatedAt) : "";
