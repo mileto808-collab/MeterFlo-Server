@@ -144,7 +144,7 @@ export default function Users() {
     { key: "website", label: "Website" },
   ], []);
 
-  const { visibleColumns, setVisibleColumns, isColumnVisible, isLoading: columnPrefsLoading } = useColumnPreferences("users", userColumns);
+  const { visibleColumns, setVisibleColumns, isColumnVisible, isLoading: columnPrefsLoading, orderedColumns } = useColumnPreferences("users", userColumns);
 
   // Filter configuration - matches columns (excluding password_hash and locked_at)
   const userFilters: FilterConfig[] = useMemo(() => [
@@ -420,6 +420,173 @@ export default function Users() {
     return sortOrder === "asc" ? <ArrowUp className="h-4 w-4 ml-1" /> : <ArrowDown className="h-4 w-4 ml-1" />;
   };
 
+  // Column header configuration for dynamic rendering
+  const columnHeaderConfig: Record<string, { label: string; sortKey?: SortField }> = {
+    user: { label: "User", sortKey: "name" },
+    username: { label: "Username" },
+    email: { label: "Email", sortKey: "email" },
+    firstName: { label: "First Name" },
+    lastName: { label: "Last Name" },
+    role: { label: "Role", sortKey: "role" },
+    accessLevel: { label: "Access Level" },
+    projects: { label: "Projects" },
+    status: { label: "Status", sortKey: "status" },
+    isLocked: { label: "Is Locked" },
+    lockedReason: { label: "Locked Reason" },
+    lastLogin: { label: "Last Login" },
+    address: { label: "Address" },
+    city: { label: "City" },
+    state: { label: "State" },
+    zip: { label: "ZIP" },
+    phone: { label: "Phone" },
+    website: { label: "Website" },
+  };
+
+  // Render a table header cell for a given column key
+  const renderHeaderCell = (key: string) => {
+    const config = columnHeaderConfig[key];
+    if (!config) return null;
+    
+    if (config.sortKey) {
+      return (
+        <TableHead key={key}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="flex items-center p-0 h-auto hover:bg-transparent"
+            onClick={() => handleSort(config.sortKey!)}
+            data-testid={`sort-${config.sortKey}`}
+          >
+            {config.label}
+            {getSortIcon(config.sortKey)}
+          </Button>
+        </TableHead>
+      );
+    }
+    
+    return <TableHead key={key}>{config.label}</TableHead>;
+  };
+
+  // Render a table data cell for a given column key and user
+  const renderDataCell = (key: string, userData: User) => {
+    switch (key) {
+      case "user":
+        return (
+          <TableCell key={key}>
+            <div className="flex items-center gap-3">
+              <Avatar className="h-8 w-8">
+                <AvatarImage src={userData.profileImageUrl || undefined} className="object-cover" />
+                <AvatarFallback>{getInitials(userData)}</AvatarFallback>
+              </Avatar>
+              <div>
+                <span className="font-medium block">
+                  {userData.firstName && userData.lastName ? `${userData.firstName} ${userData.lastName}` : userData.username || "Unknown"}
+                </span>
+                {userData.username && (
+                  <span className="text-sm text-muted-foreground">@{userData.username}</span>
+                )}
+              </div>
+            </div>
+          </TableCell>
+        );
+      case "username":
+        return <TableCell key={key}>{userData.username || "—"}</TableCell>;
+      case "email":
+        return <TableCell key={key} className="text-muted-foreground">{userData.email || "—"}</TableCell>;
+      case "firstName":
+        return <TableCell key={key}>{userData.firstName || "—"}</TableCell>;
+      case "lastName":
+        return <TableCell key={key}>{userData.lastName || "—"}</TableCell>;
+      case "role":
+        return (
+          <TableCell key={key}>
+            <Badge variant={getRoleBadgeVariant(userData.role)} data-testid={`badge-role-${userData.id}`}>
+              {userData.role}
+            </Badge>
+          </TableCell>
+        );
+      case "accessLevel":
+        return (
+          <TableCell key={key} data-testid={`cell-access-level-${userData.id}`}>
+            {(userData.role === "user" || userData.role === "customer") && userData.subroleId ? (
+              <Badge variant="outline" className="capitalize">
+                {subroles?.find(s => s.id === userData.subroleId)?.label || "—"}
+              </Badge>
+            ) : userData.role === "admin" ? (
+              <span className="text-muted-foreground text-sm">Full Access</span>
+            ) : userData.role === "customer" ? (
+              <span className="text-muted-foreground text-sm">Read Only</span>
+            ) : userData.role === "user" ? (
+              <span className="text-muted-foreground text-sm">View Only</span>
+            ) : (
+              <span className="text-muted-foreground text-sm">—</span>
+            )}
+          </TableCell>
+        );
+      case "projects":
+        return (
+          <TableCell key={key} data-testid={`cell-projects-${userData.id}`}>
+            {allUsersProjects && allUsersProjects[userData.id]?.length > 0 ? (
+              <div className="flex flex-wrap gap-1 max-w-[200px]">
+                {allUsersProjects[userData.id].slice(0, 3).map((project) => (
+                  <Badge 
+                    key={project.id} 
+                    variant="secondary" 
+                    className="text-xs"
+                    data-testid={`badge-project-${userData.id}-${project.id}`}
+                  >
+                    {project.name}
+                  </Badge>
+                ))}
+                {allUsersProjects[userData.id].length > 3 && (
+                  <Badge variant="outline" className="text-xs">
+                    +{allUsersProjects[userData.id].length - 3} more
+                  </Badge>
+                )}
+              </div>
+            ) : (
+              <span className="text-muted-foreground text-sm">None</span>
+            )}
+          </TableCell>
+        );
+      case "status":
+        return (
+          <TableCell key={key}>
+            {userData.isLocked ? (
+              <Badge variant="destructive" data-testid={`badge-status-${userData.id}`}>
+                <Lock className="h-3 w-3 mr-1" />
+                Locked
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="text-green-600 border-green-600" data-testid={`badge-status-${userData.id}`}>
+                Active
+              </Badge>
+            )}
+          </TableCell>
+        );
+      case "isLocked":
+        return <TableCell key={key}>{userData.isLocked ? "Yes" : "No"}</TableCell>;
+      case "lockedReason":
+        return <TableCell key={key} className="max-w-xs truncate">{userData.lockedReason || "—"}</TableCell>;
+      case "lastLogin":
+        return <TableCell key={key}>{userData.lastLoginAt ? formatDateTime(userData.lastLoginAt) : "Never"}</TableCell>;
+      case "address":
+        return <TableCell key={key} className="max-w-xs truncate">{userData.address || "—"}</TableCell>;
+      case "city":
+        return <TableCell key={key}>{userData.city || "—"}</TableCell>;
+      case "state":
+        return <TableCell key={key}>{userData.state || "—"}</TableCell>;
+      case "zip":
+        return <TableCell key={key}>{userData.zip || "—"}</TableCell>;
+      case "phone":
+        return <TableCell key={key}>{userData.phone || "—"}</TableCell>;
+      case "website":
+        return <TableCell key={key}>{userData.website || "—"}</TableCell>;
+      default:
+        return null;
+    }
+  };
+
   const clearFilters = () => {
     setSearchQuery("");
     setRoleFilter("all");
@@ -454,31 +621,63 @@ export default function Users() {
     return userProjects.map(p => p.name).join(", ");
   };
 
+  // Helper to get cell value for export by column key
+  const getExportCellValue = (u: User, key: string): string => {
+    switch (key) {
+      case "user":
+        return u.firstName && u.lastName ? `${u.firstName} ${u.lastName}` : u.username || "";
+      case "username":
+        return u.username || "";
+      case "email":
+        return u.email || "";
+      case "firstName":
+        return u.firstName || "";
+      case "lastName":
+        return u.lastName || "";
+      case "role":
+        return u.role || "";
+      case "accessLevel":
+        return getSubroleName(u.subroleId);
+      case "projects":
+        return getUserProjects(u.id);
+      case "status":
+        return u.isLocked ? "Locked" : "Active";
+      case "isLocked":
+        return u.isLocked ? "Yes" : "No";
+      case "lockedReason":
+        return u.lockedReason || "";
+      case "lastLogin":
+        return u.lastLoginAt ? formatDateTime(u.lastLoginAt) : "";
+      case "address":
+        return u.address || "";
+      case "city":
+        return u.city || "";
+      case "state":
+        return u.state || "";
+      case "zip":
+        return u.zip || "";
+      case "phone":
+        return u.phone || "";
+      case "website":
+        return u.website || "";
+      default:
+        return "";
+    }
+  };
+
   const exportToCSV = () => {
     if (!filteredUsers?.length) {
       toast({ title: "No data to export", variant: "destructive" });
       return;
     }
 
-    const headers = ["Username", "First Name", "Last Name", "Email", "Role", "Access Level", "Projects", "Status", "Address", "City", "State", "ZIP", "Phone", "Website", "Last Login", "Created At"];
-    const rows = filteredUsers.map(u => [
-      u.username || "",
-      u.firstName || "",
-      u.lastName || "",
-      u.email || "",
-      u.role || "",
-      getSubroleName(u.subroleId),
-      getUserProjects(u.id),
-      u.isLocked ? "Locked" : "Active",
-      u.address || "",
-      u.city || "",
-      u.state || "",
-      u.zip || "",
-      u.phone || "",
-      u.website || "",
-      u.lastLoginAt ? formatDateTime(u.lastLoginAt) : "",
-      u.createdAt ? formatDateTime(u.createdAt) : "",
-    ]);
+    // Use orderedColumns to respect column order (orderedColumns is ColumnConfig[])
+    const exportColumns = orderedColumns;
+    
+    const headers = exportColumns.map(col => col.label);
+    const rows = filteredUsers.map(u => 
+      exportColumns.map(col => getExportCellValue(u, col.key))
+    );
 
     const csvContent = [
       headers.join(","),
@@ -501,24 +700,16 @@ export default function Users() {
       return;
     }
 
-    const data = filteredUsers.map(u => ({
-      "Username": u.username || "",
-      "First Name": u.firstName || "",
-      "Last Name": u.lastName || "",
-      "Email": u.email || "",
-      "Role": u.role || "",
-      "Access Level": getSubroleName(u.subroleId),
-      "Projects": getUserProjects(u.id),
-      "Status": u.isLocked ? "Locked" : "Active",
-      "Address": u.address || "",
-      "City": u.city || "",
-      "State": u.state || "",
-      "ZIP": u.zip || "",
-      "Phone": u.phone || "",
-      "Website": u.website || "",
-      "Last Login": u.lastLoginAt ? formatDateTime(u.lastLoginAt) : "",
-      "Created At": u.createdAt ? formatDateTime(u.createdAt) : "",
-    }));
+    // Use orderedColumns to respect column order (orderedColumns is ColumnConfig[])
+    const exportColumns = orderedColumns;
+
+    const data = filteredUsers.map(u => {
+      const row: Record<string, string> = {};
+      exportColumns.forEach(col => {
+        row[col.label] = getExportCellValue(u, col.key);
+      });
+      return row;
+    });
 
     const worksheet = XLSX.utils.json_to_sheet(data);
     const workbook = XLSX.utils.book_new();
@@ -1317,6 +1508,7 @@ export default function Users() {
               visibleColumns={visibleColumns}
               onChange={setVisibleColumns}
               disabled={columnPrefsLoading}
+              orderedColumns={orderedColumns}
             />
             <Button variant="outline" size="sm" onClick={exportToCSV} data-testid="button-export-csv">
               <Download className="h-4 w-4 mr-2" />
@@ -1356,219 +1548,14 @@ export default function Users() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    {isColumnVisible("user") && (
-                      <TableHead>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="flex items-center p-0 h-auto hover:bg-transparent"
-                          onClick={() => handleSort("name")}
-                          data-testid="sort-name"
-                        >
-                          User
-                          {getSortIcon("name")}
-                        </Button>
-                      </TableHead>
-                    )}
-                    {isColumnVisible("email") && (
-                      <TableHead>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="flex items-center p-0 h-auto hover:bg-transparent"
-                          onClick={() => handleSort("email")}
-                          data-testid="sort-email"
-                        >
-                          Email
-                          {getSortIcon("email")}
-                        </Button>
-                      </TableHead>
-                    )}
-                    {isColumnVisible("username") && <TableHead>Username</TableHead>}
-                    {isColumnVisible("firstName") && <TableHead>First Name</TableHead>}
-                    {isColumnVisible("lastName") && <TableHead>Last Name</TableHead>}
-                    {isColumnVisible("role") && (
-                      <TableHead>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="flex items-center p-0 h-auto hover:bg-transparent"
-                          onClick={() => handleSort("role")}
-                          data-testid="sort-role"
-                        >
-                          Role
-                          {getSortIcon("role")}
-                        </Button>
-                      </TableHead>
-                    )}
-                    {isColumnVisible("accessLevel") && <TableHead>Access Level</TableHead>}
-                    {isColumnVisible("projects") && <TableHead>Projects</TableHead>}
-                    {isColumnVisible("status") && (
-                      <TableHead>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="flex items-center p-0 h-auto hover:bg-transparent"
-                          onClick={() => handleSort("status")}
-                          data-testid="sort-status"
-                        >
-                          Status
-                          {getSortIcon("status")}
-                        </Button>
-                      </TableHead>
-                    )}
-                    {isColumnVisible("createdAt") && (
-                      <TableHead>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="flex items-center p-0 h-auto hover:bg-transparent"
-                          onClick={() => handleSort("createdAt")}
-                          data-testid="sort-joined"
-                        >
-                          Joined
-                          {getSortIcon("createdAt")}
-                        </Button>
-                      </TableHead>
-                    )}
-                    {isColumnVisible("isLocked") && <TableHead>Is Locked</TableHead>}
-                    {isColumnVisible("lockedReason") && <TableHead>Locked Reason</TableHead>}
-                    {isColumnVisible("lastLogin") && <TableHead>Last Login</TableHead>}
-                    {isColumnVisible("address") && <TableHead>Address</TableHead>}
-                    {isColumnVisible("city") && <TableHead>City</TableHead>}
-                    {isColumnVisible("state") && <TableHead>State</TableHead>}
-                    {isColumnVisible("zip") && <TableHead>ZIP</TableHead>}
-                    {isColumnVisible("phone") && <TableHead>Phone</TableHead>}
-                    {isColumnVisible("website") && <TableHead>Website</TableHead>}
+                    {orderedColumns.map(col => renderHeaderCell(col.key))}
                     <TableHead className="w-[80px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredUsers.map((user) => (
                     <TableRow key={user.id} data-testid={`row-user-${user.id}`}>
-                      {isColumnVisible("user") && (
-                        <TableCell>
-                          <div className="flex items-center gap-3">
-                            <Avatar className="h-8 w-8">
-                              <AvatarImage src={user.profileImageUrl || undefined} className="object-cover" />
-                              <AvatarFallback>{getInitials(user)}</AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <span className="font-medium block">
-                                {user.firstName && user.lastName ? `${user.firstName} ${user.lastName}` : user.username || "Unknown"}
-                              </span>
-                              {user.username && (
-                                <span className="text-sm text-muted-foreground">@{user.username}</span>
-                              )}
-                            </div>
-                          </div>
-                        </TableCell>
-                      )}
-                      {isColumnVisible("email") && (
-                        <TableCell className="text-muted-foreground">{user.email || "—"}</TableCell>
-                      )}
-                      {isColumnVisible("username") && (
-                        <TableCell>{user.username || "—"}</TableCell>
-                      )}
-                      {isColumnVisible("firstName") && (
-                        <TableCell>{user.firstName || "—"}</TableCell>
-                      )}
-                      {isColumnVisible("lastName") && (
-                        <TableCell>{user.lastName || "—"}</TableCell>
-                      )}
-                      {isColumnVisible("role") && (
-                        <TableCell>
-                          <Badge variant={getRoleBadgeVariant(user.role)} data-testid={`badge-role-${user.id}`}>
-                            {user.role}
-                          </Badge>
-                        </TableCell>
-                      )}
-                      {isColumnVisible("accessLevel") && (
-                        <TableCell data-testid={`cell-access-level-${user.id}`}>
-                          {(user.role === "user" || user.role === "customer") && user.subroleId ? (
-                            <Badge variant="outline" className="capitalize">
-                              {subroles?.find(s => s.id === user.subroleId)?.label || "—"}
-                            </Badge>
-                          ) : user.role === "admin" ? (
-                            <span className="text-muted-foreground text-sm">Full Access</span>
-                          ) : user.role === "customer" ? (
-                            <span className="text-muted-foreground text-sm">Read Only</span>
-                          ) : user.role === "user" ? (
-                            <span className="text-muted-foreground text-sm">View Only</span>
-                          ) : (
-                            <span className="text-muted-foreground text-sm">—</span>
-                          )}
-                        </TableCell>
-                      )}
-                      {isColumnVisible("projects") && (
-                        <TableCell data-testid={`cell-projects-${user.id}`}>
-                          {allUsersProjects && allUsersProjects[user.id]?.length > 0 ? (
-                            <div className="flex flex-wrap gap-1 max-w-[200px]">
-                              {allUsersProjects[user.id].slice(0, 3).map((project) => (
-                                <Badge 
-                                  key={project.id} 
-                                  variant="secondary" 
-                                  className="text-xs"
-                                  data-testid={`badge-project-${user.id}-${project.id}`}
-                                >
-                                  {project.name}
-                                </Badge>
-                              ))}
-                              {allUsersProjects[user.id].length > 3 && (
-                                <Badge variant="outline" className="text-xs">
-                                  +{allUsersProjects[user.id].length - 3} more
-                                </Badge>
-                              )}
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground text-sm">None</span>
-                          )}
-                        </TableCell>
-                      )}
-                      {isColumnVisible("status") && (
-                        <TableCell>
-                          {user.isLocked ? (
-                            <Badge variant="destructive" data-testid={`badge-status-${user.id}`}>
-                              <Lock className="h-3 w-3 mr-1" />
-                              Locked
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-green-600 border-green-600" data-testid={`badge-status-${user.id}`}>
-                              Active
-                            </Badge>
-                          )}
-                        </TableCell>
-                      )}
-                      {isColumnVisible("createdAt") && (
-                        <TableCell>{user.createdAt ? formatCustom(user.createdAt, "MMM d, yyyy") : "—"}</TableCell>
-                      )}
-                      {isColumnVisible("isLocked") && (
-                        <TableCell>{user.isLocked ? "Yes" : "No"}</TableCell>
-                      )}
-                      {isColumnVisible("lockedReason") && (
-                        <TableCell className="max-w-xs truncate">{user.lockedReason || "—"}</TableCell>
-                      )}
-                      {isColumnVisible("lastLogin") && (
-                        <TableCell>{user.lastLoginAt ? formatDateTime(user.lastLoginAt) : "Never"}</TableCell>
-                      )}
-                      {isColumnVisible("address") && (
-                        <TableCell className="max-w-xs truncate">{user.address || "—"}</TableCell>
-                      )}
-                      {isColumnVisible("city") && (
-                        <TableCell>{user.city || "—"}</TableCell>
-                      )}
-                      {isColumnVisible("state") && (
-                        <TableCell>{user.state || "—"}</TableCell>
-                      )}
-                      {isColumnVisible("zip") && (
-                        <TableCell>{user.zip || "—"}</TableCell>
-                      )}
-                      {isColumnVisible("phone") && (
-                        <TableCell>{user.phone || "—"}</TableCell>
-                      )}
-                      {isColumnVisible("website") && (
-                        <TableCell>{user.website || "—"}</TableCell>
-                      )}
+                      {orderedColumns.map(col => renderDataCell(col.key, user))}
                       <TableCell>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
