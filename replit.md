@@ -102,6 +102,7 @@ Users with the "user" role can be assigned a subrole that determines their speci
 - **Schema Changes**: Removed priority field from work orders; added updatedBy field to track who last modified a work order (stores user's display name)
 - **Audit Fields**: Read-only display of assigned_to, created_by, created_at, updated_by, updated_at, completed_at in work order edit form
 - **Filter Preferences**: Users can customize which filter fields are visible on Work Orders, Search & Reports, and Users pages; preferences stored per user per page in `user_filter_preferences` table; uses FilterSelector component similar to ColumnSelector
+- **Foreign Key ID Columns**: Added foreign key ID columns to work orders for improved data integrity. Uses dual storage (text + ID columns) for backward compatibility. Includes: service_type_id, status_id, trouble_code_id, old_meter_type_id, new_meter_type_id, assigned_user_id, assigned_group_id, created_by_id, updated_by_id. Resolver methods automatically populate IDs when text values are set. Both columns are kept in sync during create/update operations.
 
 ### Key Design Patterns
 - **Storage Interface**: `IStorage` interface in `storage.ts` abstracts database operations, making it testable and swappable
