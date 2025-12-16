@@ -589,7 +589,7 @@ export default function SearchReports() {
       return;
     }
 
-    const headers = ["Project", "WO ID", "Customer ID", "Customer Name", "Address", "City", "State", "ZIP", "Phone", "Email", "Route", "Zone", "Service Type", "Old Meter Type", "New Meter Type", "Old Meter ID", "Old Meter Reading", "New Meter ID", "New Meter Reading", "Old GPS", "New GPS", "Status", "Assigned To", "Created At", "Completed At", "Notes"];
+    const headers = ["Project", "WO ID", "Customer ID", "Customer Name", "Address", "City", "State", "ZIP", "Phone", "Email", "Route", "Zone", "Service Type", "Old Meter Type", "New Meter Type", "Old Meter ID", "Old Meter Reading", "New Meter ID", "New Meter Reading", "Old GPS", "New GPS", "Status", "Assigned User", "Assigned Group", "Created At", "Completed At", "Notes"];
     const rows = searchResults.results.map(r => [
       r.projectName,
       r.workOrder.customerWoId || "",
@@ -613,7 +613,8 @@ export default function SearchReports() {
       r.workOrder.oldGps || "",
       r.workOrder.newGps || "",
       r.workOrder.status,
-      getAssignedUserName(r.workOrder.assignedUserId) || getAssignedGroupName(r.workOrder.assignedGroupId) || "",
+      getAssignedUserName(r.workOrder.assignedUserId) || "",
+      getAssignedGroupName(r.workOrder.assignedGroupId) || "",
       r.workOrder.createdAt ? formatExport(r.workOrder.createdAt) : "",
       r.workOrder.completedAt ? formatExport(r.workOrder.completedAt) : "",
       r.workOrder.notes || "",
@@ -663,7 +664,8 @@ export default function SearchReports() {
       "Old GPS": r.workOrder.oldGps || "",
       "New GPS": r.workOrder.newGps || "",
       "Status": r.workOrder.status,
-      "Assigned To": getAssignedUserName(r.workOrder.assignedUserId) || getAssignedGroupName(r.workOrder.assignedGroupId) || "",
+      "Assigned User": getAssignedUserName(r.workOrder.assignedUserId) || "",
+      "Assigned Group": getAssignedGroupName(r.workOrder.assignedGroupId) || "",
       "Created At": r.workOrder.createdAt ? formatExport(r.workOrder.createdAt) : "",
       "Completed At": r.workOrder.completedAt ? formatExport(r.workOrder.completedAt) : "",
       "Notes": r.workOrder.notes || "",
@@ -1271,7 +1273,12 @@ export default function SearchReports() {
                         )}
                         {isColumnVisible("assignedTo") && (
                           <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('assignedTo')} data-testid="header-assigned-to">
-                            Assigned To{getSortIcon('assignedTo')}
+                            Assigned User{getSortIcon('assignedTo')}
+                          </TableHead>
+                        )}
+                        {isColumnVisible("assignedGroup") && (
+                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('assignedGroup')} data-testid="header-assigned-group">
+                            Assigned Group{getSortIcon('assignedGroup')}
                           </TableHead>
                         )}
                         {isColumnVisible("createdBy") && (
@@ -1338,7 +1345,8 @@ export default function SearchReports() {
                           {isColumnVisible("newGps") && <TableCell>{result.workOrder.newGps || "-"}</TableCell>}
                           {isColumnVisible("status") && <TableCell>{getStatusBadge(result.workOrder.status)}</TableCell>}
                           {isColumnVisible("scheduledDate") && <TableCell>{(result.workOrder as any).scheduledDate ? formatCustom((result.workOrder as any).scheduledDate, "MMM d, yyyy") : "-"}</TableCell>}
-                          {isColumnVisible("assignedTo") && <TableCell>{getAssignedUserName(result.workOrder.assignedUserId) || getAssignedGroupName(result.workOrder.assignedGroupId) || "-"}</TableCell>}
+                          {isColumnVisible("assignedTo") && <TableCell>{getAssignedUserName(result.workOrder.assignedUserId) || "-"}</TableCell>}
+                          {isColumnVisible("assignedGroup") && <TableCell>{getAssignedGroupName(result.workOrder.assignedGroupId) || "-"}</TableCell>}
                           {isColumnVisible("createdBy") && <TableCell>{result.workOrder.createdBy || "-"}</TableCell>}
                           {isColumnVisible("updatedBy") && <TableCell>{(result.workOrder as any).updatedBy || "-"}</TableCell>}
                           {isColumnVisible("completedAt") && <TableCell>{result.workOrder.completedAt ? formatCustom(result.workOrder.completedAt, "MMM d, yyyy h:mm a") : "-"}</TableCell>}

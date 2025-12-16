@@ -943,7 +943,7 @@ export default function ProjectWorkOrders() {
       return;
     }
 
-    const headers = ["WO ID", "Customer ID", "Customer Name", "Address", "City", "State", "ZIP", "Phone", "Email", "Route", "Zone", "Service Type", "Old Meter ID", "Old Meter Reading", "New Meter ID", "New Meter Reading", "Old GPS", "New GPS", "Status", "Assigned To", "Created At", "Completed At", "Notes"];
+    const headers = ["WO ID", "Customer ID", "Customer Name", "Address", "City", "State", "ZIP", "Phone", "Email", "Route", "Zone", "Service Type", "Old Meter ID", "Old Meter Reading", "New Meter ID", "New Meter Reading", "Old GPS", "New GPS", "Status", "Assigned User", "Assigned Group", "Created At", "Completed At", "Notes"];
     const rows = filteredAndSortedWorkOrders.map(wo => [
       wo.customerWoId || "",
       wo.customerId || "",
@@ -964,7 +964,8 @@ export default function ProjectWorkOrders() {
       wo.oldGps || "",
       wo.newGps || "",
       wo.status,
-      getAssignmentDisplay(wo),
+      getAssignedUserName((wo as any).assignedUserId),
+      getAssignedGroupName((wo as any).assignedGroupId),
       wo.createdAt ? formatExport(wo.createdAt) : "",
       wo.completedAt ? formatExport(wo.completedAt) : "",
       wo.notes || "",
@@ -1011,7 +1012,8 @@ export default function ProjectWorkOrders() {
       "Old GPS": wo.oldGps || "",
       "New GPS": wo.newGps || "",
       "Status": wo.status,
-      "Assigned To": getAssignmentDisplay(wo),
+      "Assigned User": getAssignedUserName((wo as any).assignedUserId),
+      "Assigned Group": getAssignedGroupName((wo as any).assignedGroupId),
       "Created At": wo.createdAt ? formatExport(wo.createdAt) : "",
       "Completed At": wo.completedAt ? formatExport(wo.completedAt) : "",
       "Notes": wo.notes || "",
