@@ -58,10 +58,13 @@ type SearchResult = {
     oldGps?: string | null;
     newGps?: string | null;
     status: string;
+    scheduledDate?: string | null;
     assignedUserId?: string | null;
     assignedGroupId?: number | null;
     createdBy?: string | null;
+    updatedBy?: string | null;
     completedAt?: string | null;
+    trouble?: string | null;
     notes?: string | null;
     createdAt?: string | null;
     updatedAt?: string | null;
@@ -120,6 +123,7 @@ export default function SearchReports() {
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [stateRestored, setStateRestored] = useState(false);
+  const [showFilters, setShowFilters] = useState(true);
 
   const columns: ColumnConfig[] = useMemo(() => [
     { key: "projectName", label: "Project", required: true },
@@ -526,6 +530,42 @@ export default function SearchReports() {
     return results;
   }, [searchResults?.results, sortColumn, sortDirection, filterCustomerWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterOldMeterType, filterNewMeterId, filterNewMeterType, filterAssignedTo, filterAssignedGroup, filterCreatedBy, filterUpdatedBy, filterTroubleCode, filterNotes, filterScheduledDate, filterCompletedAt, filterCreatedAt, filterUpdatedAt, users, userGroups]);
 
+  // Calculate active filters
+  const activeFiltersArray = [
+    selectedProject !== "all",
+    selectedStatus !== "all",
+    selectedServiceType !== "all",
+    dateFrom !== "",
+    dateTo !== "",
+    filterCustomerWoId !== "",
+    filterCustomerId !== "",
+    filterCustomerName !== "",
+    filterAddress !== "",
+    filterCity !== "",
+    filterState !== "",
+    filterZip !== "",
+    filterPhone !== "",
+    filterEmail !== "",
+    filterRoute !== "",
+    filterZone !== "",
+    filterOldMeterId !== "",
+    filterOldMeterType !== "all",
+    filterNewMeterId !== "",
+    filterNewMeterType !== "all",
+    filterScheduledDate !== "",
+    filterAssignedTo !== "all",
+    filterAssignedGroup !== "all",
+    filterCreatedBy !== "all",
+    filterUpdatedBy !== "all",
+    filterCompletedAt !== "",
+    filterTroubleCode !== "all",
+    filterNotes !== "",
+    filterCreatedAt !== "",
+    filterUpdatedAt !== "",
+  ];
+  const hasActiveFilters = activeFiltersArray.some(Boolean);
+  const activeFilterCount = activeFiltersArray.filter(Boolean).length;
+
   const getStatusColorHex = (color: string): string => {
     const colorMap: Record<string, string> = {
       blue: "#3b82f6",
@@ -583,42 +623,57 @@ export default function SearchReports() {
     return <Badge variant="outline" className="text-xs">{serviceType}</Badge>;
   };
 
+  // Helper to get export value for a column key
+  const getExportValue = (r: SearchResult, key: string): string => {
+    switch (key) {
+      case "projectName": return r.projectName;
+      case "customerWoId": return r.workOrder.customerWoId || "";
+      case "customerId": return r.workOrder.customerId || "";
+      case "customerName": return r.workOrder.customerName || "";
+      case "address": return r.workOrder.address || "";
+      case "city": return r.workOrder.city || "";
+      case "state": return r.workOrder.state || "";
+      case "zip": return r.workOrder.zip || "";
+      case "phone": return r.workOrder.phone || "";
+      case "email": return r.workOrder.email || "";
+      case "route": return r.workOrder.route || "";
+      case "zone": return r.workOrder.zone || "";
+      case "serviceType": return r.workOrder.serviceType || "";
+      case "oldMeterId": return r.workOrder.oldMeterId || "";
+      case "oldMeterType": return r.workOrder.oldMeterType || "";
+      case "oldMeterReading": return r.workOrder.oldMeterReading?.toString() ?? "";
+      case "newMeterId": return r.workOrder.newMeterId || "";
+      case "newMeterReading": return r.workOrder.newMeterReading?.toString() ?? "";
+      case "newMeterType": return r.workOrder.newMeterType || "";
+      case "oldGps": return r.workOrder.oldGps || "";
+      case "newGps": return r.workOrder.newGps || "";
+      case "status": return r.workOrder.status;
+      case "scheduledDate": return r.workOrder.scheduledDate ? formatExport(r.workOrder.scheduledDate) : "";
+      case "assignedTo": return getAssignedUserName(r.workOrder.assignedUserId) || "";
+      case "assignedGroup": return getAssignedGroupName(r.workOrder.assignedGroupId) || "";
+      case "createdBy": return r.workOrder.createdBy || "";
+      case "updatedBy": return r.workOrder.updatedBy || "";
+      case "completedAt": return r.workOrder.completedAt ? formatExport(r.workOrder.completedAt) : "";
+      case "trouble": return r.workOrder.trouble || "";
+      case "notes": return r.workOrder.notes || "";
+      case "createdAt": return r.workOrder.createdAt ? formatExport(r.workOrder.createdAt) : "";
+      case "updatedAt": return r.workOrder.updatedAt ? formatExport(r.workOrder.updatedAt) : "";
+      default: return "";
+    }
+  };
+
   const exportToCSV = () => {
     if (!searchResults?.results.length) {
       toast({ title: "No data to export", variant: "destructive" });
       return;
     }
 
-    const headers = ["Project", "WO ID", "Customer ID", "Customer Name", "Address", "City", "State", "ZIP", "Phone", "Email", "Route", "Zone", "Service Type", "Old Meter Type", "New Meter Type", "Old Meter ID", "Old Meter Reading", "New Meter ID", "New Meter Reading", "Old GPS", "New GPS", "Status", "Assigned User", "Assigned Group", "Created At", "Completed At", "Notes"];
-    const rows = searchResults.results.map(r => [
-      r.projectName,
-      r.workOrder.customerWoId || "",
-      r.workOrder.customerId || "",
-      r.workOrder.customerName || "",
-      r.workOrder.address || "",
-      r.workOrder.city || "",
-      r.workOrder.state || "",
-      r.workOrder.zip || "",
-      r.workOrder.phone || "",
-      r.workOrder.email || "",
-      r.workOrder.route || "",
-      r.workOrder.zone || "",
-      r.workOrder.serviceType || "",
-      r.workOrder.oldMeterType || "",
-      r.workOrder.newMeterType || "",
-      r.workOrder.oldMeterId || "",
-      r.workOrder.oldMeterReading ?? "",
-      r.workOrder.newMeterId || "",
-      r.workOrder.newMeterReading ?? "",
-      r.workOrder.oldGps || "",
-      r.workOrder.newGps || "",
-      r.workOrder.status,
-      getAssignedUserName(r.workOrder.assignedUserId) || "",
-      getAssignedGroupName(r.workOrder.assignedGroupId) || "",
-      r.workOrder.createdAt ? formatExport(r.workOrder.createdAt) : "",
-      r.workOrder.completedAt ? formatExport(r.workOrder.completedAt) : "",
-      r.workOrder.notes || "",
-    ]);
+    // Filter columns for export (exclude 'actions' as it's not a data column)
+    const exportColumns = columns.filter(col => col.key !== "actions" && visibleColumns.includes(col.key));
+    const headers = exportColumns.map(col => col.label);
+    const rows = searchResults.results.map(r => 
+      exportColumns.map(col => getExportValue(r, col.key))
+    );
 
     const csvContent = [
       headers.join(","),
@@ -641,35 +696,16 @@ export default function SearchReports() {
       return;
     }
 
-    const data = searchResults.results.map(r => ({
-      "Project": r.projectName,
-      "WO ID": r.workOrder.customerWoId || "",
-      "Customer ID": r.workOrder.customerId || "",
-      "Customer Name": r.workOrder.customerName || "",
-      "Address": r.workOrder.address || "",
-      "City": r.workOrder.city || "",
-      "State": r.workOrder.state || "",
-      "ZIP": r.workOrder.zip || "",
-      "Phone": r.workOrder.phone || "",
-      "Email": r.workOrder.email || "",
-      "Route": r.workOrder.route || "",
-      "Zone": r.workOrder.zone || "",
-      "Service Type": r.workOrder.serviceType || "",
-      "Old Meter Type": r.workOrder.oldMeterType || "",
-      "New Meter Type": r.workOrder.newMeterType || "",
-      "Old Meter ID": r.workOrder.oldMeterId || "",
-      "Old Meter Reading": r.workOrder.oldMeterReading ?? "",
-      "New Meter ID": r.workOrder.newMeterId || "",
-      "New Meter Reading": r.workOrder.newMeterReading ?? "",
-      "Old GPS": r.workOrder.oldGps || "",
-      "New GPS": r.workOrder.newGps || "",
-      "Status": r.workOrder.status,
-      "Assigned User": getAssignedUserName(r.workOrder.assignedUserId) || "",
-      "Assigned Group": getAssignedGroupName(r.workOrder.assignedGroupId) || "",
-      "Created At": r.workOrder.createdAt ? formatExport(r.workOrder.createdAt) : "",
-      "Completed At": r.workOrder.completedAt ? formatExport(r.workOrder.completedAt) : "",
-      "Notes": r.workOrder.notes || "",
-    }));
+    // Filter columns for export (exclude 'actions' as it's not a data column)
+    const exportColumns = columns.filter(col => col.key !== "actions" && visibleColumns.includes(col.key));
+    
+    const data = searchResults.results.map(r => {
+      const row: Record<string, string> = {};
+      exportColumns.forEach(col => {
+        row[col.label] = getExportValue(r, col.key);
+      });
+      return row;
+    });
 
     const worksheet = XLSX.utils.json_to_sheet(data);
     const workbook = XLSX.utils.book_new();
@@ -772,17 +808,38 @@ export default function SearchReports() {
       </div>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Filter className="h-5 w-5" />
-            Search Filters
-          </CardTitle>
-          <CardDescription>
-            Filter work orders by project, status, service type, or text search
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex justify-end mb-2">
+        <CardContent className="pt-4">
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="relative flex-1 min-w-[200px] max-w-md">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search work orders..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+                data-testid="input-search-work-orders"
+              />
+            </div>
+            <Button 
+              variant={showFilters ? "secondary" : "outline"} 
+              onClick={() => setShowFilters(!showFilters)}
+              data-testid="button-toggle-filters"
+            >
+              <Filter className="h-4 w-4 mr-2" />
+              Filters
+              {hasActiveFilters && <Badge variant="secondary" className="ml-2">{activeFilterCount}</Badge>}
+            </Button>
+            {hasActiveFilters && (
+              <Button variant="ghost" onClick={clearFilters} data-testid="button-clear-filters">
+                <X className="h-4 w-4 mr-1" />
+                Clear
+              </Button>
+            )}
+            <div className="flex-1" />
+            <Button onClick={handleSearch} disabled={searchLoading} data-testid="button-search">
+              <Search className="h-4 w-4 mr-2" />
+              {searchLoading ? "Searching..." : "Search"}
+            </Button>
             <FilterSelector
               allFilters={searchFilters}
               visibleFilters={visibleFilters}
@@ -790,19 +847,8 @@ export default function SearchReports() {
               disabled={filterPrefsLoading}
             />
           </div>
-          <div className="flex flex-wrap gap-4">
-            {isFilterVisible("searchQuery") && (
-              <div className="min-w-[200px] flex-1 max-w-md">
-                <Label htmlFor="search-query">Search Text</Label>
-                <Input
-                  id="search-query"
-                  placeholder="Search in WO ID, name, address, meter ID..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  data-testid="input-search-query"
-                />
-              </div>
-            )}
+          {showFilters && (
+            <div className="flex flex-wrap gap-4 mt-4 pt-4 border-t">
             {isFilterVisible("projectName") && (
               <div className="min-w-[180px]">
                 <Label>Project</Label>
@@ -1096,17 +1142,8 @@ export default function SearchReports() {
                 <Input id="filter-updated-at" type="date" value={filterUpdatedAt} onChange={(e) => setFilterUpdatedAt(e.target.value)} data-testid="input-filter-updated-at" />
               </div>
             )}
-          </div>
-          <div className="flex gap-2 flex-wrap">
-            <Button onClick={handleSearch} disabled={searchLoading} data-testid="button-search">
-              <Search className="h-4 w-4 mr-2" />
-              {searchLoading ? "Searching..." : "Search"}
-            </Button>
-            <Button variant="outline" onClick={clearFilters} data-testid="button-clear">
-              <X className="h-4 w-4 mr-2" />
-              Clear Filters
-            </Button>
-          </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -1344,13 +1381,13 @@ export default function SearchReports() {
                           {isColumnVisible("oldGps") && <TableCell>{result.workOrder.oldGps || "-"}</TableCell>}
                           {isColumnVisible("newGps") && <TableCell>{result.workOrder.newGps || "-"}</TableCell>}
                           {isColumnVisible("status") && <TableCell>{getStatusBadge(result.workOrder.status)}</TableCell>}
-                          {isColumnVisible("scheduledDate") && <TableCell>{(result.workOrder as any).scheduledDate ? formatCustom((result.workOrder as any).scheduledDate, "MMM d, yyyy") : "-"}</TableCell>}
+                          {isColumnVisible("scheduledDate") && <TableCell>{result.workOrder.scheduledDate ? formatCustom(result.workOrder.scheduledDate, "MMM d, yyyy") : "-"}</TableCell>}
                           {isColumnVisible("assignedTo") && <TableCell>{getAssignedUserName(result.workOrder.assignedUserId) || "-"}</TableCell>}
                           {isColumnVisible("assignedGroup") && <TableCell>{getAssignedGroupName(result.workOrder.assignedGroupId) || "-"}</TableCell>}
                           {isColumnVisible("createdBy") && <TableCell>{result.workOrder.createdBy || "-"}</TableCell>}
-                          {isColumnVisible("updatedBy") && <TableCell>{(result.workOrder as any).updatedBy || "-"}</TableCell>}
+                          {isColumnVisible("updatedBy") && <TableCell>{result.workOrder.updatedBy || "-"}</TableCell>}
                           {isColumnVisible("completedAt") && <TableCell>{result.workOrder.completedAt ? formatCustom(result.workOrder.completedAt, "MMM d, yyyy h:mm a") : "-"}</TableCell>}
-                          {isColumnVisible("trouble") && <TableCell>{(result.workOrder as any).trouble || "-"}</TableCell>}
+                          {isColumnVisible("trouble") && <TableCell>{result.workOrder.trouble || "-"}</TableCell>}
                           {isColumnVisible("notes") && <TableCell className="max-w-xs truncate">{result.workOrder.notes || "-"}</TableCell>}
                           {isColumnVisible("createdAt") && <TableCell>{result.workOrder.createdAt ? formatCustom(result.workOrder.createdAt, "MMM d, yyyy h:mm a") : "-"}</TableCell>}
                           {isColumnVisible("updatedAt") && <TableCell>{result.workOrder.updatedAt ? formatCustom(result.workOrder.updatedAt, "MMM d, yyyy h:mm a") : "-"}</TableCell>}
