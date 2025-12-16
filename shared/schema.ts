@@ -77,6 +77,12 @@ export const projects = pgTable("projects", {
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
   customerEmail: varchar("customer_email"),
+  phone: varchar("phone", { length: 50 }),
+  address: varchar("address", { length: 255 }),
+  city: varchar("city", { length: 100 }),
+  state: varchar("state", { length: 50 }),
+  zip: varchar("zip", { length: 20 }),
+  notes: text("notes"),
   databaseName: varchar("database_name", { length: 255 }),
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
@@ -403,6 +409,12 @@ export const insertProjectSchema = z.object({
   name: z.string().min(1).max(255),
   description: z.string().optional().nullable(),
   customerEmail: z.string().email().optional().nullable(),
+  phone: z.string().max(50).optional().nullable(),
+  address: z.string().max(255).optional().nullable(),
+  city: z.string().max(100).optional().nullable(),
+  state: z.string().max(50).optional().nullable(),
+  zip: z.string().max(20).optional().nullable(),
+  notes: z.string().optional().nullable(),
 });
 
 export const insertSubroleSchema = z.object({
