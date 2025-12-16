@@ -1020,7 +1020,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteTroubleCode(id: number): Promise<boolean> {
     const result = await db.delete(troubleCodes).where(eq(troubleCodes.id, id));
-    return (result.rowCount ?? 0) > 0;
+    return result.rowCount > 0;
   }
 
   // Service type operations
@@ -1058,7 +1058,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteServiceType(id: number): Promise<boolean> {
     const result = await db.delete(serviceTypes).where(eq(serviceTypes.id, id));
-    return (result.rowCount ?? 0) > 0;
+    return result.rowCount > 0;
   }
 
   // User group operations
