@@ -33,7 +33,6 @@ export const projectWorkOrders = pgTable("work_orders", {
   status: varchar("status", { length: 50 }).notNull().default("Open"),
   statusId: integer("status_id"),
   scheduledDate: timestamp("scheduled_date"),
-  assignedTo: varchar("assigned_to"),
   assignedUserId: varchar("assigned_user_id"),
   assignedGroupId: integer("assigned_group_id"),
   createdBy: varchar("created_by"),
@@ -104,7 +103,6 @@ export async function createProjectSchema(projectName: string, projectId: number
         status VARCHAR(50) NOT NULL DEFAULT 'Open',
         status_id INTEGER REFERENCES public.work_order_statuses(id) ON DELETE RESTRICT,
         scheduled_date TIMESTAMP,
-        assigned_to VARCHAR,
         assigned_user_id VARCHAR REFERENCES public.users(id) ON DELETE RESTRICT,
         assigned_group_id INTEGER REFERENCES public.user_groups(id) ON DELETE RESTRICT,
         created_by VARCHAR,
@@ -302,6 +300,21 @@ export async function migrateProjectSchema(schemaName: string): Promise<void> {
       }
     }
     
+    // Drop the deprecated assigned_to column if it exists
+    const assignedToCheck = await client.query(`
+      SELECT column_name FROM information_schema.columns 
+      WHERE table_schema = $1 AND table_name = 'work_orders' 
+      AND column_name = 'assigned_to'
+    `, [schemaName]);
+    
+    if (assignedToCheck.rows.length > 0) {
+      await client.query(`
+        ALTER TABLE "${schemaName}".work_orders 
+        DROP COLUMN IF EXISTS assigned_to
+      `);
+      console.log(`Dropped deprecated assigned_to column from ${schemaName}.work_orders`);
+    }
+    
     console.log(`Migration completed for ${schemaName}.work_orders`);
   } catch (error) {
     // Log but don't fail - table might not exist yet
@@ -327,7 +340,7 @@ export class ProjectWorkOrderStorage {
     await this.migrationPromise;
   }
 
-  async getWorkOrders(filters?: { status?: string; assignedTo?: string }): Promise<ProjectWorkOrder[]> {
+  async getWorkOrders(filters?: { status?: string; assignedUserId?: string; assignedGroupId?: number }): Promise<ProjectWorkOrder[]> {
     await this.ensureMigrated();
     const client = await pool.connect();
     try {
@@ -340,9 +353,13 @@ export class ProjectWorkOrderStorage {
         conditions.push(`status = $${paramCount++}`);
         values.push(filters.status);
       }
-      if (filters?.assignedTo) {
-        conditions.push(`assigned_to = $${paramCount++}`);
-        values.push(filters.assignedTo);
+      if (filters?.assignedUserId) {
+        conditions.push(`assigned_user_id = $${paramCount++}`);
+        values.push(filters.assignedUserId);
+      }
+      if (filters?.assignedGroupId) {
+        conditions.push(`assigned_group_id = $${paramCount++}`);
+        values.push(filters.assignedGroupId);
       }
 
       if (conditions.length > 0) {
@@ -421,16 +438,9 @@ export class ProjectWorkOrderStorage {
       const oldMeterTypeId = (workOrder as any).oldMeterType ? await this.resolveMeterTypeId((workOrder as any).oldMeterType) : null;
       const newMeterTypeId = (workOrder as any).newMeterType ? await this.resolveMeterTypeId((workOrder as any).newMeterType) : null;
       
-      // Resolve assigned_to - check if it's a user or group
-      const assignedToValue = workOrder.assignedTo || null;
-      let assignedUserId: string | null = null;
-      let assignedGroupId: number | null = null;
-      if (assignedToValue) {
-        assignedUserId = await this.resolveUserId(assignedToValue);
-        if (!assignedUserId) {
-          assignedGroupId = await this.resolveGroupId(assignedToValue);
-        }
-      }
+      // Get assigned user/group IDs directly from the work order
+      const assignedUserId = workOrder.assignedUserId || null;
+      const assignedGroupId = workOrder.assignedGroupId || null;
       
       // Resolve created_by to user ID
       const createdByValue = createdBy || workOrder.createdBy || null;
@@ -438,8 +448,8 @@ export class ProjectWorkOrderStorage {
       
       const result = await client.query(
         `INSERT INTO "${this.schemaName}".work_orders 
-         (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, service_type_id, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, status_id, scheduled_date, assigned_to, assigned_user_id, assigned_group_id, created_by, created_by_id, updated_by, updated_by_id, trouble, trouble_code_id, notes, attachments, old_meter_type, old_meter_type_id, new_meter_type, new_meter_type_id, signature_data, signature_name)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39)
+         (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, service_type_id, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, status_id, scheduled_date, assigned_user_id, assigned_group_id, created_by, created_by_id, updated_by, updated_by_id, trouble, trouble_code_id, notes, attachments, old_meter_type, old_meter_type_id, new_meter_type, new_meter_type_id, signature_data, signature_name)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38)
          RETURNING *`,
         [
           workOrder.customerWoId,
@@ -464,7 +474,6 @@ export class ProjectWorkOrderStorage {
           status,
           statusId,
           workOrder.scheduledDate || null,
-          assignedToValue,
           assignedUserId,
           assignedGroupId,
           createdByValue,
@@ -774,27 +783,14 @@ export class ProjectWorkOrderStorage {
         values.push((updates as any).signatureName);
       }
 
-      // Handle assignedTo if provided - resolve to user or group ID
-      if (updates.assignedTo !== undefined) {
-        setClauses.push(`assigned_to = $${paramCount++}`);
-        values.push(updates.assignedTo);
-        
-        if (updates.assignedTo) {
-          const assignedUserId = await this.resolveUserId(updates.assignedTo);
-          if (assignedUserId) {
-            setClauses.push(`assigned_user_id = $${paramCount++}`);
-            values.push(assignedUserId);
-            setClauses.push(`assigned_group_id = NULL`);
-          } else {
-            const assignedGroupId = await this.resolveGroupId(updates.assignedTo);
-            setClauses.push(`assigned_user_id = NULL`);
-            setClauses.push(`assigned_group_id = $${paramCount++}`);
-            values.push(assignedGroupId);
-          }
-        } else {
-          setClauses.push(`assigned_user_id = NULL`);
-          setClauses.push(`assigned_group_id = NULL`);
-        }
+      // Handle assignedUserId and assignedGroupId directly
+      if (updates.assignedUserId !== undefined) {
+        setClauses.push(`assigned_user_id = $${paramCount++}`);
+        values.push(updates.assignedUserId || null);
+      }
+      if (updates.assignedGroupId !== undefined) {
+        setClauses.push(`assigned_group_id = $${paramCount++}`);
+        values.push(updates.assignedGroupId || null);
       }
 
       // Always set updatedBy and updated_at
@@ -893,7 +889,6 @@ export class ProjectWorkOrderStorage {
       status: row.status,
       statusId: row.status_id,
       scheduledDate: row.scheduled_date,
-      assignedTo: row.assigned_to,
       assignedUserId: row.assigned_user_id,
       assignedGroupId: row.assigned_group_id,
       createdBy: row.created_by,
@@ -964,7 +959,6 @@ export async function backupProjectDatabase(schemaName: string): Promise<{
       status: row.status,
       statusId: row.status_id,
       scheduledDate: row.scheduled_date,
-      assignedTo: row.assigned_to,
       assignedUserId: row.assigned_user_id,
       assignedGroupId: row.assigned_group_id,
       createdBy: row.created_by,
@@ -1017,8 +1011,8 @@ export async function restoreProjectDatabase(
       try {
         await client.query(
           `INSERT INTO "${schemaName}".work_orders 
-           (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, service_type_id, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, status_id, scheduled_date, assigned_to, assigned_user_id, assigned_group_id, created_by, created_by_id, updated_by, updated_by_id, completed_at, trouble, trouble_code_id, notes, attachments, old_meter_type, old_meter_type_id, new_meter_type, new_meter_type_id, signature_data, signature_name)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40)`,
+           (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, service_type_id, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, status_id, scheduled_date, assigned_user_id, assigned_group_id, created_by, created_by_id, updated_by, updated_by_id, completed_at, trouble, trouble_code_id, notes, attachments, old_meter_type, old_meter_type_id, new_meter_type, new_meter_type_id, signature_data, signature_name)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39)`,
           [
             wo.customerWoId || null,
             wo.customerId || null,
@@ -1042,7 +1036,6 @@ export async function restoreProjectDatabase(
             wo.status || "Open",
             wo.statusId || null,
             wo.scheduledDate || null,
-            wo.assignedTo || null,
             wo.assignedUserId || null,
             wo.assignedGroupId || null,
             wo.createdBy || null,
