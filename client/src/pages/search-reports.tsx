@@ -107,6 +107,7 @@ export default function SearchReports() {
   const [filterNewMeterType, setFilterNewMeterType] = useState("all");
   const [filterScheduledDate, setFilterScheduledDate] = useState("");
   const [filterAssignedTo, setFilterAssignedTo] = useState("all");
+  const [filterAssignedGroup, setFilterAssignedGroup] = useState("all");
   const [filterCreatedBy, setFilterCreatedBy] = useState("all");
   const [filterUpdatedBy, setFilterUpdatedBy] = useState("all");
   const [filterCompletedAt, setFilterCompletedAt] = useState("");
@@ -178,7 +179,8 @@ export default function SearchReports() {
     { key: "newMeterType", label: "New Meter Type" },
     { key: "status", label: "Status" },
     { key: "scheduledDate", label: "Scheduled Date" },
-    { key: "assignedTo", label: "Assigned To" },
+    { key: "assignedTo", label: "Assigned To (User)" },
+    { key: "assignedGroup", label: "Assigned To (Group)" },
     { key: "createdBy", label: "Created By" },
     { key: "updatedBy", label: "Updated By" },
     { key: "completedAt", label: "Completed At" },
@@ -317,6 +319,7 @@ export default function SearchReports() {
     setFilterNewMeterType("all");
     setFilterScheduledDate("");
     setFilterAssignedTo("all");
+    setFilterAssignedGroup("all");
     setFilterCreatedBy("all");
     setFilterUpdatedBy("all");
     setFilterCompletedAt("");
@@ -398,21 +401,55 @@ export default function SearchReports() {
       results = results.filter(r => (r.workOrder.newMeterType || '') === filterNewMeterType);
     }
     if (filterAssignedTo !== "all") {
+      // Look up user label from selected ID for fallback comparison
+      const selectedUser = users.find(u => u.id === filterAssignedTo);
+      const selectedUserLabel = selectedUser?.username || (selectedUser?.firstName && selectedUser?.lastName ? `${selectedUser.firstName} ${selectedUser.lastName}` : null);
       results = results.filter(r => {
-        const assignedTo = r.workOrder.assignedTo || '';
-        return assignedTo === filterAssignedTo || assignedTo.toLowerCase().includes(filterAssignedTo.toLowerCase());
+        const wo = r.workOrder as any;
+        // First try ID-based match (normalize both to strings for comparison)
+        if (wo.assignedUserId && String(wo.assignedUserId) === String(filterAssignedTo)) return true;
+        // Fall back to user name match in assignedTo
+        if (selectedUserLabel && wo.assignedTo === selectedUserLabel) return true;
+        return false;
+      });
+    }
+    if (filterAssignedGroup !== "all") {
+      // Look up group name from selected ID for fallback comparison
+      const selectedGroup = userGroups.find(g => String(g.id) === filterAssignedGroup);
+      const selectedGroupName = selectedGroup?.name;
+      results = results.filter(r => {
+        const wo = r.workOrder as any;
+        // First try ID-based match
+        if (wo.assignedGroupId && String(wo.assignedGroupId) === filterAssignedGroup) return true;
+        // Fall back to group name match in assignedTo
+        if (selectedGroupName && wo.assignedTo === selectedGroupName) return true;
+        return false;
       });
     }
     if (filterCreatedBy !== "all") {
+      // Look up user label from selected ID for fallback comparison
+      const selectedUser = users.find(u => u.id === filterCreatedBy);
+      const selectedUserLabel = selectedUser?.username || (selectedUser?.firstName && selectedUser?.lastName ? `${selectedUser.firstName} ${selectedUser.lastName}` : null);
       results = results.filter(r => {
-        const createdBy = r.workOrder.createdBy || '';
-        return createdBy === filterCreatedBy || createdBy.toLowerCase().includes(filterCreatedBy.toLowerCase());
+        const wo = r.workOrder as any;
+        // First try ID-based match (normalize both to strings for comparison)
+        if (wo.createdById && String(wo.createdById) === String(filterCreatedBy)) return true;
+        // Fall back to user name match
+        if (selectedUserLabel && wo.createdBy === selectedUserLabel) return true;
+        return false;
       });
     }
     if (filterUpdatedBy !== "all") {
+      // Look up user label from selected ID for fallback comparison
+      const selectedUser = users.find(u => u.id === filterUpdatedBy);
+      const selectedUserLabel = selectedUser?.username || (selectedUser?.firstName && selectedUser?.lastName ? `${selectedUser.firstName} ${selectedUser.lastName}` : null);
       results = results.filter(r => {
-        const updatedBy = (r.workOrder as any).updatedBy || '';
-        return updatedBy === filterUpdatedBy || updatedBy.toLowerCase().includes(filterUpdatedBy.toLowerCase());
+        const wo = r.workOrder as any;
+        // First try ID-based match (normalize both to strings for comparison)
+        if (wo.updatedById && String(wo.updatedById) === String(filterUpdatedBy)) return true;
+        // Fall back to user name match
+        if (selectedUserLabel && wo.updatedBy === selectedUserLabel) return true;
+        return false;
       });
     }
     if (filterTroubleCode !== "all") {
@@ -471,7 +508,7 @@ export default function SearchReports() {
       });
     }
     return results;
-  }, [searchResults?.results, sortColumn, sortDirection, filterCustomerWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterOldMeterType, filterNewMeterId, filterNewMeterType, filterAssignedTo, filterCreatedBy, filterUpdatedBy, filterTroubleCode, filterNotes, filterScheduledDate, filterCompletedAt, filterCreatedAt, filterUpdatedAt]);
+  }, [searchResults?.results, sortColumn, sortDirection, filterCustomerWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterOldMeterType, filterNewMeterId, filterNewMeterType, filterAssignedTo, filterAssignedGroup, filterCreatedBy, filterUpdatedBy, filterTroubleCode, filterNotes, filterScheduledDate, filterCompletedAt, filterCreatedAt, filterUpdatedAt, users, userGroups]);
 
   const getStatusColorHex = (color: string): string => {
     const colorMap: Record<string, string> = {
@@ -936,26 +973,39 @@ export default function SearchReports() {
                 <Input id="filter-scheduled-date" type="date" value={filterScheduledDate} onChange={(e) => setFilterScheduledDate(e.target.value)} data-testid="input-filter-scheduled-date" />
               </div>
             )}
-            {isFilterVisible("assignedTo") && (users.length > 0 || userGroups.length > 0) && (
+            {isFilterVisible("assignedTo") && users.length > 0 && (
               <div className="min-w-[180px]">
-                <Label htmlFor="filter-assigned-to">Assigned To</Label>
+                <Label htmlFor="filter-assigned-to">Assigned To (User)</Label>
                 <Select value={filterAssignedTo} onValueChange={setFilterAssignedTo}>
                   <SelectTrigger id="filter-assigned-to" data-testid="select-filter-assigned-to">
-                    <SelectValue placeholder="All" />
+                    <SelectValue placeholder="All Users" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="all">All Users</SelectItem>
                     {users.map((u) => (
-                      <SelectItem key={u.id} value={u.username || String(u.id)}>{u.username || `${u.firstName} ${u.lastName}`}</SelectItem>
-                    ))}
-                    {userGroups.map((g) => (
-                      <SelectItem key={`group-${g.id}`} value={g.name}>{g.name}</SelectItem>
+                      <SelectItem key={u.id} value={u.id}>{u.username || `${u.firstName} ${u.lastName}`}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             )}
-            {isFilterVisible("createdBy") && (users.length > 0 || userGroups.length > 0) && (
+            {isFilterVisible("assignedGroup") && userGroups.length > 0 && (
+              <div className="min-w-[180px]">
+                <Label htmlFor="filter-assigned-group">Assigned To (Group)</Label>
+                <Select value={filterAssignedGroup} onValueChange={setFilterAssignedGroup}>
+                  <SelectTrigger id="filter-assigned-group" data-testid="select-filter-assigned-group">
+                    <SelectValue placeholder="All Groups" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Groups</SelectItem>
+                    {userGroups.map((g) => (
+                      <SelectItem key={g.id} value={String(g.id)}>{g.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {isFilterVisible("createdBy") && users.length > 0 && (
               <div className="min-w-[180px]">
                 <Label htmlFor="filter-created-by">Created By</Label>
                 <Select value={filterCreatedBy} onValueChange={setFilterCreatedBy}>
@@ -965,16 +1015,13 @@ export default function SearchReports() {
                   <SelectContent>
                     <SelectItem value="all">All</SelectItem>
                     {users.map((u) => (
-                      <SelectItem key={u.id} value={u.username || String(u.id)}>{u.username || `${u.firstName} ${u.lastName}`}</SelectItem>
-                    ))}
-                    {userGroups.map((g) => (
-                      <SelectItem key={`group-${g.id}`} value={g.name}>{g.name}</SelectItem>
+                      <SelectItem key={u.id} value={u.id}>{u.username || `${u.firstName} ${u.lastName}`}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             )}
-            {isFilterVisible("updatedBy") && (users.length > 0 || userGroups.length > 0) && (
+            {isFilterVisible("updatedBy") && users.length > 0 && (
               <div className="min-w-[180px]">
                 <Label htmlFor="filter-updated-by">Updated By</Label>
                 <Select value={filterUpdatedBy} onValueChange={setFilterUpdatedBy}>
@@ -984,10 +1031,7 @@ export default function SearchReports() {
                   <SelectContent>
                     <SelectItem value="all">All</SelectItem>
                     {users.map((u) => (
-                      <SelectItem key={u.id} value={u.username || String(u.id)}>{u.username || `${u.firstName} ${u.lastName}`}</SelectItem>
-                    ))}
-                    {userGroups.map((g) => (
-                      <SelectItem key={`group-${g.id}`} value={g.name}>{g.name}</SelectItem>
+                      <SelectItem key={u.id} value={u.id}>{u.username || `${u.firstName} ${u.lastName}`}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
