@@ -15,48 +15,38 @@ const TABLE_PRIMARY_KEYS: Record<string, string[]> = {
   user_projects: ["user_id", "project_id"],
   user_groups: ["id"],
   user_group_members: ["group_id", "user_id"],
-  user_group_projects: ["group_id", "project_id"],
   subroles: ["id"],
   permissions: ["id"],
   subrole_permissions: ["subrole_id", "permission_id"],
   system_settings: ["key"],
   work_order_statuses: ["id"],
   trouble_codes: ["id"],
-  meter_types: ["id"],
-  meter_type_projects: ["meter_type_id", "project_id"],
   import_configs: ["id"],
   import_history: ["id"],
   file_import_configs: ["id"],
   file_import_history: ["id"],
   external_database_configs: ["id"],
-  user_column_preferences: ["id"],
-  user_filter_preferences: ["id"],
 };
 
 const MAIN_TABLES = Object.keys(TABLE_PRIMARY_KEYS);
 
 const TABLE_RESTORE_ORDER = [
+  "users",
   "subroles",
   "permissions",
   "subrole_permissions",
-  "user_groups",
   "projects",
+  "user_projects",
+  "user_groups",
+  "user_group_members",
   "system_settings",
   "work_order_statuses",
   "trouble_codes",
-  "meter_types",
-  "users",
-  "external_database_configs",
-  "file_import_configs",
-  "meter_type_projects",
-  "user_projects",
-  "user_group_members",
-  "user_group_projects",
-  "user_column_preferences",
-  "user_filter_preferences",
   "import_configs",
-  "file_import_history",
   "import_history",
+  "file_import_configs",
+  "file_import_history",
+  "external_database_configs",
 ];
 
 const TABLE_DELETE_ORDER = [...TABLE_RESTORE_ORDER].reverse();
@@ -188,7 +178,6 @@ export async function restoreFullSystem(
   const projectErrors: string[] = [];
   const mainTablesRestored: Record<string, number> = {};
   let projectsRestored = 0;
-  let fkConstraintsDisabled = false;
   
   try {
     const existingTables = await getExistingTables(client);
@@ -206,15 +195,6 @@ export async function restoreFullSystem(
     }
     
     await client.query("BEGIN");
-    
-    // Try to disable foreign key constraint checking during restore
-    // This requires superuser privileges - if it fails, we continue without it
-    try {
-      await client.query("SET session_replication_role = 'replica'");
-      fkConstraintsDisabled = true;
-    } catch (e: any) {
-      warnings.push("Could not disable FK constraints during restore (requires superuser). Restore will proceed with constraints enabled.");
-    }
     
     if (options.clearExisting) {
       for (const tableName of TABLE_DELETE_ORDER) {
@@ -244,13 +224,8 @@ export async function restoreFullSystem(
       let restoredCount = 0;
       const primaryKeys = await getPrimaryKeyColumns(client, tableName);
       
-      for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
-        const row = rows[rowIndex];
-        const savepointName = `sp_${tableName}_${rowIndex}`;
-        
+      for (const row of rows) {
         try {
-          await client.query(`SAVEPOINT ${savepointName}`);
-          
           const columns = Object.keys(row);
           const values = Object.values(row);
           const placeholders = columns.map((_, i) => `$${i + 1}`).join(", ");
@@ -283,15 +258,9 @@ export async function restoreFullSystem(
               );
             }
           }
-          
-          await client.query(`RELEASE SAVEPOINT ${savepointName}`);
           restoredCount++;
         } catch (error: any) {
-          try {
-            await client.query(`ROLLBACK TO SAVEPOINT ${savepointName}`);
-          } catch {}
-          const pkValues = primaryKeys.map(pk => row[pk]).join(", ");
-          errors.push(`${tableName} (pk: ${pkValues}): ${error.message}`);
+          errors.push(`${tableName}: ${error.message}`);
         }
       }
       
@@ -302,17 +271,10 @@ export async function restoreFullSystem(
       e.includes("users:") || e.includes("projects:") || e.includes("subroles:")
     );
     if (criticalErrors.length > 0) {
-      if (fkConstraintsDisabled) {
-        await client.query("SET session_replication_role = 'origin'");
-      }
       await client.query("ROLLBACK");
       throw new Error(`Critical restore errors: ${criticalErrors.join("; ")}`);
     }
     
-    // Re-enable foreign key constraint checking if it was disabled
-    if (fkConstraintsDisabled) {
-      await client.query("SET session_replication_role = 'origin'");
-    }
     await client.query("COMMIT");
     
     for (const projectBackup of backupData.projectDatabases) {
@@ -334,19 +296,10 @@ export async function restoreFullSystem(
     return { mainTablesRestored, projectsRestored, projectErrors, errors, warnings };
   } catch (error: any) {
     try {
-      if (fkConstraintsDisabled) {
-        await client.query("SET session_replication_role = 'origin'");
-      }
       await client.query("ROLLBACK");
     } catch {}
     throw error;
   } finally {
-    // Ensure session_replication_role is reset even if something goes wrong
-    if (fkConstraintsDisabled) {
-      try {
-        await client.query("SET session_replication_role = 'origin'");
-      } catch {}
-    }
     client.release();
   }
 }
