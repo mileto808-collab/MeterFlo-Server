@@ -27,8 +27,18 @@ export function ColumnSelector({
 }: ColumnSelectorProps) {
   const [open, setOpen] = useState(false);
 
-  // Use orderedColumns if provided, otherwise fall back to allColumns
-  const displayColumns = orderedColumns || allColumns;
+  // Show visible columns first (in order), then hidden columns at the end
+  // This ensures all columns are displayed for selection
+  const displayColumns = (() => {
+    if (!orderedColumns) return allColumns;
+    
+    // Get hidden columns (in allColumns but not in orderedColumns)
+    const visibleKeys = new Set(orderedColumns.map(c => c.key));
+    const hiddenColumns = allColumns.filter(c => !visibleKeys.has(c.key));
+    
+    // Return visible columns first, then hidden ones
+    return [...orderedColumns, ...hiddenColumns];
+  })();
 
   const handleToggleColumn = (key: string, checked: boolean) => {
     const column = allColumns.find(c => c.key === key);
