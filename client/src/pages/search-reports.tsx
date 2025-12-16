@@ -275,6 +275,13 @@ export default function SearchReports() {
     return group?.name || null;
   };
 
+  // Helper to get trouble code label from code
+  const getTroubleCodeLabel = (code: string | null | undefined): string | null => {
+    if (!code) return null;
+    const troubleCode = troubleCodes.find(tc => tc.code === code);
+    return troubleCode?.label || code;
+  };
+
   // Helper to get color hex from color name
   const getServiceTypeColorHex = (color: string): string => {
     const colorMap: Record<string, string> = {
@@ -487,7 +494,7 @@ export default function SearchReports() {
       case "completedAt":
         return <TableCell key={key}>{wo.completedAt ? formatCustom(wo.completedAt, "MMM d, yyyy h:mm a") : "-"}</TableCell>;
       case "trouble":
-        return <TableCell key={key}>{wo.trouble || "-"}</TableCell>;
+        return <TableCell key={key}>{getTroubleCodeLabel(wo.trouble) || "-"}</TableCell>;
       case "notes":
         return <TableCell key={key} className="max-w-xs truncate">{wo.notes || "-"}</TableCell>;
       case "createdAt":
@@ -779,7 +786,7 @@ export default function SearchReports() {
       case "createdBy": return r.workOrder.createdBy || "";
       case "updatedBy": return r.workOrder.updatedBy || "";
       case "completedAt": return r.workOrder.completedAt ? formatExport(r.workOrder.completedAt) : "";
-      case "trouble": return r.workOrder.trouble || "";
+      case "trouble": return getTroubleCodeLabel(r.workOrder.trouble) || "";
       case "notes": return r.workOrder.notes || "";
       case "createdAt": return r.workOrder.createdAt ? formatExport(r.workOrder.createdAt) : "";
       case "updatedAt": return r.workOrder.updatedAt ? formatExport(r.workOrder.updatedAt) : "";
