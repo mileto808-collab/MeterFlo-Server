@@ -6,8 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/hooks/useAuth";
-import type { WorkOrder, Project, User } from "@shared/schema";
-import { ArrowLeft, Edit, Calendar, User as UserIcon, FolderOpen, Clock } from "lucide-react";
+import type { WorkOrder, Project, User, UserGroup } from "@shared/schema";
+import { ArrowLeft, Edit, Calendar, User as UserIcon, FolderOpen, Clock, Users } from "lucide-react";
 import { useTimezone } from "@/hooks/use-timezone";
 
 export default function WorkOrderDetail() {
@@ -31,6 +31,11 @@ export default function WorkOrderDetail() {
     enabled: role === "admin",
   });
 
+  const { data: userGroups } = useQuery<UserGroup[]>({
+    queryKey: ["/api/user-groups"],
+    enabled: role === "admin",
+  });
+
   const getProjectName = (projectId: number | null) => {
     if (!projectId || !projects) return "No project assigned";
     const project = projects.find((p) => p.id === projectId);
@@ -38,12 +43,28 @@ export default function WorkOrderDetail() {
   };
 
   const getAssigneeName = (assigneeId: string | null) => {
-    if (!assigneeId || !users) return "Unassigned";
+    if (!assigneeId || !users) return null;
     const assignee = users.find((u) => u.id === assigneeId);
-    if (!assignee) return "Unknown user";
+    if (!assignee) return null;
     return assignee.firstName && assignee.lastName
       ? `${assignee.firstName} ${assignee.lastName}`
       : assignee.email || assignee.id;
+  };
+
+  const getGroupName = (groupId: number | null | undefined) => {
+    if (!groupId || !userGroups) return null;
+    const group = userGroups.find((g) => g.id === groupId);
+    return group?.name || null;
+  };
+
+  const getAssignmentDisplay = () => {
+    const wo = workOrder as any;
+    const userName = getAssigneeName(wo?.assignedUserId);
+    const groupName = getGroupName(wo?.assignedGroupId);
+    if (userName && groupName) return `${userName}, ${groupName}`;
+    if (userName) return userName;
+    if (groupName) return groupName;
+    return "Unassigned";
   };
 
   const getStatusColor = (status: string) => {
@@ -252,7 +273,7 @@ export default function WorkOrderDetail() {
                   <div>
                     <p className="text-xs text-muted-foreground">Assigned To</p>
                     <p className="text-sm font-medium" data-testid="text-assignee">
-                      {getAssigneeName(workOrder.assignedTo)}
+                      {getAssignmentDisplay()}
                     </p>
                   </div>
                 </div>

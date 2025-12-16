@@ -58,7 +58,8 @@ type SearchResult = {
     oldGps?: string | null;
     newGps?: string | null;
     status: string;
-    assignedTo?: string | null;
+    assignedUserId?: string | null;
+    assignedGroupId?: number | null;
     createdBy?: string | null;
     completedAt?: string | null;
     notes?: string | null;
@@ -252,6 +253,24 @@ export default function SearchReports() {
     queryKey: ["/api/user-groups"],
   });
 
+  // Helper to get assigned user name from ID
+  const getAssignedUserName = (userId: string | null | undefined): string | null => {
+    if (!userId) return null;
+    const user = users.find(u => u.id === userId);
+    if (!user) return null;
+    if (user.firstName && user.lastName) {
+      return `${user.firstName} ${user.lastName}`;
+    }
+    return user.username || null;
+  };
+
+  // Helper to get assigned group name from ID
+  const getAssignedGroupName = (groupId: number | null | undefined): string | null => {
+    if (!groupId) return null;
+    const group = userGroups.find(g => g.id === groupId);
+    return group?.name || null;
+  };
+
   // Helper to get color hex from color name
   const getServiceTypeColorHex = (color: string): string => {
     const colorMap: Record<string, string> = {
@@ -406,10 +425,8 @@ export default function SearchReports() {
       const selectedUserLabel = selectedUser?.username || (selectedUser?.firstName && selectedUser?.lastName ? `${selectedUser.firstName} ${selectedUser.lastName}` : null);
       results = results.filter(r => {
         const wo = r.workOrder as any;
-        // First try ID-based match (normalize both to strings for comparison)
+        // ID-based match (normalize both to strings for comparison)
         if (wo.assignedUserId && String(wo.assignedUserId) === String(filterAssignedTo)) return true;
-        // Fall back to user name match in assignedTo
-        if (selectedUserLabel && wo.assignedTo === selectedUserLabel) return true;
         return false;
       });
     }
@@ -419,10 +436,8 @@ export default function SearchReports() {
       const selectedGroupName = selectedGroup?.name;
       results = results.filter(r => {
         const wo = r.workOrder as any;
-        // First try ID-based match
+        // ID-based match
         if (wo.assignedGroupId && String(wo.assignedGroupId) === filterAssignedGroup) return true;
-        // Fall back to group name match in assignedTo
-        if (selectedGroupName && wo.assignedTo === selectedGroupName) return true;
         return false;
       });
     }
@@ -597,7 +612,7 @@ export default function SearchReports() {
       r.workOrder.oldGps || "",
       r.workOrder.newGps || "",
       r.workOrder.status,
-      r.workOrder.assignedTo || "",
+      getAssignedUserName(r.workOrder.assignedUserId) || getAssignedGroupName(r.workOrder.assignedGroupId) || "",
       r.workOrder.createdAt ? formatExport(r.workOrder.createdAt) : "",
       r.workOrder.completedAt ? formatExport(r.workOrder.completedAt) : "",
       r.workOrder.notes || "",
@@ -647,7 +662,7 @@ export default function SearchReports() {
       "Old GPS": r.workOrder.oldGps || "",
       "New GPS": r.workOrder.newGps || "",
       "Status": r.workOrder.status,
-      "Assigned To": r.workOrder.assignedTo || "",
+      "Assigned To": getAssignedUserName(r.workOrder.assignedUserId) || getAssignedGroupName(r.workOrder.assignedGroupId) || "",
       "Created At": r.workOrder.createdAt ? formatExport(r.workOrder.createdAt) : "",
       "Completed At": r.workOrder.completedAt ? formatExport(r.workOrder.completedAt) : "",
       "Notes": r.workOrder.notes || "",
@@ -1322,7 +1337,7 @@ export default function SearchReports() {
                           {isColumnVisible("newGps") && <TableCell>{result.workOrder.newGps || "-"}</TableCell>}
                           {isColumnVisible("status") && <TableCell>{getStatusBadge(result.workOrder.status)}</TableCell>}
                           {isColumnVisible("scheduledDate") && <TableCell>{(result.workOrder as any).scheduledDate ? formatCustom((result.workOrder as any).scheduledDate, "MMM d, yyyy") : "-"}</TableCell>}
-                          {isColumnVisible("assignedTo") && <TableCell>{result.workOrder.assignedTo || "-"}</TableCell>}
+                          {isColumnVisible("assignedTo") && <TableCell>{getAssignedUserName(result.workOrder.assignedUserId) || getAssignedGroupName(result.workOrder.assignedGroupId) || "-"}</TableCell>}
                           {isColumnVisible("createdBy") && <TableCell>{result.workOrder.createdBy || "-"}</TableCell>}
                           {isColumnVisible("updatedBy") && <TableCell>{(result.workOrder as any).updatedBy || "-"}</TableCell>}
                           {isColumnVisible("completedAt") && <TableCell>{result.workOrder.completedAt ? formatCustom(result.workOrder.completedAt, "MMM d, yyyy h:mm a") : "-"}</TableCell>}

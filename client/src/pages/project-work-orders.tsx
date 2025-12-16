@@ -80,7 +80,6 @@ type AssigneesResponse = {
 
 const workOrderFormSchema = insertProjectWorkOrderSchema.extend({
   email: z.string().optional().nullable().or(z.literal("")),
-  assignedTo: z.string().optional().nullable(),
 });
 
 type WorkOrderFormData = z.infer<typeof workOrderFormSchema>;
@@ -230,7 +229,8 @@ export default function ProjectWorkOrders() {
       oldGps: "",
       newGps: "",
       notes: "",
-      assignedTo: "",
+      assignedUserId: "",
+      assignedGroupId: undefined,
       scheduledDate: "",
       trouble: "",
       oldMeterType: "",
@@ -261,7 +261,8 @@ export default function ProjectWorkOrders() {
       newGps: "",
       notes: "",
       status: "Open",
-      assignedTo: "",
+      assignedUserId: "",
+      assignedGroupId: undefined,
       scheduledDate: "",
       trouble: "",
       oldMeterType: "",
@@ -391,7 +392,8 @@ export default function ProjectWorkOrders() {
         newGps: editingWorkOrder.newGps || "",
         notes: editingWorkOrder.notes || "",
         status: editingWorkOrder.status || "Open",
-        assignedTo: editingWorkOrder.assignedTo || "",
+        assignedUserId: (editingWorkOrder as any).assignedUserId || "",
+        assignedGroupId: (editingWorkOrder as any).assignedGroupId || undefined,
         scheduledDate: (editingWorkOrder as any).scheduledDate || "",
         trouble: (editingWorkOrder as any).trouble || "",
         oldMeterType: (editingWorkOrder as any).oldMeterType || "",
@@ -623,6 +625,29 @@ export default function ProjectWorkOrders() {
     return <Badge variant="outline">{status}</Badge>;
   };
 
+  // Helper to get assigned user name from ID
+  const getAssignedUserName = (userId: string | null | undefined): string => {
+    if (!userId) return "";
+    const user = assigneesData?.users?.find(u => u.id === userId);
+    return user?.label || userId;
+  };
+
+  // Helper to get assigned group name from ID
+  const getAssignedGroupName = (groupId: number | null | undefined): string => {
+    if (!groupId) return "";
+    const group = assigneesData?.groups?.find(g => String(g.id) === String(groupId));
+    return group?.label || String(groupId);
+  };
+
+  // Helper to get combined assignment display (for exports and legacy display)
+  const getAssignmentDisplay = (workOrder: ProjectWorkOrder): string => {
+    const woAny = workOrder as any;
+    const userName = getAssignedUserName(woAny.assignedUserId);
+    const groupName = getAssignedGroupName(woAny.assignedGroupId);
+    if (userName && groupName) return `${userName} / ${groupName}`;
+    return userName || groupName || "";
+  };
+
   const getServiceTypeBadge = (serviceType: string | null) => {
     if (!serviceType) {
       return <Badge variant="outline">Unknown</Badge>;
@@ -708,33 +733,19 @@ export default function ProjectWorkOrders() {
       result = result.filter(wo => wo.createdAt && new Date(wo.createdAt) <= toDate);
     }
     
-    // Filter by assigned to user (using ID when available, falling back to user name)
+    // Filter by assigned to user using ID
     if (selectedAssignedTo !== "all") {
-      // Look up user label from selected ID for fallback comparison
-      const selectedUser = assigneesData?.users?.find(u => u.id === selectedAssignedTo);
-      const selectedUserLabel = selectedUser?.label;
       result = result.filter(wo => {
         const woAny = wo as any;
-        // First try ID-based match (normalize both to strings for comparison)
-        if (woAny.assignedUserId && String(woAny.assignedUserId) === String(selectedAssignedTo)) return true;
-        // Fall back to user name match in assignedTo
-        if (selectedUserLabel && wo.assignedTo === selectedUserLabel) return true;
-        return false;
+        return woAny.assignedUserId && String(woAny.assignedUserId) === String(selectedAssignedTo);
       });
     }
     
-    // Filter by assigned to group (using ID when available, falling back to group name)
+    // Filter by assigned to group using ID
     if (selectedAssignedGroup !== "all") {
-      // Look up group name from selected ID for fallback comparison
-      const selectedGroup = assigneesData?.groups?.find(g => String(g.id) === selectedAssignedGroup);
-      const selectedGroupName = selectedGroup?.label;
       result = result.filter(wo => {
         const woAny = wo as any;
-        // First try ID-based match
-        if (woAny.assignedGroupId && String(woAny.assignedGroupId) === selectedAssignedGroup) return true;
-        // Fall back to group name match in assignedTo
-        if (selectedGroupName && wo.assignedTo === selectedGroupName) return true;
-        return false;
+        return woAny.assignedGroupId && String(woAny.assignedGroupId) === selectedAssignedGroup;
       });
     }
     
@@ -952,7 +963,7 @@ export default function ProjectWorkOrders() {
       wo.oldGps || "",
       wo.newGps || "",
       wo.status,
-      wo.assignedTo || "",
+      getAssignmentDisplay(wo),
       wo.createdAt ? formatExport(wo.createdAt) : "",
       wo.completedAt ? formatExport(wo.completedAt) : "",
       wo.notes || "",
@@ -999,7 +1010,7 @@ export default function ProjectWorkOrders() {
       "Old GPS": wo.oldGps || "",
       "New GPS": wo.newGps || "",
       "Status": wo.status,
-      "Assigned To": wo.assignedTo || "",
+      "Assigned To": getAssignmentDisplay(wo),
       "Created At": wo.createdAt ? formatExport(wo.createdAt) : "",
       "Completed At": wo.completedAt ? formatExport(wo.completedAt) : "",
       "Notes": wo.notes || "",
@@ -1514,111 +1525,50 @@ export default function ProjectWorkOrders() {
                   />
                   <FormField
                     control={editForm.control}
-                    name="assignedTo"
+                    name="assignedUserId"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Assigned To</FormLabel>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <FormControl>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                role="combobox"
-                                className="w-full justify-between font-normal"
-                                data-testid="select-edit-assigned-to"
-                              >
-                                <span className="truncate">
-                                  {field.value || "Select assignee(s)..."}
-                                </span>
-                                <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                              </Button>
-                            </FormControl>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-[300px] p-0" align="start">
-                            <div className="p-2 border-b">
-                              <Input
-                                placeholder="Search users or groups..."
-                                className="h-8"
-                                data-testid="input-search-assignees"
-                              />
-                            </div>
-                            <ScrollArea className="h-[200px]">
-                              <div className="p-2">
-                                {assigneesData?.groups && assigneesData.groups.length > 0 && (
-                                  <>
-                                    <div className="text-xs font-medium text-muted-foreground mb-1 px-2">Groups</div>
-                                    {assigneesData.groups.map((group) => (
-                                      <div
-                                        key={group.id}
-                                        className="flex items-center gap-2 px-2 py-1.5 rounded-md hover-elevate cursor-pointer"
-                                        onClick={() => {
-                                          const current = field.value || "";
-                                          const items = current.split(",").map(s => s.trim()).filter(Boolean);
-                                          if (items.includes(group.label)) {
-                                            field.onChange(items.filter(i => i !== group.label).join(", "));
-                                          } else {
-                                            field.onChange([...items, group.label].join(", "));
-                                          }
-                                        }}
-                                        data-testid={`option-group-${group.key}`}
-                                      >
-                                        <Checkbox
-                                          checked={(field.value || "").split(",").map(s => s.trim()).includes(group.label)}
-                                        />
-                                        <Users className="h-4 w-4 text-muted-foreground" />
-                                        <span className="text-sm">{group.label}</span>
-                                      </div>
-                                    ))}
-                                  </>
-                                )}
-                                {assigneesData?.users && assigneesData.users.length > 0 && (
-                                  <>
-                                    <div className="text-xs font-medium text-muted-foreground mb-1 mt-2 px-2">Users</div>
-                                    {assigneesData.users.map((user) => (
-                                      <div
-                                        key={user.id}
-                                        className="flex items-center gap-2 px-2 py-1.5 rounded-md hover-elevate cursor-pointer"
-                                        onClick={() => {
-                                          const current = field.value || "";
-                                          const items = current.split(",").map(s => s.trim()).filter(Boolean);
-                                          if (items.includes(user.label)) {
-                                            field.onChange(items.filter(i => i !== user.label).join(", "));
-                                          } else {
-                                            field.onChange([...items, user.label].join(", "));
-                                          }
-                                        }}
-                                        data-testid={`option-user-${user.id}`}
-                                      >
-                                        <Checkbox
-                                          checked={(field.value || "").split(",").map(s => s.trim()).includes(user.label)}
-                                        />
-                                        <span className="text-sm">{user.label}</span>
-                                      </div>
-                                    ))}
-                                  </>
-                                )}
-                                {(!assigneesData?.users?.length && !assigneesData?.groups?.length) && (
-                                  <div className="text-sm text-muted-foreground text-center py-4">
-                                    No users or groups available
-                                  </div>
-                                )}
-                              </div>
-                            </ScrollArea>
-                            {field.value && (
-                              <div className="border-t p-2">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="w-full"
-                                  onClick={() => field.onChange("")}
-                                >
-                                  Clear selection
-                                </Button>
-                              </div>
-                            )}
-                          </PopoverContent>
-                        </Popover>
+                        <FormLabel>Assigned User</FormLabel>
+                        <Select value={field.value || ""} onValueChange={field.onChange}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-edit-assigned-user">
+                              <SelectValue placeholder="Select user..." />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="">None</SelectItem>
+                            {assigneesData?.users?.map((user) => (
+                              <SelectItem key={user.id} value={user.id}>
+                                {user.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={editForm.control}
+                    name="assignedGroupId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Assigned Group</FormLabel>
+                        <Select value={field.value?.toString() || ""} onValueChange={(v) => field.onChange(v ? parseInt(v) : undefined)}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-edit-assigned-group">
+                              <SelectValue placeholder="Select group..." />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="">None</SelectItem>
+                            {assigneesData?.groups?.map((group) => (
+                              <SelectItem key={group.id} value={group.id}>
+                                {group.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -2144,111 +2094,50 @@ export default function ProjectWorkOrders() {
                   />
                   <FormField
                     control={form.control}
-                    name="assignedTo"
+                    name="assignedUserId"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Assigned To</FormLabel>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <FormControl>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                role="combobox"
-                                className="w-full justify-between font-normal"
-                                data-testid="select-create-assigned-to"
-                              >
-                                <span className="truncate">
-                                  {field.value || "Select assignee(s)..."}
-                                </span>
-                                <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                              </Button>
-                            </FormControl>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-[300px] p-0" align="start">
-                            <div className="p-2 border-b">
-                              <Input
-                                placeholder="Search users or groups..."
-                                className="h-8"
-                                data-testid="input-search-create-assignees"
-                              />
-                            </div>
-                            <ScrollArea className="h-[200px]">
-                              <div className="p-2">
-                                {assigneesData?.groups && assigneesData.groups.length > 0 && (
-                                  <>
-                                    <div className="text-xs font-medium text-muted-foreground mb-1 px-2">Groups</div>
-                                    {assigneesData.groups.map((group) => (
-                                      <div
-                                        key={group.id}
-                                        className="flex items-center gap-2 px-2 py-1.5 rounded-md hover-elevate cursor-pointer"
-                                        onClick={() => {
-                                          const current = field.value || "";
-                                          const items = current.split(",").map(s => s.trim()).filter(Boolean);
-                                          if (items.includes(group.label)) {
-                                            field.onChange(items.filter(i => i !== group.label).join(", "));
-                                          } else {
-                                            field.onChange([...items, group.label].join(", "));
-                                          }
-                                        }}
-                                        data-testid={`option-create-group-${group.key}`}
-                                      >
-                                        <Checkbox
-                                          checked={(field.value || "").split(",").map(s => s.trim()).includes(group.label)}
-                                        />
-                                        <Users className="h-4 w-4 text-muted-foreground" />
-                                        <span className="text-sm">{group.label}</span>
-                                      </div>
-                                    ))}
-                                  </>
-                                )}
-                                {assigneesData?.users && assigneesData.users.length > 0 && (
-                                  <>
-                                    <div className="text-xs font-medium text-muted-foreground mb-1 mt-2 px-2">Users</div>
-                                    {assigneesData.users.map((user) => (
-                                      <div
-                                        key={user.id}
-                                        className="flex items-center gap-2 px-2 py-1.5 rounded-md hover-elevate cursor-pointer"
-                                        onClick={() => {
-                                          const current = field.value || "";
-                                          const items = current.split(",").map(s => s.trim()).filter(Boolean);
-                                          if (items.includes(user.label)) {
-                                            field.onChange(items.filter(i => i !== user.label).join(", "));
-                                          } else {
-                                            field.onChange([...items, user.label].join(", "));
-                                          }
-                                        }}
-                                        data-testid={`option-create-user-${user.id}`}
-                                      >
-                                        <Checkbox
-                                          checked={(field.value || "").split(",").map(s => s.trim()).includes(user.label)}
-                                        />
-                                        <span className="text-sm">{user.label}</span>
-                                      </div>
-                                    ))}
-                                  </>
-                                )}
-                                {(!assigneesData?.users?.length && !assigneesData?.groups?.length) && (
-                                  <div className="text-sm text-muted-foreground text-center py-4">
-                                    No users or groups available
-                                  </div>
-                                )}
-                              </div>
-                            </ScrollArea>
-                            {field.value && (
-                              <div className="border-t p-2">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="w-full"
-                                  onClick={() => field.onChange("")}
-                                >
-                                  Clear selection
-                                </Button>
-                              </div>
-                            )}
-                          </PopoverContent>
-                        </Popover>
+                        <FormLabel>Assigned User</FormLabel>
+                        <Select value={field.value || ""} onValueChange={field.onChange}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-create-assigned-user">
+                              <SelectValue placeholder="Select user..." />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="">None</SelectItem>
+                            {assigneesData?.users?.map((user) => (
+                              <SelectItem key={user.id} value={user.id}>
+                                {user.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="assignedGroupId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Assigned Group</FormLabel>
+                        <Select value={field.value?.toString() || ""} onValueChange={(v) => field.onChange(v ? parseInt(v) : undefined)}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-create-assigned-group">
+                              <SelectValue placeholder="Select group..." />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="">None</SelectItem>
+                            {assigneesData?.groups?.map((group) => (
+                              <SelectItem key={group.id} value={group.id}>
+                                {group.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -3136,8 +3025,13 @@ export default function ProjectWorkOrders() {
                       </TableHead>
                     )}
                     {isColumnVisible("assignedTo") && (
-                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("assignedTo")}>
-                        Assigned To {getSortIcon("assignedTo")}
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("assignedUserId")}>
+                        Assigned User {getSortIcon("assignedUserId")}
+                      </TableHead>
+                    )}
+                    {isColumnVisible("assignedGroup") && (
+                      <TableHead className="cursor-pointer select-none" onClick={() => handleSort("assignedGroupId")}>
+                        Assigned Group {getSortIcon("assignedGroupId")}
                       </TableHead>
                     )}
                     {isColumnVisible("createdBy") && (
@@ -3268,7 +3162,10 @@ export default function ProjectWorkOrders() {
                         <TableCell>{(workOrder as any).scheduledDate ? formatDateTime((workOrder as any).scheduledDate) : "-"}</TableCell>
                       )}
                       {isColumnVisible("assignedTo") && (
-                        <TableCell>{workOrder.assignedTo || "-"}</TableCell>
+                        <TableCell>{getAssignedUserName((workOrder as any).assignedUserId) || "-"}</TableCell>
+                      )}
+                      {isColumnVisible("assignedGroup") && (
+                        <TableCell>{getAssignedGroupName((workOrder as any).assignedGroupId) || "-"}</TableCell>
                       )}
                       {isColumnVisible("createdBy") && (
                         <TableCell>{(workOrder as any).createdBy || "-"}</TableCell>
