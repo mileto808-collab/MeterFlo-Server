@@ -94,7 +94,7 @@ export async function createProjectSchema(projectName: string, projectId: number
         route VARCHAR(100),
         zone VARCHAR(100),
         service_type VARCHAR(20),
-        service_type_id INTEGER REFERENCES public.service_types(id) ON DELETE SET NULL,
+        service_type_id INTEGER REFERENCES public.service_types(id) ON DELETE RESTRICT,
         old_meter_id VARCHAR(100),
         old_meter_reading INTEGER,
         new_meter_id VARCHAR(100),
@@ -102,24 +102,24 @@ export async function createProjectSchema(projectName: string, projectId: number
         old_gps VARCHAR(100),
         new_gps VARCHAR(100),
         status VARCHAR(50) NOT NULL DEFAULT 'Open',
-        status_id INTEGER REFERENCES public.work_order_statuses(id) ON DELETE SET NULL,
+        status_id INTEGER REFERENCES public.work_order_statuses(id) ON DELETE RESTRICT,
         scheduled_date TIMESTAMP,
         assigned_to VARCHAR,
-        assigned_user_id VARCHAR REFERENCES public.users(id) ON DELETE SET NULL,
-        assigned_group_id INTEGER REFERENCES public.user_groups(id) ON DELETE SET NULL,
+        assigned_user_id VARCHAR REFERENCES public.users(id) ON DELETE RESTRICT,
+        assigned_group_id INTEGER REFERENCES public.user_groups(id) ON DELETE RESTRICT,
         created_by VARCHAR,
-        created_by_id VARCHAR REFERENCES public.users(id) ON DELETE SET NULL,
+        created_by_id VARCHAR REFERENCES public.users(id) ON DELETE RESTRICT,
         updated_by VARCHAR,
-        updated_by_id VARCHAR REFERENCES public.users(id) ON DELETE SET NULL,
+        updated_by_id VARCHAR REFERENCES public.users(id) ON DELETE RESTRICT,
         completed_at TIMESTAMP,
         trouble VARCHAR(100),
-        trouble_code_id INTEGER REFERENCES public.trouble_codes(id) ON DELETE SET NULL,
+        trouble_code_id INTEGER REFERENCES public.trouble_codes(id) ON DELETE RESTRICT,
         notes TEXT,
         attachments TEXT[],
         old_meter_type VARCHAR(255),
-        old_meter_type_id INTEGER REFERENCES public.meter_types(id) ON DELETE SET NULL,
+        old_meter_type_id INTEGER REFERENCES public.meter_types(id) ON DELETE RESTRICT,
         new_meter_type VARCHAR(255),
-        new_meter_type_id INTEGER REFERENCES public.meter_types(id) ON DELETE SET NULL,
+        new_meter_type_id INTEGER REFERENCES public.meter_types(id) ON DELETE RESTRICT,
         signature_data TEXT,
         signature_name VARCHAR(255),
         created_at TIMESTAMP DEFAULT NOW(),
@@ -233,8 +233,8 @@ export async function migrateProjectSchema(schemaName: string): Promise<void> {
       ADD COLUMN IF NOT EXISTS new_meter_type_id INTEGER
     `);
     
-    // Add foreign key constraints if they don't exist
-    // Each constraint is added in a try-catch to handle cases where it already exists
+    // Add/update foreign key constraints with ON DELETE RESTRICT
+    // Drop existing constraints first if they exist, then recreate with RESTRICT
     const fkConstraints = [
       { column: 'service_type_id', ref_table: 'public.service_types', ref_column: 'id', constraint_name: 'fk_service_type' },
       { column: 'status_id', ref_table: 'public.work_order_statuses', ref_column: 'id', constraint_name: 'fk_status' },
@@ -256,16 +256,24 @@ export async function migrateProjectSchema(schemaName: string): Promise<void> {
           AND constraint_name = $2
         `, [schemaName, fk.constraint_name]);
         
-        if (constraintExists.rows.length === 0) {
+        if (constraintExists.rows.length > 0) {
+          // Drop existing constraint (it may have SET NULL, we want RESTRICT)
           await client.query(`
             ALTER TABLE "${schemaName}".work_orders 
-            ADD CONSTRAINT ${fk.constraint_name} 
-            FOREIGN KEY (${fk.column}) REFERENCES ${fk.ref_table}(${fk.ref_column}) ON DELETE SET NULL
+            DROP CONSTRAINT IF EXISTS ${fk.constraint_name}
           `);
-          console.log(`Added FK constraint ${fk.constraint_name} to ${schemaName}.work_orders`);
+          console.log(`Dropped existing FK constraint ${fk.constraint_name} from ${schemaName}.work_orders`);
         }
+        
+        // Add constraint with ON DELETE RESTRICT
+        await client.query(`
+          ALTER TABLE "${schemaName}".work_orders 
+          ADD CONSTRAINT ${fk.constraint_name} 
+          FOREIGN KEY (${fk.column}) REFERENCES ${fk.ref_table}(${fk.ref_column}) ON DELETE RESTRICT
+        `);
+        console.log(`Added FK constraint ${fk.constraint_name} with ON DELETE RESTRICT to ${schemaName}.work_orders`);
       } catch (fkError) {
-        // Constraint might already exist or other error, log and continue
+        // Log error and continue
         console.log(`FK constraint ${fk.constraint_name} for ${schemaName}: ${fkError}`);
       }
     }
