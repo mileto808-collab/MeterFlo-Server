@@ -229,7 +229,7 @@ export default function ProjectWorkOrders() {
       oldGps: "",
       newGps: "",
       notes: "",
-      assignedUserId: "",
+      assignedUserId: undefined,
       assignedGroupId: undefined,
       scheduledDate: "",
       trouble: "",
@@ -261,7 +261,7 @@ export default function ProjectWorkOrders() {
       newGps: "",
       notes: "",
       status: "Open",
-      assignedUserId: "",
+      assignedUserId: undefined,
       assignedGroupId: undefined,
       scheduledDate: "",
       trouble: "",
@@ -392,7 +392,7 @@ export default function ProjectWorkOrders() {
         newGps: editingWorkOrder.newGps || "",
         notes: editingWorkOrder.notes || "",
         status: editingWorkOrder.status || "Open",
-        assignedUserId: (editingWorkOrder as any).assignedUserId || "",
+        assignedUserId: (editingWorkOrder as any).assignedUserId || undefined,
         assignedGroupId: (editingWorkOrder as any).assignedGroupId || undefined,
         scheduledDate: (editingWorkOrder as any).scheduledDate || "",
         trouble: (editingWorkOrder as any).trouble || "",
@@ -428,6 +428,8 @@ export default function ProjectWorkOrders() {
     trouble: (data as any).trouble || null,
     oldMeterType: (data as any).oldMeterType || null,
     newMeterType: (data as any).newMeterType || null,
+    assignedUserId: (data as any).assignedUserId ?? null,
+    assignedGroupId: (data as any).assignedGroupId ?? null,
   });
 
   const createMutation = useMutation({
@@ -635,7 +637,8 @@ export default function ProjectWorkOrders() {
   // Helper to get assigned group name from ID
   const getAssignedGroupName = (groupId: number | null | undefined): string => {
     if (!groupId) return "";
-    const group = assigneesData?.groups?.find(g => String(g.id) === String(groupId));
+    // Group IDs from API are formatted as "group:123", so we match by extracting the numeric part
+    const group = assigneesData?.groups?.find(g => g.id === `group:${groupId}`);
     return group?.label || String(groupId);
   };
 
@@ -1643,14 +1646,14 @@ export default function ProjectWorkOrders() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Assigned User</FormLabel>
-                        <Select value={field.value || ""} onValueChange={field.onChange}>
+                        <Select value={field.value ?? "__none__"} onValueChange={(v) => field.onChange(v === "__none__" ? undefined : v)}>
                           <FormControl>
                             <SelectTrigger data-testid="select-edit-assigned-user">
                               <SelectValue placeholder="Select user..." />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="">None</SelectItem>
+                            <SelectItem value="__none__">None</SelectItem>
                             {assigneesData?.users?.map((user) => (
                               <SelectItem key={user.id} value={user.id}>
                                 {user.label}
@@ -1668,14 +1671,14 @@ export default function ProjectWorkOrders() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Assigned Group</FormLabel>
-                        <Select value={field.value?.toString() || ""} onValueChange={(v) => field.onChange(v ? parseInt(v) : undefined)}>
+                        <Select value={field.value != null ? `group:${field.value}` : "__none__"} onValueChange={(v) => field.onChange(v === "__none__" ? undefined : Number(v.replace("group:", "")))}>
                           <FormControl>
                             <SelectTrigger data-testid="select-edit-assigned-group">
                               <SelectValue placeholder="Select group..." />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="">None</SelectItem>
+                            <SelectItem value="__none__">None</SelectItem>
                             {assigneesData?.groups?.map((group) => (
                               <SelectItem key={group.id} value={group.id}>
                                 {group.label}
@@ -2212,14 +2215,14 @@ export default function ProjectWorkOrders() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Assigned User</FormLabel>
-                        <Select value={field.value || ""} onValueChange={field.onChange}>
+                        <Select value={field.value ?? "__none__"} onValueChange={(v) => field.onChange(v === "__none__" ? undefined : v)}>
                           <FormControl>
                             <SelectTrigger data-testid="select-create-assigned-user">
                               <SelectValue placeholder="Select user..." />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="">None</SelectItem>
+                            <SelectItem value="__none__">None</SelectItem>
                             {assigneesData?.users?.map((user) => (
                               <SelectItem key={user.id} value={user.id}>
                                 {user.label}
@@ -2237,14 +2240,14 @@ export default function ProjectWorkOrders() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Assigned Group</FormLabel>
-                        <Select value={field.value?.toString() || ""} onValueChange={(v) => field.onChange(v ? parseInt(v) : undefined)}>
+                        <Select value={field.value != null ? `group:${field.value}` : "__none__"} onValueChange={(v) => field.onChange(v === "__none__" ? undefined : Number(v.replace("group:", "")))}>
                           <FormControl>
                             <SelectTrigger data-testid="select-create-assigned-group">
                               <SelectValue placeholder="Select group..." />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="">None</SelectItem>
+                            <SelectItem value="__none__">None</SelectItem>
                             {assigneesData?.groups?.map((group) => (
                               <SelectItem key={group.id} value={group.id}>
                                 {group.label}
