@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -24,18 +24,17 @@ export function ColumnSelector({
   disabled = false 
 }: ColumnSelectorProps) {
   const [open, setOpen] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
 
     const handleWheel = (e: WheelEvent) => {
-      const el = scrollRef.current;
-      if (!el) return;
+      const scrollEl = scrollContainerRef.current;
+      if (!scrollEl) return;
+      if (!scrollEl.contains(e.target as Node)) return;
       
-      if (!el.contains(e.target as Node)) return;
-      
-      const { scrollTop, scrollHeight, clientHeight } = el;
+      const { scrollTop, scrollHeight, clientHeight } = scrollEl;
       const canScroll = scrollHeight > clientHeight;
       if (!canScroll) return;
       
@@ -44,10 +43,14 @@ export function ColumnSelector({
       const isAtTop = scrollTop <= 0;
       const isAtBottom = scrollTop + clientHeight >= scrollHeight - 1;
       
-      if ((isScrollingUp && !isAtTop) || (isScrollingDown && !isAtBottom)) {
+      const canScrollInDirection = 
+        (isScrollingUp && !isAtTop) || 
+        (isScrollingDown && !isAtBottom);
+      
+      if (canScrollInDirection) {
         e.stopPropagation();
         e.preventDefault();
-        el.scrollTop += e.deltaY;
+        scrollEl.scrollTop += e.deltaY;
       }
     };
 
@@ -79,7 +82,7 @@ export function ColumnSelector({
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={setOpen} modal={true}>
       <PopoverTrigger asChild>
         <Button 
           variant="outline" 
@@ -118,8 +121,9 @@ export function ColumnSelector({
           </div>
         </div>
         <div 
-          ref={scrollRef}
+          ref={scrollContainerRef}
           className="max-h-[300px] overflow-y-auto p-3 space-y-2"
+          style={{ overscrollBehavior: 'contain' }}
         >
           {allColumns.map((column) => (
             <div 
