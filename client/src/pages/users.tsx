@@ -117,6 +117,7 @@ export default function Users() {
   const [assignProjectDialogOpen, setAssignProjectDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [lockReason, setLockReason] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
 
   const { data: users, isLoading } = useQuery<User[]>({ queryKey: ["/api/users"] });
   const { data: projects } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
@@ -1392,106 +1393,21 @@ export default function Users() {
       <Card>
         <CardHeader className="pb-4">
           <div className="flex flex-wrap items-center gap-3">
-            {isFilterVisible("searchQuery") && (
-              <div className="relative flex-1 min-w-[200px] max-w-md">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Search users..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9" data-testid="input-search-users" />
-              </div>
-            )}
-            {isFilterVisible("role") && (
-              <Select value={roleFilter} onValueChange={setRoleFilter}>
-                <SelectTrigger className="w-[140px]" data-testid="select-filter-role">
-                  <SelectValue placeholder="All Roles" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Roles</SelectItem>
-                  <SelectItem value="admin">Admin</SelectItem>
-                  <SelectItem value="user">User</SelectItem>
-                  <SelectItem value="customer">Customer</SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-            {isFilterVisible("status") && (
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[140px]" data-testid="select-filter-status">
-                  <SelectValue placeholder="All Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="locked">Locked</SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-            {isFilterVisible("subrole") && (
-              <Select value={subroleFilter} onValueChange={setSubroleFilter}>
-                <SelectTrigger className="w-[160px]" data-testid="select-filter-subrole">
-                  <SelectValue placeholder="All Access Levels" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Access Levels</SelectItem>
-                  <SelectItem value="none">No Access Level</SelectItem>
-                  {subroles?.map((subrole) => (
-                    <SelectItem key={subrole.id} value={String(subrole.id)}>
-                      {subrole.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-            {isFilterVisible("username") && (
-              <Input className="w-[140px]" placeholder="Username..." value={filterUsername} onChange={(e) => setFilterUsername(e.target.value)} data-testid="input-filter-username" />
-            )}
-            {isFilterVisible("email") && (
-              <Input className="w-[160px]" placeholder="Email..." value={filterEmail} onChange={(e) => setFilterEmail(e.target.value)} data-testid="input-filter-email" />
-            )}
-            {isFilterVisible("firstName") && (
-              <Input className="w-[140px]" placeholder="First Name..." value={filterFirstName} onChange={(e) => setFilterFirstName(e.target.value)} data-testid="input-filter-first-name" />
-            )}
-            {isFilterVisible("lastName") && (
-              <Input className="w-[140px]" placeholder="Last Name..." value={filterLastName} onChange={(e) => setFilterLastName(e.target.value)} data-testid="input-filter-last-name" />
-            )}
-            {isFilterVisible("projects") && (
-              <Input className="w-[140px]" placeholder="Projects..." value={filterProjects} onChange={(e) => setFilterProjects(e.target.value)} data-testid="input-filter-projects" />
-            )}
-            {isFilterVisible("isLocked") && (
-              <Select value={filterIsLocked} onValueChange={setFilterIsLocked}>
-                <SelectTrigger className="w-[120px]" data-testid="select-filter-is-locked">
-                  <SelectValue placeholder="Locked" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="yes">Locked</SelectItem>
-                  <SelectItem value="no">Not Locked</SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-            {isFilterVisible("lockedReason") && (
-              <Input className="w-[140px]" placeholder="Locked Reason..." value={filterLockedReason} onChange={(e) => setFilterLockedReason(e.target.value)} data-testid="input-filter-locked-reason" />
-            )}
-            {isFilterVisible("lastLogin") && (
-              <Input className="w-[140px]" type="date" placeholder="Last Login" value={filterLastLogin} onChange={(e) => setFilterLastLogin(e.target.value)} data-testid="input-filter-last-login" />
-            )}
-            {isFilterVisible("address") && (
-              <Input className="w-[140px]" placeholder="Address..." value={filterAddress} onChange={(e) => setFilterAddress(e.target.value)} data-testid="input-filter-address" />
-            )}
-            {isFilterVisible("city") && (
-              <Input className="w-[120px]" placeholder="City..." value={filterCity} onChange={(e) => setFilterCity(e.target.value)} data-testid="input-filter-city" />
-            )}
-            {isFilterVisible("state") && (
-              <Input className="w-[100px]" placeholder="State..." value={filterState} onChange={(e) => setFilterState(e.target.value)} data-testid="input-filter-state" />
-            )}
-            {isFilterVisible("zip") && (
-              <Input className="w-[100px]" placeholder="ZIP..." value={filterZip} onChange={(e) => setFilterZip(e.target.value)} data-testid="input-filter-zip" />
-            )}
-            {isFilterVisible("phone") && (
-              <Input className="w-[130px]" placeholder="Phone..." value={filterPhone} onChange={(e) => setFilterPhone(e.target.value)} data-testid="input-filter-phone" />
-            )}
-            {isFilterVisible("website") && (
-              <Input className="w-[140px]" placeholder="Website..." value={filterWebsite} onChange={(e) => setFilterWebsite(e.target.value)} data-testid="input-filter-website" />
-            )}
+            <div className="relative flex-1 min-w-[200px] max-w-md">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input placeholder="Search users..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9" data-testid="input-search-users" />
+            </div>
+            <Button 
+              variant={showFilters ? "secondary" : "outline"} 
+              onClick={() => setShowFilters(!showFilters)}
+              data-testid="button-toggle-filters"
+            >
+              <Filter className="h-4 w-4 mr-2" />
+              Filters
+              {hasActiveFilters && <Badge variant="secondary" className="ml-2">{[roleFilter !== "all", statusFilter !== "all", subroleFilter !== "all", filterUsername, filterEmail, filterFirstName, filterLastName].filter(Boolean).length}</Badge>}
+            </Button>
             {hasActiveFilters && (
-              <Button variant="ghost" size="sm" onClick={clearFilters} data-testid="button-clear-filters">
+              <Button variant="ghost" onClick={clearFilters} data-testid="button-clear-filters">
                 <X className="h-4 w-4 mr-1" />
                 Clear
               </Button>
@@ -1523,6 +1439,102 @@ export default function Users() {
               PDF
             </Button>
           </div>
+          {showFilters && (
+            <div className="flex flex-wrap gap-3 mt-4 pt-4 border-t">
+              {isFilterVisible("role") && (
+                <Select value={roleFilter} onValueChange={setRoleFilter}>
+                  <SelectTrigger className="w-[140px]" data-testid="select-filter-role">
+                    <SelectValue placeholder="All Roles" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Roles</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="user">User</SelectItem>
+                    <SelectItem value="customer">Customer</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+              {isFilterVisible("status") && (
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-[140px]" data-testid="select-filter-status">
+                    <SelectValue placeholder="All Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="locked">Locked</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+              {isFilterVisible("subrole") && (
+                <Select value={subroleFilter} onValueChange={setSubroleFilter}>
+                  <SelectTrigger className="w-[160px]" data-testid="select-filter-subrole">
+                    <SelectValue placeholder="All Access Levels" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Access Levels</SelectItem>
+                    <SelectItem value="none">No Access Level</SelectItem>
+                    {subroles?.map((subrole) => (
+                      <SelectItem key={subrole.id} value={String(subrole.id)}>
+                        {subrole.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              {isFilterVisible("username") && (
+                <Input className="w-[140px]" placeholder="Username..." value={filterUsername} onChange={(e) => setFilterUsername(e.target.value)} data-testid="input-filter-username" />
+              )}
+              {isFilterVisible("email") && (
+                <Input className="w-[160px]" placeholder="Email..." value={filterEmail} onChange={(e) => setFilterEmail(e.target.value)} data-testid="input-filter-email" />
+              )}
+              {isFilterVisible("firstName") && (
+                <Input className="w-[140px]" placeholder="First Name..." value={filterFirstName} onChange={(e) => setFilterFirstName(e.target.value)} data-testid="input-filter-first-name" />
+              )}
+              {isFilterVisible("lastName") && (
+                <Input className="w-[140px]" placeholder="Last Name..." value={filterLastName} onChange={(e) => setFilterLastName(e.target.value)} data-testid="input-filter-last-name" />
+              )}
+              {isFilterVisible("projects") && (
+                <Input className="w-[140px]" placeholder="Projects..." value={filterProjects} onChange={(e) => setFilterProjects(e.target.value)} data-testid="input-filter-projects" />
+              )}
+              {isFilterVisible("isLocked") && (
+                <Select value={filterIsLocked} onValueChange={setFilterIsLocked}>
+                  <SelectTrigger className="w-[120px]" data-testid="select-filter-is-locked">
+                    <SelectValue placeholder="Locked" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="yes">Locked</SelectItem>
+                    <SelectItem value="no">Not Locked</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
+              {isFilterVisible("lockedReason") && (
+                <Input className="w-[140px]" placeholder="Locked Reason..." value={filterLockedReason} onChange={(e) => setFilterLockedReason(e.target.value)} data-testid="input-filter-locked-reason" />
+              )}
+              {isFilterVisible("lastLogin") && (
+                <Input className="w-[140px]" type="date" placeholder="Last Login" value={filterLastLogin} onChange={(e) => setFilterLastLogin(e.target.value)} data-testid="input-filter-last-login" />
+              )}
+              {isFilterVisible("address") && (
+                <Input className="w-[140px]" placeholder="Address..." value={filterAddress} onChange={(e) => setFilterAddress(e.target.value)} data-testid="input-filter-address" />
+              )}
+              {isFilterVisible("city") && (
+                <Input className="w-[120px]" placeholder="City..." value={filterCity} onChange={(e) => setFilterCity(e.target.value)} data-testid="input-filter-city" />
+              )}
+              {isFilterVisible("state") && (
+                <Input className="w-[100px]" placeholder="State..." value={filterState} onChange={(e) => setFilterState(e.target.value)} data-testid="input-filter-state" />
+              )}
+              {isFilterVisible("zip") && (
+                <Input className="w-[100px]" placeholder="ZIP..." value={filterZip} onChange={(e) => setFilterZip(e.target.value)} data-testid="input-filter-zip" />
+              )}
+              {isFilterVisible("phone") && (
+                <Input className="w-[130px]" placeholder="Phone..." value={filterPhone} onChange={(e) => setFilterPhone(e.target.value)} data-testid="input-filter-phone" />
+              )}
+              {isFilterVisible("website") && (
+                <Input className="w-[140px]" placeholder="Website..." value={filterWebsite} onChange={(e) => setFilterWebsite(e.target.value)} data-testid="input-filter-website" />
+              )}
+            </div>
+          )}
           {hasActiveFilters && (
             <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
               <Filter className="h-4 w-4" />
