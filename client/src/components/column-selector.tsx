@@ -58,7 +58,7 @@ export function ColumnSelector({
           Columns
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-56 p-0" align="end">
+      <PopoverContent className="w-56 p-0 max-h-[60vh] overflow-y-auto" align="end">
         <div className="p-3 border-b sticky top-0 bg-popover z-10">
           <div className="flex items-center justify-between gap-2">
             <span className="text-sm font-medium">Show Columns</span>
@@ -84,7 +84,7 @@ export function ColumnSelector({
             </div>
           </div>
         </div>
-        <div className="p-3 space-y-2 max-h-[50vh] overflow-y-auto">
+        <div className="p-3 space-y-2">
           {allColumns.map((column) => (
             <div 
               key={column.key} 
