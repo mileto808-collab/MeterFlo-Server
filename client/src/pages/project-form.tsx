@@ -20,6 +20,12 @@ const projectFormSchema = z.object({
   name: z.string().min(1, "Name is required").max(255),
   description: z.string().optional(),
   customerEmail: z.string().email("Invalid email").optional().or(z.literal("")),
+  phone: z.string().max(50).optional().or(z.literal("")),
+  address: z.string().max(255).optional().or(z.literal("")),
+  city: z.string().max(100).optional().or(z.literal("")),
+  state: z.string().max(50).optional().or(z.literal("")),
+  zip: z.string().max(20).optional().or(z.literal("")),
+  notes: z.string().optional().or(z.literal("")),
 });
 
 type ProjectFormValues = z.infer<typeof projectFormSchema>;
@@ -39,7 +45,7 @@ export default function ProjectForm() {
 
   const form = useForm<ProjectFormValues>({
     resolver: zodResolver(projectFormSchema),
-    defaultValues: { name: "", description: "", customerEmail: "" },
+    defaultValues: { name: "", description: "", customerEmail: "", phone: "", address: "", city: "", state: "", zip: "", notes: "" },
   });
 
   useEffect(() => {
@@ -48,6 +54,12 @@ export default function ProjectForm() {
         name: project.name,
         description: project.description || "",
         customerEmail: project.customerEmail || "",
+        phone: project.phone || "",
+        address: project.address || "",
+        city: project.city || "",
+        state: project.state || "",
+        zip: project.zip || "",
+        notes: project.notes || "",
       });
     }
   }, [project, form]);
@@ -177,6 +189,76 @@ export default function ProjectForm() {
                   <FormItem>
                     <FormLabel>Customer Email</FormLabel>
                     <FormControl><Input type="email" placeholder="customer@example.com" {...field} data-testid="input-email" /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="phone"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Phone</FormLabel>
+                    <FormControl><Input placeholder="(555) 123-4567" {...field} data-testid="input-phone" /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="address"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Address</FormLabel>
+                    <FormControl><Input placeholder="123 Main Street" {...field} data-testid="input-address" /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <div className="grid grid-cols-3 gap-4">
+                <FormField
+                  control={form.control}
+                  name="city"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>City</FormLabel>
+                      <FormControl><Input placeholder="City" {...field} data-testid="input-city" /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="state"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>State</FormLabel>
+                      <FormControl><Input placeholder="State" {...field} data-testid="input-state" /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="zip"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>ZIP</FormLabel>
+                      <FormControl><Input placeholder="12345" {...field} data-testid="input-zip" /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <FormField
+                control={form.control}
+                name="notes"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Notes</FormLabel>
+                    <FormControl>
+                      <Textarea placeholder="Additional notes about this project..." className="min-h-[100px]" {...field} data-testid="input-notes" />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
