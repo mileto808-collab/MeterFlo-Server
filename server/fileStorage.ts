@@ -56,13 +56,16 @@ export async function ensureProjectDirectory(projectName: string, projectId: num
 }
 
 // Ensure a work order directory exists within a project
+// Uses customerWoId (the customer's work order identifier) for the folder name
 export async function ensureWorkOrderDirectory(
   projectName: string,
   projectId: number,
-  workOrderId: number
+  customerWoId: string
 ): Promise<string> {
   const projectPath = await ensureProjectDirectory(projectName, projectId);
-  const workOrderDir = path.join(projectPath, String(workOrderId));
+  // Sanitize customerWoId for use as folder name
+  const sanitizedWoId = customerWoId.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const workOrderDir = path.join(projectPath, sanitizedWoId);
   
   try {
     await fs.mkdir(workOrderDir, { recursive: true });
@@ -77,11 +80,11 @@ export async function ensureWorkOrderDirectory(
 export async function saveWorkOrderFile(
   projectName: string,
   projectId: number,
-  workOrderId: number,
+  customerWoId: string,
   filename: string,
   buffer: Buffer
 ): Promise<string> {
-  const workOrderDir = await ensureWorkOrderDirectory(projectName, projectId, workOrderId);
+  const workOrderDir = await ensureWorkOrderDirectory(projectName, projectId, customerWoId);
   const sanitizedFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
   const filePath = path.join(workOrderDir, sanitizedFilename);
   
@@ -94,9 +97,9 @@ export async function saveWorkOrderFile(
 export async function getWorkOrderFiles(
   projectName: string,
   projectId: number,
-  workOrderId: number
+  customerWoId: string
 ): Promise<string[]> {
-  const workOrderDir = await ensureWorkOrderDirectory(projectName, projectId, workOrderId);
+  const workOrderDir = await ensureWorkOrderDirectory(projectName, projectId, customerWoId);
   
   try {
     const files = await fs.readdir(workOrderDir);
@@ -110,10 +113,10 @@ export async function getWorkOrderFiles(
 export async function deleteWorkOrderFile(
   projectName: string,
   projectId: number,
-  workOrderId: number,
+  customerWoId: string,
   filename: string
 ): Promise<boolean> {
-  const workOrderDir = await ensureWorkOrderDirectory(projectName, projectId, workOrderId);
+  const workOrderDir = await ensureWorkOrderDirectory(projectName, projectId, customerWoId);
   const filePath = path.join(workOrderDir, filename);
   
   try {
@@ -142,10 +145,10 @@ export async function deleteProjectDirectory(projectName: string, projectId: num
 export async function getFilePath(
   projectName: string,
   projectId: number,
-  workOrderId: number,
+  customerWoId: string,
   filename: string
 ): Promise<string | null> {
-  const workOrderDir = await ensureWorkOrderDirectory(projectName, projectId, workOrderId);
+  const workOrderDir = await ensureWorkOrderDirectory(projectName, projectId, customerWoId);
   const filePath = path.join(workOrderDir, filename);
   
   try {
