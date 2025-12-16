@@ -120,6 +120,7 @@ export function ColumnSelector({
         <div 
           ref={scrollRef}
           className="max-h-[300px] overflow-y-auto p-3 space-y-2"
+          style={{ overscrollBehavior: 'contain' }}
         >
           {allColumns.map((column) => (
             <div 
