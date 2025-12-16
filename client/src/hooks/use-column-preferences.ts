@@ -1,4 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useMemo } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { ColumnConfig } from "@/components/column-selector";
@@ -57,11 +58,36 @@ export function useColumnPreferences(
 
   const isColumnVisible = (key: string) => visibleColumns.includes(key);
 
+  // Get columns in the user's preferred order (visible columns first, then hidden)
+  // The visibleColumns array order determines the display order
+  const orderedColumns = useMemo(() => {
+    // Create a map for quick lookup of column configs
+    const columnMap = new Map(allColumns.map(c => [c.key, c]));
+    
+    // Start with visible columns in their saved order
+    const ordered: ColumnConfig[] = [];
+    for (const key of visibleColumns) {
+      const col = columnMap.get(key);
+      if (col) ordered.push(col);
+    }
+    
+    // Add any columns that exist in allColumns but not in visibleColumns (new columns)
+    // These go at the end
+    for (const col of allColumns) {
+      if (!visibleColumns.includes(col.key)) {
+        ordered.push(col);
+      }
+    }
+    
+    return ordered;
+  }, [visibleColumns, allColumns]);
+
   return {
     visibleColumns,
     setVisibleColumns,
     isColumnVisible,
     isLoading,
     isSaving: saveMutation.isPending,
+    orderedColumns,
   };
 }

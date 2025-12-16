@@ -160,7 +160,7 @@ export default function SearchReports() {
     { key: "actions", label: "Actions", required: true },
   ], []);
 
-  const { visibleColumns, setVisibleColumns, isColumnVisible, isLoading: columnPrefsLoading } = useColumnPreferences("search_reports", columns);
+  const { visibleColumns, setVisibleColumns, isColumnVisible, isLoading: columnPrefsLoading, orderedColumns } = useColumnPreferences("search_reports", columns);
 
   // Filter configuration - matches columns (excluding attachments and signature_data)
   const searchFilters: FilterConfig[] = useMemo(() => [
@@ -371,6 +371,132 @@ export default function SearchReports() {
     return sortDirection === "asc" 
       ? <ArrowUp className="ml-1 h-3 w-3 inline" />
       : <ArrowDown className="ml-1 h-3 w-3 inline" />;
+  };
+
+  // Column header configuration for dynamic rendering
+  const columnHeaderConfig: Record<string, { label: string; sortKey?: string }> = {
+    projectName: { label: "Project", sortKey: "projectName" },
+    customerWoId: { label: "WO ID", sortKey: "customerWoId" },
+    customerId: { label: "Customer ID", sortKey: "customerId" },
+    customerName: { label: "Customer Name", sortKey: "customerName" },
+    address: { label: "Address", sortKey: "address" },
+    city: { label: "City", sortKey: "city" },
+    state: { label: "State", sortKey: "state" },
+    zip: { label: "ZIP", sortKey: "zip" },
+    phone: { label: "Phone", sortKey: "phone" },
+    email: { label: "Email", sortKey: "email" },
+    route: { label: "Route", sortKey: "route" },
+    zone: { label: "Zone", sortKey: "zone" },
+    serviceType: { label: "Service", sortKey: "serviceType" },
+    oldMeterId: { label: "Old Meter ID", sortKey: "oldMeterId" },
+    oldMeterReading: { label: "Old Meter Reading", sortKey: "oldMeterReading" },
+    oldMeterType: { label: "Old Meter Type", sortKey: "oldMeterType" },
+    newMeterId: { label: "New Meter ID", sortKey: "newMeterId" },
+    newMeterReading: { label: "New Meter Reading", sortKey: "newMeterReading" },
+    newMeterType: { label: "New Meter Type", sortKey: "newMeterType" },
+    oldGps: { label: "Old GPS", sortKey: "oldGps" },
+    newGps: { label: "New GPS", sortKey: "newGps" },
+    status: { label: "Status", sortKey: "status" },
+    scheduledDate: { label: "Scheduled Date", sortKey: "scheduledDate" },
+    assignedTo: { label: "Assigned User", sortKey: "assignedUserId" },
+    assignedGroup: { label: "Assigned Group", sortKey: "assignedGroupId" },
+    createdBy: { label: "Created By", sortKey: "createdBy" },
+    updatedBy: { label: "Updated By", sortKey: "updatedBy" },
+    completedAt: { label: "Completed At", sortKey: "completedAt" },
+    trouble: { label: "Trouble", sortKey: "trouble" },
+    notes: { label: "Notes", sortKey: "notes" },
+    createdAt: { label: "Created At", sortKey: "createdAt" },
+    updatedAt: { label: "Updated At", sortKey: "updatedAt" },
+  };
+
+  // Render a table header cell for a given column key
+  const renderHeaderCell = (key: string) => {
+    const config = columnHeaderConfig[key];
+    if (!config) return null;
+    const sortKey = config.sortKey || key;
+    return (
+      <TableHead 
+        key={key}
+        className="cursor-pointer select-none" 
+        onClick={() => handleSort(sortKey)}
+        data-testid={`header-${key}`}
+      >
+        {config.label} {getSortIcon(sortKey)}
+      </TableHead>
+    );
+  };
+
+  // Render a table data cell for a given column key and result
+  const renderDataCell = (key: string, result: SearchResult) => {
+    const wo = result.workOrder;
+    switch (key) {
+      case "projectName":
+        return <TableCell key={key}>{result.projectName}</TableCell>;
+      case "customerWoId":
+        return <TableCell key={key} className="font-medium">{wo.customerWoId || "-"}</TableCell>;
+      case "customerId":
+        return <TableCell key={key}>{wo.customerId || "-"}</TableCell>;
+      case "customerName":
+        return <TableCell key={key}>{wo.customerName || "-"}</TableCell>;
+      case "address":
+        return <TableCell key={key} className="max-w-xs truncate">{wo.address || "-"}</TableCell>;
+      case "city":
+        return <TableCell key={key}>{wo.city || "-"}</TableCell>;
+      case "state":
+        return <TableCell key={key}>{wo.state || "-"}</TableCell>;
+      case "zip":
+        return <TableCell key={key}>{wo.zip || "-"}</TableCell>;
+      case "phone":
+        return <TableCell key={key}>{wo.phone || "-"}</TableCell>;
+      case "email":
+        return <TableCell key={key}>{wo.email || "-"}</TableCell>;
+      case "route":
+        return <TableCell key={key}>{wo.route || "-"}</TableCell>;
+      case "zone":
+        return <TableCell key={key}>{wo.zone || "-"}</TableCell>;
+      case "serviceType":
+        return <TableCell key={key}>{getServiceTypeBadge(wo.serviceType)}</TableCell>;
+      case "oldMeterId":
+        return <TableCell key={key}>{wo.oldMeterId || "-"}</TableCell>;
+      case "oldMeterReading":
+        return <TableCell key={key}>{wo.oldMeterReading ?? "-"}</TableCell>;
+      case "oldMeterType":
+        return <TableCell key={key}>{wo.oldMeterType || "-"}</TableCell>;
+      case "newMeterId":
+        return <TableCell key={key}>{wo.newMeterId || "-"}</TableCell>;
+      case "newMeterReading":
+        return <TableCell key={key}>{wo.newMeterReading ?? "-"}</TableCell>;
+      case "newMeterType":
+        return <TableCell key={key}>{wo.newMeterType || "-"}</TableCell>;
+      case "oldGps":
+        return <TableCell key={key}>{wo.oldGps || "-"}</TableCell>;
+      case "newGps":
+        return <TableCell key={key}>{wo.newGps || "-"}</TableCell>;
+      case "status":
+        return <TableCell key={key}>{getStatusBadge(wo.status)}</TableCell>;
+      case "scheduledDate":
+        return <TableCell key={key}>{wo.scheduledDate ? formatCustom(wo.scheduledDate, "MMM d, yyyy") : "-"}</TableCell>;
+      case "assignedTo":
+        return <TableCell key={key}>{getAssignedUserName(wo.assignedUserId) || "-"}</TableCell>;
+      case "assignedGroup":
+        return <TableCell key={key}>{getAssignedGroupName(wo.assignedGroupId) || "-"}</TableCell>;
+      case "createdBy":
+        return <TableCell key={key}>{wo.createdBy || "-"}</TableCell>;
+      case "updatedBy":
+        return <TableCell key={key}>{wo.updatedBy || "-"}</TableCell>;
+      case "completedAt":
+        return <TableCell key={key}>{wo.completedAt ? formatCustom(wo.completedAt, "MMM d, yyyy h:mm a") : "-"}</TableCell>;
+      case "trouble":
+        return <TableCell key={key}>{wo.trouble || "-"}</TableCell>;
+      case "notes":
+        return <TableCell key={key} className="max-w-xs truncate">{wo.notes || "-"}</TableCell>;
+      case "createdAt":
+        return <TableCell key={key}>{wo.createdAt ? formatCustom(wo.createdAt, "MMM d, yyyy h:mm a") : "-"}</TableCell>;
+      case "updatedAt":
+        return <TableCell key={key}>{wo.updatedAt ? formatCustom(wo.updatedAt, "MMM d, yyyy h:mm a") : "-"}</TableCell>;
+      default:
+        return null;
+    }
   };
 
   const filteredAndSortedResults = useMemo(() => {
@@ -667,8 +793,8 @@ export default function SearchReports() {
       return;
     }
 
-    // Filter columns for export (exclude 'actions' as it's not a data column)
-    const exportColumns = columns.filter(col => col.key !== "actions" && visibleColumns.includes(col.key));
+    // Use orderedColumns for correct order, filtering out 'actions'
+    const exportColumns = orderedColumns.filter(col => col.key !== "actions");
     const headers = exportColumns.map(col => col.label);
     const rows = searchResults.results.map(r => 
       exportColumns.map(col => getExportValue(r, col.key))
@@ -695,8 +821,8 @@ export default function SearchReports() {
       return;
     }
 
-    // Filter columns for export (exclude 'actions' as it's not a data column)
-    const exportColumns = columns.filter(col => col.key !== "actions" && visibleColumns.includes(col.key));
+    // Use orderedColumns for correct order, filtering out 'actions'
+    const exportColumns = orderedColumns.filter(col => col.key !== "actions");
     
     const data = searchResults.results.map(r => {
       const row: Record<string, string> = {};
@@ -720,6 +846,9 @@ export default function SearchReports() {
       return;
     }
 
+    // Use orderedColumns for correct order, filtering out 'actions'
+    const exportColumns = orderedColumns.filter(col => col.key !== "actions");
+
     const printContent = `
       <!DOCTYPE html>
       <html>
@@ -733,9 +862,6 @@ export default function SearchReports() {
           th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 11px; }
           th { background-color: #f4f4f4; font-weight: bold; }
           tr:nth-child(even) { background-color: #fafafa; }
-          .service-water { color: #0066cc; }
-          .service-electric { color: #cc9900; }
-          .service-gas { color: #cc6600; }
         </style>
       </head>
       <body>
@@ -748,39 +874,13 @@ export default function SearchReports() {
         <table>
           <thead>
             <tr>
-              <th>Project</th>
-              <th>WO ID</th>
-              <th>Customer</th>
-              <th>Address</th>
-              <th>Service</th>
-              <th>Route</th>
-              <th>Zone</th>
-              <th>Old Meter</th>
-              <th>Old Meter Type</th>
-              <th>Old Reading</th>
-              <th>New Meter</th>
-              <th>New Meter Type</th>
-              <th>New Reading</th>
-              <th>Status</th>
+              ${exportColumns.map(col => `<th>${col.label}</th>`).join("")}
             </tr>
           </thead>
           <tbody>
             ${searchResults.results.map(r => `
               <tr>
-                <td>${r.projectName}</td>
-                <td>${r.workOrder.customerWoId || "-"}</td>
-                <td>${r.workOrder.customerName || "-"}</td>
-                <td>${r.workOrder.address || "-"}</td>
-                <td class="service-${(r.workOrder.serviceType || "").toLowerCase()}">${r.workOrder.serviceType || "-"}</td>
-                <td>${r.workOrder.route || "-"}</td>
-                <td>${r.workOrder.zone || "-"}</td>
-                <td>${r.workOrder.oldMeterId || "-"}</td>
-                <td>${r.workOrder.oldMeterType || "-"}</td>
-                <td>${r.workOrder.oldMeterReading ?? "-"}</td>
-                <td>${r.workOrder.newMeterId || "-"}</td>
-                <td>${r.workOrder.newMeterType || "-"}</td>
-                <td>${r.workOrder.newMeterReading ?? "-"}</td>
-                <td>${r.workOrder.status.replace("_", " ")}</td>
+                ${exportColumns.map(col => `<td>${getExportValue(r, col.key) || "-"}</td>`).join("")}
               </tr>
             `).join("")}
           </tbody>
@@ -1164,6 +1264,7 @@ export default function SearchReports() {
                       visibleColumns={visibleColumns}
                       onChange={setVisibleColumns}
                       disabled={columnPrefsLoading}
+                      orderedColumns={orderedColumns}
                     />
                     <Button variant="outline" size="sm" onClick={exportToCSV} data-testid="button-export-csv">
                       <FileText className="h-4 w-4 mr-2" />
@@ -1192,204 +1293,14 @@ export default function SearchReports() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        {isColumnVisible("projectName") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('projectName')} data-testid="header-project">
-                            Project{getSortIcon('projectName')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("customerWoId") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('customerWoId')} data-testid="header-wo-id">
-                            WO ID{getSortIcon('customerWoId')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("customerId") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('customerId')} data-testid="header-customer-id">
-                            Customer ID{getSortIcon('customerId')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("customerName") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('customerName')} data-testid="header-customer-name">
-                            Customer Name{getSortIcon('customerName')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("address") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('address')} data-testid="header-address">
-                            Address{getSortIcon('address')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("city") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('city')} data-testid="header-city">
-                            City{getSortIcon('city')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("state") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('state')} data-testid="header-state">
-                            State{getSortIcon('state')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("zip") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('zip')} data-testid="header-zip">
-                            ZIP{getSortIcon('zip')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("phone") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('phone')} data-testid="header-phone">
-                            Phone{getSortIcon('phone')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("email") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('email')} data-testid="header-email">
-                            Email{getSortIcon('email')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("serviceType") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('serviceType')} data-testid="header-service">
-                            Service{getSortIcon('serviceType')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("route") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('route')} data-testid="header-route">
-                            Route{getSortIcon('route')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("zone") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('zone')} data-testid="header-zone">
-                            Zone{getSortIcon('zone')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("oldMeterId") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('oldMeterId')} data-testid="header-old-meter">
-                            Old Meter{getSortIcon('oldMeterId')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("oldMeterType") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('oldMeterType')} data-testid="header-old-meter-type">
-                            Old Meter Type{getSortIcon('oldMeterType')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("oldMeterReading") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('oldMeterReading')} data-testid="header-old-meter-reading">
-                            Old Meter Reading{getSortIcon('oldMeterReading')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("newMeterId") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('newMeterId')} data-testid="header-new-meter-id">
-                            New Meter ID{getSortIcon('newMeterId')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("newMeterReading") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('newMeterReading')} data-testid="header-new-meter-reading">
-                            New Meter Reading{getSortIcon('newMeterReading')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("newMeterType") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('newMeterType')} data-testid="header-new-meter-type">
-                            New Meter Type{getSortIcon('newMeterType')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("oldGps") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('oldGps')} data-testid="header-old-gps">
-                            Old GPS{getSortIcon('oldGps')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("newGps") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('newGps')} data-testid="header-new-gps">
-                            New GPS{getSortIcon('newGps')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("status") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('status')} data-testid="header-status">
-                            Status{getSortIcon('status')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("scheduledDate") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('scheduledDate')} data-testid="header-scheduled-date">
-                            Scheduled Date{getSortIcon('scheduledDate')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("assignedTo") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('assignedTo')} data-testid="header-assigned-to">
-                            Assigned User{getSortIcon('assignedTo')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("assignedGroup") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('assignedGroup')} data-testid="header-assigned-group">
-                            Assigned Group{getSortIcon('assignedGroup')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("createdBy") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('createdBy')} data-testid="header-created-by">
-                            Created By{getSortIcon('createdBy')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("updatedBy") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('updatedBy')} data-testid="header-updated-by">
-                            Updated By{getSortIcon('updatedBy')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("completedAt") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('completedAt')} data-testid="header-completed-at">
-                            Completed At{getSortIcon('completedAt')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("trouble") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('trouble')} data-testid="header-trouble">
-                            Trouble{getSortIcon('trouble')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("notes") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('notes')} data-testid="header-notes">
-                            Notes{getSortIcon('notes')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("createdAt") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('createdAt')} data-testid="header-created-at">
-                            Created At{getSortIcon('createdAt')}
-                          </TableHead>
-                        )}
-                        {isColumnVisible("updatedAt") && (
-                          <TableHead className="cursor-pointer hover-elevate" onClick={() => handleSort('updatedAt')} data-testid="header-updated-at">
-                            Updated At{getSortIcon('updatedAt')}
-                          </TableHead>
-                        )}
+                        {orderedColumns.filter(col => col.key !== "actions").map(col => renderHeaderCell(col.key))}
                         {isColumnVisible("actions") && <TableHead>Actions</TableHead>}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {filteredAndSortedResults.map((result, index) => (
                         <TableRow key={`${result.projectId}-${result.workOrder.id}-${index}`} data-testid={`row-result-${index}`}>
-                          {isColumnVisible("projectName") && <TableCell>{result.projectName}</TableCell>}
-                          {isColumnVisible("customerWoId") && <TableCell className="font-medium">{result.workOrder.customerWoId || "-"}</TableCell>}
-                          {isColumnVisible("customerId") && <TableCell>{result.workOrder.customerId || "-"}</TableCell>}
-                          {isColumnVisible("customerName") && <TableCell>{result.workOrder.customerName || "-"}</TableCell>}
-                          {isColumnVisible("address") && <TableCell className="max-w-xs truncate">{result.workOrder.address || "-"}</TableCell>}
-                          {isColumnVisible("city") && <TableCell>{result.workOrder.city || "-"}</TableCell>}
-                          {isColumnVisible("state") && <TableCell>{result.workOrder.state || "-"}</TableCell>}
-                          {isColumnVisible("zip") && <TableCell>{result.workOrder.zip || "-"}</TableCell>}
-                          {isColumnVisible("phone") && <TableCell>{result.workOrder.phone || "-"}</TableCell>}
-                          {isColumnVisible("email") && <TableCell>{result.workOrder.email || "-"}</TableCell>}
-                          {isColumnVisible("serviceType") && <TableCell>{getServiceTypeBadge(result.workOrder.serviceType)}</TableCell>}
-                          {isColumnVisible("route") && <TableCell>{result.workOrder.route || "-"}</TableCell>}
-                          {isColumnVisible("zone") && <TableCell>{result.workOrder.zone || "-"}</TableCell>}
-                          {isColumnVisible("oldMeterId") && <TableCell>{result.workOrder.oldMeterId || "-"}</TableCell>}
-                          {isColumnVisible("oldMeterType") && <TableCell>{result.workOrder.oldMeterType || "-"}</TableCell>}
-                          {isColumnVisible("oldMeterReading") && <TableCell>{result.workOrder.oldMeterReading ?? "-"}</TableCell>}
-                          {isColumnVisible("newMeterId") && <TableCell>{result.workOrder.newMeterId || "-"}</TableCell>}
-                          {isColumnVisible("newMeterReading") && <TableCell>{result.workOrder.newMeterReading ?? "-"}</TableCell>}
-                          {isColumnVisible("newMeterType") && <TableCell>{result.workOrder.newMeterType || "-"}</TableCell>}
-                          {isColumnVisible("oldGps") && <TableCell>{result.workOrder.oldGps || "-"}</TableCell>}
-                          {isColumnVisible("newGps") && <TableCell>{result.workOrder.newGps || "-"}</TableCell>}
-                          {isColumnVisible("status") && <TableCell>{getStatusBadge(result.workOrder.status)}</TableCell>}
-                          {isColumnVisible("scheduledDate") && <TableCell>{result.workOrder.scheduledDate ? formatCustom(result.workOrder.scheduledDate, "MMM d, yyyy") : "-"}</TableCell>}
-                          {isColumnVisible("assignedTo") && <TableCell>{getAssignedUserName(result.workOrder.assignedUserId) || "-"}</TableCell>}
-                          {isColumnVisible("assignedGroup") && <TableCell>{getAssignedGroupName(result.workOrder.assignedGroupId) || "-"}</TableCell>}
-                          {isColumnVisible("createdBy") && <TableCell>{result.workOrder.createdBy || "-"}</TableCell>}
-                          {isColumnVisible("updatedBy") && <TableCell>{result.workOrder.updatedBy || "-"}</TableCell>}
-                          {isColumnVisible("completedAt") && <TableCell>{result.workOrder.completedAt ? formatCustom(result.workOrder.completedAt, "MMM d, yyyy h:mm a") : "-"}</TableCell>}
-                          {isColumnVisible("trouble") && <TableCell>{result.workOrder.trouble || "-"}</TableCell>}
-                          {isColumnVisible("notes") && <TableCell className="max-w-xs truncate">{result.workOrder.notes || "-"}</TableCell>}
-                          {isColumnVisible("createdAt") && <TableCell>{result.workOrder.createdAt ? formatCustom(result.workOrder.createdAt, "MMM d, yyyy h:mm a") : "-"}</TableCell>}
-                          {isColumnVisible("updatedAt") && <TableCell>{result.workOrder.updatedAt ? formatCustom(result.workOrder.updatedAt, "MMM d, yyyy h:mm a") : "-"}</TableCell>}
+                          {orderedColumns.filter(col => col.key !== "actions").map(col => renderDataCell(col.key, result))}
                           {isColumnVisible("actions") && (
                             <TableCell>
                               <Link 
