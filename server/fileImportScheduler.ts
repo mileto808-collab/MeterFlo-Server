@@ -143,7 +143,14 @@ class FileImportScheduler {
         return { success: false, imported: 0, failed: 0, error: "File not found" };
       }
 
-      const historyEntry = await storage.createFileImportHistoryEntry(configId, latestFile.name, "running");
+      const historyEntry = await storage.createFileImportHistoryEntry(
+        configId, 
+        latestFile.name, 
+        "running",
+        importConfig.projectId,
+        "scheduled_file",
+        "system"
+      );
 
       // Track the actual filename (might be renamed after processing)
       let processedFileName = latestFile.name;
