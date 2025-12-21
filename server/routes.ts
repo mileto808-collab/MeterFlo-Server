@@ -1149,21 +1149,41 @@ export async function registerRoutes(
         createdByName
       );
       
+      // Pass through ALL fields from the mapped work order data
+      // Only set defaults for truly required fields
       const toImport = workOrdersData.map((wo: any) => ({
-        customerWoId: wo.customerWoId || wo.title,
-        customerId: wo.customerId || "",
-        customerName: wo.customerName || "",
-        address: wo.address || "",
+        customerWoId: wo.customerWoId || wo.title || null,
+        customerId: wo.customerId || null,
+        customerName: wo.customerName || null,
+        address: wo.address || null,
+        city: wo.city || null,
+        state: wo.state || null,
+        zip: wo.zip || null,
+        phone: wo.phone || null,
+        email: wo.email || null,
+        route: wo.route || null,
+        zone: wo.zone || null,
         serviceType: wo.serviceType || "Water",
-        status: wo.status || "pending",
-        assignedTo: wo.assignedTo || null,
+        oldMeterId: wo.oldMeterId || wo.old_meter_id || null,
+        oldMeterReading: wo.oldMeterReading || wo.old_meter_reading || null,
+        newMeterId: wo.newMeterId || wo.new_meter_id || null,
+        newMeterReading: wo.newMeterReading || wo.new_meter_reading || null,
+        oldGps: wo.oldGps || wo.old_gps || null,
+        newGps: wo.newGps || wo.new_gps || null,
+        status: wo.status || "Open",
+        scheduledDate: wo.scheduledDate || wo.scheduled_date || null,
+        assignedUserId: wo.assignedUserId || wo.assigned_user_id || null,
+        assignedGroupId: wo.assignedGroupId || wo.assigned_group_id || null,
         createdBy: createdByName,
+        trouble: wo.trouble || null,
         notes: wo.notes || null,
         attachments: wo.attachments || null,
+        oldMeterType: wo.oldMeterType || wo.old_meter_type || null,
+        newMeterType: wo.newMeterType || wo.new_meter_type || null,
       }));
       
       const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
-      const result = await workOrderStorage.importWorkOrders(toImport);
+      const result = await workOrderStorage.importWorkOrders(toImport, createdByName);
       
       // Update history entry with results
       const status = result.errors && result.errors.length > 0 

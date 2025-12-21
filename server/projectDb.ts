@@ -859,22 +859,38 @@ export class ProjectWorkOrderStorage {
     }
   }
 
-  async importWorkOrders(workOrders: Array<Omit<InsertProjectWorkOrder, "id" | "createdAt" | "updatedAt">>): Promise<{ imported: number; errors: string[] }> {
+  async importWorkOrders(workOrders: Array<Omit<InsertProjectWorkOrder, "id" | "createdAt" | "updatedAt">>, importedBy?: string): Promise<{ imported: number; updated: number; errors: string[] }> {
     const errors: string[] = [];
     let imported = 0;
+    let updated = 0;
 
     for (let i = 0; i < workOrders.length; i++) {
       try {
-        await this.createWorkOrder(workOrders[i]);
+        const wo = workOrders[i];
+        
+        // Check if work order with this customerWoId already exists
+        if (wo.customerWoId) {
+          const existing = await this.getWorkOrderByCustomerWoId(wo.customerWoId);
+          if (existing) {
+            // Update existing work order (upsert) - exclude createdBy for updates
+            const { createdBy, ...updateData } = wo as any;
+            await this.updateWorkOrder(existing.id, updateData, importedBy);
+            updated++;
+            continue;
+          }
+        }
+        
+        // Create new work order
+        await this.createWorkOrder(wo, importedBy);
         imported++;
       } catch (error) {
         errors.push(`Row ${i + 1}: ${error instanceof Error ? error.message : "Unknown error"}`);
       }
     }
 
-    return { imported, errors };
+    return { imported, updated, errors };
   }
-
+  
   private mapRowToWorkOrder(row: any): ProjectWorkOrder {
     return {
       id: row.id,
