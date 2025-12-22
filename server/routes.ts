@@ -447,8 +447,12 @@ export async function registerRoutes(
   app.post("/api/subroles", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (currentUser?.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canManageAccessLevels = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_ACCESS_LEVELS);
+      if (!canManageAccessLevels) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to manage access levels" });
       }
       
       const { key, label, baseRole, description, permissions: permissionList } = req.body;
@@ -478,8 +482,12 @@ export async function registerRoutes(
   app.put("/api/subroles/:id", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (currentUser?.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canManageAccessLevels = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_ACCESS_LEVELS);
+      if (!canManageAccessLevels) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to manage access levels" });
       }
       
       const id = parseInt(req.params.id);
@@ -513,8 +521,12 @@ export async function registerRoutes(
   app.delete("/api/subroles/:id", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (currentUser?.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canManageAccessLevels = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_ACCESS_LEVELS);
+      if (!canManageAccessLevels) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to manage access levels" });
       }
       
       const id = parseInt(req.params.id);
@@ -534,8 +546,12 @@ export async function registerRoutes(
   app.post("/api/subroles/:id/copy", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (currentUser?.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canManageAccessLevels = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_ACCESS_LEVELS);
+      if (!canManageAccessLevels) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to manage access levels" });
       }
       
       const id = parseInt(req.params.id);
@@ -576,8 +592,12 @@ export async function registerRoutes(
   app.put("/api/subroles/:id/permissions", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (currentUser?.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canManageAccessLevels = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_ACCESS_LEVELS);
+      if (!canManageAccessLevels) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to manage access levels" });
       }
       
       const id = parseInt(req.params.id);
@@ -3230,8 +3250,12 @@ export async function registerRoutes(
   app.get("/api/user-groups", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (!currentUser || currentUser.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canManageUserGroups = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_USER_GROUPS);
+      if (!canManageUserGroups) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to manage user groups" });
       }
       
       const groups = await storage.getAllUserGroupsWithProjects();
@@ -3245,8 +3269,12 @@ export async function registerRoutes(
   app.get("/api/user-groups/:id", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (!currentUser || currentUser.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canManageUserGroups = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_USER_GROUPS);
+      if (!canManageUserGroups) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to manage user groups" });
       }
       
       const id = parseInt(req.params.id);
@@ -3266,8 +3294,12 @@ export async function registerRoutes(
   app.post("/api/user-groups", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (!currentUser || currentUser.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canManageUserGroups = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_USER_GROUPS);
+      if (!canManageUserGroups) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to manage user groups" });
       }
       
       const { name, description, projectIds } = req.body;
@@ -3294,8 +3326,12 @@ export async function registerRoutes(
   app.patch("/api/user-groups/:id", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (!currentUser || currentUser.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canManageUserGroups = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_USER_GROUPS);
+      if (!canManageUserGroups) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to manage user groups" });
       }
       
       const id = parseInt(req.params.id);
@@ -3328,8 +3364,12 @@ export async function registerRoutes(
   app.delete("/api/user-groups/:id", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (!currentUser || currentUser.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canManageUserGroups = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_USER_GROUPS);
+      if (!canManageUserGroups) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to manage user groups" });
       }
       
       const id = parseInt(req.params.id);
@@ -3351,8 +3391,12 @@ export async function registerRoutes(
   app.get("/api/user-groups/:id/members", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (!currentUser || currentUser.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canManageUserGroups = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_USER_GROUPS);
+      if (!canManageUserGroups) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to manage user groups" });
       }
       
       const groupId = parseInt(req.params.id);
@@ -3367,8 +3411,12 @@ export async function registerRoutes(
   app.post("/api/user-groups/:id/members", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (!currentUser || currentUser.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canManageUserGroups = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_USER_GROUPS);
+      if (!canManageUserGroups) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to manage user groups" });
       }
       
       const groupId = parseInt(req.params.id);
@@ -3392,8 +3440,12 @@ export async function registerRoutes(
   app.delete("/api/user-groups/:groupId/members/:userId", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (!currentUser || currentUser.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canManageUserGroups = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_USER_GROUPS);
+      if (!canManageUserGroups) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to manage user groups" });
       }
       
       const groupId = parseInt(req.params.groupId);
