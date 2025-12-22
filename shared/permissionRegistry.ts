@@ -5,7 +5,6 @@ export type PermissionCategory =
   | "Maintenance"
   | "Project Actions"
   | "Work Order Actions"
-  | "File Actions"
   | "User Actions";
 
 export interface PermissionDefinition {
@@ -270,22 +269,6 @@ export const permissionRegistry: PermissionDefinition[] = [
     label: "Delete Work Orders",
     category: "Work Order Actions",
     description: "Delete work orders",
-    defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
-  },
-
-  // File Action permissions - what users can do with files
-  {
-    key: "files.upload",
-    label: "Upload Files",
-    category: "File Actions",
-    description: "Upload files to work orders and projects",
-    defaultAccess: { administrator: true, projectManager: true, fieldTechnician: true, viewer: false, customer: false },
-  },
-  {
-    key: "files.delete",
-    label: "Delete Files",
-    category: "File Actions",
-    description: "Delete uploaded files",
     defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
   },
 
