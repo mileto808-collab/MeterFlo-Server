@@ -737,7 +737,9 @@ export async function registerRoutes(
       const currentUser = await storage.getUser(req.user.claims.sub);
       const targetUserId = req.params.id;
       
-      if (currentUser?.id !== targetUserId && currentUser?.role !== "admin") {
+      // Allow users to edit their own filter preferences, or users with nav.users permission to edit others
+      const hasNavUsers = currentUser ? await storage.hasPermission(currentUser, permissionKeys.NAV_USERS) : false;
+      if (currentUser?.id !== targetUserId && !hasNavUsers) {
         return res.status(403).json({ message: "Forbidden" });
       }
       
@@ -780,7 +782,9 @@ export async function registerRoutes(
       const currentUser = await storage.getUser(req.user.claims.sub);
       const projectId = parseInt(req.params.id);
       
-      if (currentUser?.role !== "admin") {
+      // Check if user has nav.projects permission (can see all projects) or is assigned to this project
+      const hasNavProjects = currentUser ? await storage.hasPermission(currentUser, permissionKeys.NAV_PROJECTS) : false;
+      if (!hasNavProjects) {
         const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
         if (!isAssigned) {
           return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
@@ -801,8 +805,12 @@ export async function registerRoutes(
   app.get("/api/projects/:id/users", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (currentUser?.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const hasNavProjects = await storage.hasPermission(currentUser, permissionKeys.NAV_PROJECTS);
+      if (!hasNavProjects) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to view project users" });
       }
       
       const users = await storage.getProjectUsers(parseInt(req.params.id));
@@ -819,8 +827,9 @@ export async function registerRoutes(
       const currentUser = await storage.getUser(req.user.claims.sub);
       const projectId = parseInt(req.params.id);
       
-      // Check if user has access to this project
-      if (currentUser?.role !== "admin") {
+      // Check if user has access to this project (via nav.projects permission or direct assignment)
+      const hasNavProjects = currentUser ? await storage.hasPermission(currentUser, permissionKeys.NAV_PROJECTS) : false;
+      if (!hasNavProjects) {
         const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
         if (!isAssigned) {
           return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
