@@ -827,6 +827,12 @@ export default function SearchReports() {
     return <Badge variant="outline" className="text-xs">{serviceType}</Badge>;
   };
 
+  const getStatusLabel = (status: string): string => {
+    if (!status) return "";
+    const statusRecord = workOrderStatuses.find(s => s.code === status || s.label === status);
+    return statusRecord?.label || status;
+  };
+
   // Helper to get export value for a column key
   const getExportValue = (r: SearchResult, key: string): string => {
     switch (key) {
@@ -851,7 +857,7 @@ export default function SearchReports() {
       case "newMeterType": return r.workOrder.newMeterType || "";
       case "oldGps": return r.workOrder.oldGps || "";
       case "newGps": return r.workOrder.newGps || "";
-      case "status": return r.workOrder.status;
+      case "status": return getStatusLabel(r.workOrder.status);
       case "scheduledDate": return r.workOrder.scheduledDate ? formatExport(r.workOrder.scheduledDate) : "";
       case "assignedTo": return getAssignedUserName(r.workOrder.assignedUserId) || "";
       case "assignedGroup": return getAssignedGroupName(r.workOrder.assignedGroupId) || "";
