@@ -161,14 +161,16 @@ export default function Settings() {
     projectIds: [] as number[],
   });
 
+  const isAdmin = user?.role === "admin";
+
   const { data: subroles, isLoading: loadingSubroles } = useQuery<Subrole[]>({
     queryKey: ["/api/subroles"],
-    enabled: hasPermission("settings.accessLevels"),
+    enabled: isAdmin || hasPermission("settings.accessLevels"),
   });
 
   const { data: allPermissions } = useQuery<Permission[]>({
     queryKey: ["/api/permissions"],
-    enabled: hasPermission("settings.accessLevels"),
+    enabled: isAdmin || hasPermission("settings.accessLevels"),
   });
 
   const { data: selectedSubrolePermissions } = useQuery<string[]>({
@@ -178,39 +180,39 @@ export default function Settings() {
       const res = await fetch(`/api/subroles/${selectedSubrole.id}/permissions`, { credentials: "include" });
       return res.json();
     },
-    enabled: !!selectedSubrole && subroleDialogOpen && hasPermission("settings.accessLevels"),
+    enabled: !!selectedSubrole && subroleDialogOpen && (isAdmin || hasPermission("settings.accessLevels")),
   });
 
   const { data: pathData } = useQuery<{ path: string }>({
     queryKey: ["/api/settings/project-files-path"],
-    enabled: hasPermission("settings.projectFiles"),
+    enabled: isAdmin || hasPermission("settings.projectFiles"),
   });
 
   const { data: fileSettingsData } = useQuery<FileSettings>({
     queryKey: ["/api/settings/file-settings"],
-    enabled: hasPermission("settings.fileUpload"),
+    enabled: isAdmin || hasPermission("settings.fileUpload"),
   });
 
   const { data: timezoneData } = useQuery<{ timezone: string; isEnabled: boolean }>({
     queryKey: ["/api/settings/timezone"],
-    enabled: hasPermission("settings.timezone"),
+    enabled: isAdmin || hasPermission("settings.timezone"),
   });
 
   const { data: workOrderStatusList, isLoading: loadingStatuses } = useQuery<WorkOrderStatus[]>({
     queryKey: ["/api/work-order-statuses"],
-    enabled: hasPermission("settings.statuses"),
+    enabled: isAdmin || hasPermission("settings.statuses"),
   });
 
   // Trouble Codes query
   const { data: troubleCodesList, isLoading: loadingTroubleCodes } = useQuery<TroubleCode[]>({
     queryKey: ["/api/trouble-codes"],
-    enabled: hasPermission("settings.troubleCodes"),
+    enabled: isAdmin || hasPermission("settings.troubleCodes"),
   });
 
   // User Groups queries
   const { data: userGroups, isLoading: loadingUserGroups } = useQuery<UserGroupWithProjects[]>({
     queryKey: ["/api/user-groups"],
-    enabled: hasPermission("settings.userGroups"),
+    enabled: isAdmin || hasPermission("settings.userGroups"),
   });
 
   const { data: groupMembers, isLoading: loadingGroupMembers } = useQuery<User[]>({
@@ -220,18 +222,18 @@ export default function Settings() {
       const res = await fetch(`/api/user-groups/${selectedUserGroup.id}/members`, { credentials: "include" });
       return res.json();
     },
-    enabled: !!selectedUserGroup && membersDialogOpen && hasPermission("settings.userGroups"),
+    enabled: !!selectedUserGroup && membersDialogOpen && (isAdmin || hasPermission("settings.userGroups")),
   });
 
   const { data: allUsers } = useQuery<User[]>({
     queryKey: ["/api/users"],
-    enabled: hasPermission("settings.userGroups") && membersDialogOpen,
+    enabled: (isAdmin || hasPermission("settings.userGroups")) && membersDialogOpen,
   });
 
   // Service Types query
   const { data: serviceTypesList, isLoading: loadingServiceTypes } = useQuery<ServiceTypeRecord[]>({
     queryKey: ["/api/service-types"],
-    enabled: hasPermission("settings.serviceTypes"),
+    enabled: isAdmin || hasPermission("settings.serviceTypes"),
   });
 
   // Meter Types queries
@@ -244,24 +246,24 @@ export default function Settings() {
       const res = await fetch(url, { credentials: "include" });
       return res.json();
     },
-    enabled: hasPermission("settings.meterTypes"),
+    enabled: isAdmin || hasPermission("settings.meterTypes"),
   });
 
   const { data: projectsList } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
-    enabled: hasPermission("settings.meterTypes") || hasPermission("settings.userGroups"),
+    enabled: isAdmin || hasPermission("settings.meterTypes") || hasPermission("settings.userGroups"),
   });
 
   // File Import History query
   const { data: fileImportHistoryList, isLoading: loadingImportHistory } = useQuery<(FileImportHistory & { projectName?: string })[]>({
     queryKey: ["/api/file-import-history"],
-    enabled: hasPermission("settings.importHistory"),
+    enabled: isAdmin || hasPermission("settings.importHistory"),
   });
 
   // External Database Import History query
   const { data: externalDbImportHistoryList, isLoading: loadingExternalDbImportHistory } = useQuery<(ImportHistory & { configName?: string; databaseName?: string; projectName?: string })[]>({
     queryKey: ["/api/import-history"],
-    enabled: hasPermission("settings.dbImportHistory"),
+    enabled: isAdmin || hasPermission("settings.dbImportHistory"),
   });
 
   useEffect(() => {
