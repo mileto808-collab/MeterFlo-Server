@@ -7,6 +7,7 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useAuth } from "@/hooks/useAuth";
+import { usePermissions } from "@/hooks/usePermissions";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import Landing from "@/pages/landing";
@@ -39,7 +40,16 @@ function LoadingScreen() {
 
 function AuthenticatedRouter() {
   const { user } = useAuth();
+  const { hasPermission, isLoading } = usePermissions();
   const role = user?.role || "user";
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Skeleton className="h-8 w-32" />
+      </div>
+    );
+  }
 
   return (
     <Switch>
@@ -49,16 +59,25 @@ function AuthenticatedRouter() {
         <Route path="/work-orders" component={WorkOrders} />
       )}
       
-      {role === "admin" && (
+      {hasPermission("nav.projects") && (
         <>
           <Route path="/projects" component={Projects} />
           <Route path="/projects/new" component={ProjectForm} />
           <Route path="/projects/:id/edit" component={ProjectForm} />
           <Route path="/projects/:projectId/db-import" component={ProjectDbImport} />
-          <Route path="/users" component={Users} />
-          <Route path="/maintenance" component={Maintenance} />
-          <Route path="/settings" component={Settings} />
         </>
+      )}
+      
+      {hasPermission("nav.users") && (
+        <Route path="/users" component={Users} />
+      )}
+      
+      {hasPermission("nav.maintenance") && (
+        <Route path="/maintenance" component={Maintenance} />
+      )}
+      
+      {hasPermission("nav.settings") && (
+        <Route path="/settings" component={Settings} />
       )}
       
       {(role === "admin" || role === "user") && (
@@ -68,12 +87,11 @@ function AuthenticatedRouter() {
           <Route path="/projects/:projectId/ftp-files" component={ProjectFtpFiles} />
           <Route path="/projects/:projectId/work-orders/:workOrderId/files" component={WorkOrderFiles} />
           <Route path="/projects/:projectId/import" component={ProjectImport} />
-          <Route path="/search" component={SearchReports} />
         </>
       )}
       
-      {role === "user" && (
-        <Route path="/settings" component={Settings} />
+      {hasPermission("nav.searchReports") && (
+        <Route path="/search" component={SearchReports} />
       )}
       
       <Route component={NotFound} />
