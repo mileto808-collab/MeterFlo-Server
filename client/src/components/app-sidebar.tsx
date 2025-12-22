@@ -146,7 +146,7 @@ export function AppSidebar() {
                 </SidebarMenuItem>
               )}
 
-              {hasPermission("projects.manage") && (
+              {hasPermission("nav.projects") && (
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     asChild
@@ -161,7 +161,7 @@ export function AppSidebar() {
                 </SidebarMenuItem>
               )}
 
-              {hasPermission("users.manage") && (
+              {hasPermission("nav.users") && (
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     asChild
@@ -176,7 +176,7 @@ export function AppSidebar() {
                 </SidebarMenuItem>
               )}
 
-              {hasPermission("maintenance.manage") && (
+              {hasPermission("nav.maintenance") && (
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     asChild
@@ -191,7 +191,7 @@ export function AppSidebar() {
                 </SidebarMenuItem>
               )}
 
-              {hasPermission("settings.manage") && (
+              {hasPermission("nav.settings") && (
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     asChild
@@ -206,7 +206,7 @@ export function AppSidebar() {
                 </SidebarMenuItem>
               )}
 
-              {hasPermission("search.reports") && (
+              {hasPermission("nav.searchReports") && (
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     asChild
@@ -256,55 +256,63 @@ export function AppSidebar() {
                         </CollapsibleTrigger>
                         <CollapsibleContent>
                           <SidebarMenuSub>
-                            <SidebarMenuSubItem>
-                              <SidebarMenuSubButton
-                                asChild
-                                isActive={location === `/projects/${project.id}/work-orders`}
-                                data-testid={`nav-project-${project.id}-work-orders`}
-                              >
-                                <Link href={`/projects/${project.id}/work-orders`}>
-                                  <ClipboardList className="h-3 w-3" />
-                                  <span>Work Orders</span>
-                                </Link>
-                              </SidebarMenuSubButton>
-                            </SidebarMenuSubItem>
-                            <SidebarMenuSubItem>
-                              <SidebarMenuSubButton
-                                asChild
-                                isActive={location === `/projects/${project.id}/files`}
-                                data-testid={`nav-project-${project.id}-documents`}
-                              >
-                                <Link href={`/projects/${project.id}/files`}>
-                                  <FileText className="h-3 w-3" />
-                                  <span>Project Documents</span>
-                                </Link>
-                              </SidebarMenuSubButton>
-                            </SidebarMenuSubItem>
-                            <SidebarMenuSubItem>
-                              <SidebarMenuSubButton
-                                asChild
-                                isActive={location === `/projects/${project.id}/import`}
-                                data-testid={`nav-project-${project.id}-import`}
-                              >
-                                <Link href={`/projects/${project.id}/import`}>
-                                  <Upload className="h-3 w-3" />
-                                  <span>File Import</span>
-                                </Link>
-                              </SidebarMenuSubButton>
-                            </SidebarMenuSubItem>
-                            <SidebarMenuSubItem>
-                              <SidebarMenuSubButton
-                                asChild
-                                isActive={location === `/projects/${project.id}/ftp-files`}
-                                data-testid={`nav-project-${project.id}-ftp-files`}
-                              >
-                                <Link href={`/projects/${project.id}/ftp-files`}>
-                                  <FolderSync className="h-3 w-3" />
-                                  <span>FTP Files</span>
-                                </Link>
-                              </SidebarMenuSubButton>
-                            </SidebarMenuSubItem>
-                            {role === "admin" && (
+                            {hasPermission("project.workOrders") && (
+                              <SidebarMenuSubItem>
+                                <SidebarMenuSubButton
+                                  asChild
+                                  isActive={location === `/projects/${project.id}/work-orders`}
+                                  data-testid={`nav-project-${project.id}-work-orders`}
+                                >
+                                  <Link href={`/projects/${project.id}/work-orders`}>
+                                    <ClipboardList className="h-3 w-3" />
+                                    <span>Work Orders</span>
+                                  </Link>
+                                </SidebarMenuSubButton>
+                              </SidebarMenuSubItem>
+                            )}
+                            {hasPermission("project.documents") && (
+                              <SidebarMenuSubItem>
+                                <SidebarMenuSubButton
+                                  asChild
+                                  isActive={location === `/projects/${project.id}/files`}
+                                  data-testid={`nav-project-${project.id}-documents`}
+                                >
+                                  <Link href={`/projects/${project.id}/files`}>
+                                    <FileText className="h-3 w-3" />
+                                    <span>Project Documents</span>
+                                  </Link>
+                                </SidebarMenuSubButton>
+                              </SidebarMenuSubItem>
+                            )}
+                            {hasPermission("project.import") && (
+                              <SidebarMenuSubItem>
+                                <SidebarMenuSubButton
+                                  asChild
+                                  isActive={location === `/projects/${project.id}/import`}
+                                  data-testid={`nav-project-${project.id}-import`}
+                                >
+                                  <Link href={`/projects/${project.id}/import`}>
+                                    <Upload className="h-3 w-3" />
+                                    <span>File Import</span>
+                                  </Link>
+                                </SidebarMenuSubButton>
+                              </SidebarMenuSubItem>
+                            )}
+                            {hasPermission("project.ftpFiles") && (
+                              <SidebarMenuSubItem>
+                                <SidebarMenuSubButton
+                                  asChild
+                                  isActive={location === `/projects/${project.id}/ftp-files`}
+                                  data-testid={`nav-project-${project.id}-ftp-files`}
+                                >
+                                  <Link href={`/projects/${project.id}/ftp-files`}>
+                                    <FolderSync className="h-3 w-3" />
+                                    <span>FTP Files</span>
+                                  </Link>
+                                </SidebarMenuSubButton>
+                              </SidebarMenuSubItem>
+                            )}
+                            {hasPermission("project.dbImport") && (
                               <SidebarMenuSubItem>
                                 <SidebarMenuSubButton
                                   asChild
