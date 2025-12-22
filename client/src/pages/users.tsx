@@ -100,7 +100,8 @@ export default function Users() {
   const [filterProjects, setFilterProjects] = useState("");
   const [filterIsLocked, setFilterIsLocked] = useState<string>("all");
   const [filterLockedReason, setFilterLockedReason] = useState("");
-  const [filterLastLogin, setFilterLastLogin] = useState("");
+  const [filterLastLoginFrom, setFilterLastLoginFrom] = useState("");
+  const [filterLastLoginTo, setFilterLastLoginTo] = useState("");
   const [filterAddress, setFilterAddress] = useState("");
   const [filterCity, setFilterCity] = useState("");
   const [filterState, setFilterState] = useState("");
@@ -600,7 +601,8 @@ export default function Users() {
     setFilterProjects("");
     setFilterIsLocked("all");
     setFilterLockedReason("");
-    setFilterLastLogin("");
+    setFilterLastLoginFrom("");
+    setFilterLastLoginTo("");
     setFilterAddress("");
     setFilterCity("");
     setFilterState("");
@@ -609,7 +611,7 @@ export default function Users() {
     setFilterWebsite("");
   };
 
-  const hasActiveFilters = searchQuery !== "" || roleFilter !== "all" || statusFilter !== "all" || subroleFilter !== "all" || filterUsername !== "" || filterEmail !== "" || filterFirstName !== "" || filterLastName !== "" || filterProjects !== "" || filterIsLocked !== "all" || filterLockedReason !== "" || filterLastLogin !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterWebsite !== "";
+  const hasActiveFilters = searchQuery !== "" || roleFilter !== "all" || statusFilter !== "all" || subroleFilter !== "all" || filterUsername !== "" || filterEmail !== "" || filterFirstName !== "" || filterLastName !== "" || filterProjects !== "" || filterIsLocked !== "all" || filterLockedReason !== "" || filterLastLoginFrom !== "" || filterLastLoginTo !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterWebsite !== "";
 
   const getSubroleName = (subroleId: number | null | undefined) => {
     if (!subroleId) return "";
@@ -1513,7 +1515,11 @@ export default function Users() {
                 <Input className="w-[140px]" placeholder="Locked Reason..." value={filterLockedReason} onChange={(e) => setFilterLockedReason(e.target.value)} data-testid="input-filter-locked-reason" />
               )}
               {isFilterVisible("lastLogin") && (
-                <Input className="w-[140px]" type="date" placeholder="Last Login" value={filterLastLogin} onChange={(e) => setFilterLastLogin(e.target.value)} data-testid="input-filter-last-login" />
+                <div className="flex gap-2 items-center">
+                  <Input className="w-[130px]" type="date" value={filterLastLoginFrom} onChange={(e) => setFilterLastLoginFrom(e.target.value)} data-testid="input-filter-last-login-from" />
+                  <span className="text-muted-foreground text-sm">to</span>
+                  <Input className="w-[130px]" type="date" value={filterLastLoginTo} onChange={(e) => setFilterLastLoginTo(e.target.value)} data-testid="input-filter-last-login-to" />
+                </div>
               )}
               {isFilterVisible("address") && (
                 <Input className="w-[140px]" placeholder="Address..." value={filterAddress} onChange={(e) => setFilterAddress(e.target.value)} data-testid="input-filter-address" />

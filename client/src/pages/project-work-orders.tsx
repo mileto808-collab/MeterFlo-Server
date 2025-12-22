@@ -118,13 +118,17 @@ export default function ProjectWorkOrders() {
   const [filterZone, setFilterZone] = useState("");
   const [filterOldMeterId, setFilterOldMeterId] = useState("");
   const [filterNewMeterId, setFilterNewMeterId] = useState("");
-  const [filterScheduledDate, setFilterScheduledDate] = useState("");
+  const [filterScheduledDateFrom, setFilterScheduledDateFrom] = useState("");
+  const [filterScheduledDateTo, setFilterScheduledDateTo] = useState("");
   const [filterCreatedBy, setFilterCreatedBy] = useState("all");
   const [filterUpdatedBy, setFilterUpdatedBy] = useState("all");
-  const [filterCompletedAt, setFilterCompletedAt] = useState("");
+  const [filterCompletedAtFrom, setFilterCompletedAtFrom] = useState("");
+  const [filterCompletedAtTo, setFilterCompletedAtTo] = useState("");
   const [filterNotes, setFilterNotes] = useState("");
-  const [filterCreatedAt, setFilterCreatedAt] = useState("");
-  const [filterUpdatedAt, setFilterUpdatedAt] = useState("");
+  const [filterCreatedAtFrom, setFilterCreatedAtFrom] = useState("");
+  const [filterCreatedAtTo, setFilterCreatedAtTo] = useState("");
+  const [filterUpdatedAtFrom, setFilterUpdatedAtFrom] = useState("");
+  const [filterUpdatedAtTo, setFilterUpdatedAtTo] = useState("");
   const [createMeterTypeOpen, setCreateMeterTypeOpen] = useState(false);
   const [meterTypeField, setMeterTypeField] = useState<"oldMeterType" | "newMeterType" | "editOldMeterType" | "editNewMeterType" | null>(null);
   const [cameFromSearch, setCameFromSearch] = useState(false);
@@ -1010,8 +1014,15 @@ export default function ProjectWorkOrders() {
     if (filterNewMeterId.trim()) {
       result = result.filter(wo => wo.newMeterId?.toLowerCase().includes(filterNewMeterId.toLowerCase()));
     }
-    if (filterScheduledDate) {
-      result = result.filter(wo => (wo as any).scheduledDate?.includes(filterScheduledDate));
+    if (filterScheduledDateFrom || filterScheduledDateTo) {
+      result = result.filter(wo => {
+        const scheduledDate = (wo as any).scheduledDate;
+        if (!scheduledDate) return false;
+        const dateStr = scheduledDate.substring(0, 10);
+        if (filterScheduledDateFrom && dateStr < filterScheduledDateFrom) return false;
+        if (filterScheduledDateTo && dateStr > filterScheduledDateTo) return false;
+        return true;
+      });
     }
     if (filterCreatedBy !== "all") {
       // Look up user label from selected ID for fallback comparison
@@ -1039,17 +1050,35 @@ export default function ProjectWorkOrders() {
         return false;
       });
     }
-    if (filterCompletedAt) {
-      result = result.filter(wo => wo.completedAt && String(wo.completedAt).includes(filterCompletedAt));
+    if (filterCompletedAtFrom || filterCompletedAtTo) {
+      result = result.filter(wo => {
+        if (!wo.completedAt) return false;
+        const dateStr = String(wo.completedAt).substring(0, 10);
+        if (filterCompletedAtFrom && dateStr < filterCompletedAtFrom) return false;
+        if (filterCompletedAtTo && dateStr > filterCompletedAtTo) return false;
+        return true;
+      });
     }
     if (filterNotes.trim()) {
       result = result.filter(wo => wo.notes?.toLowerCase().includes(filterNotes.toLowerCase()));
     }
-    if (filterCreatedAt) {
-      result = result.filter(wo => wo.createdAt && String(wo.createdAt).includes(filterCreatedAt));
+    if (filterCreatedAtFrom || filterCreatedAtTo) {
+      result = result.filter(wo => {
+        if (!wo.createdAt) return false;
+        const dateStr = String(wo.createdAt).substring(0, 10);
+        if (filterCreatedAtFrom && dateStr < filterCreatedAtFrom) return false;
+        if (filterCreatedAtTo && dateStr > filterCreatedAtTo) return false;
+        return true;
+      });
     }
-    if (filterUpdatedAt) {
-      result = result.filter(wo => wo.updatedAt && String(wo.updatedAt).includes(filterUpdatedAt));
+    if (filterUpdatedAtFrom || filterUpdatedAtTo) {
+      result = result.filter(wo => {
+        if (!wo.updatedAt) return false;
+        const dateStr = String(wo.updatedAt).substring(0, 10);
+        if (filterUpdatedAtFrom && dateStr < filterUpdatedAtFrom) return false;
+        if (filterUpdatedAtTo && dateStr > filterUpdatedAtTo) return false;
+        return true;
+      });
     }
     
     // Sort
@@ -1063,7 +1092,7 @@ export default function ProjectWorkOrders() {
     }
     
     return result;
-  }, [workOrders, searchQuery, sortColumn, sortDirection, selectedStatus, selectedServiceType, dateFrom, dateTo, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldMeterType, selectedNewMeterType, meterTypes, assigneesData, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterNewMeterId, filterScheduledDate, filterCreatedBy, filterUpdatedBy, filterCompletedAt, filterNotes, filterCreatedAt, filterUpdatedAt]);
+  }, [workOrders, searchQuery, sortColumn, sortDirection, selectedStatus, selectedServiceType, dateFrom, dateTo, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldMeterType, selectedNewMeterType, meterTypes, assigneesData, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterNewMeterId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
 
   const clearFilters = () => {
     setSearchQuery("");
@@ -1088,16 +1117,20 @@ export default function ProjectWorkOrders() {
     setFilterZone("");
     setFilterOldMeterId("");
     setFilterNewMeterId("");
-    setFilterScheduledDate("");
+    setFilterScheduledDateFrom("");
+    setFilterScheduledDateTo("");
     setFilterCreatedBy("all");
     setFilterUpdatedBy("all");
-    setFilterCompletedAt("");
+    setFilterCompletedAtFrom("");
+    setFilterCompletedAtTo("");
     setFilterNotes("");
-    setFilterCreatedAt("");
-    setFilterUpdatedAt("");
+    setFilterCreatedAtFrom("");
+    setFilterCreatedAtTo("");
+    setFilterUpdatedAtFrom("");
+    setFilterUpdatedAtTo("");
   };
 
-  const hasActiveFilters = selectedStatus !== "all" || selectedServiceType !== "all" || dateFrom !== "" || dateTo !== "" || selectedAssignedTo !== "all" || selectedAssignedGroup !== "all" || selectedTrouble !== "all" || selectedOldMeterType !== "all" || selectedNewMeterType !== "all" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldMeterId !== "" || filterNewMeterId !== "" || filterScheduledDate !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterCompletedAt !== "" || filterNotes !== "" || filterCreatedAt !== "" || filterUpdatedAt !== "";
+  const hasActiveFilters = selectedStatus !== "all" || selectedServiceType !== "all" || dateFrom !== "" || dateTo !== "" || selectedAssignedTo !== "all" || selectedAssignedGroup !== "all" || selectedTrouble !== "all" || selectedOldMeterType !== "all" || selectedNewMeterType !== "all" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldMeterId !== "" || filterNewMeterId !== "" || filterScheduledDateFrom !== "" || filterScheduledDateTo !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterCompletedAtFrom !== "" || filterCompletedAtTo !== "" || filterNotes !== "" || filterCreatedAtFrom !== "" || filterCreatedAtTo !== "" || filterUpdatedAtFrom !== "" || filterUpdatedAtTo !== "";
 
   // Helper to get export value for a column key
   const getExportValue = (wo: ProjectWorkOrder, key: string): string => {
@@ -2977,9 +3010,13 @@ export default function ProjectWorkOrders() {
                 </div>
               )}
               {isFilterVisible("scheduledDate") && (
-                <div className="min-w-[150px]">
-                  <Label htmlFor="filter-scheduled-date">Scheduled Date</Label>
-                  <Input id="filter-scheduled-date" type="date" value={filterScheduledDate} onChange={(e) => setFilterScheduledDate(e.target.value)} data-testid="input-filter-scheduled-date" />
+                <div className="min-w-[280px]">
+                  <Label>Scheduled Date</Label>
+                  <div className="flex gap-2 items-center">
+                    <Input id="filter-scheduled-date-from" type="date" value={filterScheduledDateFrom} onChange={(e) => setFilterScheduledDateFrom(e.target.value)} data-testid="input-filter-scheduled-date-from" className="flex-1" />
+                    <span className="text-muted-foreground text-sm">to</span>
+                    <Input id="filter-scheduled-date-to" type="date" value={filterScheduledDateTo} onChange={(e) => setFilterScheduledDateTo(e.target.value)} data-testid="input-filter-scheduled-date-to" className="flex-1" />
+                  </div>
                 </div>
               )}
               {isFilterVisible("createdBy") && assigneesData && (
@@ -3015,9 +3052,13 @@ export default function ProjectWorkOrders() {
                 </div>
               )}
               {isFilterVisible("completedAt") && (
-                <div className="min-w-[150px]">
-                  <Label htmlFor="filter-completed-at">Completed At</Label>
-                  <Input id="filter-completed-at" type="date" value={filterCompletedAt} onChange={(e) => setFilterCompletedAt(e.target.value)} data-testid="input-filter-completed-at" />
+                <div className="min-w-[280px]">
+                  <Label>Completed At</Label>
+                  <div className="flex gap-2 items-center">
+                    <Input id="filter-completed-at-from" type="date" value={filterCompletedAtFrom} onChange={(e) => setFilterCompletedAtFrom(e.target.value)} data-testid="input-filter-completed-at-from" className="flex-1" />
+                    <span className="text-muted-foreground text-sm">to</span>
+                    <Input id="filter-completed-at-to" type="date" value={filterCompletedAtTo} onChange={(e) => setFilterCompletedAtTo(e.target.value)} data-testid="input-filter-completed-at-to" className="flex-1" />
+                  </div>
                 </div>
               )}
               {isFilterVisible("notes") && (
@@ -3027,15 +3068,23 @@ export default function ProjectWorkOrders() {
                 </div>
               )}
               {isFilterVisible("createdAt") && (
-                <div className="min-w-[150px]">
-                  <Label htmlFor="filter-created-at">Created At</Label>
-                  <Input id="filter-created-at" type="date" value={filterCreatedAt} onChange={(e) => setFilterCreatedAt(e.target.value)} data-testid="input-filter-created-at" />
+                <div className="min-w-[280px]">
+                  <Label>Created At</Label>
+                  <div className="flex gap-2 items-center">
+                    <Input id="filter-created-at-from" type="date" value={filterCreatedAtFrom} onChange={(e) => setFilterCreatedAtFrom(e.target.value)} data-testid="input-filter-created-at-from" className="flex-1" />
+                    <span className="text-muted-foreground text-sm">to</span>
+                    <Input id="filter-created-at-to" type="date" value={filterCreatedAtTo} onChange={(e) => setFilterCreatedAtTo(e.target.value)} data-testid="input-filter-created-at-to" className="flex-1" />
+                  </div>
                 </div>
               )}
               {isFilterVisible("updatedAt") && (
-                <div className="min-w-[150px]">
-                  <Label htmlFor="filter-updated-at">Updated At</Label>
-                  <Input id="filter-updated-at" type="date" value={filterUpdatedAt} onChange={(e) => setFilterUpdatedAt(e.target.value)} data-testid="input-filter-updated-at" />
+                <div className="min-w-[280px]">
+                  <Label>Updated At</Label>
+                  <div className="flex gap-2 items-center">
+                    <Input id="filter-updated-at-from" type="date" value={filterUpdatedAtFrom} onChange={(e) => setFilterUpdatedAtFrom(e.target.value)} data-testid="input-filter-updated-at-from" className="flex-1" />
+                    <span className="text-muted-foreground text-sm">to</span>
+                    <Input id="filter-updated-at-to" type="date" value={filterUpdatedAtTo} onChange={(e) => setFilterUpdatedAtTo(e.target.value)} data-testid="input-filter-updated-at-to" className="flex-1" />
+                  </div>
                 </div>
               )}
             </div>
