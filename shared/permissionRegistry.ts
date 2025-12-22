@@ -2,7 +2,10 @@ export type PermissionCategory =
   | "Navigation"
   | "Project Menu"
   | "Settings"
-  | "Actions";
+  | "Project Actions"
+  | "Work Order Actions"
+  | "File Actions"
+  | "User Actions";
 
 export interface PermissionDefinition {
   key: string;
@@ -179,74 +182,101 @@ export const permissionRegistry: PermissionDefinition[] = [
     defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
   },
 
-  // Action permissions - what users can do
+  // Project Action permissions - what users can do with projects
+  {
+    key: "projects.create",
+    label: "Create Projects",
+    category: "Project Actions",
+    description: "Create new projects",
+    defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
+  },
+  {
+    key: "projects.edit",
+    label: "Edit Projects",
+    category: "Project Actions",
+    description: "Edit existing projects",
+    defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
+  },
+  {
+    key: "projects.delete",
+    label: "Delete Projects",
+    category: "Project Actions",
+    description: "Delete projects",
+    defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
+  },
+
+  // Work Order Action permissions - what users can do with work orders
   {
     key: "workOrders.create",
     label: "Create Work Orders",
-    category: "Actions",
+    category: "Work Order Actions",
     description: "Create new work orders",
     defaultAccess: { administrator: true, projectManager: true, fieldTechnician: true, viewer: false, customer: false },
   },
   {
     key: "workOrders.edit",
     label: "Edit Work Orders",
-    category: "Actions",
+    category: "Work Order Actions",
     description: "Edit existing work orders",
     defaultAccess: { administrator: true, projectManager: true, fieldTechnician: true, viewer: false, customer: false },
   },
   {
     key: "workOrders.delete",
     label: "Delete Work Orders",
-    category: "Actions",
+    category: "Work Order Actions",
     description: "Delete work orders",
     defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
   },
+
+  // File Action permissions - what users can do with files
   {
     key: "files.upload",
     label: "Upload Files",
-    category: "Actions",
+    category: "File Actions",
     description: "Upload files to work orders and projects",
     defaultAccess: { administrator: true, projectManager: true, fieldTechnician: true, viewer: false, customer: false },
   },
   {
     key: "files.delete",
     label: "Delete Files",
-    category: "Actions",
+    category: "File Actions",
     description: "Delete uploaded files",
     defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
   },
+
+  // User Action permissions - what users can do with user accounts
   {
     key: "users.create",
     label: "Create Users",
-    category: "Actions",
+    category: "User Actions",
     description: "Create new user accounts",
     defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
   },
   {
     key: "users.edit",
     label: "Edit Users",
-    category: "Actions",
+    category: "User Actions",
     description: "Edit existing user accounts",
     defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
   },
   {
     key: "users.delete",
     label: "Delete Users",
-    category: "Actions",
+    category: "User Actions",
     description: "Delete user accounts",
     defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
   },
   {
     key: "users.lock",
     label: "Lock/Unlock Users",
-    category: "Actions",
+    category: "User Actions",
     description: "Lock or unlock user accounts",
     defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
   },
   {
     key: "users.resetPassword",
     label: "Reset Passwords",
-    category: "Actions",
+    category: "User Actions",
     description: "Reset user passwords",
     defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
   },
