@@ -94,8 +94,7 @@ export default function ProjectWorkOrders() {
   const [editingWorkOrder, setEditingWorkOrder] = useState<ProjectWorkOrder | null>(null);
   const [accessDenied, setAccessDenied] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [sortColumn, setSortColumn] = useState<string | null>(null);
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const [sortCriteria, setSortCriteria] = useState<Array<{ column: string; direction: "asc" | "desc" }>>([]);
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [selectedServiceType, setSelectedServiceType] = useState<string>("all");
   const [selectedAssignedTo, setSelectedAssignedTo] = useState<string>("all");
@@ -708,22 +707,56 @@ export default function ProjectWorkOrders() {
     return <Badge variant="outline">{serviceType}</Badge>;
   };
 
-  const handleSort = (column: string) => {
-    if (sortColumn === column) {
-      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+  const handleSort = (column: string, event: React.MouseEvent) => {
+    const existingIndex = sortCriteria.findIndex(sc => sc.column === column);
+    
+    if (event.shiftKey) {
+      // Shift-click: add to or modify existing sort criteria
+      if (existingIndex >= 0) {
+        // Toggle direction of existing column
+        const newCriteria = [...sortCriteria];
+        newCriteria[existingIndex] = {
+          ...newCriteria[existingIndex],
+          direction: newCriteria[existingIndex].direction === "asc" ? "desc" : "asc"
+        };
+        setSortCriteria(newCriteria);
+      } else {
+        // Add as new sort criterion
+        setSortCriteria([...sortCriteria, { column, direction: "asc" }]);
+      }
     } else {
-      setSortColumn(column);
-      setSortDirection("asc");
+      // Regular click: replace all with single column sort
+      if (existingIndex >= 0 && sortCriteria.length === 1) {
+        // Toggle direction if it's the only sort column
+        setSortCriteria([{ column, direction: sortCriteria[0].direction === "asc" ? "desc" : "asc" }]);
+      } else {
+        // Set as sole sort column
+        setSortCriteria([{ column, direction: "asc" }]);
+      }
     }
   };
 
+  const clearSort = () => {
+    setSortCriteria([]);
+  };
+
   const getSortIcon = (column: string) => {
-    if (sortColumn !== column) {
+    const sortIndex = sortCriteria.findIndex(sc => sc.column === column);
+    if (sortIndex < 0) {
       return <ArrowUpDown className="ml-1 h-3 w-3 inline opacity-50" />;
     }
-    return sortDirection === "asc" 
-      ? <ArrowUp className="ml-1 h-3 w-3 inline" />
-      : <ArrowDown className="ml-1 h-3 w-3 inline" />;
+    const direction = sortCriteria[sortIndex].direction;
+    const priority = sortCriteria.length > 1 ? (
+      <span className="ml-0.5 text-[10px] font-bold">{sortIndex + 1}</span>
+    ) : null;
+    return (
+      <>
+        {direction === "asc" 
+          ? <ArrowUp className="ml-1 h-3 w-3 inline" />
+          : <ArrowDown className="ml-1 h-3 w-3 inline" />}
+        {priority}
+      </>
+    );
   };
 
   // Column header configuration for dynamic rendering
@@ -770,7 +803,8 @@ export default function ProjectWorkOrders() {
       <TableHead 
         key={key}
         className="cursor-pointer select-none" 
-        onClick={() => handleSort(sortKey)}
+        onClick={(e) => handleSort(sortKey, e)}
+        title="Click to sort. Shift+click to add to multi-column sort."
       >
         {config.label} {getSortIcon(sortKey)}
       </TableHead>
@@ -1064,18 +1098,42 @@ export default function ProjectWorkOrders() {
       });
     }
     
-    // Sort
-    if (sortColumn) {
+    // Multi-column sort with proper value normalization
+    if (sortCriteria.length > 0) {
+      const dateColumns = ['scheduledDate', 'completedAt', 'createdAt', 'updatedAt'];
+      const numericColumns = ['oldMeterReading', 'newMeterReading'];
+      
       result.sort((a, b) => {
-        const aVal = (a as any)[sortColumn] || "";
-        const bVal = (b as any)[sortColumn] || "";
-        const comparison = String(aVal).localeCompare(String(bVal));
-        return sortDirection === "asc" ? comparison : -comparison;
+        for (const criterion of sortCriteria) {
+          let aVal = (a as any)[criterion.column];
+          let bVal = (b as any)[criterion.column];
+          let comparison = 0;
+          
+          if (dateColumns.includes(criterion.column)) {
+            // Compare dates as timestamps
+            const aTime = aVal ? new Date(aVal).getTime() : 0;
+            const bTime = bVal ? new Date(bVal).getTime() : 0;
+            comparison = aTime - bTime;
+          } else if (numericColumns.includes(criterion.column)) {
+            // Compare as numbers
+            const aNum = aVal ? parseFloat(aVal) : 0;
+            const bNum = bVal ? parseFloat(bVal) : 0;
+            comparison = aNum - bNum;
+          } else {
+            // Default string comparison
+            comparison = String(aVal || "").localeCompare(String(bVal || ""));
+          }
+          
+          if (comparison !== 0) {
+            return criterion.direction === "asc" ? comparison : -comparison;
+          }
+        }
+        return 0;
       });
     }
     
     return result;
-  }, [workOrders, searchQuery, sortColumn, sortDirection, selectedStatus, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldMeterType, selectedNewMeterType, meterTypes, assigneesData, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterNewMeterId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
+  }, [workOrders, searchQuery, sortCriteria, selectedStatus, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldMeterType, selectedNewMeterType, meterTypes, assigneesData, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterNewMeterId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
 
   const clearFilters = () => {
     setSearchQuery("");
@@ -2734,7 +2792,13 @@ export default function ProjectWorkOrders() {
             {hasActiveFilters && (
               <Button variant="ghost" onClick={clearFilters} data-testid="button-clear-filters">
                 <X className="h-4 w-4 mr-1" />
-                Clear
+                Clear Filters
+              </Button>
+            )}
+            {sortCriteria.length > 0 && (
+              <Button variant="ghost" onClick={clearSort} data-testid="button-clear-sort">
+                <X className="h-4 w-4 mr-1" />
+                Clear Sort ({sortCriteria.length})
               </Button>
             )}
             <div className="flex-1" />

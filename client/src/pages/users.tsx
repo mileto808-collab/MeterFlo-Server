@@ -85,6 +85,7 @@ type ResetPasswordForm = z.infer<typeof resetPasswordSchema>;
 
 type SortField = "name" | "email" | "role" | "status" | "createdAt";
 type SortOrder = "asc" | "desc";
+type SortCriterion = { field: SortField; direction: SortOrder };
 
 export default function Users() {
   const { toast } = useToast();
@@ -108,8 +109,7 @@ export default function Users() {
   const [filterZip, setFilterZip] = useState("");
   const [filterPhone, setFilterPhone] = useState("");
   const [filterWebsite, setFilterWebsite] = useState("");
-  const [sortField, setSortField] = useState<SortField>("name");
-  const [sortOrder, setSortOrder] = useState<SortOrder>("asc");
+  const [sortCriteria, setSortCriteria] = useState<SortCriterion[]>([{ field: "name", direction: "asc" }]);
   const [isCreatingUser, setIsCreatingUser] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [resetPasswordDialogOpen, setResetPasswordDialogOpen] = useState(false);
@@ -381,45 +381,85 @@ export default function Users() {
     
     return matchesSearch && matchesRole && matchesStatus && matchesSubrole;
   }).sort((a, b) => {
-    let comparison = 0;
-    
-    switch (sortField) {
-      case "name":
-        const nameA = (a.firstName && a.lastName) ? `${a.firstName} ${a.lastName}` : (a.username || "");
-        const nameB = (b.firstName && b.lastName) ? `${b.firstName} ${b.lastName}` : (b.username || "");
-        comparison = nameA.localeCompare(nameB);
-        break;
-      case "email":
-        comparison = (a.email || "").localeCompare(b.email || "");
-        break;
-      case "role":
-        comparison = (a.role || "").localeCompare(b.role || "");
-        break;
-      case "status":
-        comparison = (a.isLocked ? 1 : 0) - (b.isLocked ? 1 : 0);
-        break;
-      case "createdAt":
-        comparison = new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
-        break;
+    // Multi-column sort
+    for (const criterion of sortCriteria) {
+      let comparison = 0;
+      
+      switch (criterion.field) {
+        case "name":
+          const nameA = (a.firstName && a.lastName) ? `${a.firstName} ${a.lastName}` : (a.username || "");
+          const nameB = (b.firstName && b.lastName) ? `${b.firstName} ${b.lastName}` : (b.username || "");
+          comparison = nameA.localeCompare(nameB);
+          break;
+        case "email":
+          comparison = (a.email || "").localeCompare(b.email || "");
+          break;
+        case "role":
+          comparison = (a.role || "").localeCompare(b.role || "");
+          break;
+        case "status":
+          comparison = (a.isLocked ? 1 : 0) - (b.isLocked ? 1 : 0);
+          break;
+        case "createdAt":
+          comparison = new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
+          break;
+      }
+      
+      if (comparison !== 0) {
+        return criterion.direction === "asc" ? comparison : -comparison;
+      }
     }
-    
-    return sortOrder === "asc" ? comparison : -comparison;
+    return 0;
   });
 
-  const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+  const handleSort = (field: SortField, event: React.MouseEvent) => {
+    const existingIndex = sortCriteria.findIndex(sc => sc.field === field);
+    
+    if (event.shiftKey) {
+      // Shift-click: add to or modify existing sort criteria
+      if (existingIndex >= 0) {
+        // Toggle direction of existing field
+        const newCriteria = [...sortCriteria];
+        newCriteria[existingIndex] = {
+          ...newCriteria[existingIndex],
+          direction: newCriteria[existingIndex].direction === "asc" ? "desc" : "asc"
+        };
+        setSortCriteria(newCriteria);
+      } else {
+        // Add as new sort criterion
+        setSortCriteria([...sortCriteria, { field, direction: "asc" }]);
+      }
     } else {
-      setSortField(field);
-      setSortOrder("asc");
+      // Regular click: replace all with single field sort
+      if (existingIndex >= 0 && sortCriteria.length === 1) {
+        // Toggle direction if it's the only sort field
+        setSortCriteria([{ field, direction: sortCriteria[0].direction === "asc" ? "desc" : "asc" }]);
+      } else {
+        // Set as sole sort field
+        setSortCriteria([{ field, direction: "asc" }]);
+      }
     }
   };
 
+  const clearSort = () => {
+    setSortCriteria([]);
+  };
+
   const getSortIcon = (field: SortField) => {
-    if (sortField !== field) {
+    const sortIndex = sortCriteria.findIndex(sc => sc.field === field);
+    if (sortIndex < 0) {
       return <ArrowUpDown className="h-4 w-4 ml-1" />;
     }
-    return sortOrder === "asc" ? <ArrowUp className="h-4 w-4 ml-1" /> : <ArrowDown className="h-4 w-4 ml-1" />;
+    const direction = sortCriteria[sortIndex].direction;
+    const priority = sortCriteria.length > 1 ? (
+      <span className="ml-0.5 text-[10px] font-bold">{sortIndex + 1}</span>
+    ) : null;
+    return (
+      <>
+        {direction === "asc" ? <ArrowUp className="h-4 w-4 ml-1" /> : <ArrowDown className="h-4 w-4 ml-1" />}
+        {priority}
+      </>
+    );
   };
 
   // Column header configuration for dynamic rendering
@@ -456,7 +496,8 @@ export default function Users() {
             variant="ghost"
             size="sm"
             className="flex items-center p-0 h-auto hover:bg-transparent"
-            onClick={() => handleSort(config.sortKey!)}
+            onClick={(e) => handleSort(config.sortKey!, e)}
+            title="Click to sort. Shift+click to add to multi-column sort."
             data-testid={`sort-${config.sortKey}`}
           >
             {config.label}
@@ -1411,7 +1452,13 @@ export default function Users() {
             {hasActiveFilters && (
               <Button variant="ghost" onClick={clearFilters} data-testid="button-clear-filters">
                 <X className="h-4 w-4 mr-1" />
-                Clear
+                Clear Filters
+              </Button>
+            )}
+            {sortCriteria.length > 0 && (
+              <Button variant="ghost" onClick={clearSort} data-testid="button-clear-sort">
+                <X className="h-4 w-4 mr-1" />
+                Clear Sort ({sortCriteria.length})
               </Button>
             )}
             <div className="flex-1" />
