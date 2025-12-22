@@ -91,8 +91,6 @@ export default function SearchReports() {
   };
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [selectedServiceType, setSelectedServiceType] = useState<string>("all");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
   const [filterCustomerWoId, setFilterCustomerWoId] = useState("");
   const [filterCustomerId, setFilterCustomerId] = useState("");
   const [filterCustomerName, setFilterCustomerName] = useState("");
@@ -197,8 +195,6 @@ export default function SearchReports() {
     { key: "notes", label: "Notes" },
     { key: "createdAt", label: "Created At" },
     { key: "updatedAt", label: "Updated At" },
-    { key: "dateFrom", label: "Date From" },
-    { key: "dateTo", label: "Date To" },
   ], []);
 
   const { visibleFilters, setVisibleFilters, isFilterVisible, isLoading: filterPrefsLoading } = useFilterPreferences("search-reports", searchFilters);
@@ -213,8 +209,6 @@ export default function SearchReports() {
         setSelectedProjectState(state.selectedProject || "all");
         setSelectedStatus(state.selectedStatus || "all");
         setSelectedServiceType(state.selectedServiceType || "all");
-        setDateFrom(state.dateFrom || "");
-        setDateTo(state.dateTo || "");
         setIsSearchActive(state.isSearchActive || false);
         setStateRestored(true);
         // Clear the stored state after restoring
@@ -306,8 +300,8 @@ export default function SearchReports() {
     if (selectedProject !== "all") params.append("projectId", selectedProject);
     if (selectedStatus !== "all") params.append("status", selectedStatus);
     if (selectedServiceType !== "all") params.append("serviceType", selectedServiceType);
-    if (dateFrom) params.append("dateFrom", dateFrom);
-    if (dateTo) params.append("dateTo", dateTo);
+    if (filterCreatedAtFrom) params.append("dateFrom", filterCreatedAtFrom);
+    if (filterCreatedAtTo) params.append("dateTo", filterCreatedAtTo);
     return params.toString();
   };
 
@@ -334,8 +328,6 @@ export default function SearchReports() {
     setSelectedProject("all");
     setSelectedStatus("all");
     setSelectedServiceType("all");
-    setDateFrom("");
-    setDateTo("");
     setFilterCustomerWoId("");
     setFilterCustomerId("");
     setFilterCustomerName("");
@@ -687,8 +679,6 @@ export default function SearchReports() {
     selectedProject !== "all",
     selectedStatus !== "all",
     selectedServiceType !== "all",
-    dateFrom !== "",
-    dateTo !== "",
     filterCustomerWoId !== "",
     filterCustomerId !== "",
     filterCustomerName !== "",
@@ -1027,30 +1017,6 @@ export default function SearchReports() {
                 </Select>
               </div>
             )}
-            {isFilterVisible("dateFrom") && (
-              <div className="min-w-[180px]">
-                <Label htmlFor="date-from">Created From</Label>
-                <Input
-                  id="date-from"
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                  data-testid="input-date-from"
-                />
-              </div>
-            )}
-            {isFilterVisible("dateTo") && (
-              <div className="min-w-[180px]">
-                <Label htmlFor="date-to">Created To</Label>
-                <Input
-                  id="date-to"
-                  type="date"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                  data-testid="input-date-to"
-                />
-              </div>
-            )}
             {isFilterVisible("customerWoId") && (
               <div className="min-w-[150px]">
                 <Label htmlFor="filter-customer-wo-id">WO ID</Label>
@@ -1358,8 +1324,6 @@ export default function SearchReports() {
                                     selectedProject,
                                     selectedStatus,
                                     selectedServiceType,
-                                    dateFrom,
-                                    dateTo,
                                     isSearchActive,
                                   };
                                   sessionStorage.setItem('searchReportsState', JSON.stringify(searchState));

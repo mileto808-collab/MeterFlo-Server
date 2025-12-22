@@ -98,8 +98,6 @@ export default function ProjectWorkOrders() {
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [selectedServiceType, setSelectedServiceType] = useState<string>("all");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
   const [selectedAssignedTo, setSelectedAssignedTo] = useState<string>("all");
   const [selectedAssignedGroup, setSelectedAssignedGroup] = useState<string>("all");
   const [selectedTrouble, setSelectedTrouble] = useState<string>("all");
@@ -205,8 +203,6 @@ export default function ProjectWorkOrders() {
     { key: "notes", label: "Notes" },
     { key: "createdAt", label: "Created At" },
     { key: "updatedAt", label: "Updated At" },
-    { key: "dateFrom", label: "Date From" },
-    { key: "dateTo", label: "Date To" },
   ], []);
 
   const { visibleFilters, setVisibleFilters, isFilterVisible, isLoading: filterPrefsLoading } = useFilterPreferences("work-orders", workOrderFilters);
@@ -347,8 +343,6 @@ export default function ProjectWorkOrders() {
     setSearchQuery("");
     setSelectedStatus("all");
     setSelectedServiceType("all");
-    setDateFrom("");
-    setDateTo("");
     setShowFilters(false);
     setIsCreatingWorkOrder(false);
     setEditingWorkOrder(null);
@@ -889,17 +883,6 @@ export default function ProjectWorkOrders() {
       result = result.filter(wo => wo.serviceType === selectedServiceType);
     }
     
-    // Filter by date range
-    if (dateFrom) {
-      const fromDate = new Date(dateFrom);
-      result = result.filter(wo => wo.createdAt && new Date(wo.createdAt) >= fromDate);
-    }
-    if (dateTo) {
-      const toDate = new Date(dateTo);
-      toDate.setHours(23, 59, 59, 999);
-      result = result.filter(wo => wo.createdAt && new Date(wo.createdAt) <= toDate);
-    }
-    
     // Filter by assigned to user using ID
     if (selectedAssignedTo !== "all") {
       result = result.filter(wo => {
@@ -1092,14 +1075,12 @@ export default function ProjectWorkOrders() {
     }
     
     return result;
-  }, [workOrders, searchQuery, sortColumn, sortDirection, selectedStatus, selectedServiceType, dateFrom, dateTo, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldMeterType, selectedNewMeterType, meterTypes, assigneesData, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterNewMeterId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
+  }, [workOrders, searchQuery, sortColumn, sortDirection, selectedStatus, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldMeterType, selectedNewMeterType, meterTypes, assigneesData, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterNewMeterId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
 
   const clearFilters = () => {
     setSearchQuery("");
     setSelectedStatus("all");
     setSelectedServiceType("all");
-    setDateFrom("");
-    setDateTo("");
     setSelectedAssignedTo("all");
     setSelectedAssignedGroup("all");
     setSelectedTrouble("all");
@@ -1130,7 +1111,7 @@ export default function ProjectWorkOrders() {
     setFilterUpdatedAtTo("");
   };
 
-  const hasActiveFilters = selectedStatus !== "all" || selectedServiceType !== "all" || dateFrom !== "" || dateTo !== "" || selectedAssignedTo !== "all" || selectedAssignedGroup !== "all" || selectedTrouble !== "all" || selectedOldMeterType !== "all" || selectedNewMeterType !== "all" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldMeterId !== "" || filterNewMeterId !== "" || filterScheduledDateFrom !== "" || filterScheduledDateTo !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterCompletedAtFrom !== "" || filterCompletedAtTo !== "" || filterNotes !== "" || filterCreatedAtFrom !== "" || filterCreatedAtTo !== "" || filterUpdatedAtFrom !== "" || filterUpdatedAtTo !== "";
+  const hasActiveFilters = selectedStatus !== "all" || selectedServiceType !== "all" || selectedAssignedTo !== "all" || selectedAssignedGroup !== "all" || selectedTrouble !== "all" || selectedOldMeterType !== "all" || selectedNewMeterType !== "all" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldMeterId !== "" || filterNewMeterId !== "" || filterScheduledDateFrom !== "" || filterScheduledDateTo !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterCompletedAtFrom !== "" || filterCompletedAtTo !== "" || filterNotes !== "" || filterCreatedAtFrom !== "" || filterCreatedAtTo !== "" || filterUpdatedAtFrom !== "" || filterUpdatedAtTo !== "";
 
   // Helper to get export value for a column key
   const getExportValue = (wo: ProjectWorkOrder, key: string): string => {
@@ -2748,7 +2729,7 @@ export default function ProjectWorkOrders() {
             >
               <Filter className="h-4 w-4 mr-2" />
               Filters
-              {hasActiveFilters && <Badge variant="secondary" className="ml-2">{[selectedStatus !== "all", selectedServiceType !== "all", dateFrom, dateTo].filter(Boolean).length}</Badge>}
+              {hasActiveFilters && <Badge variant="secondary" className="ml-2">{[selectedStatus !== "all", selectedServiceType !== "all"].filter(Boolean).length}</Badge>}
             </Button>
             {hasActiveFilters && (
               <Button variant="ghost" onClick={clearFilters} data-testid="button-clear-filters">
@@ -2830,30 +2811,6 @@ export default function ProjectWorkOrders() {
                       ))}
                     </SelectContent>
                   </Select>
-                </div>
-              )}
-              {isFilterVisible("dateFrom") && (
-                <div className="min-w-[180px]">
-                  <Label htmlFor="filter-date-from">Created From</Label>
-                  <Input
-                    id="filter-date-from"
-                    type="date"
-                    value={dateFrom}
-                    onChange={(e) => setDateFrom(e.target.value)}
-                    data-testid="input-filter-date-from"
-                  />
-                </div>
-              )}
-              {isFilterVisible("dateTo") && (
-                <div className="min-w-[180px]">
-                  <Label htmlFor="filter-date-to">Created To</Label>
-                  <Input
-                    id="filter-date-to"
-                    type="date"
-                    value={dateTo}
-                    onChange={(e) => setDateTo(e.target.value)}
-                    data-testid="input-filter-date-to"
-                  />
                 </div>
               )}
               {isFilterVisible("assignedTo") && assigneesData && (
