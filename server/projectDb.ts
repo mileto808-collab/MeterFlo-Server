@@ -856,10 +856,18 @@ export class ProjectWorkOrderStorage {
   async getWorkOrderStats(): Promise<{ statusCounts: Record<string, number>; total: number }> {
     const client = await pool.connect();
     try {
+      // Join with work_order_statuses to map both status codes and labels to the canonical label
+      // Uses COALESCE to handle cases where status is stored as code or label
       const result = await client.query(`
-        SELECT status, COUNT(*) as count
-        FROM "${this.schemaName}".work_orders
-        GROUP BY status
+        SELECT 
+          COALESCE(
+            (SELECT label FROM public.work_order_statuses WHERE code = wo.status),
+            (SELECT label FROM public.work_order_statuses WHERE label = wo.status),
+            wo.status
+          ) as status_label,
+          COUNT(*) as count
+        FROM "${this.schemaName}".work_orders wo
+        GROUP BY status_label
       `);
       
       const statusCounts: Record<string, number> = {};
@@ -867,7 +875,8 @@ export class ProjectWorkOrderStorage {
       
       for (const row of result.rows) {
         const count = parseInt(row.count) || 0;
-        statusCounts[row.status] = count;
+        const label = row.status_label || "Unknown";
+        statusCounts[label] = (statusCounts[label] || 0) + count;
         total += count;
       }
       
