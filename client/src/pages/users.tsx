@@ -41,7 +41,7 @@ const createUserSchema = z.object({
   firstName: z.string().optional(),
   lastName: z.string().optional(),
   email: z.string().email("Invalid email address").optional().or(z.literal("")),
-  role: z.enum(["admin", "user", "customer"]),
+  role: z.enum(["user", "customer"]),
   subroleId: z.number().nullable().optional(),
   address: z.string().max(255).optional().or(z.literal("")),
   city: z.string().max(100).optional().or(z.literal("")),
@@ -57,7 +57,7 @@ const editUserSchema = z.object({
   firstName: z.string().optional(),
   lastName: z.string().optional(),
   email: z.string().email("Invalid email address").optional().or(z.literal("")),
-  role: z.enum(["admin", "user", "customer"]),
+  role: z.enum(["admin", "user", "customer"]), // Include "admin" for legacy support - backend auto-syncs from subrole
   subroleId: z.number().nullable().optional(),
   address: z.string().max(255).optional().or(z.literal("")),
   city: z.string().max(100).optional().or(z.literal("")),
@@ -850,6 +850,7 @@ export default function Users() {
   };
 
   const handleEditUser = (user: User) => {
+    // Preserve the original role from the database - the backend will auto-sync based on subrole
     editForm.reset({
       username: user.username || "",
       firstName: user.firstName || "",
@@ -985,32 +986,35 @@ export default function Users() {
                   name="role"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Role</FormLabel>
+                      <FormLabel>User Type</FormLabel>
                       <Select 
                         onValueChange={(value) => {
                           field.onChange(value);
-                          if (value === "admin") {
-                            createForm.setValue("subroleId", null);
-                          }
+                          // Clear subrole when switching types
+                          createForm.setValue("subroleId", null);
                         }} 
                         value={field.value}
                       >
                         <FormControl>
                           <SelectTrigger data-testid="select-create-role">
-                            <SelectValue placeholder="Select a role" />
+                            <SelectValue placeholder="Select user type" />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="admin">Admin</SelectItem>
-                          <SelectItem value="user">User</SelectItem>
+                          <SelectItem value="user">Internal User</SelectItem>
                           <SelectItem value="customer">Customer</SelectItem>
                         </SelectContent>
                       </Select>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {field.value === "customer" 
+                          ? "External customer with limited portal access"
+                          : "Internal team member with configurable access level"}
+                      </p>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                {(createForm.watch("role") === "user" || createForm.watch("role") === "customer") && (
+                {createForm.watch("role") === "user" && (
                   <FormField
                     control={createForm.control}
                     name="subroleId"
@@ -1027,8 +1031,8 @@ export default function Users() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="none">No Access Level ({createForm.watch("role") === "customer" ? "Read Only" : "View Only"})</SelectItem>
-                            {subroles?.filter(s => s.baseRole === createForm.watch("role")).map((subrole) => (
+                            <SelectItem value="none">No Access Level (View Only)</SelectItem>
+                            {subroles?.filter(s => s.baseRole === "user" || s.baseRole === "admin").map((subrole) => (
                               <SelectItem key={subrole.id} value={subrole.id.toString()}>
                                 {subrole.label}
                               </SelectItem>
@@ -1038,9 +1042,42 @@ export default function Users() {
                         <p className="text-xs text-muted-foreground mt-1">
                           {field.value 
                             ? subroles?.find(s => s.id === field.value)?.description 
-                            : createForm.watch("role") === "customer" 
-                              ? "Read-only access to completed work orders in assigned projects"
-                              : "Basic view-only access to assigned projects"}
+                            : "Basic view-only access to assigned projects"}
+                        </p>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+                {createForm.watch("role") === "customer" && (
+                  <FormField
+                    control={createForm.control}
+                    name="subroleId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Access Level (Optional)</FormLabel>
+                        <Select 
+                          onValueChange={(value) => field.onChange(value === "none" ? null : parseInt(value))} 
+                          value={field.value?.toString() || "none"}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="select-create-customer-subrole">
+                              <SelectValue placeholder="Select access level" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="none">Default (Read Only)</SelectItem>
+                            {subroles?.filter(s => s.baseRole === "customer").map((subrole) => (
+                              <SelectItem key={subrole.id} value={subrole.id.toString()}>
+                                {subrole.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {field.value 
+                            ? subroles?.find(s => s.id === field.value)?.description 
+                            : "Read-only access to completed work orders in assigned projects"}
                         </p>
                         <FormMessage />
                       </FormItem>
@@ -1247,29 +1284,32 @@ export default function Users() {
                   name="role"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Role</FormLabel>
+                      <FormLabel>User Type</FormLabel>
                       <Select onValueChange={(value) => {
                         field.onChange(value);
-                        if (value === "admin") {
-                          editForm.setValue("subroleId", null);
-                        }
-                      }} value={field.value}>
+                        // Clear subrole when switching types
+                        editForm.setValue("subroleId", null);
+                      }} value={field.value === "admin" ? "user" : field.value}>
                         <FormControl>
                           <SelectTrigger data-testid="select-edit-role">
                             <SelectValue />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="admin">Admin</SelectItem>
-                          <SelectItem value="user">User</SelectItem>
+                          <SelectItem value="user">Internal User</SelectItem>
                           <SelectItem value="customer">Customer</SelectItem>
                         </SelectContent>
                       </Select>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {field.value === "customer" 
+                          ? "External customer with limited portal access"
+                          : "Internal team member with configurable access level"}
+                      </p>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
-                {(editForm.watch("role") === "user" || editForm.watch("role") === "customer") && (
+                {(editForm.watch("role") === "user" || editForm.watch("role") === "admin") && (
                   <FormField
                     control={editForm.control}
                     name="subroleId"
@@ -1286,8 +1326,8 @@ export default function Users() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="none">No Access Level ({editForm.watch("role") === "customer" ? "Read Only" : "View Only"})</SelectItem>
-                            {subroles?.filter(s => s.baseRole === editForm.watch("role")).map((subrole) => (
+                            <SelectItem value="none">No Access Level (View Only)</SelectItem>
+                            {subroles?.filter(s => s.baseRole === "user" || s.baseRole === "admin").map((subrole) => (
                               <SelectItem key={subrole.id} value={subrole.id.toString()}>
                                 {subrole.label}
                               </SelectItem>
@@ -1297,9 +1337,42 @@ export default function Users() {
                         <p className="text-xs text-muted-foreground mt-1">
                           {field.value 
                             ? subroles?.find(s => s.id === field.value)?.description 
-                            : editForm.watch("role") === "customer" 
-                              ? "Read-only access to completed work orders in assigned projects"
-                              : "Basic view-only access to assigned projects"}
+                            : "Basic view-only access to assigned projects"}
+                        </p>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+                {editForm.watch("role") === "customer" && (
+                  <FormField
+                    control={editForm.control}
+                    name="subroleId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Access Level (Optional)</FormLabel>
+                        <Select 
+                          onValueChange={(value) => field.onChange(value === "none" ? null : parseInt(value))} 
+                          value={field.value?.toString() || "none"}
+                        >
+                          <FormControl>
+                            <SelectTrigger data-testid="select-edit-customer-subrole">
+                              <SelectValue placeholder="Select access level" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="none">Default (Read Only)</SelectItem>
+                            {subroles?.filter(s => s.baseRole === "customer").map((subrole) => (
+                              <SelectItem key={subrole.id} value={subrole.id.toString()}>
+                                {subrole.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {field.value 
+                            ? subroles?.find(s => s.id === field.value)?.description 
+                            : "Read-only access to completed work orders in assigned projects"}
                         </p>
                         <FormMessage />
                       </FormItem>

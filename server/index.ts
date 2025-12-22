@@ -4,6 +4,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { importScheduler } from "./importScheduler";
 import { fileImportScheduler } from "./fileImportScheduler";
+import { storage } from "./storage";
 
 const app = express();
 const httpServer = createServer(app);
@@ -95,6 +96,12 @@ app.use((req, res, next) => {
     },
     () => {
       log(`serving on port ${port}`);
+      // Ensure administrator subrole exists with all permissions
+      storage.ensureAdministratorSubrole().then(() => {
+        log("Administrator subrole initialized");
+      }).catch(err => {
+        log(`Failed to initialize administrator subrole: ${err.message}`);
+      });
       importScheduler.initialize().catch(err => {
         log(`Failed to initialize import scheduler: ${err.message}`);
       });

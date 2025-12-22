@@ -32,16 +32,24 @@ Preferred communication style: Simple, everyday language.
 - **Migrations**: Drizzle Kit with `db:push` command
 - **Tables**: users, sessions, projects, workOrders
 
-### Role-Based Access Control
-- **Admin**: Full access to all features including user management, project creation, data import, and settings
-- **User**: Access controlled by subrole (access level) with granular permissions
-- **Customer**: Limited view of completed work orders for their assigned project only
+### Role-Based Access Control (Subrole-Driven Design)
+The system uses a unified permission model where **subroles** (access levels) are the primary mechanism for authorization. The main role (`admin`, `user`, `customer`) is now derived from the subrole and used only for portal routing.
 
-### Granular Permission System (Subroles)
-Users with the "user" role can be assigned a subrole that determines their specific permissions:
+**User Types**:
+- **Internal User**: Team members with configurable access levels (subroles)
+- **Customer**: External customers with limited portal access
+
+**Subroles (Access Levels)**:
+- **Administrator**: Full system access with all permissions (auto-sets role to "admin")
 - **Project Manager**: `projects.manage`, `projects.view`, `workOrders.create`, `workOrders.edit`, `workOrders.delete`
 - **Field Technician**: `projects.view`, `workOrders.create`, `workOrders.edit`
 - **Viewer**: `projects.view` (read-only access)
+
+**Auto-Sync Behavior**:
+- When a subrole is assigned, the main role is automatically synced based on the subrole's `baseRole` property
+- The "Administrator" subrole sets the main role to "admin"
+- All other internal user subroles set the main role to "user"
+- Existing admin users are automatically migrated to have the Administrator subrole on startup
 
 **Permission Types**:
 - `projects.manage` - Create/edit/delete projects
@@ -54,6 +62,7 @@ Users with the "user" role can be assigned a subrole that determines their speci
 - `maintenance.manage` - Access database backup/restore
 
 **Database Tables**: `subroles`, `permissions`, `subrole_permissions` (junction table)
+**Constants**: `ADMINISTRATOR_SUBROLE_KEY` defined in `shared/schema.ts`
 
 ### Multi-Tenant Architecture
 - **Per-Project Database Schemas**: Each project gets its own PostgreSQL schema (format: `projectName_projectID`) for data isolation
@@ -108,6 +117,8 @@ Users with the "user" role can be assigned a subrole that determines their speci
 - **Assignment Field Migration**: Removed legacy `assigned_to` text column from database schema. Assignment is now handled by two separate ID-based fields: `assigned_user_id` (references users table) and `assigned_group_id` (references user_groups table). Work order forms use separate dropdowns for user and group assignment. Schema updated in projectDb.ts and shared/schema.ts. Frontend updated in project-work-orders.tsx and search-reports.tsx to display assigned names from IDs.
 - **File Storage Folder Naming**: Work order file uploads now create folders named after the customer work order ID (`customer_wo_id`) instead of the internal work order ID. Backward compatibility maintained: if a legacy folder exists (using numeric ID), files continue to be stored there. Implemented in `server/fileStorage.ts` with `legacyWorkOrderId` fallback parameter.
 - **Completed Status Validation**: Work orders cannot be set to "Completed" status unless all required fields are filled: Old Meter ID, Old Meter Reading, New Meter ID, New Meter Reading, New GPS, Signature, Signature Name, and Attachments. Validation enforced on both frontend and backend.
+- **CompletedAt Automation**: Work orders automatically set `completedAt` timestamp when status changes to "Completed". Uses `isCompletedStatus()` helper that recognizes both status codes (e.g., "02") and status labels (e.g., "Completed") by querying the work_order_statuses table.
+- **Subrole-Driven RBAC**: Major refactoring of role-based access control. The main role (`admin`, `user`, `customer`) is now auto-derived from the subrole's `baseRole` property. The "Administrator" subrole automatically sets role to "admin"; all other internal user subroles set role to "user". Users page UI simplified: no direct "Admin" role option; users select "Internal User" or "Customer" as type, then choose access level (subrole). The `getRoleForSubrole()` method accepts a fallback role parameter for users without a subrole assigned.
 
 ### Key Design Patterns
 - **Storage Interface**: `IStorage` interface in `storage.ts` abstracts database operations, making it testable and swappable
