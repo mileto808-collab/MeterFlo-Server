@@ -1171,6 +1171,12 @@ export default function ProjectWorkOrders() {
 
   const hasActiveFilters = selectedStatus !== "all" || selectedServiceType !== "all" || selectedAssignedTo !== "all" || selectedAssignedGroup !== "all" || selectedTrouble !== "all" || selectedOldMeterType !== "all" || selectedNewMeterType !== "all" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldMeterId !== "" || filterNewMeterId !== "" || filterScheduledDateFrom !== "" || filterScheduledDateTo !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterCompletedAtFrom !== "" || filterCompletedAtTo !== "" || filterNotes !== "" || filterCreatedAtFrom !== "" || filterCreatedAtTo !== "" || filterUpdatedAtFrom !== "" || filterUpdatedAtTo !== "";
 
+  const getStatusLabel = (status: string): string => {
+    if (!status) return "";
+    const statusRecord = workOrderStatuses.find(s => s.code === status || s.label === status);
+    return statusRecord?.label || status;
+  };
+
   // Helper to get export value for a column key
   const getExportValue = (wo: ProjectWorkOrder, key: string): string => {
     switch (key) {
@@ -1194,7 +1200,7 @@ export default function ProjectWorkOrders() {
       case "newMeterType": return wo.newMeterType || "";
       case "oldGps": return wo.oldGps || "";
       case "newGps": return wo.newGps || "";
-      case "status": return wo.status;
+      case "status": return getStatusLabel(wo.status);
       case "scheduledDate": return (wo as any).scheduledDate ? formatExport((wo as any).scheduledDate) : "";
       case "assignedTo": return getAssignedUserName((wo as any).assignedUserId) || "";
       case "assignedGroup": return getAssignedGroupName((wo as any).assignedGroupId) || "";
