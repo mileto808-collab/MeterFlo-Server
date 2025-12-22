@@ -224,7 +224,7 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {hasPermission("projects.view") && projects.length > 0 && (
+        {hasPermission("project.workOrders") && projects.length > 0 && (
           <SidebarGroup>
             <SidebarGroupLabel>Projects</SidebarGroupLabel>
             <SidebarGroupContent>
