@@ -4,10 +4,16 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
-import { Upload, File, Trash2, ArrowLeft, ShieldAlert, Download, Folder, List, Grid, Image as ImageIcon } from "lucide-react";
+import { Upload, File, Trash2, ArrowLeft, ShieldAlert, Download, Folder, List, Grid, Image as ImageIcon, Eye, MoreVertical } from "lucide-react";
 import type { Project } from "@shared/schema";
 import { useTimezone } from "@/hooks/use-timezone";
 
@@ -72,8 +78,17 @@ export default function ProjectFiles() {
     return `/api/projects/${projectId}/files/${encodeURIComponent(filename)}/download`;
   };
 
-  const openFile = (filename: string) => {
+  const viewFile = (filename: string) => {
     window.open(getDownloadUrl(filename), "_blank");
+  };
+
+  const downloadFile = (filename: string) => {
+    const link = document.createElement("a");
+    link.href = getDownloadUrl(filename);
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const uploadFile = async (file: File) => {
@@ -267,26 +282,38 @@ export default function ProjectFiles() {
                   <TableHead>File Name</TableHead>
                   <TableHead className="w-32">Size</TableHead>
                   <TableHead className="w-44">Modified</TableHead>
-                  <TableHead className="w-28 text-right">Actions</TableHead>
+                  <TableHead className="w-20 text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {files.map((file) => (
                   <TableRow 
                     key={file.name} 
-                    className="cursor-pointer hover-elevate"
-                    onClick={() => openFile(file.name)}
                     data-testid={`row-file-${file.name}`}
                   >
                     <TableCell className="font-medium">
-                      <div className="flex items-center gap-2">
-                        {isImageFile(file.name) ? (
-                          <ImageIcon className="h-4 w-4 text-muted-foreground" />
-                        ) : (
-                          <File className="h-4 w-4 text-muted-foreground" />
-                        )}
-                        <span data-testid={`text-filename-${file.name}`}>{file.name}</span>
-                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button className="flex items-center gap-2 hover-elevate rounded-md p-1 -m-1 cursor-pointer w-full text-left">
+                            {isImageFile(file.name) ? (
+                              <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                            ) : (
+                              <File className="h-4 w-4 text-muted-foreground" />
+                            )}
+                            <span data-testid={`text-filename-${file.name}`}>{file.name}</span>
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="start">
+                          <DropdownMenuItem onClick={() => viewFile(file.name)}>
+                            <Eye className="h-4 w-4 mr-2" />
+                            View
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => downloadFile(file.name)}>
+                            <Download className="h-4 w-4 mr-2" />
+                            Download
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {formatFileSize(file.size)}
@@ -295,32 +322,32 @@ export default function ProjectFiles() {
                       {formatDateTime(file.modifiedAt)}
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openFile(file.name);
-                          }}
-                          data-testid={`button-download-${file.name}`}
-                        >
-                          <Download className="h-4 w-4" />
-                        </Button>
-                        {canDelete && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              deleteFile(file.name);
-                            }}
-                            data-testid={`button-delete-${file.name}`}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" data-testid={`button-actions-${file.name}`}>
+                            <MoreVertical className="h-4 w-4" />
                           </Button>
-                        )}
-                      </div>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => viewFile(file.name)}>
+                            <Eye className="h-4 w-4 mr-2" />
+                            View
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => downloadFile(file.name)}>
+                            <Download className="h-4 w-4 mr-2" />
+                            Download
+                          </DropdownMenuItem>
+                          {canDelete && (
+                            <DropdownMenuItem
+                              className="text-destructive"
+                              onClick={() => deleteFile(file.name)}
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Delete
+                            </DropdownMenuItem>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -329,45 +356,52 @@ export default function ProjectFiles() {
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
               {files.map((file) => (
-                <div
-                  key={file.name}
-                  className="relative group flex flex-col items-center p-3 rounded-md border hover-elevate cursor-pointer"
-                  onClick={() => openFile(file.name)}
-                  data-testid={`thumbnail-item-${file.name}`}
-                >
-                  <div className="w-full aspect-square flex items-center justify-center bg-muted rounded-md overflow-hidden mb-2">
-                    {isImageFile(file.name) ? (
-                      <img
-                        src={getDownloadUrl(file.name)}
-                        alt={file.name}
-                        className="w-full h-full object-cover"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <File className="h-12 w-12 text-muted-foreground" />
-                    )}
-                  </div>
-                  <span className="text-xs text-center truncate w-full" title={file.name}>
-                    {file.name}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {formatFileSize(file.size)}
-                  </span>
-                  {canDelete && (
-                    <Button
-                      variant="destructive"
-                      size="icon"
-                      className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteFile(file.name);
-                      }}
-                      data-testid={`button-delete-thumbnail-${file.name}`}
+                <DropdownMenu key={file.name}>
+                  <DropdownMenuTrigger asChild>
+                    <div
+                      className="relative group flex flex-col items-center p-3 rounded-md border hover-elevate cursor-pointer"
+                      data-testid={`thumbnail-item-${file.name}`}
                     >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  )}
-                </div>
+                      <div className="w-full aspect-square flex items-center justify-center bg-muted rounded-md overflow-hidden mb-2">
+                        {isImageFile(file.name) ? (
+                          <img
+                            src={getDownloadUrl(file.name)}
+                            alt={file.name}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <File className="h-12 w-12 text-muted-foreground" />
+                        )}
+                      </div>
+                      <span className="text-xs text-center truncate w-full" title={file.name}>
+                        {file.name}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {formatFileSize(file.size)}
+                      </span>
+                    </div>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    <DropdownMenuItem onClick={() => viewFile(file.name)}>
+                      <Eye className="h-4 w-4 mr-2" />
+                      View
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => downloadFile(file.name)}>
+                      <Download className="h-4 w-4 mr-2" />
+                      Download
+                    </DropdownMenuItem>
+                    {canDelete && (
+                      <DropdownMenuItem
+                        className="text-destructive"
+                        onClick={() => deleteFile(file.name)}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               ))}
             </div>
           )}
