@@ -23,6 +23,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { useTimezone } from "@/hooks/use-timezone";
+import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import type { User, Project, Subrole } from "@shared/schema";
@@ -90,6 +91,30 @@ type SortCriterion = { field: SortField; direction: SortOrder };
 export default function Users() {
   const { toast } = useToast();
   const { formatDateTime, formatCustom } = useTimezone();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+
+  const { data: userPermissions = [] } = useQuery<string[]>({
+    queryKey: ["/api/users", user?.id, "permissions"],
+    queryFn: async () => {
+      if (!user) return [];
+      const res = await fetch(`/api/users/${user.id}/permissions`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!user,
+  });
+
+  const hasPermission = (permission: string) => {
+    if (isAdmin) return true;
+    return userPermissions.includes(permission);
+  };
+
+  const canCreateUser = hasPermission("users.create");
+  const canEditUser = hasPermission("users.edit");
+  const canDeleteUser = hasPermission("users.delete");
+  const canLockUser = hasPermission("users.lock");
+  const canResetPassword = hasPermission("users.resetPassword");
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -1500,10 +1525,12 @@ export default function Users() {
           <h1 className="text-3xl font-bold" data-testid="text-users-title">Users</h1>
           <p className="text-muted-foreground mt-1">Manage user accounts and permissions</p>
         </div>
+{canCreateUser && (
         <Button onClick={() => setIsCreatingUser(true)} data-testid="button-create-user">
           <Plus className="h-4 w-4 mr-2" />
           Add User
         </Button>
+        )}
       </div>
 
       <Card>
@@ -1702,33 +1729,43 @@ export default function Users() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handleEditUser(user)} data-testid={`menu-edit-${user.id}`}>
-                              <Pencil className="h-4 w-4 mr-2" />
-                              Edit User
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleResetPassword(user)} data-testid={`menu-reset-password-${user.id}`}>
-                              <Key className="h-4 w-4 mr-2" />
-                              Reset Password
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleAssignProject(user)} data-testid={`menu-assign-project-${user.id}`}>
-                              <FolderPlus className="h-4 w-4 mr-2" />
-                              Assign Projects
-                            </DropdownMenuItem>
-                            {user.isLocked ? (
-                              <DropdownMenuItem onClick={() => unlockUserMutation.mutate(user.id)} data-testid={`menu-unlock-${user.id}`}>
-                                <Unlock className="h-4 w-4 mr-2" />
-                                Unlock User
-                              </DropdownMenuItem>
-                            ) : (
-                              <DropdownMenuItem onClick={() => handleLockUser(user)} data-testid={`menu-lock-${user.id}`}>
-                                <Lock className="h-4 w-4 mr-2" />
-                                Lock User
+                            {canEditUser && (
+                              <DropdownMenuItem onClick={() => handleEditUser(user)} data-testid={`menu-edit-${user.id}`}>
+                                <Pencil className="h-4 w-4 mr-2" />
+                                Edit User
                               </DropdownMenuItem>
                             )}
-                            <DropdownMenuItem onClick={() => handleDeleteUser(user)} className="text-destructive" data-testid={`menu-delete-${user.id}`}>
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              Delete User
-                            </DropdownMenuItem>
+                            {canResetPassword && (
+                              <DropdownMenuItem onClick={() => handleResetPassword(user)} data-testid={`menu-reset-password-${user.id}`}>
+                                <Key className="h-4 w-4 mr-2" />
+                                Reset Password
+                              </DropdownMenuItem>
+                            )}
+                            {canEditUser && (
+                              <DropdownMenuItem onClick={() => handleAssignProject(user)} data-testid={`menu-assign-project-${user.id}`}>
+                                <FolderPlus className="h-4 w-4 mr-2" />
+                                Assign Projects
+                              </DropdownMenuItem>
+                            )}
+                            {canLockUser && (
+                              user.isLocked ? (
+                                <DropdownMenuItem onClick={() => unlockUserMutation.mutate(user.id)} data-testid={`menu-unlock-${user.id}`}>
+                                  <Unlock className="h-4 w-4 mr-2" />
+                                  Unlock User
+                                </DropdownMenuItem>
+                              ) : (
+                                <DropdownMenuItem onClick={() => handleLockUser(user)} data-testid={`menu-lock-${user.id}`}>
+                                  <Lock className="h-4 w-4 mr-2" />
+                                  Lock User
+                                </DropdownMenuItem>
+                              )
+                            )}
+                            {canDeleteUser && (
+                              <DropdownMenuItem onClick={() => handleDeleteUser(user)} className="text-destructive" data-testid={`menu-delete-${user.id}`}>
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Delete User
+                              </DropdownMenuItem>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -1746,7 +1783,7 @@ export default function Users() {
               <p className="text-sm text-muted-foreground mb-4">
                 {searchQuery ? "Try adjusting your search" : "Get started by adding your first user"}
               </p>
-              {!searchQuery && (
+              {!searchQuery && canCreateUser && (
                 <Button onClick={() => setIsCreatingUser(true)}>
                   <Plus className="h-4 w-4 mr-2" />
                   Add User
