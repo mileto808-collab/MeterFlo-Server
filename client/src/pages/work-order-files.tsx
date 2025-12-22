@@ -63,7 +63,7 @@ export default function WorkOrderFiles() {
   };
 
   const viewFile = (filename: string) => {
-    window.open(getDownloadUrl(filename), "_blank");
+    window.open(getDownloadUrl(filename) + "?mode=view", "_blank");
   };
 
   const downloadFile = (filename: string) => {
