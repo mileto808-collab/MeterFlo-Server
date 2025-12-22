@@ -446,8 +446,9 @@ export class ProjectWorkOrderStorage {
       const createdByValue = createdBy || workOrder.createdBy || null;
       const createdById = createdByValue ? await this.resolveUserId(createdByValue) : null;
       
-      // Set completedAt if status is "Completed"
-      const completedAt = status === "Completed" ? new Date() : null;
+      // Set completedAt if status is a "Completed" type status
+      const isCompleted = await this.isCompletedStatus(status);
+      const completedAt = isCompleted ? new Date() : null;
       
       const result = await client.query(
         `INSERT INTO "${this.schemaName}".work_orders 
@@ -523,6 +524,17 @@ export class ProjectWorkOrderStorage {
       return found?.id || null;
     } catch {
       return null;
+    }
+  }
+  
+  private async isCompletedStatus(statusValue: string): Promise<boolean> {
+    try {
+      const statuses = await storage.getWorkOrderStatuses();
+      const found = statuses.find(s => s.label === statusValue || s.code === statusValue);
+      // Check if this status is the "Completed" status (label matches "Completed")
+      return found?.label === "Completed";
+    } catch {
+      return false;
     }
   }
   
@@ -723,7 +735,9 @@ export class ProjectWorkOrderStorage {
         const statusId = await this.resolveStatusId(updates.status);
         setClauses.push(`status_id = $${paramCount++}`);
         values.push(statusId);
-        if (updates.status === "Completed") {
+        // Check if this status is a "Completed" type and set completed_at
+        const isCompleted = await this.isCompletedStatus(updates.status);
+        if (isCompleted) {
           setClauses.push(`completed_at = NOW()`);
         }
         // If status is changing away from "Scheduled", clear scheduledDate and related fields
