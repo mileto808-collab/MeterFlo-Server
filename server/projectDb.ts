@@ -446,10 +446,13 @@ export class ProjectWorkOrderStorage {
       const createdByValue = createdBy || workOrder.createdBy || null;
       const createdById = createdByValue ? await this.resolveUserId(createdByValue) : null;
       
+      // Set completedAt if status is "Completed"
+      const completedAt = status === "Completed" ? new Date() : null;
+      
       const result = await client.query(
         `INSERT INTO "${this.schemaName}".work_orders 
-         (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, service_type_id, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, status_id, scheduled_date, assigned_user_id, assigned_group_id, created_by, created_by_id, updated_by, updated_by_id, trouble, trouble_code_id, notes, attachments, old_meter_type, old_meter_type_id, new_meter_type, new_meter_type_id, signature_data, signature_name)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38)
+         (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, service_type_id, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, status_id, scheduled_date, assigned_user_id, assigned_group_id, created_by, created_by_id, updated_by, updated_by_id, trouble, trouble_code_id, notes, attachments, old_meter_type, old_meter_type_id, new_meter_type, new_meter_type_id, signature_data, signature_name, completed_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39)
          RETURNING *`,
         [
           workOrder.customerWoId,
@@ -490,6 +493,7 @@ export class ProjectWorkOrderStorage {
           newMeterTypeId,
           (workOrder as any).signatureData || null,
           (workOrder as any).signatureName || null,
+          completedAt,
         ]
       );
       return this.mapRowToWorkOrder(result.rows[0]);
