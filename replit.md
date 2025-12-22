@@ -58,17 +58,16 @@ The system uses a central permission registry that auto-syncs to the database. N
 - **Navigation** (6): `nav.dashboard`, `nav.projects`, `nav.users`, `nav.maintenance`, `nav.settings`, `nav.searchReports`
 - **Project Menu** (5): `project.workOrders`, `project.documents`, `project.import`, `project.ftpFiles`, `project.dbImport`
 - **Settings** (11): `settings.projectFiles`, `settings.fileUpload`, `settings.timezone`, `settings.importHistory`, `settings.dbImportHistory`, `settings.accessLevels`, `settings.statuses`, `settings.troubleCodes`, `settings.userGroups`, `settings.serviceTypes`, `settings.meterTypes`
-- **Project Actions** (3): `projects.create`, `projects.edit`, `projects.delete`
-- **Work Order Actions** (3): `workOrders.create`, `workOrders.edit`, `workOrders.delete`
-- **File Actions** (2): `files.upload`, `files.delete`
-- **User Actions** (5): `users.create`, `users.edit`, `users.delete`, `users.lock`, `users.resetPassword`
-- **Legacy** (8 - deprecated): `projects.view`, `projects.manage`, `workOrders.view`, `users.manage`, `settings.manage`, `maintenance.manage`, `import.data`, `search.reports` (kept in database for backward compatibility only)
+- **Maintenance** (4): `maintenance.projectBackup`, `maintenance.projectRestore`, `maintenance.systemBackup`, `maintenance.systemRestore`
+- **Project Actions** (4): `projects.view`, `projects.create`, `projects.edit`, `projects.delete`
+- **Work Order Actions** (4): `workOrders.view`, `workOrders.create`, `workOrders.edit`, `workOrders.delete`
+- **User Actions** (6): `users.view`, `users.create`, `users.edit`, `users.delete`, `users.lock`, `users.resetPassword`
 
 **Default Subroles with Permissions**:
-- **Administrator**: All permissions (both legacy and new granular permissions)
-- **Project Manager**: Navigation, project menu, actions (except delete), settings for statuses/trouble codes
-- **Field Technician**: Dashboard, work orders, documents, basic actions
-- **Viewer**: Dashboard and read-only project access
+- **Administrator**: All permissions (full system access)
+- **Project Manager**: Navigation, project menu, view/create/edit actions, settings for statuses/trouble codes
+- **Field Technician**: Dashboard, work orders view/create/edit, project documents
+- **Viewer**: Dashboard, projects.view, workOrders.view (read-only access)
 
 **Database Tables**: `subroles`, `permissions`, `subrole_permissions` (junction table)
 **Constants**: `ADMINISTRATOR_SUBROLE_KEY` defined in `shared/schema.ts`
