@@ -755,10 +755,12 @@ export const permissionKeys = {
   PROJECT_FTP_FILES: "project.ftpFiles",
   PROJECT_DB_IMPORT: "project.dbImport",
   // Project actions
+  PROJECTS_VIEW: "projects.view",
   PROJECTS_CREATE: "projects.create",
   PROJECTS_EDIT: "projects.edit",
   PROJECTS_DELETE: "projects.delete",
   // Work order actions
+  WORK_ORDERS_VIEW: "workOrders.view",
   WORK_ORDERS_CREATE: "workOrders.create",
   WORK_ORDERS_EDIT: "workOrders.edit",
   WORK_ORDERS_DELETE: "workOrders.delete",
@@ -766,6 +768,7 @@ export const permissionKeys = {
   FILES_UPLOAD: "files.upload",
   FILES_DELETE: "files.delete",
   // User actions
+  USERS_VIEW: "users.view",
   USERS_CREATE: "users.create",
   USERS_EDIT: "users.edit",
   USERS_DELETE: "users.delete",
@@ -783,6 +786,11 @@ export const permissionKeys = {
   SETTINGS_USER_GROUPS: "settings.userGroups",
   SETTINGS_SERVICE_TYPES: "settings.serviceTypes",
   SETTINGS_METER_TYPES: "settings.meterTypes",
+  // Maintenance permissions
+  MAINTENANCE_PROJECT_BACKUP: "maintenance.projectBackup",
+  MAINTENANCE_PROJECT_RESTORE: "maintenance.projectRestore",
+  MAINTENANCE_SYSTEM_BACKUP: "maintenance.systemBackup",
+  MAINTENANCE_SYSTEM_RESTORE: "maintenance.systemRestore",
 } as const;
 
 export const ADMINISTRATOR_SUBROLE_KEY = "administrator";

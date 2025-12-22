@@ -2,6 +2,7 @@ export type PermissionCategory =
   | "Navigation"
   | "Project Menu"
   | "Settings"
+  | "Maintenance"
   | "Project Actions"
   | "Work Order Actions"
   | "File Actions"
@@ -182,7 +183,44 @@ export const permissionRegistry: PermissionDefinition[] = [
     defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
   },
 
+  // Maintenance action permissions - what users can do in the maintenance area
+  {
+    key: "maintenance.projectBackup",
+    label: "Project Backup",
+    category: "Maintenance",
+    description: "Create backups of project data",
+    defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
+  },
+  {
+    key: "maintenance.projectRestore",
+    label: "Project Restore",
+    category: "Maintenance",
+    description: "Restore project data from backups",
+    defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
+  },
+  {
+    key: "maintenance.systemBackup",
+    label: "System Backup",
+    category: "Maintenance",
+    description: "Create full system backups",
+    defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
+  },
+  {
+    key: "maintenance.systemRestore",
+    label: "System Restore",
+    category: "Maintenance",
+    description: "Restore system from backups",
+    defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
+  },
+
   // Project Action permissions - what users can do with projects
+  {
+    key: "projects.view",
+    label: "View Projects",
+    category: "Project Actions",
+    description: "View project details and assigned projects",
+    defaultAccess: { administrator: true, projectManager: true, fieldTechnician: true, viewer: true, customer: true },
+  },
   {
     key: "projects.create",
     label: "Create Projects",
@@ -206,6 +244,13 @@ export const permissionRegistry: PermissionDefinition[] = [
   },
 
   // Work Order Action permissions - what users can do with work orders
+  {
+    key: "workOrders.view",
+    label: "View Work Orders",
+    category: "Work Order Actions",
+    description: "View work order details and lists",
+    defaultAccess: { administrator: true, projectManager: true, fieldTechnician: true, viewer: true, customer: true },
+  },
   {
     key: "workOrders.create",
     label: "Create Work Orders",
@@ -245,6 +290,13 @@ export const permissionRegistry: PermissionDefinition[] = [
   },
 
   // User Action permissions - what users can do with user accounts
+  {
+    key: "users.view",
+    label: "View Users",
+    category: "User Actions",
+    description: "View user accounts and details",
+    defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
+  },
   {
     key: "users.create",
     label: "Create Users",
