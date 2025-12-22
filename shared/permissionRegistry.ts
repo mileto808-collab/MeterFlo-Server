@@ -215,6 +215,41 @@ export const permissionRegistry: PermissionDefinition[] = [
     description: "Delete uploaded files",
     defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
   },
+  {
+    key: "users.create",
+    label: "Create Users",
+    category: "Actions",
+    description: "Create new user accounts",
+    defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
+  },
+  {
+    key: "users.edit",
+    label: "Edit Users",
+    category: "Actions",
+    description: "Edit existing user accounts",
+    defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
+  },
+  {
+    key: "users.delete",
+    label: "Delete Users",
+    category: "Actions",
+    description: "Delete user accounts",
+    defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
+  },
+  {
+    key: "users.lock",
+    label: "Lock/Unlock Users",
+    category: "Actions",
+    description: "Lock or unlock user accounts",
+    defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
+  },
+  {
+    key: "users.resetPassword",
+    label: "Reset Passwords",
+    category: "Actions",
+    description: "Reset user passwords",
+    defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
+  },
 ];
 
 export const getPermissionsByCategory = (category: PermissionCategory): PermissionDefinition[] => {

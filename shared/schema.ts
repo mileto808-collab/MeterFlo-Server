@@ -739,21 +739,46 @@ export type ServiceTypeRecord = typeof serviceTypes.$inferSelect;
 export type InsertServiceType = z.infer<typeof insertServiceTypeSchema>;
 export type UpdateServiceType = z.infer<typeof updateServiceTypeSchema>;
 
-// Default permission keys
+// Permission keys - granular permissions from the registry
 export const permissionKeys = {
-  PROJECTS_VIEW: "projects.view",
-  PROJECTS_MANAGE: "projects.manage",
-  WORK_ORDERS_VIEW: "workOrders.view",
+  // Navigation permissions
+  NAV_DASHBOARD: "nav.dashboard",
+  NAV_PROJECTS: "nav.projects",
+  NAV_USERS: "nav.users",
+  NAV_MAINTENANCE: "nav.maintenance",
+  NAV_SETTINGS: "nav.settings",
+  NAV_SEARCH_REPORTS: "nav.searchReports",
+  // Project menu permissions
+  PROJECT_WORK_ORDERS: "project.workOrders",
+  PROJECT_DOCUMENTS: "project.documents",
+  PROJECT_IMPORT: "project.import",
+  PROJECT_FTP_FILES: "project.ftpFiles",
+  PROJECT_DB_IMPORT: "project.dbImport",
+  // Work order actions
   WORK_ORDERS_CREATE: "workOrders.create",
   WORK_ORDERS_EDIT: "workOrders.edit",
   WORK_ORDERS_DELETE: "workOrders.delete",
-  USERS_MANAGE: "users.manage",
-  SETTINGS_MANAGE: "settings.manage",
-  MAINTENANCE_MANAGE: "maintenance.manage",
+  // File actions
   FILES_UPLOAD: "files.upload",
   FILES_DELETE: "files.delete",
-  IMPORT_DATA: "import.data",
-  SEARCH_REPORTS: "search.reports",
+  // User actions
+  USERS_CREATE: "users.create",
+  USERS_EDIT: "users.edit",
+  USERS_DELETE: "users.delete",
+  USERS_LOCK: "users.lock",
+  USERS_RESET_PASSWORD: "users.resetPassword",
+  // Settings permissions
+  SETTINGS_PROJECT_FILES: "settings.projectFiles",
+  SETTINGS_FILE_UPLOAD: "settings.fileUpload",
+  SETTINGS_TIMEZONE: "settings.timezone",
+  SETTINGS_IMPORT_HISTORY: "settings.importHistory",
+  SETTINGS_DB_IMPORT_HISTORY: "settings.dbImportHistory",
+  SETTINGS_ACCESS_LEVELS: "settings.accessLevels",
+  SETTINGS_STATUSES: "settings.statuses",
+  SETTINGS_TROUBLE_CODES: "settings.troubleCodes",
+  SETTINGS_USER_GROUPS: "settings.userGroups",
+  SETTINGS_SERVICE_TYPES: "settings.serviceTypes",
+  SETTINGS_METER_TYPES: "settings.meterTypes",
 } as const;
 
 export const ADMINISTRATOR_SUBROLE_KEY = "administrator";
