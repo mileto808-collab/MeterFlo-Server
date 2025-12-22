@@ -6,8 +6,17 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
-import { Upload, File, Trash2, ArrowLeft, ShieldAlert } from "lucide-react";
+import { Upload, File, Trash2, ArrowLeft, ShieldAlert, List, Grid, Image as ImageIcon, Download } from "lucide-react";
 import type { Project } from "@shared/schema";
+
+type ViewMode = "list" | "thumbnail";
+
+const IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif", ".bmp", ".tif", ".tiff"];
+
+function isImageFile(filename: string): boolean {
+  const ext = filename.toLowerCase().substring(filename.lastIndexOf("."));
+  return IMAGE_EXTENSIONS.includes(ext);
+}
 
 export default function WorkOrderFiles() {
   const [, params] = useRoute("/projects/:projectId/work-orders/:workOrderId/files");
@@ -19,6 +28,7 @@ export default function WorkOrderFiles() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [accessDenied, setAccessDenied] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
 
   const { data: project, error: projectError } = useQuery<Project>({
     queryKey: ["/api/projects", projectId],
@@ -41,6 +51,14 @@ export default function WorkOrderFiles() {
       }
     }
   }, [projectError, filesError]);
+
+  const getDownloadUrl = (filename: string) => {
+    return `/api/projects/${projectId}/work-orders/${workOrderId}/files/${encodeURIComponent(filename)}/download`;
+  };
+
+  const openFile = (filename: string) => {
+    window.open(getDownloadUrl(filename), "_blank");
+  };
 
   const uploadFile = async (file: File) => {
     if (accessDenied) {
@@ -192,37 +210,119 @@ export default function WorkOrderFiles() {
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle>Files</CardTitle>
-          <CardDescription>
-            {files.length} file{files.length !== 1 ? "s" : ""} attached
-          </CardDescription>
+        <CardHeader className="flex flex-row items-center justify-between gap-4 flex-wrap">
+          <div>
+            <CardTitle>Files</CardTitle>
+            <CardDescription>
+              {files.length} file{files.length !== 1 ? "s" : ""} attached
+            </CardDescription>
+          </div>
+          <div className="flex items-center gap-1">
+            <Button
+              variant={viewMode === "list" ? "default" : "ghost"}
+              size="icon"
+              onClick={() => setViewMode("list")}
+              data-testid="button-view-list"
+            >
+              <List className="h-4 w-4" />
+            </Button>
+            <Button
+              variant={viewMode === "thumbnail" ? "default" : "ghost"}
+              size="icon"
+              onClick={() => setViewMode("thumbnail")}
+              data-testid="button-view-thumbnail"
+            >
+              <Grid className="h-4 w-4" />
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           {isLoading ? (
             <p className="text-muted-foreground">Loading files...</p>
           ) : files.length === 0 ? (
             <p className="text-muted-foreground">No files uploaded yet</p>
-          ) : (
+          ) : viewMode === "list" ? (
             <div className="space-y-2">
               {files.map((filename) => (
                 <div
                   key={filename}
-                  className="flex items-center justify-between p-3 rounded-md border"
+                  className="flex items-center justify-between p-3 rounded-md border hover-elevate cursor-pointer"
+                  onClick={() => openFile(filename)}
                   data-testid={`file-item-${filename}`}
                 >
                   <div className="flex items-center gap-3">
-                    <File className="h-5 w-5 text-muted-foreground" />
+                    {isImageFile(filename) ? (
+                      <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                    ) : (
+                      <File className="h-5 w-5 text-muted-foreground" />
+                    )}
                     <span className="truncate">{filename}</span>
                   </div>
-                  {user?.role === "admin" && (
+                  <div className="flex items-center gap-1">
                     <Button
                       variant="ghost"
-                      size="sm"
-                      onClick={() => deleteFile(filename)}
-                      data-testid={`button-delete-file-${filename}`}
+                      size="icon"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openFile(filename);
+                      }}
+                      data-testid={`button-download-file-${filename}`}
                     >
-                      <Trash2 className="h-4 w-4 text-destructive" />
+                      <Download className="h-4 w-4" />
+                    </Button>
+                    {user?.role === "admin" && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteFile(filename);
+                        }}
+                        data-testid={`button-delete-file-${filename}`}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              {files.map((filename) => (
+                <div
+                  key={filename}
+                  className="relative group flex flex-col items-center p-3 rounded-md border hover-elevate cursor-pointer"
+                  onClick={() => openFile(filename)}
+                  data-testid={`thumbnail-item-${filename}`}
+                >
+                  <div className="w-full aspect-square flex items-center justify-center bg-muted rounded-md overflow-hidden mb-2">
+                    {isImageFile(filename) ? (
+                      <img
+                        src={getDownloadUrl(filename)}
+                        alt={filename}
+                        className="w-full h-full object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <File className="h-12 w-12 text-muted-foreground" />
+                    )}
+                  </div>
+                  <span className="text-xs text-center truncate w-full" title={filename}>
+                    {filename}
+                  </span>
+                  {user?.role === "admin" && (
+                    <Button
+                      variant="destructive"
+                      size="icon"
+                      className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteFile(filename);
+                      }}
+                      data-testid={`button-delete-thumbnail-${filename}`}
+                    >
+                      <Trash2 className="h-3 w-3" />
                     </Button>
                   )}
                 </div>

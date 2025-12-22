@@ -7,9 +7,18 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
-import { Upload, File, Trash2, ArrowLeft, ShieldAlert, Download, Folder } from "lucide-react";
+import { Upload, File, Trash2, ArrowLeft, ShieldAlert, Download, Folder, List, Grid, Image as ImageIcon } from "lucide-react";
 import type { Project } from "@shared/schema";
 import { useTimezone } from "@/hooks/use-timezone";
+
+type ViewMode = "list" | "thumbnail";
+
+const IMAGE_EXTENSIONS = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif", ".bmp", ".tif", ".tiff"];
+
+function isImageFile(filename: string): boolean {
+  const ext = filename.toLowerCase().substring(filename.lastIndexOf("."));
+  return IMAGE_EXTENSIONS.includes(ext);
+}
 
 interface ProjectFile {
   name: string;
@@ -35,6 +44,7 @@ export default function ProjectFiles() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [accessDenied, setAccessDenied] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
 
   const { data: project, error: projectError } = useQuery<Project>({
     queryKey: ["/api/projects", projectId],
@@ -57,6 +67,14 @@ export default function ProjectFiles() {
       }
     }
   }, [projectError, filesError]);
+
+  const getDownloadUrl = (filename: string) => {
+    return `/api/projects/${projectId}/files/${encodeURIComponent(filename)}/download`;
+  };
+
+  const openFile = (filename: string) => {
+    window.open(getDownloadUrl(filename), "_blank");
+  };
 
   const uploadFile = async (file: File) => {
     if (accessDenied) {
@@ -124,10 +142,6 @@ export default function ProjectFiles() {
     }
   };
 
-  const downloadFile = (filename: string) => {
-    window.open(`/api/projects/${projectId}/files/${encodeURIComponent(filename)}/download`, "_blank");
-  };
-
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
@@ -191,25 +205,45 @@ export default function ProjectFiles() {
               <CardDescription>Documents shared across the entire project</CardDescription>
             </div>
           </div>
-          {canUpload && (
-            <>
-              <input
-                type="file"
-                ref={fileInputRef}
-                className="hidden"
-                onChange={handleFileSelect}
-                data-testid="input-file-upload"
-              />
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-1">
               <Button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={uploading}
-                data-testid="button-upload"
+                variant={viewMode === "list" ? "default" : "ghost"}
+                size="icon"
+                onClick={() => setViewMode("list")}
+                data-testid="button-view-list"
               >
-                <Upload className="h-4 w-4 mr-2" />
-                {uploading ? "Uploading..." : "Upload File"}
+                <List className="h-4 w-4" />
               </Button>
-            </>
-          )}
+              <Button
+                variant={viewMode === "thumbnail" ? "default" : "ghost"}
+                size="icon"
+                onClick={() => setViewMode("thumbnail")}
+                data-testid="button-view-thumbnail"
+              >
+                <Grid className="h-4 w-4" />
+              </Button>
+            </div>
+            {canUpload && (
+              <>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  className="hidden"
+                  onChange={handleFileSelect}
+                  data-testid="input-file-upload"
+                />
+                <Button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  data-testid="button-upload"
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  {uploading ? "Uploading..." : "Upload File"}
+                </Button>
+              </>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -226,7 +260,7 @@ export default function ProjectFiles() {
                 </p>
               )}
             </div>
-          ) : (
+          ) : viewMode === "list" ? (
             <Table>
               <TableHeader>
                 <TableRow>
@@ -238,10 +272,19 @@ export default function ProjectFiles() {
               </TableHeader>
               <TableBody>
                 {files.map((file) => (
-                  <TableRow key={file.name} data-testid={`row-file-${file.name}`}>
+                  <TableRow 
+                    key={file.name} 
+                    className="cursor-pointer hover-elevate"
+                    onClick={() => openFile(file.name)}
+                    data-testid={`row-file-${file.name}`}
+                  >
                     <TableCell className="font-medium">
                       <div className="flex items-center gap-2">
-                        <File className="h-4 w-4 text-muted-foreground" />
+                        {isImageFile(file.name) ? (
+                          <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <File className="h-4 w-4 text-muted-foreground" />
+                        )}
                         <span data-testid={`text-filename-${file.name}`}>{file.name}</span>
                       </div>
                     </TableCell>
@@ -256,7 +299,10 @@ export default function ProjectFiles() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => downloadFile(file.name)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openFile(file.name);
+                          }}
                           data-testid={`button-download-${file.name}`}
                         >
                           <Download className="h-4 w-4" />
@@ -265,7 +311,10 @@ export default function ProjectFiles() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            onClick={() => deleteFile(file.name)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteFile(file.name);
+                            }}
                             data-testid={`button-delete-${file.name}`}
                           >
                             <Trash2 className="h-4 w-4 text-destructive" />
@@ -277,6 +326,50 @@ export default function ProjectFiles() {
                 ))}
               </TableBody>
             </Table>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+              {files.map((file) => (
+                <div
+                  key={file.name}
+                  className="relative group flex flex-col items-center p-3 rounded-md border hover-elevate cursor-pointer"
+                  onClick={() => openFile(file.name)}
+                  data-testid={`thumbnail-item-${file.name}`}
+                >
+                  <div className="w-full aspect-square flex items-center justify-center bg-muted rounded-md overflow-hidden mb-2">
+                    {isImageFile(file.name) ? (
+                      <img
+                        src={getDownloadUrl(file.name)}
+                        alt={file.name}
+                        className="w-full h-full object-cover"
+                        loading="lazy"
+                      />
+                    ) : (
+                      <File className="h-12 w-12 text-muted-foreground" />
+                    )}
+                  </div>
+                  <span className="text-xs text-center truncate w-full" title={file.name}>
+                    {file.name}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {formatFileSize(file.size)}
+                  </span>
+                  {canDelete && (
+                    <Button
+                      variant="destructive"
+                      size="icon"
+                      className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteFile(file.name);
+                      }}
+                      data-testid={`button-delete-thumbnail-${file.name}`}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>
