@@ -86,12 +86,16 @@ export async function registerRoutes(
     }
   });
 
-  // User management (Admin only)
+  // User management
   app.get("/api/users", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (currentUser?.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const hasNavUsers = await storage.hasPermission(currentUser, permissionKeys.NAV_USERS);
+      if (!hasNavUsers) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to view users" });
       }
       const users = await storage.getAllUsers();
       res.json(users);
@@ -104,8 +108,12 @@ export async function registerRoutes(
   app.patch("/api/users/:id/role", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (currentUser?.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canEditUsers = await storage.hasPermission(currentUser, permissionKeys.USERS_EDIT);
+      if (!canEditUsers) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to edit users" });
       }
       const { role } = req.body;
       if (!["admin", "user", "customer"].includes(role)) {
@@ -122,12 +130,16 @@ export async function registerRoutes(
     }
   });
 
-  // Create new user (Admin only)
+  // Create new user
   app.post("/api/users", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (currentUser?.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canCreateUsers = await storage.hasPermission(currentUser, permissionKeys.USERS_CREATE);
+      if (!canCreateUsers) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to create users" });
       }
       
       const parsed = createUserSchema.safeParse(req.body);
@@ -159,12 +171,16 @@ export async function registerRoutes(
     }
   });
 
-  // Update user (Admin only)
+  // Update user
   app.patch("/api/users/:id", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (currentUser?.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canEditUsers = await storage.hasPermission(currentUser, permissionKeys.USERS_EDIT);
+      if (!canEditUsers) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to edit users" });
       }
       
       const parsed = updateUserSchema.safeParse(req.body);
@@ -207,12 +223,16 @@ export async function registerRoutes(
     }
   });
 
-  // Reset user password (Admin only)
+  // Reset user password
   app.post("/api/users/:id/reset-password", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (currentUser?.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canResetPasswords = await storage.hasPermission(currentUser, permissionKeys.USERS_RESET_PASSWORD);
+      if (!canResetPasswords) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to reset passwords" });
       }
       
       const parsed = resetPasswordSchema.safeParse(req.body);
@@ -236,12 +256,16 @@ export async function registerRoutes(
     }
   });
 
-  // Lock user (Admin only)
+  // Lock user
   app.post("/api/users/:id/lock", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (currentUser?.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canLockUsers = await storage.hasPermission(currentUser, permissionKeys.USERS_LOCK);
+      if (!canLockUsers) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to lock users" });
       }
       
       const targetUserId = req.params.id;
@@ -272,12 +296,16 @@ export async function registerRoutes(
     }
   });
 
-  // Unlock user (Admin only)
+  // Unlock user
   app.post("/api/users/:id/unlock", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (currentUser?.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canLockUsers = await storage.hasPermission(currentUser, permissionKeys.USERS_LOCK);
+      if (!canLockUsers) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to unlock users" });
       }
       
       const targetUserId = req.params.id;
@@ -294,12 +322,16 @@ export async function registerRoutes(
     }
   });
 
-  // Delete user (Admin only)
+  // Delete user
   app.delete("/api/users/:id", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (currentUser?.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canDeleteUsers = await storage.hasPermission(currentUser, permissionKeys.USERS_DELETE);
+      if (!canDeleteUsers) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to delete users" });
       }
       
       const targetUserId = req.params.id;
@@ -334,7 +366,9 @@ export async function registerRoutes(
       const currentUser = await storage.getUser(req.user.claims.sub);
       const targetUserId = req.params.id;
       
-      if (currentUser?.role !== "admin" && currentUser?.id !== targetUserId) {
+      // Allow users with nav.users permission OR if viewing their own projects
+      const hasNavUsers = currentUser ? await storage.hasPermission(currentUser, permissionKeys.NAV_USERS) : false;
+      if (!hasNavUsers && currentUser?.id !== targetUserId) {
         return res.status(403).json({ message: "Forbidden" });
       }
       
@@ -349,8 +383,12 @@ export async function registerRoutes(
   app.post("/api/users/:id/projects", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (currentUser?.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canEditUsers = await storage.hasPermission(currentUser, permissionKeys.USERS_EDIT);
+      if (!canEditUsers) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to assign projects" });
       }
       
       const { projectId } = req.body;
@@ -369,8 +407,12 @@ export async function registerRoutes(
   app.delete("/api/users/:userId/projects/:projectId", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (currentUser?.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canEditUsers = await storage.hasPermission(currentUser, permissionKeys.USERS_EDIT);
+      if (!canEditUsers) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to remove projects" });
       }
       
       await storage.removeUserFromProject(req.params.userId, parseInt(req.params.projectId));
