@@ -51,18 +51,25 @@ The system uses a unified permission model where **subroles** (access levels) ar
 - All other internal user subroles set the main role to "user"
 - Existing admin users are automatically migrated to have the Administrator subrole on startup
 
-**Permission Types**:
-- `projects.manage` - Create/edit/delete projects
-- `projects.view` - View assigned projects
-- `workOrders.create` - Create work orders
-- `workOrders.edit` - Edit work orders
-- `workOrders.delete` - Delete work orders
-- `users.manage` - Manage user accounts
-- `settings.manage` - Access system settings
-- `maintenance.manage` - Access database backup/restore
+**Permission Registry System** (shared/permissionRegistry.ts):
+The system uses a central permission registry that auto-syncs to the database. New permissions appear in the Access Levels UI automatically once registered.
+
+**Permission Categories**:
+- **Navigation** (6): `nav.dashboard`, `nav.projects`, `nav.users`, `nav.maintenance`, `nav.settings`, `nav.searchReports`
+- **Project Menu** (5): `project.workOrders`, `project.documents`, `project.import`, `project.ftpFiles`, `project.dbImport`
+- **Settings** (11): `settings.projectFiles`, `settings.fileUpload`, `settings.timezone`, `settings.importHistory`, `settings.dbImportHistory`, `settings.accessLevels`, `settings.statuses`, `settings.troubleCodes`, `settings.userGroups`, `settings.serviceTypes`, `settings.meterTypes`
+- **Actions** (5): `workOrders.create`, `workOrders.edit`, `workOrders.delete`, `files.upload`, `files.delete`
+- **Legacy** (6): `projects.view`, `projects.manage`, `workOrders.view`, `users.manage`, `settings.manage`, `maintenance.manage`, `import.data`, `search.reports`
+
+**Default Subroles with Permissions**:
+- **Administrator**: All permissions (both legacy and new granular permissions)
+- **Project Manager**: Navigation, project menu, actions (except delete), settings for statuses/trouble codes
+- **Field Technician**: Dashboard, work orders, documents, basic actions
+- **Viewer**: Dashboard and read-only project access
 
 **Database Tables**: `subroles`, `permissions`, `subrole_permissions` (junction table)
 **Constants**: `ADMINISTRATOR_SUBROLE_KEY` defined in `shared/schema.ts`
+**Storage Methods**: `syncPermissionsFromRegistry()`, `ensureDefaultSubroles()`, `getUserEffectivePermissions()`
 
 ### Multi-Tenant Architecture
 - **Per-Project Database Schemas**: Each project gets its own PostgreSQL schema (format: `projectName_projectID`) for data isolation
@@ -119,6 +126,7 @@ The system uses a unified permission model where **subroles** (access levels) ar
 - **Completed Status Validation**: Work orders cannot be set to "Completed" status unless all required fields are filled: Old Meter ID, Old Meter Reading, New Meter ID, New Meter Reading, New GPS, Signature, Signature Name, and Attachments. Validation enforced on both frontend and backend.
 - **CompletedAt Automation**: Work orders automatically set `completedAt` timestamp when status changes to "Completed". Uses `isCompletedStatus()` helper that recognizes both status codes (e.g., "02") and status labels (e.g., "Completed") by querying the work_order_statuses table.
 - **Subrole-Driven RBAC**: Major refactoring of role-based access control. The main role (`admin`, `user`, `customer`) is now auto-derived from the subrole's `baseRole` property. The "Administrator" subrole automatically sets role to "admin"; all other internal user subroles set role to "user". Users page UI simplified: no direct "Admin" role option; users select "Internal User" or "Customer" as type, then choose access level (subrole). The `getRoleForSubrole()` method accepts a fallback role parameter for users without a subrole assigned.
+- **Granular Permission System**: Implemented central permission registry (shared/permissionRegistry.ts) with 36+ granular permissions organized by category. Settings page now checks individual permissions (`settings.projectFiles`, `settings.statuses`, etc.) instead of a single admin role check. Sidebar navigation checks `nav.*` permissions. Project sub-menus check `project.*` permissions. Registry auto-syncs to database on startup.
 
 ### Key Design Patterns
 - **Storage Interface**: `IStorage` interface in `storage.ts` abstracts database operations, making it testable and swappable

@@ -595,8 +595,24 @@ export class DatabaseStorage implements IStorage {
   async getUserEffectivePermissions(user: User): Promise<string[]> {
     // Customers have read-only view permissions for work orders only
     if (user.role === "customer") {
-      return [permissionKeys.WORK_ORDERS_VIEW];
+      return [permissionKeys.WORK_ORDERS_VIEW, "project.workOrders", "project.documents", "project.ftpFiles"];
     }
+
+    // Helper to get all permission keys (old + new from registry)
+    const getAllPermissionKeys = async (): Promise<string[]> => {
+      const { getAllPermissionKeys: getRegistryKeys } = await import("@shared/permissionRegistry");
+      const oldKeys = Object.values(permissionKeys);
+      const newKeys = getRegistryKeys();
+      // Combine and deduplicate without using Set spread
+      const combined = oldKeys.concat(newKeys);
+      const unique: string[] = [];
+      for (const key of combined) {
+        if (!unique.includes(key)) {
+          unique.push(key);
+        }
+      }
+      return unique;
+    };
 
     // Check if user has a subrole - permissions come from subrole
     if (user.subroleId) {
@@ -604,7 +620,7 @@ export class DatabaseStorage implements IStorage {
       // If this is the administrator subrole, ensure they have all permissions
       const subrole = await this.getSubrole(user.subroleId);
       if (subrole?.key === ADMINISTRATOR_SUBROLE_KEY) {
-        return Object.values(permissionKeys);
+        return await getAllPermissionKeys();
       }
       return subrolePerms;
     }
@@ -612,7 +628,7 @@ export class DatabaseStorage implements IStorage {
     // Legacy support: users with admin role but no subrole still get all permissions
     // This handles existing admins before migration
     if (user.role === "admin") {
-      return Object.values(permissionKeys);
+      return await getAllPermissionKeys();
     }
 
     // Users without a subrole get basic view permissions
@@ -620,6 +636,9 @@ export class DatabaseStorage implements IStorage {
       permissionKeys.PROJECTS_VIEW,
       permissionKeys.WORK_ORDERS_VIEW,
       permissionKeys.SEARCH_REPORTS,
+      "nav.dashboard",
+      "project.workOrders",
+      "project.documents",
     ];
   }
 

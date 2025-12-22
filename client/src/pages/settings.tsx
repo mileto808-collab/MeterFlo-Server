@@ -74,6 +74,23 @@ export default function Settings() {
   const [allowedExtensions, setAllowedExtensions] = useState("");
   const [selectedTimezone, setSelectedTimezone] = useState("America/Denver");
   const [timezoneEnabled, setTimezoneEnabled] = useState(true);
+
+  // User permissions query for granular settings access
+  const { data: userPermissions = [] } = useQuery<string[]>({
+    queryKey: ["/api/users", user?.id, "permissions"],
+    queryFn: async () => {
+      if (!user) return [];
+      const res = await fetch(`/api/users/${user.id}/permissions`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!user,
+  });
+
+  const hasPermission = (permission: string) => {
+    if (user?.role === "admin") return true;
+    return userPermissions.includes(permission);
+  };
   
   const [subroleDialogOpen, setSubroleDialogOpen] = useState(false);
   const [deleteSubroleDialogOpen, setDeleteSubroleDialogOpen] = useState(false);
@@ -146,12 +163,12 @@ export default function Settings() {
 
   const { data: subroles, isLoading: loadingSubroles } = useQuery<Subrole[]>({
     queryKey: ["/api/subroles"],
-    enabled: user?.role === "admin",
+    enabled: hasPermission("settings.accessLevels"),
   });
 
   const { data: allPermissions } = useQuery<Permission[]>({
     queryKey: ["/api/permissions"],
-    enabled: user?.role === "admin",
+    enabled: hasPermission("settings.accessLevels"),
   });
 
   const { data: selectedSubrolePermissions } = useQuery<string[]>({
@@ -161,39 +178,39 @@ export default function Settings() {
       const res = await fetch(`/api/subroles/${selectedSubrole.id}/permissions`, { credentials: "include" });
       return res.json();
     },
-    enabled: !!selectedSubrole && subroleDialogOpen,
+    enabled: !!selectedSubrole && subroleDialogOpen && hasPermission("settings.accessLevels"),
   });
 
   const { data: pathData } = useQuery<{ path: string }>({
     queryKey: ["/api/settings/project-files-path"],
-    enabled: user?.role === "admin",
+    enabled: hasPermission("settings.projectFiles"),
   });
 
   const { data: fileSettingsData } = useQuery<FileSettings>({
     queryKey: ["/api/settings/file-settings"],
-    enabled: user?.role === "admin",
+    enabled: hasPermission("settings.fileUpload"),
   });
 
   const { data: timezoneData } = useQuery<{ timezone: string; isEnabled: boolean }>({
     queryKey: ["/api/settings/timezone"],
-    enabled: user?.role === "admin",
+    enabled: hasPermission("settings.timezone"),
   });
 
   const { data: workOrderStatusList, isLoading: loadingStatuses } = useQuery<WorkOrderStatus[]>({
     queryKey: ["/api/work-order-statuses"],
-    enabled: user?.role === "admin",
+    enabled: hasPermission("settings.statuses"),
   });
 
   // Trouble Codes query
   const { data: troubleCodesList, isLoading: loadingTroubleCodes } = useQuery<TroubleCode[]>({
     queryKey: ["/api/trouble-codes"],
-    enabled: user?.role === "admin",
+    enabled: hasPermission("settings.troubleCodes"),
   });
 
   // User Groups queries
   const { data: userGroups, isLoading: loadingUserGroups } = useQuery<UserGroupWithProjects[]>({
     queryKey: ["/api/user-groups"],
-    enabled: user?.role === "admin",
+    enabled: hasPermission("settings.userGroups"),
   });
 
   const { data: groupMembers, isLoading: loadingGroupMembers } = useQuery<User[]>({
@@ -203,18 +220,18 @@ export default function Settings() {
       const res = await fetch(`/api/user-groups/${selectedUserGroup.id}/members`, { credentials: "include" });
       return res.json();
     },
-    enabled: !!selectedUserGroup && membersDialogOpen,
+    enabled: !!selectedUserGroup && membersDialogOpen && hasPermission("settings.userGroups"),
   });
 
   const { data: allUsers } = useQuery<User[]>({
     queryKey: ["/api/users"],
-    enabled: user?.role === "admin" && membersDialogOpen,
+    enabled: hasPermission("settings.userGroups") && membersDialogOpen,
   });
 
   // Service Types query
   const { data: serviceTypesList, isLoading: loadingServiceTypes } = useQuery<ServiceTypeRecord[]>({
     queryKey: ["/api/service-types"],
-    enabled: user?.role === "admin",
+    enabled: hasPermission("settings.serviceTypes"),
   });
 
   // Meter Types queries
@@ -227,24 +244,24 @@ export default function Settings() {
       const res = await fetch(url, { credentials: "include" });
       return res.json();
     },
-    enabled: user?.role === "admin",
+    enabled: hasPermission("settings.meterTypes"),
   });
 
   const { data: projectsList } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
-    enabled: user?.role === "admin",
+    enabled: hasPermission("settings.meterTypes") || hasPermission("settings.userGroups"),
   });
 
   // File Import History query
   const { data: fileImportHistoryList, isLoading: loadingImportHistory } = useQuery<(FileImportHistory & { projectName?: string })[]>({
     queryKey: ["/api/file-import-history"],
-    enabled: user?.role === "admin",
+    enabled: hasPermission("settings.importHistory"),
   });
 
   // External Database Import History query
   const { data: externalDbImportHistoryList, isLoading: loadingExternalDbImportHistory } = useQuery<(ImportHistory & { configName?: string; databaseName?: string; projectName?: string })[]>({
     queryKey: ["/api/import-history"],
-    enabled: user?.role === "admin",
+    enabled: hasPermission("settings.dbImportHistory"),
   });
 
   useEffect(() => {
@@ -1073,8 +1090,7 @@ export default function Settings() {
           </CardContent>
         </Card>
 
-        {user?.role === "admin" && (
-          <>
+        {hasPermission("settings.projectFiles") && (
             <Card>
               <CardHeader>
                 <div className="flex items-center gap-2">
@@ -1110,7 +1126,9 @@ export default function Settings() {
                 </div>
               </CardContent>
             </Card>
+        )}
 
+        {hasPermission("settings.fileUpload") && (
             <Card>
               <CardHeader>
                 <div className="flex items-center gap-2">
@@ -1173,7 +1191,9 @@ export default function Settings() {
                 </Button>
               </CardContent>
             </Card>
+        )}
 
+        {hasPermission("settings.timezone") && (
             <Card>
               <CardHeader>
                 <div className="flex items-center gap-2">
@@ -1233,7 +1253,9 @@ export default function Settings() {
                 </Button>
               </CardContent>
             </Card>
+        )}
 
+        {hasPermission("settings.importHistory") && (
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -1308,7 +1330,9 @@ export default function Settings() {
                 )}
               </CardContent>
             </Card>
+        )}
 
+        {hasPermission("settings.dbImportHistory") && (
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -1377,7 +1401,9 @@ export default function Settings() {
                 )}
               </CardContent>
             </Card>
+        )}
 
+        {hasPermission("settings.accessLevels") && (
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -1461,7 +1487,9 @@ export default function Settings() {
                 )}
               </CardContent>
             </Card>
+        )}
 
+        {hasPermission("settings.statuses") && (
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -1542,7 +1570,9 @@ export default function Settings() {
                 )}
               </CardContent>
             </Card>
+        )}
 
+        {hasPermission("settings.troubleCodes") && (
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -1610,7 +1640,9 @@ export default function Settings() {
                 )}
               </CardContent>
             </Card>
+        )}
 
+        {hasPermission("settings.userGroups") && (
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -1702,7 +1734,9 @@ export default function Settings() {
                 )}
               </CardContent>
             </Card>
+        )}
 
+        {hasPermission("settings.serviceTypes") && (
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -1783,7 +1817,9 @@ export default function Settings() {
                 )}
               </CardContent>
             </Card>
+        )}
 
+        {hasPermission("settings.meterTypes") && (
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -1890,7 +1926,6 @@ export default function Settings() {
                 )}
               </CardContent>
             </Card>
-          </>
         )}
 
         <Card>
