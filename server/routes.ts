@@ -93,8 +93,8 @@ export async function registerRoutes(
       if (!currentUser) {
         return res.status(401).json({ message: "Unauthorized" });
       }
-      const hasNavUsers = await storage.hasPermission(currentUser, permissionKeys.NAV_USERS);
-      if (!hasNavUsers) {
+      const canViewUsers = await storage.hasPermission(currentUser, permissionKeys.USERS_VIEW);
+      if (!canViewUsers) {
         return res.status(403).json({ message: "Forbidden: You don't have permission to view users" });
       }
       const users = await storage.getAllUsers();
@@ -561,7 +561,7 @@ export async function registerRoutes(
       }
       
       // Get the permissions of the original subrole (returns array of permission key strings)
-      const permissionKeys = await storage.getSubrolePermissions(id);
+      const originalPermissions = await storage.getSubrolePermissions(id);
       
       // Use provided label/key or generate defaults
       const { label: providedLabel, key: providedKey } = req.body;
@@ -578,8 +578,8 @@ export async function registerRoutes(
       });
       
       // Copy the permissions to the new subrole
-      if (permissionKeys.length > 0) {
-        await storage.setSubrolePermissions(newSubrole.id, permissionKeys);
+      if (originalPermissions.length > 0) {
+        await storage.setSubrolePermissions(newSubrole.id, originalPermissions);
       }
       
       res.status(201).json(newSubrole);
@@ -958,7 +958,15 @@ export async function registerRoutes(
       const currentUser = await storage.getUser(req.user.claims.sub);
       const projectId = parseInt(req.params.projectId);
       
-      if (currentUser?.role !== "admin") {
+      // Check if user has permission to view work orders
+      const canViewWorkOrders = currentUser ? await storage.hasPermission(currentUser, permissionKeys.WORK_ORDERS_VIEW) : false;
+      if (!canViewWorkOrders) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to view work orders" });
+      }
+      
+      // Check project access - either has projects.view (can see all) or is assigned
+      const canViewProjects = currentUser ? await storage.hasPermission(currentUser, permissionKeys.PROJECTS_VIEW) : false;
+      if (!canViewProjects) {
         const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
         if (!isAssigned) {
           return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
@@ -2314,14 +2322,19 @@ export async function registerRoutes(
     }
   });
 
-  // Database backup/restore endpoints (Admin only)
+  // Database backup/restore endpoints
   
   // Get database stats for a project
   app.get("/api/projects/:projectId/database/stats", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (currentUser?.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      // Need project backup permission to view stats
+      const canBackup = await storage.hasPermission(currentUser, permissionKeys.MAINTENANCE_PROJECT_BACKUP);
+      if (!canBackup) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to view database stats" });
       }
       
       const projectId = parseInt(req.params.projectId);
@@ -2342,8 +2355,12 @@ export async function registerRoutes(
   app.get("/api/projects/:projectId/database/backup", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (currentUser?.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canBackup = await storage.hasPermission(currentUser, permissionKeys.MAINTENANCE_PROJECT_BACKUP);
+      if (!canBackup) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to backup projects" });
       }
       
       const projectId = parseInt(req.params.projectId);
@@ -2373,8 +2390,12 @@ export async function registerRoutes(
   app.post("/api/projects/:projectId/database/restore", isAuthenticated, upload.single("backup"), async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (currentUser?.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canRestore = await storage.hasPermission(currentUser, permissionKeys.MAINTENANCE_PROJECT_RESTORE);
+      if (!canRestore) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to restore projects" });
       }
       
       const projectId = parseInt(req.params.projectId);
@@ -2417,8 +2438,14 @@ export async function registerRoutes(
   app.get("/api/maintenance/projects", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (currentUser?.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      // Need either project backup or restore permission to see the maintenance page
+      const canBackup = await storage.hasPermission(currentUser, permissionKeys.MAINTENANCE_PROJECT_BACKUP);
+      const canRestore = await storage.hasPermission(currentUser, permissionKeys.MAINTENANCE_PROJECT_RESTORE);
+      if (!canBackup && !canRestore) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to access maintenance" });
       }
       
       const projects = await storage.getProjects();
@@ -3475,8 +3502,12 @@ export async function registerRoutes(
   app.get("/api/system/backup", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (!currentUser || currentUser.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canSystemBackup = await storage.hasPermission(currentUser, permissionKeys.MAINTENANCE_SYSTEM_BACKUP);
+      if (!canSystemBackup) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to create system backups" });
       }
       
       await createBackupArchive(res);
@@ -3496,8 +3527,12 @@ export async function registerRoutes(
   app.post("/api/system/restore", isAuthenticated, largeUpload.single("backup"), async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (!currentUser || currentUser.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canSystemRestore = await storage.hasPermission(currentUser, permissionKeys.MAINTENANCE_SYSTEM_RESTORE);
+      if (!canSystemRestore) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to restore system backups" });
       }
       
       if (!req.file) {
