@@ -764,9 +764,6 @@ export const permissionKeys = {
   WORK_ORDERS_CREATE: "workOrders.create",
   WORK_ORDERS_EDIT: "workOrders.edit",
   WORK_ORDERS_DELETE: "workOrders.delete",
-  // File actions
-  FILES_UPLOAD: "files.upload",
-  FILES_DELETE: "files.delete",
   // User actions
   USERS_VIEW: "users.view",
   USERS_CREATE: "users.create",
