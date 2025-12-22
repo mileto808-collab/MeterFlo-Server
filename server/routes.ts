@@ -29,6 +29,8 @@ export async function registerRoutes(
   await setupAuth(app);
   await initializeAdminUser();
   await storage.seedDefaultWorkOrderStatuses();
+  await storage.syncPermissionsFromRegistry();
+  await storage.ensureDefaultSubroles();
 
   // Local authentication
   app.post("/api/auth/local/login", async (req, res) => {

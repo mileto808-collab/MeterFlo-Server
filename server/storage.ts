@@ -123,6 +123,8 @@ export interface IStorage {
   getAdministratorSubrole(): Promise<Subrole | undefined>;
   ensureAdministratorSubrole(): Promise<Subrole>;
   getRoleForSubrole(subroleId: number | null, fallbackRole?: string): Promise<string>;
+  syncPermissionsFromRegistry(): Promise<void>;
+  ensureDefaultSubroles(): Promise<void>;
 
   // External database config operations
   getExternalDatabaseConfigs(projectId: number): Promise<ExternalDatabaseConfig[]>;
@@ -695,6 +697,87 @@ export class DatabaseStorage implements IStorage {
       return "admin";
     }
     return subrole.baseRole || "user";
+  }
+
+  async syncPermissionsFromRegistry(): Promise<void> {
+    // Dynamic import to avoid circular dependencies
+    const { permissionRegistry } = await import("@shared/permissionRegistry");
+    
+    for (const perm of permissionRegistry) {
+      // Check if permission exists
+      const existing = await db
+        .select()
+        .from(permissions)
+        .where(eq(permissions.key, perm.key));
+      
+      if (existing.length === 0) {
+        // Insert new permission
+        await db.insert(permissions).values({
+          key: perm.key,
+          label: perm.label,
+          category: perm.category,
+          description: perm.description,
+        });
+        console.log(`Created permission: ${perm.key}`);
+      } else {
+        // Update existing permission label/category/description
+        await db
+          .update(permissions)
+          .set({
+            label: perm.label,
+            category: perm.category,
+            description: perm.description,
+          })
+          .where(eq(permissions.key, perm.key));
+      }
+    }
+  }
+
+  async ensureDefaultSubroles(): Promise<void> {
+    const { permissionRegistry, getAllPermissionKeys } = await import("@shared/permissionRegistry");
+    
+    const defaultSubroles = [
+      { key: "administrator", label: "Administrator", baseRole: "admin", description: "Full system access with all permissions" },
+      { key: "project_manager", label: "Project Manager", baseRole: "user", description: "Manage projects and work orders" },
+      { key: "field_technician", label: "Field Technician", baseRole: "user", description: "Create and edit work orders in the field" },
+      { key: "viewer", label: "Viewer", baseRole: "user", description: "Read-only access to projects and work orders" },
+    ];
+
+    for (const subroleData of defaultSubroles) {
+      let subrole = await this.getSubroleByKey(subroleData.key);
+      
+      if (!subrole) {
+        subrole = await this.createSubrole(subroleData);
+        console.log(`Created subrole: ${subroleData.label}`);
+        
+        // Assign default permissions based on registry
+        const defaultPerms: string[] = [];
+        const accessKey = subroleData.key === "administrator" ? "administrator" :
+                          subroleData.key === "project_manager" ? "projectManager" :
+                          subroleData.key === "field_technician" ? "fieldTechnician" :
+                          "viewer";
+        
+        for (const perm of permissionRegistry) {
+          if (perm.defaultAccess[accessKey as keyof typeof perm.defaultAccess]) {
+            defaultPerms.push(perm.key);
+          }
+        }
+        
+        // Administrator gets all permissions
+        if (subroleData.key === "administrator") {
+          await this.setSubrolePermissions(subrole.id, getAllPermissionKeys());
+        } else {
+          await this.setSubrolePermissions(subrole.id, defaultPerms);
+        }
+        console.log(`Assigned ${subroleData.key === "administrator" ? "all" : defaultPerms.length} permissions to ${subroleData.label}`);
+      }
+    }
+    
+    // Ensure admin users are migrated
+    const adminSubrole = await this.getAdministratorSubrole();
+    if (adminSubrole) {
+      await this.migrateAdminUsersToSubrole(adminSubrole.id);
+    }
   }
 
   // External database config operations
