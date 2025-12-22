@@ -35,7 +35,7 @@ export default function Projects() {
   const { user } = useAuth();
   const { toast } = useToast();
   const { formatDate } = useTimezone();
-  const role = user?.role || "user";
+  const isAdmin = user?.role === "admin";
 
   const [searchQuery, setSearchQuery] = useState("");
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -44,6 +44,26 @@ export default function Projects() {
   const { data: projects, isLoading } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
   });
+
+  const { data: userPermissions = [] } = useQuery<string[]>({
+    queryKey: ["/api/users", user?.id, "permissions"],
+    queryFn: async () => {
+      if (!user) return [];
+      const res = await fetch(`/api/users/${user.id}/permissions`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!user,
+  });
+
+  const hasPermission = (permission: string) => {
+    if (isAdmin) return true;
+    return userPermissions.includes(permission);
+  };
+
+  const canCreateProject = hasPermission("projects.create");
+  const canEditProject = hasPermission("projects.edit");
+  const canDeleteProject = hasPermission("projects.delete");
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -74,8 +94,6 @@ export default function Projects() {
     p.description?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const canEdit = role === "admin";
-
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between gap-4 flex-wrap mb-6">
@@ -83,7 +101,7 @@ export default function Projects() {
           <h1 className="text-3xl font-bold" data-testid="text-projects-title">Projects</h1>
           <p className="text-muted-foreground mt-1">Manage customer projects</p>
         </div>
-        {canEdit && (
+        {canCreateProject && (
           <Link href="/projects/new">
             <Button data-testid="button-new-project">
               <Plus className="h-4 w-4 mr-2" />
@@ -151,22 +169,22 @@ export default function Projects() {
                               <Eye className="h-4 w-4" />
                             </Button>
                           </Link>
-                          {canEdit && (
-                            <>
-                              <Link href={`/projects/${project.id}/edit`}>
-                                <Button variant="ghost" size="icon" data-testid={`button-edit-${project.id}`}>
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                              </Link>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => { setProjectToDelete(project.id); setDeleteDialogOpen(true); }}
-                                data-testid={`button-delete-${project.id}`}
-                              >
-                                <Trash2 className="h-4 w-4 text-destructive" />
+                          {canEditProject && (
+                            <Link href={`/projects/${project.id}/edit`}>
+                              <Button variant="ghost" size="icon" data-testid={`button-edit-${project.id}`}>
+                                <Edit className="h-4 w-4" />
                               </Button>
-                            </>
+                            </Link>
+                          )}
+                          {canDeleteProject && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => { setProjectToDelete(project.id); setDeleteDialogOpen(true); }}
+                              data-testid={`button-delete-${project.id}`}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
                           )}
                         </div>
                       </TableCell>
@@ -184,7 +202,7 @@ export default function Projects() {
               <p className="text-sm text-muted-foreground mb-6">
                 {searchQuery ? "Try adjusting your search" : "Create your first project to get started"}
               </p>
-              {canEdit && !searchQuery && (
+              {canCreateProject && !searchQuery && (
                 <Link href="/projects/new">
                   <Button data-testid="button-create-first-project">
                     <Plus className="h-4 w-4 mr-2" />

@@ -802,8 +802,8 @@ export async function registerRoutes(
       if (!currentUser) {
         return res.status(401).json({ message: "Unauthorized" });
       }
-      const canManageProjects = await storage.hasPermission(currentUser, permissionKeys.PROJECTS_MANAGE);
-      if (!canManageProjects) {
+      const canCreateProjects = await storage.hasPermission(currentUser, permissionKeys.PROJECTS_CREATE);
+      if (!canCreateProjects) {
         return res.status(403).json({ message: "Forbidden: You don't have permission to create projects" });
       }
       
@@ -833,8 +833,8 @@ export async function registerRoutes(
       if (!currentUser) {
         return res.status(401).json({ message: "Unauthorized" });
       }
-      const canManageProjects = await storage.hasPermission(currentUser, permissionKeys.PROJECTS_MANAGE);
-      if (!canManageProjects) {
+      const canEditProjects = await storage.hasPermission(currentUser, permissionKeys.PROJECTS_EDIT);
+      if (!canEditProjects) {
         return res.status(403).json({ message: "Forbidden: You don't have permission to edit projects" });
       }
       const project = await storage.updateProject(parseInt(req.params.id), req.body);
@@ -854,8 +854,8 @@ export async function registerRoutes(
       if (!currentUser) {
         return res.status(401).json({ message: "Unauthorized" });
       }
-      const canManageProjects = await storage.hasPermission(currentUser, permissionKeys.PROJECTS_MANAGE);
-      if (!canManageProjects) {
+      const canDeleteProjects = await storage.hasPermission(currentUser, permissionKeys.PROJECTS_DELETE);
+      if (!canDeleteProjects) {
         return res.status(403).json({ message: "Forbidden: You don't have permission to delete projects" });
       }
       

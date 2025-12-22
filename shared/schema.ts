@@ -754,6 +754,10 @@ export const permissionKeys = {
   PROJECT_IMPORT: "project.import",
   PROJECT_FTP_FILES: "project.ftpFiles",
   PROJECT_DB_IMPORT: "project.dbImport",
+  // Project actions
+  PROJECTS_CREATE: "projects.create",
+  PROJECTS_EDIT: "projects.edit",
+  PROJECTS_DELETE: "projects.delete",
   // Work order actions
   WORK_ORDERS_CREATE: "workOrders.create",
   WORK_ORDERS_EDIT: "workOrders.edit",
