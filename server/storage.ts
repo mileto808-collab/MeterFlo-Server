@@ -18,6 +18,7 @@ import {
   meterTypeProjects,
   defaultWorkOrderStatuses,
   permissionKeys,
+  ADMINISTRATOR_SUBROLE_KEY,
   userGroups,
   userGroupMembers,
   userGroupProjects,
@@ -118,6 +119,10 @@ export interface IStorage {
   getUserEffectivePermissions(user: User): Promise<string[]>;
   updateUserSubrole(userId: string, subroleId: number | null): Promise<User | undefined>;
   hasPermission(user: User, permissionKey: string): Promise<boolean>;
+  isAdminUser(user: User): Promise<boolean>;
+  getAdministratorSubrole(): Promise<Subrole | undefined>;
+  ensureAdministratorSubrole(): Promise<Subrole>;
+  getRoleForSubrole(subroleId: number | null, fallbackRole?: string): Promise<string>;
 
   // External database config operations
   getExternalDatabaseConfigs(projectId: number): Promise<ExternalDatabaseConfig[]>;
@@ -231,12 +236,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createLocalUser(username: string, passwordHash: string, role: string, firstName?: string, lastName?: string, email?: string | null, subroleId?: number | null): Promise<User> {
+    // Auto-sync role based on subrole if provided, otherwise use the passed role
+    const effectiveRole = await this.getRoleForSubrole(subroleId || null, role);
     const [user] = await db
       .insert(users)
       .values({
         username,
         passwordHash,
-        role,
+        role: effectiveRole,
         firstName: firstName || username,
         lastName: lastName || null,
         email: email || null,
@@ -288,6 +295,12 @@ export class DatabaseStorage implements IStorage {
     } else if (data.isLocked === false) {
       updateData.lockedAt = null;
       updateData.lockedReason = null;
+    }
+    
+    // Auto-sync role based on subrole if subroleId is being updated
+    // Preserve the original role if no subrole is specified
+    if (data.subroleId !== undefined) {
+      updateData.role = await this.getRoleForSubrole(data.subroleId, data.role);
     }
     
     const [user] = await db
@@ -350,11 +363,28 @@ export class DatabaseStorage implements IStorage {
   }
 
   async countActiveAdmins(): Promise<number> {
+    // Get the administrator subrole
+    const adminSubrole = await this.getAdministratorSubrole();
+    if (!adminSubrole) {
+      // Fallback: count legacy admin role users
+      const adminUsers = await db
+        .select()
+        .from(users)
+        .where(and(eq(users.role, "admin"), eq(users.isLocked, false)));
+      return adminUsers.length;
+    }
+    // Count users with the administrator subrole who are not locked
     const adminUsers = await db
       .select()
       .from(users)
+      .where(and(eq(users.subroleId, adminSubrole.id), eq(users.isLocked, false)));
+    // Also count legacy admin role users without subrole (for backward compatibility during migration)
+    const legacyAdmins = await db
+      .select()
+      .from(users)
       .where(and(eq(users.role, "admin"), eq(users.isLocked, false)));
-    return adminUsers.length;
+    const legacyCount = legacyAdmins.filter(u => u.subroleId !== adminSubrole.id).length;
+    return adminUsers.length + legacyCount;
   }
 
   // Project operations
@@ -561,19 +591,26 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserEffectivePermissions(user: User): Promise<string[]> {
-    // Admins have all permissions
-    if (user.role === "admin") {
-      return Object.values(permissionKeys);
-    }
-
     // Customers have read-only view permissions for work orders only
     if (user.role === "customer") {
       return [permissionKeys.WORK_ORDERS_VIEW];
     }
 
-    // For regular users, check their subrole
-    if (user.role === "user" && user.subroleId) {
-      return await this.getSubrolePermissions(user.subroleId);
+    // Check if user has a subrole - permissions come from subrole
+    if (user.subroleId) {
+      const subrolePerms = await this.getSubrolePermissions(user.subroleId);
+      // If this is the administrator subrole, ensure they have all permissions
+      const subrole = await this.getSubrole(user.subroleId);
+      if (subrole?.key === ADMINISTRATOR_SUBROLE_KEY) {
+        return Object.values(permissionKeys);
+      }
+      return subrolePerms;
+    }
+
+    // Legacy support: users with admin role but no subrole still get all permissions
+    // This handles existing admins before migration
+    if (user.role === "admin") {
+      return Object.values(permissionKeys);
     }
 
     // Users without a subrole get basic view permissions
@@ -585,9 +622,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateUserSubrole(userId: string, subroleId: number | null): Promise<User | undefined> {
+    // Get the existing user to use their role as fallback
+    const existingUser = await this.getUser(userId);
+    const fallbackRole = existingUser?.role || "user";
+    // Auto-sync the main role based on subrole
+    const role = await this.getRoleForSubrole(subroleId, fallbackRole);
     const [user] = await db
       .update(users)
-      .set({ subroleId, updatedAt: new Date() })
+      .set({ subroleId, role, updatedAt: new Date() })
       .where(eq(users.id, userId))
       .returning();
     return user;
@@ -596,6 +638,63 @@ export class DatabaseStorage implements IStorage {
   async hasPermission(user: User, permissionKey: string): Promise<boolean> {
     const permissions = await this.getUserEffectivePermissions(user);
     return permissions.includes(permissionKey);
+  }
+
+  async isAdminUser(user: User): Promise<boolean> {
+    if (!user.subroleId) return false;
+    const subrole = await this.getSubrole(user.subroleId);
+    return subrole?.key === ADMINISTRATOR_SUBROLE_KEY;
+  }
+
+  async getAdministratorSubrole(): Promise<Subrole | undefined> {
+    return await this.getSubroleByKey(ADMINISTRATOR_SUBROLE_KEY);
+  }
+
+  async ensureAdministratorSubrole(): Promise<Subrole> {
+    let adminSubrole = await this.getAdministratorSubrole();
+    if (!adminSubrole) {
+      adminSubrole = await this.createSubrole({
+        key: ADMINISTRATOR_SUBROLE_KEY,
+        label: "Administrator",
+        baseRole: "admin",
+        description: "Full system access with all permissions",
+      });
+      // Grant all permissions to the administrator subrole
+      const allPermissions = Object.values(permissionKeys);
+      await this.setSubrolePermissions(adminSubrole.id, allPermissions);
+    }
+    // Migrate existing admin users to have the administrator subrole
+    await this.migrateAdminUsersToSubrole(adminSubrole.id);
+    return adminSubrole;
+  }
+
+  private async migrateAdminUsersToSubrole(adminSubroleId: number): Promise<void> {
+    // Find admin users who don't have a subrole assigned
+    const adminUsers = await db
+      .select()
+      .from(users)
+      .where(and(eq(users.role, "admin"), eq(users.subroleId, null as unknown as number)));
+    
+    // Assign the administrator subrole to each
+    for (const user of adminUsers) {
+      await db
+        .update(users)
+        .set({ subroleId: adminSubroleId })
+        .where(eq(users.id, user.id));
+      console.log(`Migrated admin user ${user.username || user.id} to administrator subrole`);
+    }
+  }
+
+  async getRoleForSubrole(subroleId: number | null, fallbackRole?: string): Promise<string> {
+    if (!subroleId) return fallbackRole || "user";
+    const subrole = await this.getSubrole(subroleId);
+    if (!subrole) return fallbackRole || "user";
+    // If the subrole is administrator, the main role should be admin
+    // Otherwise, derive from the subrole's baseRole
+    if (subrole.key === ADMINISTRATOR_SUBROLE_KEY) {
+      return "admin";
+    }
+    return subrole.baseRole || "user";
   }
 
   // External database config operations

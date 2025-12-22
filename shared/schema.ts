@@ -756,4 +756,6 @@ export const permissionKeys = {
   SEARCH_REPORTS: "search.reports",
 } as const;
 
+export const ADMINISTRATOR_SUBROLE_KEY = "administrator";
+
 export type PermissionKey = typeof permissionKeys[keyof typeof permissionKeys];
