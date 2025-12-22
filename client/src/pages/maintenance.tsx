@@ -38,8 +38,8 @@ import {
   Lock,
 } from "lucide-react";
 import { useTimezone } from "@/hooks/use-timezone";
-import { useAuth } from "@/hooks/useAuth";
-import type { Project, User } from "@shared/schema";
+import { usePermissions } from "@/hooks/usePermissions";
+import type { Project } from "@shared/schema";
 
 interface ProjectWithStats extends Project {
   stats: {
@@ -52,7 +52,7 @@ interface ProjectWithStats extends Project {
 export default function Maintenance() {
   const { toast } = useToast();
   const { formatDateTime } = useTimezone();
-  const { user } = useAuth();
+  const { hasPermission, isLoading: isPermissionsLoading } = usePermissions();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const systemFileInputRef = useRef<HTMLInputElement>(null);
   const [restoreDialogOpen, setRestoreDialogOpen] = useState(false);
@@ -69,26 +69,10 @@ export default function Maintenance() {
     queryKey: ["/api/maintenance/projects"],
   });
 
-  const { data: userPermissions = [] } = useQuery<string[]>({
-    queryKey: ["/api/users", user?.id, "permissions"],
-    queryFn: async () => {
-      if (!user) return [];
-      const res = await fetch(`/api/users/${user.id}/permissions`, { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: !!user,
-  });
-
-  const hasPermission = (permission: string) => {
-    if (user?.role === "admin") return true;
-    return userPermissions.includes(permission);
-  };
-
-  const canProjectBackup = hasPermission("maintenance.projectBackup");
-  const canProjectRestore = hasPermission("maintenance.projectRestore");
-  const canSystemBackup = hasPermission("maintenance.systemBackup");
-  const canSystemRestore = hasPermission("maintenance.systemRestore");
+  const canProjectBackup = !isPermissionsLoading && hasPermission("maintenance.projectBackup");
+  const canProjectRestore = !isPermissionsLoading && hasPermission("maintenance.projectRestore");
+  const canSystemBackup = !isPermissionsLoading && hasPermission("maintenance.systemBackup");
+  const canSystemRestore = !isPermissionsLoading && hasPermission("maintenance.systemRestore");
 
   const handleBackup = async (project: ProjectWithStats) => {
     try {
@@ -323,40 +307,49 @@ export default function Maintenance() {
               </ul>
             </div>
             <div className="flex flex-col gap-2 justify-center">
-              {canSystemBackup && (
-                <Button 
-                  onClick={handleFullSystemBackup}
-                  disabled={isSystemBackup}
-                  data-testid="button-full-system-backup"
-                >
-                  {isSystemBackup ? (
-                    <>
-                      <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                      Creating Backup...
-                    </>
-                  ) : (
-                    <>
-                      <Download className="h-4 w-4 mr-2" />
-                      Download Full Backup
-                    </>
+              {isPermissionsLoading ? (
+                <>
+                  <Skeleton className="h-9 w-40" />
+                  <Skeleton className="h-9 w-40" />
+                </>
+              ) : (
+                <>
+                  {canSystemBackup && (
+                    <Button 
+                      onClick={handleFullSystemBackup}
+                      disabled={isSystemBackup}
+                      data-testid="button-full-system-backup"
+                    >
+                      {isSystemBackup ? (
+                        <>
+                          <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                          Creating Backup...
+                        </>
+                      ) : (
+                        <>
+                          <Download className="h-4 w-4 mr-2" />
+                          Download Full Backup
+                        </>
+                      )}
+                    </Button>
                   )}
-                </Button>
-              )}
-              {canSystemRestore && (
-                <Button 
-                  variant="outline" 
-                  onClick={openSystemRestoreDialog}
-                  data-testid="button-full-system-restore"
-                >
-                  <Upload className="h-4 w-4 mr-2" />
-                  Restore from Backup
-                </Button>
-              )}
-              {!canSystemBackup && !canSystemRestore && (
-                <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                  <Lock className="h-4 w-4" />
-                  <span>No permissions for system backup/restore</span>
-                </div>
+                  {canSystemRestore && (
+                    <Button 
+                      variant="outline" 
+                      onClick={openSystemRestoreDialog}
+                      data-testid="button-full-system-restore"
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      Restore from Backup
+                    </Button>
+                  )}
+                  {!canSystemBackup && !canSystemRestore && (
+                    <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                      <Lock className="h-4 w-4" />
+                      <span>No permissions for system backup/restore</span>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -446,35 +439,44 @@ export default function Maintenance() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
-                        {canProjectBackup && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleBackup(project)}
-                            disabled={!project.databaseName}
-                            data-testid={`button-backup-${project.id}`}
-                          >
-                            <Download className="h-4 w-4 mr-1" />
-                            Backup
-                          </Button>
-                        )}
-                        {canProjectRestore && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => openRestoreDialog(project)}
-                            disabled={!project.databaseName}
-                            data-testid={`button-restore-${project.id}`}
-                          >
-                            <Upload className="h-4 w-4 mr-1" />
-                            Restore
-                          </Button>
-                        )}
-                        {!canProjectBackup && !canProjectRestore && (
-                          <span className="text-muted-foreground text-sm flex items-center gap-1">
-                            <Lock className="h-3 w-3" />
-                            No access
-                          </span>
+                        {isPermissionsLoading ? (
+                          <>
+                            <Skeleton className="h-8 w-20" />
+                            <Skeleton className="h-8 w-20" />
+                          </>
+                        ) : (
+                          <>
+                            {canProjectBackup && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleBackup(project)}
+                                disabled={!project.databaseName}
+                                data-testid={`button-backup-${project.id}`}
+                              >
+                                <Download className="h-4 w-4 mr-1" />
+                                Backup
+                              </Button>
+                            )}
+                            {canProjectRestore && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => openRestoreDialog(project)}
+                                disabled={!project.databaseName}
+                                data-testid={`button-restore-${project.id}`}
+                              >
+                                <Upload className="h-4 w-4 mr-1" />
+                                Restore
+                              </Button>
+                            )}
+                            {!canProjectBackup && !canProjectRestore && (
+                              <span className="text-muted-foreground text-sm flex items-center gap-1">
+                                <Lock className="h-3 w-3" />
+                                No access
+                              </span>
+                            )}
+                          </>
                         )}
                       </div>
                     </TableCell>

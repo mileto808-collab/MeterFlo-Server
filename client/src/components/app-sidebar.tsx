@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/hooks/useAuth";
+import { usePermissions } from "@/hooks/usePermissions";
 import {
   ClipboardList,
   LayoutDashboard,
@@ -40,7 +40,7 @@ import type { Project } from "@shared/schema";
 
 export function AppSidebar() {
   const [location] = useLocation();
-  const { user } = useAuth();
+  const { user, hasPermission } = usePermissions();
   const role = user?.role || "user";
   const [openProjects, setOpenProjects] = useState<number[]>([]);
 
@@ -48,22 +48,6 @@ export function AppSidebar() {
     queryKey: ["/api/projects"],
     enabled: !!user,
   });
-
-  const { data: userPermissions = [] } = useQuery<string[]>({
-    queryKey: ["/api/users", user?.id, "permissions"],
-    queryFn: async () => {
-      if (!user) return [];
-      const res = await fetch(`/api/users/${user.id}/permissions`, { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: !!user,
-  });
-
-  const hasPermission = (permission: string) => {
-    if (role === "admin") return true;
-    return userPermissions.includes(permission);
-  };
 
   const toggleProject = (projectId: number) => {
     setOpenProjects((prev) =>
