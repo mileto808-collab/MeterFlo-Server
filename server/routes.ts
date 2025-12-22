@@ -760,15 +760,18 @@ export async function registerRoutes(
   app.get("/api/projects", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
       
-      if (currentUser?.role === "admin") {
+      // Users with nav.projects permission can see all projects
+      const hasNavProjects = await storage.hasPermission(currentUser, permissionKeys.NAV_PROJECTS);
+      if (hasNavProjects) {
         const projects = await storage.getProjects();
         res.json(projects);
-      } else if (currentUser?.role === "user") {
-        const projects = await storage.getUserProjects(currentUser.id);
-        res.json(projects);
       } else {
-        const projects = await storage.getUserProjects(currentUser!.id);
+        // Other users only see projects they are assigned to
+        const projects = await storage.getUserProjects(currentUser.id);
         res.json(projects);
       }
     } catch (error) {
