@@ -1416,6 +1416,51 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/projects/:projectId/work-orders/:workOrderId/files/:filename/download", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      const workOrderId = parseInt(req.params.workOrderId);
+      
+      if (currentUser?.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      const workOrder = await workOrderStorage.getWorkOrder(workOrderId);
+      if (!workOrder) {
+        return res.status(404).json({ message: "Work order not found" });
+      }
+      
+      const folderName = workOrder.customerWoId || String(workOrder.id);
+      
+      const filePath = await getFilePath(
+        project.name,
+        project.id,
+        folderName,
+        req.params.filename,
+        workOrder.id
+      );
+      
+      if (!filePath) {
+        return res.status(404).json({ message: "File not found" });
+      }
+      
+      res.download(filePath, req.params.filename);
+    } catch (error) {
+      console.error("Error downloading work order file:", error);
+      res.status(500).json({ message: "Failed to download file" });
+    }
+  });
+
   // Project-level files (separate from work order files)
   app.get("/api/projects/:projectId/files", isAuthenticated, async (req: any, res) => {
     try {
