@@ -79,7 +79,7 @@ export default function ProjectFiles() {
   };
 
   const viewFile = (filename: string) => {
-    window.open(getDownloadUrl(filename), "_blank");
+    window.open(getDownloadUrl(filename) + "?mode=view", "_blank");
   };
 
   const downloadFile = (filename: string) => {

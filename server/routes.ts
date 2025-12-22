@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import path from "path";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { insertProjectWorkOrderSchema, insertProjectSchema, createUserSchema, updateUserSchema, resetPasswordSchema, permissionKeys, insertExternalDatabaseConfigSchema, updateExternalDatabaseConfigSchema, insertImportConfigSchema, updateImportConfigSchema, databaseTypeEnum, importScheduleFrequencyEnum } from "@shared/schema";
@@ -1454,6 +1455,21 @@ export async function registerRoutes(
         return res.status(404).json({ message: "File not found" });
       }
       
+      const mode = req.query.mode;
+      if (mode === "view") {
+        const ext = req.params.filename.toLowerCase().split(".").pop() || "";
+        const mimeTypes: Record<string, string> = {
+          "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "gif": "image/gif",
+          "webp": "image/webp", "bmp": "image/bmp", "tif": "image/tiff", "tiff": "image/tiff",
+          "pdf": "application/pdf", "txt": "text/plain", "html": "text/html", "htm": "text/html",
+          "json": "application/json", "xml": "application/xml", "csv": "text/csv"
+        };
+        const contentType = mimeTypes[ext] || "application/octet-stream";
+        res.setHeader("Content-Type", contentType);
+        res.setHeader("Content-Disposition", `inline; filename="${req.params.filename}"`);
+        return res.sendFile(path.resolve(filePath));
+      }
+      
       res.download(filePath, req.params.filename);
     } catch (error) {
       console.error("Error downloading work order file:", error);
@@ -1589,6 +1605,21 @@ export async function registerRoutes(
       
       if (!filePath) {
         return res.status(404).json({ message: "File not found" });
+      }
+      
+      const mode = req.query.mode;
+      if (mode === "view") {
+        const ext = req.params.filename.toLowerCase().split(".").pop() || "";
+        const mimeTypes: Record<string, string> = {
+          "jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "gif": "image/gif",
+          "webp": "image/webp", "bmp": "image/bmp", "tif": "image/tiff", "tiff": "image/tiff",
+          "pdf": "application/pdf", "txt": "text/plain", "html": "text/html", "htm": "text/html",
+          "json": "application/json", "xml": "application/xml", "csv": "text/csv"
+        };
+        const contentType = mimeTypes[ext] || "application/octet-stream";
+        res.setHeader("Content-Type", contentType);
+        res.setHeader("Content-Disposition", `inline; filename="${req.params.filename}"`);
+        return res.sendFile(path.resolve(filePath));
       }
       
       res.download(filePath, req.params.filename);
