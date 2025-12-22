@@ -3,10 +3,16 @@ import { useRoute, Link, useLocation } from "wouter";
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
-import { Upload, File, Trash2, ArrowLeft, ShieldAlert, List, Grid, Image as ImageIcon, Download } from "lucide-react";
+import { Upload, File, Trash2, ArrowLeft, ShieldAlert, List, Grid, Image as ImageIcon, Download, Eye, MoreVertical } from "lucide-react";
 import type { Project } from "@shared/schema";
 
 type ViewMode = "list" | "thumbnail";
@@ -56,8 +62,17 @@ export default function WorkOrderFiles() {
     return `/api/projects/${projectId}/work-orders/${workOrderId}/files/${encodeURIComponent(filename)}/download`;
   };
 
-  const openFile = (filename: string) => {
+  const viewFile = (filename: string) => {
     window.open(getDownloadUrl(filename), "_blank");
+  };
+
+  const downloadFile = (filename: string) => {
+    const link = document.createElement("a");
+    link.href = getDownloadUrl(filename);
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const uploadFile = async (file: File) => {
@@ -246,43 +261,58 @@ export default function WorkOrderFiles() {
               {files.map((filename) => (
                 <div
                   key={filename}
-                  className="flex items-center justify-between p-3 rounded-md border hover-elevate cursor-pointer"
-                  onClick={() => openFile(filename)}
+                  className="flex items-center justify-between p-3 rounded-md border"
                   data-testid={`file-item-${filename}`}
                 >
-                  <div className="flex items-center gap-3">
-                    {isImageFile(filename) ? (
-                      <ImageIcon className="h-5 w-5 text-muted-foreground" />
-                    ) : (
-                      <File className="h-5 w-5 text-muted-foreground" />
-                    )}
-                    <span className="truncate">{filename}</span>
-                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button className="flex items-center gap-3 flex-1 text-left hover-elevate rounded-md p-1 -m-1 cursor-pointer">
+                        {isImageFile(filename) ? (
+                          <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                        ) : (
+                          <File className="h-5 w-5 text-muted-foreground" />
+                        )}
+                        <span className="truncate">{filename}</span>
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start">
+                      <DropdownMenuItem onClick={() => viewFile(filename)} data-testid={`menu-view-${filename}`}>
+                        <Eye className="h-4 w-4 mr-2" />
+                        View
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => downloadFile(filename)} data-testid={`menu-download-${filename}`}>
+                        <Download className="h-4 w-4 mr-2" />
+                        Download
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                   <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openFile(filename);
-                      }}
-                      data-testid={`button-download-file-${filename}`}
-                    >
-                      <Download className="h-4 w-4" />
-                    </Button>
-                    {user?.role === "admin" && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          deleteFile(filename);
-                        }}
-                        data-testid={`button-delete-file-${filename}`}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    )}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" data-testid={`button-actions-${filename}`}>
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={() => viewFile(filename)}>
+                          <Eye className="h-4 w-4 mr-2" />
+                          View
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => downloadFile(filename)}>
+                          <Download className="h-4 w-4 mr-2" />
+                          Download
+                        </DropdownMenuItem>
+                        {user?.role === "admin" && (
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={() => deleteFile(filename)}
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </div>
               ))}
@@ -290,42 +320,49 @@ export default function WorkOrderFiles() {
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
               {files.map((filename) => (
-                <div
-                  key={filename}
-                  className="relative group flex flex-col items-center p-3 rounded-md border hover-elevate cursor-pointer"
-                  onClick={() => openFile(filename)}
-                  data-testid={`thumbnail-item-${filename}`}
-                >
-                  <div className="w-full aspect-square flex items-center justify-center bg-muted rounded-md overflow-hidden mb-2">
-                    {isImageFile(filename) ? (
-                      <img
-                        src={getDownloadUrl(filename)}
-                        alt={filename}
-                        className="w-full h-full object-cover"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <File className="h-12 w-12 text-muted-foreground" />
-                    )}
-                  </div>
-                  <span className="text-xs text-center truncate w-full" title={filename}>
-                    {filename}
-                  </span>
-                  {user?.role === "admin" && (
-                    <Button
-                      variant="destructive"
-                      size="icon"
-                      className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteFile(filename);
-                      }}
-                      data-testid={`button-delete-thumbnail-${filename}`}
+                <DropdownMenu key={filename}>
+                  <DropdownMenuTrigger asChild>
+                    <div
+                      className="relative group flex flex-col items-center p-3 rounded-md border hover-elevate cursor-pointer"
+                      data-testid={`thumbnail-item-${filename}`}
                     >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  )}
-                </div>
+                      <div className="w-full aspect-square flex items-center justify-center bg-muted rounded-md overflow-hidden mb-2">
+                        {isImageFile(filename) ? (
+                          <img
+                            src={getDownloadUrl(filename)}
+                            alt={filename}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <File className="h-12 w-12 text-muted-foreground" />
+                        )}
+                      </div>
+                      <span className="text-xs text-center truncate w-full" title={filename}>
+                        {filename}
+                      </span>
+                    </div>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    <DropdownMenuItem onClick={() => viewFile(filename)}>
+                      <Eye className="h-4 w-4 mr-2" />
+                      View
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => downloadFile(filename)}>
+                      <Download className="h-4 w-4 mr-2" />
+                      Download
+                    </DropdownMenuItem>
+                    {user?.role === "admin" && (
+                      <DropdownMenuItem
+                        className="text-destructive"
+                        onClick={() => deleteFile(filename)}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               ))}
             </div>
           )}
