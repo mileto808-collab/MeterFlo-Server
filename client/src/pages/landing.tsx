@@ -78,7 +78,7 @@ export default function Landing() {
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-2">
             <ClipboardList className="h-6 w-6 text-primary" />
-            <span className="text-xl font-semibold">MeterFlow Server</span>
+            <span className="text-xl font-semibold">MeterFlo Server</span>
           </div>
           <ThemeToggle />
         </div>

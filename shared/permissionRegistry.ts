@@ -230,5 +230,11 @@ export const getAllPermissionKeys = (): string[] => {
 };
 
 export const getCategories = (): PermissionCategory[] => {
-  return [...new Set(permissionRegistry.map(p => p.category))];
+  const categories: PermissionCategory[] = [];
+  for (const p of permissionRegistry) {
+    if (!categories.includes(p.category)) {
+      categories.push(p.category);
+    }
+  }
+  return categories;
 };
