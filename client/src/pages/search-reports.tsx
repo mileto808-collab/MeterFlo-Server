@@ -108,16 +108,20 @@ export default function SearchReports() {
   const [filterOldMeterType, setFilterOldMeterType] = useState("all");
   const [filterNewMeterId, setFilterNewMeterId] = useState("");
   const [filterNewMeterType, setFilterNewMeterType] = useState("all");
-  const [filterScheduledDate, setFilterScheduledDate] = useState("");
+  const [filterScheduledDateFrom, setFilterScheduledDateFrom] = useState("");
+  const [filterScheduledDateTo, setFilterScheduledDateTo] = useState("");
   const [filterAssignedTo, setFilterAssignedTo] = useState("all");
   const [filterAssignedGroup, setFilterAssignedGroup] = useState("all");
   const [filterCreatedBy, setFilterCreatedBy] = useState("all");
   const [filterUpdatedBy, setFilterUpdatedBy] = useState("all");
-  const [filterCompletedAt, setFilterCompletedAt] = useState("");
+  const [filterCompletedAtFrom, setFilterCompletedAtFrom] = useState("");
+  const [filterCompletedAtTo, setFilterCompletedAtTo] = useState("");
   const [filterTroubleCode, setFilterTroubleCode] = useState("all");
   const [filterNotes, setFilterNotes] = useState("");
-  const [filterCreatedAt, setFilterCreatedAt] = useState("");
-  const [filterUpdatedAt, setFilterUpdatedAt] = useState("");
+  const [filterCreatedAtFrom, setFilterCreatedAtFrom] = useState("");
+  const [filterCreatedAtTo, setFilterCreatedAtTo] = useState("");
+  const [filterUpdatedAtFrom, setFilterUpdatedAtFrom] = useState("");
+  const [filterUpdatedAtTo, setFilterUpdatedAtTo] = useState("");
   const [isSearchActive, setIsSearchActive] = useState(false);
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
@@ -347,16 +351,20 @@ export default function SearchReports() {
     setFilterOldMeterType("all");
     setFilterNewMeterId("");
     setFilterNewMeterType("all");
-    setFilterScheduledDate("");
+    setFilterScheduledDateFrom("");
+    setFilterScheduledDateTo("");
     setFilterAssignedTo("all");
     setFilterAssignedGroup("all");
     setFilterCreatedBy("all");
     setFilterUpdatedBy("all");
-    setFilterCompletedAt("");
+    setFilterCompletedAtFrom("");
+    setFilterCompletedAtTo("");
     setFilterTroubleCode("all");
     setFilterNotes("");
-    setFilterCreatedAt("");
-    setFilterUpdatedAt("");
+    setFilterCreatedAtFrom("");
+    setFilterCreatedAtTo("");
+    setFilterUpdatedAtFrom("");
+    setFilterUpdatedAtTo("");
     setIsSearchActive(false);
     setSortColumn(null);
     setSortDirection("asc");
@@ -618,29 +626,41 @@ export default function SearchReports() {
     if (filterNotes) {
       results = results.filter(r => (r.workOrder.notes || '').toLowerCase().includes(filterNotes.toLowerCase()));
     }
-    if (filterScheduledDate) {
+    if (filterScheduledDateFrom || filterScheduledDateTo) {
       results = results.filter(r => {
         const scheduledDate = (r.workOrder as any).scheduledDate;
         if (!scheduledDate) return false;
-        return scheduledDate.startsWith(filterScheduledDate);
+        const dateStr = scheduledDate.substring(0, 10);
+        if (filterScheduledDateFrom && dateStr < filterScheduledDateFrom) return false;
+        if (filterScheduledDateTo && dateStr > filterScheduledDateTo) return false;
+        return true;
       });
     }
-    if (filterCompletedAt) {
+    if (filterCompletedAtFrom || filterCompletedAtTo) {
       results = results.filter(r => {
         if (!r.workOrder.completedAt) return false;
-        return r.workOrder.completedAt.startsWith(filterCompletedAt);
+        const dateStr = r.workOrder.completedAt.substring(0, 10);
+        if (filterCompletedAtFrom && dateStr < filterCompletedAtFrom) return false;
+        if (filterCompletedAtTo && dateStr > filterCompletedAtTo) return false;
+        return true;
       });
     }
-    if (filterCreatedAt) {
+    if (filterCreatedAtFrom || filterCreatedAtTo) {
       results = results.filter(r => {
         if (!r.workOrder.createdAt) return false;
-        return r.workOrder.createdAt.startsWith(filterCreatedAt);
+        const dateStr = r.workOrder.createdAt.substring(0, 10);
+        if (filterCreatedAtFrom && dateStr < filterCreatedAtFrom) return false;
+        if (filterCreatedAtTo && dateStr > filterCreatedAtTo) return false;
+        return true;
       });
     }
-    if (filterUpdatedAt) {
+    if (filterUpdatedAtFrom || filterUpdatedAtTo) {
       results = results.filter(r => {
         if (!r.workOrder.updatedAt) return false;
-        return r.workOrder.updatedAt.startsWith(filterUpdatedAt);
+        const dateStr = r.workOrder.updatedAt.substring(0, 10);
+        if (filterUpdatedAtFrom && dateStr < filterUpdatedAtFrom) return false;
+        if (filterUpdatedAtTo && dateStr > filterUpdatedAtTo) return false;
+        return true;
       });
     }
 
@@ -660,7 +680,7 @@ export default function SearchReports() {
       });
     }
     return results;
-  }, [searchResults?.results, sortColumn, sortDirection, filterCustomerWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterOldMeterType, filterNewMeterId, filterNewMeterType, filterAssignedTo, filterAssignedGroup, filterCreatedBy, filterUpdatedBy, filterTroubleCode, filterNotes, filterScheduledDate, filterCompletedAt, filterCreatedAt, filterUpdatedAt, users, userGroups]);
+  }, [searchResults?.results, sortColumn, sortDirection, filterCustomerWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterOldMeterType, filterNewMeterId, filterNewMeterType, filterAssignedTo, filterAssignedGroup, filterCreatedBy, filterUpdatedBy, filterTroubleCode, filterNotes, filterScheduledDateFrom, filterScheduledDateTo, filterCompletedAtFrom, filterCompletedAtTo, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo, users, userGroups]);
 
   // Calculate active filters
   const activeFiltersArray = [
@@ -684,16 +704,20 @@ export default function SearchReports() {
     filterOldMeterType !== "all",
     filterNewMeterId !== "",
     filterNewMeterType !== "all",
-    filterScheduledDate !== "",
+    filterScheduledDateFrom !== "",
+    filterScheduledDateTo !== "",
     filterAssignedTo !== "all",
     filterAssignedGroup !== "all",
     filterCreatedBy !== "all",
     filterUpdatedBy !== "all",
-    filterCompletedAt !== "",
+    filterCompletedAtFrom !== "",
+    filterCompletedAtTo !== "",
     filterTroubleCode !== "all",
     filterNotes !== "",
-    filterCreatedAt !== "",
-    filterUpdatedAt !== "",
+    filterCreatedAtFrom !== "",
+    filterCreatedAtTo !== "",
+    filterUpdatedAtFrom !== "",
+    filterUpdatedAtTo !== "",
   ];
   const hasActiveFilters = activeFiltersArray.some(Boolean);
   const activeFilterCount = activeFiltersArray.filter(Boolean).length;
@@ -1138,9 +1162,13 @@ export default function SearchReports() {
               </div>
             )}
             {isFilterVisible("scheduledDate") && (
-              <div className="min-w-[150px]">
-                <Label htmlFor="filter-scheduled-date">Scheduled Date</Label>
-                <Input id="filter-scheduled-date" type="date" value={filterScheduledDate} onChange={(e) => setFilterScheduledDate(e.target.value)} data-testid="input-filter-scheduled-date" />
+              <div className="min-w-[280px]">
+                <Label>Scheduled Date</Label>
+                <div className="flex gap-2 items-center">
+                  <Input id="filter-scheduled-date-from" type="date" value={filterScheduledDateFrom} onChange={(e) => setFilterScheduledDateFrom(e.target.value)} data-testid="input-filter-scheduled-date-from" className="flex-1" />
+                  <span className="text-muted-foreground text-sm">to</span>
+                  <Input id="filter-scheduled-date-to" type="date" value={filterScheduledDateTo} onChange={(e) => setFilterScheduledDateTo(e.target.value)} data-testid="input-filter-scheduled-date-to" className="flex-1" />
+                </div>
               </div>
             )}
             {isFilterVisible("assignedTo") && users.length > 0 && (
@@ -1208,9 +1236,13 @@ export default function SearchReports() {
               </div>
             )}
             {isFilterVisible("completedAt") && (
-              <div className="min-w-[150px]">
-                <Label htmlFor="filter-completed-at">Completed At</Label>
-                <Input id="filter-completed-at" type="date" value={filterCompletedAt} onChange={(e) => setFilterCompletedAt(e.target.value)} data-testid="input-filter-completed-at" />
+              <div className="min-w-[280px]">
+                <Label>Completed At</Label>
+                <div className="flex gap-2 items-center">
+                  <Input id="filter-completed-at-from" type="date" value={filterCompletedAtFrom} onChange={(e) => setFilterCompletedAtFrom(e.target.value)} data-testid="input-filter-completed-at-from" className="flex-1" />
+                  <span className="text-muted-foreground text-sm">to</span>
+                  <Input id="filter-completed-at-to" type="date" value={filterCompletedAtTo} onChange={(e) => setFilterCompletedAtTo(e.target.value)} data-testid="input-filter-completed-at-to" className="flex-1" />
+                </div>
               </div>
             )}
             {isFilterVisible("troubleCode") && troubleCodes.length > 0 && (
@@ -1237,15 +1269,23 @@ export default function SearchReports() {
               </div>
             )}
             {isFilterVisible("createdAt") && (
-              <div className="min-w-[150px]">
-                <Label htmlFor="filter-created-at">Created At</Label>
-                <Input id="filter-created-at" type="date" value={filterCreatedAt} onChange={(e) => setFilterCreatedAt(e.target.value)} data-testid="input-filter-created-at" />
+              <div className="min-w-[280px]">
+                <Label>Created At</Label>
+                <div className="flex gap-2 items-center">
+                  <Input id="filter-created-at-from" type="date" value={filterCreatedAtFrom} onChange={(e) => setFilterCreatedAtFrom(e.target.value)} data-testid="input-filter-created-at-from" className="flex-1" />
+                  <span className="text-muted-foreground text-sm">to</span>
+                  <Input id="filter-created-at-to" type="date" value={filterCreatedAtTo} onChange={(e) => setFilterCreatedAtTo(e.target.value)} data-testid="input-filter-created-at-to" className="flex-1" />
+                </div>
               </div>
             )}
             {isFilterVisible("updatedAt") && (
-              <div className="min-w-[150px]">
-                <Label htmlFor="filter-updated-at">Updated At</Label>
-                <Input id="filter-updated-at" type="date" value={filterUpdatedAt} onChange={(e) => setFilterUpdatedAt(e.target.value)} data-testid="input-filter-updated-at" />
+              <div className="min-w-[280px]">
+                <Label>Updated At</Label>
+                <div className="flex gap-2 items-center">
+                  <Input id="filter-updated-at-from" type="date" value={filterUpdatedAtFrom} onChange={(e) => setFilterUpdatedAtFrom(e.target.value)} data-testid="input-filter-updated-at-from" className="flex-1" />
+                  <span className="text-muted-foreground text-sm">to</span>
+                  <Input id="filter-updated-at-to" type="date" value={filterUpdatedAtTo} onChange={(e) => setFilterUpdatedAtTo(e.target.value)} data-testid="input-filter-updated-at-to" className="flex-1" />
+                </div>
               </div>
             )}
             </div>
