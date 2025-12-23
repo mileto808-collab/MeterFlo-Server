@@ -27,7 +27,7 @@ Preferred communication style: Simple, everyday language.
 - **Role-Based Access Control (RBAC)**: Subrole-driven design with granular permissions. Subroles (Administrator, Project Manager, Field Technician, Viewer) determine access levels, automatically mapping to main roles (admin, user, customer). Permissions are managed via a central registry and synced to the database.
 - **Multi-Tenancy**:
     - **Database Isolation**: Each project gets its own PostgreSQL schema (e.g., `projectName_projectID`).
-    - **File Storage**: Configurable root directory with project-specific file structures.
+    - **File Storage**: Configurable root directory with structure: `Project Files/ProjectName_ID/Work Orders/customerWoId/` for work order attachments, plus `Project Documents/` and `Project FTP Files/` subfolders. Legacy folders are automatically migrated.
 - **Work Order Management**: Create, edit, assign, track. Customizable statuses, audit fields, and completion validation.
 - **User Management**: Role assignment via subroles, user lock/unlock, password reset.
 - **Project Management**: Project creation, editing, and per-project database backup/restore.
