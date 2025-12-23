@@ -2809,7 +2809,7 @@ export default function ProjectWorkOrders() {
               </Button>
             )}
             <div className="flex-1" />
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <ColumnSelector
                 allColumns={workOrderColumns}
                 visibleColumns={visibleColumns}
