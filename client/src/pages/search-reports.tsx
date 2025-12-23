@@ -29,7 +29,8 @@ import { useColumnPreferences } from "@/hooks/use-column-preferences";
 import { FilterSelector, type FilterConfig } from "@/components/filter-selector";
 import { useFilterPreferences } from "@/hooks/use-filter-preferences";
 import { SortDialog } from "@/components/SortDialog";
-import { Search, Download, FileSpreadsheet, FileText, FileDown, Filter, X, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { RouteSheetDialog } from "@/components/RouteSheetDialog";
+import { Search, Download, FileSpreadsheet, FileText, FileDown, Filter, X, ArrowUpDown, ArrowUp, ArrowDown, Route } from "lucide-react";
 import type { Project, ServiceTypeRecord, WorkOrderStatus, MeterType, TroubleCode, User, UserGroup } from "@shared/schema";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
@@ -123,6 +124,7 @@ export default function SearchReports() {
   const [filterUpdatedAtTo, setFilterUpdatedAtTo] = useState("");
   const [isSearchActive, setIsSearchActive] = useState(false);
   const [sortCriteria, setSortCriteria] = useState<Array<{ column: string; direction: "asc" | "desc" }>>([]);
+  const [showRouteSheetDialog, setShowRouteSheetDialog] = useState(false);
   const [stateRestored, setStateRestored] = useState(false);
   const [showFilters, setShowFilters] = useState(true);
 
@@ -1367,6 +1369,10 @@ export default function SearchReports() {
                       <FileDown className="h-4 w-4 mr-2" />
                       PDF
                     </Button>
+                    <Button variant="outline" size="sm" onClick={() => setShowRouteSheetDialog(true)} data-testid="button-route-sheet">
+                      <Route className="h-4 w-4 mr-2" />
+                      Route Sheet
+                    </Button>
                   </div>
                 )}
               </div>
@@ -1430,6 +1436,16 @@ export default function SearchReports() {
           </CardContent>
         </Card>
       )}
+
+      <RouteSheetDialog
+        open={showRouteSheetDialog}
+        onOpenChange={setShowRouteSheetDialog}
+        workOrders={filteredAndSortedResults.map(r => ({
+          customerWoId: r.workOrder.customerWoId || String(r.workOrder.id),
+          address: r.workOrder.address || "",
+          oldMeterNumber: r.workOrder.oldMeterId || null,
+        }))}
+      />
     </div>
   );
 }

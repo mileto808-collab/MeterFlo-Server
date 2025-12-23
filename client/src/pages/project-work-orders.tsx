@@ -11,6 +11,7 @@ import { useColumnPreferences } from "@/hooks/use-column-preferences";
 import { FilterSelector, type FilterConfig } from "@/components/filter-selector";
 import { useFilterPreferences } from "@/hooks/use-filter-preferences";
 import { SortDialog } from "@/components/SortDialog";
+import { RouteSheetDialog } from "@/components/RouteSheetDialog";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -41,7 +42,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useTimezone } from "@/hooks/use-timezone";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, ArrowLeft, Search, ArrowUpDown, ArrowUp, ArrowDown, Download, FileSpreadsheet, FileText, Filter, X } from "lucide-react";
+import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, ArrowLeft, Search, ArrowUpDown, ArrowUp, ArrowDown, Download, FileSpreadsheet, FileText, Filter, X, Route } from "lucide-react";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
 import { Label } from "@/components/ui/label";
@@ -96,6 +97,7 @@ export default function ProjectWorkOrders() {
   const [accessDenied, setAccessDenied] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortCriteria, setSortCriteria] = useState<Array<{ column: string; direction: "asc" | "desc" }>>([]);
+  const [showRouteSheetDialog, setShowRouteSheetDialog] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [selectedServiceType, setSelectedServiceType] = useState<string>("all");
   const [selectedAssignedTo, setSelectedAssignedTo] = useState<string>("all");
@@ -2836,9 +2838,13 @@ export default function ProjectWorkOrders() {
                 <FileSpreadsheet className="h-4 w-4 mr-2" />
                 Excel
               </Button>
-              <Button variant="outline" onClick={exportToPDF} data-testid="button-export-pdf">
+              <Button variant="outline" onClick={exportToPDF} data-testid="button-export-pdf-workorders">
                 <FileText className="h-4 w-4 mr-2" />
                 PDF
+              </Button>
+              <Button variant="outline" onClick={() => setShowRouteSheetDialog(true)} data-testid="button-route-sheet-workorders">
+                <Route className="h-4 w-4 mr-2" />
+                Route Sheet
               </Button>
             </div>
           </div>
@@ -3259,6 +3265,17 @@ export default function ProjectWorkOrders() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <RouteSheetDialog
+        open={showRouteSheetDialog}
+        onOpenChange={setShowRouteSheetDialog}
+        workOrders={filteredAndSortedWorkOrders.map(wo => ({
+          customerWoId: wo.customerWoId || String(wo.id),
+          address: wo.address || "",
+          oldMeterNumber: wo.oldMeterId || null,
+        }))}
+        projectName={project?.name}
+      />
     </div>
   );
 }
