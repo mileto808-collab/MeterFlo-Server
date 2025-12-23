@@ -74,7 +74,8 @@ type ParsedWorkOrder = {
   scheduledDate?: string;
   trouble?: string;
   notes?: string;
-  assignedTo?: string;
+  assignedUserId?: string;
+  assignedGroupId?: string;
   createdBy?: string;
   completedAt?: string;
 };
@@ -101,7 +102,8 @@ type ColumnMapping = {
   scheduledDate: string;
   trouble: string;
   notes: string;
-  assignedTo: string;
+  assignedUserId: string;
+  assignedGroupId: string;
   createdBy: string;
   completedAt: string;
 };
@@ -128,7 +130,8 @@ const defaultColumnMapping: ColumnMapping = {
   scheduledDate: "",
   trouble: "",
   notes: "",
-  assignedTo: "",
+  assignedUserId: "",
+  assignedGroupId: "",
   createdBy: "",
   completedAt: "",
 };
@@ -462,7 +465,8 @@ export default function ProjectImport() {
       { field: "scheduledDate", variants: ["scheduled date", "scheduled_date", "scheduleddate", "schedule date", "schedule", "due date", "due_date", "scheduled datetime", "scheduled_datetime"] },
       { field: "trouble", variants: ["trouble", "issue", "problem", "trouble code", "trouble_code"] },
       { field: "notes", variants: ["notes", "comments", "remarks", "description"] },
-      { field: "assignedTo", variants: ["assigned", "assignedto", "assigned to", "technician", "worker", "assignee", "tech"] },
+      { field: "assignedUserId", variants: ["assigned_user_id", "assigned user", "assigneduserid", "technician", "worker", "assignee", "tech"] },
+      { field: "assignedGroupId", variants: ["assigned_group_id", "assigned group", "assignedgroupid", "team", "group", "crew"] },
       { field: "createdBy", variants: ["created by", "created_by", "createdby", "creator", "created by user"] },
       { field: "completedAt", variants: ["completed at", "completed_at", "completedat", "completion date", "completion_date", "completed date", "completed_date"] },
     ];
@@ -516,7 +520,8 @@ export default function ProjectImport() {
         scheduledDate: getValueByHeader(columnMapping.scheduledDate) || undefined,
         trouble: getValueByHeader(columnMapping.trouble) || undefined,
         notes: getValueByHeader(columnMapping.notes) || undefined,
-        assignedTo: getValueByHeader(columnMapping.assignedTo) || undefined,
+        assignedUserId: getValueByHeader(columnMapping.assignedUserId) || undefined,
+        assignedGroupId: getValueByHeader(columnMapping.assignedGroupId) || undefined,
         createdBy: getValueByHeader(columnMapping.createdBy) || undefined,
         completedAt: getValueByHeader(columnMapping.completedAt) || undefined,
       };
@@ -582,7 +587,8 @@ export default function ProjectImport() {
         scheduledDate: getValueByHeader(columnMapping.scheduledDate) || undefined,
         trouble: getValueByHeader(columnMapping.trouble) || undefined,
         notes: getValueByHeader(columnMapping.notes) || undefined,
-        assignedTo: getValueByHeader(columnMapping.assignedTo) || undefined,
+        assignedUserId: getValueByHeader(columnMapping.assignedUserId) || undefined,
+        assignedGroupId: getValueByHeader(columnMapping.assignedGroupId) || undefined,
         createdBy: getValueByHeader(columnMapping.createdBy) || undefined,
         completedAt: getValueByHeader(columnMapping.completedAt) || undefined,
       };
@@ -797,7 +803,7 @@ export default function ProjectImport() {
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">old_gps</span> - GPS coordinates</div>
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">old_meter_type, new_meter_type</span> - Meter types</div>
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">status, scheduled_date, trouble, notes</span> - Work order details</div>
-                    <div><span className="font-mono bg-muted px-2 py-1 rounded">assigned_to, created_by, completed_at</span> - Assignment and tracking</div>
+                    <div><span className="font-mono bg-muted px-2 py-1 rounded">assigned_user_id, assigned_group_id, created_by, completed_at</span> - Assignment and tracking</div>
                   </div>
                 </div>
                 
@@ -845,7 +851,8 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,M
                   <MappingSelect field="scheduledDate" label="Scheduled Date & Time" />
                   <MappingSelect field="trouble" label="Trouble" />
                   <MappingSelect field="notes" label="Notes" />
-                  <MappingSelect field="assignedTo" label="Assigned To" />
+                  <MappingSelect field="assignedUserId" label="Assigned User" />
+                  <MappingSelect field="assignedGroupId" label="Assigned Group" />
                   <MappingSelect field="createdBy" label="Created By" />
                   <MappingSelect field="completedAt" label="Completed At" />
                 </div>
@@ -1169,7 +1176,7 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,M
               <div>
                 <h4 className="font-medium mb-2">Optional Columns</h4>
                 <div className="text-sm text-muted-foreground">
-                  city, state, zip, phone, email, route, zone, old_meter_id, old_meter_reading, old_gps, old_meter_type, new_meter_type, status, scheduled_date, trouble, notes, assigned_to, created_by, completed_at
+                  city, state, zip, phone, email, route, zone, old_meter_id, old_meter_reading, old_gps, old_meter_type, new_meter_type, status, scheduled_date, trouble, notes, assigned_user_id, assigned_group_id, created_by, completed_at
                 </div>
               </div>
             </CardContent>
