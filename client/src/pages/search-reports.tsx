@@ -28,6 +28,7 @@ import { ColumnSelector, type ColumnConfig } from "@/components/column-selector"
 import { useColumnPreferences } from "@/hooks/use-column-preferences";
 import { FilterSelector, type FilterConfig } from "@/components/filter-selector";
 import { useFilterPreferences } from "@/hooks/use-filter-preferences";
+import { SortDialog } from "@/components/SortDialog";
 import { Search, Download, FileSpreadsheet, FileText, FileDown, Filter, X, ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 import type { Project, ServiceTypeRecord, WorkOrderStatus, MeterType, TroubleCode, User, UserGroup } from "@shared/schema";
 import * as XLSX from "xlsx";
@@ -1348,6 +1349,11 @@ export default function SearchReports() {
                       onChange={setVisibleColumns}
                       disabled={columnPrefsLoading}
                       orderedColumns={orderedColumns}
+                    />
+                    <SortDialog
+                      sortCriteria={sortCriteria}
+                      setSortCriteria={setSortCriteria}
+                      columns={columns}
                     />
                     <Button variant="outline" size="sm" onClick={exportToCSV} data-testid="button-export-csv">
                       <FileText className="h-4 w-4 mr-2" />
