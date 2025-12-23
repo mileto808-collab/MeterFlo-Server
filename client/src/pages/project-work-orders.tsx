@@ -10,6 +10,7 @@ import { ColumnSelector, type ColumnConfig } from "@/components/column-selector"
 import { useColumnPreferences } from "@/hooks/use-column-preferences";
 import { FilterSelector, type FilterConfig } from "@/components/filter-selector";
 import { useFilterPreferences } from "@/hooks/use-filter-preferences";
+import { SortDialog } from "@/components/SortDialog";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -2821,6 +2822,11 @@ export default function ProjectWorkOrders() {
                 visibleFilters={visibleFilters}
                 onChange={setVisibleFilters}
                 disabled={filterPrefsLoading}
+              />
+              <SortDialog
+                sortCriteria={sortCriteria}
+                setSortCriteria={setSortCriteria}
+                columns={workOrderColumns}
               />
               <Button variant="outline" onClick={exportToCSV} data-testid="button-export-csv">
                 <Download className="h-4 w-4 mr-2" />
