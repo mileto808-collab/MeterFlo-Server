@@ -55,6 +55,42 @@ export async function ensureProjectDirectory(projectName: string, projectId: num
   return fullPath;
 }
 
+// Rename a project directory when project name changes
+export async function renameProjectDirectory(
+  oldProjectName: string,
+  newProjectName: string,
+  projectId: number
+): Promise<boolean> {
+  const rootPath = await ensureProjectFilesRoot();
+  const oldDirName = getProjectDirectoryName(oldProjectName, projectId);
+  const newDirName = getProjectDirectoryName(newProjectName, projectId);
+  
+  // If names are the same after sanitization, no rename needed
+  if (oldDirName === newDirName) {
+    return true;
+  }
+  
+  const oldPath = path.join(rootPath, oldDirName);
+  const newPath = path.join(rootPath, newDirName);
+  
+  try {
+    // Check if old directory exists
+    await fs.access(oldPath);
+    // Rename the directory
+    await fs.rename(oldPath, newPath);
+    return true;
+  } catch (error) {
+    // Old directory doesn't exist or rename failed
+    // Try to ensure the new directory exists instead
+    try {
+      await fs.mkdir(newPath, { recursive: true });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
 // Ensure a work order directory exists within a project
 // Uses customerWoId (the customer's work order identifier) for the folder name
 // If legacyWorkOrderId is provided, checks for legacy folder first for backward compatibility
@@ -316,17 +352,65 @@ export async function saveProjectFtpFile(
 // === PROJECT-LEVEL FILE FUNCTIONS ===
 
 // Ensure project documents folder exists (separate from work order folders)
+// Migrates legacy "_project_documents" folder to "Project Documents" if needed
 export async function ensureProjectDocumentsDirectory(projectName: string, projectId: number): Promise<string> {
   const projectPath = await ensureProjectDirectory(projectName, projectId);
-  const docsDir = path.join(projectPath, "_project_documents");
+  const legacyDocsDir = path.join(projectPath, "_project_documents");
+  const newDocsDir = path.join(projectPath, "Project Documents");
   
+  // Check if legacy folder exists
+  let legacyExists = false;
   try {
-    await fs.mkdir(docsDir, { recursive: true });
+    await fs.access(legacyDocsDir);
+    legacyExists = true;
+  } catch {
+    // Legacy folder doesn't exist
+  }
+  
+  // Ensure new folder exists
+  try {
+    await fs.mkdir(newDocsDir, { recursive: true });
   } catch (error) {
     // Directory might already exist
   }
   
-  return docsDir;
+  // If legacy folder exists, migrate files from it to new folder
+  if (legacyExists) {
+    try {
+      const legacyFiles = await fs.readdir(legacyDocsDir);
+      for (const file of legacyFiles) {
+        const sourcePath = path.join(legacyDocsDir, file);
+        const destPath = path.join(newDocsDir, file);
+        
+        // Check if destination file already exists
+        try {
+          await fs.access(destPath);
+          // File exists in new folder, skip to avoid overwriting
+        } catch {
+          // File doesn't exist in new folder, move it
+          try {
+            await fs.rename(sourcePath, destPath);
+          } catch (moveError) {
+            console.error(`Failed to migrate file ${file} from legacy project documents:`, moveError);
+          }
+        }
+      }
+      
+      // Try to remove legacy folder if empty
+      try {
+        const remainingFiles = await fs.readdir(legacyDocsDir);
+        if (remainingFiles.length === 0) {
+          await fs.rmdir(legacyDocsDir);
+        }
+      } catch {
+        // Folder may not be empty or removal failed - leave it
+      }
+    } catch (error) {
+      console.error("Failed to migrate legacy project documents:", error);
+    }
+  }
+  
+  return newDocsDir;
 }
 
 // Save a file to project documents
