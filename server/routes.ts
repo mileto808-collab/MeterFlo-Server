@@ -8,7 +8,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import multer from "multer";
 import { createProjectSchema, deleteProjectSchema, getProjectWorkOrderStorage, sanitizeSchemaName, backupProjectDatabase, restoreProjectDatabase, getProjectDatabaseStats } from "./projectDb";
-import { ensureProjectDirectory, saveWorkOrderFile, getWorkOrderFiles, deleteWorkOrderFile, getFilePath, getProjectFilesPath, setProjectFilesPath, deleteProjectDirectory, saveProjectFile, getProjectFiles, deleteProjectFile, getProjectFilePath, ensureProjectFtpDirectory, getProjectFtpFiles, deleteProjectFtpFile, getProjectFtpFilePath, saveProjectFtpFile } from "./fileStorage";
+import { ensureProjectDirectory, renameProjectDirectory, saveWorkOrderFile, getWorkOrderFiles, deleteWorkOrderFile, getFilePath, getProjectFilesPath, setProjectFilesPath, deleteProjectDirectory, saveProjectFile, getProjectFiles, deleteProjectFile, getProjectFilePath, ensureProjectFtpDirectory, getProjectFtpFiles, deleteProjectFtpFile, getProjectFtpFilePath, saveProjectFtpFile } from "./fileStorage";
 import { ExternalDatabaseService } from "./externalDbService";
 import { createBackupArchive, extractDatabaseBackupFromArchive, restoreFullSystem, restoreFilesFromArchive } from "./systemBackup";
 
@@ -912,7 +912,21 @@ export async function registerRoutes(
       if (!canEditProjects) {
         return res.status(403).json({ message: "Forbidden: You don't have permission to edit projects" });
       }
-      const project = await storage.updateProject(parseInt(req.params.id), req.body);
+      
+      const projectId = parseInt(req.params.id);
+      
+      // Get the current project to check if name is changing
+      const existingProject = await storage.getProject(projectId);
+      if (!existingProject) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      // If name is changing, rename the project directory
+      if (req.body.name && req.body.name !== existingProject.name) {
+        await renameProjectDirectory(existingProject.name, req.body.name, projectId);
+      }
+      
+      const project = await storage.updateProject(projectId, req.body);
       if (!project) {
         return res.status(404).json({ message: "Project not found" });
       }
