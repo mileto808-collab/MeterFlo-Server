@@ -1719,7 +1719,19 @@ export default function Users() {
                 </TableHeader>
                 <TableBody>
                   {filteredUsers.map((user) => (
-                    <TableRow key={user.id} data-testid={`row-user-${user.id}`}>
+                    <TableRow 
+                      key={user.id} 
+                      data-testid={`row-user-${user.id}`}
+                      className="cursor-pointer"
+                      onDoubleClick={() => handleEditUser(user)}
+                      onTouchEnd={(e) => {
+                        const target = e.target as HTMLElement;
+                        if (target.closest('button, a, [role="button"]')) return;
+                        if (target.closest('tr')) {
+                          handleEditUser(user);
+                        }
+                      }}
+                    >
                       {orderedColumns.map(col => renderDataCell(col.key, user))}
                       <TableCell>
                         <DropdownMenu>
