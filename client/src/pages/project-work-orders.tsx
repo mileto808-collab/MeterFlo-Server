@@ -42,7 +42,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useTimezone } from "@/hooks/use-timezone";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, ArrowLeft, Search, ArrowUpDown, ArrowUp, ArrowDown, Download, FileSpreadsheet, FileText, Filter, X, Route } from "lucide-react";
+import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, ArrowLeft, Search, ArrowUpDown, ArrowUp, ArrowDown, Download, FileSpreadsheet, FileText, Filter, X, Route, ChevronRight } from "lucide-react";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
 import { Label } from "@/components/ui/label";
@@ -3160,12 +3160,13 @@ export default function ProjectWorkOrders() {
                   <TableRow>
                     {visibleColumns.map(key => renderHeaderCell(key))}
                     {user?.role !== "customer" && <TableHead>Actions</TableHead>}
+                    <TableHead className="w-8"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredAndSortedWorkOrders.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={visibleColumns.length + 1} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={visibleColumns.length + (user?.role !== "customer" ? 1 : 0) + 1} className="text-center py-8 text-muted-foreground">
                         No work orders match your search
                       </TableCell>
                     </TableRow>
@@ -3173,28 +3174,11 @@ export default function ProjectWorkOrders() {
                     <TableRow 
                       key={workOrder.id} 
                       data-testid={`row-work-order-${workOrder.id}`}
-                      className="cursor-pointer"
-                      onDoubleClick={() => handleEdit(workOrder)}
-                      onTouchStart={(e) => {
+                      className="cursor-pointer hover-elevate"
+                      onClick={(e) => {
                         const target = e.target as HTMLElement;
                         if (target.closest('button, a, [role="button"]')) return;
-                        const row = target.closest('tr');
-                        if (row) {
-                          row.dataset.touchStart = String(Date.now());
-                        }
-                      }}
-                      onTouchEnd={(e) => {
-                        const target = e.target as HTMLElement;
-                        if (target.closest('button, a, [role="button"]')) return;
-                        const row = target.closest('tr');
-                        if (row && row.dataset.touchStart) {
-                          const duration = Date.now() - parseInt(row.dataset.touchStart);
-                          delete row.dataset.touchStart;
-                          if (duration >= 900) {
-                            e.preventDefault();
-                            handleEdit(workOrder);
-                          }
-                        }
+                        handleEdit(workOrder);
                       }}
                     >
                       {visibleColumns.map(key => renderDataCell(key, workOrder))}
@@ -3228,6 +3212,9 @@ export default function ProjectWorkOrders() {
                           </div>
                         </TableCell>
                       )}
+                      <TableCell className="w-8 text-muted-foreground">
+                        <ChevronRight className="h-4 w-4" />
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

@@ -30,7 +30,7 @@ import { FilterSelector, type FilterConfig } from "@/components/filter-selector"
 import { useFilterPreferences } from "@/hooks/use-filter-preferences";
 import { SortDialog } from "@/components/SortDialog";
 import { RouteSheetDialog } from "@/components/RouteSheetDialog";
-import { Search, Download, FileSpreadsheet, FileText, FileDown, Filter, X, ArrowUpDown, ArrowUp, ArrowDown, Route } from "lucide-react";
+import { Search, Download, FileSpreadsheet, FileText, FileDown, Filter, X, ArrowUpDown, ArrowUp, ArrowDown, Route, ChevronRight } from "lucide-react";
 import type { Project, ServiceTypeRecord, WorkOrderStatus, MeterType, TroubleCode, User, UserGroup } from "@shared/schema";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
@@ -1391,6 +1391,7 @@ export default function SearchReports() {
                       <TableRow>
                         {orderedColumns.filter(col => col.key !== "actions").map(col => renderHeaderCell(col.key))}
                         {isColumnVisible("actions") && <TableHead>Actions</TableHead>}
+                        <TableHead className="w-8"></TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1410,28 +1411,11 @@ export default function SearchReports() {
                         <TableRow 
                           key={`${result.projectId}-${result.workOrder.id}-${index}`} 
                           data-testid={`row-result-${index}`}
-                          className="cursor-pointer"
-                          onDoubleClick={navigateToWorkOrder}
-                          onTouchStart={(e) => {
+                          className="cursor-pointer hover-elevate"
+                          onClick={(e) => {
                             const target = e.target as HTMLElement;
                             if (target.closest('button, a, [role="button"]')) return;
-                            const row = target.closest('tr');
-                            if (row) {
-                              row.dataset.touchStart = String(Date.now());
-                            }
-                          }}
-                          onTouchEnd={(e) => {
-                            const target = e.target as HTMLElement;
-                            if (target.closest('button, a, [role="button"]')) return;
-                            const row = target.closest('tr');
-                            if (row && row.dataset.touchStart) {
-                              const duration = Date.now() - parseInt(row.dataset.touchStart);
-                              delete row.dataset.touchStart;
-                              if (duration >= 900) {
-                                e.preventDefault();
-                                navigateToWorkOrder();
-                              }
-                            }
+                            navigateToWorkOrder();
                           }}
                         >
                           {orderedColumns.filter(col => col.key !== "actions").map(col => renderDataCell(col.key, result))}
@@ -1456,6 +1440,9 @@ export default function SearchReports() {
                               </Link>
                             </TableCell>
                           )}
+                          <TableCell className="w-8 text-muted-foreground">
+                            <ChevronRight className="h-4 w-4" />
+                          </TableCell>
                         </TableRow>
                           );
                       })}

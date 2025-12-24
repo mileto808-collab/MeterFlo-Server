@@ -27,7 +27,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import type { User, Project, Subrole } from "@shared/schema";
-import { Search, Users as UsersIcon, Plus, MoreHorizontal, Pencil, Lock, Unlock, Key, Trash2, FolderPlus, X, Folder, ArrowLeft, ArrowUpDown, ArrowUp, ArrowDown, Filter, Download, FileSpreadsheet, FileText } from "lucide-react";
+import { Search, Users as UsersIcon, Plus, MoreHorizontal, Pencil, Lock, Unlock, Key, Trash2, FolderPlus, X, Folder, ArrowLeft, ArrowUpDown, ArrowUp, ArrowDown, Filter, Download, FileSpreadsheet, FileText, ChevronRight } from "lucide-react";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
 
@@ -1715,6 +1715,7 @@ export default function Users() {
                   <TableRow>
                     {orderedColumns.map(col => renderHeaderCell(col.key))}
                     <TableHead className="w-[80px]">Actions</TableHead>
+                    <TableHead className="w-8"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1722,28 +1723,11 @@ export default function Users() {
                     <TableRow 
                       key={user.id} 
                       data-testid={`row-user-${user.id}`}
-                      className="cursor-pointer"
-                      onDoubleClick={() => handleEditUser(user)}
-                      onTouchStart={(e) => {
+                      className="cursor-pointer hover-elevate"
+                      onClick={(e) => {
                         const target = e.target as HTMLElement;
                         if (target.closest('button, a, [role="button"]')) return;
-                        const row = target.closest('tr');
-                        if (row) {
-                          row.dataset.touchStart = String(Date.now());
-                        }
-                      }}
-                      onTouchEnd={(e) => {
-                        const target = e.target as HTMLElement;
-                        if (target.closest('button, a, [role="button"]')) return;
-                        const row = target.closest('tr');
-                        if (row && row.dataset.touchStart) {
-                          const duration = Date.now() - parseInt(row.dataset.touchStart);
-                          delete row.dataset.touchStart;
-                          if (duration >= 900) {
-                            e.preventDefault();
-                            handleEditUser(user);
-                          }
-                        }
+                        handleEditUser(user);
                       }}
                     >
                       {orderedColumns.map(col => renderDataCell(col.key, user))}
@@ -1794,6 +1778,9 @@ export default function Users() {
                             )}
                           </DropdownMenuContent>
                         </DropdownMenu>
+                      </TableCell>
+                      <TableCell className="w-8 text-muted-foreground">
+                        <ChevronRight className="h-4 w-4" />
                       </TableCell>
                     </TableRow>
                   ))}
