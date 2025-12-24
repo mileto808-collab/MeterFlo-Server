@@ -3170,7 +3170,19 @@ export default function ProjectWorkOrders() {
                       </TableCell>
                     </TableRow>
                   ) : filteredAndSortedWorkOrders.map((workOrder) => (
-                    <TableRow key={workOrder.id} data-testid={`row-work-order-${workOrder.id}`}>
+                    <TableRow 
+                      key={workOrder.id} 
+                      data-testid={`row-work-order-${workOrder.id}`}
+                      className="cursor-pointer"
+                      onDoubleClick={() => handleEdit(workOrder)}
+                      onTouchEnd={(e) => {
+                        const target = e.target as HTMLElement;
+                        if (target.closest('button, a, [role="button"]')) return;
+                        if (target.closest('tr')) {
+                          handleEdit(workOrder);
+                        }
+                      }}
+                    >
                       {visibleColumns.map(key => renderDataCell(key, workOrder))}
                       {user?.role !== "customer" && (
                         <TableCell>

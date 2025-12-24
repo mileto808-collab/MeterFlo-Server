@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState, useMemo, useEffect } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -84,6 +84,7 @@ export default function SearchReports() {
   const { user } = useAuth();
   const { toast } = useToast();
   const { formatExport, formatCustom } = useTimezone();
+  const [, navigate] = useLocation();
   
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProject, setSelectedProjectState] = useState<string>("all");
@@ -1393,8 +1394,32 @@ export default function SearchReports() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredAndSortedResults.map((result, index) => (
-                        <TableRow key={`${result.projectId}-${result.workOrder.id}-${index}`} data-testid={`row-result-${index}`}>
+                      {filteredAndSortedResults.map((result, index) => {
+                          const navigateToWorkOrder = () => {
+                            const searchState = {
+                              searchQuery,
+                              selectedProject,
+                              selectedStatus,
+                              selectedServiceType,
+                              isSearchActive,
+                            };
+                            sessionStorage.setItem('searchReportsState', JSON.stringify(searchState));
+                            navigate(`/projects/${result.projectId}/work-orders?edit=${result.workOrder.id}&from=search`);
+                          };
+                          return (
+                        <TableRow 
+                          key={`${result.projectId}-${result.workOrder.id}-${index}`} 
+                          data-testid={`row-result-${index}`}
+                          className="cursor-pointer"
+                          onDoubleClick={navigateToWorkOrder}
+                          onTouchEnd={(e) => {
+                            const target = e.target as HTMLElement;
+                            if (target.closest('button, a, [role="button"]')) return;
+                            if (target.closest('tr')) {
+                              navigateToWorkOrder();
+                            }
+                          }}
+                        >
                           {orderedColumns.filter(col => col.key !== "actions").map(col => renderDataCell(col.key, result))}
                           {isColumnVisible("actions") && (
                             <TableCell>
@@ -1418,7 +1443,8 @@ export default function SearchReports() {
                             </TableCell>
                           )}
                         </TableRow>
-                      ))}
+                          );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
