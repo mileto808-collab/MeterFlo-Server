@@ -1724,11 +1724,25 @@ export default function Users() {
                       data-testid={`row-user-${user.id}`}
                       className="cursor-pointer"
                       onDoubleClick={() => handleEditUser(user)}
+                      onTouchStart={(e) => {
+                        const target = e.target as HTMLElement;
+                        if (target.closest('button, a, [role="button"]')) return;
+                        const row = target.closest('tr');
+                        if (row) {
+                          row.dataset.touchStart = String(Date.now());
+                        }
+                      }}
                       onTouchEnd={(e) => {
                         const target = e.target as HTMLElement;
                         if (target.closest('button, a, [role="button"]')) return;
-                        if (target.closest('tr')) {
-                          handleEditUser(user);
+                        const row = target.closest('tr');
+                        if (row && row.dataset.touchStart) {
+                          const duration = Date.now() - parseInt(row.dataset.touchStart);
+                          delete row.dataset.touchStart;
+                          if (duration >= 500) {
+                            e.preventDefault();
+                            handleEditUser(user);
+                          }
                         }
                       }}
                     >
