@@ -100,7 +100,7 @@ export async function createProjectSchema(projectName: string, projectId: number
         new_meter_reading INTEGER,
         old_gps VARCHAR(100),
         new_gps VARCHAR(100),
-        status VARCHAR(50) NOT NULL DEFAULT 'Open',
+        status VARCHAR(50) NOT NULL DEFAULT 'Open' REFERENCES public.work_order_statuses(code) ON DELETE RESTRICT,
         status_id INTEGER REFERENCES public.work_order_statuses(id) ON DELETE RESTRICT,
         scheduled_date TIMESTAMP,
         assigned_user_id VARCHAR REFERENCES public.users(id) ON DELETE RESTRICT,
@@ -235,6 +235,7 @@ export async function migrateProjectSchema(schemaName: string): Promise<void> {
     // Drop existing constraints first if they exist, then recreate with RESTRICT
     const fkConstraints = [
       { column: 'service_type_id', ref_table: 'public.service_types', ref_column: 'id', constraint_name: 'fk_service_type' },
+      { column: 'status', ref_table: 'public.work_order_statuses', ref_column: 'code', constraint_name: 'fk_status_code' },
       { column: 'status_id', ref_table: 'public.work_order_statuses', ref_column: 'id', constraint_name: 'fk_status' },
       { column: 'assigned_user_id', ref_table: 'public.users', ref_column: 'id', constraint_name: 'fk_assigned_user' },
       { column: 'assigned_group_id', ref_table: 'public.user_groups', ref_column: 'id', constraint_name: 'fk_assigned_group' },
