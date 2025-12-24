@@ -1427,7 +1427,7 @@ export default function SearchReports() {
                             if (row && row.dataset.touchStart) {
                               const duration = Date.now() - parseInt(row.dataset.touchStart);
                               delete row.dataset.touchStart;
-                              if (duration >= 500) {
+                              if (duration >= 900) {
                                 e.preventDefault();
                                 navigateToWorkOrder();
                               }
