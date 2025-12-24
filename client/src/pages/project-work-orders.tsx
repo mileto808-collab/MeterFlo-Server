@@ -2002,7 +2002,7 @@ export default function ProjectWorkOrders() {
                     </div>
                   )}
                   <div className="mt-3">
-                    <Link href={`/projects/${projectId}/work-orders/${editingWorkOrder.id}/files`}>
+                    <Link href={`/projects/${projectId}/work-orders/${editingWorkOrder.id}/files?returnTo=detail`}>
                       <Button type="button" variant="outline" size="sm" data-testid="button-manage-attachments">
                         <Upload className="h-4 w-4 mr-2" />
                         Manage Attachments

@@ -35,6 +35,12 @@ export default function WorkOrderFiles() {
   const [uploading, setUploading] = useState(false);
   const [accessDenied, setAccessDenied] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("list");
+  
+  // Check if we came from work order detail dialog
+  const returnTo = new URLSearchParams(window.location.search).get("returnTo");
+  const backUrl = returnTo === "detail" 
+    ? `/projects/${projectId}/work-orders?edit=${workOrderId}`
+    : `/projects/${projectId}/work-orders`;
 
   const { data: project, error: projectError } = useQuery<Project>({
     queryKey: ["/api/projects", projectId],
@@ -182,10 +188,10 @@ export default function WorkOrderFiles() {
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center gap-4 flex-wrap">
-        <Link href={`/projects/${projectId}/work-orders`}>
+        <Link href={backUrl}>
           <Button variant="ghost" size="sm">
             <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Work Orders
+            {returnTo === "detail" ? "Back to Work Order" : "Back to Work Orders"}
           </Button>
         </Link>
       </div>
