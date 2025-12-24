@@ -42,7 +42,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useTimezone } from "@/hooks/use-timezone";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, ArrowLeft, Search, ArrowUpDown, ArrowUp, ArrowDown, Download, FileSpreadsheet, FileText, Filter, X, Route, ChevronRight } from "lucide-react";
+import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, ArrowLeft, Search, ArrowUpDown, ArrowUp, ArrowDown, Download, FileSpreadsheet, FileText, Filter, X, Route, ChevronRight, Paperclip, Eye, FileIcon } from "lucide-react";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
 import { Label } from "@/components/ui/label";
@@ -314,6 +314,15 @@ export default function ProjectWorkOrders() {
       return res.json();
     },
     enabled: !!projectId && !accessDenied,
+  });
+
+  const { data: workOrderFiles = [], isLoading: filesLoading } = useQuery<string[]>({
+    queryKey: ["/api/projects", projectId, "work-orders", editingWorkOrder?.id, "files"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/${projectId}/work-orders/${editingWorkOrder?.id}/files`, { credentials: "include" });
+      return res.json();
+    },
+    enabled: !!projectId && !!editingWorkOrder?.id,
   });
 
   // Helper to get color hex from service type color name
@@ -1941,6 +1950,64 @@ export default function ProjectWorkOrders() {
                         data-testid="text-completed-at"
                       />
                     </div>
+                  </div>
+                </div>
+
+                <div className="border-t pt-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Paperclip className="h-4 w-4 text-muted-foreground" />
+                    <h3 className="font-medium">Attachments</h3>
+                    <span className="text-sm text-muted-foreground">({workOrderFiles.length} file{workOrderFiles.length !== 1 ? "s" : ""})</span>
+                  </div>
+                  {filesLoading ? (
+                    <p className="text-sm text-muted-foreground">Loading attachments...</p>
+                  ) : workOrderFiles.length === 0 ? (
+                    <div className="flex items-center gap-2 py-4 px-3 bg-muted rounded-md">
+                      <FileIcon className="h-5 w-5 text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">No attachments</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {workOrderFiles.map((filename, index) => (
+                        <div
+                          key={index}
+                          className="flex items-center justify-between gap-3 p-3 rounded-md bg-muted"
+                          data-testid={`attachment-${index}`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <FileIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+                            <span className="text-sm truncate">{filename}</span>
+                          </div>
+                          <div className="flex gap-1 shrink-0">
+                            <a
+                              href={`/api/projects/${projectId}/work-orders/${editingWorkOrder.id}/files/${encodeURIComponent(filename)}/download?mode=view`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <Button type="button" variant="ghost" size="icon" data-testid={`button-view-attachment-${index}`}>
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </a>
+                            <a
+                              href={`/api/projects/${projectId}/work-orders/${editingWorkOrder.id}/files/${encodeURIComponent(filename)}/download`}
+                              download
+                            >
+                              <Button type="button" variant="ghost" size="icon" data-testid={`button-download-attachment-${index}`}>
+                                <Download className="h-4 w-4" />
+                              </Button>
+                            </a>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mt-3">
+                    <Link href={`/projects/${projectId}/work-orders/${editingWorkOrder.id}/files`}>
+                      <Button type="button" variant="outline" size="sm" data-testid="button-manage-attachments">
+                        <Upload className="h-4 w-4 mr-2" />
+                        Manage Attachments
+                      </Button>
+                    </Link>
                   </div>
                 </div>
                 
