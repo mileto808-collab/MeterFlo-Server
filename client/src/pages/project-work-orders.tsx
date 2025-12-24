@@ -3175,11 +3175,25 @@ export default function ProjectWorkOrders() {
                       data-testid={`row-work-order-${workOrder.id}`}
                       className="cursor-pointer"
                       onDoubleClick={() => handleEdit(workOrder)}
+                      onTouchStart={(e) => {
+                        const target = e.target as HTMLElement;
+                        if (target.closest('button, a, [role="button"]')) return;
+                        const row = target.closest('tr');
+                        if (row) {
+                          row.dataset.touchStart = String(Date.now());
+                        }
+                      }}
                       onTouchEnd={(e) => {
                         const target = e.target as HTMLElement;
                         if (target.closest('button, a, [role="button"]')) return;
-                        if (target.closest('tr')) {
-                          handleEdit(workOrder);
+                        const row = target.closest('tr');
+                        if (row && row.dataset.touchStart) {
+                          const duration = Date.now() - parseInt(row.dataset.touchStart);
+                          delete row.dataset.touchStart;
+                          if (duration >= 500) {
+                            e.preventDefault();
+                            handleEdit(workOrder);
+                          }
                         }
                       }}
                     >
