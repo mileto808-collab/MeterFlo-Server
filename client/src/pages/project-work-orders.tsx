@@ -122,6 +122,8 @@ export default function ProjectWorkOrders() {
   const [filterScheduledDateTo, setFilterScheduledDateTo] = useState("");
   const [filterCreatedBy, setFilterCreatedBy] = useState("all");
   const [filterUpdatedBy, setFilterUpdatedBy] = useState("all");
+  const [filterScheduledBy, setFilterScheduledBy] = useState("all");
+  const [filterCompletedBy, setFilterCompletedBy] = useState("all");
   const [filterCompletedAtFrom, setFilterCompletedAtFrom] = useState("");
   const [filterCompletedAtTo, setFilterCompletedAtTo] = useState("");
   const [filterNotes, setFilterNotes] = useState("");
@@ -1089,6 +1091,32 @@ export default function ProjectWorkOrders() {
         return false;
       });
     }
+    if (filterScheduledBy !== "all") {
+      // Look up user label from selected ID for fallback comparison
+      const selectedUser = assigneesData?.users?.find(u => u.id === filterScheduledBy);
+      const selectedUserLabel = selectedUser?.label;
+      result = result.filter(wo => {
+        const woAny = wo as any;
+        // First try scheduledById if it exists (ID field)
+        if (woAny.scheduledById && String(woAny.scheduledById) === String(filterScheduledBy)) return true;
+        // Fall back to scheduledBy as display label match
+        if (selectedUserLabel && woAny.scheduledBy === selectedUserLabel) return true;
+        return false;
+      });
+    }
+    if (filterCompletedBy !== "all") {
+      // Look up user label from selected ID for fallback comparison
+      const selectedUser = assigneesData?.users?.find(u => u.id === filterCompletedBy);
+      const selectedUserLabel = selectedUser?.label;
+      result = result.filter(wo => {
+        const woAny = wo as any;
+        // First try completedById if it exists (ID field)
+        if (woAny.completedById && String(woAny.completedById) === String(filterCompletedBy)) return true;
+        // Fall back to completedBy as display label match
+        if (selectedUserLabel && woAny.completedBy === selectedUserLabel) return true;
+        return false;
+      });
+    }
     if (filterCompletedAtFrom || filterCompletedAtTo) {
       result = result.filter(wo => {
         if (!wo.completedAt) return false;
@@ -1155,7 +1183,7 @@ export default function ProjectWorkOrders() {
     }
     
     return result;
-  }, [workOrders, searchQuery, sortCriteria, selectedStatus, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldMeterType, selectedNewMeterType, meterTypes, assigneesData, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterNewMeterId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
+  }, [workOrders, searchQuery, sortCriteria, selectedStatus, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldMeterType, selectedNewMeterType, meterTypes, assigneesData, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterNewMeterId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
 
   const clearFilters = () => {
     setSearchQuery("");
@@ -1182,6 +1210,8 @@ export default function ProjectWorkOrders() {
     setFilterScheduledDateTo("");
     setFilterCreatedBy("all");
     setFilterUpdatedBy("all");
+    setFilterScheduledBy("all");
+    setFilterCompletedBy("all");
     setFilterCompletedAtFrom("");
     setFilterCompletedAtTo("");
     setFilterNotes("");
@@ -1191,7 +1221,7 @@ export default function ProjectWorkOrders() {
     setFilterUpdatedAtTo("");
   };
 
-  const hasActiveFilters = selectedStatus !== "all" || selectedServiceType !== "all" || selectedAssignedTo !== "all" || selectedAssignedGroup !== "all" || selectedTrouble !== "all" || selectedOldMeterType !== "all" || selectedNewMeterType !== "all" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldMeterId !== "" || filterNewMeterId !== "" || filterScheduledDateFrom !== "" || filterScheduledDateTo !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterCompletedAtFrom !== "" || filterCompletedAtTo !== "" || filterNotes !== "" || filterCreatedAtFrom !== "" || filterCreatedAtTo !== "" || filterUpdatedAtFrom !== "" || filterUpdatedAtTo !== "";
+  const hasActiveFilters = selectedStatus !== "all" || selectedServiceType !== "all" || selectedAssignedTo !== "all" || selectedAssignedGroup !== "all" || selectedTrouble !== "all" || selectedOldMeterType !== "all" || selectedNewMeterType !== "all" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldMeterId !== "" || filterNewMeterId !== "" || filterScheduledDateFrom !== "" || filterScheduledDateTo !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterScheduledBy !== "all" || filterCompletedBy !== "all" || filterCompletedAtFrom !== "" || filterCompletedAtTo !== "" || filterNotes !== "" || filterCreatedAtFrom !== "" || filterCreatedAtTo !== "" || filterUpdatedAtFrom !== "" || filterUpdatedAtTo !== "";
 
   const getStatusLabel = (status: string): string => {
     if (!status) return "";
@@ -3158,6 +3188,38 @@ export default function ProjectWorkOrders() {
                   <Label htmlFor="filter-updated-by">Updated By</Label>
                   <Select value={filterUpdatedBy} onValueChange={setFilterUpdatedBy}>
                     <SelectTrigger id="filter-updated-by" data-testid="select-filter-updated-by">
+                      <SelectValue placeholder="All" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All</SelectItem>
+                      {assigneesData.users.map((user) => (
+                        <SelectItem key={user.id} value={user.id}>{user.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {isFilterVisible("scheduledBy") && assigneesData && (
+                <div className="min-w-[180px]">
+                  <Label htmlFor="filter-scheduled-by">Scheduled By</Label>
+                  <Select value={filterScheduledBy} onValueChange={setFilterScheduledBy}>
+                    <SelectTrigger id="filter-scheduled-by" data-testid="select-filter-scheduled-by">
+                      <SelectValue placeholder="All" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All</SelectItem>
+                      {assigneesData.users.map((user) => (
+                        <SelectItem key={user.id} value={user.id}>{user.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {isFilterVisible("completedBy") && assigneesData && (
+                <div className="min-w-[180px]">
+                  <Label htmlFor="filter-completed-by">Completed By</Label>
+                  <Select value={filterCompletedBy} onValueChange={setFilterCompletedBy}>
+                    <SelectTrigger id="filter-completed-by" data-testid="select-filter-completed-by">
                       <SelectValue placeholder="All" />
                     </SelectTrigger>
                     <SelectContent>
