@@ -1205,11 +1205,11 @@ export default function ProjectWorkOrders() {
       case "zone": return wo.zone || "";
       case "serviceType": return wo.serviceType || "";
       case "oldMeterId": return wo.oldMeterId || "";
-      case "oldMeterType": return wo.oldMeterType || "";
+      case "oldMeterType": return wo.oldMeterType?.toString() || "";
       case "oldMeterReading": return wo.oldMeterReading?.toString() ?? "";
       case "newMeterId": return wo.newMeterId || "";
       case "newMeterReading": return wo.newMeterReading?.toString() ?? "";
-      case "newMeterType": return wo.newMeterType || "";
+      case "newMeterType": return wo.newMeterType?.toString() || "";
       case "oldGps": return wo.oldGps || "";
       case "newGps": return wo.newGps || "";
       case "status": return getStatusLabel(wo.status);
@@ -1799,7 +1799,7 @@ export default function ProjectWorkOrders() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Assigned Group</FormLabel>
-                        <Select value={field.value != null ? `group:${field.value}` : "__none__"} onValueChange={(v) => field.onChange(v === "__none__" ? undefined : Number(v.replace("group:", "")))}>
+                        <Select value={field.value ?? "__none__"} onValueChange={(v) => field.onChange(v === "__none__" ? undefined : v)}>
                           <FormControl>
                             <SelectTrigger data-testid="select-edit-assigned-group">
                               <SelectValue placeholder="Select group..." />
@@ -1808,7 +1808,7 @@ export default function ProjectWorkOrders() {
                           <SelectContent>
                             <SelectItem value="__none__">None</SelectItem>
                             {assigneesData?.groups?.map((group) => (
-                              <SelectItem key={group.id} value={group.id}>
+                              <SelectItem key={group.id} value={group.key || group.label}>
                                 {group.label}
                               </SelectItem>
                             ))}
@@ -2426,7 +2426,7 @@ export default function ProjectWorkOrders() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Assigned Group</FormLabel>
-                        <Select value={field.value != null ? `group:${field.value}` : "__none__"} onValueChange={(v) => field.onChange(v === "__none__" ? undefined : Number(v.replace("group:", "")))}>
+                        <Select value={field.value ?? "__none__"} onValueChange={(v) => field.onChange(v === "__none__" ? undefined : v)}>
                           <FormControl>
                             <SelectTrigger data-testid="select-create-assigned-group">
                               <SelectValue placeholder="Select group..." />
@@ -2435,7 +2435,7 @@ export default function ProjectWorkOrders() {
                           <SelectContent>
                             <SelectItem value="__none__">None</SelectItem>
                             {assigneesData?.groups?.map((group) => (
-                              <SelectItem key={group.id} value={group.id}>
+                              <SelectItem key={group.id} value={group.key || group.label}>
                                 {group.label}
                               </SelectItem>
                             ))}
