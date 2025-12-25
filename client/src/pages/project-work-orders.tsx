@@ -1888,7 +1888,19 @@ export default function ProjectWorkOrders() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Status</FormLabel>
-                        <Select value={field.value || editingWorkOrder.status} onValueChange={field.onChange}>
+                        <Select 
+                          value={field.value || editingWorkOrder.status} 
+                          onValueChange={(newStatus) => {
+                            field.onChange(newStatus);
+                            const currentScheduledAt = editForm.getValues("scheduledAt");
+                            if (currentScheduledAt && newStatus !== "Scheduled") {
+                              toast({
+                                title: "Schedule will be cleared",
+                                description: "Changing status from Scheduled will clear the scheduled date/time.",
+                              });
+                            }
+                          }}
+                        >
                           <FormControl>
                             <SelectTrigger data-testid="select-edit-status">
                               <SelectValue />
@@ -1912,14 +1924,28 @@ export default function ProjectWorkOrders() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Scheduled At</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="datetime-local"
-                            {...field}
-                            value={field.value || ""}
-                            data-testid="input-edit-scheduled-at"
-                          />
-                        </FormControl>
+                        <div className="flex gap-2">
+                          <FormControl>
+                            <Input
+                              type="datetime-local"
+                              {...field}
+                              value={field.value || ""}
+                              data-testid="input-edit-scheduled-at"
+                            />
+                          </FormControl>
+                          {field.value && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              onClick={() => field.onChange("")}
+                              title="Clear schedule"
+                              data-testid="button-clear-edit-schedule"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
                         <p className="text-xs text-muted-foreground">Setting a date/time will auto-set status to "Scheduled"</p>
                         <FormMessage />
                       </FormItem>
@@ -2542,14 +2568,28 @@ export default function ProjectWorkOrders() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Scheduled At</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="datetime-local"
-                            {...field}
-                            value={field.value || ""}
-                            data-testid="input-create-scheduled-at"
-                          />
-                        </FormControl>
+                        <div className="flex gap-2">
+                          <FormControl>
+                            <Input
+                              type="datetime-local"
+                              {...field}
+                              value={field.value || ""}
+                              data-testid="input-create-scheduled-at"
+                            />
+                          </FormControl>
+                          {field.value && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              onClick={() => field.onChange("")}
+                              title="Clear schedule"
+                              data-testid="button-clear-create-schedule"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
                         <p className="text-xs text-muted-foreground">Setting a date/time will auto-set status to "Scheduled"</p>
                         <FormMessage />
                       </FormItem>
