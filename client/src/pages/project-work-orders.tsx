@@ -437,7 +437,6 @@ export default function ProjectWorkOrders() {
     if (!data.newGps) missingFields.push("New GPS");
     if (!signatureData) missingFields.push("Signature");
     if (!signatureName) missingFields.push("Signature Name");
-    if (!data.attachments || (Array.isArray(data.attachments) && data.attachments.length === 0)) missingFields.push("Attachments");
     return missingFields;
   };
 
