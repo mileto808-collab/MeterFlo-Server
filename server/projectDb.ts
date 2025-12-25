@@ -337,7 +337,7 @@ export class ProjectWorkOrderStorage {
     await this.migrationPromise;
   }
 
-  async getWorkOrders(filters?: { status?: string; assignedUserId?: string; assignedGroupId?: number }): Promise<ProjectWorkOrder[]> {
+  async getWorkOrders(filters?: { status?: string; assignedUserId?: string; assignedGroupId?: string | number }): Promise<ProjectWorkOrder[]> {
     await this.ensureMigrated();
     const client = await pool.connect();
     try {
@@ -355,8 +355,12 @@ export class ProjectWorkOrderStorage {
         values.push(filters.assignedUserId);
       }
       if (filters?.assignedGroupId) {
-        conditions.push(`assigned_group_id = $${paramCount++}`);
-        values.push(filters.assignedGroupId);
+        // Resolve group ID/name to group name for filtering (FK references user_groups.name)
+        const resolvedGroupName = await this.resolveGroupName(filters.assignedGroupId);
+        if (resolvedGroupName) {
+          conditions.push(`assigned_group_id = $${paramCount++}`);
+          values.push(resolvedGroupName);
+        }
       }
 
       if (conditions.length > 0) {
@@ -431,7 +435,8 @@ export class ProjectWorkOrderStorage {
       
       // Get assigned user/group IDs directly from the work order
       const assignedUserId = workOrder.assignedUserId || null;
-      const assignedGroupId = workOrder.assignedGroupId || null;
+      // Resolve group ID/name to group name (FK references user_groups.name)
+      const assignedGroupId = await this.resolveGroupName(workOrder.assignedGroupId);
       
       // Resolve created_by to username for FK
       const createdByValue = createdBy || workOrder.createdBy || null;
@@ -566,6 +571,26 @@ export class ProjectWorkOrderStorage {
       const groups = await storage.getAllUserGroups();
       const found = groups.find(g => g.name === groupName);
       return found?.id || null;
+    } catch {
+      return null;
+    }
+  }
+  
+  private async resolveGroupName(groupIdOrName: string | number | null | undefined): Promise<string | null> {
+    if (!groupIdOrName) return null;
+    try {
+      const groups = await storage.getAllUserGroups();
+      if (typeof groupIdOrName === 'number') {
+        const found = groups.find(g => g.id === groupIdOrName);
+        return found?.name || null;
+      }
+      const numericId = parseInt(String(groupIdOrName), 10);
+      if (!isNaN(numericId)) {
+        const found = groups.find(g => g.id === numericId);
+        if (found) return found.name;
+      }
+      const foundByName = groups.find(g => g.name === groupIdOrName);
+      return foundByName?.name || null;
     } catch {
       return null;
     }
@@ -780,17 +805,16 @@ export class ProjectWorkOrderStorage {
         values.push(updates.assignedUserId || null);
       }
       if (updates.assignedGroupId !== undefined) {
+        // Resolve group ID/name to group name (FK references user_groups.name)
+        const resolvedGroupName = await this.resolveGroupName(updates.assignedGroupId);
         setClauses.push(`assigned_group_id = $${paramCount++}`);
-        values.push(updates.assignedGroupId || null);
+        values.push(resolvedGroupName);
       }
 
       // Always set updatedBy and updated_at
       if (updatedBy) {
         setClauses.push(`updated_by = $${paramCount++}`);
         values.push(updatedBy);
-        const updatedById = await this.resolveUserId(updatedBy);
-        setClauses.push(`updated_by_id = $${paramCount++}`);
-        values.push(updatedById);
       }
       setClauses.push(`updated_at = NOW()`);
       values.push(id);

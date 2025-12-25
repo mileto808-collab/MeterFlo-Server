@@ -497,7 +497,7 @@ export const insertProjectWorkOrderSchema = z.object({
   status: z.string().max(50).optional().nullable(),
   scheduledDate: z.string().optional().nullable(),
   assignedUserId: z.string().optional().nullable(),
-  assignedGroupId: z.number().int().optional().nullable(),
+  assignedGroupId: z.string().optional().nullable(),
   createdBy: z.string().optional().nullable(),
   trouble: z.string().max(100).optional().nullable(),
   notes: z.string().optional().nullable(),
