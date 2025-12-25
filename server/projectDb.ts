@@ -113,17 +113,17 @@ export async function createProjectSchema(projectName: string, projectId: number
         assigned_group_id VARCHAR(100),
         completed_by VARCHAR(50),
         scheduled_by VARCHAR(50),
-        CONSTRAINT fk_status_code FOREIGN KEY (status) REFERENCES public.work_order_statuses(code) ON DELETE RESTRICT,
-        CONSTRAINT fk_service_types FOREIGN KEY (service_type) REFERENCES public.service_types(code) ON DELETE RESTRICT,
-        CONSTRAINT fk_trouble_code FOREIGN KEY (trouble) REFERENCES public.trouble_codes(code) ON DELETE RESTRICT,
-        CONSTRAINT fk_old_meter_type FOREIGN KEY (old_meter_type) REFERENCES public.meter_types(product_id) ON DELETE RESTRICT,
-        CONSTRAINT fk_new_meter_type FOREIGN KEY (new_meter_type) REFERENCES public.meter_types(product_id) ON DELETE RESTRICT,
-        CONSTRAINT fk_assigned_user FOREIGN KEY (assigned_user_id) REFERENCES public.users(id) ON DELETE RESTRICT,
-        CONSTRAINT fk_assigned_group FOREIGN KEY (assigned_group_id) REFERENCES public.user_groups(name) ON DELETE RESTRICT,
-        CONSTRAINT fk_created_by FOREIGN KEY (created_by) REFERENCES public.users(username) ON DELETE RESTRICT,
-        CONSTRAINT fk_updated_by FOREIGN KEY (updated_by) REFERENCES public.users(username) ON DELETE RESTRICT,
-        CONSTRAINT fk_completed_by FOREIGN KEY (completed_by) REFERENCES public.users(id) ON DELETE RESTRICT,
-        CONSTRAINT fk_scheduled_by FOREIGN KEY (scheduled_by) REFERENCES public.users(id) ON DELETE RESTRICT
+        CONSTRAINT fk_status_code FOREIGN KEY (status) REFERENCES public.work_order_statuses(code) ON DELETE RESTRICT ON UPDATE CASCADE,
+        CONSTRAINT fk_service_types FOREIGN KEY (service_type) REFERENCES public.service_types(code) ON DELETE RESTRICT ON UPDATE CASCADE,
+        CONSTRAINT fk_trouble_code FOREIGN KEY (trouble) REFERENCES public.trouble_codes(code) ON DELETE RESTRICT ON UPDATE CASCADE,
+        CONSTRAINT fk_old_meter_type FOREIGN KEY (old_meter_type) REFERENCES public.meter_types(product_id) ON DELETE RESTRICT ON UPDATE CASCADE,
+        CONSTRAINT fk_new_meter_type FOREIGN KEY (new_meter_type) REFERENCES public.meter_types(product_id) ON DELETE RESTRICT ON UPDATE CASCADE,
+        CONSTRAINT fk_assigned_user FOREIGN KEY (assigned_user_id) REFERENCES public.users(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+        CONSTRAINT fk_assigned_group FOREIGN KEY (assigned_group_id) REFERENCES public.user_groups(name) ON DELETE RESTRICT ON UPDATE CASCADE,
+        CONSTRAINT fk_created_by FOREIGN KEY (created_by) REFERENCES public.users(username) ON DELETE RESTRICT ON UPDATE CASCADE,
+        CONSTRAINT fk_updated_by FOREIGN KEY (updated_by) REFERENCES public.users(username) ON DELETE RESTRICT ON UPDATE CASCADE,
+        CONSTRAINT fk_completed_by FOREIGN KEY (completed_by) REFERENCES public.users(id) ON DELETE RESTRICT ON UPDATE CASCADE,
+        CONSTRAINT fk_scheduled_by FOREIGN KEY (scheduled_by) REFERENCES public.users(id) ON DELETE RESTRICT ON UPDATE CASCADE
       )
     `);
     
@@ -302,11 +302,11 @@ export async function migrateProjectSchema(schemaName: string): Promise<void> {
           DROP CONSTRAINT IF EXISTS ${fk.constraint_name}
         `);
         
-        // Add constraint with ON DELETE RESTRICT
+        // Add constraint with ON DELETE RESTRICT ON UPDATE CASCADE
         await client.query(`
           ALTER TABLE "${schemaName}".work_orders 
           ADD CONSTRAINT ${fk.constraint_name} 
-          FOREIGN KEY (${fk.column}) REFERENCES ${fk.ref_table}(${fk.ref_column}) ON DELETE RESTRICT
+          FOREIGN KEY (${fk.column}) REFERENCES ${fk.ref_table}(${fk.ref_column}) ON DELETE RESTRICT ON UPDATE CASCADE
         `);
         console.log(`Added FK constraint ${fk.constraint_name} to ${schemaName}.work_orders`);
       } catch (fkError) {
