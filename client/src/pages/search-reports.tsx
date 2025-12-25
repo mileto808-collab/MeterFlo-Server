@@ -117,6 +117,8 @@ export default function SearchReports() {
   const [filterAssignedGroup, setFilterAssignedGroup] = useState("all");
   const [filterCreatedBy, setFilterCreatedBy] = useState("all");
   const [filterUpdatedBy, setFilterUpdatedBy] = useState("all");
+  const [filterScheduledBy, setFilterScheduledBy] = useState("all");
+  const [filterCompletedBy, setFilterCompletedBy] = useState("all");
   const [filterCompletedAtFrom, setFilterCompletedAtFrom] = useState("");
   const [filterCompletedAtTo, setFilterCompletedAtTo] = useState("");
   const [filterTroubleCode, setFilterTroubleCode] = useState("all");
@@ -358,6 +360,8 @@ export default function SearchReports() {
     setFilterAssignedGroup("all");
     setFilterCreatedBy("all");
     setFilterUpdatedBy("all");
+    setFilterScheduledBy("all");
+    setFilterCompletedBy("all");
     setFilterCompletedAtFrom("");
     setFilterCompletedAtTo("");
     setFilterTroubleCode("all");
@@ -653,6 +657,32 @@ export default function SearchReports() {
         return false;
       });
     }
+    if (filterScheduledBy !== "all") {
+      // Look up user label from selected ID for fallback comparison
+      const selectedUser = users.find(u => u.id === filterScheduledBy);
+      const selectedUserLabel = selectedUser?.username || (selectedUser?.firstName && selectedUser?.lastName ? `${selectedUser.firstName} ${selectedUser.lastName}` : null);
+      results = results.filter(r => {
+        const wo = r.workOrder as any;
+        // First try scheduledById if it exists (ID field)
+        if (wo.scheduledById && String(wo.scheduledById) === String(filterScheduledBy)) return true;
+        // Fall back to scheduledBy as display label match
+        if (selectedUserLabel && wo.scheduledBy === selectedUserLabel) return true;
+        return false;
+      });
+    }
+    if (filterCompletedBy !== "all") {
+      // Look up user label from selected ID for fallback comparison
+      const selectedUser = users.find(u => u.id === filterCompletedBy);
+      const selectedUserLabel = selectedUser?.username || (selectedUser?.firstName && selectedUser?.lastName ? `${selectedUser.firstName} ${selectedUser.lastName}` : null);
+      results = results.filter(r => {
+        const wo = r.workOrder as any;
+        // First try completedById if it exists (ID field)
+        if (wo.completedById && String(wo.completedById) === String(filterCompletedBy)) return true;
+        // Fall back to completedBy as display label match
+        if (selectedUserLabel && wo.completedBy === selectedUserLabel) return true;
+        return false;
+      });
+    }
     if (filterTroubleCode !== "all") {
       if (filterTroubleCode === "none") {
         results = results.filter(r => !((r.workOrder as any).trouble) && !((r.workOrder as any).troubleCode));
@@ -746,7 +776,7 @@ export default function SearchReports() {
       });
     }
     return results;
-  }, [searchResults?.results, sortCriteria, filterCustomerWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterOldMeterType, filterNewMeterId, filterNewMeterType, filterAssignedTo, filterAssignedGroup, filterCreatedBy, filterUpdatedBy, filterTroubleCode, filterNotes, filterScheduledDateFrom, filterScheduledDateTo, filterCompletedAtFrom, filterCompletedAtTo, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo, users, userGroups]);
+  }, [searchResults?.results, sortCriteria, filterCustomerWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterOldMeterType, filterNewMeterId, filterNewMeterType, filterAssignedTo, filterAssignedGroup, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterTroubleCode, filterNotes, filterScheduledDateFrom, filterScheduledDateTo, filterCompletedAtFrom, filterCompletedAtTo, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo, users, userGroups]);
 
   // Calculate active filters
   const activeFiltersArray = [
@@ -774,6 +804,8 @@ export default function SearchReports() {
     filterAssignedGroup !== "all",
     filterCreatedBy !== "all",
     filterUpdatedBy !== "all",
+    filterScheduledBy !== "all",
+    filterCompletedBy !== "all",
     filterCompletedAtFrom !== "",
     filterCompletedAtTo !== "",
     filterTroubleCode !== "all",
@@ -1278,6 +1310,38 @@ export default function SearchReports() {
                 <Label htmlFor="filter-updated-by">Updated By</Label>
                 <Select value={filterUpdatedBy} onValueChange={setFilterUpdatedBy}>
                   <SelectTrigger id="filter-updated-by" data-testid="select-filter-updated-by">
+                    <SelectValue placeholder="All" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    {users.map((u) => (
+                      <SelectItem key={u.id} value={u.id}>{u.username || `${u.firstName} ${u.lastName}`}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {isFilterVisible("scheduledBy") && users.length > 0 && (
+              <div className="min-w-[180px]">
+                <Label htmlFor="filter-scheduled-by">Scheduled By</Label>
+                <Select value={filterScheduledBy} onValueChange={setFilterScheduledBy}>
+                  <SelectTrigger id="filter-scheduled-by" data-testid="select-filter-scheduled-by">
+                    <SelectValue placeholder="All" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    {users.map((u) => (
+                      <SelectItem key={u.id} value={u.id}>{u.username || `${u.firstName} ${u.lastName}`}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {isFilterVisible("completedBy") && users.length > 0 && (
+              <div className="min-w-[180px]">
+                <Label htmlFor="filter-completed-by">Completed By</Label>
+                <Select value={filterCompletedBy} onValueChange={setFilterCompletedBy}>
+                  <SelectTrigger id="filter-completed-by" data-testid="select-filter-completed-by">
                     <SelectValue placeholder="All" />
                   </SelectTrigger>
                   <SelectContent>
