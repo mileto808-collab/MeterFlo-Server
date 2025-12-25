@@ -9,49 +9,45 @@ export const serviceTypeEnum = ["Water", "Electric", "Gas"] as const;
 export type ServiceType = (typeof serviceTypeEnum)[number];
 
 // Work orders schema for project databases (within project-specific schemas)
+// Canonical schema matching Aurora project structure (36 columns)
 export const projectWorkOrders = pgTable("work_orders", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  status: varchar("status", { length: 50 }).notNull().default("Open"),
+  createdBy: varchar("created_by", { length: 100 }),
+  completedAt: timestamp("completed_at"),
+  notes: text("notes"),
+  attachments: text("attachments").array(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
   customerWoId: varchar("customer_wo_id", { length: 100 }).unique(),
   customerId: varchar("customer_id", { length: 100 }),
-  customerName: varchar("customer_name", { length: 255 }),
+  customerName: varchar("customer_name", { length: 100 }),
   address: varchar("address", { length: 500 }),
   city: varchar("city", { length: 100 }),
   state: varchar("state", { length: 50 }),
   zip: varchar("zip", { length: 20 }),
   phone: varchar("phone", { length: 50 }),
-  email: varchar("email", { length: 255 }),
+  email: varchar("email", { length: 100 }),
   route: varchar("route", { length: 100 }),
   zone: varchar("zone", { length: 100 }),
-  serviceType: varchar("service_type", { length: 20 }),
-  serviceTypeId: integer("service_type_id"),
+  serviceType: varchar("service_type", { length: 50 }),
   oldMeterId: varchar("old_meter_id", { length: 100 }),
-  oldMeterReading: integer("old_meter_reading"),
   newMeterId: varchar("new_meter_id", { length: 100 }),
-  newMeterReading: integer("new_meter_reading"),
   oldGps: varchar("old_gps", { length: 100 }),
   newGps: varchar("new_gps", { length: 100 }),
-  status: varchar("status", { length: 50 }).notNull().default("Open"),
-  statusId: integer("status_id"),
-  scheduledDate: timestamp("scheduled_date"),
-  assignedUserId: varchar("assigned_user_id"),
-  assignedGroupId: integer("assigned_group_id"),
-  createdBy: varchar("created_by"),
-  createdById: varchar("created_by_id"),
-  updatedBy: varchar("updated_by"),
-  updatedById: varchar("updated_by_id"),
-  completedAt: timestamp("completed_at"),
-  trouble: varchar("trouble", { length: 100 }),
-  troubleCodeId: integer("trouble_code_id"),
-  notes: text("notes"),
-  attachments: text("attachments").array(),
-  oldMeterType: varchar("old_meter_type", { length: 255 }),
-  oldMeterTypeId: integer("old_meter_type_id"),
-  newMeterType: varchar("new_meter_type", { length: 255 }),
-  newMeterTypeId: integer("new_meter_type_id"),
+  oldMeterReading: integer("old_meter_reading"),
+  newMeterReading: integer("new_meter_reading"),
+  scheduledAt: timestamp("scheduled_at"),
+  updatedBy: varchar("updated_by", { length: 100 }),
+  trouble: varchar("trouble", { length: 50 }),
+  oldMeterType: integer("old_meter_type"),
+  newMeterType: integer("new_meter_type"),
   signatureData: text("signature_data"),
-  signatureName: varchar("signature_name", { length: 255 }),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
+  signatureName: varchar("signature_name", { length: 100 }),
+  assignedUserId: varchar("assigned_user_id", { length: 50 }),
+  assignedGroupId: varchar("assigned_group_id", { length: 100 }),
+  completedBy: varchar("completed_by", { length: 50 }),
+  scheduledBy: varchar("scheduled_by", { length: 50 }),
 });
 
 export type ProjectWorkOrder = typeof projectWorkOrders.$inferSelect;
@@ -77,51 +73,57 @@ export async function createProjectSchema(projectName: string, projectId: number
     // Create schema
     await client.query(`CREATE SCHEMA IF NOT EXISTS "${schemaName}"`);
     
-    // Create work_orders table in the project schema with foreign key constraints
+    // Create work_orders table in the project schema (canonical Aurora structure - 36 columns)
     await client.query(`
       CREATE TABLE IF NOT EXISTS "${schemaName}".work_orders (
         id SERIAL PRIMARY KEY,
+        status VARCHAR(50) NOT NULL DEFAULT 'Open',
+        created_by VARCHAR(100) DEFAULT CURRENT_USER,
+        completed_at TIMESTAMP,
+        notes TEXT,
+        attachments TEXT[],
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW(),
         customer_wo_id VARCHAR(100) UNIQUE,
         customer_id VARCHAR(100),
-        customer_name VARCHAR(255),
+        customer_name VARCHAR(100),
         address VARCHAR(500),
         city VARCHAR(100),
         state VARCHAR(50),
         zip VARCHAR(20),
         phone VARCHAR(50),
-        email VARCHAR(255),
+        email VARCHAR(100),
         route VARCHAR(100),
         zone VARCHAR(100),
-        service_type VARCHAR(20),
-        service_type_id INTEGER REFERENCES public.service_types(id) ON DELETE RESTRICT,
+        service_type VARCHAR(50),
         old_meter_id VARCHAR(100),
-        old_meter_reading INTEGER,
         new_meter_id VARCHAR(100),
-        new_meter_reading INTEGER,
         old_gps VARCHAR(100),
         new_gps VARCHAR(100),
-        status VARCHAR(50) NOT NULL DEFAULT 'Open' REFERENCES public.work_order_statuses(code) ON DELETE RESTRICT,
-        status_id INTEGER REFERENCES public.work_order_statuses(id) ON DELETE RESTRICT,
-        scheduled_date TIMESTAMP,
-        assigned_user_id VARCHAR REFERENCES public.users(id) ON DELETE RESTRICT,
-        assigned_group_id INTEGER REFERENCES public.user_groups(id) ON DELETE RESTRICT,
-        created_by VARCHAR,
-        created_by_id VARCHAR REFERENCES public.users(id) ON DELETE RESTRICT,
-        updated_by VARCHAR,
-        updated_by_id VARCHAR REFERENCES public.users(id) ON DELETE RESTRICT,
-        completed_at TIMESTAMP,
-        trouble VARCHAR(100),
-        trouble_code_id INTEGER REFERENCES public.trouble_codes(id) ON DELETE RESTRICT,
-        notes TEXT,
-        attachments TEXT[],
-        old_meter_type VARCHAR(255),
-        old_meter_type_id INTEGER REFERENCES public.meter_types(id) ON DELETE RESTRICT,
-        new_meter_type VARCHAR(255),
-        new_meter_type_id INTEGER REFERENCES public.meter_types(id) ON DELETE RESTRICT,
+        old_meter_reading INTEGER,
+        new_meter_reading INTEGER,
+        scheduled_at TIMESTAMP,
+        updated_by VARCHAR(100),
+        trouble VARCHAR(50),
+        old_meter_type INTEGER,
+        new_meter_type INTEGER,
         signature_data TEXT,
-        signature_name VARCHAR(255),
-        created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW()
+        signature_name VARCHAR(100),
+        assigned_user_id VARCHAR(50),
+        assigned_group_id VARCHAR(100),
+        completed_by VARCHAR(50),
+        scheduled_by VARCHAR(50),
+        CONSTRAINT fk_status_code FOREIGN KEY (status) REFERENCES public.work_order_statuses(code) ON DELETE RESTRICT,
+        CONSTRAINT fk_service_types FOREIGN KEY (service_type) REFERENCES public.service_types(code) ON DELETE RESTRICT,
+        CONSTRAINT fk_trouble_code FOREIGN KEY (trouble) REFERENCES public.trouble_codes(code) ON DELETE RESTRICT,
+        CONSTRAINT fk_old_meter_type FOREIGN KEY (old_meter_type) REFERENCES public.meter_types(id) ON DELETE RESTRICT,
+        CONSTRAINT fk_new_meter_type FOREIGN KEY (new_meter_type) REFERENCES public.meter_types(id) ON DELETE RESTRICT,
+        CONSTRAINT fk_assigned_user FOREIGN KEY (assigned_user_id) REFERENCES public.users(id) ON DELETE RESTRICT,
+        CONSTRAINT fk_assigned_group FOREIGN KEY (assigned_group_id) REFERENCES public.user_groups(name) ON DELETE RESTRICT,
+        CONSTRAINT fk_created_by FOREIGN KEY (created_by) REFERENCES public.users(username) ON DELETE RESTRICT,
+        CONSTRAINT fk_updated_by FOREIGN KEY (updated_by) REFERENCES public.users(username) ON DELETE RESTRICT,
+        CONSTRAINT fk_completed_by FOREIGN KEY (completed_by) REFERENCES public.users(id) ON DELETE RESTRICT,
+        CONSTRAINT fk_scheduled_by FOREIGN KEY (scheduled_by) REFERENCES public.users(id) ON DELETE RESTRICT
       )
     `);
     
@@ -143,126 +145,160 @@ export async function deleteProjectSchema(schemaName: string): Promise<void> {
   }
 }
 
-// Migrate existing project schema to add missing columns
+// Migrate existing project schema to canonical Aurora structure (36 columns)
 export async function migrateProjectSchema(schemaName: string): Promise<void> {
   const client = await pool.connect();
   try {
-    // Add trouble column if it doesn't exist
-    await client.query(`
-      ALTER TABLE "${schemaName}".work_orders 
-      ADD COLUMN IF NOT EXISTS trouble VARCHAR(100)
-    `);
+    console.log(`Starting migration of ${schemaName} to canonical Aurora schema...`);
     
-    // Rename meter_type to old_meter_type if needed, then add new_meter_type
-    // First check if meter_type exists and old_meter_type doesn't
-    const columnCheck = await client.query(`
-      SELECT column_name FROM information_schema.columns 
-      WHERE table_schema = $1 AND table_name = 'work_orders' 
-      AND column_name IN ('meter_type', 'old_meter_type')
-    `, [schemaName]);
+    // Step 1: Add new columns that don't exist
+    const newColumns = [
+      { name: 'completed_by', type: 'VARCHAR(50)' },
+      { name: 'scheduled_by', type: 'VARCHAR(50)' },
+      { name: 'signature_data', type: 'TEXT' },
+      { name: 'signature_name', type: 'VARCHAR(100)' },
+      { name: 'trouble', type: 'VARCHAR(50)' },
+    ];
     
-    const existingColumns = columnCheck.rows.map(r => r.column_name);
-    
-    if (existingColumns.includes('meter_type') && !existingColumns.includes('old_meter_type')) {
-      // Rename meter_type to old_meter_type
+    for (const col of newColumns) {
       await client.query(`
         ALTER TABLE "${schemaName}".work_orders 
-        RENAME COLUMN meter_type TO old_meter_type
-      `);
-    } else if (!existingColumns.includes('old_meter_type')) {
-      // Add old_meter_type if neither exists
-      await client.query(`
-        ALTER TABLE "${schemaName}".work_orders 
-        ADD COLUMN IF NOT EXISTS old_meter_type VARCHAR(255)
+        ADD COLUMN IF NOT EXISTS ${col.name} ${col.type}
       `);
     }
     
-    // Add new_meter_type column if it doesn't exist
+    // Step 2: Handle scheduled_date -> scheduled_at rename
+    const scheduledDateCheck = await client.query(`
+      SELECT column_name FROM information_schema.columns 
+      WHERE table_schema = $1 AND table_name = 'work_orders' 
+      AND column_name = 'scheduled_date'
+    `, [schemaName]);
+    
+    if (scheduledDateCheck.rows.length > 0) {
+      // Check if scheduled_at already exists
+      const scheduledAtExists = await client.query(`
+        SELECT column_name FROM information_schema.columns 
+        WHERE table_schema = $1 AND table_name = 'work_orders' 
+        AND column_name = 'scheduled_at'
+      `, [schemaName]);
+      
+      if (scheduledAtExists.rows.length === 0) {
+        await client.query(`
+          ALTER TABLE "${schemaName}".work_orders 
+          RENAME COLUMN scheduled_date TO scheduled_at
+        `);
+        console.log(`Renamed scheduled_date to scheduled_at for ${schemaName}`);
+      }
+    }
+    
+    // Step 3: Handle old_meter_type/new_meter_type type changes (VARCHAR -> INTEGER)
+    const meterTypeCheck = await client.query(`
+      SELECT column_name, data_type FROM information_schema.columns 
+      WHERE table_schema = $1 AND table_name = 'work_orders' 
+      AND column_name IN ('old_meter_type', 'new_meter_type')
+    `, [schemaName]);
+    
+    for (const col of meterTypeCheck.rows) {
+      if (col.data_type === 'character varying') {
+        // Convert VARCHAR to INTEGER (setting NULL where not numeric)
+        await client.query(`
+          ALTER TABLE "${schemaName}".work_orders 
+          ALTER COLUMN ${col.column_name} TYPE INTEGER USING 
+            CASE 
+              WHEN ${col.column_name} IS NULL THEN NULL
+              WHEN ${col.column_name} ~ '^\\d+$' THEN ${col.column_name}::INTEGER
+              ELSE NULL
+            END
+        `);
+        console.log(`Converted ${col.column_name} from VARCHAR to INTEGER for ${schemaName}`);
+      }
+    }
+    
+    // Step 4: Handle assigned_group_id type change (INTEGER -> VARCHAR with name lookup)
+    const groupIdCheck = await client.query(`
+      SELECT data_type FROM information_schema.columns 
+      WHERE table_schema = $1 AND table_name = 'work_orders' 
+      AND column_name = 'assigned_group_id'
+    `, [schemaName]);
+    
+    if (groupIdCheck.rows.length > 0 && groupIdCheck.rows[0].data_type === 'integer') {
+      // Drop existing FK constraint before type change
+      await client.query(`
+        ALTER TABLE "${schemaName}".work_orders 
+        DROP CONSTRAINT IF EXISTS fk_assigned_group CASCADE
+      `);
+      // Convert integer ID to group name using lookup
+      await client.query(`
+        ALTER TABLE "${schemaName}".work_orders 
+        ALTER COLUMN assigned_group_id TYPE VARCHAR(100) USING 
+          (SELECT name FROM public.user_groups WHERE id = assigned_group_id)
+      `);
+      console.log(`Converted assigned_group_id from INTEGER to group name for ${schemaName}`);
+    }
+    
+    // Step 5: Drop deprecated _id suffix columns (consolidate to text-based references)
+    const deprecatedColumns = [
+      'service_type_id', 'status_id', 'created_by_id', 'updated_by_id', 
+      'trouble_code_id', 'old_meter_type_id', 'new_meter_type_id'
+    ];
+    
+    for (const colName of deprecatedColumns) {
+      const colExists = await client.query(`
+        SELECT column_name FROM information_schema.columns 
+        WHERE table_schema = $1 AND table_name = 'work_orders' 
+        AND column_name = $2
+      `, [schemaName, colName]);
+      
+      if (colExists.rows.length > 0) {
+        // Drop any FK constraints first
+        await client.query(`
+          ALTER TABLE "${schemaName}".work_orders 
+          DROP COLUMN IF EXISTS ${colName} CASCADE
+        `);
+        console.log(`Dropped deprecated column ${colName} from ${schemaName}.work_orders`);
+      }
+    }
+    
+    // Step 6: Drop old assigned_to column if it exists
     await client.query(`
       ALTER TABLE "${schemaName}".work_orders 
-      ADD COLUMN IF NOT EXISTS new_meter_type VARCHAR(255)
+      DROP COLUMN IF EXISTS assigned_to CASCADE
     `);
     
-    // Add signature columns if they don't exist
-    await client.query(`
-      ALTER TABLE "${schemaName}".work_orders 
-      ADD COLUMN IF NOT EXISTS signature_data TEXT
-    `);
-    await client.query(`
-      ALTER TABLE "${schemaName}".work_orders 
-      ADD COLUMN IF NOT EXISTS signature_name VARCHAR(255)
-    `);
-    
-    // Add foreign key ID columns for data integrity
-    await client.query(`
-      ALTER TABLE "${schemaName}".work_orders 
-      ADD COLUMN IF NOT EXISTS service_type_id INTEGER
-    `);
-    await client.query(`
-      ALTER TABLE "${schemaName}".work_orders 
-      ADD COLUMN IF NOT EXISTS status_id INTEGER
-    `);
-    await client.query(`
-      ALTER TABLE "${schemaName}".work_orders 
-      ADD COLUMN IF NOT EXISTS assigned_user_id VARCHAR
-    `);
-    await client.query(`
-      ALTER TABLE "${schemaName}".work_orders 
-      ADD COLUMN IF NOT EXISTS assigned_group_id INTEGER
-    `);
-    await client.query(`
-      ALTER TABLE "${schemaName}".work_orders 
-      ADD COLUMN IF NOT EXISTS created_by_id VARCHAR
-    `);
-    await client.query(`
-      ALTER TABLE "${schemaName}".work_orders 
-      ADD COLUMN IF NOT EXISTS updated_by_id VARCHAR
-    `);
-    await client.query(`
-      ALTER TABLE "${schemaName}".work_orders 
-      ADD COLUMN IF NOT EXISTS trouble_code_id INTEGER
-    `);
-    await client.query(`
-      ALTER TABLE "${schemaName}".work_orders 
-      ADD COLUMN IF NOT EXISTS old_meter_type_id INTEGER
-    `);
-    await client.query(`
-      ALTER TABLE "${schemaName}".work_orders 
-      ADD COLUMN IF NOT EXISTS new_meter_type_id INTEGER
-    `);
-    
-    // Add/update foreign key constraints with ON DELETE RESTRICT
-    // Drop existing constraints first if they exist, then recreate with RESTRICT
+    // Step 7: Add/update foreign key constraints matching Aurora
     const fkConstraints = [
-      { column: 'service_type_id', ref_table: 'public.service_types', ref_column: 'id', constraint_name: 'fk_service_type' },
       { column: 'status', ref_table: 'public.work_order_statuses', ref_column: 'code', constraint_name: 'fk_status_code' },
-      { column: 'status_id', ref_table: 'public.work_order_statuses', ref_column: 'id', constraint_name: 'fk_status' },
+      { column: 'service_type', ref_table: 'public.service_types', ref_column: 'code', constraint_name: 'fk_service_types' },
+      { column: 'trouble', ref_table: 'public.trouble_codes', ref_column: 'code', constraint_name: 'fk_trouble_code' },
+      { column: 'old_meter_type', ref_table: 'public.meter_types', ref_column: 'id', constraint_name: 'fk_old_meter_type' },
+      { column: 'new_meter_type', ref_table: 'public.meter_types', ref_column: 'id', constraint_name: 'fk_new_meter_type' },
       { column: 'assigned_user_id', ref_table: 'public.users', ref_column: 'id', constraint_name: 'fk_assigned_user' },
-      { column: 'assigned_group_id', ref_table: 'public.user_groups', ref_column: 'id', constraint_name: 'fk_assigned_group' },
-      { column: 'created_by_id', ref_table: 'public.users', ref_column: 'id', constraint_name: 'fk_created_by' },
-      { column: 'updated_by_id', ref_table: 'public.users', ref_column: 'id', constraint_name: 'fk_updated_by' },
-      { column: 'trouble_code_id', ref_table: 'public.trouble_codes', ref_column: 'id', constraint_name: 'fk_trouble_code' },
-      { column: 'old_meter_type_id', ref_table: 'public.meter_types', ref_column: 'id', constraint_name: 'fk_old_meter_type' },
-      { column: 'new_meter_type_id', ref_table: 'public.meter_types', ref_column: 'id', constraint_name: 'fk_new_meter_type' },
+      { column: 'assigned_group_id', ref_table: 'public.user_groups', ref_column: 'name', constraint_name: 'fk_assigned_group' },
+      { column: 'created_by', ref_table: 'public.users', ref_column: 'username', constraint_name: 'fk_created_by' },
+      { column: 'updated_by', ref_table: 'public.users', ref_column: 'username', constraint_name: 'fk_updated_by' },
+      { column: 'completed_by', ref_table: 'public.users', ref_column: 'id', constraint_name: 'fk_completed_by' },
+      { column: 'scheduled_by', ref_table: 'public.users', ref_column: 'id', constraint_name: 'fk_scheduled_by' },
     ];
     
     for (const fk of fkConstraints) {
       try {
-        // Check if constraint already exists
-        const constraintExists = await client.query(`
-          SELECT 1 FROM information_schema.table_constraints 
+        // Check if column exists
+        const colExists = await client.query(`
+          SELECT column_name FROM information_schema.columns 
           WHERE table_schema = $1 AND table_name = 'work_orders' 
-          AND constraint_name = $2
-        `, [schemaName, fk.constraint_name]);
+          AND column_name = $2
+        `, [schemaName, fk.column]);
         
-        if (constraintExists.rows.length > 0) {
-          // Drop existing constraint (it may have SET NULL, we want RESTRICT)
-          await client.query(`
-            ALTER TABLE "${schemaName}".work_orders 
-            DROP CONSTRAINT IF EXISTS ${fk.constraint_name}
-          `);
-          console.log(`Dropped existing FK constraint ${fk.constraint_name} from ${schemaName}.work_orders`);
+        if (colExists.rows.length === 0) {
+          console.log(`Column ${fk.column} does not exist, skipping FK ${fk.constraint_name}`);
+          continue;
         }
+        
+        // Drop existing constraint if exists
+        await client.query(`
+          ALTER TABLE "${schemaName}".work_orders 
+          DROP CONSTRAINT IF EXISTS ${fk.constraint_name}
+        `);
         
         // Add constraint with ON DELETE RESTRICT
         await client.query(`
@@ -270,53 +306,13 @@ export async function migrateProjectSchema(schemaName: string): Promise<void> {
           ADD CONSTRAINT ${fk.constraint_name} 
           FOREIGN KEY (${fk.column}) REFERENCES ${fk.ref_table}(${fk.ref_column}) ON DELETE RESTRICT
         `);
-        console.log(`Added FK constraint ${fk.constraint_name} with ON DELETE RESTRICT to ${schemaName}.work_orders`);
+        console.log(`Added FK constraint ${fk.constraint_name} to ${schemaName}.work_orders`);
       } catch (fkError) {
-        // Log error and continue
         console.log(`FK constraint ${fk.constraint_name} for ${schemaName}: ${fkError}`);
       }
     }
     
-    // Migrate scheduled_date from VARCHAR/DATE to TIMESTAMP if needed
-    const scheduledDateCheck = await client.query(`
-      SELECT data_type FROM information_schema.columns 
-      WHERE table_schema = $1 AND table_name = 'work_orders' 
-      AND column_name = 'scheduled_date'
-    `, [schemaName]);
-    
-    if (scheduledDateCheck.rows.length > 0) {
-      const currentType = scheduledDateCheck.rows[0].data_type;
-      if (currentType !== 'timestamp without time zone' && currentType !== 'timestamp with time zone') {
-        // Convert to TIMESTAMP - handles both VARCHAR and DATE types
-        await client.query(`
-          ALTER TABLE "${schemaName}".work_orders 
-          ALTER COLUMN scheduled_date TYPE TIMESTAMP USING 
-            CASE 
-              WHEN scheduled_date IS NULL THEN NULL
-              WHEN scheduled_date ~ '^\\d{4}-\\d{2}-\\d{2}' THEN scheduled_date::timestamp
-              ELSE NULL
-            END
-        `);
-        console.log(`Migrated scheduled_date to TIMESTAMP for ${schemaName}`);
-      }
-    }
-    
-    // Drop the deprecated assigned_to column if it exists
-    const assignedToCheck = await client.query(`
-      SELECT column_name FROM information_schema.columns 
-      WHERE table_schema = $1 AND table_name = 'work_orders' 
-      AND column_name = 'assigned_to'
-    `, [schemaName]);
-    
-    if (assignedToCheck.rows.length > 0) {
-      await client.query(`
-        ALTER TABLE "${schemaName}".work_orders 
-        DROP COLUMN IF EXISTS assigned_to
-      `);
-      console.log(`Dropped deprecated assigned_to column from ${schemaName}.work_orders`);
-    }
-    
-    console.log(`Migration completed for ${schemaName}.work_orders`);
+    console.log(`Migration completed for ${schemaName}.work_orders to canonical Aurora schema`);
   } catch (error) {
     // Log but don't fail - table might not exist yet
     console.log(`Migration check for ${schemaName}: ${error}`);
@@ -407,9 +403,9 @@ export class ProjectWorkOrderStorage {
     await this.ensureMigrated();
     const client = await pool.connect();
     try {
-      // If scheduledDate is set, auto-set status to "Scheduled"
+      // If scheduledAt is set, auto-set status to "Scheduled"
       let status = workOrder.status || "Open";
-      if (workOrder.scheduledDate) {
+      if (workOrder.scheduledAt) {
         status = "Scheduled";
       }
       
@@ -433,30 +429,32 @@ export class ProjectWorkOrderStorage {
         notes = notes ? `${notes}\n${troubleNote}` : troubleNote;
       }
       
-      // Resolve text values to IDs for foreign key integrity
-      const statusId = await this.resolveStatusId(status);
-      const serviceTypeId = workOrder.serviceType ? await this.resolveServiceTypeId(workOrder.serviceType) : null;
-      const oldMeterTypeId = (workOrder as any).oldMeterType ? await this.resolveMeterTypeId((workOrder as any).oldMeterType) : null;
-      const newMeterTypeId = (workOrder as any).newMeterType ? await this.resolveMeterTypeId((workOrder as any).newMeterType) : null;
-      
       // Get assigned user/group IDs directly from the work order
       const assignedUserId = workOrder.assignedUserId || null;
       const assignedGroupId = workOrder.assignedGroupId || null;
       
-      // Resolve created_by to user ID
+      // Resolve created_by to username for FK
       const createdByValue = createdBy || workOrder.createdBy || null;
-      const createdById = createdByValue ? await this.resolveUserId(createdByValue) : null;
       
       // Set completedAt if status is a "Completed" type status
       const isCompleted = await this.isCompletedStatus(status);
       const completedAt = isCompleted ? new Date() : null;
+      const completedBy = isCompleted && createdBy ? await this.resolveUserId(createdBy) : null;
+      
+      // Resolve scheduledBy if scheduling
+      const scheduledBy = workOrder.scheduledAt && createdBy ? await this.resolveUserId(createdBy) : null;
       
       const result = await client.query(
         `INSERT INTO "${this.schemaName}".work_orders 
-         (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, service_type_id, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, status_id, scheduled_date, assigned_user_id, assigned_group_id, created_by, created_by_id, updated_by, updated_by_id, trouble, trouble_code_id, notes, attachments, old_meter_type, old_meter_type_id, new_meter_type, new_meter_type_id, signature_data, signature_name, completed_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39)
+         (status, created_by, completed_at, notes, attachments, customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, new_meter_id, old_gps, new_gps, old_meter_reading, new_meter_reading, scheduled_at, updated_by, trouble, old_meter_type, new_meter_type, signature_data, signature_name, assigned_user_id, assigned_group_id, completed_by, scheduled_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34)
          RETURNING *`,
         [
+          status,
+          createdByValue,
+          completedAt,
+          notes,
+          workOrder.attachments || null,
           workOrder.customerWoId,
           workOrder.customerId,
           workOrder.customerName,
@@ -469,33 +467,23 @@ export class ProjectWorkOrderStorage {
           workOrder.route || null,
           workOrder.zone || null,
           workOrder.serviceType,
-          serviceTypeId,
           workOrder.oldMeterId || null,
-          workOrder.oldMeterReading ?? null,
           workOrder.newMeterId || null,
-          workOrder.newMeterReading ?? null,
           workOrder.oldGps || null,
           workOrder.newGps || null,
-          status,
-          statusId,
-          workOrder.scheduledDate || null,
-          assignedUserId,
-          assignedGroupId,
+          workOrder.oldMeterReading ?? null,
+          workOrder.newMeterReading ?? null,
+          workOrder.scheduledAt || null,
           createdByValue,
-          createdById,
-          createdByValue,
-          createdById,
           troubleCode || null,
-          troubleCodeId,
-          notes,
-          workOrder.attachments || null,
-          (workOrder as any).oldMeterType || null,
-          oldMeterTypeId,
-          (workOrder as any).newMeterType || null,
-          newMeterTypeId,
+          workOrder.oldMeterType ?? null,
+          workOrder.newMeterType ?? null,
           (workOrder as any).signatureData || null,
           (workOrder as any).signatureName || null,
-          completedAt,
+          assignedUserId,
+          assignedGroupId,
+          completedBy,
+          scheduledBy,
         ]
       );
       return this.mapRowToWorkOrder(result.rows[0]);
@@ -679,13 +667,6 @@ export class ProjectWorkOrderStorage {
       if (updates.serviceType !== undefined) {
         setClauses.push(`service_type = $${paramCount++}`);
         values.push(updates.serviceType || null);
-        if (updates.serviceType) {
-          const serviceTypeId = await this.resolveServiceTypeId(updates.serviceType);
-          setClauses.push(`service_type_id = $${paramCount++}`);
-          values.push(serviceTypeId);
-        } else {
-          setClauses.push(`service_type_id = NULL`);
-        }
       }
       if (updates.oldMeterId !== undefined) {
         setClauses.push(`old_meter_id = $${paramCount++}`);
@@ -711,56 +692,50 @@ export class ProjectWorkOrderStorage {
         setClauses.push(`new_gps = $${paramCount++}`);
         values.push(updates.newGps);
       }
-      if (updates.scheduledDate !== undefined) {
-        setClauses.push(`scheduled_date = $${paramCount++}`);
-        values.push(updates.scheduledDate || null);
-        // If scheduledDate is being set, auto-set status to "Scheduled" with corresponding ID
-        if (updates.scheduledDate && updates.status === undefined) {
+      if (updates.scheduledAt !== undefined) {
+        setClauses.push(`scheduled_at = $${paramCount++}`);
+        values.push(updates.scheduledAt || null);
+        // If scheduledAt is being set, auto-set status to "Scheduled" and track who scheduled
+        if (updates.scheduledAt && updates.status === undefined) {
           setClauses.push(`status = $${paramCount++}`);
           values.push("Scheduled");
-          const scheduledStatusId = await this.resolveStatusId("Scheduled");
-          setClauses.push(`status_id = $${paramCount++}`);
-          values.push(scheduledStatusId);
+          if (updatedBy) {
+            const scheduledByUserId = await this.resolveUserId(updatedBy);
+            setClauses.push(`scheduled_by = $${paramCount++}`);
+            values.push(scheduledByUserId);
+          }
         }
       }
       // Handle status - if trouble code is set, force status to "Trouble"
       if (forceStatusToTrouble) {
         setClauses.push(`status = $${paramCount++}`);
         values.push("Trouble");
-        const statusId = await this.resolveStatusId("Trouble");
-        setClauses.push(`status_id = $${paramCount++}`);
-        values.push(statusId);
       } else if (updates.status !== undefined) {
         setClauses.push(`status = $${paramCount++}`);
         values.push(updates.status);
-        const statusId = await this.resolveStatusId(updates.status);
-        setClauses.push(`status_id = $${paramCount++}`);
-        values.push(statusId);
-        // Check if this status is a "Completed" type and set completed_at
+        // Check if this status is a "Completed" type and set completed_at and completed_by
         const isCompleted = await this.isCompletedStatus(updates.status);
         if (isCompleted) {
           setClauses.push(`completed_at = NOW()`);
+          if (updatedBy) {
+            const completedByUserId = await this.resolveUserId(updatedBy);
+            setClauses.push(`completed_by = $${paramCount++}`);
+            values.push(completedByUserId);
+          }
         }
-        // If status is changing away from "Scheduled", clear scheduledDate and related fields
-        if (updates.status !== "Scheduled" && updates.scheduledDate === undefined) {
-          setClauses.push(`scheduled_date = NULL`);
+        // If status is changing away from "Scheduled", clear scheduledAt and related fields
+        if (updates.status !== "Scheduled" && updates.scheduledAt === undefined) {
+          setClauses.push(`scheduled_at = NULL`);
+          setClauses.push(`scheduled_by = NULL`);
         }
       }
-      // Handle clearing scheduled_date without explicit status change - preserve status_id
-      if (updates.scheduledDate === null && updates.status === undefined) {
+      // Handle clearing scheduled_at without explicit status change
+      if (updates.scheduledAt === null && updates.status === undefined) {
         // Just clearing the date, don't change status
       }
       if ((updates as any).trouble !== undefined) {
         setClauses.push(`trouble = $${paramCount++}`);
         values.push((updates as any).trouble || null);
-        if ((updates as any).trouble) {
-          const troubleCodeDetails = await this.getTroubleCodeDetails((updates as any).trouble);
-          setClauses.push(`trouble_code_id = $${paramCount++}`);
-          values.push(troubleCodeDetails?.id || null);
-        } else {
-          // Clear trouble_code_id when clearing trouble text
-          setClauses.push(`trouble_code_id = NULL`);
-        }
       }
       // Handle notes - append trouble note if needed
       if (troubleNoteToAdd) {
@@ -784,25 +759,11 @@ export class ProjectWorkOrderStorage {
       }
       if ((updates as any).oldMeterType !== undefined) {
         setClauses.push(`old_meter_type = $${paramCount++}`);
-        values.push((updates as any).oldMeterType || null);
-        if ((updates as any).oldMeterType) {
-          const oldMeterTypeId = await this.resolveMeterTypeId((updates as any).oldMeterType);
-          setClauses.push(`old_meter_type_id = $${paramCount++}`);
-          values.push(oldMeterTypeId);
-        } else {
-          setClauses.push(`old_meter_type_id = NULL`);
-        }
+        values.push((updates as any).oldMeterType ?? null);
       }
       if ((updates as any).newMeterType !== undefined) {
         setClauses.push(`new_meter_type = $${paramCount++}`);
-        values.push((updates as any).newMeterType || null);
-        if ((updates as any).newMeterType) {
-          const newMeterTypeId = await this.resolveMeterTypeId((updates as any).newMeterType);
-          setClauses.push(`new_meter_type_id = $${paramCount++}`);
-          values.push(newMeterTypeId);
-        } else {
-          setClauses.push(`new_meter_type_id = NULL`);
-        }
+        values.push((updates as any).newMeterType ?? null);
       }
       if ((updates as any).signatureData !== undefined) {
         setClauses.push(`signature_data = $${paramCount++}`);
@@ -922,6 +883,13 @@ export class ProjectWorkOrderStorage {
   private mapRowToWorkOrder(row: any): ProjectWorkOrder {
     return {
       id: row.id,
+      status: row.status,
+      createdBy: row.created_by,
+      completedAt: row.completed_at,
+      notes: row.notes,
+      attachments: row.attachments,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
       customerWoId: row.customer_wo_id,
       customerId: row.customer_id,
       customerName: row.customer_name,
@@ -934,35 +902,23 @@ export class ProjectWorkOrderStorage {
       route: row.route,
       zone: row.zone,
       serviceType: row.service_type,
-      serviceTypeId: row.service_type_id,
       oldMeterId: row.old_meter_id,
-      oldMeterReading: row.old_meter_reading,
       newMeterId: row.new_meter_id,
-      newMeterReading: row.new_meter_reading,
       oldGps: row.old_gps,
       newGps: row.new_gps,
-      status: row.status,
-      statusId: row.status_id,
-      scheduledDate: row.scheduled_date,
-      assignedUserId: row.assigned_user_id,
-      assignedGroupId: row.assigned_group_id,
-      createdBy: row.created_by,
-      createdById: row.created_by_id,
+      oldMeterReading: row.old_meter_reading,
+      newMeterReading: row.new_meter_reading,
+      scheduledAt: row.scheduled_at,
       updatedBy: row.updated_by,
-      updatedById: row.updated_by_id,
-      completedAt: row.completed_at,
       trouble: row.trouble,
-      troubleCodeId: row.trouble_code_id,
-      notes: row.notes,
-      attachments: row.attachments,
       oldMeterType: row.old_meter_type,
-      oldMeterTypeId: row.old_meter_type_id,
       newMeterType: row.new_meter_type,
-      newMeterTypeId: row.new_meter_type_id,
       signatureData: row.signature_data,
       signatureName: row.signature_name,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
+      assignedUserId: row.assigned_user_id,
+      assignedGroupId: row.assigned_group_id,
+      completedBy: row.completed_by,
+      scheduledBy: row.scheduled_by,
     };
   }
 }
@@ -992,6 +948,13 @@ export async function backupProjectDatabase(schemaName: string): Promise<{
     
     const workOrders = result.rows.map((row) => ({
       id: row.id,
+      status: row.status,
+      createdBy: row.created_by,
+      completedAt: row.completed_at,
+      notes: row.notes,
+      attachments: row.attachments,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
       customerWoId: row.customer_wo_id,
       customerId: row.customer_id,
       customerName: row.customer_name,
@@ -1004,35 +967,23 @@ export async function backupProjectDatabase(schemaName: string): Promise<{
       route: row.route,
       zone: row.zone,
       serviceType: row.service_type,
-      serviceTypeId: row.service_type_id,
       oldMeterId: row.old_meter_id,
-      oldMeterReading: row.old_meter_reading,
       newMeterId: row.new_meter_id,
-      newMeterReading: row.new_meter_reading,
       oldGps: row.old_gps,
       newGps: row.new_gps,
-      status: row.status,
-      statusId: row.status_id,
-      scheduledDate: row.scheduled_date,
-      assignedUserId: row.assigned_user_id,
-      assignedGroupId: row.assigned_group_id,
-      createdBy: row.created_by,
-      createdById: row.created_by_id,
+      oldMeterReading: row.old_meter_reading,
+      newMeterReading: row.new_meter_reading,
+      scheduledAt: row.scheduled_at,
       updatedBy: row.updated_by,
-      updatedById: row.updated_by_id,
-      completedAt: row.completed_at,
       trouble: row.trouble,
-      troubleCodeId: row.trouble_code_id,
-      notes: row.notes,
-      attachments: row.attachments,
       oldMeterType: row.old_meter_type,
-      oldMeterTypeId: row.old_meter_type_id,
       newMeterType: row.new_meter_type,
-      newMeterTypeId: row.new_meter_type_id,
       signatureData: row.signature_data,
       signatureName: row.signature_name,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
+      assignedUserId: row.assigned_user_id,
+      assignedGroupId: row.assigned_group_id,
+      completedBy: row.completed_by,
+      scheduledBy: row.scheduled_by,
     }));
     
     return {
@@ -1066,9 +1017,14 @@ export async function restoreProjectDatabase(
       try {
         await client.query(
           `INSERT INTO "${schemaName}".work_orders 
-           (customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, service_type_id, old_meter_id, old_meter_reading, new_meter_id, new_meter_reading, old_gps, new_gps, status, status_id, scheduled_date, assigned_user_id, assigned_group_id, created_by, created_by_id, updated_by, updated_by_id, completed_at, trouble, trouble_code_id, notes, attachments, old_meter_type, old_meter_type_id, new_meter_type, new_meter_type_id, signature_data, signature_name)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39)`,
+           (status, created_by, completed_at, notes, attachments, customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, new_meter_id, old_gps, new_gps, old_meter_reading, new_meter_reading, scheduled_at, updated_by, trouble, old_meter_type, new_meter_type, signature_data, signature_name, assigned_user_id, assigned_group_id, completed_by, scheduled_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34)`,
           [
+            wo.status || "Open",
+            wo.createdBy || null,
+            wo.completedAt || null,
+            wo.notes || null,
+            wo.attachments || null,
             wo.customerWoId || null,
             wo.customerId || null,
             wo.customerName || null,
@@ -1081,33 +1037,23 @@ export async function restoreProjectDatabase(
             wo.route || null,
             wo.zone || null,
             wo.serviceType || null,
-            wo.serviceTypeId || null,
             wo.oldMeterId || null,
-            wo.oldMeterReading ?? null,
             wo.newMeterId || null,
-            wo.newMeterReading ?? null,
             wo.oldGps || null,
             wo.newGps || null,
-            wo.status || "Open",
-            wo.statusId || null,
-            wo.scheduledDate || null,
-            wo.assignedUserId || null,
-            wo.assignedGroupId || null,
-            wo.createdBy || null,
-            wo.createdById || null,
+            wo.oldMeterReading ?? null,
+            wo.newMeterReading ?? null,
+            wo.scheduledAt || null,
             wo.updatedBy || null,
-            wo.updatedById || null,
-            wo.completedAt || null,
             wo.trouble || null,
-            wo.troubleCodeId || null,
-            wo.notes || null,
-            wo.attachments || null,
-            wo.oldMeterType || wo.meterType || null,
-            wo.oldMeterTypeId || null,
-            wo.newMeterType || null,
-            wo.newMeterTypeId || null,
+            wo.oldMeterType ?? null,
+            wo.newMeterType ?? null,
             wo.signatureData || null,
             wo.signatureName || null,
+            wo.assignedUserId || null,
+            wo.assignedGroupId || null,
+            wo.completedBy || null,
+            wo.scheduledBy || null,
           ]
         );
         restored++;
