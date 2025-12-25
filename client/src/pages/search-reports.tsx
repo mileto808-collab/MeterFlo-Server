@@ -59,12 +59,14 @@ type SearchResult = {
     oldGps?: string | null;
     newGps?: string | null;
     status: string;
-    scheduledDate?: string | null;
+    scheduledAt?: string | null;
+    scheduledBy?: string | null;
     assignedUserId?: string | null;
     assignedGroupId?: number | null;
     createdBy?: string | null;
     updatedBy?: string | null;
     completedAt?: string | null;
+    completedBy?: string | null;
     trouble?: string | null;
     notes?: string | null;
     createdAt?: string | null;
@@ -152,12 +154,14 @@ export default function SearchReports() {
     { key: "oldGps", label: "Old GPS" },
     { key: "newGps", label: "New GPS" },
     { key: "status", label: "Status" },
-    { key: "scheduledDate", label: "Scheduled Date" },
+    { key: "scheduledAt", label: "Scheduled At" },
+    { key: "scheduledBy", label: "Scheduled By" },
     { key: "assignedTo", label: "Assigned User" },
     { key: "assignedGroup", label: "Assigned Group" },
     { key: "createdBy", label: "Created By" },
     { key: "updatedBy", label: "Updated By" },
     { key: "completedAt", label: "Completed At" },
+    { key: "completedBy", label: "Completed By" },
     { key: "trouble", label: "Trouble" },
     { key: "notes", label: "Notes" },
     { key: "createdAt", label: "Created At" },
@@ -188,12 +192,14 @@ export default function SearchReports() {
     { key: "newMeterId", label: "New Meter ID" },
     { key: "newMeterType", label: "New Meter Type" },
     { key: "status", label: "Status" },
-    { key: "scheduledDate", label: "Scheduled Date" },
+    { key: "scheduledAt", label: "Scheduled At" },
+    { key: "scheduledBy", label: "Scheduled By" },
     { key: "assignedTo", label: "Assigned To (User)" },
     { key: "assignedGroup", label: "Assigned To (Group)" },
     { key: "createdBy", label: "Created By" },
     { key: "updatedBy", label: "Updated By" },
     { key: "completedAt", label: "Completed At" },
+    { key: "completedBy", label: "Completed By" },
     { key: "troubleCode", label: "Trouble Code" },
     { key: "notes", label: "Notes" },
     { key: "createdAt", label: "Created At" },
@@ -440,12 +446,14 @@ export default function SearchReports() {
     oldGps: { label: "Old GPS", sortKey: "oldGps" },
     newGps: { label: "New GPS", sortKey: "newGps" },
     status: { label: "Status", sortKey: "status" },
-    scheduledDate: { label: "Scheduled Date", sortKey: "scheduledDate" },
+    scheduledAt: { label: "Scheduled At", sortKey: "scheduledAt" },
+    scheduledBy: { label: "Scheduled By", sortKey: "scheduledBy" },
     assignedTo: { label: "Assigned User", sortKey: "assignedUserId" },
     assignedGroup: { label: "Assigned Group", sortKey: "assignedGroupId" },
     createdBy: { label: "Created By", sortKey: "createdBy" },
     updatedBy: { label: "Updated By", sortKey: "updatedBy" },
     completedAt: { label: "Completed At", sortKey: "completedAt" },
+    completedBy: { label: "Completed By", sortKey: "completedBy" },
     trouble: { label: "Trouble", sortKey: "trouble" },
     notes: { label: "Notes", sortKey: "notes" },
     createdAt: { label: "Created At", sortKey: "createdAt" },
@@ -518,8 +526,10 @@ export default function SearchReports() {
         return <TableCell key={key}>{wo.newGps || "-"}</TableCell>;
       case "status":
         return <TableCell key={key}>{getStatusBadge(wo.status)}</TableCell>;
-      case "scheduledDate":
-        return <TableCell key={key}>{wo.scheduledDate ? formatCustom(wo.scheduledDate, "MMM d, yyyy") : "-"}</TableCell>;
+      case "scheduledAt":
+        return <TableCell key={key}>{wo.scheduledAt ? formatCustom(wo.scheduledAt, "MMM d, yyyy") : "-"}</TableCell>;
+      case "scheduledBy":
+        return <TableCell key={key}>{getAssignedUserName(wo.scheduledBy) || "-"}</TableCell>;
       case "assignedTo":
         return <TableCell key={key}>{getAssignedUserName(wo.assignedUserId) || "-"}</TableCell>;
       case "assignedGroup":
@@ -530,6 +540,8 @@ export default function SearchReports() {
         return <TableCell key={key}>{wo.updatedBy || "-"}</TableCell>;
       case "completedAt":
         return <TableCell key={key}>{wo.completedAt ? formatCustom(wo.completedAt, "MMM d, yyyy h:mm a") : "-"}</TableCell>;
+      case "completedBy":
+        return <TableCell key={key}>{getAssignedUserName(wo.completedBy) || "-"}</TableCell>;
       case "trouble":
         return <TableCell key={key}>{getTroubleCodeLabel(wo.trouble) || "-"}</TableCell>;
       case "notes":
@@ -657,9 +669,9 @@ export default function SearchReports() {
     }
     if (filterScheduledDateFrom || filterScheduledDateTo) {
       results = results.filter(r => {
-        const scheduledDate = (r.workOrder as any).scheduledDate;
-        if (!scheduledDate) return false;
-        const dateStr = scheduledDate.substring(0, 10);
+        const scheduledAt = (r.workOrder as any).scheduledAt;
+        if (!scheduledAt) return false;
+        const dateStr = scheduledAt.substring(0, 10);
         if (filterScheduledDateFrom && dateStr < filterScheduledDateFrom) return false;
         if (filterScheduledDateTo && dateStr > filterScheduledDateTo) return false;
         return true;
@@ -695,7 +707,7 @@ export default function SearchReports() {
 
     // Apply multi-column sorting with proper value normalization
     if (sortCriteria.length > 0) {
-      const dateColumns = ['scheduledDate', 'completedAt', 'createdAt', 'updatedAt'];
+      const dateColumns = ['scheduledAt', 'completedAt', 'createdAt', 'updatedAt'];
       const numericColumns = ['oldMeterReading', 'newMeterReading'];
       
       results.sort((a, b) => {
@@ -862,12 +874,14 @@ export default function SearchReports() {
       case "oldGps": return r.workOrder.oldGps || "";
       case "newGps": return r.workOrder.newGps || "";
       case "status": return getStatusLabel(r.workOrder.status);
-      case "scheduledDate": return r.workOrder.scheduledDate ? formatExport(r.workOrder.scheduledDate) : "";
+      case "scheduledAt": return r.workOrder.scheduledAt ? formatExport(r.workOrder.scheduledAt) : "";
+      case "scheduledBy": return getAssignedUserName(r.workOrder.scheduledBy) || "";
       case "assignedTo": return getAssignedUserName(r.workOrder.assignedUserId) || "";
       case "assignedGroup": return getAssignedGroupName(r.workOrder.assignedGroupId) || "";
       case "createdBy": return r.workOrder.createdBy || "";
       case "updatedBy": return r.workOrder.updatedBy || "";
       case "completedAt": return r.workOrder.completedAt ? formatExport(r.workOrder.completedAt) : "";
+      case "completedBy": return getAssignedUserName(r.workOrder.completedBy) || "";
       case "trouble": return getTroubleCodeLabel(r.workOrder.trouble) || "";
       case "notes": return r.workOrder.notes || "";
       case "createdAt": return r.workOrder.createdAt ? formatExport(r.workOrder.createdAt) : "";
@@ -1201,9 +1215,9 @@ export default function SearchReports() {
                 </Select>
               </div>
             )}
-            {isFilterVisible("scheduledDate") && (
+            {isFilterVisible("scheduledAt") && (
               <div className="min-w-[280px]">
-                <Label>Scheduled Date</Label>
+                <Label>Scheduled At</Label>
                 <div className="flex gap-2 items-center">
                   <Input id="filter-scheduled-date-from" type="date" value={filterScheduledDateFrom} onChange={(e) => setFilterScheduledDateFrom(e.target.value)} data-testid="input-filter-scheduled-date-from" className="flex-1" />
                   <span className="text-muted-foreground text-sm">to</span>

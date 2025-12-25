@@ -71,12 +71,14 @@ type ParsedWorkOrder = {
   oldMeterType?: string;
   newMeterType?: string;
   status?: string;
-  scheduledDate?: string;
+  scheduledAt?: string;
+  scheduledBy?: string;
   trouble?: string;
   notes?: string;
   assignedUserId?: string;
   assignedGroupId?: string;
   createdBy?: string;
+  completedBy?: string;
   completedAt?: string;
 };
 
@@ -99,12 +101,14 @@ type ColumnMapping = {
   oldMeterType: string;
   newMeterType: string;
   status: string;
-  scheduledDate: string;
+  scheduledAt: string;
+  scheduledBy: string;
   trouble: string;
   notes: string;
   assignedUserId: string;
   assignedGroupId: string;
   createdBy: string;
+  completedBy: string;
   completedAt: string;
 };
 
@@ -127,12 +131,14 @@ const defaultColumnMapping: ColumnMapping = {
   oldMeterType: "",
   newMeterType: "",
   status: "",
-  scheduledDate: "",
+  scheduledAt: "",
+  scheduledBy: "",
   trouble: "",
   notes: "",
   assignedUserId: "",
   assignedGroupId: "",
   createdBy: "",
+  completedBy: "",
   completedAt: "",
 };
 
@@ -462,12 +468,14 @@ export default function ProjectImport() {
       { field: "oldMeterType", variants: ["old meter type", "old_meter_type", "oldmetertype", "current meter type", "existing meter type"] },
       { field: "newMeterType", variants: ["new meter type", "new_meter_type", "newmetertype", "replacement meter type"] },
       { field: "status", variants: ["status", "state", "condition", "wo status"] },
-      { field: "scheduledDate", variants: ["scheduled date", "scheduled_date", "scheduleddate", "schedule date", "schedule", "due date", "due_date", "scheduled datetime", "scheduled_datetime"] },
+      { field: "scheduledAt", variants: ["scheduled date", "scheduled_date", "scheduleddate", "schedule date", "schedule", "due date", "due_date", "scheduled datetime", "scheduled_datetime", "scheduled at", "scheduled_at", "scheduledat"] },
+      { field: "scheduledBy", variants: ["scheduled by", "scheduled_by", "scheduledby", "scheduler"] },
       { field: "trouble", variants: ["trouble", "issue", "problem", "trouble code", "trouble_code"] },
       { field: "notes", variants: ["notes", "comments", "remarks", "description"] },
       { field: "assignedUserId", variants: ["assigned_user_id", "assigned user", "assigneduserid", "technician", "worker", "assignee", "tech"] },
       { field: "assignedGroupId", variants: ["assigned_group_id", "assigned group", "assignedgroupid", "team", "group", "crew"] },
       { field: "createdBy", variants: ["created by", "created_by", "createdby", "creator", "created by user"] },
+      { field: "completedBy", variants: ["completed by", "completed_by", "completedby", "completer", "finished by"] },
       { field: "completedAt", variants: ["completed at", "completed_at", "completedat", "completion date", "completion_date", "completed date", "completed_date"] },
     ];
 
@@ -517,12 +525,14 @@ export default function ProjectImport() {
         oldMeterType: getValueByHeader(columnMapping.oldMeterType) || undefined,
         newMeterType: getValueByHeader(columnMapping.newMeterType) || undefined,
         status: getValueByHeader(columnMapping.status) || undefined,
-        scheduledDate: getValueByHeader(columnMapping.scheduledDate) || undefined,
+        scheduledAt: getValueByHeader(columnMapping.scheduledAt) || undefined,
+        scheduledBy: getValueByHeader(columnMapping.scheduledBy) || undefined,
         trouble: getValueByHeader(columnMapping.trouble) || undefined,
         notes: getValueByHeader(columnMapping.notes) || undefined,
         assignedUserId: getValueByHeader(columnMapping.assignedUserId) || undefined,
         assignedGroupId: getValueByHeader(columnMapping.assignedGroupId) || undefined,
         createdBy: getValueByHeader(columnMapping.createdBy) || undefined,
+        completedBy: getValueByHeader(columnMapping.completedBy) || undefined,
         completedAt: getValueByHeader(columnMapping.completedAt) || undefined,
       };
 
@@ -584,12 +594,14 @@ export default function ProjectImport() {
         oldMeterType: getValueByHeader(columnMapping.oldMeterType) || undefined,
         newMeterType: getValueByHeader(columnMapping.newMeterType) || undefined,
         status: status || undefined,
-        scheduledDate: getValueByHeader(columnMapping.scheduledDate) || undefined,
+        scheduledAt: getValueByHeader(columnMapping.scheduledAt) || undefined,
+        scheduledBy: getValueByHeader(columnMapping.scheduledBy) || undefined,
         trouble: getValueByHeader(columnMapping.trouble) || undefined,
         notes: getValueByHeader(columnMapping.notes) || undefined,
         assignedUserId: getValueByHeader(columnMapping.assignedUserId) || undefined,
         assignedGroupId: getValueByHeader(columnMapping.assignedGroupId) || undefined,
         createdBy: getValueByHeader(columnMapping.createdBy) || undefined,
+        completedBy: getValueByHeader(columnMapping.completedBy) || undefined,
         completedAt: getValueByHeader(columnMapping.completedAt) || undefined,
       };
 
@@ -802,7 +814,7 @@ export default function ProjectImport() {
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">old_meter_id, old_meter_reading</span> - Old meter info</div>
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">old_gps</span> - GPS coordinates</div>
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">old_meter_type, new_meter_type</span> - Meter types</div>
-                    <div><span className="font-mono bg-muted px-2 py-1 rounded">status, scheduled_date, trouble, notes</span> - Work order details</div>
+                    <div><span className="font-mono bg-muted px-2 py-1 rounded">status, scheduled_at, scheduled_by, trouble, notes</span> - Work order details</div>
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">assigned_user_id, assigned_group_id, created_by, completed_at</span> - Assignment and tracking</div>
                   </div>
                 </div>
@@ -848,12 +860,14 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,M
                   <MappingSelect field="oldMeterType" label="Old Meter Type" />
                   <MappingSelect field="newMeterType" label="New Meter Type" />
                   <MappingSelect field="status" label="Status" />
-                  <MappingSelect field="scheduledDate" label="Scheduled Date & Time" />
+                  <MappingSelect field="scheduledAt" label="Scheduled At" />
+                  <MappingSelect field="scheduledBy" label="Scheduled By" />
                   <MappingSelect field="trouble" label="Trouble" />
                   <MappingSelect field="notes" label="Notes" />
                   <MappingSelect field="assignedUserId" label="Assigned User" />
                   <MappingSelect field="assignedGroupId" label="Assigned Group" />
                   <MappingSelect field="createdBy" label="Created By" />
+                  <MappingSelect field="completedBy" label="Completed By" />
                   <MappingSelect field="completedAt" label="Completed At" />
                 </div>
               </CardContent>
@@ -1176,7 +1190,7 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,M
               <div>
                 <h4 className="font-medium mb-2">Optional Columns</h4>
                 <div className="text-sm text-muted-foreground">
-                  city, state, zip, phone, email, route, zone, old_meter_id, old_meter_reading, old_gps, old_meter_type, new_meter_type, status, scheduled_date, trouble, notes, assigned_user_id, assigned_group_id, created_by, completed_at
+                  city, state, zip, phone, email, route, zone, old_meter_id, old_meter_reading, old_gps, old_meter_type, new_meter_type, status, scheduled_at, scheduled_by, trouble, notes, assigned_user_id, assigned_group_id, created_by, completed_by, completed_at
                 </div>
               </div>
             </CardContent>

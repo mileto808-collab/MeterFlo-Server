@@ -107,11 +107,13 @@ const workOrderFields = [
   { key: "oldMeterType", label: "Old Meter Type", required: false },
   { key: "newMeterType", label: "New Meter Type", required: false },
   { key: "status", label: "Status", required: false },
-  { key: "scheduledDate", label: "Scheduled Date & Time", required: false },
+  { key: "scheduledAt", label: "Scheduled At", required: false },
+  { key: "scheduledBy", label: "Scheduled By", required: false },
   { key: "trouble", label: "Trouble", required: false },
   { key: "notes", label: "Notes", required: false },
   { key: "assignedTo", label: "Assigned To", required: false },
   { key: "createdBy", label: "Created By", required: false },
+  { key: "completedBy", label: "Completed By", required: false },
   { key: "completedAt", label: "Completed At", required: false },
 ];
 
