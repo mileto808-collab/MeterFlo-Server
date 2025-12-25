@@ -721,11 +721,13 @@ export class ProjectWorkOrderStorage {
         setClauses.push(`new_gps = $${paramCount++}`);
         values.push(updates.newGps);
       }
+      // Handle scheduledAt and status together for proper auto-scheduling behavior
       if (updates.scheduledAt !== undefined) {
         setClauses.push(`scheduled_at = $${paramCount++}`);
         values.push(updates.scheduledAt || null);
-        // If scheduledAt is being set, auto-set status to "Scheduled" and track who scheduled
-        if (updates.scheduledAt && updates.status === undefined) {
+        
+        // If scheduledAt is being SET (not cleared), auto-set status to "Scheduled"
+        if (updates.scheduledAt) {
           setClauses.push(`status = $${paramCount++}`);
           values.push("Scheduled");
           if (updatedBy) {
@@ -736,13 +738,32 @@ export class ProjectWorkOrderStorage {
           // Add scheduled note
           const timestamp = await this.getTimezoneFormattedTimestamp();
           scheduledNoteToAdd = `Scheduled at ${timestamp} by ${updatedBy || 'System'}`;
+        } else {
+          // scheduledAt is being CLEARED - use the status from the update if provided
+          setClauses.push(`scheduled_by = NULL`);
+          if (updates.status !== undefined && !forceStatusToTrouble) {
+            setClauses.push(`status = $${paramCount++}`);
+            values.push(updates.status);
+            // Check if this status is a "Completed" type
+            const isCompleted = await this.isCompletedStatus(updates.status);
+            if (isCompleted) {
+              setClauses.push(`completed_at = NOW()`);
+              const timestamp = await this.getTimezoneFormattedTimestamp();
+              completedNoteToAdd = `Completed at ${timestamp} by ${updatedBy || 'System'}`;
+              if (updatedBy) {
+                const completedByUserId = await this.resolveUserId(updatedBy);
+                setClauses.push(`completed_by = $${paramCount++}`);
+                values.push(completedByUserId);
+              }
+            }
+          }
         }
-      }
-      // Handle status - if trouble code is set, force status to "Trouble"
-      if (forceStatusToTrouble) {
+      } else if (forceStatusToTrouble) {
+        // Handle status - if trouble code is set, force status to "Trouble"
         setClauses.push(`status = $${paramCount++}`);
         values.push("Trouble");
       } else if (updates.status !== undefined) {
+        // scheduledAt was not in this update, handle status normally
         setClauses.push(`status = $${paramCount++}`);
         values.push(updates.status);
         // Check if this is a "Scheduled" status and add scheduled note
@@ -769,14 +790,10 @@ export class ProjectWorkOrderStorage {
           }
         }
         // If status is changing away from "Scheduled", clear scheduledAt and related fields
-        if (updates.status !== "Scheduled" && updates.scheduledAt === undefined) {
+        if (updates.status !== "Scheduled") {
           setClauses.push(`scheduled_at = NULL`);
           setClauses.push(`scheduled_by = NULL`);
         }
-      }
-      // Handle clearing scheduled_at without explicit status change
-      if (updates.scheduledAt === null && updates.status === undefined) {
-        // Just clearing the date, don't change status
       }
       if ((updates as any).trouble !== undefined) {
         setClauses.push(`trouble = $${paramCount++}`);
