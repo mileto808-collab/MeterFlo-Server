@@ -40,8 +40,8 @@ export const projectWorkOrders = pgTable("work_orders", {
   scheduledAt: timestamp("scheduled_at"),
   updatedBy: varchar("updated_by", { length: 100 }),
   trouble: varchar("trouble", { length: 50 }),
-  oldMeterType: integer("old_meter_type"),
-  newMeterType: integer("new_meter_type"),
+  oldMeterType: varchar("old_meter_type", { length: 100 }),
+  newMeterType: varchar("new_meter_type", { length: 100 }),
   signatureData: text("signature_data"),
   signatureName: varchar("signature_name", { length: 100 }),
   assignedUserId: varchar("assigned_user_id", { length: 50 }),
@@ -105,8 +105,8 @@ export async function createProjectSchema(projectName: string, projectId: number
         scheduled_at TIMESTAMP,
         updated_by VARCHAR(100),
         trouble VARCHAR(50),
-        old_meter_type INTEGER,
-        new_meter_type INTEGER,
+        old_meter_type VARCHAR(100),
+        new_meter_type VARCHAR(100),
         signature_data TEXT,
         signature_name VARCHAR(100),
         assigned_user_id VARCHAR(50),
@@ -116,8 +116,8 @@ export async function createProjectSchema(projectName: string, projectId: number
         CONSTRAINT fk_status_code FOREIGN KEY (status) REFERENCES public.work_order_statuses(code) ON DELETE RESTRICT,
         CONSTRAINT fk_service_types FOREIGN KEY (service_type) REFERENCES public.service_types(code) ON DELETE RESTRICT,
         CONSTRAINT fk_trouble_code FOREIGN KEY (trouble) REFERENCES public.trouble_codes(code) ON DELETE RESTRICT,
-        CONSTRAINT fk_old_meter_type FOREIGN KEY (old_meter_type) REFERENCES public.meter_types(id) ON DELETE RESTRICT,
-        CONSTRAINT fk_new_meter_type FOREIGN KEY (new_meter_type) REFERENCES public.meter_types(id) ON DELETE RESTRICT,
+        CONSTRAINT fk_old_meter_type FOREIGN KEY (old_meter_type) REFERENCES public.meter_types(product_id) ON DELETE RESTRICT,
+        CONSTRAINT fk_new_meter_type FOREIGN KEY (new_meter_type) REFERENCES public.meter_types(product_id) ON DELETE RESTRICT,
         CONSTRAINT fk_assigned_user FOREIGN KEY (assigned_user_id) REFERENCES public.users(id) ON DELETE RESTRICT,
         CONSTRAINT fk_assigned_group FOREIGN KEY (assigned_group_id) REFERENCES public.user_groups(name) ON DELETE RESTRICT,
         CONSTRAINT fk_created_by FOREIGN KEY (created_by) REFERENCES public.users(username) ON DELETE RESTRICT,
@@ -191,7 +191,7 @@ export async function migrateProjectSchema(schemaName: string): Promise<void> {
       }
     }
     
-    // Step 3: Handle old_meter_type/new_meter_type type changes (VARCHAR -> INTEGER)
+    // Step 3: Handle old_meter_type/new_meter_type type changes (INTEGER -> VARCHAR for product_id FK)
     const meterTypeCheck = await client.query(`
       SELECT column_name, data_type FROM information_schema.columns 
       WHERE table_schema = $1 AND table_name = 'work_orders' 
@@ -199,18 +199,20 @@ export async function migrateProjectSchema(schemaName: string): Promise<void> {
     `, [schemaName]);
     
     for (const col of meterTypeCheck.rows) {
-      if (col.data_type === 'character varying') {
-        // Convert VARCHAR to INTEGER (setting NULL where not numeric)
+      if (col.data_type === 'integer') {
+        // Drop FK constraint before type change
+        const fkName = col.column_name === 'old_meter_type' ? 'fk_old_meter_type' : 'fk_new_meter_type';
         await client.query(`
           ALTER TABLE "${schemaName}".work_orders 
-          ALTER COLUMN ${col.column_name} TYPE INTEGER USING 
-            CASE 
-              WHEN ${col.column_name} IS NULL THEN NULL
-              WHEN ${col.column_name} ~ '^\\d+$' THEN ${col.column_name}::INTEGER
-              ELSE NULL
-            END
+          DROP CONSTRAINT IF EXISTS ${fkName} CASCADE
         `);
-        console.log(`Converted ${col.column_name} from VARCHAR to INTEGER for ${schemaName}`);
+        // Convert INTEGER (id) to VARCHAR (product_id) using lookup
+        await client.query(`
+          ALTER TABLE "${schemaName}".work_orders 
+          ALTER COLUMN ${col.column_name} TYPE VARCHAR(100) USING 
+            (SELECT product_id FROM public.meter_types WHERE id = ${col.column_name})
+        `);
+        console.log(`Converted ${col.column_name} from INTEGER to VARCHAR (product_id) for ${schemaName}`);
       }
     }
     
@@ -270,8 +272,8 @@ export async function migrateProjectSchema(schemaName: string): Promise<void> {
       { column: 'status', ref_table: 'public.work_order_statuses', ref_column: 'code', constraint_name: 'fk_status_code' },
       { column: 'service_type', ref_table: 'public.service_types', ref_column: 'code', constraint_name: 'fk_service_types' },
       { column: 'trouble', ref_table: 'public.trouble_codes', ref_column: 'code', constraint_name: 'fk_trouble_code' },
-      { column: 'old_meter_type', ref_table: 'public.meter_types', ref_column: 'id', constraint_name: 'fk_old_meter_type' },
-      { column: 'new_meter_type', ref_table: 'public.meter_types', ref_column: 'id', constraint_name: 'fk_new_meter_type' },
+      { column: 'old_meter_type', ref_table: 'public.meter_types', ref_column: 'product_id', constraint_name: 'fk_old_meter_type' },
+      { column: 'new_meter_type', ref_table: 'public.meter_types', ref_column: 'product_id', constraint_name: 'fk_new_meter_type' },
       { column: 'assigned_user_id', ref_table: 'public.users', ref_column: 'id', constraint_name: 'fk_assigned_user' },
       { column: 'assigned_group_id', ref_table: 'public.user_groups', ref_column: 'name', constraint_name: 'fk_assigned_group' },
       { column: 'created_by', ref_table: 'public.users', ref_column: 'username', constraint_name: 'fk_created_by' },
