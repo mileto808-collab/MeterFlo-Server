@@ -487,7 +487,7 @@ export const insertProjectWorkOrderSchema = z.object({
   email: z.string().email().max(255).optional().nullable().or(z.literal("")),
   route: z.string().max(100).optional().nullable(),
   zone: z.string().max(100).optional().nullable(),
-  serviceType: z.enum(serviceTypeEnum),
+  serviceType: z.string().min(1, "Service type is required"),
   oldMeterId: z.string().max(100).optional().nullable(),
   oldMeterReading: z.number().int().optional().nullable(),
   newMeterId: z.string().max(100).optional().nullable(),
