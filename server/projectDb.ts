@@ -740,6 +740,16 @@ export class ProjectWorkOrderStorage {
         setClauses.push(`new_gps = $${paramCount++}`);
         values.push(updates.newGps);
       }
+      // Fetch existing scheduledAt to determine if it's actually changing
+      let existingScheduledAt: Date | null = null;
+      if (updates.scheduledAt !== undefined || updates.status === "Scheduled") {
+        const existingScheduleResult = await client.query(
+          `SELECT scheduled_at FROM "${this.schemaName}".work_orders WHERE id = $1`,
+          [id]
+        );
+        existingScheduledAt = existingScheduleResult.rows[0]?.scheduled_at || null;
+      }
+      
       // Handle scheduledAt and status together for proper auto-scheduling behavior
       if (updates.scheduledAt !== undefined) {
         setClauses.push(`scheduled_at = $${paramCount++}`);
@@ -754,9 +764,14 @@ export class ProjectWorkOrderStorage {
             setClauses.push(`scheduled_by = $${paramCount++}`);
             values.push(scheduledByUserId);
           }
-          // Add scheduled note
-          const timestamp = await this.getTimezoneFormattedTimestamp();
-          scheduledNoteToAdd = `Scheduled at ${timestamp} by ${updatedBy || 'System'}`;
+          // Only add scheduled note if the datetime is actually changing
+          const newScheduledAt = new Date(updates.scheduledAt);
+          const isScheduleChanging = !existingScheduledAt || 
+            newScheduledAt.getTime() !== new Date(existingScheduledAt).getTime();
+          if (isScheduleChanging) {
+            const timestamp = await this.getTimezoneFormattedTimestamp();
+            scheduledNoteToAdd = `Scheduled at ${timestamp} by ${updatedBy || 'System'}`;
+          }
         } else {
           // scheduledAt is being CLEARED - use the status from the update if provided
           setClauses.push(`scheduled_by = NULL`);
@@ -786,7 +801,8 @@ export class ProjectWorkOrderStorage {
         setClauses.push(`status = $${paramCount++}`);
         values.push(updates.status);
         // Check if this is a "Scheduled" status and add scheduled note
-        if (updates.status === "Scheduled") {
+        // Only add note if there's no existing scheduledAt (i.e., this is a fresh scheduling)
+        if (updates.status === "Scheduled" && !existingScheduledAt) {
           const timestamp = await this.getTimezoneFormattedTimestamp();
           scheduledNoteToAdd = `Scheduled at ${timestamp} by ${updatedBy || 'System'}`;
           if (updatedBy) {
@@ -794,6 +810,11 @@ export class ProjectWorkOrderStorage {
             setClauses.push(`scheduled_by = $${paramCount++}`);
             values.push(scheduledByUserId);
           }
+        } else if (updates.status === "Scheduled" && existingScheduledAt && updatedBy) {
+          // Status staying as Scheduled with existing scheduledAt - just update scheduledBy but no note
+          const scheduledByUserId = await this.resolveUserId(updatedBy);
+          setClauses.push(`scheduled_by = $${paramCount++}`);
+          values.push(scheduledByUserId);
         }
         // Check if this status is a "Completed" type and set completed_at and completed_by
         const isCompleted = await this.isCompletedStatus(updates.status);
