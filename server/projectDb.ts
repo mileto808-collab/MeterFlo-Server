@@ -618,13 +618,8 @@ export class ProjectWorkOrderStorage {
   }
 
   private async getTimezoneFormattedTimestamp(): Promise<string> {
-    return this.formatDateInTimezone(new Date());
-  }
-  
-  private async formatDateInTimezone(date: Date | string): Promise<string> {
     const timezone = await storage.getSetting("default_timezone") || "America/Denver";
-    const dateObj = typeof date === 'string' ? new Date(date) : date;
-    return dateObj.toLocaleString('en-US', {
+    return new Date().toLocaleString('en-US', {
       month: '2-digit',
       day: '2-digit',
       year: 'numeric',
@@ -774,9 +769,8 @@ export class ProjectWorkOrderStorage {
           const isScheduleChanging = !existingScheduledAt || 
             newScheduledAt.getTime() !== new Date(existingScheduledAt).getTime();
           if (isScheduleChanging) {
-            // Use the actual scheduled datetime in the note, not the current time
-            const scheduledDateFormatted = await this.formatDateInTimezone(updates.scheduledAt);
-            scheduledNoteToAdd = `Scheduled for ${scheduledDateFormatted} by ${updatedBy || 'System'}`;
+            const timestamp = await this.getTimezoneFormattedTimestamp();
+            scheduledNoteToAdd = `Scheduled at ${timestamp} by ${updatedBy || 'System'}`;
           }
         } else {
           // scheduledAt is being CLEARED - use the status from the update if provided
@@ -806,9 +800,18 @@ export class ProjectWorkOrderStorage {
         // scheduledAt was not in this update, handle status normally
         setClauses.push(`status = $${paramCount++}`);
         values.push(updates.status);
-        // Handle status change to "Scheduled" - only update scheduledBy, no note needed
-        // (Notes are only added when scheduledAt datetime is actually set/changed)
-        if (updates.status === "Scheduled" && updatedBy) {
+        // Check if this is a "Scheduled" status and add scheduled note
+        // Only add note if there's no existing scheduledAt (i.e., this is a fresh scheduling)
+        if (updates.status === "Scheduled" && !existingScheduledAt) {
+          const timestamp = await this.getTimezoneFormattedTimestamp();
+          scheduledNoteToAdd = `Scheduled at ${timestamp} by ${updatedBy || 'System'}`;
+          if (updatedBy) {
+            const scheduledByUserId = await this.resolveUserId(updatedBy);
+            setClauses.push(`scheduled_by = $${paramCount++}`);
+            values.push(scheduledByUserId);
+          }
+        } else if (updates.status === "Scheduled" && existingScheduledAt && updatedBy) {
+          // Status staying as Scheduled with existing scheduledAt - just update scheduledBy but no note
           const scheduledByUserId = await this.resolveUserId(updatedBy);
           setClauses.push(`scheduled_by = $${paramCount++}`);
           values.push(scheduledByUserId);
