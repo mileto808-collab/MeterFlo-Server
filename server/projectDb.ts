@@ -622,6 +622,8 @@ export class ProjectWorkOrderStorage {
       // Check if trouble code is being set - we'll handle status and notes later
       const troubleCode = (updates as any).trouble;
       let troubleNoteToAdd: string | null = null;
+      let scheduledNoteToAdd: string | null = null;
+      let completedNoteToAdd: string | null = null;
       let forceStatusToTrouble = false;
       
       if (troubleCode) {
@@ -731,6 +733,9 @@ export class ProjectWorkOrderStorage {
             setClauses.push(`scheduled_by = $${paramCount++}`);
             values.push(scheduledByUserId);
           }
+          // Add scheduled note
+          const timestamp = await this.getTimezoneFormattedTimestamp();
+          scheduledNoteToAdd = `Scheduled at ${timestamp} by ${updatedBy || 'System'}`;
         }
       }
       // Handle status - if trouble code is set, force status to "Trouble"
@@ -740,10 +745,23 @@ export class ProjectWorkOrderStorage {
       } else if (updates.status !== undefined) {
         setClauses.push(`status = $${paramCount++}`);
         values.push(updates.status);
+        // Check if this is a "Scheduled" status and add scheduled note
+        if (updates.status === "Scheduled") {
+          const timestamp = await this.getTimezoneFormattedTimestamp();
+          scheduledNoteToAdd = `Scheduled at ${timestamp} by ${updatedBy || 'System'}`;
+          if (updatedBy) {
+            const scheduledByUserId = await this.resolveUserId(updatedBy);
+            setClauses.push(`scheduled_by = $${paramCount++}`);
+            values.push(scheduledByUserId);
+          }
+        }
         // Check if this status is a "Completed" type and set completed_at and completed_by
         const isCompleted = await this.isCompletedStatus(updates.status);
         if (isCompleted) {
           setClauses.push(`completed_at = NOW()`);
+          // Add completed note
+          const timestamp = await this.getTimezoneFormattedTimestamp();
+          completedNoteToAdd = `Completed at ${timestamp} by ${updatedBy || 'System'}`;
           if (updatedBy) {
             const completedByUserId = await this.resolveUserId(updatedBy);
             setClauses.push(`completed_by = $${paramCount++}`);
@@ -764,16 +782,22 @@ export class ProjectWorkOrderStorage {
         setClauses.push(`trouble = $${paramCount++}`);
         values.push((updates as any).trouble || null);
       }
-      // Handle notes - append trouble note if needed
-      if (troubleNoteToAdd) {
-        // We need to get existing notes and append the trouble note
+      // Handle notes - append trouble, scheduled, and completed notes if needed
+      const notesToAppend: string[] = [];
+      if (scheduledNoteToAdd) notesToAppend.push(scheduledNoteToAdd);
+      if (completedNoteToAdd) notesToAppend.push(completedNoteToAdd);
+      if (troubleNoteToAdd) notesToAppend.push(troubleNoteToAdd);
+      
+      if (notesToAppend.length > 0) {
+        // We need to get existing notes and append the auto-generated notes
         const existingResult = await client.query(
           `SELECT notes FROM "${this.schemaName}".work_orders WHERE id = $1`,
           [id]
         );
         const existingNotes = existingResult.rows[0]?.notes || "";
         const updatedNotes = updates.notes !== undefined ? updates.notes : existingNotes;
-        const finalNotes = updatedNotes ? `${updatedNotes}\n${troubleNoteToAdd}` : troubleNoteToAdd;
+        const autoNotes = notesToAppend.join('\n');
+        const finalNotes = updatedNotes ? `${updatedNotes}\n${autoNotes}` : autoNotes;
         setClauses.push(`notes = $${paramCount++}`);
         values.push(finalNotes);
       } else if (updates.notes !== undefined) {
