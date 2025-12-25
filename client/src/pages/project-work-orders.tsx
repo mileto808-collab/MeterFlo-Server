@@ -162,12 +162,14 @@ export default function ProjectWorkOrders() {
     { key: "oldGps", label: "Old GPS" },
     { key: "newGps", label: "New GPS" },
     { key: "status", label: "Status" },
-    { key: "scheduledDate", label: "Scheduled Date" },
+    { key: "scheduledAt", label: "Scheduled At" },
+    { key: "scheduledBy", label: "Scheduled By" },
     { key: "assignedTo", label: "Assigned User" },
     { key: "assignedGroup", label: "Assigned Group" },
     { key: "createdBy", label: "Created By" },
     { key: "updatedBy", label: "Updated By" },
     { key: "completedAt", label: "Completed At" },
+    { key: "completedBy", label: "Completed By" },
     { key: "trouble", label: "Trouble" },
     { key: "notes", label: "Notes" },
     { key: "createdAt", label: "Created At" },
@@ -195,12 +197,14 @@ export default function ProjectWorkOrders() {
     { key: "newMeterId", label: "New Meter ID" },
     { key: "newMeterType", label: "New Meter Type" },
     { key: "status", label: "Status" },
-    { key: "scheduledDate", label: "Scheduled Date" },
+    { key: "scheduledAt", label: "Scheduled At" },
+    { key: "scheduledBy", label: "Scheduled By" },
     { key: "assignedTo", label: "Assigned To (User)" },
     { key: "assignedGroup", label: "Assigned To (Group)" },
     { key: "createdBy", label: "Created By" },
     { key: "updatedBy", label: "Updated By" },
     { key: "completedAt", label: "Completed At" },
+    { key: "completedBy", label: "Completed By" },
     { key: "trouble", label: "Trouble" },
     { key: "notes", label: "Notes" },
     { key: "createdAt", label: "Created At" },
@@ -233,7 +237,7 @@ export default function ProjectWorkOrders() {
       notes: "",
       assignedUserId: undefined,
       assignedGroupId: undefined,
-      scheduledDate: "",
+      scheduledAt: "",
       trouble: "",
       oldMeterType: "",
       newMeterType: "",
@@ -265,7 +269,7 @@ export default function ProjectWorkOrders() {
       status: "Open",
       assignedUserId: undefined,
       assignedGroupId: undefined,
-      scheduledDate: "",
+      scheduledAt: "",
       trouble: "",
       oldMeterType: "",
       newMeterType: "",
@@ -403,7 +407,7 @@ export default function ProjectWorkOrders() {
         status: editingWorkOrder.status || "Open",
         assignedUserId: (editingWorkOrder as any).assignedUserId || undefined,
         assignedGroupId: (editingWorkOrder as any).assignedGroupId || undefined,
-        scheduledDate: (editingWorkOrder as any).scheduledDate || "",
+        scheduledAt: (editingWorkOrder as any).scheduledAt || "",
         trouble: (editingWorkOrder as any).trouble || "",
         oldMeterType: (editingWorkOrder as any).oldMeterType || "",
         newMeterType: (editingWorkOrder as any).newMeterType || "",
@@ -794,12 +798,14 @@ export default function ProjectWorkOrders() {
     oldGps: { label: "Old GPS", sortKey: "oldGps" },
     newGps: { label: "New GPS", sortKey: "newGps" },
     status: { label: "Status", sortKey: "status" },
-    scheduledDate: { label: "Scheduled Date", sortKey: "scheduledDate" },
+    scheduledAt: { label: "Scheduled At", sortKey: "scheduledAt" },
+    scheduledBy: { label: "Scheduled By", sortKey: "scheduledBy" },
     assignedTo: { label: "Assigned User", sortKey: "assignedUserId" },
     assignedGroup: { label: "Assigned Group", sortKey: "assignedGroupId" },
     createdBy: { label: "Created By", sortKey: "createdBy" },
     updatedBy: { label: "Updated By", sortKey: "updatedBy" },
     completedAt: { label: "Completed At", sortKey: "completedAt" },
+    completedBy: { label: "Completed By", sortKey: "completedBy" },
     trouble: { label: "Trouble", sortKey: "trouble" },
     notes: { label: "Notes", sortKey: "notes" },
     createdAt: { label: "Created At", sortKey: "createdAt" },
@@ -869,8 +875,10 @@ export default function ProjectWorkOrders() {
         return <TableCell key={key}>{workOrder.newGps || "-"}</TableCell>;
       case "status":
         return <TableCell key={key} data-testid={`text-status-${workOrder.id}`}>{getStatusBadge(workOrder.status)}</TableCell>;
-      case "scheduledDate":
-        return <TableCell key={key}>{woAny.scheduledDate ? formatDateTime(woAny.scheduledDate) : "-"}</TableCell>;
+      case "scheduledAt":
+        return <TableCell key={key}>{woAny.scheduledAt ? formatDateTime(woAny.scheduledAt) : "-"}</TableCell>;
+      case "scheduledBy":
+        return <TableCell key={key}>{getAssignedUserName(woAny.scheduledBy) || "-"}</TableCell>;
       case "assignedTo":
         return <TableCell key={key}>{getAssignedUserName(woAny.assignedUserId) || "-"}</TableCell>;
       case "assignedGroup":
@@ -881,6 +889,8 @@ export default function ProjectWorkOrders() {
         return <TableCell key={key}>{woAny.updatedBy || "-"}</TableCell>;
       case "completedAt":
         return <TableCell key={key}>{workOrder.completedAt ? formatDateTime(workOrder.completedAt) : "-"}</TableCell>;
+      case "completedBy":
+        return <TableCell key={key}>{getAssignedUserName(woAny.completedBy) || "-"}</TableCell>;
       case "trouble":
         return <TableCell key={key}>{getTroubleCodeLabel(woAny.trouble) || "-"}</TableCell>;
       case "notes":
@@ -1045,9 +1055,9 @@ export default function ProjectWorkOrders() {
     }
     if (filterScheduledDateFrom || filterScheduledDateTo) {
       result = result.filter(wo => {
-        const scheduledDate = (wo as any).scheduledDate;
-        if (!scheduledDate) return false;
-        const dateStr = scheduledDate.substring(0, 10);
+        const scheduledAt = (wo as any).scheduledAt;
+        if (!scheduledAt) return false;
+        const dateStr = scheduledAt.substring(0, 10);
         if (filterScheduledDateFrom && dateStr < filterScheduledDateFrom) return false;
         if (filterScheduledDateTo && dateStr > filterScheduledDateTo) return false;
         return true;
@@ -1112,7 +1122,7 @@ export default function ProjectWorkOrders() {
     
     // Multi-column sort with proper value normalization
     if (sortCriteria.length > 0) {
-      const dateColumns = ['scheduledDate', 'completedAt', 'createdAt', 'updatedAt'];
+      const dateColumns = ['scheduledAt', 'completedAt', 'createdAt', 'updatedAt'];
       const numericColumns = ['oldMeterReading', 'newMeterReading'];
       
       result.sort((a, b) => {
@@ -1213,12 +1223,14 @@ export default function ProjectWorkOrders() {
       case "oldGps": return wo.oldGps || "";
       case "newGps": return wo.newGps || "";
       case "status": return getStatusLabel(wo.status);
-      case "scheduledDate": return (wo as any).scheduledDate ? formatExport((wo as any).scheduledDate) : "";
+      case "scheduledAt": return (wo as any).scheduledAt ? formatExport((wo as any).scheduledAt) : "";
+      case "scheduledBy": return getAssignedUserName((wo as any).scheduledBy) || "";
       case "assignedTo": return getAssignedUserName((wo as any).assignedUserId) || "";
       case "assignedGroup": return getAssignedGroupName((wo as any).assignedGroupId) || "";
       case "createdBy": return wo.createdBy || "";
       case "updatedBy": return wo.updatedBy || "";
       case "completedAt": return wo.completedAt ? formatExport(wo.completedAt) : "";
+      case "completedBy": return getAssignedUserName((wo as any).completedBy) || "";
       case "trouble": return getTroubleCodeLabel(wo.trouble) || "";
       case "notes": return wo.notes || "";
       case "createdAt": return wo.createdAt ? formatExport(wo.createdAt) : "";
@@ -1844,16 +1856,16 @@ export default function ProjectWorkOrders() {
                   />
                   <FormField
                     control={editForm.control}
-                    name="scheduledDate"
+                    name="scheduledAt"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Scheduled Date & Time</FormLabel>
+                        <FormLabel>Scheduled At</FormLabel>
                         <FormControl>
                           <Input
                             type="datetime-local"
                             {...field}
                             value={field.value || ""}
-                            data-testid="input-edit-scheduled-date"
+                            data-testid="input-edit-scheduled-at"
                           />
                         </FormControl>
                         <p className="text-xs text-muted-foreground">Setting a date/time will auto-set status to "Scheduled"</p>
@@ -2447,16 +2459,16 @@ export default function ProjectWorkOrders() {
                   />
                   <FormField
                     control={form.control}
-                    name="scheduledDate"
+                    name="scheduledAt"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Scheduled Date & Time</FormLabel>
+                        <FormLabel>Scheduled At</FormLabel>
                         <FormControl>
                           <Input
                             type="datetime-local"
                             {...field}
                             value={field.value || ""}
-                            data-testid="input-create-scheduled-date"
+                            data-testid="input-create-scheduled-at"
                           />
                         </FormControl>
                         <p className="text-xs text-muted-foreground">Setting a date/time will auto-set status to "Scheduled"</p>
@@ -3115,9 +3127,9 @@ export default function ProjectWorkOrders() {
                   <Input id="filter-new-meter-id" placeholder="Filter..." value={filterNewMeterId} onChange={(e) => setFilterNewMeterId(e.target.value)} data-testid="input-filter-new-meter-id" />
                 </div>
               )}
-              {isFilterVisible("scheduledDate") && (
+              {isFilterVisible("scheduledAt") && (
                 <div className="min-w-[280px]">
-                  <Label>Scheduled Date</Label>
+                  <Label>Scheduled At</Label>
                   <div className="flex gap-2 items-center">
                     <Input id="filter-scheduled-date-from" type="date" value={filterScheduledDateFrom} onChange={(e) => setFilterScheduledDateFrom(e.target.value)} data-testid="input-filter-scheduled-date-from" className="flex-1" />
                     <span className="text-muted-foreground text-sm">to</span>

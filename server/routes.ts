@@ -1273,7 +1273,7 @@ export async function registerRoutes(
         oldGps: wo.oldGps || wo.old_gps || null,
         newGps: wo.newGps || wo.new_gps || null,
         status: wo.status || "Open",
-        scheduledDate: wo.scheduledDate || wo.scheduled_date || null,
+        scheduledAt: wo.scheduledAt || wo.scheduledDate || wo.scheduled_date || wo.scheduled_at || null,
         assignedUserId: wo.assignedUserId || wo.assigned_user_id || null,
         assignedGroupId: wo.assignedGroupId || wo.assigned_group_id || null,
         createdBy: createdByName,
