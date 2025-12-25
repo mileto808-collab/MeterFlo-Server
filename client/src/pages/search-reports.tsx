@@ -540,7 +540,7 @@ export default function SearchReports() {
       case "scheduledAt":
         return <TableCell key={key}>{wo.scheduledAt ? formatCustom(wo.scheduledAt, "MMM d, yyyy") : "-"}</TableCell>;
       case "scheduledBy":
-        return <TableCell key={key}>{getAssignedUserName(wo.scheduledBy) || "-"}</TableCell>;
+        return <TableCell key={key}>{(wo as any).scheduledByDisplay || getAssignedUserName(wo.scheduledBy) || "-"}</TableCell>;
       case "assignedTo":
         return <TableCell key={key}>{getAssignedUserName(wo.assignedUserId) || "-"}</TableCell>;
       case "assignedGroup":
@@ -552,7 +552,7 @@ export default function SearchReports() {
       case "completedAt":
         return <TableCell key={key}>{wo.completedAt ? formatCustom(wo.completedAt, "MMM d, yyyy h:mm a") : "-"}</TableCell>;
       case "completedBy":
-        return <TableCell key={key}>{getAssignedUserName(wo.completedBy) || "-"}</TableCell>;
+        return <TableCell key={key}>{(wo as any).completedByDisplay || getAssignedUserName(wo.completedBy) || "-"}</TableCell>;
       case "trouble":
         return <TableCell key={key}>{getTroubleCodeLabel(wo.trouble) || "-"}</TableCell>;
       case "notes":
@@ -919,13 +919,13 @@ export default function SearchReports() {
       case "newGps": return r.workOrder.newGps || "";
       case "status": return getStatusLabel(r.workOrder.status);
       case "scheduledAt": return r.workOrder.scheduledAt ? formatExport(r.workOrder.scheduledAt) : "";
-      case "scheduledBy": return getAssignedUserName(r.workOrder.scheduledBy) || "";
+      case "scheduledBy": return (r.workOrder as any).scheduledByDisplay || getAssignedUserName(r.workOrder.scheduledBy) || "";
       case "assignedTo": return getAssignedUserName(r.workOrder.assignedUserId) || "";
       case "assignedGroup": return getAssignedGroupName(r.workOrder.assignedGroupId) || "";
       case "createdBy": return r.workOrder.createdBy || "";
       case "updatedBy": return r.workOrder.updatedBy || "";
       case "completedAt": return r.workOrder.completedAt ? formatExport(r.workOrder.completedAt) : "";
-      case "completedBy": return getAssignedUserName(r.workOrder.completedBy) || "";
+      case "completedBy": return (r.workOrder as any).completedByDisplay || getAssignedUserName(r.workOrder.completedBy) || "";
       case "trouble": return getTroubleCodeLabel(r.workOrder.trouble) || "";
       case "notes": return r.workOrder.notes || "";
       case "createdAt": return r.workOrder.createdAt ? formatExport(r.workOrder.createdAt) : "";
