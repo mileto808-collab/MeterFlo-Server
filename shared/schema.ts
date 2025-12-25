@@ -294,7 +294,7 @@ export const serviceTypes = pgTable("service_types", {
 // Meter types table - product types (no longer tied to a single project)
 export const meterTypes = pgTable("meter_types", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  productId: varchar("product_id", { length: 100 }).notNull(),
+  productId: varchar("product_id", { length: 100 }).notNull().unique(),
   productLabel: varchar("product_label", { length: 255 }).notNull(),
   productDescription: text("product_description"),
   createdAt: timestamp("created_at").defaultNow(),
