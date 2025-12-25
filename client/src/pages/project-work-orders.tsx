@@ -106,6 +106,7 @@ export default function ProjectWorkOrders() {
   const [selectedOldMeterType, setSelectedOldMeterType] = useState<string>("all");
   const [selectedNewMeterType, setSelectedNewMeterType] = useState<string>("all");
   const [showFilters, setShowFilters] = useState(false);
+  const [filterSystemWoId, setFilterSystemWoId] = useState("");
   const [filterCustomerId, setFilterCustomerId] = useState("");
   const [filterCustomerName, setFilterCustomerName] = useState("");
   const [filterAddress, setFilterAddress] = useState("");
@@ -143,6 +144,7 @@ export default function ProjectWorkOrders() {
 
   // Column configuration for the work orders table
   const workOrderColumns: ColumnConfig[] = useMemo(() => [
+    { key: "id", label: "System WO ID" },
     { key: "customerWoId", label: "WO ID", required: true },
     { key: "customerId", label: "Customer ID" },
     { key: "customerName", label: "Customer Name" },
@@ -182,6 +184,7 @@ export default function ProjectWorkOrders() {
 
   // Filter configuration - matches columns (excluding attachments and signature_data)
   const workOrderFilters: FilterConfig[] = useMemo(() => [
+    { key: "id", label: "System WO ID" },
     { key: "customerWoId", label: "WO ID" },
     { key: "customerId", label: "Customer ID" },
     { key: "customerName", label: "Customer Name" },
@@ -779,6 +782,7 @@ export default function ProjectWorkOrders() {
 
   // Column header configuration for dynamic rendering
   const columnHeaderConfig: Record<string, { label: string; sortKey?: string }> = {
+    id: { label: "System WO ID", sortKey: "id" },
     customerWoId: { label: "WO ID", sortKey: "customerWoId" },
     customerId: { label: "Customer ID", sortKey: "customerId" },
     customerName: { label: "Customer Name", sortKey: "customerName" },
@@ -835,6 +839,8 @@ export default function ProjectWorkOrders() {
   const renderDataCell = (key: string, workOrder: ProjectWorkOrder) => {
     const woAny = workOrder as any;
     switch (key) {
+      case "id":
+        return <TableCell key={key} className="font-medium text-muted-foreground" data-testid={`text-system-wo-id-${workOrder.id}`}>{workOrder.id}</TableCell>;
       case "customerWoId":
         return <TableCell key={key} className="font-medium" data-testid={`text-wo-id-${workOrder.id}`}>{workOrder.customerWoId || "-"}</TableCell>;
       case "customerId":
@@ -1018,6 +1024,11 @@ export default function ProjectWorkOrders() {
       });
     }
     
+    // Filter by system work order ID
+    if (filterSystemWoId.trim()) {
+      result = result.filter(wo => String(wo.id).includes(filterSystemWoId.trim()));
+    }
+    
     // Filter by text fields
     if (filterCustomerId.trim()) {
       result = result.filter(wo => wo.customerId?.toLowerCase().includes(filterCustomerId.toLowerCase()));
@@ -1183,7 +1194,7 @@ export default function ProjectWorkOrders() {
     }
     
     return result;
-  }, [workOrders, searchQuery, sortCriteria, selectedStatus, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldMeterType, selectedNewMeterType, meterTypes, assigneesData, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterNewMeterId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
+  }, [workOrders, searchQuery, sortCriteria, selectedStatus, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldMeterType, selectedNewMeterType, meterTypes, assigneesData, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterNewMeterId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
 
   const clearFilters = () => {
     setSearchQuery("");
@@ -1194,6 +1205,7 @@ export default function ProjectWorkOrders() {
     setSelectedTrouble("all");
     setSelectedOldMeterType("all");
     setSelectedNewMeterType("all");
+    setFilterSystemWoId("");
     setFilterCustomerId("");
     setFilterCustomerName("");
     setFilterAddress("");
@@ -1221,7 +1233,7 @@ export default function ProjectWorkOrders() {
     setFilterUpdatedAtTo("");
   };
 
-  const hasActiveFilters = selectedStatus !== "all" || selectedServiceType !== "all" || selectedAssignedTo !== "all" || selectedAssignedGroup !== "all" || selectedTrouble !== "all" || selectedOldMeterType !== "all" || selectedNewMeterType !== "all" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldMeterId !== "" || filterNewMeterId !== "" || filterScheduledDateFrom !== "" || filterScheduledDateTo !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterScheduledBy !== "all" || filterCompletedBy !== "all" || filterCompletedAtFrom !== "" || filterCompletedAtTo !== "" || filterNotes !== "" || filterCreatedAtFrom !== "" || filterCreatedAtTo !== "" || filterUpdatedAtFrom !== "" || filterUpdatedAtTo !== "";
+  const hasActiveFilters = selectedStatus !== "all" || selectedServiceType !== "all" || selectedAssignedTo !== "all" || selectedAssignedGroup !== "all" || selectedTrouble !== "all" || selectedOldMeterType !== "all" || selectedNewMeterType !== "all" || filterSystemWoId !== "" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldMeterId !== "" || filterNewMeterId !== "" || filterScheduledDateFrom !== "" || filterScheduledDateTo !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterScheduledBy !== "all" || filterCompletedBy !== "all" || filterCompletedAtFrom !== "" || filterCompletedAtTo !== "" || filterNotes !== "" || filterCreatedAtFrom !== "" || filterCreatedAtTo !== "" || filterUpdatedAtFrom !== "" || filterUpdatedAtTo !== "";
 
   const getStatusLabel = (status: string): string => {
     if (!status) return "";
@@ -1232,6 +1244,7 @@ export default function ProjectWorkOrders() {
   // Helper to get export value for a column key
   const getExportValue = (wo: ProjectWorkOrder, key: string): string => {
     switch (key) {
+      case "id": return String(wo.id);
       case "customerWoId": return wo.customerWoId || "";
       case "customerId": return wo.customerId || "";
       case "customerName": return wo.customerName || "";
@@ -1460,6 +1473,15 @@ export default function ProjectWorkOrders() {
             <Form {...editForm}>
               <form onSubmit={editForm.handleSubmit(onEditSubmit)} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm font-medium">System Work Order ID</label>
+                    <Input 
+                      value={editingWorkOrder.id} 
+                      disabled 
+                      className="mt-1 bg-muted"
+                      data-testid="text-edit-system-wo-id"
+                    />
+                  </div>
                   <FormField
                     control={editForm.control}
                     name="customerWoId"
@@ -2987,6 +3009,18 @@ export default function ProjectWorkOrders() {
           
           {showFilters && (
             <div className="flex flex-wrap gap-4 mt-4 pt-4 border-t">
+              {isFilterVisible("id") && (
+                <div className="min-w-[150px]">
+                  <Label htmlFor="filter-system-wo-id">System WO ID</Label>
+                  <Input
+                    id="filter-system-wo-id"
+                    placeholder="System ID..."
+                    value={filterSystemWoId}
+                    onChange={(e) => setFilterSystemWoId(e.target.value)}
+                    data-testid="input-filter-system-wo-id"
+                  />
+                </div>
+              )}
               {isFilterVisible("customerWoId") && (
                 <div className="min-w-[200px] flex-1 max-w-md">
                   <Label htmlFor="filter-search">Search</Label>
