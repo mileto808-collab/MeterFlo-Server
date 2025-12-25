@@ -843,8 +843,11 @@ export async function registerRoutes(
       // Get users assigned to this project
       const projectUsers = await storage.getProjectUsers(projectId);
       
-      // Get all user groups
-      const userGroupsList = await storage.getAllUserGroups();
+      // Get user groups assigned to this project (not all groups)
+      const allGroupsWithProjects = await storage.getAllUserGroupsWithProjects();
+      const projectGroupsList = allGroupsWithProjects.filter(group => 
+        group.projectIds.includes(projectId)
+      );
       
       // Format users for dropdown
       const users = projectUsers.map(user => ({
@@ -856,8 +859,8 @@ export async function registerRoutes(
         username: user.username,
       }));
       
-      // Format user groups for dropdown
-      const groups = userGroupsList.map(group => ({
+      // Format user groups for dropdown (only groups assigned to this project)
+      const groups = projectGroupsList.map(group => ({
         type: "group" as const,
         id: `group:${group.id}`,
         label: group.name,
