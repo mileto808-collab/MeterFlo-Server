@@ -1158,7 +1158,6 @@ export async function registerRoutes(
         if (!mergedData.newGps) missingFields.push("New GPS");
         if (!mergedData.signatureData && !req.body.signatureData) missingFields.push("Signature");
         if (!mergedData.signatureName && !req.body.signatureName) missingFields.push("Signature Name");
-        if (!mergedData.attachments || (Array.isArray(mergedData.attachments) && mergedData.attachments.length === 0)) missingFields.push("Attachments");
         
         if (missingFields.length > 0) {
           return res.status(400).json({ 
