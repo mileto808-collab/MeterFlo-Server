@@ -461,6 +461,7 @@ export default function ProjectWorkOrders() {
     newMeterType: (data as any).newMeterType || null,
     assignedUserId: (data as any).assignedUserId ?? null,
     assignedGroupId: (data as any).assignedGroupId ?? null,
+    scheduledAt: (data as any).scheduledAt || null,
   });
 
   const createMutation = useMutation({
