@@ -1984,6 +1984,33 @@ export default function ProjectWorkOrders() {
                       />
                     </div>
                     <div>
+                      <label className="text-sm font-medium text-muted-foreground">Scheduled By</label>
+                      <Input 
+                        value={getAssignedUserName((editingWorkOrder as any).scheduledBy) || "-"} 
+                        disabled 
+                        className="mt-1 bg-muted"
+                        data-testid="text-scheduled-by"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">Scheduled At</label>
+                      <Input 
+                        value={(editingWorkOrder as any).scheduledAt ? formatDateTime((editingWorkOrder as any).scheduledAt) : "-"} 
+                        disabled 
+                        className="mt-1 bg-muted"
+                        data-testid="text-scheduled-at-readonly"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-muted-foreground">Completed By</label>
+                      <Input 
+                        value={getAssignedUserName((editingWorkOrder as any).completedBy) || "-"} 
+                        disabled 
+                        className="mt-1 bg-muted"
+                        data-testid="text-completed-by"
+                      />
+                    </div>
+                    <div>
                       <label className="text-sm font-medium text-muted-foreground">Completed At</label>
                       <Input 
                         value={editingWorkOrder.completedAt ? formatDateTime(editingWorkOrder.completedAt) : "-"} 
