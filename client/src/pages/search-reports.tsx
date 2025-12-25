@@ -96,6 +96,7 @@ export default function SearchReports() {
   };
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [selectedServiceType, setSelectedServiceType] = useState<string>("all");
+  const [filterSystemWoId, setFilterSystemWoId] = useState("");
   const [filterCustomerWoId, setFilterCustomerWoId] = useState("");
   const [filterCustomerId, setFilterCustomerId] = useState("");
   const [filterCustomerName, setFilterCustomerName] = useState("");
@@ -135,6 +136,7 @@ export default function SearchReports() {
 
   const columns: ColumnConfig[] = useMemo(() => [
     { key: "projectName", label: "Project", required: true },
+    { key: "id", label: "System WO ID" },
     { key: "customerWoId", label: "WO ID" },
     { key: "customerId", label: "Customer ID" },
     { key: "customerName", label: "Customer Name" },
@@ -177,6 +179,7 @@ export default function SearchReports() {
   const searchFilters: FilterConfig[] = useMemo(() => [
     { key: "searchQuery", label: "Search Text" },
     { key: "projectName", label: "Project" },
+    { key: "id", label: "System WO ID" },
     { key: "customerWoId", label: "WO ID" },
     { key: "customerId", label: "Customer ID" },
     { key: "customerName", label: "Customer Name" },
@@ -339,6 +342,7 @@ export default function SearchReports() {
     setSelectedProject("all");
     setSelectedStatus("all");
     setSelectedServiceType("all");
+    setFilterSystemWoId("");
     setFilterCustomerWoId("");
     setFilterCustomerId("");
     setFilterCustomerName("");
@@ -429,6 +433,7 @@ export default function SearchReports() {
   // Column header configuration for dynamic rendering
   const columnHeaderConfig: Record<string, { label: string; sortKey?: string }> = {
     projectName: { label: "Project", sortKey: "projectName" },
+    id: { label: "System WO ID", sortKey: "id" },
     customerWoId: { label: "WO ID", sortKey: "customerWoId" },
     customerId: { label: "Customer ID", sortKey: "customerId" },
     customerName: { label: "Customer Name", sortKey: "customerName" },
@@ -488,6 +493,8 @@ export default function SearchReports() {
     switch (key) {
       case "projectName":
         return <TableCell key={key}>{result.projectName}</TableCell>;
+      case "id":
+        return <TableCell key={key} className="font-medium text-muted-foreground">{wo.id}</TableCell>;
       case "customerWoId":
         return <TableCell key={key} className="font-medium">{wo.customerWoId || "-"}</TableCell>;
       case "customerId":
@@ -564,6 +571,9 @@ export default function SearchReports() {
     let results = [...searchResults.results];
 
     // Apply client-side filters
+    if (filterSystemWoId) {
+      results = results.filter(r => String(r.workOrder.id).includes(filterSystemWoId.trim()));
+    }
     if (filterCustomerWoId) {
       results = results.filter(r => (r.workOrder.customerWoId || '').toLowerCase().includes(filterCustomerWoId.toLowerCase()));
     }
@@ -776,13 +786,14 @@ export default function SearchReports() {
       });
     }
     return results;
-  }, [searchResults?.results, sortCriteria, filterCustomerWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterOldMeterType, filterNewMeterId, filterNewMeterType, filterAssignedTo, filterAssignedGroup, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterTroubleCode, filterNotes, filterScheduledDateFrom, filterScheduledDateTo, filterCompletedAtFrom, filterCompletedAtTo, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo, users, userGroups]);
+  }, [searchResults?.results, sortCriteria, filterSystemWoId, filterCustomerWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterOldMeterType, filterNewMeterId, filterNewMeterType, filterAssignedTo, filterAssignedGroup, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterTroubleCode, filterNotes, filterScheduledDateFrom, filterScheduledDateTo, filterCompletedAtFrom, filterCompletedAtTo, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo, users, userGroups]);
 
   // Calculate active filters
   const activeFiltersArray = [
     selectedProject !== "all",
     selectedStatus !== "all",
     selectedServiceType !== "all",
+    filterSystemWoId !== "",
     filterCustomerWoId !== "",
     filterCustomerId !== "",
     filterCustomerName !== "",
@@ -885,6 +896,7 @@ export default function SearchReports() {
   const getExportValue = (r: SearchResult, key: string): string => {
     switch (key) {
       case "projectName": return r.projectName;
+      case "id": return String(r.workOrder.id);
       case "customerWoId": return r.workOrder.customerWoId || "";
       case "customerId": return r.workOrder.customerId || "";
       case "customerName": return r.workOrder.customerName || "";
@@ -1135,6 +1147,12 @@ export default function SearchReports() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            )}
+            {isFilterVisible("id") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-system-wo-id">System WO ID</Label>
+                <Input id="filter-system-wo-id" placeholder="System ID..." value={filterSystemWoId} onChange={(e) => setFilterSystemWoId(e.target.value)} data-testid="input-filter-system-wo-id" />
               </div>
             )}
             {isFilterVisible("customerWoId") && (
