@@ -886,7 +886,7 @@ export default function ProjectWorkOrders() {
       case "scheduledAt":
         return <TableCell key={key}>{woAny.scheduledAt ? formatDateTime(woAny.scheduledAt) : "-"}</TableCell>;
       case "scheduledBy":
-        return <TableCell key={key}>{getAssignedUserName(woAny.scheduledBy) || "-"}</TableCell>;
+        return <TableCell key={key}>{woAny.scheduledByDisplay || getAssignedUserName(woAny.scheduledBy) || "-"}</TableCell>;
       case "assignedTo":
         return <TableCell key={key}>{getAssignedUserName(woAny.assignedUserId) || "-"}</TableCell>;
       case "assignedGroup":
@@ -898,7 +898,7 @@ export default function ProjectWorkOrders() {
       case "completedAt":
         return <TableCell key={key}>{workOrder.completedAt ? formatDateTime(workOrder.completedAt) : "-"}</TableCell>;
       case "completedBy":
-        return <TableCell key={key}>{getAssignedUserName(woAny.completedBy) || "-"}</TableCell>;
+        return <TableCell key={key}>{woAny.completedByDisplay || getAssignedUserName(woAny.completedBy) || "-"}</TableCell>;
       case "trouble":
         return <TableCell key={key}>{getTroubleCodeLabel(woAny.trouble) || "-"}</TableCell>;
       case "notes":
@@ -1267,13 +1267,13 @@ export default function ProjectWorkOrders() {
       case "newGps": return wo.newGps || "";
       case "status": return getStatusLabel(wo.status);
       case "scheduledAt": return (wo as any).scheduledAt ? formatExport((wo as any).scheduledAt) : "";
-      case "scheduledBy": return getAssignedUserName((wo as any).scheduledBy) || "";
+      case "scheduledBy": return (wo as any).scheduledByDisplay || getAssignedUserName((wo as any).scheduledBy) || "";
       case "assignedTo": return getAssignedUserName((wo as any).assignedUserId) || "";
       case "assignedGroup": return getAssignedGroupName((wo as any).assignedGroupId) || "";
       case "createdBy": return wo.createdBy || "";
       case "updatedBy": return wo.updatedBy || "";
       case "completedAt": return wo.completedAt ? formatExport(wo.completedAt) : "";
-      case "completedBy": return getAssignedUserName((wo as any).completedBy) || "";
+      case "completedBy": return (wo as any).completedByDisplay || getAssignedUserName((wo as any).completedBy) || "";
       case "trouble": return getTroubleCodeLabel(wo.trouble) || "";
       case "notes": return wo.notes || "";
       case "createdAt": return wo.createdAt ? formatExport(wo.createdAt) : "";
@@ -2034,7 +2034,7 @@ export default function ProjectWorkOrders() {
                     <div>
                       <label className="text-sm font-medium text-muted-foreground">Scheduled By</label>
                       <Input 
-                        value={getAssignedUserName((editingWorkOrder as any).scheduledBy) || "-"} 
+                        value={(editingWorkOrder as any).scheduledByDisplay || getAssignedUserName((editingWorkOrder as any).scheduledBy) || "-"} 
                         disabled 
                         className="mt-1 bg-muted"
                         data-testid="text-scheduled-by"
@@ -2052,7 +2052,7 @@ export default function ProjectWorkOrders() {
                     <div>
                       <label className="text-sm font-medium text-muted-foreground">Completed By</label>
                       <Input 
-                        value={getAssignedUserName((editingWorkOrder as any).completedBy) || "-"} 
+                        value={(editingWorkOrder as any).completedByDisplay || getAssignedUserName((editingWorkOrder as any).completedBy) || "-"} 
                         disabled 
                         className="mt-1 bg-muted"
                         data-testid="text-completed-by"

@@ -343,24 +343,31 @@ export class ProjectWorkOrderStorage {
     await this.ensureMigrated();
     const client = await pool.connect();
     try {
-      let query = `SELECT * FROM "${this.schemaName}".work_orders`;
+      let query = `
+        SELECT w.*, 
+               sb.username as scheduled_by_username,
+               cb.username as completed_by_username
+        FROM "${this.schemaName}".work_orders w
+        LEFT JOIN public.users sb ON w.scheduled_by = sb.id
+        LEFT JOIN public.users cb ON w.completed_by = cb.id
+      `;
       const conditions: string[] = [];
       const values: any[] = [];
       let paramCount = 1;
 
       if (filters?.status) {
-        conditions.push(`status = $${paramCount++}`);
+        conditions.push(`w.status = $${paramCount++}`);
         values.push(filters.status);
       }
       if (filters?.assignedUserId) {
-        conditions.push(`assigned_user_id = $${paramCount++}`);
+        conditions.push(`w.assigned_user_id = $${paramCount++}`);
         values.push(filters.assignedUserId);
       }
       if (filters?.assignedGroupId) {
         // Resolve group ID/name to group name for filtering (FK references user_groups.name)
         const resolvedGroupName = await this.resolveGroupName(filters.assignedGroupId);
         if (resolvedGroupName) {
-          conditions.push(`assigned_group_id = $${paramCount++}`);
+          conditions.push(`w.assigned_group_id = $${paramCount++}`);
           values.push(resolvedGroupName);
         }
       }
@@ -368,7 +375,7 @@ export class ProjectWorkOrderStorage {
       if (conditions.length > 0) {
         query += ` WHERE ${conditions.join(" AND ")}`;
       }
-      query += " ORDER BY created_at DESC";
+      query += " ORDER BY w.created_at DESC";
 
       const result = await client.query(query, values);
       return result.rows.map(this.mapRowToWorkOrder);
@@ -382,7 +389,13 @@ export class ProjectWorkOrderStorage {
     const client = await pool.connect();
     try {
       const result = await client.query(
-        `SELECT * FROM "${this.schemaName}".work_orders WHERE id = $1`,
+        `SELECT w.*, 
+                sb.username as scheduled_by_username,
+                cb.username as completed_by_username
+         FROM "${this.schemaName}".work_orders w
+         LEFT JOIN public.users sb ON w.scheduled_by = sb.id
+         LEFT JOIN public.users cb ON w.completed_by = cb.id
+         WHERE w.id = $1`,
         [id]
       );
       return result.rows[0] ? this.mapRowToWorkOrder(result.rows[0]) : undefined;
@@ -396,7 +409,13 @@ export class ProjectWorkOrderStorage {
     const client = await pool.connect();
     try {
       const result = await client.query(
-        `SELECT * FROM "${this.schemaName}".work_orders WHERE customer_wo_id = $1`,
+        `SELECT w.*, 
+                sb.username as scheduled_by_username,
+                cb.username as completed_by_username
+         FROM "${this.schemaName}".work_orders w
+         LEFT JOIN public.users sb ON w.scheduled_by = sb.id
+         LEFT JOIN public.users cb ON w.completed_by = cb.id
+         WHERE w.customer_wo_id = $1`,
         [customerWoId]
       );
       return result.rows[0] ? this.mapRowToWorkOrder(result.rows[0]) : undefined;
@@ -948,7 +967,7 @@ export class ProjectWorkOrderStorage {
   }
   
   private mapRowToWorkOrder(row: any): ProjectWorkOrder {
-    return {
+    const result: any = {
       id: row.id,
       status: row.status,
       createdBy: row.created_by,
@@ -984,9 +1003,14 @@ export class ProjectWorkOrderStorage {
       signatureName: row.signature_name,
       assignedUserId: row.assigned_user_id,
       assignedGroupId: row.assigned_group_id,
+      // Keep IDs for data integrity and filtering
       completedBy: row.completed_by,
       scheduledBy: row.scheduled_by,
+      // Add display fields with resolved usernames for UI
+      completedByDisplay: row.completed_by_username || row.completed_by,
+      scheduledByDisplay: row.scheduled_by_username || row.scheduled_by,
     };
+    return result as ProjectWorkOrder;
   }
 }
 
