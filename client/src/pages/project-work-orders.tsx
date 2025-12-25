@@ -575,13 +575,13 @@ export default function ProjectWorkOrders() {
     onSuccess: (newMeterType: MeterType) => {
       queryClient.invalidateQueries({ queryKey: ["/api/meter-types", projectId] });
       if (meterTypeField === "oldMeterType") {
-        form.setValue("oldMeterType", newMeterType.productId);
+        form.setValue("oldMeterType", newMeterType.id as any);
       } else if (meterTypeField === "newMeterType") {
-        form.setValue("newMeterType", newMeterType.productId);
+        form.setValue("newMeterType", newMeterType.id as any);
       } else if (meterTypeField === "editOldMeterType") {
-        editForm.setValue("oldMeterType", newMeterType.productId);
+        editForm.setValue("oldMeterType", newMeterType.id as any);
       } else if (meterTypeField === "editNewMeterType") {
-        editForm.setValue("newMeterType", newMeterType.productId);
+        editForm.setValue("newMeterType", newMeterType.id as any);
       }
       setCreateMeterTypeOpen(false);
       setNewMeterTypeProductId("");
@@ -1487,9 +1487,9 @@ export default function ProjectWorkOrders() {
                         <FormLabel>Old Meter Type</FormLabel>
                         <div className="flex gap-1">
                           <Select 
-                            value={(field.value as string) || "__none__"} 
+                            value={field.value ? String(field.value) : "__none__"} 
                             onValueChange={(val) => {
-                              field.onChange(val === "__none__" ? "" : val);
+                              field.onChange(val === "__none__" ? null : Number(val));
                             }}
                           >
                             <FormControl>
@@ -1500,7 +1500,7 @@ export default function ProjectWorkOrders() {
                             <SelectContent>
                               <SelectItem value="__none__">None</SelectItem>
                               {meterTypes.map((mt) => (
-                                <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
+                                <SelectItem key={mt.id} value={String(mt.id)}>{mt.productLabel}</SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
@@ -1530,9 +1530,9 @@ export default function ProjectWorkOrders() {
                         <FormLabel>New Meter Type</FormLabel>
                         <div className="flex gap-1">
                           <Select 
-                            value={(field.value as string) || "__none__"} 
+                            value={field.value ? String(field.value) : "__none__"} 
                             onValueChange={(val) => {
-                              field.onChange(val === "__none__" ? "" : val);
+                              field.onChange(val === "__none__" ? null : Number(val));
                             }}
                           >
                             <FormControl>
@@ -1543,7 +1543,7 @@ export default function ProjectWorkOrders() {
                             <SelectContent>
                               <SelectItem value="__none__">None</SelectItem>
                               {meterTypes.map((mt) => (
-                                <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
+                                <SelectItem key={mt.id} value={String(mt.id)}>{mt.productLabel}</SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
@@ -2118,9 +2118,9 @@ export default function ProjectWorkOrders() {
                         <FormLabel>Old Meter Type</FormLabel>
                         <div className="flex gap-1">
                           <Select 
-                            value={(field.value as string) || "__none__"} 
+                            value={field.value ? String(field.value) : "__none__"} 
                             onValueChange={(val) => {
-                              field.onChange(val === "__none__" ? "" : val);
+                              field.onChange(val === "__none__" ? null : Number(val));
                             }}
                           >
                             <FormControl>
@@ -2131,7 +2131,7 @@ export default function ProjectWorkOrders() {
                             <SelectContent>
                               <SelectItem value="__none__">None</SelectItem>
                               {meterTypes.map((mt) => (
-                                <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
+                                <SelectItem key={mt.id} value={String(mt.id)}>{mt.productLabel}</SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
@@ -2161,9 +2161,9 @@ export default function ProjectWorkOrders() {
                         <FormLabel>New Meter Type</FormLabel>
                         <div className="flex gap-1">
                           <Select 
-                            value={(field.value as string) || "__none__"} 
+                            value={field.value ? String(field.value) : "__none__"} 
                             onValueChange={(val) => {
-                              field.onChange(val === "__none__" ? "" : val);
+                              field.onChange(val === "__none__" ? null : Number(val));
                             }}
                           >
                             <FormControl>
@@ -2174,7 +2174,7 @@ export default function ProjectWorkOrders() {
                             <SelectContent>
                               <SelectItem value="__none__">None</SelectItem>
                               {meterTypes.map((mt) => (
-                                <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
+                                <SelectItem key={mt.id} value={String(mt.id)}>{mt.productLabel}</SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
@@ -3021,7 +3021,7 @@ export default function ProjectWorkOrders() {
                     <SelectContent>
                       <SelectItem value="all">All Meter Types</SelectItem>
                       {meterTypes.map((mt) => (
-                        <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
+                        <SelectItem key={mt.id} value={String(mt.id)}>{mt.productLabel}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -3037,7 +3037,7 @@ export default function ProjectWorkOrders() {
                     <SelectContent>
                       <SelectItem value="all">All Meter Types</SelectItem>
                       {meterTypes.map((mt) => (
-                        <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
+                        <SelectItem key={mt.id} value={String(mt.id)}>{mt.productLabel}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
