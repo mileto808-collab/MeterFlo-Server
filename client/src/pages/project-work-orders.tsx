@@ -534,11 +534,23 @@ export default function ProjectWorkOrders() {
         signatureName: finalSignatureName || null,
       });
     },
-    onSuccess: () => {
+    onSuccess: async (response) => {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/work-orders`] });
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/work-orders/stats`] });
-      setEditingWorkOrder(null);
-      setCameFromSearch(false);
+      // Keep the form open with refreshed data
+      try {
+        const updatedWorkOrder = await response.json();
+        setEditingWorkOrder(updatedWorkOrder);
+      } catch {
+        // If we can't parse the response, refetch the work order
+        if (editingWorkOrder?.id) {
+          const refetchRes = await fetch(`/api/projects/${projectId}/work-orders/${editingWorkOrder.id}`, { credentials: 'include' });
+          if (refetchRes.ok) {
+            const refetchedWo = await refetchRes.json();
+            setEditingWorkOrder(refetchedWo);
+          }
+        }
+      }
       toast({ title: "Work order updated" });
     },
     onError: (error: any) => {
