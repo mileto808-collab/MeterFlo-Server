@@ -213,7 +213,7 @@ export interface IStorage {
 
   // User column preferences operations
   getUserColumnPreferences(userId: string, pageKey: string): Promise<UserColumnPreferences | undefined>;
-  setUserColumnPreferences(userId: string, pageKey: string, visibleColumns: string[]): Promise<UserColumnPreferences>;
+  setUserColumnPreferences(userId: string, pageKey: string, visibleColumns: string[], stickyColumns?: string[]): Promise<UserColumnPreferences>;
 
   // User filter preferences operations
   getUserFilterPreferences(userId: string, pageKey: string): Promise<UserFilterPreferences | undefined>;
@@ -1491,13 +1491,17 @@ export class DatabaseStorage implements IStorage {
     return pref;
   }
 
-  async setUserColumnPreferences(userId: string, pageKey: string, visibleColumns: string[]): Promise<UserColumnPreferences> {
+  async setUserColumnPreferences(userId: string, pageKey: string, visibleColumns: string[], stickyColumns?: string[]): Promise<UserColumnPreferences> {
     const existing = await this.getUserColumnPreferences(userId, pageKey);
     
     if (existing) {
+      const updateData: any = { visibleColumns, updatedAt: new Date() };
+      if (stickyColumns !== undefined) {
+        updateData.stickyColumns = stickyColumns;
+      }
       const [updated] = await db
         .update(userColumnPreferences)
-        .set({ visibleColumns, updatedAt: new Date() })
+        .set(updateData)
         .where(and(eq(userColumnPreferences.userId, userId), eq(userColumnPreferences.pageKey, pageKey)))
         .returning();
       return updated;
@@ -1505,7 +1509,7 @@ export class DatabaseStorage implements IStorage {
     
     const [created] = await db
       .insert(userColumnPreferences)
-      .values({ userId, pageKey, visibleColumns })
+      .values({ userId, pageKey, visibleColumns, stickyColumns: stickyColumns || [] })
       .returning();
     return created;
   }

@@ -6,6 +6,7 @@ import type { ColumnConfig } from "@/components/column-selector";
 
 interface ColumnPreferencesData {
   visibleColumns: string[];
+  stickyColumns: string[];
 }
 
 export function useColumnPreferences(
@@ -20,13 +21,13 @@ export function useColumnPreferences(
   const { data, isLoading } = useQuery<ColumnPreferencesData>({
     queryKey: ["/api/users", userId, "column-preferences", pageKey],
     queryFn: async () => {
-      if (!userId) return { visibleColumns: defaultColumns };
+      if (!userId) return { visibleColumns: defaultColumns, stickyColumns: [] };
       const res = await fetch(`/api/users/${userId}/column-preferences/${pageKey}`, {
         credentials: "include",
       });
       if (!res.ok) {
         if (res.status === 404) {
-          return { visibleColumns: defaultColumns };
+          return { visibleColumns: defaultColumns, stickyColumns: [] };
         }
         throw new Error("Failed to fetch column preferences");
       }
@@ -37,10 +38,11 @@ export function useColumnPreferences(
   });
 
   const saveMutation = useMutation({
-    mutationFn: async (visibleColumns: string[]) => {
+    mutationFn: async ({ visibleColumns, stickyColumns }: { visibleColumns: string[]; stickyColumns?: string[] }) => {
       if (!userId) return;
       await apiRequest("PUT", `/api/users/${userId}/column-preferences/${pageKey}`, {
         visibleColumns,
+        stickyColumns,
       });
     },
     onSuccess: () => {
@@ -51,10 +53,24 @@ export function useColumnPreferences(
   });
 
   const visibleColumns = data?.visibleColumns || defaultColumns;
+  const stickyColumns = (data?.stickyColumns as string[]) || [];
 
   const setVisibleColumns = (columns: string[]) => {
-    saveMutation.mutate(columns);
+    saveMutation.mutate({ visibleColumns: columns, stickyColumns });
   };
+
+  const setStickyColumns = (columns: string[]) => {
+    saveMutation.mutate({ visibleColumns, stickyColumns: columns });
+  };
+
+  const toggleStickyColumn = (key: string) => {
+    const newStickyColumns = stickyColumns.includes(key)
+      ? stickyColumns.filter(k => k !== key)
+      : [...stickyColumns, key];
+    saveMutation.mutate({ visibleColumns, stickyColumns: newStickyColumns });
+  };
+
+  const isColumnSticky = (key: string) => stickyColumns.includes(key);
 
   const isColumnVisible = (key: string) => visibleColumns.includes(key);
 
@@ -78,6 +94,10 @@ export function useColumnPreferences(
     visibleColumns,
     setVisibleColumns,
     isColumnVisible,
+    stickyColumns,
+    setStickyColumns,
+    toggleStickyColumn,
+    isColumnSticky,
     isLoading,
     isSaving: saveMutation.isPending,
     orderedColumns,
