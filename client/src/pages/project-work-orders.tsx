@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, Link, useLocation } from "wouter";
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -391,7 +391,7 @@ export default function ProjectWorkOrders() {
   }, []);
 
   // Update top scrollbar width to match table width
-  useEffect(() => {
+  useLayoutEffect(() => {
     const updateTopScrollWidth = () => {
       if (tableRef.current && topScrollRef.current) {
         const spacer = topScrollRef.current.firstChild as HTMLElement;
@@ -885,11 +885,11 @@ export default function ProjectWorkOrders() {
     const config = columnHeaderConfig[key];
     if (!config) return null;
     const sortKey = config.sortKey || key;
-    const stickyFirstClass = isFirst ? "left-0 z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]" : "";
+    const stickyFirstClass = isFirst ? "left-0 z-40 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]" : "";
     return (
       <TableHead 
         key={key}
-        className={`sticky top-0 bg-muted cursor-pointer select-none whitespace-nowrap ${stickyFirstClass}`}
+        className={`sticky top-0 z-30 bg-muted cursor-pointer select-none whitespace-nowrap ${stickyFirstClass}`}
         onClick={(e) => handleSort(sortKey, e)}
         title="Click to sort. Shift+click to add to multi-column sort."
       >
@@ -3509,12 +3509,12 @@ export default function ProjectWorkOrders() {
               <div style={{ height: "1px", width: "100%" }} />
             </div>
             <div ref={tableScrollRef} className="overflow-x-auto w-full max-h-[calc(100vh-350px)] overflow-y-auto">
-              <Table ref={tableRef}>
+              <Table ref={tableRef} noWrapper>
                 <TableHeader>
-                  <TableRow className="sticky top-0 z-30 bg-muted">
+                  <TableRow>
                     {visibleColumns.map((key, index) => renderHeaderCell(key, index === 0))}
-                    {user?.role !== "customer" && <TableHead className="sticky top-0 bg-muted whitespace-nowrap">Actions</TableHead>}
-                    <TableHead className="sticky top-0 bg-muted w-8"></TableHead>
+                    {user?.role !== "customer" && <TableHead className="sticky top-0 z-30 bg-muted whitespace-nowrap">Actions</TableHead>}
+                    <TableHead className="sticky top-0 z-30 bg-muted w-8"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

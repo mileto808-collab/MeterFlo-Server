@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useLayoutEffect, useRef } from "react";
 import { Link, useLocation } from "wouter";
 import { BackToTop } from "@/components/ui/back-to-top";
 import { TablePagination } from "@/components/ui/table-pagination";
@@ -412,7 +412,7 @@ export default function SearchReports() {
   }, []);
 
   // Update top scrollbar width to match table width
-  useEffect(() => {
+  useLayoutEffect(() => {
     const updateTopScrollWidth = () => {
       if (tableRef.current && topScrollRef.current) {
         const spacer = topScrollRef.current.firstChild as HTMLElement;
@@ -525,11 +525,11 @@ export default function SearchReports() {
     const config = columnHeaderConfig[key];
     if (!config) return null;
     const sortKey = config.sortKey || key;
-    const stickyFirstClass = isFirst ? "left-0 z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]" : "";
+    const stickyFirstClass = isFirst ? "left-0 z-40 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]" : "";
     return (
       <TableHead 
         key={key}
-        className={`sticky top-0 bg-muted cursor-pointer select-none whitespace-nowrap ${stickyFirstClass}`}
+        className={`sticky top-0 z-30 bg-muted cursor-pointer select-none whitespace-nowrap ${stickyFirstClass}`}
         onClick={(e) => handleSort(sortKey, e)}
         title="Click to sort. Shift+click to add to multi-column sort."
         data-testid={`header-${key}`}
@@ -1580,12 +1580,12 @@ export default function SearchReports() {
                     <div style={{ height: "1px", width: "100%" }} />
                   </div>
                   <div ref={tableScrollRef} className="overflow-x-auto w-full max-h-[calc(100vh-350px)] overflow-y-auto">
-                    <Table ref={tableRef}>
+                    <Table ref={tableRef} noWrapper>
                       <TableHeader>
-                        <TableRow className="sticky top-0 z-30 bg-muted">
+                        <TableRow>
                           {orderedColumns.filter(col => col.key !== "actions").map((col, index) => renderHeaderCell(col.key, index === 0))}
-                          {isColumnVisible("actions") && <TableHead className="sticky top-0 bg-muted whitespace-nowrap">Actions</TableHead>}
-                          <TableHead className="sticky top-0 bg-muted w-8"></TableHead>
+                          {isColumnVisible("actions") && <TableHead className="sticky top-0 z-30 bg-muted whitespace-nowrap">Actions</TableHead>}
+                          <TableHead className="sticky top-0 z-30 bg-muted w-8"></TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
