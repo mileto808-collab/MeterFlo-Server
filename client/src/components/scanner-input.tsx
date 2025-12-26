@@ -13,7 +13,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Scan, QrCode, Keyboard, ChevronDown, Camera, X, Flashlight, FlashlightOff, Focus } from "lucide-react";
+import { Scan, QrCode, Keyboard, ChevronDown, Camera, X, Flashlight, FlashlightOff, Focus, Check, RotateCcw } from "lucide-react";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 import { Badge } from "@/components/ui/badge";
 
@@ -43,6 +43,7 @@ export function ScannerInput({
   const [focusSupported, setFocusSupported] = useState(false);
   const [isFocusing, setIsFocusing] = useState(false);
   const [capabilitiesChecked, setCapabilitiesChecked] = useState(false);
+  const [pendingResult, setPendingResult] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const scannerContainerRef = useRef<HTMLDivElement>(null);
@@ -69,9 +70,26 @@ export function ScannerInput({
   }, []);
 
   const handleScanResult = useCallback((decodedText: string) => {
-    onChange(decodedText);
-    stopScanning();
-  }, [onChange]);
+    setPendingResult(decodedText);
+    if (scannerRef.current) {
+      scannerRef.current.pause(true);
+    }
+  }, []);
+
+  const acceptScanResult = useCallback(() => {
+    if (pendingResult) {
+      onChange(pendingResult);
+      setPendingResult(null);
+      stopScanning();
+    }
+  }, [pendingResult, onChange]);
+
+  const retryScan = useCallback(() => {
+    setPendingResult(null);
+    if (scannerRef.current) {
+      scannerRef.current.resume();
+    }
+  }, []);
 
   const stopScanning = useCallback(async () => {
     if (scannerRef.current) {
@@ -89,6 +107,7 @@ export function ScannerInput({
     setTorchEnabled(false);
     setFocusSupported(false);
     setCapabilitiesChecked(false);
+    setPendingResult(null);
   }, []);
 
   const checkCameraCapabilities = useCallback(async () => {
@@ -189,6 +208,7 @@ export function ScannerInput({
     setTorchEnabled(false);
     setFocusSupported(false);
     setCapabilitiesChecked(false);
+    setPendingResult(null);
 
     await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -237,6 +257,7 @@ export function ScannerInput({
       setTorchEnabled(false);
       setFocusSupported(false);
       setCapabilitiesChecked(false);
+      setPendingResult(null);
 
       await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -385,71 +406,112 @@ export function ScannerInput({
             <DialogTitle className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <Camera className="h-5 w-5" />
-                {scanMode === "qrcode" ? "Scan QR Code" : "Scan Barcode"}
+                {pendingResult 
+                  ? "Code Captured" 
+                  : scanMode === "qrcode" 
+                    ? "Scan QR Code" 
+                    : "Scan Barcode"}
               </div>
-              <div className="flex items-center gap-1">
-                {capabilitiesChecked && focusSupported && (
-                  <Button
-                    type="button"
-                    variant={isFocusing ? "default" : "outline"}
-                    size="icon"
-                    onClick={triggerFocus}
-                    disabled={isFocusing}
-                    data-testid={`${testId}-tap-focus`}
-                    title="Tap to focus"
-                  >
-                    <Focus className="h-4 w-4" />
-                  </Button>
-                )}
-                {capabilitiesChecked && torchSupported && (
-                  <Button
-                    type="button"
-                    variant={torchEnabled ? "default" : "outline"}
-                    size="icon"
-                    onClick={toggleTorch}
-                    data-testid={`${testId}-toggle-torch`}
-                    title={torchEnabled ? "Turn off flashlight" : "Turn on flashlight"}
-                  >
-                    {torchEnabled ? (
-                      <Flashlight className="h-4 w-4" />
-                    ) : (
-                      <FlashlightOff className="h-4 w-4" />
-                    )}
-                  </Button>
-                )}
-              </div>
+              {!pendingResult && (
+                <div className="flex items-center gap-1">
+                  {capabilitiesChecked && focusSupported && (
+                    <Button
+                      type="button"
+                      variant={isFocusing ? "default" : "outline"}
+                      size="icon"
+                      onClick={triggerFocus}
+                      disabled={isFocusing}
+                      data-testid={`${testId}-tap-focus`}
+                      title="Tap to focus"
+                    >
+                      <Focus className="h-4 w-4" />
+                    </Button>
+                  )}
+                  {capabilitiesChecked && torchSupported && (
+                    <Button
+                      type="button"
+                      variant={torchEnabled ? "default" : "outline"}
+                      size="icon"
+                      onClick={toggleTorch}
+                      data-testid={`${testId}-toggle-torch`}
+                      title={torchEnabled ? "Turn off flashlight" : "Turn on flashlight"}
+                    >
+                      {torchEnabled ? (
+                        <Flashlight className="h-4 w-4" />
+                      ) : (
+                        <FlashlightOff className="h-4 w-4" />
+                      )}
+                    </Button>
+                  )}
+                </div>
+              )}
             </DialogTitle>
           </DialogHeader>
           
           <div className="space-y-4">
-            <div 
-              id="qr-scanner-container" 
-              ref={scannerContainerRef}
-              className="w-full aspect-square bg-muted rounded-lg overflow-hidden"
-            />
-            
-            {scanError && (
-              <div className="p-3 bg-destructive/10 text-destructive rounded-md text-sm">
-                {scanError}
+            {pendingResult ? (
+              <div className="space-y-4">
+                <div className="p-4 bg-muted rounded-lg text-center">
+                  <p className="text-sm text-muted-foreground mb-2">Scanned Value:</p>
+                  <p className="text-lg font-mono font-semibold break-all" data-testid={`${testId}-scanned-value`}>
+                    {pendingResult}
+                  </p>
+                </div>
+                
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={retryScan}
+                    className="flex-1"
+                    data-testid={`${testId}-retry-scan`}
+                  >
+                    <RotateCcw className="h-4 w-4 mr-2" />
+                    Retry
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={acceptScanResult}
+                    className="flex-1"
+                    data-testid={`${testId}-accept-scan`}
+                  >
+                    <Check className="h-4 w-4 mr-2" />
+                    Accept
+                  </Button>
+                </div>
               </div>
-            )}
+            ) : (
+              <>
+                <div 
+                  id="qr-scanner-container" 
+                  ref={scannerContainerRef}
+                  className="w-full aspect-square bg-muted rounded-lg overflow-hidden"
+                />
+                
+                {scanError && (
+                  <div className="p-3 bg-destructive/10 text-destructive rounded-md text-sm">
+                    {scanError}
+                  </div>
+                )}
 
-            {capabilitiesChecked && (
-              <div className="flex flex-wrap gap-2 justify-center">
-                <Badge variant={focusSupported ? "secondary" : "outline"} className="text-xs">
-                  {focusSupported ? "Autofocus: On" : "Autofocus: N/A"}
-                </Badge>
-                <Badge variant={torchSupported ? "secondary" : "outline"} className="text-xs">
-                  {torchSupported ? "Flashlight: Available" : "Flashlight: N/A"}
-                </Badge>
-              </div>
+                {capabilitiesChecked && (
+                  <div className="flex flex-wrap gap-2 justify-center">
+                    <Badge variant={focusSupported ? "secondary" : "outline"} className="text-xs">
+                      {focusSupported ? "Autofocus: On" : "Autofocus: N/A"}
+                    </Badge>
+                    <Badge variant={torchSupported ? "secondary" : "outline"} className="text-xs">
+                      {torchSupported ? "Flashlight: Available" : "Flashlight: N/A"}
+                    </Badge>
+                  </div>
+                )}
+                
+                <p className="text-sm text-muted-foreground text-center">
+                  {scanMode === "qrcode" 
+                    ? "Point your camera at a QR code"
+                    : "Point your camera at a barcode"}
+                </p>
+              </>
             )}
-            
-            <p className="text-sm text-muted-foreground text-center">
-              {scanMode === "qrcode" 
-                ? "Point your camera at a QR code"
-                : "Point your camera at a barcode"}
-            </p>
             
             <Button
               type="button"
