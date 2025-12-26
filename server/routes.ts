@@ -1009,7 +1009,25 @@ export async function registerRoutes(
         filters.status = "completed";
       }
       
-      const workOrders = await workOrderStorage.getWorkOrders(filters);
+      let workOrders = await workOrderStorage.getWorkOrders(filters);
+      
+      // Filter for field technicians - only show work orders assigned to them or their groups
+      if (currentUser?.subroleId) {
+        const subrole = await storage.getSubrole(currentUser.subroleId);
+        if (subrole?.key === "field_technician") {
+          const userGroups = await storage.getUserGroupMemberships(currentUser.id);
+          const userGroupIds = userGroups.map(g => String(g.id));
+          
+          workOrders = workOrders.filter(wo => {
+            // Check if directly assigned to user
+            if (wo.assignedUserId === currentUser.id) return true;
+            // Check if assigned to one of user's groups
+            if (wo.assignedGroupId && userGroupIds.includes(wo.assignedGroupId)) return true;
+            return false;
+          });
+        }
+      }
+      
       res.json(workOrders);
     } catch (error) {
       console.error("Error fetching work orders:", error);
@@ -1035,6 +1053,34 @@ export async function registerRoutes(
       }
       
       const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      
+      // For field technicians, compute stats from their filtered work orders
+      if (currentUser?.subroleId) {
+        const subrole = await storage.getSubrole(currentUser.subroleId);
+        if (subrole?.key === "field_technician") {
+          const userGroups = await storage.getUserGroupMemberships(currentUser.id);
+          const userGroupIds = userGroups.map(g => String(g.id));
+          
+          const allWorkOrders = await workOrderStorage.getWorkOrders({});
+          const filteredWorkOrders = allWorkOrders.filter(wo => {
+            if (wo.assignedUserId === currentUser.id) return true;
+            if (wo.assignedGroupId && userGroupIds.includes(wo.assignedGroupId)) return true;
+            return false;
+          });
+          
+          // Compute stats from filtered work orders
+          const statusCounts: Record<string, number> = {};
+          for (const wo of filteredWorkOrders) {
+            statusCounts[wo.status] = (statusCounts[wo.status] || 0) + 1;
+          }
+          
+          return res.json({
+            total: filteredWorkOrders.length,
+            statusCounts
+          });
+        }
+      }
+      
       const stats = await workOrderStorage.getWorkOrderStats();
       res.json(stats);
     } catch (error) {
