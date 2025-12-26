@@ -44,6 +44,7 @@ import { useTimezone } from "@/hooks/use-timezone";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, ArrowLeft, Search, ArrowUpDown, ArrowUp, ArrowDown, Download, FileSpreadsheet, FileText, Filter, X, Route, ChevronRight, Paperclip, Eye, FileIcon, ChevronsUp } from "lucide-react";
 import { BackToTop } from "@/components/ui/back-to-top";
+import { TablePagination } from "@/components/ui/table-pagination";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
 import { Label } from "@/components/ui/label";
@@ -139,6 +140,8 @@ export default function ProjectWorkOrders() {
   const [newMeterTypeProductId, setNewMeterTypeProductId] = useState("");
   const [newMeterTypeLabel, setNewMeterTypeLabel] = useState("");
   const [newMeterTypeDescription, setNewMeterTypeDescription] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
 
   const signaturePadRef = useRef<SignaturePadRef>(null);
   const editSignaturePadRef = useRef<SignaturePadRef>(null);
@@ -1258,6 +1261,32 @@ export default function ProjectWorkOrders() {
     return result;
   }, [workOrders, searchQuery, sortCriteria, selectedStatus, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldMeterType, selectedNewMeterType, meterTypes, assigneesData, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterNewMeterId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
 
+  const totalPages = Math.ceil(filteredAndSortedWorkOrders.length / pageSize);
+  const paginatedWorkOrders = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return filteredAndSortedWorkOrders.slice(startIndex, startIndex + pageSize);
+  }, [filteredAndSortedWorkOrders, currentPage, pageSize]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [workOrders, searchQuery, selectedStatus, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldMeterType, selectedNewMeterType, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterNewMeterId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo, pageSize]);
+
+  useEffect(() => {
+    if (currentPage > totalPages && totalPages > 0) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    tableScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const handlePageSizeChange = (size: number) => {
+    setPageSize(size);
+    setCurrentPage(1);
+  };
+
   const clearFilters = () => {
     setSearchQuery("");
     setSelectedStatus("all");
@@ -1293,6 +1322,7 @@ export default function ProjectWorkOrders() {
     setFilterCreatedAtTo("");
     setFilterUpdatedAtFrom("");
     setFilterUpdatedAtTo("");
+    setCurrentPage(1);
   };
 
   const hasActiveFilters = selectedStatus !== "all" || selectedServiceType !== "all" || selectedAssignedTo !== "all" || selectedAssignedGroup !== "all" || selectedTrouble !== "all" || selectedOldMeterType !== "all" || selectedNewMeterType !== "all" || filterSystemWoId !== "" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldMeterId !== "" || filterNewMeterId !== "" || filterScheduledDateFrom !== "" || filterScheduledDateTo !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterScheduledBy !== "all" || filterCompletedBy !== "all" || filterCompletedAtFrom !== "" || filterCompletedAtTo !== "" || filterNotes !== "" || filterCreatedAtFrom !== "" || filterCreatedAtTo !== "" || filterUpdatedAtFrom !== "" || filterUpdatedAtTo !== "";
@@ -3435,10 +3465,22 @@ export default function ProjectWorkOrders() {
         </CardContent>
       </Card>
 
-      {/* Results count */}
-      {(searchQuery || hasActiveFilters) && (
-        <div className="text-sm text-muted-foreground">
-          Showing {filteredAndSortedWorkOrders.length} of {workOrders.length} work orders
+      {/* Results count and top pagination */}
+      {workOrders.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {(searchQuery || hasActiveFilters) && (
+            <div className="text-sm text-muted-foreground">
+              Filtered: {filteredAndSortedWorkOrders.length} of {workOrders.length} work orders
+            </div>
+          )}
+          <TablePagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            pageSize={pageSize}
+            totalItems={filteredAndSortedWorkOrders.length}
+            onPageChange={handlePageChange}
+            onPageSizeChange={handlePageSizeChange}
+          />
         </div>
       )}
 
@@ -3476,13 +3518,13 @@ export default function ProjectWorkOrders() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredAndSortedWorkOrders.length === 0 ? (
+                  {paginatedWorkOrders.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={visibleColumns.length + (user?.role !== "customer" ? 1 : 0) + 1} className="text-center py-8 text-muted-foreground">
                         No work orders match your search
                       </TableCell>
                     </TableRow>
-                  ) : filteredAndSortedWorkOrders.map((workOrder) => (
+                  ) : paginatedWorkOrders.map((workOrder) => (
                     <TableRow 
                       key={workOrder.id} 
                       data-testid={`row-work-order-${workOrder.id}`}
@@ -3533,6 +3575,17 @@ export default function ProjectWorkOrders() {
               </Table>
             </div>
           </CardContent>
+          <CardFooter className="border-t p-4">
+            <TablePagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              pageSize={pageSize}
+              totalItems={filteredAndSortedWorkOrders.length}
+              onPageChange={handlePageChange}
+              onPageSizeChange={handlePageSizeChange}
+              className="w-full"
+            />
+          </CardFooter>
         </Card>
       )}
 
