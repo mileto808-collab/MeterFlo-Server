@@ -80,7 +80,18 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
-      res.json(user);
+      if (!user) {
+        return res.json(null);
+      }
+      
+      // Include subrole key if user has a subrole
+      let subroleKey: string | null = null;
+      if (user.subroleId) {
+        const subrole = await storage.getSubrole(user.subroleId);
+        subroleKey = subrole?.key || null;
+      }
+      
+      res.json({ ...user, subroleKey });
     } catch (error) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });

@@ -587,6 +587,8 @@ export const insertMeterTypeProjectSchema = z.object({
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
+// Extended user type with subrole key (returned by /api/auth/user)
+export type UserWithSubroleKey = User & { subroleKey?: string | null };
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type CreateUser = z.infer<typeof createUserSchema>;
 export type UpdateUser = z.infer<typeof updateUserSchema>;

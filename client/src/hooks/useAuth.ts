@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
-import type { User } from "@shared/schema";
+import type { UserWithSubroleKey } from "@shared/schema";
 
 export function useAuth() {
-  const { data: user, isLoading, error } = useQuery<User | null>({
+  const { data: user, isLoading, error } = useQuery<UserWithSubroleKey | null>({
     queryKey: ["/api/auth/user"],
     retry: false,
   });
