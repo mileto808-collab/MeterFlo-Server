@@ -836,6 +836,9 @@ export default function ProjectWorkOrders() {
     updatedAt: { label: "Updated At", sortKey: "updatedAt" },
   };
 
+  // Fixed width for sticky columns to ensure proper offset calculation
+  const STICKY_COLUMN_WIDTH = 160; // px
+
   // Calculate sticky column offsets based on ordered visible columns
   const getStickyStyle = (key: string, isHeader: boolean = false): { className: string; style?: React.CSSProperties } => {
     if (!stickyColumns.includes(key)) {
@@ -846,8 +849,8 @@ export default function ProjectWorkOrders() {
     const visibleStickyColumns = orderedColumns.filter(col => stickyColumns.includes(col.key)).map(col => col.key);
     const stickyIndex = visibleStickyColumns.indexOf(key);
     
-    // Estimate left offset (using 150px per column as default width)
-    const leftOffset = stickyIndex * 150;
+    // Calculate left offset based on fixed sticky column width
+    const leftOffset = stickyIndex * STICKY_COLUMN_WIDTH;
     
     const stickyClass = isHeader 
       ? "sticky top-0 z-40 bg-muted shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]"
@@ -855,7 +858,7 @@ export default function ProjectWorkOrders() {
     
     return {
       className: stickyClass,
-      style: { left: `${leftOffset}px` }
+      style: { left: `${leftOffset}px`, minWidth: `${STICKY_COLUMN_WIDTH}px`, maxWidth: `${STICKY_COLUMN_WIDTH}px` }
     };
   };
 

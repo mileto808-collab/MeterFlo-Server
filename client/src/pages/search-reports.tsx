@@ -180,7 +180,7 @@ export default function SearchReports() {
     { key: "actions", label: "Actions", required: true },
   ], []);
 
-  const { visibleColumns, setVisibleColumns, isColumnVisible, isLoading: columnPrefsLoading, orderedColumns } = useColumnPreferences("search_reports", columns);
+  const { visibleColumns, setVisibleColumns, isColumnVisible, isLoading: columnPrefsLoading, orderedColumns, stickyColumns, setStickyColumns } = useColumnPreferences("search_reports", columns);
 
   // Filter configuration - matches columns (excluding attachments and signature_data)
   const searchFilters: FilterConfig[] = useMemo(() => [
@@ -476,16 +476,43 @@ export default function SearchReports() {
     updatedAt: { label: "Updated At", sortKey: "updatedAt" },
   };
 
+  // Fixed width for sticky columns to ensure proper offset calculation
+  const STICKY_COLUMN_WIDTH = 160; // px
+
+  // Calculate sticky column offsets based on ordered visible columns
+  const getStickyStyle = (key: string, isHeader: boolean = false): { className: string; style?: React.CSSProperties } => {
+    if (!stickyColumns.includes(key)) {
+      return { className: isHeader ? "sticky top-0 z-30 bg-muted" : "" };
+    }
+    
+    // Find position of this column among all sticky columns in the visible order
+    const visibleStickyColumns = orderedColumns.filter(col => stickyColumns.includes(col.key)).map(col => col.key);
+    const stickyIndex = visibleStickyColumns.indexOf(key);
+    
+    // Calculate left offset based on fixed sticky column width
+    const leftOffset = stickyIndex * STICKY_COLUMN_WIDTH;
+    
+    const stickyClass = isHeader 
+      ? "sticky top-0 z-40 bg-muted shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]"
+      : "sticky z-20 bg-background shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]";
+    
+    return {
+      className: stickyClass,
+      style: { left: `${leftOffset}px`, minWidth: `${STICKY_COLUMN_WIDTH}px`, maxWidth: `${STICKY_COLUMN_WIDTH}px` }
+    };
+  };
+
   // Render a table header cell for a given column key
   const renderHeaderCell = (key: string, isFirst: boolean = false) => {
     const config = columnHeaderConfig[key];
     if (!config) return null;
     const sortKey = config.sortKey || key;
-    const stickyFirstClass = isFirst ? "left-0 z-40 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]" : "";
+    const { className: stickyClass, style: stickyStyle } = getStickyStyle(key, true);
     return (
       <TableHead 
         key={key}
-        className={`sticky top-0 z-30 bg-muted cursor-pointer select-none whitespace-nowrap ${stickyFirstClass}`}
+        className={`${stickyClass} cursor-pointer select-none whitespace-nowrap`}
+        style={stickyStyle}
         onClick={(e) => handleSort(sortKey, e)}
         title="Click to sort. Shift+click to add to multi-column sort."
         data-testid={`header-${key}`}
@@ -498,79 +525,80 @@ export default function SearchReports() {
   // Render a table data cell for a given column key and result
   const renderDataCell = (key: string, result: SearchResult, isFirst: boolean = false) => {
     const wo = result.workOrder;
-    const stickyClass = isFirst ? "sticky left-0 z-10 bg-background shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]" : "";
+    const { className: stickyClass, style: stickyStyle } = getStickyStyle(key, false);
     const baseClass = stickyClass;
+    const cellStyle = stickyStyle || {};
     switch (key) {
       case "projectName":
-        return <TableCell key={key} className={baseClass}>{result.projectName}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{result.projectName}</TableCell>;
       case "id":
-        return <TableCell key={key} className={`font-medium text-muted-foreground ${baseClass}`}>{wo.id}</TableCell>;
+        return <TableCell key={key} className={`font-medium text-muted-foreground ${baseClass}`} style={cellStyle}>{wo.id}</TableCell>;
       case "customerWoId":
-        return <TableCell key={key} className={`font-medium ${baseClass}`}>{wo.customerWoId || "-"}</TableCell>;
+        return <TableCell key={key} className={`font-medium ${baseClass}`} style={cellStyle}>{wo.customerWoId || "-"}</TableCell>;
       case "customerId":
-        return <TableCell key={key} className={baseClass}>{wo.customerId || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.customerId || "-"}</TableCell>;
       case "customerName":
-        return <TableCell key={key} className={baseClass}>{wo.customerName || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.customerName || "-"}</TableCell>;
       case "address":
-        return <TableCell key={key} className={`max-w-xs truncate ${baseClass}`}>{wo.address || "-"}</TableCell>;
+        return <TableCell key={key} className={`max-w-xs truncate ${baseClass}`} style={cellStyle}>{wo.address || "-"}</TableCell>;
       case "city":
-        return <TableCell key={key} className={baseClass}>{wo.city || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.city || "-"}</TableCell>;
       case "state":
-        return <TableCell key={key} className={baseClass}>{wo.state || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.state || "-"}</TableCell>;
       case "zip":
-        return <TableCell key={key} className={baseClass}>{wo.zip || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.zip || "-"}</TableCell>;
       case "phone":
-        return <TableCell key={key} className={baseClass}>{wo.phone || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.phone || "-"}</TableCell>;
       case "email":
-        return <TableCell key={key} className={baseClass}>{wo.email || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.email || "-"}</TableCell>;
       case "route":
-        return <TableCell key={key} className={baseClass}>{wo.route || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.route || "-"}</TableCell>;
       case "zone":
-        return <TableCell key={key} className={baseClass}>{wo.zone || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.zone || "-"}</TableCell>;
       case "serviceType":
-        return <TableCell key={key} className={baseClass}>{getServiceTypeBadge(wo.serviceType)}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{getServiceTypeBadge(wo.serviceType)}</TableCell>;
       case "oldMeterId":
-        return <TableCell key={key} className={baseClass}>{wo.oldMeterId || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.oldMeterId || "-"}</TableCell>;
       case "oldMeterReading":
-        return <TableCell key={key} className={baseClass}>{wo.oldMeterReading ?? "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.oldMeterReading ?? "-"}</TableCell>;
       case "oldMeterType":
-        return <TableCell key={key} className={baseClass}>{wo.oldMeterType || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.oldMeterType || "-"}</TableCell>;
       case "newMeterId":
-        return <TableCell key={key} className={baseClass}>{wo.newMeterId || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.newMeterId || "-"}</TableCell>;
       case "newMeterReading":
-        return <TableCell key={key} className={baseClass}>{wo.newMeterReading ?? "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.newMeterReading ?? "-"}</TableCell>;
       case "newMeterType":
-        return <TableCell key={key} className={baseClass}>{wo.newMeterType || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.newMeterType || "-"}</TableCell>;
       case "oldGps":
-        return <TableCell key={key} className={baseClass}>{wo.oldGps || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.oldGps || "-"}</TableCell>;
       case "newGps":
-        return <TableCell key={key} className={baseClass}>{wo.newGps || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.newGps || "-"}</TableCell>;
       case "status":
-        return <TableCell key={key} className={baseClass}>{getStatusBadge(wo.status)}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{getStatusBadge(wo.status)}</TableCell>;
       case "scheduledAt":
-        return <TableCell key={key} className={baseClass}>{wo.scheduledAt ? formatCustom(wo.scheduledAt, "MMM d, yyyy") : "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.scheduledAt ? formatCustom(wo.scheduledAt, "MMM d, yyyy") : "-"}</TableCell>;
       case "scheduledBy":
-        return <TableCell key={key} className={baseClass}>{(wo as any).scheduledByDisplay || getAssignedUserName(wo.scheduledBy) || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{(wo as any).scheduledByDisplay || getAssignedUserName(wo.scheduledBy) || "-"}</TableCell>;
       case "assignedTo":
-        return <TableCell key={key} className={baseClass}>{getAssignedUserName(wo.assignedUserId) || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{getAssignedUserName(wo.assignedUserId) || "-"}</TableCell>;
       case "assignedGroup":
-        return <TableCell key={key} className={baseClass}>{getAssignedGroupName(wo.assignedGroupId) || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{getAssignedGroupName(wo.assignedGroupId) || "-"}</TableCell>;
       case "createdBy":
-        return <TableCell key={key} className={baseClass}>{wo.createdBy || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.createdBy || "-"}</TableCell>;
       case "updatedBy":
-        return <TableCell key={key} className={baseClass}>{wo.updatedBy || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.updatedBy || "-"}</TableCell>;
       case "completedAt":
-        return <TableCell key={key} className={baseClass}>{wo.completedAt ? formatCustom(wo.completedAt, "MMM d, yyyy h:mm a") : "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.completedAt ? formatCustom(wo.completedAt, "MMM d, yyyy h:mm a") : "-"}</TableCell>;
       case "completedBy":
-        return <TableCell key={key} className={baseClass}>{(wo as any).completedByDisplay || getAssignedUserName(wo.completedBy) || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{(wo as any).completedByDisplay || getAssignedUserName(wo.completedBy) || "-"}</TableCell>;
       case "trouble":
-        return <TableCell key={key} className={baseClass}>{getTroubleCodeLabel(wo.trouble) || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{getTroubleCodeLabel(wo.trouble) || "-"}</TableCell>;
       case "notes":
-        return <TableCell key={key} className={`max-w-xs truncate ${baseClass}`}>{wo.notes || "-"}</TableCell>;
+        return <TableCell key={key} className={`max-w-xs truncate ${baseClass}`} style={cellStyle}>{wo.notes || "-"}</TableCell>;
       case "createdAt":
-        return <TableCell key={key} className={baseClass}>{wo.createdAt ? formatCustom(wo.createdAt, "MMM d, yyyy h:mm a") : "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.createdAt ? formatCustom(wo.createdAt, "MMM d, yyyy h:mm a") : "-"}</TableCell>;
       case "updatedAt":
-        return <TableCell key={key} className={baseClass}>{wo.updatedAt ? formatCustom(wo.updatedAt, "MMM d, yyyy h:mm a") : "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.updatedAt ? formatCustom(wo.updatedAt, "MMM d, yyyy h:mm a") : "-"}</TableCell>;
       default:
         return null;
     }
@@ -1484,6 +1512,8 @@ export default function SearchReports() {
                       onChange={setVisibleColumns}
                       disabled={columnPrefsLoading}
                       orderedColumns={orderedColumns}
+                      stickyColumns={stickyColumns}
+                      onStickyChange={setStickyColumns}
                     />
                     <SortDialog
                       sortCriteria={sortCriteria}
