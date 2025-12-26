@@ -1211,6 +1211,175 @@ export async function registerRoutes(
     }
   });
 
+  // Bulk assign work orders
+  app.post("/api/projects/:projectId/work-orders/bulk-assign", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const canAssign = await storage.hasPermission(currentUser, permissionKeys.WORK_ORDERS_ASSIGN);
+      if (!canAssign) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to assign work orders" });
+      }
+      
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const { workOrderIds, assigneeType, assigneeId, action } = req.body;
+      
+      if (!Array.isArray(workOrderIds) || workOrderIds.length === 0) {
+        return res.status(400).json({ message: "Work order IDs are required" });
+      }
+      
+      if (!action || !["assign", "unassign"].includes(action)) {
+        return res.status(400).json({ message: "Action must be 'assign' or 'unassign'" });
+      }
+      
+      if (action === "assign") {
+        if (!assigneeType || !["user", "group"].includes(assigneeType)) {
+          return res.status(400).json({ message: "Assignee type must be 'user' or 'group'" });
+        }
+        if (!assigneeId) {
+          return res.status(400).json({ message: "Assignee ID is required for assignment" });
+        }
+      }
+      
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      
+      const updatedByName = currentUser?.firstName 
+        ? `${currentUser.firstName}${currentUser.lastName ? ' ' + currentUser.lastName : ''}`
+        : currentUser?.username || currentUser?.id;
+      
+      let assigned = 0;
+      let skipped = 0;
+      const skippedReasons: { id: number; reason: string }[] = [];
+      
+      for (const woId of workOrderIds) {
+        const workOrder = await workOrderStorage.getWorkOrder(woId);
+        if (!workOrder) {
+          skipped++;
+          skippedReasons.push({ id: woId, reason: "Work order not found" });
+          continue;
+        }
+        
+        if (workOrder.status === "Completed" || workOrder.status === "Scheduled") {
+          skipped++;
+          skippedReasons.push({ id: woId, reason: `Cannot assign work order with status: ${workOrder.status}` });
+          continue;
+        }
+        
+        if (action === "assign") {
+          const updates = assigneeType === "user" 
+            ? { assignedUserId: assigneeId, assignedGroupId: null }
+            : { assignedGroupId: assigneeId, assignedUserId: null };
+          
+          await workOrderStorage.updateWorkOrder(woId, updates, updatedByName);
+        } else {
+          await workOrderStorage.updateWorkOrder(woId, { assignedUserId: null, assignedGroupId: null }, updatedByName);
+        }
+        
+        assigned++;
+      }
+      
+      res.json({ 
+        success: true, 
+        assigned, 
+        skipped, 
+        skippedReasons: skippedReasons.slice(0, 10),
+        message: `${action === "assign" ? "Assigned" : "Unassigned"} ${assigned} work order(s)${skipped > 0 ? `, ${skipped} skipped` : ""}`
+      });
+    } catch (error) {
+      console.error("Error bulk assigning work orders:", error);
+      res.status(500).json({ message: "Failed to bulk assign work orders" });
+    }
+  });
+
+  // Check work order assignments (for pre-validation before bulk assign)
+  app.post("/api/projects/:projectId/work-orders/check-assignments", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const canAssign = await storage.hasPermission(currentUser, permissionKeys.WORK_ORDERS_ASSIGN);
+      if (!canAssign) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to assign work orders" });
+      }
+      
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const { workOrderIds } = req.body;
+      
+      if (!Array.isArray(workOrderIds) || workOrderIds.length === 0) {
+        return res.status(400).json({ message: "Work order IDs are required" });
+      }
+      
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      
+      let assignableCount = 0;
+      let existingAssignments = 0;
+      let completedCount = 0;
+      let scheduledCount = 0;
+      
+      for (const woId of workOrderIds) {
+        const workOrder = await workOrderStorage.getWorkOrder(woId);
+        if (!workOrder) continue;
+        
+        if (workOrder.status === "Completed") {
+          completedCount++;
+          continue;
+        }
+        
+        if (workOrder.status === "Scheduled") {
+          scheduledCount++;
+          continue;
+        }
+        
+        assignableCount++;
+        if (workOrder.assignedUserId || workOrder.assignedGroupId) {
+          existingAssignments++;
+        }
+      }
+      
+      res.json({
+        total: workOrderIds.length,
+        assignableCount,
+        existingAssignments,
+        completedCount,
+        scheduledCount
+      });
+    } catch (error) {
+      console.error("Error checking work order assignments:", error);
+      res.status(500).json({ message: "Failed to check work order assignments" });
+    }
+  });
+
   // Import work orders for a project
   app.post("/api/projects/:projectId/import", isAuthenticated, async (req: any, res) => {
     try {

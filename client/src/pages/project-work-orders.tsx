@@ -42,14 +42,15 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useTimezone } from "@/hooks/use-timezone";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, ArrowLeft, Search, ArrowUpDown, ArrowUp, ArrowDown, Download, FileSpreadsheet, FileText, Filter, X, Route, ChevronRight, Paperclip, Eye, FileIcon, ChevronsUp } from "lucide-react";
+import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, ArrowLeft, Search, ArrowUpDown, ArrowUp, ArrowDown, Download, FileSpreadsheet, FileText, Filter, X, Route, ChevronRight, Paperclip, Eye, FileIcon, ChevronsUp, UserPlus, UserMinus, AlertTriangle, Loader2 } from "lucide-react";
 import { BackToTop } from "@/components/ui/back-to-top";
 import { TablePagination } from "@/components/ui/table-pagination";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
 import { Label } from "@/components/ui/label";
 import type { Project, WorkOrderStatus, TroubleCode, ServiceTypeRecord, MeterType } from "@shared/schema";
-import { insertProjectWorkOrderSchema } from "@shared/schema";
+import { insertProjectWorkOrderSchema, permissionKeys } from "@shared/schema";
+import { usePermissions } from "@/hooks/usePermissions";
 import type { ProjectWorkOrder } from "../../../server/projectDb";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -94,6 +95,7 @@ export default function ProjectWorkOrders() {
   const [, params] = useRoute("/projects/:projectId/work-orders");
   const projectId = params?.projectId ? parseInt(params.projectId) : null;
   const { user } = useAuth();
+  const { hasPermission } = usePermissions();
   const { toast } = useToast();
   const { formatDateTime, formatExport, formatCustom } = useTimezone();
   const [, navigate] = useLocation();
@@ -143,6 +145,18 @@ export default function ProjectWorkOrders() {
   const [newMeterTypeProductId, setNewMeterTypeProductId] = useState("");
   const [newMeterTypeLabel, setNewMeterTypeLabel] = useState("");
   const [newMeterTypeDescription, setNewMeterTypeDescription] = useState("");
+  const [showBulkAssignDialog, setShowBulkAssignDialog] = useState(false);
+  const [bulkAssignAction, setBulkAssignAction] = useState<"assign" | "unassign">("assign");
+  const [bulkAssigneeType, setBulkAssigneeType] = useState<"user" | "group">("user");
+  const [bulkAssigneeId, setBulkAssigneeId] = useState<string>("");
+  const [bulkAssignStep, setBulkAssignStep] = useState<"select" | "confirm">("select");
+  const [bulkAssignCheckResult, setBulkAssignCheckResult] = useState<{
+    total: number;
+    assignableCount: number;
+    existingAssignments: number;
+    completedCount: number;
+    scheduledCount: number;
+  } | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
 
@@ -624,6 +638,87 @@ export default function ProjectWorkOrders() {
       toast({ title: "Failed to create meter type", description: error?.message, variant: "destructive" });
     },
   });
+
+  const checkAssignmentsMutation = useMutation({
+    mutationFn: async (workOrderIds: number[]) => {
+      const res = await apiRequest("POST", `/api/projects/${projectId}/work-orders/check-assignments`, {
+        workOrderIds,
+      });
+      return res.json();
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to check assignments", description: error?.message, variant: "destructive" });
+    },
+  });
+
+  const bulkAssignMutation = useMutation({
+    mutationFn: async (params: {
+      workOrderIds: number[];
+      action: "assign" | "unassign";
+      assigneeType?: "user" | "group";
+      assigneeId?: string;
+    }) => {
+      const res = await apiRequest("POST", `/api/projects/${projectId}/work-orders/bulk-assign`, params);
+      return res.json();
+    },
+    onSuccess: async (result) => {
+      await queryClient.refetchQueries({ queryKey: [`/api/projects/${projectId}/work-orders`] });
+      await queryClient.refetchQueries({ queryKey: [`/api/projects/${projectId}/work-orders/stats`] });
+      setShowBulkAssignDialog(false);
+      resetBulkAssignState();
+      toast({ 
+        title: result.message || "Work orders updated",
+        description: result.skipped > 0 ? `${result.skipped} work order(s) were skipped (Completed/Scheduled status)` : undefined,
+      });
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to assign work orders", description: error?.message, variant: "destructive" });
+    },
+  });
+
+  const resetBulkAssignState = () => {
+    setBulkAssignAction("assign");
+    setBulkAssigneeType("user");
+    setBulkAssigneeId("");
+    setBulkAssignStep("select");
+    setBulkAssignCheckResult(null);
+  };
+
+  const handleOpenBulkAssign = async () => {
+    const workOrderIds = filteredAndSortedWorkOrders.map(wo => wo.id);
+    if (workOrderIds.length === 0) {
+      toast({ title: "No work orders to assign", description: "Apply filters to select work orders first", variant: "destructive" });
+      return;
+    }
+    
+    resetBulkAssignState();
+    setShowBulkAssignDialog(true);
+    
+    const result = await checkAssignmentsMutation.mutateAsync(workOrderIds);
+    setBulkAssignCheckResult(result);
+  };
+
+  const handleBulkAssignSubmit = () => {
+    const workOrderIds = filteredAndSortedWorkOrders.map(wo => wo.id);
+    
+    if (bulkAssignAction === "assign") {
+      if (!bulkAssigneeId) {
+        toast({ title: "Please select an assignee", variant: "destructive" });
+        return;
+      }
+      bulkAssignMutation.mutate({
+        workOrderIds,
+        action: "assign",
+        assigneeType: bulkAssigneeType,
+        assigneeId: bulkAssigneeId,
+      });
+    } else {
+      bulkAssignMutation.mutate({
+        workOrderIds,
+        action: "unassign",
+      });
+    }
+  };
 
   const handleCreateMeterTypeSubmit = () => {
     if (!newMeterTypeProductId.trim() || !newMeterTypeLabel.trim()) {
@@ -2360,6 +2455,12 @@ export default function ProjectWorkOrders() {
                 Project Documents
               </Button>
             </Link>
+            {hasPermission(permissionKeys.WORK_ORDERS_ASSIGN) && (
+              <Button variant="outline" onClick={handleOpenBulkAssign} data-testid="button-assign-work-orders">
+                <UserPlus className="h-4 w-4 mr-2" />
+                Assign Work Orders
+              </Button>
+            )}
             <Button onClick={() => setIsCreatingWorkOrder(true)} data-testid="button-create-work-order">
               <Plus className="h-4 w-4 mr-2" />
               New Work Order
@@ -2909,6 +3010,138 @@ export default function ProjectWorkOrders() {
           </CardFooter>
         </Card>
       )}
+
+      <Dialog open={showBulkAssignDialog} onOpenChange={(open) => { 
+        setShowBulkAssignDialog(open); 
+        if (!open) resetBulkAssignState(); 
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Assign Work Orders</DialogTitle>
+            <DialogDescription>
+              Assign or unassign the {filteredAndSortedWorkOrders.length} filtered work order(s).
+            </DialogDescription>
+          </DialogHeader>
+          
+          {checkAssignmentsMutation.isPending ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              <span className="ml-2 text-muted-foreground">Checking assignments...</span>
+            </div>
+          ) : bulkAssignCheckResult ? (
+            <div className="space-y-4">
+              <div className="bg-muted p-3 rounded-md space-y-1 text-sm">
+                <p><strong>{bulkAssignCheckResult.assignableCount}</strong> work order(s) can be assigned</p>
+                {bulkAssignCheckResult.completedCount > 0 && (
+                  <p className="text-muted-foreground">{bulkAssignCheckResult.completedCount} Completed (will be skipped)</p>
+                )}
+                {bulkAssignCheckResult.scheduledCount > 0 && (
+                  <p className="text-muted-foreground">{bulkAssignCheckResult.scheduledCount} Scheduled (will be skipped)</p>
+                )}
+              </div>
+              
+              {bulkAssignCheckResult.existingAssignments > 0 && bulkAssignAction === "assign" && (
+                <div className="bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 p-3 rounded-md flex items-start gap-2">
+                  <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm">
+                    <p className="font-medium text-yellow-800 dark:text-yellow-200">Warning: Existing Assignments</p>
+                    <p className="text-yellow-700 dark:text-yellow-300">{bulkAssignCheckResult.existingAssignments} work order(s) already have assignments. Continuing will replace them.</p>
+                  </div>
+                </div>
+              )}
+              
+              <div className="space-y-3">
+                <div className="flex gap-2">
+                  <Button
+                    variant={bulkAssignAction === "assign" ? "default" : "outline"}
+                    onClick={() => setBulkAssignAction("assign")}
+                    className="flex-1"
+                    data-testid="button-bulk-action-assign"
+                  >
+                    <UserPlus className="h-4 w-4 mr-2" />
+                    Assign
+                  </Button>
+                  <Button
+                    variant={bulkAssignAction === "unassign" ? "default" : "outline"}
+                    onClick={() => setBulkAssignAction("unassign")}
+                    className="flex-1"
+                    data-testid="button-bulk-action-unassign"
+                  >
+                    <UserMinus className="h-4 w-4 mr-2" />
+                    Unassign
+                  </Button>
+                </div>
+                
+                {bulkAssignAction === "assign" && (
+                  <>
+                    <div className="flex gap-2">
+                      <Button
+                        variant={bulkAssigneeType === "user" ? "secondary" : "outline"}
+                        size="sm"
+                        onClick={() => { setBulkAssigneeType("user"); setBulkAssigneeId(""); }}
+                        data-testid="button-assignee-type-user"
+                      >
+                        User
+                      </Button>
+                      <Button
+                        variant={bulkAssigneeType === "group" ? "secondary" : "outline"}
+                        size="sm"
+                        onClick={() => { setBulkAssigneeType("group"); setBulkAssigneeId(""); }}
+                        data-testid="button-assignee-type-group"
+                      >
+                        Group
+                      </Button>
+                    </div>
+                    
+                    <Select value={bulkAssigneeId} onValueChange={setBulkAssigneeId}>
+                      <SelectTrigger data-testid="select-bulk-assignee">
+                        <SelectValue placeholder={`Select ${bulkAssigneeType === "user" ? "a user" : "a group"}...`} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {bulkAssigneeType === "user" ? (
+                          assigneesData?.users.map((u) => (
+                            <SelectItem key={u.id} value={u.id} data-testid={`select-user-${u.id}`}>
+                              {u.label} {u.username ? `(${u.username})` : ""}
+                            </SelectItem>
+                          ))
+                        ) : (
+                          assigneesData?.groups.map((g) => (
+                            <SelectItem key={g.id} value={g.id} data-testid={`select-group-${g.id}`}>
+                              {g.label}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </>
+                )}
+              </div>
+            </div>
+          ) : null}
+          
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBulkAssignDialog(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleBulkAssignSubmit}
+              disabled={bulkAssignMutation.isPending || checkAssignmentsMutation.isPending || !bulkAssignCheckResult || bulkAssignCheckResult.assignableCount === 0 || (bulkAssignAction === "assign" && !bulkAssigneeId)}
+              data-testid="button-bulk-assign-submit"
+            >
+              {bulkAssignMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Processing...
+                </>
+              ) : bulkAssignAction === "assign" ? (
+                `Assign ${bulkAssignCheckResult?.assignableCount || 0} Work Orders`
+              ) : (
+                `Unassign ${bulkAssignCheckResult?.assignableCount || 0} Work Orders`
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={createMeterTypeOpen} onOpenChange={setCreateMeterTypeOpen}>
         <DialogContent>
