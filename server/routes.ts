@@ -1282,9 +1282,14 @@ export async function registerRoutes(
         }
         
         if (action === "assign") {
-          const updates = assigneeType === "user" 
-            ? { assignedUserId: assigneeId, assignedGroupId: null }
-            : { assignedGroupId: assigneeId, assignedUserId: null };
+          let updates: { assignedUserId?: string | null; assignedGroupId?: string | null };
+          if (assigneeType === "user") {
+            updates = { assignedUserId: assigneeId, assignedGroupId: null };
+          } else {
+            const groupIdMatch = assigneeId.match(/^group:(\d+)$/);
+            const numericGroupId = groupIdMatch ? groupIdMatch[1] : assigneeId;
+            updates = { assignedGroupId: numericGroupId, assignedUserId: null };
+          }
           
           await workOrderStorage.updateWorkOrder(woId, updates, updatedByName);
         } else {
