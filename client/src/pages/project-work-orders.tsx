@@ -479,9 +479,9 @@ export default function ProjectWorkOrders() {
         signatureName: signatureName || null,
       });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/work-orders`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/work-orders/stats`] });
+    onSuccess: async () => {
+      await queryClient.refetchQueries({ queryKey: [`/api/projects/${projectId}/work-orders`] });
+      await queryClient.refetchQueries({ queryKey: [`/api/projects/${projectId}/work-orders/stats`] });
       setIsCreatingWorkOrder(false);
       form.reset();
       signaturePadRef.current?.clear();
@@ -535,8 +535,8 @@ export default function ProjectWorkOrders() {
       });
     },
     onSuccess: async (response) => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/work-orders`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/work-orders/stats`] });
+      await queryClient.refetchQueries({ queryKey: [`/api/projects/${projectId}/work-orders`] });
+      await queryClient.refetchQueries({ queryKey: [`/api/projects/${projectId}/work-orders/stats`] });
       // Keep the form open with refreshed data
       try {
         const updatedWorkOrder = await response.json();
@@ -569,9 +569,9 @@ export default function ProjectWorkOrders() {
       if (accessDenied) throw new Error("403: Access denied");
       return apiRequest("DELETE", `/api/projects/${projectId}/work-orders/${id}`);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/work-orders`] });
-      queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/work-orders/stats`] });
+    onSuccess: async () => {
+      await queryClient.refetchQueries({ queryKey: [`/api/projects/${projectId}/work-orders`] });
+      await queryClient.refetchQueries({ queryKey: [`/api/projects/${projectId}/work-orders/stats`] });
       toast({ title: "Work order deleted" });
     },
     onError: (error: any) => {
