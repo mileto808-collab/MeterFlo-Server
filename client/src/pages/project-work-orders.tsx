@@ -68,6 +68,8 @@ import {
 import { Users, ChevronDown } from "lucide-react";
 import SignaturePad, { SignaturePadRef } from "@/components/signature-pad";
 import { WorkOrderDetail } from "@/components/work-order-detail";
+import { ScannerInput } from "@/components/scanner-input";
+import { GPSCapture } from "@/components/gps-capture";
 
 type Assignee = {
   type: "user" | "group";
@@ -1824,7 +1826,12 @@ export default function ProjectWorkOrders() {
                       <FormItem>
                         <FormLabel>Old Meter ID</FormLabel>
                         <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="OLD-12345" data-testid="input-create-old-meter-id" />
+                          <ScannerInput 
+                            value={field.value || ""} 
+                            onChange={field.onChange} 
+                            placeholder="OLD-12345" 
+                            data-testid="input-create-old-meter-id" 
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -1857,7 +1864,12 @@ export default function ProjectWorkOrders() {
                       <FormItem>
                         <FormLabel>New Meter ID</FormLabel>
                         <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="NEW-67890" data-testid="input-create-new-meter-id" />
+                          <ScannerInput 
+                            value={field.value || ""} 
+                            onChange={field.onChange} 
+                            placeholder="NEW-67890" 
+                            data-testid="input-create-new-meter-id" 
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -1890,7 +1902,12 @@ export default function ProjectWorkOrders() {
                       <FormItem>
                         <FormLabel>Old GPS Coordinates</FormLabel>
                         <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="40.7128,-74.0060" data-testid="input-create-old-gps" />
+                          <GPSCapture 
+                            value={field.value || ""} 
+                            onChange={field.onChange} 
+                            placeholder="40.7128,-74.0060" 
+                            data-testid="input-create-old-gps" 
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -1903,7 +1920,12 @@ export default function ProjectWorkOrders() {
                       <FormItem>
                         <FormLabel>New GPS Coordinates</FormLabel>
                         <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="40.7128,-74.0060" data-testid="input-create-new-gps" />
+                          <GPSCapture 
+                            value={field.value || ""} 
+                            onChange={field.onChange} 
+                            placeholder="40.7128,-74.0060" 
+                            data-testid="input-create-new-gps" 
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>

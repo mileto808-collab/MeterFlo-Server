@@ -1,0 +1,312 @@
+import { useState, useRef, useEffect, useCallback } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Scan, QrCode, Keyboard, ChevronDown, Camera, X } from "lucide-react";
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
+
+interface ScannerInputProps {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  disabled?: boolean;
+  "data-testid"?: string;
+}
+
+type ScanMode = "manual" | "barcode" | "qrcode";
+
+export function ScannerInput({
+  value,
+  onChange,
+  placeholder = "Enter ID...",
+  disabled = false,
+  "data-testid": testId,
+}: ScannerInputProps) {
+  const [scanMode, setScanMode] = useState<ScanMode>("manual");
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const scannerContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+        navigator.userAgent
+      );
+      setIsMobile(mobile);
+    };
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (scannerRef.current) {
+        scannerRef.current.stop().catch(() => {});
+        scannerRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleScanResult = useCallback((decodedText: string) => {
+    onChange(decodedText);
+    stopScanning();
+  }, [onChange]);
+
+  const stopScanning = useCallback(async () => {
+    if (scannerRef.current) {
+      try {
+        await scannerRef.current.stop();
+        scannerRef.current.clear();
+      } catch (e) {
+        console.error("Error stopping scanner:", e);
+      }
+      scannerRef.current = null;
+    }
+    setIsScanning(false);
+    setScanError(null);
+  }, []);
+
+  const startQRScanning = useCallback(async () => {
+    setScanError(null);
+    setIsScanning(true);
+
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    const containerId = "qr-scanner-container";
+    const container = document.getElementById(containerId);
+    
+    if (!container) {
+      setScanError("Scanner container not found");
+      setIsScanning(false);
+      return;
+    }
+
+    try {
+      scannerRef.current = new Html5Qrcode(containerId, {
+        formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+        verbose: false,
+      });
+      
+      await scannerRef.current.start(
+        { facingMode: "environment" },
+        {
+          fps: 10,
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1,
+        },
+        (decodedText) => {
+          handleScanResult(decodedText);
+        },
+        () => {}
+      );
+    } catch (err: any) {
+      console.error("QR Scanner error:", err);
+      setScanError(err?.message || "Failed to access camera. Please check permissions.");
+      setIsScanning(false);
+    }
+  }, [handleScanResult]);
+
+  const startBarcodeScanning = useCallback(async () => {
+    if (isMobile) {
+      setScanError(null);
+      setIsScanning(true);
+
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      const containerId = "qr-scanner-container";
+      const container = document.getElementById(containerId);
+      
+      if (!container) {
+        setScanError("Scanner container not found");
+        setIsScanning(false);
+        return;
+      }
+
+      try {
+        const barcodeFormats = [
+          Html5QrcodeSupportedFormats.CODE_128,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.CODE_93,
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.UPC_A,
+          Html5QrcodeSupportedFormats.UPC_E,
+          Html5QrcodeSupportedFormats.ITF,
+          Html5QrcodeSupportedFormats.CODABAR,
+        ];
+        
+        scannerRef.current = new Html5Qrcode(containerId, {
+          formatsToSupport: barcodeFormats,
+          verbose: false,
+        });
+        
+        await scannerRef.current.start(
+          { facingMode: "environment" },
+          {
+            fps: 10,
+            qrbox: { width: 300, height: 150 },
+            aspectRatio: 2,
+          },
+          (decodedText) => {
+            handleScanResult(decodedText);
+          },
+          () => {}
+        );
+      } catch (err: any) {
+        console.error("Barcode Scanner error:", err);
+        setScanError(err?.message || "Failed to access camera. Please check permissions.");
+        setIsScanning(false);
+      }
+    } else {
+      if (inputRef.current) {
+        inputRef.current.focus();
+        inputRef.current.select();
+      }
+    }
+  }, [isMobile, handleScanResult]);
+
+  const handleModeSelect = (mode: ScanMode) => {
+    setScanMode(mode);
+    setScanError(null);
+    
+    if (mode === "qrcode") {
+      startQRScanning();
+    } else if (mode === "barcode") {
+      startBarcodeScanning();
+    } else if (mode === "manual") {
+      if (inputRef.current) {
+        inputRef.current.focus();
+      }
+    }
+  };
+
+  const handleDialogClose = () => {
+    stopScanning();
+  };
+
+  const getModeIcon = () => {
+    switch (scanMode) {
+      case "barcode":
+        return <Scan className="h-4 w-4" />;
+      case "qrcode":
+        return <QrCode className="h-4 w-4" />;
+      default:
+        return <Keyboard className="h-4 w-4" />;
+    }
+  };
+
+  const getModeLabel = () => {
+    switch (scanMode) {
+      case "barcode":
+        return isMobile ? "Scan Barcode" : "HID Barcode";
+      case "qrcode":
+        return "Scan QR";
+      default:
+        return "Manual";
+    }
+  };
+
+  return (
+    <div className="flex gap-1">
+      <Input
+        ref={inputRef}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={scanMode === "barcode" && !isMobile ? "Scan with HID device..." : placeholder}
+        disabled={disabled}
+        data-testid={testId}
+        className="flex-1"
+      />
+      
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            variant="outline"
+            size="default"
+            disabled={disabled}
+            className="gap-1 px-2"
+            data-testid={`${testId}-mode-trigger`}
+          >
+            {getModeIcon()}
+            <span className="hidden sm:inline text-xs">{getModeLabel()}</span>
+            <ChevronDown className="h-3 w-3" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => handleModeSelect("manual")} data-testid={`${testId}-mode-manual`}>
+            <Keyboard className="h-4 w-4 mr-2" />
+            Manual Entry
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => handleModeSelect("barcode")} data-testid={`${testId}-mode-barcode`}>
+            <Scan className="h-4 w-4 mr-2" />
+            {isMobile ? "Scan Barcode (Camera)" : "Barcode (HID Scanner)"}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => handleModeSelect("qrcode")} data-testid={`${testId}-mode-qrcode`}>
+            <QrCode className="h-4 w-4 mr-2" />
+            Scan QR Code (Camera)
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <Dialog open={isScanning} onOpenChange={(open) => !open && handleDialogClose()}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Camera className="h-5 w-5" />
+              {scanMode === "qrcode" ? "Scan QR Code" : "Scan Barcode"}
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div 
+              id="qr-scanner-container" 
+              ref={scannerContainerRef}
+              className="w-full aspect-square bg-muted rounded-lg overflow-hidden"
+            />
+            
+            {scanError && (
+              <div className="p-3 bg-destructive/10 text-destructive rounded-md text-sm">
+                {scanError}
+              </div>
+            )}
+            
+            <p className="text-sm text-muted-foreground text-center">
+              {scanMode === "qrcode" 
+                ? "Point your camera at a QR code"
+                : "Point your camera at a barcode"}
+            </p>
+            
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleDialogClose}
+              className="w-full"
+              data-testid={`${testId}-cancel-scan`}
+            >
+              <X className="h-4 w-4 mr-2" />
+              Cancel
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+export default ScannerInput;
