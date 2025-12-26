@@ -683,7 +683,7 @@ export async function registerRoutes(
       }
       
       const prefs = await storage.getUserColumnPreferences(targetUserId, req.params.pageKey);
-      res.json(prefs || { visibleColumns: [] });
+      res.json(prefs || { visibleColumns: [], stickyColumns: [] });
     } catch (error) {
       console.error("Error fetching column preferences:", error);
       res.status(500).json({ message: "Failed to fetch column preferences" });
@@ -699,12 +699,15 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Forbidden" });
       }
       
-      const { visibleColumns } = req.body;
+      const { visibleColumns, stickyColumns } = req.body;
       if (!Array.isArray(visibleColumns)) {
         return res.status(400).json({ message: "visibleColumns must be an array" });
       }
+      if (stickyColumns !== undefined && !Array.isArray(stickyColumns)) {
+        return res.status(400).json({ message: "stickyColumns must be an array" });
+      }
       
-      const prefs = await storage.setUserColumnPreferences(targetUserId, req.params.pageKey, visibleColumns);
+      const prefs = await storage.setUserColumnPreferences(targetUserId, req.params.pageKey, visibleColumns, stickyColumns);
       res.json(prefs);
     } catch (error) {
       console.error("Error saving column preferences:", error);

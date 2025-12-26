@@ -128,6 +128,7 @@ export const userColumnPreferences = pgTable("user_column_preferences", {
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   pageKey: varchar("page_key", { length: 50 }).notNull(),
   visibleColumns: jsonb("visible_columns").notNull(),
+  stickyColumns: jsonb("sticky_columns").default([]),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
@@ -460,6 +461,7 @@ export const insertUserColumnPreferencesSchema = z.object({
   userId: z.string(),
   pageKey: z.string().max(50),
   visibleColumns: z.array(z.string()),
+  stickyColumns: z.array(z.string()).optional(),
 });
 
 export const insertUserFilterPreferencesSchema = z.object({
