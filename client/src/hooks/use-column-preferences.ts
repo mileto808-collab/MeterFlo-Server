@@ -9,14 +9,26 @@ interface ColumnPreferencesData {
   stickyColumns: string[];
 }
 
+// Default columns for field technicians on work orders page
+const FIELD_TECH_WORK_ORDER_COLUMNS = ["customerWoId", "address", "oldMeterId", "status"];
+
 export function useColumnPreferences(
   pageKey: string,
   allColumns: ColumnConfig[]
 ) {
   const { user } = useAuth();
   const userId = user?.id;
+  const subroleKey = user?.subroleKey;
 
-  const defaultColumns = allColumns.map(c => c.key);
+  // Determine default columns based on subrole
+  const defaultColumns = useMemo(() => {
+    // Field technicians get a specific subset for work orders page
+    if (subroleKey === "field_technician" && pageKey === "work_orders") {
+      return FIELD_TECH_WORK_ORDER_COLUMNS;
+    }
+    // All other users get all columns
+    return allColumns.map(c => c.key);
+  }, [subroleKey, pageKey, allColumns]);
 
   const { data, isLoading } = useQuery<ColumnPreferencesData>({
     queryKey: ["/api/users", userId, "column-preferences", pageKey],
