@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState, useMemo, useEffect, useLayoutEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { Link, useLocation } from "wouter";
 import { BackToTop } from "@/components/ui/back-to-top";
 import { TablePagination } from "@/components/ui/table-pagination";
@@ -139,7 +139,6 @@ export default function SearchReports() {
   const [pageSize, setPageSize] = useState(50);
 
   const tableScrollRef = useRef<HTMLDivElement>(null);
-  const topScrollRef = useRef<HTMLDivElement>(null);
   const tableRef = useRef<HTMLTableElement>(null);
 
   const columns: ColumnConfig[] = useMemo(() => [
@@ -385,49 +384,6 @@ export default function SearchReports() {
     setIsSearchActive(false);
     setSortCriteria([]);
   };
-
-  // Sync horizontal scroll between top scrollbar and table
-  useEffect(() => {
-    const tableScroll = tableScrollRef.current;
-    const topScroll = topScrollRef.current;
-    if (!tableScroll || !topScroll) return;
-
-    let isSyncing = false;
-    const syncScroll = (source: HTMLElement, target: HTMLElement) => {
-      if (isSyncing) return;
-      isSyncing = true;
-      target.scrollLeft = source.scrollLeft;
-      requestAnimationFrame(() => { isSyncing = false; });
-    };
-
-    const handleTableScroll = () => syncScroll(tableScroll, topScroll);
-    const handleTopScroll = () => syncScroll(topScroll, tableScroll);
-
-    tableScroll.addEventListener("scroll", handleTableScroll);
-    topScroll.addEventListener("scroll", handleTopScroll);
-    return () => {
-      tableScroll.removeEventListener("scroll", handleTableScroll);
-      topScroll.removeEventListener("scroll", handleTopScroll);
-    };
-  }, []);
-
-  // Update top scrollbar width to match table width
-  useLayoutEffect(() => {
-    const updateTopScrollWidth = () => {
-      if (tableRef.current && topScrollRef.current) {
-        const spacer = topScrollRef.current.firstChild as HTMLElement;
-        if (spacer) {
-          spacer.style.width = `${tableRef.current.scrollWidth}px`;
-        }
-      }
-    };
-    updateTopScrollWidth();
-    const resizeObserver = new ResizeObserver(updateTopScrollWidth);
-    if (tableRef.current) {
-      resizeObserver.observe(tableRef.current);
-    }
-    return () => resizeObserver.disconnect();
-  }, [searchResults, visibleColumns]);
 
   const handleSort = (column: string, event: React.MouseEvent) => {
     const existingIndex = sortCriteria.findIndex(sc => sc.column === column);
@@ -1571,14 +1527,6 @@ export default function SearchReports() {
                     onPageSizeChange={handlePageSizeChange}
                     className="mb-4"
                   />
-                  {/* Top scrollbar for horizontal scrolling */}
-                  <div
-                    ref={topScrollRef}
-                    className="overflow-x-auto overflow-y-hidden h-4 border-b"
-                    style={{ scrollbarWidth: "auto" }}
-                  >
-                    <div style={{ height: "1px", width: "100%" }} />
-                  </div>
                   <div ref={tableScrollRef} className="overflow-x-auto w-full max-h-[calc(100vh-350px)] overflow-y-auto">
                     <Table ref={tableRef} noWrapper>
                       <TableHeader>

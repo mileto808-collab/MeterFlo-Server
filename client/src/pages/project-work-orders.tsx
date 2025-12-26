@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, Link, useLocation } from "wouter";
-import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -146,7 +146,6 @@ export default function ProjectWorkOrders() {
   const signaturePadRef = useRef<SignaturePadRef>(null);
   const editSignaturePadRef = useRef<SignaturePadRef>(null);
   const tableScrollRef = useRef<HTMLDivElement>(null);
-  const topScrollRef = useRef<HTMLDivElement>(null);
   const tableRef = useRef<HTMLTableElement>(null);
 
   // Column configuration for the work orders table
@@ -364,49 +363,6 @@ export default function ProjectWorkOrders() {
       }
     }
   }, [projectError, workOrdersError, statsError]);
-
-  // Sync horizontal scroll between top scrollbar and table
-  useEffect(() => {
-    const tableScroll = tableScrollRef.current;
-    const topScroll = topScrollRef.current;
-    if (!tableScroll || !topScroll) return;
-
-    let isSyncing = false;
-    const syncScroll = (source: HTMLElement, target: HTMLElement) => {
-      if (isSyncing) return;
-      isSyncing = true;
-      target.scrollLeft = source.scrollLeft;
-      requestAnimationFrame(() => { isSyncing = false; });
-    };
-
-    const handleTableScroll = () => syncScroll(tableScroll, topScroll);
-    const handleTopScroll = () => syncScroll(topScroll, tableScroll);
-
-    tableScroll.addEventListener("scroll", handleTableScroll);
-    topScroll.addEventListener("scroll", handleTopScroll);
-    return () => {
-      tableScroll.removeEventListener("scroll", handleTableScroll);
-      topScroll.removeEventListener("scroll", handleTopScroll);
-    };
-  }, []);
-
-  // Update top scrollbar width to match table width
-  useLayoutEffect(() => {
-    const updateTopScrollWidth = () => {
-      if (tableRef.current && topScrollRef.current) {
-        const spacer = topScrollRef.current.firstChild as HTMLElement;
-        if (spacer) {
-          spacer.style.width = `${tableRef.current.scrollWidth}px`;
-        }
-      }
-    };
-    updateTopScrollWidth();
-    const resizeObserver = new ResizeObserver(updateTopScrollWidth);
-    if (tableRef.current) {
-      resizeObserver.observe(tableRef.current);
-    }
-    return () => resizeObserver.disconnect();
-  }, [workOrders, visibleColumns]);
 
   // Reset filters when project changes
   useEffect(() => {
@@ -3500,14 +3456,6 @@ export default function ProjectWorkOrders() {
       ) : (
         <Card>
           <CardContent className="p-0">
-            {/* Top scrollbar for horizontal scrolling */}
-            <div
-              ref={topScrollRef}
-              className="overflow-x-auto overflow-y-hidden h-4 border-b"
-              style={{ scrollbarWidth: "auto" }}
-            >
-              <div style={{ height: "1px", width: "100%" }} />
-            </div>
             <div ref={tableScrollRef} className="overflow-x-auto w-full max-h-[calc(100vh-350px)] overflow-y-auto">
               <Table ref={tableRef} noWrapper>
                 <TableHeader>
