@@ -13,7 +13,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Scan, QrCode, Keyboard, ChevronDown, Camera, X } from "lucide-react";
+import { Scan, QrCode, Keyboard, ChevronDown, Camera, X, Flashlight, FlashlightOff } from "lucide-react";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 
 interface ScannerInputProps {
@@ -37,6 +37,8 @@ export function ScannerInput({
   const [isScanning, setIsScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const [torchSupported, setTorchSupported] = useState(false);
+  const [torchEnabled, setTorchEnabled] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const scannerContainerRef = useRef<HTMLDivElement>(null);
@@ -79,11 +81,53 @@ export function ScannerInput({
     }
     setIsScanning(false);
     setScanError(null);
+    setTorchSupported(false);
+    setTorchEnabled(false);
   }, []);
+
+  const applyAutofocusAndCheckTorch = useCallback(async () => {
+    if (!scannerRef.current) return;
+
+    try {
+      const capabilities = scannerRef.current.getRunningTrackCapabilities() as any;
+      const settings = scannerRef.current.getRunningTrackSettings() as any;
+
+      if (capabilities?.focusMode && Array.isArray(capabilities.focusMode) && capabilities.focusMode.includes("continuous")) {
+        await scannerRef.current.applyVideoConstraints({
+          focusMode: "continuous",
+          advanced: [{ focusMode: "continuous" }],
+        } as unknown as MediaTrackConstraints);
+      }
+
+      const hasTorch = capabilities?.torch === true || "torch" in settings;
+      setTorchSupported(hasTorch);
+    } catch (err) {
+      console.log("Could not apply autofocus or check torch:", err);
+    }
+  }, []);
+
+  const toggleTorch = useCallback(async () => {
+    if (!scannerRef.current || !torchSupported) return;
+
+    try {
+      const newTorchState = !torchEnabled;
+      await scannerRef.current.applyVideoConstraints({
+        torch: newTorchState,
+        advanced: [{ torch: newTorchState }],
+      } as unknown as MediaTrackConstraints);
+
+      const settings = scannerRef.current.getRunningTrackSettings() as any;
+      setTorchEnabled(settings?.torch === true);
+    } catch (err) {
+      console.error("Failed to toggle torch:", err);
+    }
+  }, [torchSupported, torchEnabled]);
 
   const startQRScanning = useCallback(async () => {
     setScanError(null);
     setIsScanning(true);
+    setTorchSupported(false);
+    setTorchEnabled(false);
 
     await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -114,17 +158,22 @@ export function ScannerInput({
         },
         () => {}
       );
+
+      await applyAutofocusAndCheckTorch();
     } catch (err: any) {
       console.error("QR Scanner error:", err);
       setScanError(err?.message || "Failed to access camera. Please check permissions.");
       setIsScanning(false);
+      scannerRef.current = null;
     }
-  }, [handleScanResult]);
+  }, [handleScanResult, applyAutofocusAndCheckTorch]);
 
   const startBarcodeScanning = useCallback(async () => {
     if (isMobile) {
       setScanError(null);
       setIsScanning(true);
+      setTorchSupported(false);
+      setTorchEnabled(false);
 
       await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -167,10 +216,13 @@ export function ScannerInput({
           },
           () => {}
         );
+
+        await applyAutofocusAndCheckTorch();
       } catch (err: any) {
         console.error("Barcode Scanner error:", err);
         setScanError(err?.message || "Failed to access camera. Please check permissions.");
         setIsScanning(false);
+        scannerRef.current = null;
       }
     } else {
       if (inputRef.current) {
@@ -178,7 +230,7 @@ export function ScannerInput({
         inputRef.current.select();
       }
     }
-  }, [isMobile, handleScanResult]);
+  }, [isMobile, handleScanResult, applyAutofocusAndCheckTorch]);
 
   const handleModeSelect = (mode: ScanMode) => {
     setScanMode(mode);
@@ -267,9 +319,27 @@ export function ScannerInput({
       <Dialog open={isScanning} onOpenChange={(open) => !open && handleDialogClose()}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Camera className="h-5 w-5" />
-              {scanMode === "qrcode" ? "Scan QR Code" : "Scan Barcode"}
+            <DialogTitle className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Camera className="h-5 w-5" />
+                {scanMode === "qrcode" ? "Scan QR Code" : "Scan Barcode"}
+              </div>
+              {torchSupported && (
+                <Button
+                  type="button"
+                  variant={torchEnabled ? "default" : "outline"}
+                  size="icon"
+                  onClick={toggleTorch}
+                  data-testid={`${testId}-toggle-torch`}
+                  title={torchEnabled ? "Turn off flashlight" : "Turn on flashlight"}
+                >
+                  {torchEnabled ? (
+                    <Flashlight className="h-4 w-4" />
+                  ) : (
+                    <FlashlightOff className="h-4 w-4" />
+                  )}
+                </Button>
+              )}
             </DialogTitle>
           </DialogHeader>
           
@@ -290,6 +360,11 @@ export function ScannerInput({
               {scanMode === "qrcode" 
                 ? "Point your camera at a QR code"
                 : "Point your camera at a barcode"}
+              {torchSupported && !torchEnabled && (
+                <span className="block mt-1 text-xs">
+                  Tap the flashlight icon for low-light conditions
+                </span>
+              )}
             </p>
             
             <Button
