@@ -2,7 +2,8 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Columns3, ChevronUp, ChevronDown, GripVertical } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Columns3, ChevronUp, ChevronDown, GripVertical, Pin, PinOff } from "lucide-react";
 
 export interface ColumnConfig {
   key: string;
@@ -16,6 +17,8 @@ interface ColumnSelectorProps {
   onChange: (visibleColumns: string[]) => void;
   disabled?: boolean;
   orderedColumns?: ColumnConfig[];
+  stickyColumns?: string[];
+  onStickyChange?: (stickyColumns: string[]) => void;
 }
 
 export function ColumnSelector({ 
@@ -23,7 +26,9 @@ export function ColumnSelector({
   visibleColumns, 
   onChange,
   disabled = false,
-  orderedColumns
+  orderedColumns,
+  stickyColumns = [],
+  onStickyChange
 }: ColumnSelectorProps) {
   const [open, setOpen] = useState(false);
 
@@ -82,6 +87,15 @@ export function ColumnSelector({
     onChange(newOrder);
   };
 
+  const handleToggleSticky = (key: string) => {
+    if (!onStickyChange) return;
+    if (stickyColumns.includes(key)) {
+      onStickyChange(stickyColumns.filter(k => k !== key));
+    } else {
+      onStickyChange([...stickyColumns, key]);
+    }
+  };
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -133,6 +147,7 @@ export function ColumnSelector({
             const visibleIndex = visibleColumns.indexOf(column.key);
             const isFirst = visibleIndex === 0;
             const isLast = visibleIndex === visibleColumns.length - 1;
+            const isSticky = stickyColumns.includes(column.key);
             
             return (
               <div 
@@ -156,6 +171,24 @@ export function ColumnSelector({
                 </label>
                 {isVisible && (
                   <div className="flex gap-0.5 flex-shrink-0">
+                    {onStickyChange && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className={`h-6 w-6 ${isSticky ? 'text-primary' : ''}`}
+                            onClick={() => handleToggleSticky(column.key)}
+                            data-testid={`button-pin-${column.key}`}
+                          >
+                            {isSticky ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          {isSticky ? 'Unfreeze column' : 'Freeze column'}
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
                     <Button
                       variant="ghost"
                       size="icon"
