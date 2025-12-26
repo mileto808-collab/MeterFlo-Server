@@ -153,24 +153,42 @@ export function ScannerInput({
 
     setIsFocusing(true);
     try {
-      const capabilities = scannerRef.current.getRunningTrackCapabilities() as any;
+      const videoElement = document.querySelector('#qr-scanner-container video') as HTMLVideoElement;
+      if (!videoElement?.srcObject) {
+        console.log("No video element or srcObject found");
+        return;
+      }
+      
+      const stream = videoElement.srcObject as MediaStream;
+      const videoTrack = stream.getVideoTracks()[0];
+      if (!videoTrack) {
+        console.log("No video track found");
+        return;
+      }
+
+      const capabilities = videoTrack.getCapabilities() as any;
+      console.log("Focus capabilities:", capabilities?.focusMode);
       
       if (capabilities?.focusMode && Array.isArray(capabilities.focusMode)) {
         if (capabilities.focusMode.includes("single-shot")) {
-          await scannerRef.current.applyVideoConstraints({
-            focusMode: "single-shot",
-            advanced: [{ focusMode: "single-shot" }],
-          } as unknown as MediaTrackConstraints);
-        } else if (capabilities.focusMode.includes("manual")) {
-          await scannerRef.current.applyVideoConstraints({
-            focusMode: "manual",
-            advanced: [{ focusMode: "manual" }],
-          } as unknown as MediaTrackConstraints);
+          await videoTrack.applyConstraints({
+            advanced: [{ focusMode: "single-shot" } as any],
+          });
+          console.log("Single-shot focus triggered");
+        } else if (capabilities.focusMode.includes("manual") && capabilities.focusMode.includes("continuous")) {
+          await videoTrack.applyConstraints({
+            advanced: [{ focusMode: "manual" } as any],
+          });
           await new Promise(resolve => setTimeout(resolve, 100));
-          await scannerRef.current.applyVideoConstraints({
-            focusMode: "continuous",
-            advanced: [{ focusMode: "continuous" }],
-          } as unknown as MediaTrackConstraints);
+          await videoTrack.applyConstraints({
+            advanced: [{ focusMode: "continuous" } as any],
+          });
+          console.log("Manual focus toggle triggered");
+        } else if (capabilities.focusMode.includes("continuous")) {
+          await videoTrack.applyConstraints({
+            advanced: [{ focusMode: "continuous" } as any],
+          });
+          console.log("Continuous focus re-applied (camera will re-autofocus)");
         }
       }
     } catch (err) {
@@ -281,19 +299,23 @@ export function ScannerInput({
           Html5QrcodeSupportedFormats.UPC_E,
           Html5QrcodeSupportedFormats.ITF,
           Html5QrcodeSupportedFormats.CODABAR,
+          Html5QrcodeSupportedFormats.PDF_417,
+          Html5QrcodeSupportedFormats.DATA_MATRIX,
         ];
         
         scannerRef.current = new Html5Qrcode(containerId, {
           formatsToSupport: barcodeFormats,
           verbose: false,
+          experimentalFeatures: {
+            useBarCodeDetectorIfSupported: true,
+          },
         });
         
         await scannerRef.current.start(
           { facingMode: "environment" },
           {
-            fps: 10,
-            qrbox: { width: 300, height: 150 },
-            aspectRatio: 2,
+            fps: 15,
+            disableFlip: true,
           },
           (decodedText) => {
             handleScanResult(decodedText);
@@ -452,7 +474,7 @@ export function ScannerInput({
             <div 
               id="qr-scanner-container" 
               ref={scannerContainerRef}
-              className={`w-full aspect-square bg-muted rounded-lg overflow-hidden ${pendingResult ? 'hidden' : ''}`}
+              className={`w-full bg-muted rounded-lg overflow-hidden ${pendingResult ? 'hidden' : ''} ${scanMode === 'barcode' ? 'aspect-video' : 'aspect-square'}`}
             />
             
             {pendingResult ? (
