@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { ScannerInput } from "@/components/scanner-input";
+import { GPSCapture } from "@/components/gps-capture";
 import {
   Form,
   FormControl,
@@ -422,7 +424,12 @@ export function WorkOrderDetail({
                           <FormItem>
                             <FormLabel>Meter ID</FormLabel>
                             <FormControl>
-                              <Input {...field} value={field.value || ""} placeholder="OLD-12345" data-testid="input-old-meter-id" />
+                              <ScannerInput 
+                                value={field.value || ""} 
+                                onChange={field.onChange} 
+                                placeholder="OLD-12345" 
+                                data-testid="input-old-meter-id" 
+                              />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -495,7 +502,12 @@ export function WorkOrderDetail({
                           <FormItem className="md:col-span-3">
                             <FormLabel>GPS Coordinates</FormLabel>
                             <FormControl>
-                              <Input {...field} value={field.value || ""} placeholder="40.7128,-74.0060" data-testid="input-old-gps" />
+                              <GPSCapture 
+                                value={field.value || ""} 
+                                onChange={field.onChange} 
+                                placeholder="40.7128,-74.0060" 
+                                data-testid="input-old-gps" 
+                              />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -515,7 +527,12 @@ export function WorkOrderDetail({
                           <FormItem>
                             <FormLabel>Meter ID</FormLabel>
                             <FormControl>
-                              <Input {...field} value={field.value || ""} placeholder="NEW-67890" data-testid="input-new-meter-id" />
+                              <ScannerInput 
+                                value={field.value || ""} 
+                                onChange={field.onChange} 
+                                placeholder="NEW-67890" 
+                                data-testid="input-new-meter-id" 
+                              />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -588,7 +605,12 @@ export function WorkOrderDetail({
                           <FormItem className="md:col-span-3">
                             <FormLabel>GPS Coordinates</FormLabel>
                             <FormControl>
-                              <Input {...field} value={field.value || ""} placeholder="40.7128,-74.0060" data-testid="input-new-gps" />
+                              <GPSCapture 
+                                value={field.value || ""} 
+                                onChange={field.onChange} 
+                                placeholder="40.7128,-74.0060" 
+                                data-testid="input-new-gps" 
+                              />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
