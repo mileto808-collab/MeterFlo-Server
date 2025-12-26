@@ -449,6 +449,12 @@ export function ScannerInput({
           </DialogHeader>
           
           <div className="space-y-4">
+            <div 
+              id="qr-scanner-container" 
+              ref={scannerContainerRef}
+              className={`w-full aspect-square bg-muted rounded-lg overflow-hidden ${pendingResult ? 'hidden' : ''}`}
+            />
+            
             {pendingResult ? (
               <div className="space-y-4">
                 <div className="p-4 bg-muted rounded-lg text-center">
@@ -482,12 +488,6 @@ export function ScannerInput({
               </div>
             ) : (
               <>
-                <div 
-                  id="qr-scanner-container" 
-                  ref={scannerContainerRef}
-                  className="w-full aspect-square bg-muted rounded-lg overflow-hidden"
-                />
-                
                 {scanError && (
                   <div className="p-3 bg-destructive/10 text-destructive rounded-md text-sm">
                     {scanError}
