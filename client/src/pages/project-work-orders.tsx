@@ -186,7 +186,7 @@ export default function ProjectWorkOrders() {
     { key: "updatedAt", label: "Updated At" },
   ], []);
 
-  const { visibleColumns, setVisibleColumns, isColumnVisible, isLoading: columnPrefsLoading, orderedColumns } = useColumnPreferences("work_orders", workOrderColumns);
+  const { visibleColumns, setVisibleColumns, isColumnVisible, isLoading: columnPrefsLoading, orderedColumns, stickyColumns, setStickyColumns } = useColumnPreferences("work_orders", workOrderColumns);
 
   // Filter configuration - matches columns (excluding attachments and signature_data)
   const workOrderFilters: FilterConfig[] = useMemo(() => [
@@ -836,16 +836,40 @@ export default function ProjectWorkOrders() {
     updatedAt: { label: "Updated At", sortKey: "updatedAt" },
   };
 
+  // Calculate sticky column offsets based on ordered visible columns
+  const getStickyStyle = (key: string, isHeader: boolean = false): { className: string; style?: React.CSSProperties } => {
+    if (!stickyColumns.includes(key)) {
+      return { className: isHeader ? "sticky top-0 z-30 bg-muted" : "" };
+    }
+    
+    // Find position of this column among all sticky columns in the visible order
+    const visibleStickyColumns = orderedColumns.filter(col => stickyColumns.includes(col.key)).map(col => col.key);
+    const stickyIndex = visibleStickyColumns.indexOf(key);
+    
+    // Estimate left offset (using 150px per column as default width)
+    const leftOffset = stickyIndex * 150;
+    
+    const stickyClass = isHeader 
+      ? "sticky top-0 z-40 bg-muted shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]"
+      : "sticky z-20 bg-background shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]";
+    
+    return {
+      className: stickyClass,
+      style: { left: `${leftOffset}px` }
+    };
+  };
+
   // Render a table header cell for a given column key
   const renderHeaderCell = (key: string, isFirst: boolean = false) => {
     const config = columnHeaderConfig[key];
     if (!config) return null;
     const sortKey = config.sortKey || key;
-    const stickyFirstClass = isFirst ? "left-0 z-40 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]" : "";
+    const { className: stickyClass, style: stickyStyle } = getStickyStyle(key, true);
     return (
       <TableHead 
         key={key}
-        className={`sticky top-0 z-30 bg-muted cursor-pointer select-none whitespace-nowrap ${stickyFirstClass}`}
+        className={`${stickyClass} cursor-pointer select-none whitespace-nowrap`}
+        style={stickyStyle}
         onClick={(e) => handleSort(sortKey, e)}
         title="Click to sort. Shift+click to add to multi-column sort."
       >
@@ -857,77 +881,78 @@ export default function ProjectWorkOrders() {
   // Render a table data cell for a given column key and work order
   const renderDataCell = (key: string, workOrder: ProjectWorkOrder, isFirst: boolean = false) => {
     const woAny = workOrder as any;
-    const stickyClass = isFirst ? "sticky left-0 z-10 bg-background shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]" : "";
+    const { className: stickyClass, style: stickyStyle } = getStickyStyle(key, false);
     const baseClass = stickyClass;
+    const cellStyle = stickyStyle || {};
     switch (key) {
       case "id":
-        return <TableCell key={key} className={`font-medium text-muted-foreground ${baseClass}`} data-testid={`text-system-wo-id-${workOrder.id}`}>{workOrder.id}</TableCell>;
+        return <TableCell key={key} className={`font-medium text-muted-foreground ${baseClass}`} style={cellStyle} data-testid={`text-system-wo-id-${workOrder.id}`}>{workOrder.id}</TableCell>;
       case "customerWoId":
-        return <TableCell key={key} className={`font-medium ${baseClass}`} data-testid={`text-wo-id-${workOrder.id}`}>{workOrder.customerWoId || "-"}</TableCell>;
+        return <TableCell key={key} className={`font-medium ${baseClass}`} style={cellStyle} data-testid={`text-wo-id-${workOrder.id}`}>{workOrder.customerWoId || "-"}</TableCell>;
       case "customerId":
-        return <TableCell key={key} className={baseClass}>{workOrder.customerId || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{workOrder.customerId || "-"}</TableCell>;
       case "customerName":
-        return <TableCell key={key} className={baseClass}>{workOrder.customerName || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{workOrder.customerName || "-"}</TableCell>;
       case "address":
-        return <TableCell key={key} className={baseClass} data-testid={`text-address-${workOrder.id}`}>{workOrder.address || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle} data-testid={`text-address-${workOrder.id}`}>{workOrder.address || "-"}</TableCell>;
       case "city":
-        return <TableCell key={key} className={baseClass}>{workOrder.city || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{workOrder.city || "-"}</TableCell>;
       case "state":
-        return <TableCell key={key} className={baseClass}>{workOrder.state || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{workOrder.state || "-"}</TableCell>;
       case "zip":
-        return <TableCell key={key} className={baseClass}>{workOrder.zip || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{workOrder.zip || "-"}</TableCell>;
       case "phone":
-        return <TableCell key={key} className={baseClass}>{workOrder.phone || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{workOrder.phone || "-"}</TableCell>;
       case "email":
-        return <TableCell key={key} className={baseClass}>{workOrder.email || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{workOrder.email || "-"}</TableCell>;
       case "route":
-        return <TableCell key={key} className={baseClass} data-testid={`text-route-${workOrder.id}`}>{workOrder.route || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle} data-testid={`text-route-${workOrder.id}`}>{workOrder.route || "-"}</TableCell>;
       case "zone":
-        return <TableCell key={key} className={baseClass} data-testid={`text-zone-${workOrder.id}`}>{workOrder.zone || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle} data-testid={`text-zone-${workOrder.id}`}>{workOrder.zone || "-"}</TableCell>;
       case "serviceType":
-        return <TableCell key={key} className={baseClass} data-testid={`text-service-${workOrder.id}`}>{getServiceTypeBadge(workOrder.serviceType)}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle} data-testid={`text-service-${workOrder.id}`}>{getServiceTypeBadge(workOrder.serviceType)}</TableCell>;
       case "oldMeterId":
-        return <TableCell key={key} className={baseClass} data-testid={`text-old-meter-${workOrder.id}`}>{workOrder.oldMeterId || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle} data-testid={`text-old-meter-${workOrder.id}`}>{workOrder.oldMeterId || "-"}</TableCell>;
       case "oldMeterReading":
-        return <TableCell key={key} className={baseClass}>{workOrder.oldMeterReading ?? "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{workOrder.oldMeterReading ?? "-"}</TableCell>;
       case "oldMeterType":
-        return <TableCell key={key} className={baseClass}>{woAny.oldMeterType || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{woAny.oldMeterType || "-"}</TableCell>;
       case "newMeterId":
-        return <TableCell key={key} className={baseClass}>{workOrder.newMeterId || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{workOrder.newMeterId || "-"}</TableCell>;
       case "newMeterReading":
-        return <TableCell key={key} className={baseClass}>{workOrder.newMeterReading ?? "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{workOrder.newMeterReading ?? "-"}</TableCell>;
       case "newMeterType":
-        return <TableCell key={key} className={baseClass}>{woAny.newMeterType || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{woAny.newMeterType || "-"}</TableCell>;
       case "oldGps":
-        return <TableCell key={key} className={baseClass}>{workOrder.oldGps || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{workOrder.oldGps || "-"}</TableCell>;
       case "newGps":
-        return <TableCell key={key} className={baseClass}>{workOrder.newGps || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{workOrder.newGps || "-"}</TableCell>;
       case "status":
-        return <TableCell key={key} className={baseClass} data-testid={`text-status-${workOrder.id}`}>{getStatusBadge(workOrder.status)}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle} data-testid={`text-status-${workOrder.id}`}>{getStatusBadge(workOrder.status)}</TableCell>;
       case "scheduledAt":
-        return <TableCell key={key} className={baseClass}>{woAny.scheduledAt ? formatDateTime(woAny.scheduledAt) : "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{woAny.scheduledAt ? formatDateTime(woAny.scheduledAt) : "-"}</TableCell>;
       case "scheduledBy":
-        return <TableCell key={key} className={baseClass}>{woAny.scheduledByDisplay || getAssignedUserName(woAny.scheduledBy) || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{woAny.scheduledByDisplay || getAssignedUserName(woAny.scheduledBy) || "-"}</TableCell>;
       case "assignedTo":
-        return <TableCell key={key} className={baseClass}>{getAssignedUserName(woAny.assignedUserId) || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{getAssignedUserName(woAny.assignedUserId) || "-"}</TableCell>;
       case "assignedGroup":
-        return <TableCell key={key} className={baseClass}>{getAssignedGroupName(woAny.assignedGroupId) || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{getAssignedGroupName(woAny.assignedGroupId) || "-"}</TableCell>;
       case "createdBy":
-        return <TableCell key={key} className={baseClass}>{woAny.createdBy || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{woAny.createdBy || "-"}</TableCell>;
       case "updatedBy":
-        return <TableCell key={key} className={baseClass}>{woAny.updatedBy || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{woAny.updatedBy || "-"}</TableCell>;
       case "completedAt":
-        return <TableCell key={key} className={baseClass}>{workOrder.completedAt ? formatDateTime(workOrder.completedAt) : "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{workOrder.completedAt ? formatDateTime(workOrder.completedAt) : "-"}</TableCell>;
       case "completedBy":
-        return <TableCell key={key} className={baseClass}>{woAny.completedByDisplay || getAssignedUserName(woAny.completedBy) || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{woAny.completedByDisplay || getAssignedUserName(woAny.completedBy) || "-"}</TableCell>;
       case "trouble":
-        return <TableCell key={key} className={baseClass}>{getTroubleCodeLabel(woAny.trouble) || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{getTroubleCodeLabel(woAny.trouble) || "-"}</TableCell>;
       case "notes":
-        return <TableCell key={key} className={`max-w-xs truncate ${baseClass}`}>{workOrder.notes || "-"}</TableCell>;
+        return <TableCell key={key} className={`max-w-xs truncate ${baseClass}`} style={cellStyle}>{workOrder.notes || "-"}</TableCell>;
       case "createdAt":
-        return <TableCell key={key} className={baseClass}>{workOrder.createdAt ? formatDateTime(workOrder.createdAt) : "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{workOrder.createdAt ? formatDateTime(workOrder.createdAt) : "-"}</TableCell>;
       case "updatedAt":
-        return <TableCell key={key} className={baseClass}>{workOrder.updatedAt ? formatDateTime(workOrder.updatedAt) : "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{workOrder.updatedAt ? formatDateTime(workOrder.updatedAt) : "-"}</TableCell>;
       default:
         return null;
     }
@@ -3064,6 +3089,8 @@ export default function ProjectWorkOrders() {
                 onChange={setVisibleColumns}
                 disabled={columnPrefsLoading}
                 orderedColumns={orderedColumns}
+                stickyColumns={stickyColumns}
+                onStickyChange={setStickyColumns}
               />
               <FilterSelector
                 allFilters={workOrderFilters}
