@@ -885,11 +885,11 @@ export default function ProjectWorkOrders() {
     const config = columnHeaderConfig[key];
     if (!config) return null;
     const sortKey = config.sortKey || key;
-    const stickyClass = isFirst ? "sticky left-0 z-20 bg-muted shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]" : "";
+    const stickyFirstClass = isFirst ? "left-0 z-20 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]" : "";
     return (
       <TableHead 
         key={key}
-        className={`cursor-pointer select-none whitespace-nowrap ${stickyClass}`}
+        className={`sticky top-0 bg-muted cursor-pointer select-none whitespace-nowrap ${stickyFirstClass}`}
         onClick={(e) => handleSort(sortKey, e)}
         title="Click to sort. Shift+click to add to multi-column sort."
       >
@@ -3503,18 +3503,18 @@ export default function ProjectWorkOrders() {
             {/* Top scrollbar for horizontal scrolling */}
             <div
               ref={topScrollRef}
-              className="overflow-x-auto overflow-y-hidden h-3 border-b"
-              style={{ scrollbarWidth: "thin" }}
+              className="overflow-x-auto overflow-y-hidden h-4 border-b"
+              style={{ scrollbarWidth: "auto" }}
             >
-              <div style={{ height: "1px" }} />
+              <div style={{ height: "1px", width: "100%" }} />
             </div>
             <div ref={tableScrollRef} className="overflow-x-auto w-full max-h-[calc(100vh-350px)] overflow-y-auto">
               <Table ref={tableRef}>
-                <TableHeader className="sticky top-0 z-30 bg-muted">
-                  <TableRow>
+                <TableHeader>
+                  <TableRow className="sticky top-0 z-30 bg-muted">
                     {visibleColumns.map((key, index) => renderHeaderCell(key, index === 0))}
-                    {user?.role !== "customer" && <TableHead className="whitespace-nowrap">Actions</TableHead>}
-                    <TableHead className="w-8"></TableHead>
+                    {user?.role !== "customer" && <TableHead className="sticky top-0 bg-muted whitespace-nowrap">Actions</TableHead>}
+                    <TableHead className="sticky top-0 bg-muted w-8"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
