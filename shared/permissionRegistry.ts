@@ -271,6 +271,13 @@ export const permissionRegistry: PermissionDefinition[] = [
     description: "Delete work orders",
     defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
   },
+  {
+    key: "workOrders.assign",
+    label: "Assign Work Orders",
+    category: "Work Order Actions",
+    description: "Bulk assign or unassign work orders to users or groups",
+    defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
+  },
 
   // User Action permissions - what users can do with user accounts
   {
