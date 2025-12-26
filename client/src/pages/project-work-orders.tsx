@@ -42,7 +42,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useTimezone } from "@/hooks/use-timezone";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, ArrowLeft, Search, ArrowUpDown, ArrowUp, ArrowDown, Download, FileSpreadsheet, FileText, Filter, X, Route, ChevronRight, Paperclip, Eye, FileIcon } from "lucide-react";
+import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, ArrowLeft, Search, ArrowUpDown, ArrowUp, ArrowDown, Download, FileSpreadsheet, FileText, Filter, X, Route, ChevronRight, Paperclip, Eye, FileIcon, ChevronsUp } from "lucide-react";
+import { BackToTop } from "@/components/ui/back-to-top";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
 import { Label } from "@/components/ui/label";
@@ -141,6 +142,9 @@ export default function ProjectWorkOrders() {
 
   const signaturePadRef = useRef<SignaturePadRef>(null);
   const editSignaturePadRef = useRef<SignaturePadRef>(null);
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+  const topScrollRef = useRef<HTMLDivElement>(null);
+  const tableRef = useRef<HTMLTableElement>(null);
 
   // Column configuration for the work orders table
   const workOrderColumns: ColumnConfig[] = useMemo(() => [
@@ -357,6 +361,49 @@ export default function ProjectWorkOrders() {
       }
     }
   }, [projectError, workOrdersError, statsError]);
+
+  // Sync horizontal scroll between top scrollbar and table
+  useEffect(() => {
+    const tableScroll = tableScrollRef.current;
+    const topScroll = topScrollRef.current;
+    if (!tableScroll || !topScroll) return;
+
+    let isSyncing = false;
+    const syncScroll = (source: HTMLElement, target: HTMLElement) => {
+      if (isSyncing) return;
+      isSyncing = true;
+      target.scrollLeft = source.scrollLeft;
+      requestAnimationFrame(() => { isSyncing = false; });
+    };
+
+    const handleTableScroll = () => syncScroll(tableScroll, topScroll);
+    const handleTopScroll = () => syncScroll(topScroll, tableScroll);
+
+    tableScroll.addEventListener("scroll", handleTableScroll);
+    topScroll.addEventListener("scroll", handleTopScroll);
+    return () => {
+      tableScroll.removeEventListener("scroll", handleTableScroll);
+      topScroll.removeEventListener("scroll", handleTopScroll);
+    };
+  }, []);
+
+  // Update top scrollbar width to match table width
+  useEffect(() => {
+    const updateTopScrollWidth = () => {
+      if (tableRef.current && topScrollRef.current) {
+        const spacer = topScrollRef.current.firstChild as HTMLElement;
+        if (spacer) {
+          spacer.style.width = `${tableRef.current.scrollWidth}px`;
+        }
+      }
+    };
+    updateTopScrollWidth();
+    const resizeObserver = new ResizeObserver(updateTopScrollWidth);
+    if (tableRef.current) {
+      resizeObserver.observe(tableRef.current);
+    }
+    return () => resizeObserver.disconnect();
+  }, [workOrders, visibleColumns]);
 
   // Reset filters when project changes
   useEffect(() => {
@@ -831,14 +878,15 @@ export default function ProjectWorkOrders() {
   };
 
   // Render a table header cell for a given column key
-  const renderHeaderCell = (key: string) => {
+  const renderHeaderCell = (key: string, isFirst: boolean = false) => {
     const config = columnHeaderConfig[key];
     if (!config) return null;
     const sortKey = config.sortKey || key;
+    const stickyClass = isFirst ? "sticky left-0 z-20 bg-muted shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]" : "";
     return (
       <TableHead 
         key={key}
-        className="cursor-pointer select-none" 
+        className={`cursor-pointer select-none whitespace-nowrap ${stickyClass}`}
         onClick={(e) => handleSort(sortKey, e)}
         title="Click to sort. Shift+click to add to multi-column sort."
       >
@@ -848,77 +896,79 @@ export default function ProjectWorkOrders() {
   };
 
   // Render a table data cell for a given column key and work order
-  const renderDataCell = (key: string, workOrder: ProjectWorkOrder) => {
+  const renderDataCell = (key: string, workOrder: ProjectWorkOrder, isFirst: boolean = false) => {
     const woAny = workOrder as any;
+    const stickyClass = isFirst ? "sticky left-0 z-10 bg-background shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]" : "";
+    const baseClass = stickyClass;
     switch (key) {
       case "id":
-        return <TableCell key={key} className="font-medium text-muted-foreground" data-testid={`text-system-wo-id-${workOrder.id}`}>{workOrder.id}</TableCell>;
+        return <TableCell key={key} className={`font-medium text-muted-foreground ${baseClass}`} data-testid={`text-system-wo-id-${workOrder.id}`}>{workOrder.id}</TableCell>;
       case "customerWoId":
-        return <TableCell key={key} className="font-medium" data-testid={`text-wo-id-${workOrder.id}`}>{workOrder.customerWoId || "-"}</TableCell>;
+        return <TableCell key={key} className={`font-medium ${baseClass}`} data-testid={`text-wo-id-${workOrder.id}`}>{workOrder.customerWoId || "-"}</TableCell>;
       case "customerId":
-        return <TableCell key={key}>{workOrder.customerId || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{workOrder.customerId || "-"}</TableCell>;
       case "customerName":
-        return <TableCell key={key}>{workOrder.customerName || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{workOrder.customerName || "-"}</TableCell>;
       case "address":
-        return <TableCell key={key} data-testid={`text-address-${workOrder.id}`}>{workOrder.address || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} data-testid={`text-address-${workOrder.id}`}>{workOrder.address || "-"}</TableCell>;
       case "city":
-        return <TableCell key={key}>{workOrder.city || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{workOrder.city || "-"}</TableCell>;
       case "state":
-        return <TableCell key={key}>{workOrder.state || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{workOrder.state || "-"}</TableCell>;
       case "zip":
-        return <TableCell key={key}>{workOrder.zip || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{workOrder.zip || "-"}</TableCell>;
       case "phone":
-        return <TableCell key={key}>{workOrder.phone || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{workOrder.phone || "-"}</TableCell>;
       case "email":
-        return <TableCell key={key}>{workOrder.email || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{workOrder.email || "-"}</TableCell>;
       case "route":
-        return <TableCell key={key} data-testid={`text-route-${workOrder.id}`}>{workOrder.route || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} data-testid={`text-route-${workOrder.id}`}>{workOrder.route || "-"}</TableCell>;
       case "zone":
-        return <TableCell key={key} data-testid={`text-zone-${workOrder.id}`}>{workOrder.zone || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} data-testid={`text-zone-${workOrder.id}`}>{workOrder.zone || "-"}</TableCell>;
       case "serviceType":
-        return <TableCell key={key} data-testid={`text-service-${workOrder.id}`}>{getServiceTypeBadge(workOrder.serviceType)}</TableCell>;
+        return <TableCell key={key} className={baseClass} data-testid={`text-service-${workOrder.id}`}>{getServiceTypeBadge(workOrder.serviceType)}</TableCell>;
       case "oldMeterId":
-        return <TableCell key={key} data-testid={`text-old-meter-${workOrder.id}`}>{workOrder.oldMeterId || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} data-testid={`text-old-meter-${workOrder.id}`}>{workOrder.oldMeterId || "-"}</TableCell>;
       case "oldMeterReading":
-        return <TableCell key={key}>{workOrder.oldMeterReading ?? "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{workOrder.oldMeterReading ?? "-"}</TableCell>;
       case "oldMeterType":
-        return <TableCell key={key}>{woAny.oldMeterType || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{woAny.oldMeterType || "-"}</TableCell>;
       case "newMeterId":
-        return <TableCell key={key}>{workOrder.newMeterId || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{workOrder.newMeterId || "-"}</TableCell>;
       case "newMeterReading":
-        return <TableCell key={key}>{workOrder.newMeterReading ?? "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{workOrder.newMeterReading ?? "-"}</TableCell>;
       case "newMeterType":
-        return <TableCell key={key}>{woAny.newMeterType || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{woAny.newMeterType || "-"}</TableCell>;
       case "oldGps":
-        return <TableCell key={key}>{workOrder.oldGps || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{workOrder.oldGps || "-"}</TableCell>;
       case "newGps":
-        return <TableCell key={key}>{workOrder.newGps || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{workOrder.newGps || "-"}</TableCell>;
       case "status":
-        return <TableCell key={key} data-testid={`text-status-${workOrder.id}`}>{getStatusBadge(workOrder.status)}</TableCell>;
+        return <TableCell key={key} className={baseClass} data-testid={`text-status-${workOrder.id}`}>{getStatusBadge(workOrder.status)}</TableCell>;
       case "scheduledAt":
-        return <TableCell key={key}>{woAny.scheduledAt ? formatDateTime(woAny.scheduledAt) : "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{woAny.scheduledAt ? formatDateTime(woAny.scheduledAt) : "-"}</TableCell>;
       case "scheduledBy":
-        return <TableCell key={key}>{woAny.scheduledByDisplay || getAssignedUserName(woAny.scheduledBy) || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{woAny.scheduledByDisplay || getAssignedUserName(woAny.scheduledBy) || "-"}</TableCell>;
       case "assignedTo":
-        return <TableCell key={key}>{getAssignedUserName(woAny.assignedUserId) || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{getAssignedUserName(woAny.assignedUserId) || "-"}</TableCell>;
       case "assignedGroup":
-        return <TableCell key={key}>{getAssignedGroupName(woAny.assignedGroupId) || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{getAssignedGroupName(woAny.assignedGroupId) || "-"}</TableCell>;
       case "createdBy":
-        return <TableCell key={key}>{woAny.createdBy || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{woAny.createdBy || "-"}</TableCell>;
       case "updatedBy":
-        return <TableCell key={key}>{woAny.updatedBy || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{woAny.updatedBy || "-"}</TableCell>;
       case "completedAt":
-        return <TableCell key={key}>{workOrder.completedAt ? formatDateTime(workOrder.completedAt) : "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{workOrder.completedAt ? formatDateTime(workOrder.completedAt) : "-"}</TableCell>;
       case "completedBy":
-        return <TableCell key={key}>{woAny.completedByDisplay || getAssignedUserName(woAny.completedBy) || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{woAny.completedByDisplay || getAssignedUserName(woAny.completedBy) || "-"}</TableCell>;
       case "trouble":
-        return <TableCell key={key}>{getTroubleCodeLabel(woAny.trouble) || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{getTroubleCodeLabel(woAny.trouble) || "-"}</TableCell>;
       case "notes":
-        return <TableCell key={key} className="max-w-xs truncate">{workOrder.notes || "-"}</TableCell>;
+        return <TableCell key={key} className={`max-w-xs truncate ${baseClass}`}>{workOrder.notes || "-"}</TableCell>;
       case "createdAt":
-        return <TableCell key={key}>{workOrder.createdAt ? formatDateTime(workOrder.createdAt) : "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{workOrder.createdAt ? formatDateTime(workOrder.createdAt) : "-"}</TableCell>;
       case "updatedAt":
-        return <TableCell key={key}>{workOrder.updatedAt ? formatDateTime(workOrder.updatedAt) : "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{workOrder.updatedAt ? formatDateTime(workOrder.updatedAt) : "-"}</TableCell>;
       default:
         return null;
     }
@@ -3408,12 +3458,20 @@ export default function ProjectWorkOrders() {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <div className="overflow-x-auto w-full">
-              <Table>
-                <TableHeader>
+            {/* Top scrollbar for horizontal scrolling */}
+            <div
+              ref={topScrollRef}
+              className="overflow-x-auto overflow-y-hidden h-3 border-b"
+              style={{ scrollbarWidth: "thin" }}
+            >
+              <div style={{ height: "1px" }} />
+            </div>
+            <div ref={tableScrollRef} className="overflow-x-auto w-full max-h-[calc(100vh-350px)] overflow-y-auto">
+              <Table ref={tableRef}>
+                <TableHeader className="sticky top-0 z-30 bg-muted">
                   <TableRow>
-                    {visibleColumns.map(key => renderHeaderCell(key))}
-                    {user?.role !== "customer" && <TableHead>Actions</TableHead>}
+                    {visibleColumns.map((key, index) => renderHeaderCell(key, index === 0))}
+                    {user?.role !== "customer" && <TableHead className="whitespace-nowrap">Actions</TableHead>}
                     <TableHead className="w-8"></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -3435,7 +3493,7 @@ export default function ProjectWorkOrders() {
                         handleEdit(workOrder);
                       }}
                     >
-                      {visibleColumns.map(key => renderDataCell(key, workOrder))}
+                      {visibleColumns.map((key, index) => renderDataCell(key, workOrder, index === 0))}
                       {user?.role !== "customer" && (
                         <TableCell>
                           <div className="flex gap-1">
@@ -3543,6 +3601,8 @@ export default function ProjectWorkOrders() {
         }))}
         projectName={project?.name}
       />
+
+      <BackToTop containerRef={tableScrollRef} />
     </div>
   );
 }
