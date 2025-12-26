@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { Link, useLocation } from "wouter";
+import { BackToTop } from "@/components/ui/back-to-top";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -133,6 +134,10 @@ export default function SearchReports() {
   const [showRouteSheetDialog, setShowRouteSheetDialog] = useState(false);
   const [stateRestored, setStateRestored] = useState(false);
   const [showFilters, setShowFilters] = useState(true);
+
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+  const topScrollRef = useRef<HTMLDivElement>(null);
+  const tableRef = useRef<HTMLTableElement>(null);
 
   const columns: ColumnConfig[] = useMemo(() => [
     { key: "projectName", label: "Project", required: true },
@@ -378,6 +383,49 @@ export default function SearchReports() {
     setSortCriteria([]);
   };
 
+  // Sync horizontal scroll between top scrollbar and table
+  useEffect(() => {
+    const tableScroll = tableScrollRef.current;
+    const topScroll = topScrollRef.current;
+    if (!tableScroll || !topScroll) return;
+
+    let isSyncing = false;
+    const syncScroll = (source: HTMLElement, target: HTMLElement) => {
+      if (isSyncing) return;
+      isSyncing = true;
+      target.scrollLeft = source.scrollLeft;
+      requestAnimationFrame(() => { isSyncing = false; });
+    };
+
+    const handleTableScroll = () => syncScroll(tableScroll, topScroll);
+    const handleTopScroll = () => syncScroll(topScroll, tableScroll);
+
+    tableScroll.addEventListener("scroll", handleTableScroll);
+    topScroll.addEventListener("scroll", handleTopScroll);
+    return () => {
+      tableScroll.removeEventListener("scroll", handleTableScroll);
+      topScroll.removeEventListener("scroll", handleTopScroll);
+    };
+  }, []);
+
+  // Update top scrollbar width to match table width
+  useEffect(() => {
+    const updateTopScrollWidth = () => {
+      if (tableRef.current && topScrollRef.current) {
+        const spacer = topScrollRef.current.firstChild as HTMLElement;
+        if (spacer) {
+          spacer.style.width = `${tableRef.current.scrollWidth}px`;
+        }
+      }
+    };
+    updateTopScrollWidth();
+    const resizeObserver = new ResizeObserver(updateTopScrollWidth);
+    if (tableRef.current) {
+      resizeObserver.observe(tableRef.current);
+    }
+    return () => resizeObserver.disconnect();
+  }, [searchResults, visibleColumns]);
+
   const handleSort = (column: string, event: React.MouseEvent) => {
     const existingIndex = sortCriteria.findIndex(sc => sc.column === column);
     
@@ -470,14 +518,15 @@ export default function SearchReports() {
   };
 
   // Render a table header cell for a given column key
-  const renderHeaderCell = (key: string) => {
+  const renderHeaderCell = (key: string, isFirst: boolean = false) => {
     const config = columnHeaderConfig[key];
     if (!config) return null;
     const sortKey = config.sortKey || key;
+    const stickyClass = isFirst ? "sticky left-0 z-20 bg-muted shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]" : "";
     return (
       <TableHead 
         key={key}
-        className="cursor-pointer select-none" 
+        className={`cursor-pointer select-none whitespace-nowrap ${stickyClass}`}
         onClick={(e) => handleSort(sortKey, e)}
         title="Click to sort. Shift+click to add to multi-column sort."
         data-testid={`header-${key}`}
@@ -488,79 +537,81 @@ export default function SearchReports() {
   };
 
   // Render a table data cell for a given column key and result
-  const renderDataCell = (key: string, result: SearchResult) => {
+  const renderDataCell = (key: string, result: SearchResult, isFirst: boolean = false) => {
     const wo = result.workOrder;
+    const stickyClass = isFirst ? "sticky left-0 z-10 bg-background shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]" : "";
+    const baseClass = stickyClass;
     switch (key) {
       case "projectName":
-        return <TableCell key={key}>{result.projectName}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{result.projectName}</TableCell>;
       case "id":
-        return <TableCell key={key} className="font-medium text-muted-foreground">{wo.id}</TableCell>;
+        return <TableCell key={key} className={`font-medium text-muted-foreground ${baseClass}`}>{wo.id}</TableCell>;
       case "customerWoId":
-        return <TableCell key={key} className="font-medium">{wo.customerWoId || "-"}</TableCell>;
+        return <TableCell key={key} className={`font-medium ${baseClass}`}>{wo.customerWoId || "-"}</TableCell>;
       case "customerId":
-        return <TableCell key={key}>{wo.customerId || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{wo.customerId || "-"}</TableCell>;
       case "customerName":
-        return <TableCell key={key}>{wo.customerName || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{wo.customerName || "-"}</TableCell>;
       case "address":
-        return <TableCell key={key} className="max-w-xs truncate">{wo.address || "-"}</TableCell>;
+        return <TableCell key={key} className={`max-w-xs truncate ${baseClass}`}>{wo.address || "-"}</TableCell>;
       case "city":
-        return <TableCell key={key}>{wo.city || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{wo.city || "-"}</TableCell>;
       case "state":
-        return <TableCell key={key}>{wo.state || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{wo.state || "-"}</TableCell>;
       case "zip":
-        return <TableCell key={key}>{wo.zip || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{wo.zip || "-"}</TableCell>;
       case "phone":
-        return <TableCell key={key}>{wo.phone || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{wo.phone || "-"}</TableCell>;
       case "email":
-        return <TableCell key={key}>{wo.email || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{wo.email || "-"}</TableCell>;
       case "route":
-        return <TableCell key={key}>{wo.route || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{wo.route || "-"}</TableCell>;
       case "zone":
-        return <TableCell key={key}>{wo.zone || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{wo.zone || "-"}</TableCell>;
       case "serviceType":
-        return <TableCell key={key}>{getServiceTypeBadge(wo.serviceType)}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{getServiceTypeBadge(wo.serviceType)}</TableCell>;
       case "oldMeterId":
-        return <TableCell key={key}>{wo.oldMeterId || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{wo.oldMeterId || "-"}</TableCell>;
       case "oldMeterReading":
-        return <TableCell key={key}>{wo.oldMeterReading ?? "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{wo.oldMeterReading ?? "-"}</TableCell>;
       case "oldMeterType":
-        return <TableCell key={key}>{wo.oldMeterType || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{wo.oldMeterType || "-"}</TableCell>;
       case "newMeterId":
-        return <TableCell key={key}>{wo.newMeterId || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{wo.newMeterId || "-"}</TableCell>;
       case "newMeterReading":
-        return <TableCell key={key}>{wo.newMeterReading ?? "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{wo.newMeterReading ?? "-"}</TableCell>;
       case "newMeterType":
-        return <TableCell key={key}>{wo.newMeterType || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{wo.newMeterType || "-"}</TableCell>;
       case "oldGps":
-        return <TableCell key={key}>{wo.oldGps || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{wo.oldGps || "-"}</TableCell>;
       case "newGps":
-        return <TableCell key={key}>{wo.newGps || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{wo.newGps || "-"}</TableCell>;
       case "status":
-        return <TableCell key={key}>{getStatusBadge(wo.status)}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{getStatusBadge(wo.status)}</TableCell>;
       case "scheduledAt":
-        return <TableCell key={key}>{wo.scheduledAt ? formatCustom(wo.scheduledAt, "MMM d, yyyy") : "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{wo.scheduledAt ? formatCustom(wo.scheduledAt, "MMM d, yyyy") : "-"}</TableCell>;
       case "scheduledBy":
-        return <TableCell key={key}>{(wo as any).scheduledByDisplay || getAssignedUserName(wo.scheduledBy) || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{(wo as any).scheduledByDisplay || getAssignedUserName(wo.scheduledBy) || "-"}</TableCell>;
       case "assignedTo":
-        return <TableCell key={key}>{getAssignedUserName(wo.assignedUserId) || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{getAssignedUserName(wo.assignedUserId) || "-"}</TableCell>;
       case "assignedGroup":
-        return <TableCell key={key}>{getAssignedGroupName(wo.assignedGroupId) || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{getAssignedGroupName(wo.assignedGroupId) || "-"}</TableCell>;
       case "createdBy":
-        return <TableCell key={key}>{wo.createdBy || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{wo.createdBy || "-"}</TableCell>;
       case "updatedBy":
-        return <TableCell key={key}>{wo.updatedBy || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{wo.updatedBy || "-"}</TableCell>;
       case "completedAt":
-        return <TableCell key={key}>{wo.completedAt ? formatCustom(wo.completedAt, "MMM d, yyyy h:mm a") : "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{wo.completedAt ? formatCustom(wo.completedAt, "MMM d, yyyy h:mm a") : "-"}</TableCell>;
       case "completedBy":
-        return <TableCell key={key}>{(wo as any).completedByDisplay || getAssignedUserName(wo.completedBy) || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{(wo as any).completedByDisplay || getAssignedUserName(wo.completedBy) || "-"}</TableCell>;
       case "trouble":
-        return <TableCell key={key}>{getTroubleCodeLabel(wo.trouble) || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{getTroubleCodeLabel(wo.trouble) || "-"}</TableCell>;
       case "notes":
-        return <TableCell key={key} className="max-w-xs truncate">{wo.notes || "-"}</TableCell>;
+        return <TableCell key={key} className={`max-w-xs truncate ${baseClass}`}>{wo.notes || "-"}</TableCell>;
       case "createdAt":
-        return <TableCell key={key}>{wo.createdAt ? formatCustom(wo.createdAt, "MMM d, yyyy h:mm a") : "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{wo.createdAt ? formatCustom(wo.createdAt, "MMM d, yyyy h:mm a") : "-"}</TableCell>;
       case "updatedAt":
-        return <TableCell key={key}>{wo.updatedAt ? formatCustom(wo.updatedAt, "MMM d, yyyy h:mm a") : "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass}>{wo.updatedAt ? formatCustom(wo.updatedAt, "MMM d, yyyy h:mm a") : "-"}</TableCell>;
       default:
         return null;
     }
@@ -1481,70 +1532,80 @@ export default function SearchReports() {
                   <p className="text-muted-foreground">No work orders found matching your criteria</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto w-full">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        {orderedColumns.filter(col => col.key !== "actions").map(col => renderHeaderCell(col.key))}
-                        {isColumnVisible("actions") && <TableHead>Actions</TableHead>}
-                        <TableHead className="w-8"></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredAndSortedResults.map((result, index) => {
-                          const navigateToWorkOrder = () => {
-                            const searchState = {
-                              searchQuery,
-                              selectedProject,
-                              selectedStatus,
-                              selectedServiceType,
-                              isSearchActive,
-                            };
-                            sessionStorage.setItem('searchReportsState', JSON.stringify(searchState));
-                            navigate(`/projects/${result.projectId}/work-orders?edit=${result.workOrder.id}&from=search`);
-                          };
-                          return (
-                        <TableRow 
-                          key={`${result.projectId}-${result.workOrder.id}-${index}`} 
-                          data-testid={`row-result-${index}`}
-                          className="cursor-pointer hover-elevate"
-                          onClick={(e) => {
-                            const target = e.target as HTMLElement;
-                            if (target.closest('button, a, [role="button"]')) return;
-                            navigateToWorkOrder();
-                          }}
-                        >
-                          {orderedColumns.filter(col => col.key !== "actions").map(col => renderDataCell(col.key, result))}
-                          {isColumnVisible("actions") && (
-                            <TableCell>
-                              <Link 
-                                href={`/projects/${result.projectId}/work-orders?edit=${result.workOrder.id}&from=search`}
-                                onClick={() => {
-                                  const searchState = {
-                                    searchQuery,
-                                    selectedProject,
-                                    selectedStatus,
-                                    selectedServiceType,
-                                    isSearchActive,
-                                  };
-                                  sessionStorage.setItem('searchReportsState', JSON.stringify(searchState));
-                                }}
-                              >
-                                <Button variant="ghost" size="sm" data-testid={`button-view-${index}`}>
-                                  View
-                                </Button>
-                              </Link>
-                            </TableCell>
-                          )}
-                          <TableCell className="w-8 text-muted-foreground">
-                            <ChevronRight className="h-4 w-4" />
-                          </TableCell>
+                <>
+                  {/* Top scrollbar for horizontal scrolling */}
+                  <div
+                    ref={topScrollRef}
+                    className="overflow-x-auto overflow-y-hidden h-3 border-b"
+                    style={{ scrollbarWidth: "thin" }}
+                  >
+                    <div style={{ height: "1px" }} />
+                  </div>
+                  <div ref={tableScrollRef} className="overflow-x-auto w-full max-h-[calc(100vh-350px)] overflow-y-auto">
+                    <Table ref={tableRef}>
+                      <TableHeader className="sticky top-0 z-30 bg-muted">
+                        <TableRow>
+                          {orderedColumns.filter(col => col.key !== "actions").map((col, index) => renderHeaderCell(col.key, index === 0))}
+                          {isColumnVisible("actions") && <TableHead className="whitespace-nowrap">Actions</TableHead>}
+                          <TableHead className="w-8"></TableHead>
                         </TableRow>
-                          );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredAndSortedResults.map((result, index) => {
+                            const navigateToWorkOrder = () => {
+                              const searchState = {
+                                searchQuery,
+                                selectedProject,
+                                selectedStatus,
+                                selectedServiceType,
+                                isSearchActive,
+                              };
+                              sessionStorage.setItem('searchReportsState', JSON.stringify(searchState));
+                              navigate(`/projects/${result.projectId}/work-orders?edit=${result.workOrder.id}&from=search`);
+                            };
+                            return (
+                          <TableRow 
+                            key={`${result.projectId}-${result.workOrder.id}-${index}`} 
+                            data-testid={`row-result-${index}`}
+                            className="cursor-pointer hover-elevate"
+                            onClick={(e) => {
+                              const target = e.target as HTMLElement;
+                              if (target.closest('button, a, [role="button"]')) return;
+                              navigateToWorkOrder();
+                            }}
+                          >
+                            {orderedColumns.filter(col => col.key !== "actions").map((col, colIndex) => renderDataCell(col.key, result, colIndex === 0))}
+                            {isColumnVisible("actions") && (
+                              <TableCell>
+                                <Link 
+                                  href={`/projects/${result.projectId}/work-orders?edit=${result.workOrder.id}&from=search`}
+                                  onClick={() => {
+                                    const searchState = {
+                                      searchQuery,
+                                      selectedProject,
+                                      selectedStatus,
+                                      selectedServiceType,
+                                      isSearchActive,
+                                    };
+                                    sessionStorage.setItem('searchReportsState', JSON.stringify(searchState));
+                                  }}
+                                >
+                                  <Button variant="ghost" size="sm" data-testid={`button-view-${index}`}>
+                                    View
+                                  </Button>
+                                </Link>
+                              </TableCell>
+                            )}
+                            <TableCell className="w-8 text-muted-foreground">
+                              <ChevronRight className="h-4 w-4" />
+                            </TableCell>
+                          </TableRow>
+                            );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </>
               )}
             </CardContent>
           </Card>
@@ -1569,6 +1630,8 @@ export default function SearchReports() {
           oldMeterNumber: r.workOrder.oldMeterId || null,
         }))}
       />
+
+      <BackToTop containerRef={tableScrollRef} />
     </div>
   );
 }
