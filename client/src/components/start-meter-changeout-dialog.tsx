@@ -284,12 +284,32 @@ export function StartMeterChangeoutDialog({
     }
   }, [projectId, stopScanning]);
 
-  const confirmAndProceed = useCallback(() => {
-    if (foundWorkOrder) {
-      onWorkOrderFound(foundWorkOrder);
+  const [isClaiming, setIsClaiming] = useState(false);
+
+  const confirmAndProceed = useCallback(async () => {
+    if (!foundWorkOrder) return;
+    
+    setIsClaiming(true);
+    try {
+      // Claim/auto-assign the work order to the current user
+      const response = await apiRequest("POST", `/api/projects/${projectId}/work-orders/${foundWorkOrder.id}/claim`);
+      const result = await response.json();
+      
+      // Use the updated work order from the claim response (with assignment)
+      const updatedWorkOrder = result.workOrder || foundWorkOrder;
+      onWorkOrderFound(updatedWorkOrder);
       onClose();
+    } catch (error: any) {
+      console.error("Error claiming work order:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to assign work order",
+        variant: "destructive",
+      });
+    } finally {
+      setIsClaiming(false);
     }
-  }, [foundWorkOrder, onWorkOrderFound, onClose]);
+  }, [foundWorkOrder, projectId, onWorkOrderFound, onClose, toast]);
 
   const cancelConfirmation = useCallback(() => {
     setFoundWorkOrder(null);
@@ -637,6 +657,7 @@ export function StartMeterChangeoutDialog({
                   variant="outline"
                   onClick={cancelConfirmation}
                   className="flex-1"
+                  disabled={isClaiming}
                   data-testid="button-cancel-confirm"
                 >
                   <X className="h-4 w-4 mr-2" />
@@ -647,10 +668,15 @@ export function StartMeterChangeoutDialog({
                     type="button"
                     onClick={confirmAndProceed}
                     className="flex-1"
+                    disabled={isClaiming}
                     data-testid="button-confirm-proceed"
                   >
-                    <Check className="h-4 w-4 mr-2" />
-                    Confirm
+                    {isClaiming ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Check className="h-4 w-4 mr-2" />
+                    )}
+                    {isClaiming ? "Assigning..." : "Confirm"}
                   </Button>
                 )}
               </div>
