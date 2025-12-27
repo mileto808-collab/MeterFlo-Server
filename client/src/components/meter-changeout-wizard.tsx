@@ -8,8 +8,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -37,6 +39,8 @@ import {
   ScanBarcode,
   QrCode,
   Keyboard,
+  Trash2,
+  ZoomIn,
 } from "lucide-react";
 
 type WizardStep =
@@ -142,6 +146,7 @@ export function MeterChangeoutWizard({
   const [meterIdInputMode, setMeterIdInputMode] = useState<"choose" | "barcode" | "qr" | "manual" | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const scannerRef = useRef<HTMLDivElement>(null);
+  const [previewPhoto, setPreviewPhoto] = useState<{ photo: CapturedPhoto; type: "trouble" | "before" | "after"; index: number } | null>(null);
 
   const [data, setData] = useState<MeterChangeoutData>({
     canChange: true,
@@ -581,12 +586,20 @@ export function MeterChangeoutWizard({
     return (
       <div className="grid grid-cols-3 gap-2 mt-3">
         {photos.map((photo, index) => (
-          <div key={index} className="relative aspect-square rounded-md overflow-hidden border">
+          <div 
+            key={index} 
+            className="relative aspect-square rounded-md overflow-hidden border cursor-pointer hover-elevate"
+            onClick={() => setPreviewPhoto({ photo, type, index })}
+            data-testid={`photo-thumbnail-${type}-${index}`}
+          >
             <img
               src={photo.preview}
               alt={`${type} photo ${index + 1}`}
               className="w-full h-full object-cover"
             />
+            <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 bg-black/30 transition-opacity">
+              <ZoomIn className="h-6 w-6 text-white" />
+            </div>
             <Button
               type="button"
               variant="destructive"
@@ -1118,6 +1131,7 @@ export function MeterChangeoutWizard({
   };
 
   return (
+    <>
     <Dialog open={isOpen} onOpenChange={(open) => {
       if (!open && !isCapturingPhoto && !captureSessionActive.current) {
         handleClose();
@@ -1205,6 +1219,53 @@ export function MeterChangeoutWizard({
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Photo Preview Dialog */}
+    <Dialog open={previewPhoto !== null} onOpenChange={(open) => !open && setPreviewPhoto(null)}>
+      <DialogContent className="max-w-2xl max-h-[90vh] p-0 overflow-hidden">
+        <DialogHeader className="p-4 pb-0">
+          <DialogTitle>
+            Photo {previewPhoto ? previewPhoto.index + 1 : ""} - {previewPhoto?.type === "trouble" ? "Trouble" : previewPhoto?.type === "before" ? "Before" : "After"}
+          </DialogTitle>
+          <DialogDescription>
+            Click delete to remove this photo and take another one.
+          </DialogDescription>
+        </DialogHeader>
+        {previewPhoto && (
+          <div className="relative">
+            <img
+              src={previewPhoto.photo.preview}
+              alt={`${previewPhoto.type} photo preview`}
+              className="w-full max-h-[60vh] object-contain"
+              data-testid="image-photo-preview"
+            />
+          </div>
+        )}
+        <DialogFooter className="p-4 pt-2 gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setPreviewPhoto(null)}
+            data-testid="button-preview-close"
+          >
+            Close
+          </Button>
+          <Button
+            variant="destructive"
+            onClick={() => {
+              if (previewPhoto) {
+                removePhoto(previewPhoto.type, previewPhoto.index);
+                setPreviewPhoto(null);
+              }
+            }}
+            data-testid="button-preview-delete"
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Delete Photo
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  </>
   );
 }
 
