@@ -85,6 +85,8 @@ export const projects = pgTable("projects", {
   notes: text("notes"),
   databaseName: varchar("database_name", { length: 255 }),
   isActive: boolean("is_active").default(true),
+  webhookUrl: varchar("webhook_url", { length: 500 }),
+  webhookEnabled: boolean("webhook_enabled").default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
