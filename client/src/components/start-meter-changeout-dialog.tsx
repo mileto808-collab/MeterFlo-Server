@@ -26,7 +26,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest } from "@/lib/queryClient";
 import type { ProjectWorkOrder } from "../../../server/projectDb";
-import type { UserGroup } from "@shared/schema";
+import type { UserGroup, TroubleCode } from "@shared/schema";
 
 interface StartMeterChangeoutDialogProps {
   isOpen: boolean;
@@ -51,6 +51,19 @@ export function StartMeterChangeoutDialog({
     queryKey: ["/api/auth/user/groups"],
     enabled: isOpen,
   });
+  
+  // Fetch trouble codes to display labels
+  const { data: troubleCodes = [] } = useQuery<TroubleCode[]>({
+    queryKey: ["/api/trouble-codes"],
+    enabled: isOpen,
+  });
+  
+  // Helper to get trouble code label (case-insensitive comparison)
+  const getTroubleCodeLabel = (code: string | null | undefined): string | null => {
+    if (!code) return null;
+    const troubleCode = troubleCodes.find(tc => tc.code.toLowerCase() === code.toLowerCase());
+    return troubleCode ? troubleCode.label : null;
+  };
   
   const [scanMode, setScanMode] = useState<ScanMode>("select");
   const [isScanning, setIsScanning] = useState(false);
@@ -733,7 +746,7 @@ export function StartMeterChangeoutDialog({
                         {foundWorkOrder.status || "Unknown"}
                         {isTrouble && foundWorkOrder.trouble && (
                           <span className="ml-2 text-sm" data-testid="text-confirm-trouble-code">
-                            (Code: {foundWorkOrder.trouble})
+                            ({foundWorkOrder.trouble}{getTroubleCodeLabel(foundWorkOrder.trouble) ? ` - ${getTroubleCodeLabel(foundWorkOrder.trouble)}` : ""})
                           </span>
                         )}
                       </p>
