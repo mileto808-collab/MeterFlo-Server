@@ -103,42 +103,6 @@ export function WorkOrderDetail({
 }: WorkOrderDetailProps) {
   const [openSections, setOpenSections] = useState<string[]>(["customer", "meter", "scheduling"]);
   const [showMeterChangeoutWizard, setShowMeterChangeoutWizard] = useState(false);
-  const historyPushedRef = useRef(false);
-  const onBackRef = useRef(onBack);
-  
-  // Keep onBackRef current
-  useEffect(() => {
-    onBackRef.current = onBack;
-  }, [onBack]);
-
-  // Handle browser back button to behave like the "Back to Work Orders" link
-  useEffect(() => {
-    // Push a state exactly once when the component mounts
-    if (!historyPushedRef.current) {
-      window.history.pushState({ workOrderDetail: true }, "");
-      historyPushedRef.current = true;
-    }
-
-    const handlePopState = (event: PopStateEvent) => {
-      // Only respond if we pushed state and this looks like our entry
-      if (historyPushedRef.current) {
-        historyPushedRef.current = false;
-        onBackRef.current();
-      }
-    };
-
-    window.addEventListener("popstate", handlePopState);
-
-    return () => {
-      window.removeEventListener("popstate", handlePopState);
-      // Clean up the synthetic history entry if the dialog is closed via UI button
-      // (not via browser back button which would have already cleared it)
-      if (historyPushedRef.current) {
-        historyPushedRef.current = false;
-        window.history.back();
-      }
-    };
-  }, []);
 
   const getStatusBadge = (status: string) => {
     const statusConfig: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; className?: string }> = {
