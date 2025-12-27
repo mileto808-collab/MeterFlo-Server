@@ -8,6 +8,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Scan, QrCode, Keyboard, Camera, X, Flashlight, FlashlightOff, Focus, Check, RotateCcw, Loader2, Wrench, AlertCircle, MapPin, FileText, Gauge, ClipboardCheck, Ban } from "lucide-react";
@@ -285,8 +294,14 @@ export function StartMeterChangeoutDialog({
   }, [projectId, stopScanning]);
 
   const [isClaiming, setIsClaiming] = useState(false);
+  const [showClaimConfirm, setShowClaimConfirm] = useState(false);
 
-  const confirmAndProceed = useCallback(async () => {
+  const openClaimConfirmation = useCallback(() => {
+    if (!foundWorkOrder) return;
+    setShowClaimConfirm(true);
+  }, [foundWorkOrder]);
+
+  const executeClaimAndProceed = useCallback(async () => {
     if (!foundWorkOrder) return;
     
     setIsClaiming(true);
@@ -297,6 +312,7 @@ export function StartMeterChangeoutDialog({
       
       // Use the updated work order from the claim response (with assignment)
       const updatedWorkOrder = result.workOrder || foundWorkOrder;
+      setShowClaimConfirm(false);
       onWorkOrderFound(updatedWorkOrder);
       onClose();
     } catch (error: any) {
@@ -306,6 +322,7 @@ export function StartMeterChangeoutDialog({
         description: error.message || "Failed to assign work order",
         variant: "destructive",
       });
+      setShowClaimConfirm(false);
     } finally {
       setIsClaiming(false);
     }
@@ -354,6 +371,7 @@ export function StartMeterChangeoutDialog({
   };
 
   return (
+    <>
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
       <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
@@ -666,17 +684,12 @@ export function StartMeterChangeoutDialog({
                 {!isCompleted && (
                   <Button
                     type="button"
-                    onClick={confirmAndProceed}
+                    onClick={openClaimConfirmation}
                     className="flex-1"
-                    disabled={isClaiming}
                     data-testid="button-confirm-proceed"
                   >
-                    {isClaiming ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Check className="h-4 w-4 mr-2" />
-                    )}
-                    {isClaiming ? "Assigning..." : "Confirm"}
+                    <Check className="h-4 w-4 mr-2" />
+                    Confirm
                   </Button>
                 )}
               </div>
@@ -685,5 +698,41 @@ export function StartMeterChangeoutDialog({
         })()}
       </DialogContent>
     </Dialog>
+
+    <AlertDialog open={showClaimConfirm} onOpenChange={setShowClaimConfirm}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle data-testid="title-claim-confirm">Claim Work Order?</AlertDialogTitle>
+          <AlertDialogDescription data-testid="text-claim-description">
+            Claiming this work order will assign it to you and open the meter changeout wizard. 
+            {foundWorkOrder?.assignedGroupId && (
+              <span className="block mt-2">
+                Currently assigned to group: <strong>{foundWorkOrder.assignedGroupId}</strong>
+              </span>
+            )}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isClaiming} data-testid="button-claim-back">
+            Back
+          </AlertDialogCancel>
+          <Button 
+            onClick={executeClaimAndProceed} 
+            disabled={isClaiming}
+            data-testid="button-claim-start"
+          >
+            {isClaiming ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Claiming...
+              </>
+            ) : (
+              "Claim & Start"
+            )}
+          </Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }
