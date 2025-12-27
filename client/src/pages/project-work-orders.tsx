@@ -399,12 +399,19 @@ export default function ProjectWorkOrders() {
     setCameFromSearch(false);
   }, [projectId]);
 
-  // Handle ?edit=workOrderId&from=search query parameters to auto-open a work order
+  // Handle ?edit=workOrderId&from=search query parameters OR history.state to auto-open a work order
+  // This handles both deep links from search results AND browser back from Manage Attachments page
   useEffect(() => {
+    // Skip if already editing a work order or no work orders loaded yet
+    if (editingWorkOrder || workOrders.length === 0) {
+      return;
+    }
+
+    // First check query parameters (priority for deep links)
     const searchParams = new URLSearchParams(window.location.search);
     const editId = searchParams.get("edit");
     const fromSearch = searchParams.get("from") === "search";
-    if (editId && workOrders.length > 0) {
+    if (editId) {
       const workOrderToEdit = workOrders.find((wo) => wo.id === parseInt(editId));
       if (workOrderToEdit) {
         setEditingWorkOrder(workOrderToEdit);
@@ -413,9 +420,24 @@ export default function ProjectWorkOrders() {
         }
         // Clear the query parameter from URL without refreshing
         window.history.replaceState({}, "", window.location.pathname);
+        return;
       }
     }
-  }, [workOrders]);
+
+    // Then check history.state (for browser back from Manage Attachments)
+    const historyState = window.history.state;
+    if (historyState?.workOrderDetail && historyState?.workOrderId) {
+      const workOrderToRestore = workOrders.find((wo) => wo.id === historyState.workOrderId);
+      if (workOrderToRestore) {
+        // Restore the detail view - the history state is already there, so set the ref
+        historyPushedRef.current = true;
+        setEditingWorkOrder(workOrderToRestore);
+      } else {
+        // Work order not found - clear the stale history state
+        window.history.replaceState({}, "", window.location.pathname);
+      }
+    }
+  }, [workOrders, editingWorkOrder]);
 
   // Handle browser back button when work order detail is open
   useEffect(() => {
