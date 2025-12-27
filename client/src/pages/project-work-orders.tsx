@@ -733,6 +733,9 @@ export default function ProjectWorkOrders() {
   };
 
   const openCreateMeterTypeDialog = (field: "oldMeterType" | "newMeterType" | "editOldMeterType" | "editNewMeterType") => {
+    if (!hasPermission('workOrders.edit')) {
+      return;
+    }
     if (!projectId) {
       toast({ title: "Project not loaded", description: "Please wait for the project to load", variant: "destructive" });
       return;
@@ -749,6 +752,10 @@ export default function ProjectWorkOrders() {
   };
 
   const onEditSubmit = (data: WorkOrderFormData) => {
+    if (!hasPermission('workOrders.edit')) {
+      toast({ title: "Permission denied", description: "You do not have permission to edit work orders.", variant: "destructive" });
+      return;
+    }
     if (editingWorkOrder) {
       updateMutation.mutate({ id: editingWorkOrder.id, ...data });
     }
@@ -1690,6 +1697,7 @@ export default function ProjectWorkOrders() {
           signaturePadRef={editSignaturePadRef}
           openCreateMeterTypeDialog={openCreateMeterTypeDialog}
           toast={toast}
+          canEdit={hasPermission('workOrders.edit')}
         />
         {meterTypeDialog}
       </>
