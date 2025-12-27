@@ -1250,27 +1250,12 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Work order not found" });
       }
       
-      // Skip claim if already assigned to this user
-      if (workOrder.assignedUserId === currentUser.id) {
+      // Skip claim if already assigned to this user AND no group assignment
+      if (workOrder.assignedUserId === currentUser.id && !workOrder.assignedGroupId) {
         return res.json({ message: "Already assigned to you", workOrder, claimed: false });
       }
       
-      // Check if work order is assigned to a group the user is a member of
-      if (workOrder.assignedGroupId) {
-        const userGroups = await storage.getUserGroupMemberships(currentUser.id);
-        const userGroupNames = userGroups.map(g => g.name);
-        
-        // If user is a member of the assigned group, skip claim and proceed
-        if (userGroupNames.includes(workOrder.assignedGroupId)) {
-          return res.json({ 
-            message: "Work order is assigned to your group", 
-            workOrder, 
-            claimed: false 
-          });
-        }
-      }
-      
-      // Work order is unassigned or assigned to a different group - perform claim
+      // Always perform claim when launching wizard - this assigns to the user and clears group
       // Use username for updated_by since it has a foreign key constraint to users table
       const updatedByUsername = currentUser.username || currentUser.id;
       
