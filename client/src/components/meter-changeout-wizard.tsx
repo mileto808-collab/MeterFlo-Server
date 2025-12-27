@@ -206,13 +206,16 @@ export function MeterChangeoutWizard({
   };
 
   // Validation helpers
-  const isValidMeterReading = (reading: string): boolean => {
+  const isValidMeterReading = (reading: string | undefined | null): boolean => {
     // Must be digits only (allows leading zeros like "0001")
-    return reading.trim().length > 0 && /^\d+$/.test(reading.trim());
+    if (!reading || typeof reading !== 'string') return false;
+    const trimmed = reading.trim();
+    return trimmed.length > 0 && /^\d+$/.test(trimmed);
   };
 
-  const isValidGps = (gps: string): boolean => {
+  const isValidGps = (gps: string | undefined | null): boolean => {
     // Validate GPS format: lat,lng where lat is -90 to 90 and lng is -180 to 180
+    if (!gps || typeof gps !== 'string') return false;
     const trimmed = gps.trim();
     if (!trimmed) return false;
     
@@ -225,14 +228,14 @@ export function MeterChangeoutWizard({
     return !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
   };
 
-  const getMeterReadingError = (reading: string): string | null => {
-    if (!reading.trim()) return "Reading is required";
+  const getMeterReadingError = (reading: string | undefined | null): string | null => {
+    if (!reading || typeof reading !== 'string' || !reading.trim()) return "Reading is required";
     if (!/^\d+$/.test(reading.trim())) return "Reading must contain only digits (0-9)";
     return null;
   };
 
-  const getGpsError = (gps: string): string | null => {
-    if (!gps.trim()) return "GPS coordinates are required";
+  const getGpsError = (gps: string | undefined | null): string | null => {
+    if (!gps || typeof gps !== 'string' || !gps.trim()) return "GPS coordinates are required";
     const trimmed = gps.trim();
     const match = trimmed.match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
     if (!match) return "Invalid format. Use: latitude,longitude (e.g., 37.7749,-122.4194)";
