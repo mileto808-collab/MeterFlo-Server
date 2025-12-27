@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import path from "path";
+import { promises as fs } from "fs";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { insertProjectWorkOrderSchema, insertProjectSchema, createUserSchema, updateUserSchema, resetPasswordSchema, updateProfileSchema, permissionKeys, insertExternalDatabaseConfigSchema, updateExternalDatabaseConfigSchema, insertImportConfigSchema, updateImportConfigSchema, databaseTypeEnum, importScheduleFrequencyEnum } from "@shared/schema";
@@ -8,6 +9,7 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import multer from "multer";
 import { createProjectSchema, deleteProjectSchema, getProjectWorkOrderStorage, sanitizeSchemaName, backupProjectDatabase, restoreProjectDatabase, getProjectDatabaseStats } from "./projectDb";
+import { pool } from "./db";
 import { ensureProjectDirectory, renameProjectDirectory, saveWorkOrderFile, getWorkOrderFiles, deleteWorkOrderFile, getFilePath, getProjectFilesPath, setProjectFilesPath, deleteProjectDirectory, saveProjectFile, getProjectFiles, deleteProjectFile, getProjectFilePath, ensureProjectFtpDirectory, getProjectFtpFiles, deleteProjectFtpFile, getProjectFtpFilePath, saveProjectFtpFile } from "./fileStorage";
 import { ExternalDatabaseService } from "./externalDbService";
 import { createBackupArchive, extractDatabaseBackupFromArchive, restoreFullSystem, restoreFilesFromArchive } from "./systemBackup";
@@ -4307,5 +4309,759 @@ export async function registerRoutes(
     }
   });
 
+  // ============================================================================
+  // MOBILE SYNC API ENDPOINTS
+  // These endpoints support mobile apps with offline capability
+  // ============================================================================
+
+  // Mobile sync download - bulk fetch work orders for offline cache
+  // Supports filters and last-sync timestamp for incremental sync
+  app.get("/api/projects/:projectId/mobile/sync/download", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // Must be assigned to project
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      
+      // Parse query parameters for filtering
+      const {
+        lastSyncTimestamp,
+        assignedUserId,
+        assignedGroupId,
+        status,
+        includeCompleted,
+        limit,
+        offset
+      } = req.query;
+      
+      // Build query with filters
+      const client = await pool.connect();
+      try {
+        let query = `
+          SELECT w.*, 
+                 sb.username as scheduled_by_username,
+                 cb.username as completed_by_username
+          FROM "${project.databaseName}".work_orders w
+          LEFT JOIN public.users sb ON w.scheduled_by = sb.id
+          LEFT JOIN public.users cb ON w.completed_by = cb.id
+        `;
+        const conditions: string[] = [];
+        const values: any[] = [];
+        let paramCount = 1;
+        
+        // Filter by last sync timestamp (incremental sync)
+        if (lastSyncTimestamp) {
+          conditions.push(`w.updated_at > $${paramCount++}`);
+          values.push(new Date(lastSyncTimestamp as string));
+        }
+        
+        // Filter by assigned user
+        if (assignedUserId) {
+          conditions.push(`w.assigned_user_id = $${paramCount++}`);
+          values.push(assignedUserId);
+        }
+        
+        // Filter by assigned group
+        if (assignedGroupId) {
+          conditions.push(`w.assigned_group_id = $${paramCount++}`);
+          values.push(assignedGroupId);
+        }
+        
+        // Filter by status
+        if (status) {
+          conditions.push(`w.status = $${paramCount++}`);
+          values.push(status);
+        }
+        
+        // Exclude completed unless requested
+        if (includeCompleted !== "true") {
+          conditions.push(`w.status != 'Completed'`);
+        }
+        
+        if (conditions.length > 0) {
+          query += ` WHERE ${conditions.join(" AND ")}`;
+        }
+        
+        query += " ORDER BY w.updated_at DESC";
+        
+        // Apply pagination
+        if (limit) {
+          query += ` LIMIT $${paramCount++}`;
+          values.push(parseInt(limit as string));
+        }
+        if (offset) {
+          query += ` OFFSET $${paramCount++}`;
+          values.push(parseInt(offset as string));
+        }
+        
+        const result = await client.query(query, values);
+        
+        // Get server timestamp for client to use in next sync
+        const serverTimestamp = new Date().toISOString();
+        
+        // Get reference data for offline use
+        const [workOrderStatuses, troubleCodes, meterTypes, serviceTypes] = await Promise.all([
+          storage.getWorkOrderStatuses(),
+          storage.getTroubleCodes(),
+          storage.getMeterTypes(),
+          storage.getServiceTypes()
+        ]);
+        
+        res.json({
+          success: true,
+          serverTimestamp,
+          workOrders: result.rows,
+          referenceData: {
+            workOrderStatuses,
+            troubleCodes,
+            meterTypes,
+            serviceTypes
+          },
+          meta: {
+            count: result.rows.length,
+            projectId,
+            projectName: project.name
+          }
+        });
+      } finally {
+        client.release();
+      }
+    } catch (error) {
+      console.error("Error in mobile sync download:", error);
+      res.status(500).json({ message: "Failed to download work orders for sync" });
+    }
+  });
+
+  // Mobile sync upload - batch submit completed work orders with conflict detection
+  app.post("/api/projects/:projectId/mobile/sync/upload", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // Must be assigned to project
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const { workOrders, clientSyncTimestamp } = req.body;
+      
+      if (!Array.isArray(workOrders)) {
+        return res.status(400).json({ message: "workOrders must be an array" });
+      }
+      
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      const updatedByUsername = currentUser.username || currentUser.id;
+      
+      const results: { id: number; status: string; conflict?: boolean; message?: string; serverUpdatedAt?: Date | null }[] = [];
+      
+      for (const woUpdate of workOrders) {
+        try {
+          const { id, clientUpdatedAt, forceOverwrite, ...updateData } = woUpdate;
+          
+          // Get current server version
+          const serverWorkOrder = await workOrderStorage.getWorkOrder(id);
+          
+          if (!serverWorkOrder) {
+            results.push({ id, status: "error", message: "Work order not found" });
+            continue;
+          }
+          
+          // Check for conflicts - if server version is newer than client's last known version
+          const serverUpdatedAt = serverWorkOrder.updatedAt ? new Date(serverWorkOrder.updatedAt).getTime() : 0;
+          const clientLastKnown = clientUpdatedAt ? new Date(clientUpdatedAt).getTime() : 0;
+          
+          if (clientLastKnown > 0 && serverUpdatedAt > clientLastKnown && !forceOverwrite) {
+            // Conflict detected - server has newer data, reject the update
+            results.push({ 
+              id, 
+              status: "conflict", 
+              conflict: true,
+              message: "Server has newer data - please sync and retry. Use forceOverwrite:true to override.",
+              serverUpdatedAt: serverWorkOrder.updatedAt
+            });
+            continue; // Skip this update - don't overwrite server data
+          }
+          
+          // Apply the update
+          await workOrderStorage.updateWorkOrder(
+            id,
+            updateData,
+            updatedByUsername
+          );
+          
+          results.push({ id, status: "success" });
+        } catch (error) {
+          console.error(`Error updating work order ${woUpdate.id}:`, error);
+          results.push({ id: woUpdate.id, status: "error", message: String(error) });
+        }
+      }
+      
+      // Get updated server timestamp
+      const serverTimestamp = new Date().toISOString();
+      
+      res.json({
+        success: true,
+        serverTimestamp,
+        results,
+        summary: {
+          total: workOrders.length,
+          successful: results.filter(r => r.status === "success").length,
+          conflicts: results.filter(r => r.status === "conflict").length,
+          errors: results.filter(r => r.status === "error").length
+        }
+      });
+    } catch (error) {
+      console.error("Error in mobile sync upload:", error);
+      res.status(500).json({ message: "Failed to upload work order changes" });
+    }
+  });
+
+  // Mobile photo upload - upload photos for work orders (supports offline queue)
+  app.post("/api/projects/:projectId/mobile/work-orders/:workOrderId/photos", isAuthenticated, upload.array("photos", 20), async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      const workOrderId = parseInt(req.params.workOrderId);
+      
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // Must be assigned to project
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      const workOrder = await workOrderStorage.getWorkOrder(workOrderId);
+      
+      if (!workOrder) {
+        return res.status(404).json({ message: "Work order not found" });
+      }
+      
+      const files = req.files as Express.Multer.File[];
+      const photoTypes = JSON.parse(req.body.photoTypes || "[]");
+      
+      if (!files || files.length === 0) {
+        return res.status(400).json({ message: "No photos provided" });
+      }
+      
+      // Validate photo types
+      const validTypes = ["trouble", "before", "after", "signature"];
+      for (const pType of photoTypes) {
+        if (!validTypes.includes(pType)) {
+          return res.status(400).json({ message: `Invalid photo type: ${pType}` });
+        }
+      }
+      
+      // Get work order folder
+      const folderName = workOrder.customerWoId || String(workOrder.id);
+      const projectFilesPath = await getProjectFilesPath();
+      const workOrderFolder = path.join(
+        projectFilesPath,
+        `${project.name}_${project.id}`,
+        "Work Orders",
+        folderName
+      );
+      
+      // Create folders for each photo type
+      const savedPhotos: { filename: string; type: string; path: string }[] = [];
+      
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const photoType = photoTypes[i] || "photo";
+        const typeFolder = path.join(workOrderFolder, photoType);
+        
+        await fs.mkdir(typeFolder, { recursive: true });
+        
+        // Generate unique filename
+        const timestamp = Date.now();
+        const ext = path.extname(file.originalname) || ".jpg";
+        const filename = `${photoType}_${timestamp}_${i}${ext}`;
+        const filePath = path.join(typeFolder, filename);
+        
+        await fs.writeFile(filePath, file.buffer);
+        
+        savedPhotos.push({
+          filename,
+          type: photoType,
+          path: `${photoType}/${filename}`
+        });
+      }
+      
+      res.json({
+        success: true,
+        uploadedPhotos: savedPhotos,
+        workOrderId,
+        message: `${files.length} photo(s) uploaded successfully`
+      });
+    } catch (error) {
+      console.error("Error uploading mobile photos:", error);
+      res.status(500).json({ message: "Failed to upload photos" });
+    }
+  });
+
+  // Mobile signature upload - upload signature image for work order
+  app.post("/api/projects/:projectId/mobile/work-orders/:workOrderId/signature", isAuthenticated, upload.single("signature"), async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      const workOrderId = parseInt(req.params.workOrderId);
+      
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // Must be assigned to project
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      const workOrder = await workOrderStorage.getWorkOrder(workOrderId);
+      
+      if (!workOrder) {
+        return res.status(404).json({ message: "Work order not found" });
+      }
+      
+      const { signatureName, signatureData } = req.body;
+      
+      // Handle either file upload or base64 data
+      let signatureImageData: string | null = null;
+      
+      if (req.file) {
+        // Convert file to base64
+        signatureImageData = `data:${req.file.mimetype};base64,${req.file.buffer.toString("base64")}`;
+      } else if (signatureData) {
+        signatureImageData = signatureData;
+      }
+      
+      if (!signatureImageData && !signatureName) {
+        return res.status(400).json({ message: "Signature data or signature name required" });
+      }
+      
+      // Update work order with signature
+      const updatedByUsername = currentUser.username || currentUser.id;
+      const updateData: any = {};
+      
+      if (signatureImageData) {
+        updateData.signatureData = signatureImageData;
+      }
+      if (signatureName) {
+        updateData.signatureName = signatureName;
+      }
+      
+      const updatedWorkOrder = await workOrderStorage.updateWorkOrder(
+        workOrderId,
+        updateData,
+        updatedByUsername
+      );
+      
+      res.json({
+        success: true,
+        workOrderId,
+        signatureName: updatedWorkOrder?.signatureName || signatureName,
+        message: "Signature saved successfully"
+      });
+    } catch (error) {
+      console.error("Error uploading mobile signature:", error);
+      res.status(500).json({ message: "Failed to upload signature" });
+    }
+  });
+
+  // Mobile meter changeout - complete a meter changeout from mobile device
+  app.post("/api/projects/:projectId/mobile/work-orders/:workOrderId/complete-changeout", isAuthenticated, upload.array("photos", 20), async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      const workOrderId = parseInt(req.params.workOrderId);
+      
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // Check permission
+      const hasMeterChangeoutPermission = await storage.hasPermission(currentUser, "workOrders.meterChangeout");
+      if (!hasMeterChangeoutPermission) {
+        return res.status(403).json({ message: "You do not have permission to perform meter changeouts" });
+      }
+      
+      // Must be assigned to project
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      const workOrder = await workOrderStorage.getWorkOrder(workOrderId);
+      
+      if (!workOrder) {
+        return res.status(404).json({ message: "Work order not found" });
+      }
+      
+      // Parse changeout data from request
+      const changeoutData = JSON.parse(req.body.data || "{}");
+      const {
+        canChange,
+        troubleCode,
+        troubleNote,
+        oldMeterReading,
+        newMeterId,
+        newMeterReading,
+        gpsCoordinates,
+        signatureData,
+        signatureName,
+        photoTypes,
+        completedAt: clientCompletedAt
+      } = changeoutData;
+      
+      const files = req.files as Express.Multer.File[];
+      const folderName = workOrder.customerWoId || String(workOrder.id);
+      
+      // Validation
+      const isValidMeterReading = (reading: string): boolean => {
+        if (!reading || reading.trim().length === 0) return false;
+        return /^\d+$/.test(reading.trim());
+      };
+      
+      const isValidGps = (gps: string): boolean => {
+        if (!gps || !gps.trim()) return false;
+        const match = gps.trim().match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
+        if (!match) return false;
+        const lat = parseFloat(match[1]);
+        const lng = parseFloat(match[2]);
+        return !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+      };
+      
+      const updatedByUsername = currentUser.username || currentUser.id;
+      const updateData: any = {
+        updatedAt: new Date().toISOString(),
+      };
+      
+      // Save photos if provided
+      if (files && files.length > 0) {
+        const projectFilesPath = await getProjectFilesPath();
+        const workOrderFolder = path.join(
+          projectFilesPath,
+          `${project.name}_${project.id}`,
+          "Work Orders",
+          folderName
+        );
+        
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const photoType = (photoTypes && photoTypes[i]) || "photo";
+          const typeFolder = path.join(workOrderFolder, photoType);
+          
+          await fs.mkdir(typeFolder, { recursive: true });
+          
+          const timestamp = Date.now();
+          const ext = path.extname(file.originalname) || ".jpg";
+          const filename = `${photoType}_${timestamp}_${i}${ext}`;
+          const filePath = path.join(typeFolder, filename);
+          
+          await fs.writeFile(filePath, file.buffer);
+        }
+      }
+      
+      if (canChange) {
+        // Success path - meter was changed
+        if (!oldMeterReading || !newMeterId || !newMeterReading || !gpsCoordinates || !signatureName) {
+          return res.status(400).json({ 
+            message: "Missing required fields for meter changeout" 
+          });
+        }
+        
+        if (!isValidMeterReading(oldMeterReading)) {
+          return res.status(400).json({ message: "Old meter reading must contain only digits" });
+        }
+        if (!isValidMeterReading(newMeterReading)) {
+          return res.status(400).json({ message: "New meter reading must contain only digits" });
+        }
+        if (!isValidGps(gpsCoordinates)) {
+          return res.status(400).json({ message: "Invalid GPS coordinates format" });
+        }
+        
+        updateData.status = "Completed";
+        updateData.oldMeterReading = parseInt(oldMeterReading.trim(), 10);
+        updateData.newMeterId = newMeterId;
+        updateData.newMeterReading = parseInt(newMeterReading.trim(), 10);
+        updateData.newGps = gpsCoordinates;
+        updateData.signatureName = signatureName;
+        updateData.completedAt = clientCompletedAt || new Date().toISOString();
+        updateData.completedBy = currentUser.id;
+        updateData.trouble = null;
+        updateData.notes = troubleNote || null;
+        
+        if (signatureData) {
+          updateData.signatureData = signatureData;
+        }
+      } else {
+        // Trouble path - could not change meter
+        if (!troubleCode) {
+          return res.status(400).json({ message: "Trouble code is required" });
+        }
+        
+        updateData.status = "Trouble";
+        updateData.trouble = troubleCode;
+        updateData.notes = troubleNote || null;
+      }
+      
+      const updatedWorkOrder = await workOrderStorage.updateWorkOrder(
+        workOrderId,
+        updateData,
+        updatedByUsername
+      );
+      
+      // Trigger webhook if configured
+      await triggerProjectWebhook(project, "work_order.completed", updatedWorkOrder, currentUser);
+      
+      res.json({
+        success: true,
+        workOrder: updatedWorkOrder,
+        message: canChange ? "Meter changeout completed successfully" : "Trouble reported successfully"
+      });
+    } catch (error) {
+      console.error("Error completing mobile meter changeout:", error);
+      res.status(500).json({ message: "Failed to complete meter changeout" });
+    }
+  });
+
+  // Bulk claim work orders - mobile batch operation
+  app.post("/api/projects/:projectId/mobile/work-orders/bulk-claim", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // Must be assigned to project
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const { workOrderIds } = req.body;
+      
+      if (!Array.isArray(workOrderIds) || workOrderIds.length === 0) {
+        return res.status(400).json({ message: "workOrderIds must be a non-empty array" });
+      }
+      
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      const updatedByUsername = currentUser.username || currentUser.id;
+      
+      const results: { id: number; claimed: boolean; message?: string }[] = [];
+      
+      for (const workOrderId of workOrderIds) {
+        try {
+          const workOrder = await workOrderStorage.getWorkOrder(workOrderId);
+          
+          if (!workOrder) {
+            results.push({ id: workOrderId, claimed: false, message: "Work order not found" });
+            continue;
+          }
+          
+          // Skip if already assigned to this user
+          if (workOrder.assignedUserId === currentUser.id) {
+            results.push({ id: workOrderId, claimed: false, message: "Already assigned to you" });
+            continue;
+          }
+          
+          // Claim the work order
+          await workOrderStorage.updateWorkOrder(
+            workOrderId,
+            { assignedUserId: currentUser.id, assignedGroupId: null },
+            updatedByUsername
+          );
+          
+          results.push({ id: workOrderId, claimed: true });
+        } catch (error) {
+          console.error(`Error claiming work order ${workOrderId}:`, error);
+          results.push({ id: workOrderId, claimed: false, message: String(error) });
+        }
+      }
+      
+      res.json({
+        success: true,
+        results,
+        summary: {
+          total: workOrderIds.length,
+          claimed: results.filter(r => r.claimed).length,
+          skipped: results.filter(r => !r.claimed).length
+        }
+      });
+    } catch (error) {
+      console.error("Error in bulk claim:", error);
+      res.status(500).json({ message: "Failed to bulk claim work orders" });
+    }
+  });
+
+  // Bulk update work order status - mobile batch operation
+  app.post("/api/projects/:projectId/mobile/work-orders/bulk-status", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // Must be assigned to project
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const { workOrderIds, status } = req.body;
+      
+      if (!Array.isArray(workOrderIds) || workOrderIds.length === 0) {
+        return res.status(400).json({ message: "workOrderIds must be a non-empty array" });
+      }
+      
+      if (!status) {
+        return res.status(400).json({ message: "status is required" });
+      }
+      
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      const updatedByUsername = currentUser.username || currentUser.id;
+      
+      const results: { id: number; updated: boolean; message?: string }[] = [];
+      
+      for (const workOrderId of workOrderIds) {
+        try {
+          await workOrderStorage.updateWorkOrder(
+            workOrderId,
+            { status },
+            updatedByUsername
+          );
+          
+          results.push({ id: workOrderId, updated: true });
+        } catch (error) {
+          console.error(`Error updating work order ${workOrderId}:`, error);
+          results.push({ id: workOrderId, updated: false, message: String(error) });
+        }
+      }
+      
+      res.json({
+        success: true,
+        results,
+        summary: {
+          total: workOrderIds.length,
+          updated: results.filter(r => r.updated).length,
+          failed: results.filter(r => !r.updated).length
+        }
+      });
+    } catch (error) {
+      console.error("Error in bulk status update:", error);
+      res.status(500).json({ message: "Failed to bulk update work order status" });
+    }
+  });
+
   return httpServer;
+}
+
+// Helper function to trigger project webhooks
+async function triggerProjectWebhook(
+  project: any, 
+  event: string, 
+  data: any, 
+  user: any
+): Promise<void> {
+  try {
+    // Check if project has webhook URL configured
+    const webhookUrl = project.webhookUrl;
+    if (!webhookUrl) return;
+    
+    const payload = {
+      event,
+      timestamp: new Date().toISOString(),
+      projectId: project.id,
+      projectName: project.name,
+      triggeredBy: user?.username || "system",
+      data
+    };
+    
+    // Fire and forget - don't wait for response
+    fetch(webhookUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Webhook-Event": event,
+        "X-Project-ID": String(project.id)
+      },
+      body: JSON.stringify(payload)
+    }).catch(err => {
+      console.error(`Webhook delivery failed for project ${project.id}:`, err);
+    });
+  } catch (error) {
+    console.error("Error triggering webhook:", error);
+  }
 }
