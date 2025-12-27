@@ -964,6 +964,15 @@ export function WorkOrderDetail({
                     />
                   </div>
                   <div>
+                    <label className="text-sm font-medium text-muted-foreground">Scheduled At</label>
+                    <Input 
+                      value={(workOrder as any).scheduledAt ? formatDateTime((workOrder as any).scheduledAt) : "-"} 
+                      disabled 
+                      className="mt-1 bg-muted"
+                      data-testid="text-scheduled-at"
+                    />
+                  </div>
+                  <div>
                     <label className="text-sm font-medium text-muted-foreground">Completed By</label>
                     <Input 
                       value={(workOrder as any).completedByDisplay || getAssignedUserName((workOrder as any).completedBy) || "-"} 
