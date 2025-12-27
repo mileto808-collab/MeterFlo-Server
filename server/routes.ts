@@ -1269,15 +1269,14 @@ export async function registerRoutes(
       }
       
       // Work order is unassigned or assigned to a different group - perform claim
-      const updatedByName = currentUser.firstName 
-        ? `${currentUser.firstName}${currentUser.lastName ? ' ' + currentUser.lastName : ''}`
-        : currentUser.username || currentUser.id;
+      // Use username for updated_by since it has a foreign key constraint to users table
+      const updatedByUsername = currentUser.username || currentUser.id;
       
       // Assign work order to current user (clear group assignment)
       const updatedWorkOrder = await workOrderStorage.updateWorkOrder(
         workOrderId, 
         { assignedUserId: currentUser.id, assignedGroupId: null },
-        updatedByName
+        updatedByUsername
       );
       
       res.json({ message: "Work order assigned to you", workOrder: updatedWorkOrder, claimed: true });
