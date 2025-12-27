@@ -1027,13 +1027,14 @@ export async function registerRoutes(
         const subrole = await storage.getSubrole(currentUser.subroleId);
         if (subrole?.key === "field_technician") {
           const userGroups = await storage.getUserGroupMemberships(currentUser.id);
-          const userGroupIds = userGroups.map(g => String(g.id));
+          // assignedGroupId stores group names, not numeric IDs
+          const userGroupNames = userGroups.map(g => g.name);
           
           workOrders = workOrders.filter(wo => {
             // Check if directly assigned to user
             if (wo.assignedUserId === currentUser.id) return true;
-            // Check if assigned to one of user's groups
-            if (wo.assignedGroupId && userGroupIds.includes(wo.assignedGroupId)) return true;
+            // Check if assigned to one of user's groups (by name)
+            if (wo.assignedGroupId && userGroupNames.includes(wo.assignedGroupId)) return true;
             return false;
           });
         }
@@ -1070,12 +1071,13 @@ export async function registerRoutes(
         const subrole = await storage.getSubrole(currentUser.subroleId);
         if (subrole?.key === "field_technician") {
           const userGroups = await storage.getUserGroupMemberships(currentUser.id);
-          const userGroupIds = userGroups.map(g => String(g.id));
+          // assignedGroupId stores group names, not numeric IDs
+          const userGroupNames = userGroups.map(g => g.name);
           
           const allWorkOrders = await workOrderStorage.getWorkOrders({});
           const filteredWorkOrders = allWorkOrders.filter(wo => {
             if (wo.assignedUserId === currentUser.id) return true;
-            if (wo.assignedGroupId && userGroupIds.includes(wo.assignedGroupId)) return true;
+            if (wo.assignedGroupId && userGroupNames.includes(wo.assignedGroupId)) return true;
             return false;
           });
           
