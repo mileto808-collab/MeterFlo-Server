@@ -784,6 +784,7 @@ export const permissionKeys = {
   WORK_ORDERS_EDIT: "workOrders.edit",
   WORK_ORDERS_DELETE: "workOrders.delete",
   WORK_ORDERS_ASSIGN: "workOrders.assign",
+  WORK_ORDERS_METER_CHANGEOUT: "workOrders.meterChangeout",
   // User actions
   USERS_VIEW: "users.view",
   USERS_CREATE: "users.create",
