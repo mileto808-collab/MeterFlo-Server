@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -125,6 +125,7 @@ export function MeterChangeoutWizard({
   const [currentStep, setCurrentStep] = useState<WizardStep>("canChange");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [photoType, setPhotoType] = useState<"trouble" | "before" | "after">("before");
+  const [isCapturingPhoto, setIsCapturingPhoto] = useState(false);
 
   const [data, setData] = useState<MeterChangeoutData>({
     canChange: true,
@@ -144,6 +145,23 @@ export function MeterChangeoutWizard({
   const currentStepIndex = currentSteps.indexOf(currentStep);
   const isFirstStep = currentStepIndex === 0;
   const isLastStep = currentStepIndex === currentSteps.length - 1;
+
+  // Reset photo capture state when user returns to page (handles camera cancel on mobile)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && isCapturingPhoto) {
+        // Give a brief delay to allow onChange to fire if a photo was taken
+        setTimeout(() => {
+          setIsCapturingPhoto(false);
+        }, 500);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [isCapturingPhoto]);
 
   const resetWizard = useCallback(() => {
     setCurrentStep("canChange");
@@ -254,6 +272,7 @@ export function MeterChangeoutWizard({
   };
 
   const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setIsCapturingPhoto(false);
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
@@ -298,6 +317,7 @@ export function MeterChangeoutWizard({
 
   const openCamera = (type: "trouble" | "before" | "after") => {
     setPhotoType(type);
+    setIsCapturingPhoto(true);
     fileInputRef.current?.click();
   };
 
@@ -699,7 +719,11 @@ export function MeterChangeoutWizard({
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
+    <Dialog open={isOpen} onOpenChange={(open) => {
+      if (!open && !isCapturingPhoto) {
+        handleClose();
+      }
+    }}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
