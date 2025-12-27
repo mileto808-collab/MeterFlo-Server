@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Scan, QrCode, Keyboard, Camera, X, Flashlight, FlashlightOff, Focus, Check, RotateCcw, Loader2, Wrench, AlertCircle, MapPin, FileText, Gauge, ClipboardCheck, Ban } from "lucide-react";
+import { Scan, QrCode, Keyboard, Camera, X, Flashlight, FlashlightOff, Focus, Check, RotateCcw, Loader2, Wrench, AlertCircle, MapPin, FileText, Gauge, ClipboardCheck, Ban, StickyNote } from "lucide-react";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -752,6 +752,18 @@ export function StartMeterChangeoutDialog({
                       </p>
                     </div>
                   </div>
+
+                  {foundWorkOrder.notes && (
+                    <div className="flex items-start gap-3">
+                      <StickyNote className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-sm text-muted-foreground">Notes</p>
+                        <p className="font-medium break-all" data-testid="text-confirm-notes">
+                          {foundWorkOrder.notes}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 
