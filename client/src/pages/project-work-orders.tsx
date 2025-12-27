@@ -1313,55 +1313,41 @@ export default function ProjectWorkOrders() {
       });
     }
     if (filterCreatedBy !== "all") {
-      // Look up user label from selected ID for fallback comparison
+      // Look up username from selected user ID - createdBy stores username in database
       const selectedUser = assigneesData?.users?.find(u => u.id === filterCreatedBy);
-      const selectedUserLabel = selectedUser?.label;
+      const selectedUsername = selectedUser?.username;
       result = result.filter(wo => {
-        const woAny = wo as any;
-        // First try ID-based match (normalize both to strings for comparison)
-        if (woAny.createdById && String(woAny.createdById) === String(filterCreatedBy)) return true;
-        // Fall back to user name match
-        if (selectedUserLabel && woAny.createdBy === selectedUserLabel) return true;
+        // createdBy stores username - compare against username
+        if (selectedUsername && wo.createdBy === selectedUsername) return true;
+        // Also try direct ID match in case createdBy stores ID
+        if (wo.createdBy && String(wo.createdBy) === String(filterCreatedBy)) return true;
         return false;
       });
     }
     if (filterUpdatedBy !== "all") {
-      // Look up user label from selected ID for fallback comparison
+      // Look up username from selected user ID - updatedBy stores username in database
       const selectedUser = assigneesData?.users?.find(u => u.id === filterUpdatedBy);
-      const selectedUserLabel = selectedUser?.label;
+      const selectedUsername = selectedUser?.username;
       result = result.filter(wo => {
-        const woAny = wo as any;
-        // First try ID-based match (normalize both to strings for comparison)
-        if (woAny.updatedById && String(woAny.updatedById) === String(filterUpdatedBy)) return true;
-        // Fall back to user name match
-        if (selectedUserLabel && woAny.updatedBy === selectedUserLabel) return true;
+        // updatedBy stores username - compare against username
+        if (selectedUsername && wo.updatedBy === selectedUsername) return true;
+        // Also try direct ID match in case updatedBy stores ID
+        if (wo.updatedBy && String(wo.updatedBy) === String(filterUpdatedBy)) return true;
         return false;
       });
     }
     if (filterScheduledBy !== "all") {
-      // Look up user label from selected ID for fallback comparison
-      const selectedUser = assigneesData?.users?.find(u => u.id === filterScheduledBy);
-      const selectedUserLabel = selectedUser?.label;
       result = result.filter(wo => {
         const woAny = wo as any;
-        // First try scheduledById if it exists (ID field)
-        if (woAny.scheduledById && String(woAny.scheduledById) === String(filterScheduledBy)) return true;
-        // Fall back to scheduledBy as display label match
-        if (selectedUserLabel && woAny.scheduledBy === selectedUserLabel) return true;
-        return false;
+        // scheduledBy stores user ID directly - compare IDs
+        return woAny.scheduledBy && String(woAny.scheduledBy) === String(filterScheduledBy);
       });
     }
     if (filterCompletedBy !== "all") {
-      // Look up user label from selected ID for fallback comparison
-      const selectedUser = assigneesData?.users?.find(u => u.id === filterCompletedBy);
-      const selectedUserLabel = selectedUser?.label;
       result = result.filter(wo => {
         const woAny = wo as any;
-        // First try completedById if it exists (ID field)
-        if (woAny.completedById && String(woAny.completedById) === String(filterCompletedBy)) return true;
-        // Fall back to completedBy as display label match
-        if (selectedUserLabel && woAny.completedBy === selectedUserLabel) return true;
-        return false;
+        // completedBy stores user ID directly - compare IDs
+        return woAny.completedBy && String(woAny.completedBy) === String(filterCompletedBy);
       });
     }
     if (filterCompletedAtFrom || filterCompletedAtTo) {
