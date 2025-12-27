@@ -1045,6 +1045,8 @@ export function WorkOrderDetail({
         onClose={() => setShowMeterChangeoutWizard(false)}
         workOrderId={workOrder.id}
         customerWoId={workOrder.customerWoId || `WO-${workOrder.id}`}
+        address={workOrder.address}
+        oldMeterId={workOrder.oldMeterId}
         projectId={typeof projectId === 'string' ? parseInt(projectId) : projectId}
         troubleCodes={troubleCodes}
         existingOldReading={workOrder.oldMeterReading}

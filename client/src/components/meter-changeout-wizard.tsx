@@ -78,6 +78,8 @@ interface MeterChangeoutWizardProps {
   onClose: () => void;
   workOrderId: number;
   customerWoId: string;
+  address?: string | null;
+  oldMeterId?: string | null;
   projectId: number;
   troubleCodes: Array<{ id: number; code: string; label: string }>;
   existingOldReading?: string | null;
@@ -120,6 +122,8 @@ export function MeterChangeoutWizard({
   onClose,
   workOrderId,
   customerWoId,
+  address,
+  oldMeterId,
   projectId,
   troubleCodes,
   existingOldReading,
@@ -938,6 +942,12 @@ export function MeterChangeoutWizard({
                   <div className="grid grid-cols-2 gap-2 text-sm">
                     <span className="text-muted-foreground">Work Order:</span>
                     <span className="font-medium">{customerWoId}</span>
+                    
+                    <span className="text-muted-foreground">Address:</span>
+                    <span className="font-medium">{address || "-"}</span>
+                    
+                    <span className="text-muted-foreground">Old Meter ID:</span>
+                    <span className="font-medium">{oldMeterId || "-"}</span>
                     
                     <span className="text-muted-foreground">Old Reading:</span>
                     <span className="font-medium">{data.oldMeterReading}</span>
