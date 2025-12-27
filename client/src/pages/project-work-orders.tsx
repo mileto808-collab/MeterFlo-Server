@@ -42,7 +42,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useTimezone } from "@/hooks/use-timezone";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, ArrowLeft, Search, ArrowUpDown, ArrowUp, ArrowDown, Download, FileSpreadsheet, FileText, Filter, X, Route, ChevronRight, Paperclip, Eye, FileIcon, ChevronsUp, UserPlus, UserMinus, AlertTriangle, Loader2 } from "lucide-react";
+import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, ArrowLeft, Search, ArrowUpDown, ArrowUp, ArrowDown, Download, FileSpreadsheet, FileText, Filter, X, Route, ChevronRight, Paperclip, Eye, FileIcon, ChevronsUp, UserPlus, UserMinus, AlertTriangle, Loader2, Wrench } from "lucide-react";
 import { BackToTop } from "@/components/ui/back-to-top";
 import { TablePagination } from "@/components/ui/table-pagination";
 import * as XLSX from "xlsx";
@@ -71,6 +71,7 @@ import SignaturePad, { SignaturePadRef } from "@/components/signature-pad";
 import { WorkOrderDetail } from "@/components/work-order-detail";
 import { ScannerInput } from "@/components/scanner-input";
 import { GPSCapture } from "@/components/gps-capture";
+import { StartMeterChangeoutDialog } from "@/components/start-meter-changeout-dialog";
 
 type Assignee = {
   type: "user" | "group";
@@ -105,6 +106,8 @@ export default function ProjectWorkOrders() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortCriteria, setSortCriteria] = useState<Array<{ column: string; direction: "asc" | "desc" }>>([]);
   const [showRouteSheetDialog, setShowRouteSheetDialog] = useState(false);
+  const [showStartMeterChangeout, setShowStartMeterChangeout] = useState(false);
+  const [autoLaunchMeterChangeout, setAutoLaunchMeterChangeout] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [selectedServiceType, setSelectedServiceType] = useState<string>("all");
   const [selectedAssignedTo, setSelectedAssignedTo] = useState<string>("all");
@@ -476,6 +479,8 @@ export default function ProjectWorkOrders() {
       setEditingWorkOrder(null);
       setCameFromSearch(false);
     }
+    // Reset auto-launch flag when closing
+    setAutoLaunchMeterChangeout(false);
   }, []);
 
   // Scroll to top when opening a work order detail
@@ -1774,6 +1779,7 @@ export default function ProjectWorkOrders() {
           toast={toast}
           canEdit={hasPermission('workOrders.edit')}
           canMeterChangeout={hasPermission('workOrders.meterChangeout')}
+          autoLaunchMeterChangeout={autoLaunchMeterChangeout}
           onMeterChangeoutComplete={async () => {
             // Use refetchQueries instead of invalidateQueries to ensure data is loaded before closing
             await Promise.all([
@@ -2617,6 +2623,12 @@ export default function ProjectWorkOrders() {
                 Assign Work Orders
               </Button>
             )}
+            {hasPermission(permissionKeys.WORK_ORDERS_METER_CHANGEOUT) && (
+              <Button variant="outline" onClick={() => setShowStartMeterChangeout(true)} data-testid="button-start-meter-changeout">
+                <Wrench className="h-4 w-4 mr-2" />
+                Start Meter Changeout
+              </Button>
+            )}
             <Button onClick={() => setIsCreatingWorkOrder(true)} data-testid="button-create-work-order">
               <Plus className="h-4 w-4 mr-2" />
               New Work Order
@@ -3311,6 +3323,18 @@ export default function ProjectWorkOrders() {
         }))}
         projectName={project?.name}
       />
+
+      {projectId && (
+        <StartMeterChangeoutDialog
+          isOpen={showStartMeterChangeout}
+          onClose={() => setShowStartMeterChangeout(false)}
+          projectId={projectId}
+          onWorkOrderFound={(workOrder) => {
+            setAutoLaunchMeterChangeout(true);
+            setEditingWorkOrder(workOrder);
+          }}
+        />
+      )}
 
       <BackToTop containerRef={tableScrollRef} />
     </div>

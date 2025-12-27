@@ -1168,6 +1168,43 @@ export async function registerRoutes(
     }
   });
 
+  // Look up work order by old meter ID
+  app.get("/api/projects/:projectId/work-orders/by-meter/:meterId", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      const meterId = decodeURIComponent(req.params.meterId);
+      
+      if (currentUser?.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      const workOrder = await workOrderStorage.getWorkOrderByOldMeterId(meterId);
+      
+      if (!workOrder) {
+        return res.status(404).json({ message: "Work order not found with old meter ID: " + meterId });
+      }
+      
+      if (currentUser?.role === "customer" && workOrder.status !== "completed") {
+        return res.status(403).json({ message: "Forbidden: Customers can only view completed work orders" });
+      }
+      
+      res.json(workOrder);
+    } catch (error) {
+      console.error("Error fetching work order by meter ID:", error);
+      res.status(500).json({ message: "Failed to fetch work order" });
+    }
+  });
+
   app.post("/api/projects/:projectId/work-orders", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);

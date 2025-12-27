@@ -424,6 +424,26 @@ export class ProjectWorkOrderStorage {
     }
   }
 
+  async getWorkOrderByOldMeterId(oldMeterId: string): Promise<ProjectWorkOrder | undefined> {
+    await this.ensureMigrated();
+    const client = await pool.connect();
+    try {
+      const result = await client.query(
+        `SELECT w.*, 
+                sb.username as scheduled_by_username,
+                cb.username as completed_by_username
+         FROM "${this.schemaName}".work_orders w
+         LEFT JOIN public.users sb ON w.scheduled_by = sb.id
+         LEFT JOIN public.users cb ON w.completed_by = cb.id
+         WHERE w.old_meter_id = $1`,
+        [oldMeterId]
+      );
+      return result.rows[0] ? this.mapRowToWorkOrder(result.rows[0]) : undefined;
+    } finally {
+      client.release();
+    }
+  }
+
   async createWorkOrder(workOrder: Omit<InsertProjectWorkOrder, "id" | "createdAt" | "updatedAt">, createdBy?: string): Promise<ProjectWorkOrder> {
     await this.ensureMigrated();
     const client = await pool.connect();
