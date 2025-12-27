@@ -211,7 +211,7 @@ export function WorkOrderDetail({
 
             {/* Right: Quick Actions */}
             <div className="flex gap-2 flex-wrap">
-              {canMeterChangeout && (
+              {canMeterChangeout && workOrder.status !== 'Completed' && (
                 <Button 
                   variant="default" 
                   size="sm" 
