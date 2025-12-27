@@ -1782,9 +1782,11 @@ export default function ProjectWorkOrders() {
           autoLaunchMeterChangeout={autoLaunchMeterChangeout}
           onMeterChangeoutComplete={async () => {
             // Use refetchQueries instead of invalidateQueries to ensure data is loaded before closing
+            // Also invalidate the files query so attachment count is fresh when work order is reopened
             await Promise.all([
               queryClient.refetchQueries({ queryKey: [`/api/projects/${projectId}/work-orders`] }),
               queryClient.refetchQueries({ queryKey: [`/api/projects/${projectId}/work-orders/stats`] }),
+              queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/work-orders/${editingWorkOrder?.id}/files`] }),
             ]);
             toast({
               title: "Success",
