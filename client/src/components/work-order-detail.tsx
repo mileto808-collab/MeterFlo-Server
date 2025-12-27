@@ -74,7 +74,7 @@ interface WorkOrderDetailProps {
   toast: any;
   canEdit?: boolean;
   canMeterChangeout?: boolean;
-  onMeterChangeoutComplete?: () => void;
+  onMeterChangeoutComplete?: () => void | Promise<void>;
 }
 
 export function WorkOrderDetail({
@@ -1100,7 +1100,7 @@ export function WorkOrderDetail({
           }
           
           if (onMeterChangeoutComplete) {
-            onMeterChangeoutComplete();
+            await onMeterChangeoutComplete();
           }
         }}
       />
