@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { apiRequest } from "@/lib/queryClient";
 import { UseFormReturn } from "react-hook-form";
 import { Link } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
@@ -105,20 +106,46 @@ export function WorkOrderDetail({
 }: WorkOrderDetailProps) {
   const [openSections, setOpenSections] = useState<string[]>(["customer", "meter", "scheduling"]);
   const [showMeterChangeoutWizard, setShowMeterChangeoutWizard] = useState(false);
+  const [isClaiming, setIsClaiming] = useState(false);
   const autoLaunchTriggered = useRef(false);
+
+  // Claim work order and open meter changeout wizard
+  const handleStartMeterChangeout = useCallback(async () => {
+    setIsClaiming(true);
+    try {
+      // Call claim endpoint - this will assign the work order to the current user
+      // and remove existing group/user assignments
+      await apiRequest("POST", `/api/projects/${projectId}/work-orders/${workOrder.id}/claim`);
+      
+      // Open the wizard after successful claim
+      setShowMeterChangeoutWizard(true);
+    } catch (error: any) {
+      console.error("Error claiming work order:", error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to claim work order",
+        variant: "destructive",
+      });
+    } finally {
+      setIsClaiming(false);
+    }
+  }, [projectId, workOrder.id, toast]);
 
   // Scroll to top when component mounts (triggered by key prop change)
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' });
   }, []);
 
-  // Auto-launch meter changeout wizard if requested
+  // Auto-launch meter changeout wizard if requested (with claim)
   useEffect(() => {
     if (autoLaunchMeterChangeout && canMeterChangeout && !autoLaunchTriggered.current) {
       autoLaunchTriggered.current = true;
-      setShowMeterChangeoutWizard(true);
+      // Wrap in async IIFE to ensure claim completes before wizard opens
+      void (async () => {
+        await handleStartMeterChangeout();
+      })();
     }
-  }, [autoLaunchMeterChangeout, canMeterChangeout]);
+  }, [autoLaunchMeterChangeout, canMeterChangeout, handleStartMeterChangeout]);
 
   const getStatusBadge = (status: string) => {
     const statusConfig: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; className?: string }> = {
@@ -231,11 +258,21 @@ export function WorkOrderDetail({
                 <Button 
                   variant="default" 
                   size="sm" 
-                  onClick={() => setShowMeterChangeoutWizard(true)}
+                  onClick={handleStartMeterChangeout}
+                  disabled={isClaiming}
                   data-testid="button-start-meter-changeout"
                 >
-                  <Wrench className="h-4 w-4 mr-1" />
-                  Start Meter Changeout
+                  {isClaiming ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                      Claiming...
+                    </>
+                  ) : (
+                    <>
+                      <Wrench className="h-4 w-4 mr-1" />
+                      Start Meter Changeout
+                    </>
+                  )}
                 </Button>
               )}
               <Link href={`/projects/${projectId}/work-orders/${workOrder.id}/files?returnTo=detail`}>
@@ -783,7 +820,7 @@ export function WorkOrderDetail({
                           </FormControl>
                           <SelectContent>
                             <SelectItem value="__none__">None</SelectItem>
-                            {assigneesData?.users?.map((user) => (
+                            {assigneesData?.users?.map((user: { id: string; label: string }) => (
                               <SelectItem key={user.id} value={user.id}>
                                 {user.label}
                               </SelectItem>
@@ -808,7 +845,7 @@ export function WorkOrderDetail({
                           </FormControl>
                           <SelectContent>
                             <SelectItem value="__none__">None</SelectItem>
-                            {assigneesData?.groups?.map((group) => (
+                            {assigneesData?.groups?.map((group: { id: number; key?: string; label: string }) => (
                               <SelectItem key={group.id} value={group.key || group.label}>
                                 {group.label}
                               </SelectItem>
