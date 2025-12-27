@@ -278,6 +278,13 @@ export const permissionRegistry: PermissionDefinition[] = [
     description: "Bulk assign or unassign work orders to users or groups",
     defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
   },
+  {
+    key: "workOrders.meterChangeout",
+    label: "Meter Changeout",
+    category: "Work Order Actions",
+    description: "Perform meter changeout workflow on work orders",
+    defaultAccess: { administrator: true, projectManager: true, fieldTechnician: true, viewer: false, customer: false },
+  },
 
   // User Action permissions - what users can do with user accounts
   {
