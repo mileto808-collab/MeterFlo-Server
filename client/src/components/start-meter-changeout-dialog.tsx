@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Scan, QrCode, Keyboard, Camera, X, Flashlight, FlashlightOff, Focus, Check, RotateCcw, Loader2, Wrench, AlertCircle, MapPin, FileText, Gauge } from "lucide-react";
+import { Scan, QrCode, Keyboard, Camera, X, Flashlight, FlashlightOff, Focus, Check, RotateCcw, Loader2, Wrench, AlertCircle, MapPin, FileText, Gauge, ClipboardCheck, Ban } from "lucide-react";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -570,71 +570,93 @@ export function StartMeterChangeoutDialog({
           </form>
         )}
 
-        {scanMode === "confirm" && foundWorkOrder && (
-          <div className="space-y-4">
-            <div className="text-center">
-              <Badge variant="secondary" className="mb-2">
-                Work Order Found
-              </Badge>
+        {scanMode === "confirm" && foundWorkOrder && (() => {
+          const isCompleted = foundWorkOrder.status?.toLowerCase() === "completed";
+          return (
+            <div className="space-y-4">
+              <div className="text-center">
+                <Badge variant={isCompleted ? "destructive" : "secondary"} className="mb-2">
+                  {isCompleted ? "Work Order Already Completed" : "Work Order Found"}
+                </Badge>
+              </div>
+
+              <Card>
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <FileText className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm text-muted-foreground">Work Order</p>
+                      <p className="font-medium break-all" data-testid="text-confirm-wo-id">
+                        {foundWorkOrder.customerWoId || `WO-${foundWorkOrder.id}`}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <MapPin className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm text-muted-foreground">Address</p>
+                      <p className="font-medium break-all" data-testid="text-confirm-address">
+                        {foundWorkOrder.address || "No address"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <Gauge className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm text-muted-foreground">Old Meter ID</p>
+                      <p className="font-medium break-all" data-testid="text-confirm-meter-id">
+                        {foundWorkOrder.oldMeterId || "N/A"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3">
+                    <ClipboardCheck className={`h-5 w-5 mt-0.5 shrink-0 ${isCompleted ? "text-destructive" : "text-muted-foreground"}`} />
+                    <div className="min-w-0">
+                      <p className="text-sm text-muted-foreground">Status</p>
+                      <p className={`font-medium ${isCompleted ? "text-destructive" : ""}`} data-testid="text-confirm-status">
+                        {foundWorkOrder.status || "Unknown"}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {isCompleted && (
+                <div className="flex items-center gap-2 p-3 rounded-md bg-destructive/10 text-destructive" data-testid="alert-completed-warning">
+                  <Ban className="h-5 w-5 shrink-0" />
+                  <p className="text-sm" data-testid="text-completed-warning">This work order has already been completed. A meter changeout cannot be started.</p>
+                </div>
+              )}
+
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={cancelConfirmation}
+                  className="flex-1"
+                  data-testid="button-cancel-confirm"
+                >
+                  <X className="h-4 w-4 mr-2" />
+                  {isCompleted ? "Close" : "Cancel"}
+                </Button>
+                {!isCompleted && (
+                  <Button
+                    type="button"
+                    onClick={confirmAndProceed}
+                    className="flex-1"
+                    data-testid="button-confirm-proceed"
+                  >
+                    <Check className="h-4 w-4 mr-2" />
+                    Confirm
+                  </Button>
+                )}
+              </div>
             </div>
-
-            <Card>
-              <CardContent className="p-4 space-y-3">
-                <div className="flex items-start gap-3">
-                  <FileText className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-sm text-muted-foreground">Work Order</p>
-                    <p className="font-medium break-all" data-testid="text-confirm-wo-id">
-                      {foundWorkOrder.customerWoId || `WO-${foundWorkOrder.id}`}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3">
-                  <MapPin className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-sm text-muted-foreground">Address</p>
-                    <p className="font-medium break-all" data-testid="text-confirm-address">
-                      {foundWorkOrder.address || "No address"}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3">
-                  <Gauge className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-sm text-muted-foreground">Old Meter ID</p>
-                    <p className="font-medium break-all" data-testid="text-confirm-meter-id">
-                      {foundWorkOrder.oldMeterId || "N/A"}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={cancelConfirmation}
-                className="flex-1"
-                data-testid="button-cancel-confirm"
-              >
-                <X className="h-4 w-4 mr-2" />
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                onClick={confirmAndProceed}
-                className="flex-1"
-                data-testid="button-confirm-proceed"
-              >
-                <Check className="h-4 w-4 mr-2" />
-                Confirm
-              </Button>
-            </div>
-          </div>
-        )}
+          );
+        })()}
       </DialogContent>
     </Dialog>
   );
