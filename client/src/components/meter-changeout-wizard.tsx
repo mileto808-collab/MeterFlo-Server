@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -33,6 +34,9 @@ import {
   Loader2,
   X,
   Image as ImageIcon,
+  ScanBarcode,
+  QrCode,
+  Keyboard,
 } from "lucide-react";
 
 type WizardStep =
@@ -41,6 +45,7 @@ type WizardStep =
   | "oldReading"
   | "beforePhotos"
   | "physicalChange"
+  | "newMeterId"
   | "newReading"
   | "afterPhotos"
   | "gps"
@@ -60,6 +65,7 @@ interface MeterChangeoutData {
   troublePhotos: CapturedPhoto[];
   oldMeterReading: string;
   beforePhotos: CapturedPhoto[];
+  newMeterId: string;
   newMeterReading: string;
   afterPhotos: CapturedPhoto[];
   gpsCoordinates: string;
@@ -86,6 +92,7 @@ const stepLabels: Record<WizardStep, string> = {
   oldReading: "Old Meter Reading",
   beforePhotos: "Before Photos",
   physicalChange: "Perform Changeout",
+  newMeterId: "New Meter ID",
   newReading: "New Meter Reading",
   afterPhotos: "After Photos",
   gps: "Capture GPS",
@@ -98,6 +105,7 @@ const successSteps: WizardStep[] = [
   "oldReading",
   "beforePhotos",
   "physicalChange",
+  "newMeterId",
   "newReading",
   "afterPhotos",
   "gps",
@@ -126,6 +134,9 @@ export function MeterChangeoutWizard({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [photoType, setPhotoType] = useState<"trouble" | "before" | "after">("before");
   const [isCapturingPhoto, setIsCapturingPhoto] = useState(false);
+  const [meterIdInputMode, setMeterIdInputMode] = useState<"choose" | "barcode" | "qr" | "manual" | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+  const scannerRef = useRef<HTMLDivElement>(null);
 
   const [data, setData] = useState<MeterChangeoutData>({
     canChange: true,
@@ -134,6 +145,7 @@ export function MeterChangeoutWizard({
     troublePhotos: [],
     oldMeterReading: existingOldReading || "",
     beforePhotos: [],
+    newMeterId: "",
     newMeterReading: existingNewReading || "",
     afterPhotos: [],
     gpsCoordinates: existingGps || "",
@@ -172,6 +184,7 @@ export function MeterChangeoutWizard({
       troublePhotos: [],
       oldMeterReading: existingOldReading || "",
       beforePhotos: [],
+      newMeterId: "",
       newMeterReading: existingNewReading || "",
       afterPhotos: [],
       gpsCoordinates: existingGps || "",
@@ -200,6 +213,8 @@ export function MeterChangeoutWizard({
         return data.beforePhotos.length >= 1;
       case "physicalChange":
         return true;
+      case "newMeterId":
+        return !!data.newMeterId.trim();
       case "newReading":
         return !!data.newMeterReading.trim();
       case "afterPhotos":
@@ -211,9 +226,10 @@ export function MeterChangeoutWizard({
       case "confirm":
         // Final validation: check all required fields based on path
         if (data.canChange) {
-          // Success path requires: old reading, new reading, before/after photos, GPS, signature
+          // Success path requires: old reading, new meter ID, new reading, before/after photos, GPS, signature
           return (
             !!data.oldMeterReading.trim() &&
+            !!data.newMeterId.trim() &&
             !!data.newMeterReading.trim() &&
             data.beforePhotos.length >= 1 &&
             data.afterPhotos.length >= 1 &&
@@ -355,6 +371,102 @@ export function MeterChangeoutWizard({
       setIsSubmitting(false);
     }
   };
+
+  const scannerInstanceRef = useRef<Html5Qrcode | null>(null);
+
+  const startScanner = useCallback(async (mode: "barcode" | "qr") => {
+    try {
+      // Clean up any existing scanner
+      if (scannerInstanceRef.current) {
+        try {
+          await scannerInstanceRef.current.stop();
+        } catch {
+          // Ignore stop errors
+        }
+        scannerInstanceRef.current = null;
+      }
+
+      const html5QrCode = new Html5Qrcode("qr-reader");
+      scannerInstanceRef.current = html5QrCode;
+
+      // Configure supported formats based on scan mode
+      const barcodeFormats = [
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.CODE_93,
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8,
+        Html5QrcodeSupportedFormats.UPC_A,
+        Html5QrcodeSupportedFormats.UPC_E,
+        Html5QrcodeSupportedFormats.ITF,
+        Html5QrcodeSupportedFormats.CODABAR,
+      ];
+      
+      const qrFormats = [
+        Html5QrcodeSupportedFormats.QR_CODE,
+        Html5QrcodeSupportedFormats.DATA_MATRIX,
+      ];
+
+      const formatsToSupport = mode === "qr" ? qrFormats : barcodeFormats;
+      
+      const config = {
+        fps: 10,
+        qrbox: mode === "qr" ? { width: 200, height: 200 } : { width: 280, height: 100 },
+        aspectRatio: 1.0,
+        formatsToSupport,
+      };
+
+      await html5QrCode.start(
+        { facingMode: "environment" },
+        config,
+        (decodedText) => {
+          // Success - stop scanner and set the value
+          setData((prev) => ({ ...prev, newMeterId: decodedText }));
+          setIsScanning(false);
+          setMeterIdInputMode(null);
+          html5QrCode.stop().catch(() => {});
+          scannerInstanceRef.current = null;
+          toast({
+            title: "Scanned Successfully",
+            description: `Meter ID: ${decodedText}`,
+          });
+        },
+        () => {
+          // QR code not found - this is called continuously, ignore
+        }
+      );
+    } catch (error: any) {
+      console.error("Scanner error:", error);
+      setIsScanning(false);
+      toast({
+        title: "Camera Error",
+        description: error.message || "Could not access camera. Try manual entry instead.",
+        variant: "destructive",
+      });
+      setMeterIdInputMode(null);
+    }
+  }, [toast]);
+
+  // Clean up scanner when mode changes or component unmounts
+  useEffect(() => {
+    return () => {
+      if (scannerInstanceRef.current) {
+        scannerInstanceRef.current.stop().catch(() => {});
+        scannerInstanceRef.current = null;
+      }
+    };
+  }, []);
+
+  // Stop scanner when leaving the newMeterId step or changing mode
+  useEffect(() => {
+    if (currentStep !== "newMeterId" || (!meterIdInputMode || meterIdInputMode === "manual" || meterIdInputMode === "choose")) {
+      if (scannerInstanceRef.current) {
+        scannerInstanceRef.current.stop().catch(() => {});
+        scannerInstanceRef.current = null;
+        setIsScanning(false);
+      }
+    }
+  }, [currentStep, meterIdInputMode]);
 
   const renderStepIndicator = () => {
     return (
@@ -562,6 +674,170 @@ export function MeterChangeoutWizard({
           </div>
         );
 
+      case "newMeterId":
+        return (
+          <div className="space-y-4">
+            <div className="text-center mb-4">
+              <ScanBarcode className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
+              <p className="text-muted-foreground">
+                Capture the new meter ID by scanning or entering manually.
+              </p>
+            </div>
+            
+            {data.newMeterId ? (
+              <div className="space-y-3">
+                <Card className="bg-muted/50">
+                  <CardContent className="pt-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <Label className="text-xs text-muted-foreground">New Meter ID</Label>
+                        <p className="text-lg font-medium break-all" data-testid="text-new-meter-id">{data.newMeterId}</p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setData((prev) => ({ ...prev, newMeterId: "" }));
+                          setMeterIdInputMode(null);
+                        }}
+                        data-testid="button-clear-meter-id"
+                      >
+                        Clear
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            ) : meterIdInputMode === "barcode" || meterIdInputMode === "qr" ? (
+              <div className="space-y-4">
+                <div 
+                  ref={scannerRef} 
+                  id="qr-reader" 
+                  className="w-full rounded-md overflow-hidden"
+                  style={{ minHeight: "250px" }}
+                />
+                {isScanning && (
+                  <div className="flex items-center justify-center gap-2 text-muted-foreground">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>Scanning for {meterIdInputMode === "qr" ? "QR code" : "barcode"}...</span>
+                  </div>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    setMeterIdInputMode(null);
+                    setIsScanning(false);
+                  }}
+                  data-testid="button-cancel-scan"
+                >
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back to Options
+                </Button>
+              </div>
+            ) : meterIdInputMode === "manual" ? (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Enter New Meter ID *</Label>
+                  <Input
+                    type="text"
+                    placeholder="Type or paste meter ID..."
+                    className="text-lg"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        const input = e.currentTarget.value.trim();
+                        if (input) {
+                          setData((prev) => ({ ...prev, newMeterId: input }));
+                        }
+                      }
+                    }}
+                    data-testid="input-new-meter-id"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1"
+                    onClick={() => setMeterIdInputMode(null)}
+                    data-testid="button-cancel-manual"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    className="flex-1"
+                    onClick={() => {
+                      const input = document.querySelector<HTMLInputElement>('[data-testid="input-new-meter-id"]');
+                      if (input && input.value.trim()) {
+                        setData((prev) => ({ ...prev, newMeterId: input.value.trim() }));
+                      } else {
+                        toast({
+                          title: "Required",
+                          description: "Please enter a meter ID",
+                          variant: "destructive",
+                        });
+                      }
+                    }}
+                    data-testid="button-confirm-meter-id"
+                  >
+                    <Check className="h-4 w-4 mr-2" />
+                    Confirm
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-16 flex items-center justify-center gap-3"
+                  onClick={() => {
+                    setMeterIdInputMode("barcode");
+                    setIsScanning(true);
+                    setTimeout(() => {
+                      startScanner("barcode");
+                    }, 100);
+                  }}
+                  data-testid="button-scan-barcode"
+                >
+                  <ScanBarcode className="h-6 w-6" />
+                  <span>Scan Barcode</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-16 flex items-center justify-center gap-3"
+                  onClick={() => {
+                    setMeterIdInputMode("qr");
+                    setIsScanning(true);
+                    setTimeout(() => {
+                      startScanner("qr");
+                    }, 100);
+                  }}
+                  data-testid="button-scan-qr"
+                >
+                  <QrCode className="h-6 w-6" />
+                  <span>Scan QR Code</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-16 flex items-center justify-center gap-3"
+                  onClick={() => setMeterIdInputMode("manual")}
+                  data-testid="button-enter-manual"
+                >
+                  <Keyboard className="h-6 w-6" />
+                  <span>Enter Manually</span>
+                </Button>
+              </div>
+            )}
+          </div>
+        );
+
       case "newReading":
         return (
           <div className="space-y-4">
@@ -665,6 +941,9 @@ export function MeterChangeoutWizard({
                     
                     <span className="text-muted-foreground">Old Reading:</span>
                     <span className="font-medium">{data.oldMeterReading}</span>
+                    
+                    <span className="text-muted-foreground">New Meter ID:</span>
+                    <span className="font-medium">{data.newMeterId}</span>
                     
                     <span className="text-muted-foreground">New Reading:</span>
                     <span className="font-medium">{data.newMeterReading}</span>
