@@ -349,7 +349,7 @@ export default function ProjectWorkOrders() {
   });
 
   const { data: workOrderFiles = [], isLoading: filesLoading } = useQuery<string[]>({
-    queryKey: ["/api/projects", projectId, "work-orders", editingWorkOrder?.id, "files"],
+    queryKey: [`/api/projects/${projectId}/work-orders/${editingWorkOrder?.id}/files`],
     queryFn: async () => {
       const res = await fetch(`/api/projects/${projectId}/work-orders/${editingWorkOrder?.id}/files`, { credentials: "include" });
       return res.json();
