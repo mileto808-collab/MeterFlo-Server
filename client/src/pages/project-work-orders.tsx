@@ -478,6 +478,15 @@ export default function ProjectWorkOrders() {
     }
   }, []);
 
+  // Scroll to top when opening a work order detail
+  useEffect(() => {
+    if (editingWorkOrder) {
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: 0, behavior: 'instant' });
+      });
+    }
+  }, [editingWorkOrder?.id]);
+
   useEffect(() => {
     if (editingWorkOrder) {
       editForm.reset({
@@ -1743,6 +1752,7 @@ export default function ProjectWorkOrders() {
     return (
       <>
         <WorkOrderDetail
+          key={editingWorkOrder.id}
           workOrder={editingWorkOrder}
           form={editForm}
           onSubmit={onEditSubmit}

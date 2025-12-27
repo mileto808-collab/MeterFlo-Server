@@ -104,6 +104,11 @@ export function WorkOrderDetail({
   const [openSections, setOpenSections] = useState<string[]>(["customer", "meter", "scheduling"]);
   const [showMeterChangeoutWizard, setShowMeterChangeoutWizard] = useState(false);
 
+  // Scroll to top when component mounts (triggered by key prop change)
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, []);
+
   const getStatusBadge = (status: string) => {
     const statusConfig: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; className?: string }> = {
       Open: { variant: "outline" },
