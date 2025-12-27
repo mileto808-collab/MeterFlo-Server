@@ -406,6 +406,19 @@ export const resetPasswordSchema = z.object({
   ),
 });
 
+// Schema for updating own profile (self-service, limited fields)
+export const updateProfileSchema = z.object({
+  firstName: z.string().max(100).optional().nullable(),
+  lastName: z.string().max(100).optional().nullable(),
+  email: z.string().email("Invalid email address").optional().nullable(),
+  phone: z.string().max(50).optional().nullable(),
+  address: z.string().max(255).optional().nullable(),
+  city: z.string().max(100).optional().nullable(),
+  state: z.string().max(50).optional().nullable(),
+  zip: z.string().max(20).optional().nullable(),
+});
+export type UpdateProfile = z.infer<typeof updateProfileSchema>;
+
 export const insertProjectSchema = z.object({
   name: z.string().min(1).max(255),
   description: z.string().optional().nullable(),
