@@ -1700,10 +1700,10 @@ export default function ProjectWorkOrders() {
           canEdit={hasPermission('workOrders.edit')}
           canMeterChangeout={hasPermission('workOrders.meterChangeout')}
           onMeterChangeoutComplete={async () => {
+            // Use refetchQueries instead of invalidateQueries to ensure data is loaded before closing
             await Promise.all([
-              queryClient.invalidateQueries({ queryKey: ['/api/projects', projectId, 'work-orders'] }),
-              queryClient.invalidateQueries({ queryKey: ['/api/projects', projectId, 'work-orders', editingWorkOrder.id] }),
-              queryClient.invalidateQueries({ queryKey: ['/api/projects', projectId, 'work-orders', editingWorkOrder.id, 'files'] }),
+              queryClient.refetchQueries({ queryKey: [`/api/projects/${projectId}/work-orders`] }),
+              queryClient.refetchQueries({ queryKey: [`/api/projects/${projectId}/work-orders/stats`] }),
             ]);
             toast({
               title: "Success",
