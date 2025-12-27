@@ -1953,8 +1953,8 @@ export async function registerRoutes(
         }
       }
       
-      // Update the work order - pass user ID as third parameter (FK constraint requires ID, not name)
-      const updatedWorkOrder = await workOrderStorage.updateWorkOrder(workOrderId, updateData, currentUser.id);
+      // Update the work order - pass username as third parameter (FK references public.users(username))
+      const updatedWorkOrder = await workOrderStorage.updateWorkOrder(workOrderId, updateData, currentUser.username || undefined);
       
       if (!updatedWorkOrder) {
         console.error("Meter changeout: updateWorkOrder returned undefined for work order", workOrderId);
