@@ -70,6 +70,7 @@ interface WorkOrderDetailProps {
   signaturePadRef: React.RefObject<SignaturePadRef | null>;
   openCreateMeterTypeDialog: (field: string) => void;
   toast: any;
+  canEdit?: boolean;
 }
 
 export function WorkOrderDetail({
@@ -92,6 +93,7 @@ export function WorkOrderDetail({
   signaturePadRef,
   openCreateMeterTypeDialog,
   toast,
+  canEdit = true,
 }: WorkOrderDetailProps) {
   const [openSections, setOpenSections] = useState<string[]>(["customer", "meter", "scheduling"]);
 
@@ -124,6 +126,14 @@ export function WorkOrderDetail({
 
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-5xl mx-auto">
+      {/* Read-Only Banner */}
+      {!canEdit && (
+        <div className="flex items-center gap-2 p-3 bg-muted border rounded-md" data-testid="banner-read-only">
+          <Eye className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm text-muted-foreground">You are viewing this work order in read-only mode.</span>
+        </div>
+      )}
+
       {/* Back Navigation */}
       <div className="mb-2">
         {cameFromSearch ? (
@@ -240,7 +250,7 @@ export function WorkOrderDetail({
                       <FormItem>
                         <FormLabel>Work Order ID *</FormLabel>
                         <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="WO-001" data-testid="input-customer-wo-id" />
+                          <Input {...field} value={field.value || ""} placeholder="WO-001" disabled={!canEdit} data-testid="input-customer-wo-id" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -253,7 +263,7 @@ export function WorkOrderDetail({
                       <FormItem>
                         <FormLabel>Customer ID *</FormLabel>
                         <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="CUST-001" data-testid="input-customer-id" />
+                          <Input {...field} value={field.value || ""} placeholder="CUST-001" disabled={!canEdit} data-testid="input-customer-id" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -266,7 +276,7 @@ export function WorkOrderDetail({
                       <FormItem>
                         <FormLabel>Customer Name *</FormLabel>
                         <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="John Doe" data-testid="input-customer-name" />
+                          <Input {...field} value={field.value || ""} placeholder="John Doe" disabled={!canEdit} data-testid="input-customer-name" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -279,7 +289,7 @@ export function WorkOrderDetail({
                       <FormItem className="md:col-span-2">
                         <FormLabel>Address *</FormLabel>
                         <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="123 Main Street" data-testid="input-address" />
+                          <Input {...field} value={field.value || ""} placeholder="123 Main Street" disabled={!canEdit} data-testid="input-address" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -292,7 +302,7 @@ export function WorkOrderDetail({
                       <FormItem>
                         <FormLabel>City</FormLabel>
                         <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="City" data-testid="input-city" />
+                          <Input {...field} value={field.value || ""} placeholder="City" disabled={!canEdit} data-testid="input-city" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -305,7 +315,7 @@ export function WorkOrderDetail({
                       <FormItem>
                         <FormLabel>State</FormLabel>
                         <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="State" data-testid="input-state" />
+                          <Input {...field} value={field.value || ""} placeholder="State" disabled={!canEdit} data-testid="input-state" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -318,7 +328,7 @@ export function WorkOrderDetail({
                       <FormItem>
                         <FormLabel>ZIP Code</FormLabel>
                         <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="12345" data-testid="input-zip" />
+                          <Input {...field} value={field.value || ""} placeholder="12345" disabled={!canEdit} data-testid="input-zip" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -331,7 +341,7 @@ export function WorkOrderDetail({
                       <FormItem>
                         <FormLabel>Phone</FormLabel>
                         <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="555-123-4567" data-testid="input-phone" />
+                          <Input {...field} value={field.value || ""} placeholder="555-123-4567" disabled={!canEdit} data-testid="input-phone" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -344,7 +354,7 @@ export function WorkOrderDetail({
                       <FormItem>
                         <FormLabel>Email</FormLabel>
                         <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="email@example.com" data-testid="input-email" />
+                          <Input {...field} value={field.value || ""} placeholder="email@example.com" disabled={!canEdit} data-testid="input-email" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -357,7 +367,7 @@ export function WorkOrderDetail({
                       <FormItem>
                         <FormLabel>Route</FormLabel>
                         <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="Route A" data-testid="input-route" />
+                          <Input {...field} value={field.value || ""} placeholder="Route A" disabled={!canEdit} data-testid="input-route" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -370,7 +380,7 @@ export function WorkOrderDetail({
                       <FormItem>
                         <FormLabel>Zone</FormLabel>
                         <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="Zone 1" data-testid="input-zone" />
+                          <Input {...field} value={field.value || ""} placeholder="Zone 1" disabled={!canEdit} data-testid="input-zone" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -396,9 +406,9 @@ export function WorkOrderDetail({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Service Type *</FormLabel>
-                        <Select value={field.value} onValueChange={field.onChange}>
+                        <Select value={field.value} onValueChange={field.onChange} disabled={!canEdit}>
                           <FormControl>
-                            <SelectTrigger data-testid="select-service-type">
+                            <SelectTrigger data-testid="select-service-type" disabled={!canEdit}>
                               <SelectValue />
                             </SelectTrigger>
                           </FormControl>
@@ -428,6 +438,7 @@ export function WorkOrderDetail({
                                 value={field.value || ""} 
                                 onChange={field.onChange} 
                                 placeholder="OLD-12345" 
+                                disabled={!canEdit}
                                 data-testid="input-old-meter-id" 
                               />
                             </FormControl>
@@ -448,6 +459,7 @@ export function WorkOrderDetail({
                                 value={field.value ?? ""} 
                                 onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
                                 placeholder="12345" 
+                                disabled={!canEdit}
                                 data-testid="input-old-meter-reading" 
                               />
                             </FormControl>
@@ -465,9 +477,10 @@ export function WorkOrderDetail({
                               <Select 
                                 value={field.value || "__none__"} 
                                 onValueChange={(val) => field.onChange(val === "__none__" ? null : val)}
+                                disabled={!canEdit}
                               >
                                 <FormControl>
-                                  <SelectTrigger data-testid="select-old-meter-type" className="flex-1">
+                                  <SelectTrigger data-testid="select-old-meter-type" className="flex-1" disabled={!canEdit}>
                                     <SelectValue placeholder="Select type..." />
                                   </SelectTrigger>
                                 </FormControl>
@@ -478,18 +491,20 @@ export function WorkOrderDetail({
                                   ))}
                                 </SelectContent>
                               </Select>
-                              <Button
-                                type="button"
-                                size="icon"
-                                variant="outline"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  openCreateMeterTypeDialog("editOldMeterType");
-                                }}
-                                data-testid="button-create-old-meter-type"
-                              >
-                                <Plus className="h-4 w-4" />
-                              </Button>
+                              {canEdit && (
+                                <Button
+                                  type="button"
+                                  size="icon"
+                                  variant="outline"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    openCreateMeterTypeDialog("editOldMeterType");
+                                  }}
+                                  data-testid="button-create-old-meter-type"
+                                >
+                                  <Plus className="h-4 w-4" />
+                                </Button>
+                              )}
                             </div>
                             <FormMessage />
                           </FormItem>
@@ -506,6 +521,7 @@ export function WorkOrderDetail({
                                 value={field.value || ""} 
                                 onChange={field.onChange} 
                                 placeholder="40.7128,-74.0060" 
+                                disabled={!canEdit}
                                 data-testid="input-old-gps" 
                               />
                             </FormControl>
@@ -531,6 +547,7 @@ export function WorkOrderDetail({
                                 value={field.value || ""} 
                                 onChange={field.onChange} 
                                 placeholder="NEW-67890" 
+                                disabled={!canEdit}
                                 data-testid="input-new-meter-id" 
                               />
                             </FormControl>
@@ -551,6 +568,7 @@ export function WorkOrderDetail({
                                 value={field.value ?? ""} 
                                 onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
                                 placeholder="67890" 
+                                disabled={!canEdit}
                                 data-testid="input-new-meter-reading" 
                               />
                             </FormControl>
@@ -568,9 +586,10 @@ export function WorkOrderDetail({
                               <Select 
                                 value={field.value || "__none__"} 
                                 onValueChange={(val) => field.onChange(val === "__none__" ? null : val)}
+                                disabled={!canEdit}
                               >
                                 <FormControl>
-                                  <SelectTrigger data-testid="select-new-meter-type" className="flex-1">
+                                  <SelectTrigger data-testid="select-new-meter-type" className="flex-1" disabled={!canEdit}>
                                     <SelectValue placeholder="Select type..." />
                                   </SelectTrigger>
                                 </FormControl>
@@ -581,18 +600,20 @@ export function WorkOrderDetail({
                                   ))}
                                 </SelectContent>
                               </Select>
-                              <Button
-                                type="button"
-                                size="icon"
-                                variant="outline"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  openCreateMeterTypeDialog("editNewMeterType");
-                                }}
-                                data-testid="button-create-new-meter-type"
-                              >
-                                <Plus className="h-4 w-4" />
-                              </Button>
+                              {canEdit && (
+                                <Button
+                                  type="button"
+                                  size="icon"
+                                  variant="outline"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    openCreateMeterTypeDialog("editNewMeterType");
+                                  }}
+                                  data-testid="button-create-new-meter-type"
+                                >
+                                  <Plus className="h-4 w-4" />
+                                </Button>
+                              )}
                             </div>
                             <FormMessage />
                           </FormItem>
@@ -609,6 +630,7 @@ export function WorkOrderDetail({
                                 value={field.value || ""} 
                                 onChange={field.onChange} 
                                 placeholder="40.7128,-74.0060" 
+                                disabled={!canEdit}
                                 data-testid="input-new-gps" 
                               />
                             </FormControl>
@@ -625,6 +647,7 @@ export function WorkOrderDetail({
                       ref={signaturePadRef}
                       initialSignatureData={(workOrder as any)?.signatureData}
                       initialSignatureName={(workOrder as any)?.signatureName}
+                      disabled={!canEdit}
                     />
                   </div>
                 </div>
@@ -659,9 +682,10 @@ export function WorkOrderDetail({
                               });
                             }
                           }}
+                          disabled={!canEdit}
                         >
                           <FormControl>
-                            <SelectTrigger data-testid="select-status">
+                            <SelectTrigger data-testid="select-status" disabled={!canEdit}>
                               <SelectValue />
                             </SelectTrigger>
                           </FormControl>
@@ -689,10 +713,11 @@ export function WorkOrderDetail({
                               type="datetime-local"
                               {...field}
                               value={field.value || ""}
+                              disabled={!canEdit}
                               data-testid="input-scheduled-at"
                             />
                           </FormControl>
-                          {field.value && (
+                          {field.value && canEdit && (
                             <Button
                               type="button"
                               variant="outline"
@@ -716,9 +741,9 @@ export function WorkOrderDetail({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Assigned User</FormLabel>
-                        <Select value={field.value ?? "__none__"} onValueChange={(v) => field.onChange(v === "__none__" ? undefined : v)}>
+                        <Select value={field.value ?? "__none__"} onValueChange={(v) => field.onChange(v === "__none__" ? undefined : v)} disabled={!canEdit}>
                           <FormControl>
-                            <SelectTrigger data-testid="select-assigned-user">
+                            <SelectTrigger data-testid="select-assigned-user" disabled={!canEdit}>
                               <SelectValue placeholder="Select user..." />
                             </SelectTrigger>
                           </FormControl>
@@ -741,9 +766,9 @@ export function WorkOrderDetail({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Assigned Group</FormLabel>
-                        <Select value={field.value ?? "__none__"} onValueChange={(v) => field.onChange(v === "__none__" ? undefined : v)}>
+                        <Select value={field.value ?? "__none__"} onValueChange={(v) => field.onChange(v === "__none__" ? undefined : v)} disabled={!canEdit}>
                           <FormControl>
-                            <SelectTrigger data-testid="select-assigned-group">
+                            <SelectTrigger data-testid="select-assigned-group" disabled={!canEdit}>
                               <SelectValue placeholder="Select group..." />
                             </SelectTrigger>
                           </FormControl>
@@ -766,9 +791,9 @@ export function WorkOrderDetail({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Trouble Code</FormLabel>
-                        <Select value={(field.value as string) || "__none__"} onValueChange={(val) => field.onChange(val === "__none__" ? "" : val)}>
+                        <Select value={(field.value as string) || "__none__"} onValueChange={(val) => field.onChange(val === "__none__" ? "" : val)} disabled={!canEdit}>
                           <FormControl>
-                            <SelectTrigger data-testid="select-trouble">
+                            <SelectTrigger data-testid="select-trouble" disabled={!canEdit}>
                               <SelectValue placeholder="Select trouble code..." />
                             </SelectTrigger>
                           </FormControl>
@@ -809,6 +834,7 @@ export function WorkOrderDetail({
                           value={field.value || ""} 
                           placeholder="Additional notes about this work order..." 
                           className="min-h-[120px]"
+                          disabled={!canEdit}
                           data-testid="input-notes" 
                         />
                       </FormControl>
@@ -960,25 +986,27 @@ export function WorkOrderDetail({
             </AccordionItem>
           </Accordion>
 
-          {/* Sticky Save Button */}
+          {/* Sticky Footer */}
           <div className="sticky bottom-0 bg-background border-t py-4 -mx-4 px-4 md:-mx-6 md:px-6">
             <div className="flex justify-end gap-3">
               <Button type="button" variant="outline" onClick={onBack} data-testid="button-cancel">
-                Cancel
+                {canEdit ? "Cancel" : "Back"}
               </Button>
-              <Button type="submit" disabled={isSubmitting} data-testid="button-save">
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <Save className="mr-2 h-4 w-4" />
-                    Save Changes
-                  </>
-                )}
-              </Button>
+              {canEdit && (
+                <Button type="submit" disabled={isSubmitting} data-testid="button-save">
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="mr-2 h-4 w-4" />
+                      Save Changes
+                    </>
+                  )}
+                </Button>
+              )}
             </div>
           </div>
         </form>
