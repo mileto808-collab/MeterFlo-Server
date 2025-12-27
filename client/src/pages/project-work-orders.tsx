@@ -1698,6 +1698,17 @@ export default function ProjectWorkOrders() {
           openCreateMeterTypeDialog={openCreateMeterTypeDialog}
           toast={toast}
           canEdit={hasPermission('workOrders.edit')}
+          canMeterChangeout={hasPermission('workOrders.meterChangeout')}
+          onMeterChangeoutComplete={() => {
+            queryClient.invalidateQueries({ queryKey: ['/api/projects', projectId, 'work-orders'] });
+            queryClient.invalidateQueries({ queryKey: ['/api/projects', projectId, 'work-orders', editingWorkOrder.id] });
+            queryClient.invalidateQueries({ queryKey: ['/api/projects', projectId, 'work-orders', editingWorkOrder.id, 'files'] });
+            toast({
+              title: "Success",
+              description: "Meter changeout completed successfully!",
+            });
+            setEditingWorkOrder(null);
+          }}
         />
         {meterTypeDialog}
       </>

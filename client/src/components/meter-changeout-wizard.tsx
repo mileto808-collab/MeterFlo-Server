@@ -189,9 +189,23 @@ export function MeterChangeoutWizard({
       case "gps":
         return !!data.gpsCoordinates.trim();
       case "signature":
-        return !!data.signatureName.trim() && (!!data.signatureData || data.signatureName.trim().length > 0);
+        return !!data.signatureName.trim();
       case "confirm":
-        return true;
+        // Final validation: check all required fields based on path
+        if (data.canChange) {
+          // Success path requires: old reading, new reading, before/after photos, GPS, signature
+          return (
+            !!data.oldMeterReading.trim() &&
+            !!data.newMeterReading.trim() &&
+            data.beforePhotos.length >= 1 &&
+            data.afterPhotos.length >= 1 &&
+            !!data.gpsCoordinates.trim() &&
+            !!data.signatureName.trim()
+          );
+        } else {
+          // Trouble path requires: trouble code, trouble photos
+          return !!data.troubleCode && data.troublePhotos.length >= 1;
+        }
       default:
         return false;
     }

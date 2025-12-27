@@ -1759,6 +1759,214 @@ export async function registerRoutes(
     }
   });
 
+  // Meter changeout workflow endpoint
+  app.post("/api/projects/:projectId/work-orders/:workOrderId/meter-changeout", isAuthenticated, upload.array("photos", 20), async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      const workOrderId = parseInt(req.params.workOrderId);
+      
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // Check permission
+      const hasMeterChangeoutPermission = await storage.hasPermission(currentUser, "workOrders.meterChangeout");
+      if (!hasMeterChangeoutPermission) {
+        return res.status(403).json({ message: "You do not have permission to perform meter changeouts" });
+      }
+      
+      if (currentUser.role === "customer") {
+        return res.status(403).json({ message: "Customers cannot perform meter changeouts" });
+      }
+      
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      const workOrder = await workOrderStorage.getWorkOrder(workOrderId);
+      if (!workOrder) {
+        return res.status(404).json({ message: "Work order not found" });
+      }
+      
+      // Parse the changeout data
+      const changeoutData = JSON.parse(req.body.data || "{}");
+      const {
+        canChange,
+        troubleCode,
+        troubleNote,
+        oldMeterReading,
+        newMeterReading,
+        gpsCoordinates,
+        signatureData,
+        signatureName,
+        photoTypes, // Array of types matching the files array: ["before", "before", "after", "after", "trouble"]
+      } = changeoutData;
+      
+      const files = req.files as Express.Multer.File[];
+      const folderName = workOrder.customerWoId || String(workOrder.id);
+      
+      // Get existing files to determine next sequence numbers
+      const existingFiles = await getWorkOrderFiles(project.name, project.id, folderName, workOrder.id);
+      
+      // Count existing files by type
+      const countByType: Record<string, number> = { trouble: 0, before: 0, after: 0 };
+      existingFiles.forEach((file: string) => {
+        const match = file.match(/^.*-(trouble|before|after)-(\d+)\./);
+        if (match) {
+          const type = match[1] as "trouble" | "before" | "after";
+          const num = parseInt(match[2]);
+          if (num > countByType[type]) {
+            countByType[type] = num;
+          }
+        }
+      });
+      
+      // Upload photos with proper naming convention
+      const uploadedPhotos: string[] = [];
+      if (files && files.length > 0 && Array.isArray(photoTypes)) {
+        // Validate photoTypes matches files
+        if (photoTypes.length !== files.length) {
+          return res.status(400).json({ 
+            message: `Photo types count (${photoTypes.length}) does not match files count (${files.length})` 
+          });
+        }
+        
+        // Validate each photo type is valid
+        const validTypes = ["trouble", "before", "after"];
+        for (let i = 0; i < photoTypes.length; i++) {
+          if (!validTypes.includes(photoTypes[i])) {
+            return res.status(400).json({ 
+              message: `Invalid photo type at index ${i}: "${photoTypes[i]}"` 
+            });
+          }
+        }
+        
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const type = photoTypes[i] as "trouble" | "before" | "after";
+          
+          // Increment the sequence number for this type
+          countByType[type] = (countByType[type] || 0) + 1;
+          const sequence = countByType[type];
+          
+          // Determine file extension
+          const ext = path.extname(file.originalname) || ".jpg";
+          
+          // Create filename: customerWoId-type-sequence.ext
+          const filename = `${folderName}-${type}-${sequence}${ext}`;
+          
+          await saveWorkOrderFile(
+            project.name,
+            project.id,
+            folderName,
+            filename,
+            file.buffer,
+            workOrder.id
+          );
+          
+          uploadedPhotos.push(filename);
+        }
+      }
+      
+      // Save signature image if provided
+      if (signatureData && signatureData.startsWith("data:image")) {
+        const base64Data = signatureData.split(",")[1];
+        const signatureBuffer = Buffer.from(base64Data, "base64");
+        const signatureFilename = `${folderName}-signature.png`;
+        await saveWorkOrderFile(
+          project.name,
+          project.id,
+          folderName,
+          signatureFilename,
+          signatureBuffer,
+          workOrder.id
+        );
+        uploadedPhotos.push(signatureFilename);
+      }
+      
+      // Prepare the update data
+      const updatedByName = currentUser.firstName && currentUser.lastName 
+        ? `${currentUser.firstName} ${currentUser.lastName}` 
+        : currentUser.username || "System";
+      const updateData: any = {
+        updatedBy: updatedByName,
+        updatedAt: new Date().toISOString(),
+      };
+      
+      if (canChange) {
+        // Success path - meter was changed
+        // Validate required fields for success path
+        if (!oldMeterReading || !newMeterReading || !gpsCoordinates || !signatureName) {
+          return res.status(400).json({ 
+            message: "Missing required fields for meter changeout: old reading, new reading, GPS, and signature name are required" 
+          });
+        }
+        
+        updateData.oldMeterReading = oldMeterReading;
+        updateData.newMeterReading = newMeterReading;
+        updateData.gps = gpsCoordinates;
+        updateData.signatureData = signatureData || null;
+        updateData.signatureName = signatureName || null;
+        updateData.completedAt = new Date().toISOString();
+        updateData.completedBy = currentUser.id;
+        
+        // Get the "Completed" status from system
+        const statuses = await storage.getWorkOrderStatuses();
+        const completedStatus = statuses.find((s: any) => s.code.toLowerCase() === "completed" || s.label.toLowerCase() === "completed");
+        if (completedStatus) {
+          updateData.status = completedStatus.code;
+        }
+      } else {
+        // Trouble path - meter could not be changed
+        // Validate required fields for trouble path (GPS and signature NOT required)
+        if (!troubleCode) {
+          return res.status(400).json({ message: "Trouble code is required when meter cannot be changed" });
+        }
+        
+        updateData.trouble = troubleCode;
+        if (troubleNote) {
+          updateData.notes = workOrder.notes 
+            ? `${workOrder.notes}\n\n[Trouble Report - ${new Date().toLocaleString()}]\n${troubleNote}`
+            : `[Trouble Report - ${new Date().toLocaleString()}]\n${troubleNote}`;
+        }
+        
+        // Get the "Unable to Complete" or similar status
+        const statuses = await storage.getWorkOrderStatuses();
+        const troubleStatus = statuses.find((s: any) => 
+          s.code.toLowerCase().includes("unable") || 
+          s.label.toLowerCase().includes("unable") ||
+          s.code.toLowerCase().includes("trouble") ||
+          s.label.toLowerCase().includes("trouble")
+        );
+        if (troubleStatus) {
+          updateData.status = troubleStatus.code;
+        }
+      }
+      
+      // Update the work order
+      await workOrderStorage.updateWorkOrder(workOrderId, updateData);
+      
+      res.json({ 
+        success: true, 
+        message: canChange ? "Meter changeout completed successfully" : "Trouble report submitted successfully",
+        uploadedPhotos 
+      });
+    } catch (error: any) {
+      console.error("Error processing meter changeout:", error);
+      res.status(500).json({ message: error.message || "Failed to process meter changeout" });
+    }
+  });
+
   // Project-level files (separate from work order files)
   app.get("/api/projects/:projectId/files", isAuthenticated, async (req: any, res) => {
     try {
