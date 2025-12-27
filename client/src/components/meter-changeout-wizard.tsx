@@ -138,6 +138,7 @@ export function MeterChangeoutWizard({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [photoType, setPhotoType] = useState<"trouble" | "before" | "after">("before");
   const [isCapturingPhoto, setIsCapturingPhoto] = useState(false);
+  const captureSessionActive = useRef(false);
   const [meterIdInputMode, setMeterIdInputMode] = useState<"choose" | "barcode" | "qr" | "manual" | null>(null);
   const [isScanning, setIsScanning] = useState(false);
   const scannerRef = useRef<HTMLDivElement>(null);
@@ -169,13 +170,44 @@ export function MeterChangeoutWizard({
         // Give a brief delay to allow onChange to fire if a photo was taken
         setTimeout(() => {
           setIsCapturingPhoto(false);
+          captureSessionActive.current = false;
         }, 500);
       }
     };
 
+    // Handle cancel event on file input (modern browsers)
+    const handleCancel = () => {
+      setTimeout(() => {
+        setIsCapturingPhoto(false);
+        captureSessionActive.current = false;
+      }, 100);
+    };
+
+    // Handle window focus regain (desktop fallback for file picker cancel)
+    const handleWindowFocus = () => {
+      if (isCapturingPhoto) {
+        // Give a brief delay to allow onChange to fire if a file was selected
+        setTimeout(() => {
+          setIsCapturingPhoto(false);
+          captureSessionActive.current = false;
+        }, 500);
+      }
+    };
+
+    const fileInput = fileInputRef.current;
+    if (fileInput) {
+      fileInput.addEventListener('cancel', handleCancel);
+    }
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleWindowFocus);
+    
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleWindowFocus);
+      if (fileInput) {
+        fileInput.removeEventListener('cancel', handleCancel);
+      }
     };
   }, [isCapturingPhoto]);
 
@@ -337,7 +369,13 @@ export function MeterChangeoutWizard({
   const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     setIsCapturingPhoto(false);
     const files = e.target.files;
-    if (!files || files.length === 0) return;
+    
+    if (!files || files.length === 0) {
+      setTimeout(() => {
+        captureSessionActive.current = false;
+      }, 500);
+      return;
+    }
 
     const newPhotos: CapturedPhoto[] = [];
     Array.from(files).forEach((file) => {
@@ -358,6 +396,10 @@ export function MeterChangeoutWizard({
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
+    
+    setTimeout(() => {
+      captureSessionActive.current = false;
+    }, 500);
   };
 
   const removePhoto = (type: "trouble" | "before" | "after", index: number) => {
@@ -381,6 +423,7 @@ export function MeterChangeoutWizard({
   const openCamera = (type: "trouble" | "before" | "after") => {
     setPhotoType(type);
     setIsCapturingPhoto(true);
+    captureSessionActive.current = true;
     fileInputRef.current?.click();
   };
 
@@ -548,11 +591,15 @@ export function MeterChangeoutWizard({
               type="button"
               variant="destructive"
               size="icon"
-              className="absolute top-1 right-1 h-6 w-6"
-              onClick={() => removePhoto(type, index)}
+              className="absolute top-1 right-1"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                removePhoto(type, index);
+              }}
               data-testid={`button-remove-${type}-photo-${index}`}
             >
-              <X className="h-3 w-3" />
+              <X className="h-4 w-4" />
             </Button>
             <Badge className="absolute bottom-1 left-1 text-xs" variant="secondary">
               {index + 1}
@@ -1072,7 +1119,7 @@ export function MeterChangeoutWizard({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => {
-      if (!open && !isCapturingPhoto) {
+      if (!open && !isCapturingPhoto && !captureSessionActive.current) {
         handleClose();
       }
     }}>
