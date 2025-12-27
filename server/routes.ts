@@ -1816,33 +1816,16 @@ export async function registerRoutes(
       const files = req.files as Express.Multer.File[];
       const folderName = workOrder.customerWoId || String(workOrder.id);
       
-      // Get existing files to determine next sequence numbers
-      const existingFiles = await getWorkOrderFiles(project.name, project.id, folderName, workOrder.id);
+      // ========== VALIDATION FIRST - Before saving any files ==========
       
-      // Count existing files by type
-      const countByType: Record<string, number> = { trouble: 0, before: 0, after: 0 };
-      existingFiles.forEach((file: string) => {
-        const match = file.match(/^.*-(trouble|before|after)-(\d+)\./);
-        if (match) {
-          const type = match[1] as "trouble" | "before" | "after";
-          const num = parseInt(match[2]);
-          if (num > countByType[type]) {
-            countByType[type] = num;
-          }
-        }
-      });
-      
-      // Upload photos with proper naming convention
-      const uploadedPhotos: string[] = [];
+      // Validate photo types match files
       if (files && files.length > 0 && Array.isArray(photoTypes)) {
-        // Validate photoTypes matches files
         if (photoTypes.length !== files.length) {
           return res.status(400).json({ 
             message: `Photo types count (${photoTypes.length}) does not match files count (${files.length})` 
           });
         }
         
-        // Validate each photo type is valid
         const validTypes = ["trouble", "before", "after"];
         for (let i = 0; i < photoTypes.length; i++) {
           if (!validTypes.includes(photoTypes[i])) {
@@ -1851,49 +1834,23 @@ export async function registerRoutes(
             });
           }
         }
-        
-        for (let i = 0; i < files.length; i++) {
-          const file = files[i];
-          const type = photoTypes[i] as "trouble" | "before" | "after";
-          
-          // Increment the sequence number for this type
-          countByType[type] = (countByType[type] || 0) + 1;
-          const sequence = countByType[type];
-          
-          // Determine file extension
-          const ext = path.extname(file.originalname) || ".jpg";
-          
-          // Create filename: customerWoId-type-sequence.ext
-          const filename = `${folderName}-${type}-${sequence}${ext}`;
-          
-          await saveWorkOrderFile(
-            project.name,
-            project.id,
-            folderName,
-            filename,
-            file.buffer,
-            workOrder.id
-          );
-          
-          uploadedPhotos.push(filename);
-        }
       }
       
-      // Save signature image if provided
-      if (signatureData && signatureData.startsWith("data:image")) {
-        const base64Data = signatureData.split(",")[1];
-        const signatureBuffer = Buffer.from(base64Data, "base64");
-        const signatureFilename = `${folderName}-signature.png`;
-        await saveWorkOrderFile(
-          project.name,
-          project.id,
-          folderName,
-          signatureFilename,
-          signatureBuffer,
-          workOrder.id
-        );
-        uploadedPhotos.push(signatureFilename);
-      }
+      // Validate meter reading format (digits only)
+      const isValidMeterReading = (reading: string): boolean => {
+        if (!reading || reading.trim().length === 0) return false;
+        return /^\d+$/.test(reading.trim());
+      };
+      
+      // Validate GPS format (lat,lng with valid ranges)
+      const isValidGps = (gps: string): boolean => {
+        if (!gps || !gps.trim()) return false;
+        const match = gps.trim().match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
+        if (!match) return false;
+        const lat = parseFloat(match[1]);
+        const lng = parseFloat(match[2]);
+        return !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+      };
       
       // Prepare the update data
       const updatedByName = currentUser.firstName && currentUser.lastName 
@@ -1910,6 +1867,25 @@ export async function registerRoutes(
         if (!oldMeterReading || !newMeterId || !newMeterReading || !gpsCoordinates || !signatureName) {
           return res.status(400).json({ 
             message: "Missing required fields for meter changeout: old reading, new meter ID, new reading, GPS, and signature name are required" 
+          });
+        }
+        
+        // Validate meter readings are digits only
+        if (!isValidMeterReading(oldMeterReading)) {
+          return res.status(400).json({ 
+            message: "Old meter reading must contain only digits (0-9)" 
+          });
+        }
+        if (!isValidMeterReading(newMeterReading)) {
+          return res.status(400).json({ 
+            message: "New meter reading must contain only digits (0-9)" 
+          });
+        }
+        
+        // Validate GPS format
+        if (!isValidGps(gpsCoordinates)) {
+          return res.status(400).json({ 
+            message: "Invalid GPS format. Use: latitude,longitude (e.g., 37.7749,-122.4194)" 
           });
         }
         
@@ -1953,6 +1929,70 @@ export async function registerRoutes(
         if (troubleStatus) {
           updateData.status = troubleStatus.code;
         }
+      }
+      
+      // ========== ALL VALIDATION PASSED - Now save files ==========
+      
+      // Get existing files to determine next sequence numbers
+      const existingFiles = await getWorkOrderFiles(project.name, project.id, folderName, workOrder.id);
+      
+      // Count existing files by type
+      const countByType: Record<string, number> = { trouble: 0, before: 0, after: 0 };
+      existingFiles.forEach((file: string) => {
+        const match = file.match(/^.*-(trouble|before|after)-(\d+)\./);
+        if (match) {
+          const type = match[1] as "trouble" | "before" | "after";
+          const num = parseInt(match[2]);
+          if (num > countByType[type]) {
+            countByType[type] = num;
+          }
+        }
+      });
+      
+      // Upload photos with proper naming convention
+      const uploadedPhotos: string[] = [];
+      if (files && files.length > 0 && Array.isArray(photoTypes)) {
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const type = photoTypes[i] as "trouble" | "before" | "after";
+          
+          // Increment the sequence number for this type
+          countByType[type] = (countByType[type] || 0) + 1;
+          const sequence = countByType[type];
+          
+          // Determine file extension
+          const ext = path.extname(file.originalname) || ".jpg";
+          
+          // Create filename: customerWoId-type-sequence.ext
+          const filename = `${folderName}-${type}-${sequence}${ext}`;
+          
+          await saveWorkOrderFile(
+            project.name,
+            project.id,
+            folderName,
+            filename,
+            file.buffer,
+            workOrder.id
+          );
+          
+          uploadedPhotos.push(filename);
+        }
+      }
+      
+      // Save signature image if provided
+      if (signatureData && signatureData.startsWith("data:image")) {
+        const base64Data = signatureData.split(",")[1];
+        const signatureBuffer = Buffer.from(base64Data, "base64");
+        const signatureFilename = `${folderName}-signature.png`;
+        await saveWorkOrderFile(
+          project.name,
+          project.id,
+          folderName,
+          signatureFilename,
+          signatureBuffer,
+          workOrder.id
+        );
+        uploadedPhotos.push(signatureFilename);
       }
       
       // Update the work order - pass username as third parameter (FK references public.users(username))
