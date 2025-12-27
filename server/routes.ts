@@ -4357,10 +4357,13 @@ export async function registerRoutes(
         let query = `
           SELECT w.*, 
                  sb.username as scheduled_by_username,
-                 cb.username as completed_by_username
+                 cb.username as completed_by_username,
+                 au.username as assigned_user_username,
+                 COALESCE(au.first_name || ' ' || au.last_name, au.username) as assigned_user_display_name
           FROM "${project.databaseName}".work_orders w
           LEFT JOIN public.users sb ON w.scheduled_by = sb.id
           LEFT JOIN public.users cb ON w.completed_by = cb.id
+          LEFT JOIN public.users au ON w.assigned_user_id = au.id
         `;
         const conditions: string[] = [];
         const values: any[] = [];
@@ -4416,13 +4419,36 @@ export async function registerRoutes(
         // Get server timestamp for client to use in next sync
         const serverTimestamp = new Date().toISOString();
         
-        // Get reference data for offline use
-        const [workOrderStatuses, troubleCodes, meterTypes, serviceTypes] = await Promise.all([
+        // Get reference data for offline use (including assignees)
+        const [workOrderStatuses, troubleCodes, meterTypes, serviceTypes, projectUsers, allGroupsWithProjects] = await Promise.all([
           storage.getWorkOrderStatuses(),
           storage.getTroubleCodes(),
           storage.getMeterTypes(),
-          storage.getServiceTypes()
+          storage.getServiceTypes(),
+          storage.getProjectUsers(projectId),
+          storage.getAllUserGroupsWithProjects()
         ]);
+        
+        // Format assignees for offline use
+        const users = projectUsers.map(user => ({
+          type: "user" as const,
+          id: user.id,
+          label: user.firstName && user.lastName 
+            ? `${user.firstName} ${user.lastName}`
+            : user.username || user.email || user.id,
+          username: user.username,
+        }));
+        
+        const projectGroupsList = allGroupsWithProjects.filter(group => 
+          group.projectIds.includes(projectId)
+        );
+        
+        const groups = projectGroupsList.map(group => ({
+          type: "group" as const,
+          id: `group:${group.id}`,
+          label: group.name,
+          key: group.name,
+        }));
         
         res.json({
           success: true,
@@ -4432,7 +4458,8 @@ export async function registerRoutes(
             workOrderStatuses,
             troubleCodes,
             meterTypes,
-            serviceTypes
+            serviceTypes,
+            assignees: { users, groups }
           },
           meta: {
             count: result.rows.length,
