@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, Link, useLocation } from "wouter";
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -164,6 +164,7 @@ export default function ProjectWorkOrders() {
   const editSignaturePadRef = useRef<SignaturePadRef>(null);
   const tableScrollRef = useRef<HTMLDivElement>(null);
   const tableRef = useRef<HTMLTableElement>(null);
+  const historyPushedRef = useRef(false);
 
   // Column configuration for the work orders table
   const workOrderColumns: ColumnConfig[] = useMemo(() => [
@@ -388,6 +389,12 @@ export default function ProjectWorkOrders() {
     setSelectedServiceType("all");
     setShowFilters(false);
     setIsCreatingWorkOrder(false);
+    // Clean up history if we had pushed a state before project change
+    if (historyPushedRef.current) {
+      historyPushedRef.current = false;
+      // Use replaceState to avoid navigation, just clear the marker
+      window.history.replaceState({}, "", window.location.pathname);
+    }
     setEditingWorkOrder(null);
     setCameFromSearch(false);
   }, [projectId]);
@@ -409,6 +416,45 @@ export default function ProjectWorkOrders() {
       }
     }
   }, [workOrders]);
+
+  // Handle browser back button when work order detail is open
+  useEffect(() => {
+    // When detail view opens, push a synthetic history state
+    if (editingWorkOrder && !historyPushedRef.current) {
+      window.history.pushState({ workOrderDetail: true, workOrderId: editingWorkOrder.id }, "");
+      historyPushedRef.current = true;
+    }
+
+    const handlePopState = (event: PopStateEvent) => {
+      // Only respond if we pushed state AND we're not navigating INTO another workOrderDetail state
+      // (event.state is the NEW state we're navigating to after back is pressed)
+      if (historyPushedRef.current && !event.state?.workOrderDetail) {
+        historyPushedRef.current = false;
+        setEditingWorkOrder(null);
+        setCameFromSearch(false);
+      }
+    };
+
+    window.addEventListener("popstate", handlePopState);
+
+    return () => {
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [editingWorkOrder]);
+
+  // Close detail view - handles both UI button and ensures history is clean
+  const closeDetailView = useCallback(() => {
+    if (historyPushedRef.current) {
+      // If we pushed a history state, use history.back() to clean it up
+      // The popstate handler will see historyPushedRef.current === true and close the view
+      // Do NOT clear historyPushedRef here - let the popstate handler do it
+      window.history.back();
+    } else {
+      // Fallback: just close the detail view directly
+      setEditingWorkOrder(null);
+      setCameFromSearch(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (editingWorkOrder) {
@@ -1678,10 +1724,7 @@ export default function ProjectWorkOrders() {
           workOrder={editingWorkOrder}
           form={editForm}
           onSubmit={onEditSubmit}
-          onBack={() => {
-            setEditingWorkOrder(null);
-            setCameFromSearch(false);
-          }}
+          onBack={closeDetailView}
           isSubmitting={updateMutation.isPending}
           projectId={projectId!}
           cameFromSearch={cameFromSearch}
@@ -1709,7 +1752,7 @@ export default function ProjectWorkOrders() {
               title: "Success",
               description: "Meter changeout completed successfully!",
             });
-            setEditingWorkOrder(null);
+            closeDetailView();
           }}
         />
         {meterTypeDialog}
