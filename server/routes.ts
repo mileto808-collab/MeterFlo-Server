@@ -1805,6 +1805,7 @@ export async function registerRoutes(
         troubleCode,
         troubleNote,
         oldMeterReading,
+        newMeterId,
         newMeterReading,
         gpsCoordinates,
         signatureData,
@@ -1906,13 +1907,14 @@ export async function registerRoutes(
       if (canChange) {
         // Success path - meter was changed
         // Validate required fields for success path
-        if (!oldMeterReading || !newMeterReading || !gpsCoordinates || !signatureName) {
+        if (!oldMeterReading || !newMeterId || !newMeterReading || !gpsCoordinates || !signatureName) {
           return res.status(400).json({ 
-            message: "Missing required fields for meter changeout: old reading, new reading, GPS, and signature name are required" 
+            message: "Missing required fields for meter changeout: old reading, new meter ID, new reading, GPS, and signature name are required" 
           });
         }
         
         updateData.oldMeterReading = oldMeterReading;
+        updateData.newMeterId = newMeterId;
         updateData.newMeterReading = newMeterReading;
         updateData.gps = gpsCoordinates;
         updateData.signatureData = signatureData || null;

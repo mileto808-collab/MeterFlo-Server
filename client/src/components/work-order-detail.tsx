@@ -1083,6 +1083,7 @@ export function WorkOrderDetail({
             troubleCode: data.troubleCode,
             troubleNote: data.troubleNote,
             oldMeterReading: data.oldMeterReading,
+            newMeterId: data.newMeterId,
             newMeterReading: data.newMeterReading,
             gpsCoordinates: data.gpsCoordinates,
             signatureData: data.signatureData,
