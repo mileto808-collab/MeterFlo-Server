@@ -1063,6 +1063,9 @@ export function WorkOrderDetail({
         customerWoId={workOrder.customerWoId || `WO-${workOrder.id}`}
         address={workOrder.address}
         oldMeterId={workOrder.oldMeterId}
+        status={workOrder.status}
+        trouble={workOrder.trouble}
+        notes={workOrder.notes}
         projectId={typeof projectId === 'string' ? parseInt(projectId) : projectId}
         troubleCodes={troubleCodes}
         existingOldReading={workOrder.oldMeterReading}
