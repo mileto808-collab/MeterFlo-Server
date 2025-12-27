@@ -41,6 +41,10 @@ import {
   Keyboard,
   Trash2,
   ZoomIn,
+  FileText,
+  Gauge,
+  ClipboardCheck,
+  StickyNote,
 } from "lucide-react";
 
 type WizardStep =
@@ -84,6 +88,9 @@ interface MeterChangeoutWizardProps {
   customerWoId: string;
   address?: string | null;
   oldMeterId?: string | null;
+  status?: string | null;
+  trouble?: string | null;
+  notes?: string | null;
   projectId: number;
   troubleCodes: Array<{ id: number; code: string; label: string }>;
   existingOldReading?: string | null;
@@ -128,6 +135,9 @@ export function MeterChangeoutWizard({
   customerWoId,
   address,
   oldMeterId,
+  status,
+  trouble,
+  notes,
   projectId,
   troubleCodes,
   existingOldReading,
@@ -625,9 +635,76 @@ export function MeterChangeoutWizard({
 
   const renderStepContent = () => {
     switch (currentStep) {
-      case "canChange":
+      case "canChange": {
+        const isTrouble = status?.toLowerCase() === "trouble";
+        const getTroubleCodeLabel = (code: string | null | undefined): string | null => {
+          if (!code) return null;
+          const troubleCode = troubleCodes.find(tc => tc.code.toLowerCase() === code.toLowerCase());
+          return troubleCode ? troubleCode.label : null;
+        };
         return (
           <div className="space-y-4">
+            <Card>
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-start gap-3">
+                  <FileText className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-sm text-muted-foreground">Work Order</p>
+                    <p className="font-medium break-all" data-testid="text-wizard-wo-id">
+                      {customerWoId}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <MapPin className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-sm text-muted-foreground">Address</p>
+                    <p className="font-medium break-all" data-testid="text-wizard-address">
+                      {address || "No address"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <Gauge className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-sm text-muted-foreground">Old Meter ID</p>
+                    <p className="font-medium break-all" data-testid="text-wizard-meter-id">
+                      {oldMeterId || "N/A"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <ClipboardCheck className={`h-5 w-5 mt-0.5 shrink-0 ${isTrouble ? "text-amber-500" : "text-muted-foreground"}`} />
+                  <div className="min-w-0">
+                    <p className="text-sm text-muted-foreground">Status</p>
+                    <p className={`font-medium ${isTrouble ? "text-amber-500" : ""}`} data-testid="text-wizard-status">
+                      {status || "Unknown"}
+                      {isTrouble && trouble && (
+                        <span className="ml-2 text-sm" data-testid="text-wizard-trouble-code">
+                          ({trouble}{getTroubleCodeLabel(trouble) ? ` - ${getTroubleCodeLabel(trouble)}` : ""})
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                {notes && (
+                  <div className="flex items-start gap-3">
+                    <StickyNote className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm text-muted-foreground">Notes</p>
+                      <p className="font-medium break-all" data-testid="text-wizard-notes">
+                        {notes}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
             <p className="text-center text-muted-foreground">
               Can this meter be changed today?
             </p>
@@ -655,6 +732,7 @@ export function MeterChangeoutWizard({
             </div>
           </div>
         );
+      }
 
       case "troubleCapture":
         return (
