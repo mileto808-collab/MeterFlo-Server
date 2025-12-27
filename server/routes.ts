@@ -98,6 +98,18 @@ export async function registerRoutes(
     }
   });
 
+  // Get current user's group memberships
+  app.get("/api/auth/user/groups", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const groups = await storage.getUserGroupMemberships(userId);
+      res.json(groups);
+    } catch (error) {
+      console.error("Error fetching user groups:", error);
+      res.status(500).json({ message: "Failed to fetch user groups" });
+    }
+  });
+
   // User management
   app.get("/api/users", isAuthenticated, async (req: any, res) => {
     try {
