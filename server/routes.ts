@@ -1916,7 +1916,7 @@ export async function registerRoutes(
         updateData.oldMeterReading = oldMeterReading;
         updateData.newMeterId = newMeterId;
         updateData.newMeterReading = newMeterReading;
-        updateData.gps = gpsCoordinates;
+        updateData.newGps = gpsCoordinates;
         updateData.signatureData = signatureData || null;
         updateData.signatureName = signatureName || null;
         updateData.completedAt = new Date().toISOString();
