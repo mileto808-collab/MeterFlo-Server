@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -22,8 +23,10 @@ import { Badge } from "@/components/ui/badge";
 import { Scan, QrCode, Keyboard, Camera, X, Flashlight, FlashlightOff, Focus, Check, RotateCcw, Loader2, Wrench, AlertCircle, MapPin, FileText, Gauge, ClipboardCheck, Ban } from "lucide-react";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import { apiRequest } from "@/lib/queryClient";
 import type { ProjectWorkOrder } from "../../../server/projectDb";
+import type { UserGroup } from "@shared/schema";
 
 interface StartMeterChangeoutDialogProps {
   isOpen: boolean;
@@ -41,6 +44,14 @@ export function StartMeterChangeoutDialog({
   onWorkOrderFound,
 }: StartMeterChangeoutDialogProps) {
   const { toast } = useToast();
+  const { user } = useAuth();
+  
+  // Fetch user's group memberships to determine if claiming is needed
+  const { data: userGroups = [], isLoading: isGroupsLoading } = useQuery<UserGroup[]>({
+    queryKey: ["/api/auth/user/groups"],
+    enabled: isOpen,
+  });
+  
   const [scanMode, setScanMode] = useState<ScanMode>("select");
   const [isScanning, setIsScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
@@ -91,6 +102,9 @@ export function StartMeterChangeoutDialog({
     setLookupError(null);
     setPendingResult(null);
     setFoundWorkOrder(null);
+    setShowClaimConfirm(false);
+    setPendingClaimCheck(false);
+    setIsClaiming(false);
   }, []);
 
   const handleScanResult = useCallback((decodedText: string) => {
@@ -296,30 +310,43 @@ export function StartMeterChangeoutDialog({
   const [isClaiming, setIsClaiming] = useState(false);
   const [showClaimConfirm, setShowClaimConfirm] = useState(false);
 
-  const openClaimConfirmation = useCallback(() => {
-    if (!foundWorkOrder) return;
-    setShowClaimConfirm(true);
-  }, [foundWorkOrder]);
+  // Check if claiming is needed for the found work order (client-side check)
+  const isClaimingNeeded = useCallback((workOrder: ProjectWorkOrder): boolean => {
+    // Already assigned to current user - no claim needed
+    if (workOrder.assignedUserId === user?.id) {
+      return false;
+    }
+    
+    // Assigned to a group the user is a member of - no claim needed
+    if (workOrder.assignedGroupId && userGroups.length > 0) {
+      const userGroupNames = userGroups.map(g => g.name);
+      if (userGroupNames.includes(workOrder.assignedGroupId)) {
+        return false;
+      }
+    }
+    
+    // Otherwise, claiming is needed
+    return true;
+  }, [user?.id, userGroups]);
 
-  const executeClaimAndProceed = useCallback(async () => {
+  // Proceed with work order (let backend decide if claim is needed)
+  const proceedWithWorkOrder = useCallback(async () => {
     if (!foundWorkOrder) return;
     
     setIsClaiming(true);
     try {
-      // Claim/auto-assign the work order to the current user
+      // Call claim endpoint - backend will decide if claim is actually needed
       const response = await apiRequest("POST", `/api/projects/${projectId}/work-orders/${foundWorkOrder.id}/claim`);
       const result = await response.json();
-      
-      // Use the updated work order from the claim response (with assignment)
       const updatedWorkOrder = result.workOrder || foundWorkOrder;
       setShowClaimConfirm(false);
       onWorkOrderFound(updatedWorkOrder);
       onClose();
     } catch (error: any) {
-      console.error("Error claiming work order:", error);
+      console.error("Error proceeding with work order:", error);
       toast({
         title: "Error",
-        description: error.message || "Failed to assign work order",
+        description: error.message || "Failed to proceed with work order",
         variant: "destructive",
       });
       setShowClaimConfirm(false);
@@ -327,6 +354,53 @@ export function StartMeterChangeoutDialog({
       setIsClaiming(false);
     }
   }, [foundWorkOrder, projectId, onWorkOrderFound, onClose, toast]);
+
+  // State to track when we're waiting for groups to load
+  const [pendingClaimCheck, setPendingClaimCheck] = useState(false);
+  
+  // Effect to handle claim check after groups have loaded
+  useEffect(() => {
+    if (pendingClaimCheck && !isGroupsLoading && foundWorkOrder && user) {
+      setPendingClaimCheck(false);
+      
+      // Now that groups are loaded, make the decision
+      if (!isClaimingNeeded(foundWorkOrder)) {
+        // No claim needed - proceed directly
+        proceedWithWorkOrder();
+      } else {
+        // Claiming is needed - show confirmation dialog
+        setShowClaimConfirm(true);
+      }
+    }
+  }, [pendingClaimCheck, isGroupsLoading, foundWorkOrder, user, isClaimingNeeded, proceedWithWorkOrder]);
+
+  const openClaimConfirmation = useCallback(() => {
+    if (!foundWorkOrder) return;
+    
+    // If groups are still loading or user not ready, wait for them
+    if (isGroupsLoading || !user) {
+      // Mark that we're waiting for groups to load
+      setPendingClaimCheck(true);
+      return;
+    }
+    
+    // Use client-side check to determine if dialog should show
+    // The backend will do the authoritative check when claim is executed
+    if (!isClaimingNeeded(foundWorkOrder)) {
+      // No claim needed according to client-side check - proceed directly
+      proceedWithWorkOrder();
+      return;
+    }
+    
+    // Claiming may be needed - show confirmation dialog
+    setShowClaimConfirm(true);
+  }, [foundWorkOrder, isClaimingNeeded, proceedWithWorkOrder, isGroupsLoading, user]);
+
+  // User confirmed they want to claim the work order
+  const executeClaimAndProceed = useCallback(async () => {
+    if (!foundWorkOrder) return;
+    proceedWithWorkOrder();
+  }, [foundWorkOrder, proceedWithWorkOrder]);
 
   const cancelConfirmation = useCallback(() => {
     setFoundWorkOrder(null);
@@ -686,10 +760,15 @@ export function StartMeterChangeoutDialog({
                     type="button"
                     onClick={openClaimConfirmation}
                     className="flex-1"
+                    disabled={pendingClaimCheck || isClaiming}
                     data-testid="button-confirm-proceed"
                   >
-                    <Check className="h-4 w-4 mr-2" />
-                    Confirm
+                    {(pendingClaimCheck || isClaiming) ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Check className="h-4 w-4 mr-2" />
+                    )}
+                    {pendingClaimCheck ? "Loading..." : (isClaiming ? "Processing..." : "Confirm")}
                   </Button>
                 )}
               </div>
@@ -699,7 +778,7 @@ export function StartMeterChangeoutDialog({
       </DialogContent>
     </Dialog>
 
-    <AlertDialog open={showClaimConfirm} onOpenChange={setShowClaimConfirm}>
+    <AlertDialog open={showClaimConfirm && !pendingClaimCheck} onOpenChange={setShowClaimConfirm}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle data-testid="title-claim-confirm">Claim Work Order?</AlertDialogTitle>
