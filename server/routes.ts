@@ -1205,6 +1205,61 @@ export async function registerRoutes(
     }
   });
 
+  // Claim a work order - auto-assign to current user when starting meter changeout
+  app.post("/api/projects/:projectId/work-orders/:workOrderId/claim", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      const workOrderId = parseInt(req.params.workOrderId);
+      
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // Must be assigned to project
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      const workOrder = await workOrderStorage.getWorkOrder(workOrderId);
+      
+      if (!workOrder) {
+        return res.status(404).json({ message: "Work order not found" });
+      }
+      
+      // Only assign if not already assigned to this user
+      if (workOrder.assignedUserId === currentUser.id) {
+        return res.json({ message: "Already assigned to you", workOrder });
+      }
+      
+      // Get display name for updatedBy
+      const updatedByName = currentUser.firstName 
+        ? `${currentUser.firstName}${currentUser.lastName ? ' ' + currentUser.lastName : ''}`
+        : currentUser.username || currentUser.id;
+      
+      // Assign work order to current user (clear group assignment)
+      const updatedWorkOrder = await workOrderStorage.updateWorkOrder(
+        workOrderId, 
+        { assignedUserId: currentUser.id, assignedGroupId: null },
+        updatedByName
+      );
+      
+      res.json({ message: "Work order assigned to you", workOrder: updatedWorkOrder });
+    } catch (error) {
+      console.error("Error claiming work order:", error);
+      res.status(500).json({ message: "Failed to claim work order" });
+    }
+  });
+
   app.post("/api/projects/:projectId/work-orders", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
