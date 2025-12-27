@@ -75,6 +75,7 @@ interface WorkOrderDetailProps {
   canEdit?: boolean;
   canMeterChangeout?: boolean;
   onMeterChangeoutComplete?: () => void | Promise<void>;
+  autoLaunchMeterChangeout?: boolean;
 }
 
 export function WorkOrderDetail({
@@ -100,14 +101,24 @@ export function WorkOrderDetail({
   canEdit = true,
   canMeterChangeout = false,
   onMeterChangeoutComplete,
+  autoLaunchMeterChangeout = false,
 }: WorkOrderDetailProps) {
   const [openSections, setOpenSections] = useState<string[]>(["customer", "meter", "scheduling"]);
   const [showMeterChangeoutWizard, setShowMeterChangeoutWizard] = useState(false);
+  const autoLaunchTriggered = useRef(false);
 
   // Scroll to top when component mounts (triggered by key prop change)
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' });
   }, []);
+
+  // Auto-launch meter changeout wizard if requested
+  useEffect(() => {
+    if (autoLaunchMeterChangeout && canMeterChangeout && !autoLaunchTriggered.current) {
+      autoLaunchTriggered.current = true;
+      setShowMeterChangeoutWizard(true);
+    }
+  }, [autoLaunchMeterChangeout, canMeterChangeout]);
 
   const getStatusBadge = (status: string) => {
     const statusConfig: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; className?: string }> = {
