@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Scan, QrCode, Keyboard, Camera, X, Flashlight, FlashlightOff, Focus, Check, RotateCcw, Loader2, Wrench, AlertCircle } from "lucide-react";
+import { Scan, QrCode, Keyboard, Camera, X, Flashlight, FlashlightOff, Focus, Check, RotateCcw, Loader2, Wrench, AlertCircle, MapPin, FileText, Gauge } from "lucide-react";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -23,7 +23,7 @@ interface StartMeterChangeoutDialogProps {
   onWorkOrderFound: (workOrder: ProjectWorkOrder) => void;
 }
 
-type ScanMode = "select" | "barcode" | "qrcode" | "manual";
+type ScanMode = "select" | "barcode" | "qrcode" | "manual" | "confirm";
 
 export function StartMeterChangeoutDialog({
   isOpen,
@@ -45,6 +45,7 @@ export function StartMeterChangeoutDialog({
   const [manualInput, setManualInput] = useState("");
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
+  const [foundWorkOrder, setFoundWorkOrder] = useState<ProjectWorkOrder | null>(null);
   
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -80,6 +81,7 @@ export function StartMeterChangeoutDialog({
     setManualInput("");
     setLookupError(null);
     setPendingResult(null);
+    setFoundWorkOrder(null);
   }, []);
 
   const handleScanResult = useCallback((decodedText: string) => {
@@ -268,8 +270,8 @@ export function StartMeterChangeoutDialog({
       const workOrder = await response.json();
       
       stopScanning();
-      onWorkOrderFound(workOrder);
-      onClose();
+      setFoundWorkOrder(workOrder);
+      setScanMode("confirm");
     } catch (error: any) {
       console.error("Lookup error:", error);
       if (error.message?.includes("404") || error.message?.includes("not found")) {
@@ -280,7 +282,21 @@ export function StartMeterChangeoutDialog({
     } finally {
       setIsLookingUp(false);
     }
-  }, [projectId, onWorkOrderFound, onClose, stopScanning]);
+  }, [projectId, stopScanning]);
+
+  const confirmAndProceed = useCallback(() => {
+    if (foundWorkOrder) {
+      onWorkOrderFound(foundWorkOrder);
+      onClose();
+    }
+  }, [foundWorkOrder, onWorkOrderFound, onClose]);
+
+  const cancelConfirmation = useCallback(() => {
+    setFoundWorkOrder(null);
+    setScanMode("select");
+    setManualInput("");
+    setPendingResult(null);
+  }, []);
 
   const acceptScanResult = useCallback(() => {
     if (pendingResult) {
@@ -552,6 +568,72 @@ export function StartMeterChangeoutDialog({
               </Button>
             </div>
           </form>
+        )}
+
+        {scanMode === "confirm" && foundWorkOrder && (
+          <div className="space-y-4">
+            <div className="text-center">
+              <Badge variant="secondary" className="mb-2">
+                Work Order Found
+              </Badge>
+            </div>
+
+            <Card>
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-start gap-3">
+                  <FileText className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-sm text-muted-foreground">Work Order</p>
+                    <p className="font-medium break-all" data-testid="text-confirm-wo-id">
+                      {foundWorkOrder.customerWoId || `WO-${foundWorkOrder.id}`}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <MapPin className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-sm text-muted-foreground">Address</p>
+                    <p className="font-medium break-all" data-testid="text-confirm-address">
+                      {foundWorkOrder.address || "No address"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-3">
+                  <Gauge className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-sm text-muted-foreground">Old Meter ID</p>
+                    <p className="font-medium break-all" data-testid="text-confirm-meter-id">
+                      {foundWorkOrder.oldMeterId || "N/A"}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={cancelConfirmation}
+                className="flex-1"
+                data-testid="button-cancel-confirm"
+              >
+                <X className="h-4 w-4 mr-2" />
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={confirmAndProceed}
+                className="flex-1"
+                data-testid="button-confirm-proceed"
+              >
+                <Check className="h-4 w-4 mr-2" />
+                Confirm
+              </Button>
+            </div>
+          </div>
         )}
       </DialogContent>
     </Dialog>
