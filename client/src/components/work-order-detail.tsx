@@ -46,9 +46,11 @@ import {
   X,
   Plus,
   AlertTriangle,
+  Wrench,
 } from "lucide-react";
 import { FileIcon } from "lucide-react";
 import SignaturePad, { type SignaturePadRef } from "@/components/signature-pad";
+import { MeterChangeoutWizard } from "@/components/meter-changeout-wizard";
 
 interface WorkOrderDetailProps {
   workOrder: any;
@@ -71,6 +73,8 @@ interface WorkOrderDetailProps {
   openCreateMeterTypeDialog: (field: string) => void;
   toast: any;
   canEdit?: boolean;
+  canMeterChangeout?: boolean;
+  onMeterChangeoutComplete?: () => void;
 }
 
 export function WorkOrderDetail({
@@ -94,8 +98,11 @@ export function WorkOrderDetail({
   openCreateMeterTypeDialog,
   toast,
   canEdit = true,
+  canMeterChangeout = false,
+  onMeterChangeoutComplete,
 }: WorkOrderDetailProps) {
   const [openSections, setOpenSections] = useState<string[]>(["customer", "meter", "scheduling"]);
+  const [showMeterChangeoutWizard, setShowMeterChangeoutWizard] = useState(false);
 
   const getStatusBadge = (status: string) => {
     const statusConfig: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; className?: string }> = {
@@ -204,6 +211,17 @@ export function WorkOrderDetail({
 
             {/* Right: Quick Actions */}
             <div className="flex gap-2 flex-wrap">
+              {canMeterChangeout && (
+                <Button 
+                  variant="default" 
+                  size="sm" 
+                  onClick={() => setShowMeterChangeoutWizard(true)}
+                  data-testid="button-start-meter-changeout"
+                >
+                  <Wrench className="h-4 w-4 mr-1" />
+                  Start Meter Changeout
+                </Button>
+              )}
               <Link href={`/projects/${projectId}/work-orders/${workOrder.id}/files?returnTo=detail`}>
                 <Button variant="outline" size="sm" data-testid="button-quick-attachments">
                   <Paperclip className="h-4 w-4 mr-1" />
@@ -1020,6 +1038,72 @@ export function WorkOrderDetail({
           </div>
         </form>
       </Form>
+
+      {/* Meter Changeout Wizard */}
+      <MeterChangeoutWizard
+        isOpen={showMeterChangeoutWizard}
+        onClose={() => setShowMeterChangeoutWizard(false)}
+        workOrderId={workOrder.id}
+        customerWoId={workOrder.customerWoId || `WO-${workOrder.id}`}
+        projectId={typeof projectId === 'string' ? parseInt(projectId) : projectId}
+        troubleCodes={troubleCodes}
+        existingOldReading={workOrder.oldMeterReading}
+        existingNewReading={workOrder.newMeterReading}
+        existingGps={workOrder.gps}
+        onComplete={async (data) => {
+          const formData = new FormData();
+          
+          const allPhotos: File[] = [];
+          const photoTypes: string[] = [];
+          
+          if (data.canChange) {
+            data.beforePhotos.forEach((p) => {
+              allPhotos.push(p.file);
+              photoTypes.push("before");
+            });
+            data.afterPhotos.forEach((p) => {
+              allPhotos.push(p.file);
+              photoTypes.push("after");
+            });
+          } else {
+            data.troublePhotos.forEach((p) => {
+              allPhotos.push(p.file);
+              photoTypes.push("trouble");
+            });
+          }
+          
+          allPhotos.forEach((file) => {
+            formData.append("photos", file);
+          });
+          
+          formData.append("data", JSON.stringify({
+            canChange: data.canChange,
+            troubleCode: data.troubleCode,
+            troubleNote: data.troubleNote,
+            oldMeterReading: data.oldMeterReading,
+            newMeterReading: data.newMeterReading,
+            gpsCoordinates: data.gpsCoordinates,
+            signatureData: data.signatureData,
+            signatureName: data.signatureName,
+            photoTypes,
+          }));
+          
+          const response = await fetch(`/api/projects/${projectId}/work-orders/${workOrder.id}/meter-changeout`, {
+            method: "POST",
+            body: formData,
+            credentials: "include",
+          });
+          
+          if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.message || "Failed to submit meter changeout");
+          }
+          
+          if (onMeterChangeoutComplete) {
+            onMeterChangeoutComplete();
+          }
+        }}
+      />
     </div>
   );
 }
