@@ -161,6 +161,19 @@ export default function Settings() {
     projectIds: [] as number[],
   });
 
+  // Profile Edit state
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
+  const [profileForm, setProfileForm] = useState({
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: "",
+    address: "",
+    city: "",
+    state: "",
+    zip: "",
+  });
+
   const isAdmin = user?.role === "admin";
 
   const { data: subroles, isLoading: loadingSubroles } = useQuery<Subrole[]>({
@@ -1018,6 +1031,49 @@ export default function Settings() {
     },
   });
 
+  const updateProfileMutation = useMutation({
+    mutationFn: async (data: typeof profileForm) => {
+      // Normalize empty strings to null for optional fields
+      const normalizedData = {
+        firstName: data.firstName.trim() || null,
+        lastName: data.lastName.trim() || null,
+        email: data.email.trim() || null,
+        phone: data.phone.trim() || null,
+        address: data.address.trim() || null,
+        city: data.city.trim() || null,
+        state: data.state.trim() || null,
+        zip: data.zip.trim() || null,
+      };
+      return apiRequest("PATCH", "/api/users/profile", normalizedData);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/user"] });
+      setProfileDialogOpen(false);
+      toast({ title: "Profile updated successfully" });
+    },
+    onError: (error: any) => {
+      toast({ 
+        title: "Failed to update profile", 
+        description: error?.message || "Please try again",
+        variant: "destructive" 
+      });
+    },
+  });
+
+  const openProfileDialog = () => {
+    setProfileForm({
+      firstName: user?.firstName || "",
+      lastName: user?.lastName || "",
+      email: user?.email || "",
+      phone: user?.phone || "",
+      address: user?.address || "",
+      city: user?.city || "",
+      state: user?.state || "",
+      zip: user?.zip || "",
+    });
+    setProfileDialogOpen(true);
+  };
+
   const getInitials = () => {
     if (user?.firstName && user?.lastName) return `${user.firstName[0]}${user.lastName[0]}`.toUpperCase();
     if (user?.username) return user.username[0].toUpperCase();
@@ -1035,9 +1091,20 @@ export default function Settings() {
       <div className="space-y-6">
         <Card>
           <CardHeader>
-            <div className="flex items-center gap-2">
-              <UserIcon className="h-5 w-5 text-muted-foreground" />
-              <CardTitle>Profile</CardTitle>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <UserIcon className="h-5 w-5 text-muted-foreground" />
+                <CardTitle>Profile</CardTitle>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={openProfileDialog}
+                data-testid="button-edit-profile"
+              >
+                <Pencil className="h-4 w-4 mr-2" />
+                Edit
+              </Button>
             </div>
             <CardDescription>Your account information</CardDescription>
           </CardHeader>
@@ -1047,7 +1114,7 @@ export default function Settings() {
                 <AvatarImage src={user?.profileImageUrl || undefined} className="object-cover" />
                 <AvatarFallback className="text-lg">{getInitials()}</AvatarFallback>
               </Avatar>
-              <div>
+              <div className="flex-1">
                 <p className="font-medium text-lg" data-testid="text-user-name">
                   {user?.firstName && user?.lastName 
                     ? `${user.firstName} ${user.lastName}` 
@@ -2783,6 +2850,116 @@ export default function Settings() {
               data-testid="button-confirm-copy-meter-type"
             >
               {copyMeterTypeMutation.isPending ? "Copying..." : "Copy"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={profileDialogOpen} onOpenChange={setProfileDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Profile</DialogTitle>
+            <DialogDescription>
+              Update your personal information.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="profile-first-name">First Name</Label>
+                <Input
+                  id="profile-first-name"
+                  value={profileForm.firstName}
+                  onChange={(e) => setProfileForm({ ...profileForm, firstName: e.target.value })}
+                  placeholder="John"
+                  data-testid="input-profile-first-name"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="profile-last-name">Last Name</Label>
+                <Input
+                  id="profile-last-name"
+                  value={profileForm.lastName}
+                  onChange={(e) => setProfileForm({ ...profileForm, lastName: e.target.value })}
+                  placeholder="Doe"
+                  data-testid="input-profile-last-name"
+                />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="profile-email">Email</Label>
+              <Input
+                id="profile-email"
+                type="email"
+                value={profileForm.email}
+                onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
+                placeholder="john.doe@example.com"
+                data-testid="input-profile-email"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="profile-phone">Phone</Label>
+              <Input
+                id="profile-phone"
+                value={profileForm.phone}
+                onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
+                placeholder="(555) 123-4567"
+                data-testid="input-profile-phone"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="profile-address">Address</Label>
+              <Input
+                id="profile-address"
+                value={profileForm.address}
+                onChange={(e) => setProfileForm({ ...profileForm, address: e.target.value })}
+                placeholder="123 Main St"
+                data-testid="input-profile-address"
+              />
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="profile-city">City</Label>
+                <Input
+                  id="profile-city"
+                  value={profileForm.city}
+                  onChange={(e) => setProfileForm({ ...profileForm, city: e.target.value })}
+                  placeholder="Denver"
+                  data-testid="input-profile-city"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="profile-state">State</Label>
+                <Input
+                  id="profile-state"
+                  value={profileForm.state}
+                  onChange={(e) => setProfileForm({ ...profileForm, state: e.target.value })}
+                  placeholder="CO"
+                  data-testid="input-profile-state"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="profile-zip">Zip</Label>
+                <Input
+                  id="profile-zip"
+                  value={profileForm.zip}
+                  onChange={(e) => setProfileForm({ ...profileForm, zip: e.target.value })}
+                  placeholder="80202"
+                  data-testid="input-profile-zip"
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setProfileDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => updateProfileMutation.mutate(profileForm)}
+              disabled={updateProfileMutation.isPending}
+              data-testid="button-save-profile"
+            >
+              {updateProfileMutation.isPending ? "Saving..." : "Save Changes"}
             </Button>
           </DialogFooter>
         </DialogContent>
