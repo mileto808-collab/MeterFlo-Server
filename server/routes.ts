@@ -1953,8 +1953,19 @@ export async function registerRoutes(
         }
       }
       
-      // Update the work order
-      await workOrderStorage.updateWorkOrder(workOrderId, updateData);
+      // Update the work order - pass updatedByName as third parameter
+      const updatedWorkOrder = await workOrderStorage.updateWorkOrder(workOrderId, updateData, updatedByName);
+      
+      if (!updatedWorkOrder) {
+        console.error("Meter changeout: updateWorkOrder returned undefined for work order", workOrderId);
+        return res.status(500).json({ message: "Failed to update work order" });
+      }
+      
+      console.log("Meter changeout updated work order:", { 
+        id: updatedWorkOrder.id, 
+        status: updatedWorkOrder.status, 
+        trouble: updatedWorkOrder.trouble 
+      });
       
       res.json({ 
         success: true, 
