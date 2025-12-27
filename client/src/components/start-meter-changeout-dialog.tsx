@@ -684,11 +684,12 @@ export function StartMeterChangeoutDialog({
 
         {scanMode === "confirm" && foundWorkOrder && (() => {
           const isCompleted = foundWorkOrder.status?.toLowerCase() === "completed";
+          const isTrouble = foundWorkOrder.status?.toLowerCase() === "trouble";
           return (
             <div className="space-y-4">
               <div className="text-center">
-                <Badge variant={isCompleted ? "destructive" : "secondary"} className="mb-2">
-                  {isCompleted ? "Work Order Already Completed" : "Work Order Found"}
+                <Badge variant={isCompleted ? "destructive" : (isTrouble ? "outline" : "secondary")} className={`mb-2 ${isTrouble ? "border-amber-500 text-amber-500" : ""}`}>
+                  {isCompleted ? "Work Order Already Completed" : (isTrouble ? "Trouble Work Order" : "Work Order Found")}
                 </Badge>
               </div>
 
@@ -725,11 +726,16 @@ export function StartMeterChangeoutDialog({
                   </div>
 
                   <div className="flex items-start gap-3">
-                    <ClipboardCheck className={`h-5 w-5 mt-0.5 shrink-0 ${isCompleted ? "text-destructive" : "text-muted-foreground"}`} />
+                    <ClipboardCheck className={`h-5 w-5 mt-0.5 shrink-0 ${isCompleted ? "text-destructive" : (isTrouble ? "text-amber-500" : "text-muted-foreground")}`} />
                     <div className="min-w-0">
                       <p className="text-sm text-muted-foreground">Status</p>
-                      <p className={`font-medium ${isCompleted ? "text-destructive" : ""}`} data-testid="text-confirm-status">
+                      <p className={`font-medium ${isCompleted ? "text-destructive" : (isTrouble ? "text-amber-500" : "")}`} data-testid="text-confirm-status">
                         {foundWorkOrder.status || "Unknown"}
+                        {isTrouble && foundWorkOrder.trouble && (
+                          <span className="ml-2 text-sm" data-testid="text-confirm-trouble-code">
+                            (Code: {foundWorkOrder.trouble})
+                          </span>
+                        )}
                       </p>
                     </div>
                   </div>
