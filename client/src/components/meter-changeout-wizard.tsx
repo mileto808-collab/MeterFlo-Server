@@ -154,6 +154,7 @@ export function MeterChangeoutWizard({
   const [isCapturingPhoto, setIsCapturingPhoto] = useState(false);
   const captureSessionActive = useRef(false);
   const [meterIdInputMode, setMeterIdInputMode] = useState<"choose" | "barcode" | "qr" | "manual" | null>(null);
+  const [manualMeterIdInput, setManualMeterIdInput] = useState("");
   const [isScanning, setIsScanning] = useState(false);
   const scannerRef = useRef<HTMLDivElement>(null);
   const [previewPhoto, setPreviewPhoto] = useState<{ photo: CapturedPhoto; type: "trouble" | "before" | "after"; index: number } | null>(null);
@@ -938,11 +939,14 @@ export function MeterChangeoutWizard({
                     placeholder="Type or paste meter ID..."
                     className="text-lg"
                     autoFocus
+                    value={manualMeterIdInput}
+                    onChange={(e) => setManualMeterIdInput(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
-                        const input = e.currentTarget.value.trim();
+                        const input = manualMeterIdInput.trim();
                         if (input) {
                           setData((prev) => ({ ...prev, newMeterId: input }));
+                          setManualMeterIdInput("");
                         }
                       }
                     }}
@@ -954,7 +958,10 @@ export function MeterChangeoutWizard({
                     type="button"
                     variant="outline"
                     className="flex-1"
-                    onClick={() => setMeterIdInputMode(null)}
+                    onClick={() => {
+                      setMeterIdInputMode(null);
+                      setManualMeterIdInput("");
+                    }}
                     data-testid="button-cancel-manual"
                   >
                     Cancel
@@ -963,9 +970,10 @@ export function MeterChangeoutWizard({
                     type="button"
                     className="flex-1"
                     onClick={() => {
-                      const input = document.querySelector<HTMLInputElement>('[data-testid="input-new-meter-id"]');
-                      if (input && input.value.trim()) {
-                        setData((prev) => ({ ...prev, newMeterId: input.value.trim() }));
+                      const input = manualMeterIdInput.trim();
+                      if (input) {
+                        setData((prev) => ({ ...prev, newMeterId: input }));
+                        setManualMeterIdInput("");
                       } else {
                         toast({
                           title: "Required",
