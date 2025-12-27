@@ -680,55 +680,39 @@ export default function SearchReports() {
       });
     }
     if (filterCreatedBy !== "all") {
-      // Look up user label from selected ID for fallback comparison
+      // Look up username from selected user ID - createdBy stores username in database
       const selectedUser = users.find(u => u.id === filterCreatedBy);
-      const selectedUserLabel = selectedUser?.username || (selectedUser?.firstName && selectedUser?.lastName ? `${selectedUser.firstName} ${selectedUser.lastName}` : null);
+      const selectedUsername = selectedUser?.username;
       results = results.filter(r => {
-        const wo = r.workOrder as any;
-        // First try ID-based match (normalize both to strings for comparison)
-        if (wo.createdById && String(wo.createdById) === String(filterCreatedBy)) return true;
-        // Fall back to user name match
-        if (selectedUserLabel && wo.createdBy === selectedUserLabel) return true;
+        // createdBy stores username - compare against username
+        if (selectedUsername && r.workOrder.createdBy === selectedUsername) return true;
+        // Also try direct ID match in case createdBy stores ID
+        if (r.workOrder.createdBy && String(r.workOrder.createdBy) === String(filterCreatedBy)) return true;
         return false;
       });
     }
     if (filterUpdatedBy !== "all") {
-      // Look up user label from selected ID for fallback comparison
+      // Look up username from selected user ID - updatedBy stores username in database
       const selectedUser = users.find(u => u.id === filterUpdatedBy);
-      const selectedUserLabel = selectedUser?.username || (selectedUser?.firstName && selectedUser?.lastName ? `${selectedUser.firstName} ${selectedUser.lastName}` : null);
+      const selectedUsername = selectedUser?.username;
       results = results.filter(r => {
-        const wo = r.workOrder as any;
-        // First try ID-based match (normalize both to strings for comparison)
-        if (wo.updatedById && String(wo.updatedById) === String(filterUpdatedBy)) return true;
-        // Fall back to user name match
-        if (selectedUserLabel && wo.updatedBy === selectedUserLabel) return true;
+        // updatedBy stores username - compare against username
+        if (selectedUsername && r.workOrder.updatedBy === selectedUsername) return true;
+        // Also try direct ID match in case updatedBy stores ID
+        if (r.workOrder.updatedBy && String(r.workOrder.updatedBy) === String(filterUpdatedBy)) return true;
         return false;
       });
     }
     if (filterScheduledBy !== "all") {
-      // Look up user label from selected ID for fallback comparison
-      const selectedUser = users.find(u => u.id === filterScheduledBy);
-      const selectedUserLabel = selectedUser?.username || (selectedUser?.firstName && selectedUser?.lastName ? `${selectedUser.firstName} ${selectedUser.lastName}` : null);
       results = results.filter(r => {
-        const wo = r.workOrder as any;
-        // First try scheduledById if it exists (ID field)
-        if (wo.scheduledById && String(wo.scheduledById) === String(filterScheduledBy)) return true;
-        // Fall back to scheduledBy as display label match
-        if (selectedUserLabel && wo.scheduledBy === selectedUserLabel) return true;
-        return false;
+        // scheduledBy stores user ID directly - compare IDs
+        return r.workOrder.scheduledBy && String(r.workOrder.scheduledBy) === String(filterScheduledBy);
       });
     }
     if (filterCompletedBy !== "all") {
-      // Look up user label from selected ID for fallback comparison
-      const selectedUser = users.find(u => u.id === filterCompletedBy);
-      const selectedUserLabel = selectedUser?.username || (selectedUser?.firstName && selectedUser?.lastName ? `${selectedUser.firstName} ${selectedUser.lastName}` : null);
       results = results.filter(r => {
-        const wo = r.workOrder as any;
-        // First try completedById if it exists (ID field)
-        if (wo.completedById && String(wo.completedById) === String(filterCompletedBy)) return true;
-        // Fall back to completedBy as display label match
-        if (selectedUserLabel && wo.completedBy === selectedUserLabel) return true;
-        return false;
+        // completedBy stores user ID directly - compare IDs
+        return r.workOrder.completedBy && String(r.workOrder.completedBy) === String(filterCompletedBy);
       });
     }
     if (filterTroubleCode !== "all") {
