@@ -1607,32 +1607,92 @@ export default function ProjectWorkOrders() {
     );
   }
 
+  const meterTypeDialog = (
+    <Dialog open={createMeterTypeOpen} onOpenChange={setCreateMeterTypeOpen}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Create New Meter Type</DialogTitle>
+          <DialogDescription>
+            Add a new meter type to this project.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 py-4">
+          <div className="grid gap-2">
+            <Label htmlFor="product-id">Product ID *</Label>
+            <Input
+              id="product-id"
+              value={newMeterTypeProductId}
+              onChange={(e) => setNewMeterTypeProductId(e.target.value)}
+              placeholder="e.g. MTR-001"
+              data-testid="input-new-meter-type-product-id"
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="product-label">Product Label *</Label>
+            <Input
+              id="product-label"
+              value={newMeterTypeLabel}
+              onChange={(e) => setNewMeterTypeLabel(e.target.value)}
+              placeholder="e.g. 5/8 Inch Water Meter"
+              data-testid="input-new-meter-type-label"
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="product-description">Description (optional)</Label>
+            <Textarea
+              id="product-description"
+              value={newMeterTypeDescription}
+              onChange={(e) => setNewMeterTypeDescription(e.target.value)}
+              placeholder="Optional description..."
+              data-testid="input-new-meter-type-description"
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setCreateMeterTypeOpen(false)}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleCreateMeterTypeSubmit}
+            disabled={createMeterTypeMutation.isPending}
+            data-testid="button-create-meter-type-submit"
+          >
+            {createMeterTypeMutation.isPending ? "Creating..." : "Create Meter Type"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
   if (editingWorkOrder) {
     return (
-      <WorkOrderDetail
-        workOrder={editingWorkOrder}
-        form={editForm}
-        onSubmit={onEditSubmit}
-        onBack={() => {
-          setEditingWorkOrder(null);
-          setCameFromSearch(false);
-        }}
-        isSubmitting={updateMutation.isPending}
-        projectId={projectId!}
-        cameFromSearch={cameFromSearch}
-        serviceTypes={serviceTypes}
-        meterTypes={meterTypes}
-        workOrderStatuses={workOrderStatuses}
-        troubleCodes={troubleCodes}
-        assigneesData={assigneesData}
-        workOrderFiles={workOrderFiles}
-        filesLoading={filesLoading}
-        formatDateTime={formatDateTime}
-        getAssignedUserName={getAssignedUserName}
-        signaturePadRef={editSignaturePadRef}
-        openCreateMeterTypeDialog={openCreateMeterTypeDialog}
-        toast={toast}
-      />
+      <>
+        <WorkOrderDetail
+          workOrder={editingWorkOrder}
+          form={editForm}
+          onSubmit={onEditSubmit}
+          onBack={() => {
+            setEditingWorkOrder(null);
+            setCameFromSearch(false);
+          }}
+          isSubmitting={updateMutation.isPending}
+          projectId={projectId!}
+          cameFromSearch={cameFromSearch}
+          serviceTypes={serviceTypes}
+          meterTypes={meterTypes}
+          workOrderStatuses={workOrderStatuses}
+          troubleCodes={troubleCodes}
+          assigneesData={assigneesData}
+          workOrderFiles={workOrderFiles}
+          filesLoading={filesLoading}
+          formatDateTime={formatDateTime}
+          getAssignedUserName={getAssignedUserName}
+          signaturePadRef={editSignaturePadRef}
+          openCreateMeterTypeDialog={openCreateMeterTypeDialog}
+          toast={toast}
+        />
+        {meterTypeDialog}
+      </>
     );
   }
 
@@ -3143,60 +3203,7 @@ export default function ProjectWorkOrders() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={createMeterTypeOpen} onOpenChange={setCreateMeterTypeOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create New Meter Type</DialogTitle>
-            <DialogDescription>
-              Add a new meter type to this project.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="product-id">Product ID *</Label>
-              <Input
-                id="product-id"
-                value={newMeterTypeProductId}
-                onChange={(e) => setNewMeterTypeProductId(e.target.value)}
-                placeholder="e.g. MTR-001"
-                data-testid="input-new-meter-type-product-id"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="product-label">Product Label *</Label>
-              <Input
-                id="product-label"
-                value={newMeterTypeLabel}
-                onChange={(e) => setNewMeterTypeLabel(e.target.value)}
-                placeholder="e.g. 5/8 Inch Water Meter"
-                data-testid="input-new-meter-type-label"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="product-description">Description (optional)</Label>
-              <Textarea
-                id="product-description"
-                value={newMeterTypeDescription}
-                onChange={(e) => setNewMeterTypeDescription(e.target.value)}
-                placeholder="Optional description..."
-                data-testid="input-new-meter-type-description"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateMeterTypeOpen(false)}>
-              Cancel
-            </Button>
-            <Button 
-              onClick={handleCreateMeterTypeSubmit}
-              disabled={createMeterTypeMutation.isPending}
-              data-testid="button-create-meter-type-submit"
-            >
-              {createMeterTypeMutation.isPending ? "Creating..." : "Create Meter Type"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {meterTypeDialog}
 
       <RouteSheetDialog
         open={showRouteSheetDialog}
