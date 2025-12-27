@@ -205,6 +205,46 @@ export function MeterChangeoutWizard({
     onClose();
   };
 
+  // Validation helpers
+  const isValidMeterReading = (reading: string): boolean => {
+    // Must be digits only (allows leading zeros like "0001")
+    return reading.trim().length > 0 && /^\d+$/.test(reading.trim());
+  };
+
+  const isValidGps = (gps: string): boolean => {
+    // Validate GPS format: lat,lng where lat is -90 to 90 and lng is -180 to 180
+    const trimmed = gps.trim();
+    if (!trimmed) return false;
+    
+    const match = trimmed.match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
+    if (!match) return false;
+    
+    const lat = parseFloat(match[1]);
+    const lng = parseFloat(match[2]);
+    
+    return !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+  };
+
+  const getMeterReadingError = (reading: string): string | null => {
+    if (!reading.trim()) return "Reading is required";
+    if (!/^\d+$/.test(reading.trim())) return "Reading must contain only digits (0-9)";
+    return null;
+  };
+
+  const getGpsError = (gps: string): string | null => {
+    if (!gps.trim()) return "GPS coordinates are required";
+    const trimmed = gps.trim();
+    const match = trimmed.match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
+    if (!match) return "Invalid format. Use: latitude,longitude (e.g., 37.7749,-122.4194)";
+    
+    const lat = parseFloat(match[1]);
+    const lng = parseFloat(match[2]);
+    
+    if (isNaN(lat) || lat < -90 || lat > 90) return "Latitude must be between -90 and 90";
+    if (isNaN(lng) || lng < -180 || lng > 180) return "Longitude must be between -180 and 180";
+    return null;
+  };
+
   const canProceed = (): boolean => {
     switch (currentStep) {
       case "canChange":
@@ -212,7 +252,7 @@ export function MeterChangeoutWizard({
       case "troubleCapture":
         return !!data.troubleCode && data.troublePhotos.length >= 1;
       case "oldReading":
-        return !!data.oldMeterReading.trim();
+        return isValidMeterReading(data.oldMeterReading);
       case "beforePhotos":
         return data.beforePhotos.length >= 1;
       case "physicalChange":
@@ -220,11 +260,11 @@ export function MeterChangeoutWizard({
       case "newMeterId":
         return !!data.newMeterId.trim();
       case "newReading":
-        return !!data.newMeterReading.trim();
+        return isValidMeterReading(data.newMeterReading);
       case "afterPhotos":
         return data.afterPhotos.length >= 1;
       case "gps":
-        return !!data.gpsCoordinates.trim();
+        return isValidGps(data.gpsCoordinates);
       case "signature":
         return !!data.signatureName.trim();
       case "confirm":
@@ -232,12 +272,12 @@ export function MeterChangeoutWizard({
         if (data.canChange) {
           // Success path requires: old reading, new meter ID, new reading, before/after photos, GPS, signature
           return (
-            !!data.oldMeterReading.trim() &&
+            isValidMeterReading(data.oldMeterReading) &&
             !!data.newMeterId.trim() &&
-            !!data.newMeterReading.trim() &&
+            isValidMeterReading(data.newMeterReading) &&
             data.beforePhotos.length >= 1 &&
             data.afterPhotos.length >= 1 &&
-            !!data.gpsCoordinates.trim() &&
+            isValidGps(data.gpsCoordinates) &&
             !!data.signatureName.trim()
           );
         } else {
@@ -603,7 +643,8 @@ export function MeterChangeoutWizard({
           </div>
         );
 
-      case "oldReading":
+      case "oldReading": {
+        const oldReadingError = getMeterReadingError(data.oldMeterReading);
         return (
           <div className="space-y-4">
             <div className="text-center mb-4">
@@ -616,15 +657,21 @@ export function MeterChangeoutWizard({
               <Label>Old Meter Final Reading *</Label>
               <Input
                 type="text"
+                inputMode="numeric"
                 value={data.oldMeterReading}
                 onChange={(e) => setData((prev) => ({ ...prev, oldMeterReading: e.target.value }))}
-                placeholder="Enter meter reading..."
-                className="text-lg text-center"
+                placeholder="Enter meter reading (digits only)..."
+                className={`text-lg text-center ${oldReadingError && data.oldMeterReading ? "border-destructive" : ""}`}
                 data-testid="input-old-meter-reading"
               />
+              {oldReadingError && data.oldMeterReading && (
+                <p className="text-sm text-destructive">{oldReadingError}</p>
+              )}
+              <p className="text-xs text-muted-foreground">Enter digits only. Leading zeros are preserved (e.g., 0001).</p>
             </div>
           </div>
         );
+      }
 
       case "beforePhotos":
         return (
@@ -842,7 +889,8 @@ export function MeterChangeoutWizard({
           </div>
         );
 
-      case "newReading":
+      case "newReading": {
+        const newReadingError = getMeterReadingError(data.newMeterReading);
         return (
           <div className="space-y-4">
             <div className="text-center mb-4">
@@ -855,15 +903,21 @@ export function MeterChangeoutWizard({
               <Label>New Meter Initial Reading *</Label>
               <Input
                 type="text"
+                inputMode="numeric"
                 value={data.newMeterReading}
                 onChange={(e) => setData((prev) => ({ ...prev, newMeterReading: e.target.value }))}
-                placeholder="Enter meter reading..."
-                className="text-lg text-center"
+                placeholder="Enter meter reading (digits only)..."
+                className={`text-lg text-center ${newReadingError && data.newMeterReading ? "border-destructive" : ""}`}
                 data-testid="input-new-meter-reading"
               />
+              {newReadingError && data.newMeterReading && (
+                <p className="text-sm text-destructive">{newReadingError}</p>
+              )}
+              <p className="text-xs text-muted-foreground">Enter digits only. Leading zeros are preserved (e.g., 0001).</p>
             </div>
           </div>
         );
+      }
 
       case "afterPhotos":
         return (
@@ -891,7 +945,8 @@ export function MeterChangeoutWizard({
           </div>
         );
 
-      case "gps":
+      case "gps": {
+        const gpsError = getGpsError(data.gpsCoordinates);
         return (
           <div className="space-y-4">
             <div className="text-center mb-4">
@@ -907,9 +962,14 @@ export function MeterChangeoutWizard({
                 onChange={(value) => setData((prev) => ({ ...prev, gpsCoordinates: value }))}
                 data-testid="input-gps-coordinates"
               />
+              {gpsError && data.gpsCoordinates && (
+                <p className="text-sm text-destructive">{gpsError}</p>
+              )}
+              <p className="text-xs text-muted-foreground">Format: latitude,longitude (e.g., 37.7749,-122.4194)</p>
             </div>
           </div>
         );
+      }
 
       case "signature":
         return (
