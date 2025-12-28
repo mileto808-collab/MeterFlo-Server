@@ -850,27 +850,37 @@ export class ProjectWorkOrderStorage {
         setClauses.push(`trouble = $${paramCount++}`);
         values.push((updates as any).trouble || null);
       }
-      // Handle notes - append trouble, scheduled, and completed notes if needed
+      // Handle notes - always append new notes to existing notes (never replace)
       const notesToAppend: string[] = [];
       if (scheduledNoteToAdd) notesToAppend.push(scheduledNoteToAdd);
       if (completedNoteToAdd) notesToAppend.push(completedNoteToAdd);
       if (troubleNoteToAdd) notesToAppend.push(troubleNoteToAdd);
       
-      if (notesToAppend.length > 0) {
-        // We need to get existing notes and append the auto-generated notes
+      // Check if we need to update notes (either user-provided notes or auto-generated notes)
+      if (notesToAppend.length > 0 || updates.notes !== undefined) {
+        // Get existing notes to append to
         const existingResult = await client.query(
           `SELECT notes FROM "${this.schemaName}".work_orders WHERE id = $1`,
           [id]
         );
         const existingNotes = existingResult.rows[0]?.notes || "";
-        const updatedNotes = updates.notes !== undefined ? updates.notes : existingNotes;
-        const autoNotes = notesToAppend.join('\n');
-        const finalNotes = updatedNotes ? `${updatedNotes}\n${autoNotes}` : autoNotes;
+        
+        // Build final notes: existing + user-provided + auto-generated
+        let finalNotes = existingNotes;
+        
+        // Append user-provided notes if present
+        if (updates.notes !== undefined && updates.notes !== null && updates.notes.trim() !== "") {
+          finalNotes = finalNotes ? `${finalNotes}\n${updates.notes}` : updates.notes;
+        }
+        
+        // Append auto-generated notes (trouble, scheduled, completed)
+        if (notesToAppend.length > 0) {
+          const autoNotes = notesToAppend.join('\n');
+          finalNotes = finalNotes ? `${finalNotes}\n${autoNotes}` : autoNotes;
+        }
+        
         setClauses.push(`notes = $${paramCount++}`);
         values.push(finalNotes);
-      } else if (updates.notes !== undefined) {
-        setClauses.push(`notes = $${paramCount++}`);
-        values.push(updates.notes);
       }
       if (updates.attachments !== undefined) {
         setClauses.push(`attachments = $${paramCount++}`);
