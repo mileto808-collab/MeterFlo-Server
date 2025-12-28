@@ -455,6 +455,9 @@ export default function ProjectWorkOrders() {
       // (event.state is the NEW state we're navigating to after back is pressed)
       if (historyPushedRef.current && !event.state?.workOrderDetail) {
         historyPushedRef.current = false;
+        // Refetch work orders to show updated data when returning to list via browser back
+        queryClient.refetchQueries({ queryKey: [`/api/projects/${projectId}/work-orders`] });
+        queryClient.refetchQueries({ queryKey: [`/api/projects/${projectId}/work-orders/stats`] });
         setEditingWorkOrder(null);
         setCameFromSearch(false);
       }
@@ -465,10 +468,14 @@ export default function ProjectWorkOrders() {
     return () => {
       window.removeEventListener("popstate", handlePopState);
     };
-  }, [editingWorkOrder]);
+  }, [editingWorkOrder, projectId]);
 
   // Close detail view - handles both UI button and ensures history is clean
   const closeDetailView = useCallback(() => {
+    // Refetch work orders to show updated data when returning to list
+    queryClient.refetchQueries({ queryKey: [`/api/projects/${projectId}/work-orders`] });
+    queryClient.refetchQueries({ queryKey: [`/api/projects/${projectId}/work-orders/stats`] });
+    
     if (historyPushedRef.current) {
       // If we pushed a history state, use history.back() to clean it up
       // The popstate handler will see historyPushedRef.current === true and close the view
@@ -481,7 +488,7 @@ export default function ProjectWorkOrders() {
     }
     // Reset auto-launch flag when closing
     setAutoLaunchMeterChangeout(false);
-  }, []);
+  }, [projectId]);
 
   // Scroll to top when opening a work order detail
   useEffect(() => {
