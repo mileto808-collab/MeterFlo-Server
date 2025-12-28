@@ -586,6 +586,14 @@ Report a trouble code with optional photos.
 - `oldMeterReading` - Current meter reading
 - `photos` - Array of photo objects with `base64` and `filename`
 
+**Photo Storage:** Photos are saved with server-generated collision-proof filenames in the format:
+```
+{customerWoId}-trouble-{YYYYMMDD}-{uuid}.jpg
+```
+Example: `WO-1058-trouble-20251228-a1b2c3d4-e5f6-7890-abcd-ef1234567890.jpg`
+
+The `filename` field in the request is ignored - the server enforces standardized naming for consistency.
+
 **Response:**
 ```json
 {
@@ -647,6 +655,15 @@ Complete a meter changeout with photos and signature.
 - `notes` - Additional notes
 - `beforePhotos` - Array of before photo objects
 - `afterPhotos` - Array of after photo objects
+
+**Photo Storage:** Photos are saved with server-generated collision-proof filenames:
+```
+{customerWoId}-before-{YYYYMMDD}-{uuid}.jpg
+{customerWoId}-after-{YYYYMMDD}-{uuid}.jpg
+```
+Example: `WO-1058-before-20251228-a1b2c3d4-e5f6-7890-abcd-ef1234567890.jpg`
+
+The `filename` fields in requests are ignored - the server enforces standardized naming for consistency.
 
 **Response:**
 ```json
@@ -759,10 +776,23 @@ Base64 encoded PNG with data URI prefix:
 "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA..."
 ```
 
-### 6. Webhooks
+### 6. Photo Filename Convention
+All uploaded photos are automatically renamed by the server using UUID-based collision-proof naming:
+```
+{customerWoId}-{type}-{YYYYMMDD}-{uuid}.jpg
+```
+Where:
+- `customerWoId` - The work order's customer WO ID (sanitized for filesystem)
+- `type` - Photo type: `before`, `after`, or `trouble`
+- `YYYYMMDD` - Upload date
+- `uuid` - Cryptographically secure UUID v4 for uniqueness
+
+This ensures files never collide, even during concurrent uploads from multiple technicians.
+
+### 7. Webhooks
 Automatically triggered on work order completion if the project has `webhookUrl` configured. External systems receive real-time notifications with the completed work order data.
 
-### 7. Error Response Format
+### 8. Error Response Format
 All error responses follow this format:
 ```json
 {
@@ -800,4 +830,4 @@ Common HTTP status codes:
 
 ---
 
-*Last updated: December 27, 2025*
+*Last updated: December 28, 2025*
