@@ -786,7 +786,11 @@ export class ProjectWorkOrderStorage {
         } else {
           // scheduledAt is being CLEARED - use the status from the update if provided
           setClauses.push(`scheduled_by = NULL`);
-          if (updates.status !== undefined && !forceStatusToTrouble) {
+          if (forceStatusToTrouble) {
+            // Trouble code is set - force status to "Trouble"
+            setClauses.push(`status = $${paramCount++}`);
+            values.push("Trouble");
+          } else if (updates.status !== undefined) {
             setClauses.push(`status = $${paramCount++}`);
             values.push(updates.status);
             // Check if this status is a "Completed" type
