@@ -123,7 +123,7 @@ export default function Users() {
   const [filterEmail, setFilterEmail] = useState("");
   const [filterFirstName, setFilterFirstName] = useState("");
   const [filterLastName, setFilterLastName] = useState("");
-  const [filterProjects, setFilterProjects] = useState("");
+  const [filterProjects, setFilterProjects] = useState("all");
   const [filterIsLocked, setFilterIsLocked] = useState<string>("all");
   const [filterLockedReason, setFilterLockedReason] = useState("");
   const [filterLastLoginFrom, setFilterLastLoginFrom] = useState("");
@@ -404,7 +404,12 @@ export default function Users() {
       (subroleFilter === "none" && !u.subroleId) ||
       (u.subroleId && String(u.subroleId) === subroleFilter);
     
-    return matchesSearch && matchesRole && matchesStatus && matchesSubrole;
+    // Project filter
+    const userProjects = allUsersProjects?.[u.id] || [];
+    const matchesProject = filterProjects === "all" || 
+      userProjects.some(p => String(p.id) === filterProjects);
+    
+    return matchesSearch && matchesRole && matchesStatus && matchesSubrole && matchesProject;
   }).sort((a, b) => {
     // Multi-column sort
     for (const criterion of sortCriteria) {
@@ -664,7 +669,7 @@ export default function Users() {
     setFilterEmail("");
     setFilterFirstName("");
     setFilterLastName("");
-    setFilterProjects("");
+    setFilterProjects("all");
     setFilterIsLocked("all");
     setFilterLockedReason("");
     setFilterLastLoginFrom("");
@@ -677,7 +682,7 @@ export default function Users() {
     setFilterWebsite("");
   };
 
-  const hasActiveFilters = searchQuery !== "" || roleFilter !== "all" || statusFilter !== "all" || subroleFilter !== "all" || filterUsername !== "" || filterEmail !== "" || filterFirstName !== "" || filterLastName !== "" || filterProjects !== "" || filterIsLocked !== "all" || filterLockedReason !== "" || filterLastLoginFrom !== "" || filterLastLoginTo !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterWebsite !== "";
+  const hasActiveFilters = searchQuery !== "" || roleFilter !== "all" || statusFilter !== "all" || subroleFilter !== "all" || filterUsername !== "" || filterEmail !== "" || filterFirstName !== "" || filterLastName !== "" || filterProjects !== "all" || filterIsLocked !== "all" || filterLockedReason !== "" || filterLastLoginFrom !== "" || filterLastLoginTo !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterWebsite !== "";
 
   const getSubroleName = (subroleId: number | null | undefined) => {
     if (!subroleId) return "";
@@ -1644,7 +1649,19 @@ export default function Users() {
                 <Input className="w-[140px]" placeholder="Last Name..." value={filterLastName} onChange={(e) => setFilterLastName(e.target.value)} data-testid="input-filter-last-name" />
               )}
               {isFilterVisible("projects") && (
-                <Input className="w-[140px]" placeholder="Projects..." value={filterProjects} onChange={(e) => setFilterProjects(e.target.value)} data-testid="input-filter-projects" />
+                <Select value={filterProjects} onValueChange={setFilterProjects}>
+                  <SelectTrigger className="w-[160px]" data-testid="select-filter-projects">
+                    <SelectValue placeholder="All Projects" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Projects</SelectItem>
+                    {projects?.map((project) => (
+                      <SelectItem key={project.id} value={String(project.id)}>
+                        {project.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               )}
               {isFilterVisible("isLocked") && (
                 <Select value={filterIsLocked} onValueChange={setFilterIsLocked}>
