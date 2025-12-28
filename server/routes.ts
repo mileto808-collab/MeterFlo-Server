@@ -4361,6 +4361,18 @@ export async function registerRoutes(
       
       const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
       
+      // Check if user is a field technician - they can only see work orders assigned to them or their groups
+      let isFieldTechnician = false;
+      let userGroupNames: string[] = [];
+      if (currentUser.subroleId) {
+        const subrole = await storage.getSubrole(currentUser.subroleId);
+        if (subrole?.key === "field_technician") {
+          isFieldTechnician = true;
+          const userGroups = await storage.getUserGroupMemberships(currentUser.id);
+          userGroupNames = userGroups.map(g => g.name);
+        }
+      }
+      
       // Parse query parameters for filtering
       const {
         lastSyncTimestamp,
@@ -4390,20 +4402,34 @@ export async function registerRoutes(
         const values: any[] = [];
         let paramCount = 1;
         
+        // Field technician filtering - only show work orders assigned to them or their groups
+        if (isFieldTechnician) {
+          const assignmentConditions: string[] = [];
+          // Assigned directly to user
+          assignmentConditions.push(`w.assigned_user_id = $${paramCount++}`);
+          values.push(currentUser.id);
+          // Assigned to one of user's groups
+          if (userGroupNames.length > 0) {
+            assignmentConditions.push(`w.assigned_group_id = ANY($${paramCount++})`);
+            values.push(userGroupNames);
+          }
+          conditions.push(`(${assignmentConditions.join(" OR ")})`);
+        }
+        
         // Filter by last sync timestamp (incremental sync)
         if (lastSyncTimestamp) {
           conditions.push(`w.updated_at > $${paramCount++}`);
           values.push(new Date(lastSyncTimestamp as string));
         }
         
-        // Filter by assigned user
-        if (assignedUserId) {
+        // Filter by assigned user (only applies if not overridden by field tech filter)
+        if (assignedUserId && !isFieldTechnician) {
           conditions.push(`w.assigned_user_id = $${paramCount++}`);
           values.push(assignedUserId);
         }
         
-        // Filter by assigned group
-        if (assignedGroupId) {
+        // Filter by assigned group (only applies if not overridden by field tech filter)
+        if (assignedGroupId && !isFieldTechnician) {
           conditions.push(`w.assigned_group_id = $${paramCount++}`);
           values.push(assignedGroupId);
         }
