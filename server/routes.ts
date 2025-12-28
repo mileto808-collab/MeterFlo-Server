@@ -10,7 +10,7 @@ import bcrypt from "bcryptjs";
 import multer from "multer";
 import { createProjectSchema, deleteProjectSchema, getProjectWorkOrderStorage, sanitizeSchemaName, backupProjectDatabase, restoreProjectDatabase, getProjectDatabaseStats } from "./projectDb";
 import { pool } from "./db";
-import { ensureProjectDirectory, renameProjectDirectory, saveWorkOrderFile, getWorkOrderFiles, deleteWorkOrderFile, getFilePath, getProjectFilesPath, setProjectFilesPath, deleteProjectDirectory, saveProjectFile, getProjectFiles, deleteProjectFile, getProjectFilePath, ensureProjectFtpDirectory, getProjectFtpFiles, deleteProjectFtpFile, getProjectFtpFilePath, saveProjectFtpFile } from "./fileStorage";
+import { ensureProjectDirectory, renameProjectDirectory, saveWorkOrderFile, getWorkOrderFiles, deleteWorkOrderFile, getFilePath, getProjectFilesPath, setProjectFilesPath, deleteProjectDirectory, saveProjectFile, getProjectFiles, deleteProjectFile, getProjectFilePath, ensureProjectFtpDirectory, getProjectFtpFiles, deleteProjectFtpFile, getProjectFtpFilePath, saveProjectFtpFile, getProjectDirectoryName } from "./fileStorage";
 import { ExternalDatabaseService } from "./externalDbService";
 import { createBackupArchive, extractDatabaseBackupFromArchive, restoreFullSystem, restoreFilesFromArchive } from "./systemBackup";
 
@@ -5007,9 +5007,10 @@ export async function registerRoutes(
       // Save photos if provided (base64 encoded)
       if (photos && Array.isArray(photos) && photos.length > 0) {
         const projectFilesPath = await getProjectFilesPath();
+        const projectDirName = getProjectDirectoryName(project.name, project.id);
         const workOrderFolder = path.join(
           projectFilesPath,
-          `${project.name}_${project.id}`,
+          projectDirName,
           "Work Orders",
           folderName
         );
@@ -5132,9 +5133,10 @@ export async function registerRoutes(
         if (!photos || !Array.isArray(photos) || photos.length === 0) return;
         
         const projectFilesPath = await getProjectFilesPath();
+        const projectDirName = getProjectDirectoryName(project.name, project.id);
         const workOrderFolder = path.join(
           projectFilesPath,
-          `${project.name}_${project.id}`,
+          projectDirName,
           "Work Orders",
           folderName
         );
@@ -5167,9 +5169,10 @@ export async function registerRoutes(
       // Save signature if provided
       if (signatureData) {
         const projectFilesPath = await getProjectFilesPath();
+        const projectDirName = getProjectDirectoryName(project.name, project.id);
         const workOrderFolder = path.join(
           projectFilesPath,
-          `${project.name}_${project.id}`,
+          projectDirName,
           "Work Orders",
           folderName
         );
