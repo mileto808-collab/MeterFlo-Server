@@ -1399,12 +1399,10 @@ export async function registerRoutes(
         }
       }
       
-      // Get the user's display name for updatedBy
-      const updatedByName = currentUser?.firstName 
-        ? `${currentUser.firstName}${currentUser.lastName ? ' ' + currentUser.lastName : ''}`
-        : currentUser?.username || currentUser?.id;
+      // Use username for updated_by since it has a foreign key constraint to users table
+      const updatedByUsername = currentUser?.username || currentUser?.id;
       
-      const workOrder = await workOrderStorage.updateWorkOrder(workOrderId, req.body, updatedByName);
+      const workOrder = await workOrderStorage.updateWorkOrder(workOrderId, req.body, updatedByUsername);
       
       if (!workOrder) {
         return res.status(404).json({ message: "Work order not found" });
@@ -1489,9 +1487,8 @@ export async function registerRoutes(
       
       const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
       
-      const updatedByName = currentUser?.firstName 
-        ? `${currentUser.firstName}${currentUser.lastName ? ' ' + currentUser.lastName : ''}`
-        : currentUser?.username || currentUser?.id;
+      // Use username for updated_by since it has a foreign key constraint to users table
+      const updatedByUsername = currentUser?.username || currentUser?.id;
       
       let assigned = 0;
       let skipped = 0;
@@ -1521,9 +1518,9 @@ export async function registerRoutes(
             updates = { assignedGroupId: numericGroupId, assignedUserId: null };
           }
           
-          await workOrderStorage.updateWorkOrder(woId, updates, updatedByName);
+          await workOrderStorage.updateWorkOrder(woId, updates, updatedByUsername);
         } else {
-          await workOrderStorage.updateWorkOrder(woId, { assignedUserId: null, assignedGroupId: null }, updatedByName);
+          await workOrderStorage.updateWorkOrder(woId, { assignedUserId: null, assignedGroupId: null }, updatedByUsername);
         }
         
         assigned++;
@@ -1993,14 +1990,9 @@ export async function registerRoutes(
         return !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
       };
       
-      // Prepare the update data
-      const updatedByName = currentUser.firstName && currentUser.lastName 
-        ? `${currentUser.firstName} ${currentUser.lastName}` 
-        : currentUser.username || "System";
-      const updateData: any = {
-        updatedBy: updatedByName,
-        updatedAt: new Date().toISOString(),
-      };
+      // Use username for updated_by since it has a foreign key constraint to users table
+      const updatedByUsername = currentUser.username || currentUser.id;
+      const updateData: any = {};
       
       if (canChange) {
         // Success path - meter was changed
@@ -2137,7 +2129,7 @@ export async function registerRoutes(
       }
       
       // Update the work order - pass username as third parameter (FK references public.users(username))
-      const updatedWorkOrder = await workOrderStorage.updateWorkOrder(workOrderId, updateData, currentUser.username || undefined);
+      const updatedWorkOrder = await workOrderStorage.updateWorkOrder(workOrderId, updateData, updatedByUsername);
       
       if (!updatedWorkOrder) {
         console.error("Meter changeout: updateWorkOrder returned undefined for work order", workOrderId);
