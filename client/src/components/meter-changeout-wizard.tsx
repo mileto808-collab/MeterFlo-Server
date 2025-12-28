@@ -57,6 +57,7 @@ type WizardStep =
   | "newReading"
   | "afterPhotos"
   | "gps"
+  | "notes"
   | "signature"
   | "confirm";
 
@@ -77,6 +78,7 @@ interface MeterChangeoutData {
   newMeterReading: string;
   afterPhotos: CapturedPhoto[];
   gpsCoordinates: string;
+  completionNotes: string;
   signatureData: string | null;
   signatureName: string;
 }
@@ -109,6 +111,7 @@ const stepLabels: Record<WizardStep, string> = {
   newReading: "New Meter Reading",
   afterPhotos: "After Photos",
   gps: "Capture GPS",
+  notes: "Notes",
   signature: "Signature",
   confirm: "Confirm & Submit",
 };
@@ -122,6 +125,7 @@ const successSteps: WizardStep[] = [
   "newReading",
   "afterPhotos",
   "gps",
+  "notes",
   "signature",
   "confirm",
 ];
@@ -170,6 +174,7 @@ export function MeterChangeoutWizard({
     newMeterReading: existingNewReading || "",
     afterPhotos: [],
     gpsCoordinates: existingGps || "",
+    completionNotes: "",
     signatureData: null,
     signatureName: "",
   });
@@ -240,6 +245,7 @@ export function MeterChangeoutWizard({
       newMeterReading: existingNewReading || "",
       afterPhotos: [],
       gpsCoordinates: existingGps || "",
+      completionNotes: "",
       signatureData: null,
       signatureName: "",
     });
@@ -316,6 +322,8 @@ export function MeterChangeoutWizard({
         return data.afterPhotos.length >= 1;
       case "gps":
         return isValidGps(data.gpsCoordinates);
+      case "notes":
+        return true; // Notes are optional
       case "signature":
         return !!data.signatureName.trim();
       case "confirm":
@@ -1120,6 +1128,31 @@ export function MeterChangeoutWizard({
         );
       }
 
+      case "notes":
+        return (
+          <div className="space-y-4">
+            <div className="text-center mb-4">
+              <StickyNote className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
+              <p className="text-muted-foreground">
+                Add any additional notes about this changeout (optional).
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>Notes (Optional)</Label>
+              <Textarea
+                value={data.completionNotes}
+                onChange={(e) => setData((prev) => ({ ...prev, completionNotes: e.target.value }))}
+                placeholder="Enter any additional notes or observations..."
+                rows={4}
+                data-testid="input-completion-notes"
+              />
+              <p className="text-xs text-muted-foreground">
+                You can skip this step if you have no additional notes to add.
+              </p>
+            </div>
+          </div>
+        );
+
       case "signature":
         return (
           <div className="space-y-4">
@@ -1175,6 +1208,13 @@ export function MeterChangeoutWizard({
                     
                     <span className="text-muted-foreground">After Photos:</span>
                     <span className="font-medium">{data.afterPhotos.length}</span>
+                    
+                    {data.completionNotes && (
+                      <>
+                        <span className="text-muted-foreground">Notes:</span>
+                        <span className="font-medium">{data.completionNotes}</span>
+                      </>
+                    )}
                     
                     <span className="text-muted-foreground">Signed By:</span>
                     <span className="font-medium">{data.signatureName}</span>

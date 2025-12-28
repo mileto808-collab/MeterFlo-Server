@@ -1142,6 +1142,7 @@ export function WorkOrderDetail({
             newMeterId: data.newMeterId,
             newMeterReading: data.newMeterReading,
             gpsCoordinates: data.gpsCoordinates,
+            completionNotes: data.completionNotes,
             signatureData: data.signatureData,
             signatureName: data.signatureName,
             photoTypes,

@@ -1960,6 +1960,7 @@ export async function registerRoutes(
         newMeterId,
         newMeterReading,
         gpsCoordinates,
+        completionNotes,
         signatureData,
         signatureName,
         photoTypes, // Array of types matching the files array: ["before", "before", "after", "after", "trouble"]
@@ -2044,6 +2045,13 @@ export async function registerRoutes(
         updateData.signatureName = signatureName || null;
         updateData.completedAt = new Date().toISOString();
         updateData.completedBy = currentUser.id;
+        
+        // Add completion notes if provided
+        if (completionNotes && completionNotes.trim()) {
+          updateData.notes = workOrder.notes 
+            ? `${workOrder.notes}\n\n[Meter Changeout Notes - ${new Date().toLocaleString()}]\n${completionNotes.trim()}`
+            : `[Meter Changeout Notes - ${new Date().toLocaleString()}]\n${completionNotes.trim()}`;
+        }
         
         // Get the "Completed" status from system
         const statuses = await storage.getWorkOrderStatuses();
