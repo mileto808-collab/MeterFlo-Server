@@ -318,7 +318,67 @@ Note: Update fields are placed directly in the object alongside `id`, `clientUpd
 GET /api/projects/:projectId/work-orders/:workOrderId
 ```
 
-**Response:** Full work order object with all fields.
+Fetch complete details for a single work order. Use this for refreshing individual work order data.
+
+**Response:** Full work order object in **snake_case** format (matching bulk sync):
+```json
+{
+  "id": 1046,
+  "customer_wo_id": "WO-1046",
+  "status": "Open",
+  "old_meter_id": "MTR123456",
+  "old_meter_reading": 12345,
+  "old_gps": "40.7128,-74.0060",
+  "new_meter_id": null,
+  "new_meter_reading": null,
+  "new_gps": null,
+  "service_address": "123 Main St",
+  "city": "Springfield",
+  "state": "IL",
+  "zip": "62701",
+  "customer_name": "John Doe",
+  "customer_id": "CUST-001",
+  "phone": "555-1234",
+  "email": "john@example.com",
+  "route": "R1",
+  "zone": "North",
+  "service_type": "Water",
+  "old_meter_type": "Residential",
+  "new_meter_type": null,
+  "notes": "Gate code 1234",
+  "trouble": null,
+  "assigned_user_id": "user-uuid",
+  "assigned_group_id": null,
+  "assigned_user_username": "jsmith",
+  "assigned_user_display_name": "John Smith",
+  "scheduled_at": "2025-12-28T09:00:00Z",
+  "scheduled_by": "user-uuid",
+  "scheduled_by_username": "admin",
+  "completed_at": null,
+  "completed_by": null,
+  "completed_by_username": null,
+  "signature_data": null,
+  "signature_name": null,
+  "attachments": null,
+  "created_at": "2025-12-20T08:00:00Z",
+  "created_by": "admin",
+  "updated_at": "2025-12-27T10:00:00Z",
+  "updated_by": "jsmith"
+}
+```
+
+**Note:** This endpoint returns the same snake_case format as the bulk sync endpoint, so no additional field mapping is required.
+
+---
+
+### Get Work Order by Meter ID
+```
+GET /api/projects/:projectId/work-orders/by-meter/:meterId
+```
+
+Look up a work order by old meter ID. Useful for barcode/QR scanning workflows.
+
+**Response:** Same snake_case format as above.
 
 ---
 
