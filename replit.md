@@ -38,6 +38,7 @@ Preferred communication style: Simple, everyday language.
 - **System Settings**: Configurable max file size, allowed extensions, and work order statuses.
 - **Filter Preferences**: User-customizable filter visibility for work orders, search, and user pages.
 - **Data Integrity**: Foreign key constraints with `ON DELETE RESTRICT` for critical relationships. ID-based assignment for users and groups.
+- **Real-Time Updates**: SSE-based live updates eliminate manual browser refreshes. Server-side event emitter broadcasts work order changes to connected clients. Client hooks (`useProjectEvents`, `useGlobalEvents`) automatically invalidate TanStack Query cache on events. 30-second heartbeat with automatic reconnection.
 
 ### System Design Choices
 - **Storage Interface**: `IStorage` interface abstracts database operations.
