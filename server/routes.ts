@@ -1164,18 +1164,36 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Project not found" });
       }
       
-      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
-      const workOrder = await workOrderStorage.getWorkOrder(workOrderId);
-      
-      if (!workOrder) {
-        return res.status(404).json({ message: "Work order not found" });
+      // Query directly with JOINs to get snake_case format matching mobile sync endpoint
+      const client = await pool.connect();
+      try {
+        const result = await client.query(`
+          SELECT w.*, 
+                 sb.username as scheduled_by_username,
+                 cb.username as completed_by_username,
+                 au.username as assigned_user_username,
+                 COALESCE(au.first_name || ' ' || au.last_name, au.username) as assigned_user_display_name
+          FROM "${project.databaseName}".work_orders w
+          LEFT JOIN public.users sb ON w.scheduled_by = sb.id
+          LEFT JOIN public.users cb ON w.completed_by = cb.id
+          LEFT JOIN public.users au ON w.assigned_user_id = au.id
+          WHERE w.id = $1
+        `, [workOrderId]);
+        
+        if (result.rows.length === 0) {
+          return res.status(404).json({ message: "Work order not found" });
+        }
+        
+        const workOrder = result.rows[0];
+        
+        if (currentUser?.role === "customer" && workOrder.status !== "completed") {
+          return res.status(403).json({ message: "Forbidden: Customers can only view completed work orders" });
+        }
+        
+        res.json(workOrder);
+      } finally {
+        client.release();
       }
-      
-      if (currentUser?.role === "customer" && workOrder.status !== "completed") {
-        return res.status(403).json({ message: "Forbidden: Customers can only view completed work orders" });
-      }
-      
-      res.json(workOrder);
     } catch (error) {
       console.error("Error fetching work order:", error);
       res.status(500).json({ message: "Failed to fetch work order" });
@@ -1201,18 +1219,36 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Project not found" });
       }
       
-      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
-      const workOrder = await workOrderStorage.getWorkOrderByOldMeterId(meterId);
-      
-      if (!workOrder) {
-        return res.status(404).json({ message: "Work order not found with old meter ID: " + meterId });
+      // Query directly with JOINs to get snake_case format matching mobile sync endpoint
+      const client = await pool.connect();
+      try {
+        const result = await client.query(`
+          SELECT w.*, 
+                 sb.username as scheduled_by_username,
+                 cb.username as completed_by_username,
+                 au.username as assigned_user_username,
+                 COALESCE(au.first_name || ' ' || au.last_name, au.username) as assigned_user_display_name
+          FROM "${project.databaseName}".work_orders w
+          LEFT JOIN public.users sb ON w.scheduled_by = sb.id
+          LEFT JOIN public.users cb ON w.completed_by = cb.id
+          LEFT JOIN public.users au ON w.assigned_user_id = au.id
+          WHERE w.old_meter_id = $1
+        `, [meterId]);
+        
+        if (result.rows.length === 0) {
+          return res.status(404).json({ message: "Work order not found with old meter ID: " + meterId });
+        }
+        
+        const workOrder = result.rows[0];
+        
+        if (currentUser?.role === "customer" && workOrder.status !== "completed") {
+          return res.status(403).json({ message: "Forbidden: Customers can only view completed work orders" });
+        }
+        
+        res.json(workOrder);
+      } finally {
+        client.release();
       }
-      
-      if (currentUser?.role === "customer" && workOrder.status !== "completed") {
-        return res.status(403).json({ message: "Forbidden: Customers can only view completed work orders" });
-      }
-      
-      res.json(workOrder);
     } catch (error) {
       console.error("Error fetching work order by meter ID:", error);
       res.status(500).json({ message: "Failed to fetch work order" });
