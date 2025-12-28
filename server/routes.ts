@@ -11,7 +11,7 @@ import bcrypt from "bcryptjs";
 import multer from "multer";
 import { createProjectSchema, deleteProjectSchema, getProjectWorkOrderStorage, sanitizeSchemaName, backupProjectDatabase, restoreProjectDatabase, getProjectDatabaseStats } from "./projectDb";
 import { pool } from "./db";
-import { ensureProjectDirectory, renameProjectDirectory, saveWorkOrderFile, getWorkOrderFiles, deleteWorkOrderFile, getFilePath, getProjectFilesPath, setProjectFilesPath, deleteProjectDirectory, saveProjectFile, getProjectFiles, deleteProjectFile, getProjectFilePath, ensureProjectFtpDirectory, getProjectFtpFiles, deleteProjectFtpFile, getProjectFtpFilePath, saveProjectFtpFile, getProjectDirectoryName } from "./fileStorage";
+import { ensureProjectDirectory, renameProjectDirectory, saveWorkOrderFile, getWorkOrderFiles, deleteWorkOrderFile, deleteWorkOrderDirectory, getFilePath, getProjectFilesPath, setProjectFilesPath, deleteProjectDirectory, saveProjectFile, getProjectFiles, deleteProjectFile, getProjectFilePath, ensureProjectFtpDirectory, getProjectFtpFiles, deleteProjectFtpFile, getProjectFtpFilePath, saveProjectFtpFile, getProjectDirectoryName } from "./fileStorage";
 import { ExternalDatabaseService } from "./externalDbService";
 import { createBackupArchive, extractDatabaseBackupFromArchive, restoreFullSystem, restoreFilesFromArchive } from "./systemBackup";
 
@@ -1420,6 +1420,7 @@ export async function registerRoutes(
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       const projectId = parseInt(req.params.projectId);
+      const workOrderId = parseInt(req.params.workOrderId);
       
       if (currentUser?.role !== "admin") {
         return res.status(403).json({ message: "Forbidden: Admin access required" });
@@ -1431,7 +1432,19 @@ export async function registerRoutes(
       }
       
       const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
-      await workOrderStorage.deleteWorkOrder(parseInt(req.params.workOrderId));
+      
+      // Get work order first to get customerWoId for file cleanup
+      const workOrder = await workOrderStorage.getWorkOrder(workOrderId);
+      if (!workOrder) {
+        return res.status(404).json({ message: "Work order not found" });
+      }
+      
+      // Delete work order files/directory
+      const folderName = workOrder.customerWoId || String(workOrder.id);
+      await deleteWorkOrderDirectory(project.name, project.id, folderName, workOrder.id);
+      
+      // Delete work order from database
+      await workOrderStorage.deleteWorkOrder(workOrderId);
       
       res.status(204).send();
     } catch (error) {

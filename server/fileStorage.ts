@@ -293,6 +293,53 @@ export async function deleteWorkOrderFile(
   }
 }
 
+// Delete entire work order directory (all files and subdirectories)
+export async function deleteWorkOrderDirectory(
+  projectName: string,
+  projectId: number,
+  customerWoId: string,
+  legacyWorkOrderId?: number
+): Promise<boolean> {
+  const workOrdersParent = await ensureWorkOrdersParentDirectory(projectName, projectId);
+  const projectPath = await ensureProjectDirectory(projectName, projectId);
+  const sanitizedWoId = customerWoId.replace(/[^a-zA-Z0-9._-]/g, "_");
+  
+  // Check if customerWoId is actually the numeric ID (fallback case when no real customerWoId exists)
+  const isNumericFallback = legacyWorkOrderId !== undefined && sanitizedWoId === String(legacyWorkOrderId);
+  
+  try {
+    // Delete the primary work order directory
+    const workOrderDir = path.join(workOrdersParent, sanitizedWoId);
+    await fs.rm(workOrderDir, { recursive: true, force: true });
+    
+    // Only check legacy locations if customerWoId is a real value (not the numeric fallback)
+    if (!isNumericFallback && legacyWorkOrderId !== undefined) {
+      // Legacy location 1: numeric ID folder at project root
+      const legacyNumericDir = path.join(projectPath, String(legacyWorkOrderId));
+      try {
+        await fs.rm(legacyNumericDir, { recursive: true, force: true });
+      } catch { /* Legacy dir may not exist */ }
+      
+      // Legacy location 2: migrated numeric ID folder in Work Orders
+      const migratedNumericDir = path.join(workOrdersParent, String(legacyWorkOrderId));
+      try {
+        await fs.rm(migratedNumericDir, { recursive: true, force: true });
+      } catch { /* Migrated dir may not exist */ }
+    }
+    
+    // Check for legacy customerWoId folder at project root (oldest format)
+    const legacyWoIdDir = path.join(projectPath, sanitizedWoId);
+    try {
+      await fs.rm(legacyWoIdDir, { recursive: true, force: true });
+    } catch { /* Legacy dir may not exist */ }
+    
+    return true;
+  } catch (error) {
+    console.error("Error deleting work order directory:", error);
+    return false;
+  }
+}
+
 // Delete entire project directory
 export async function deleteProjectDirectory(projectName: string, projectId: number): Promise<boolean> {
   const rootPath = await getProjectFilesPath();
