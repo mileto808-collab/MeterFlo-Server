@@ -668,23 +668,14 @@ export class ProjectWorkOrderStorage {
       if (troubleCode) {
         forceStatusToTrouble = true;
         
-        // Only add a trouble note if the trouble code is actually changing
-        const existingWoResult = await client.query(
-          `SELECT trouble FROM "${this.schemaName}".work_orders WHERE id = $1`,
-          [id]
-        );
-        const existingTroubleCode = existingWoResult.rows[0]?.trouble;
-        
-        // Only add note if trouble code is different from existing value
-        if (troubleCode !== existingTroubleCode) {
-          const troubleCodeDetails = await this.getTroubleCodeDetails(troubleCode);
-          const timestamp = await this.getTimezoneFormattedTimestamp();
-          if (troubleCodeDetails) {
-            troubleNoteToAdd = `Trouble Code: ${troubleCodeDetails.code} - ${troubleCodeDetails.label} - ${timestamp}`;
-          } else {
-            // Fallback: use the code value directly if lookup fails
-            troubleNoteToAdd = `Trouble Code: ${troubleCode} - ${timestamp}`;
-          }
+        // Always add a trouble note when a trouble code is submitted (supports multiple attempts)
+        const troubleCodeDetails = await this.getTroubleCodeDetails(troubleCode);
+        const timestamp = await this.getTimezoneFormattedTimestamp();
+        if (troubleCodeDetails) {
+          troubleNoteToAdd = `Trouble Code: ${troubleCodeDetails.code} - ${troubleCodeDetails.label} - ${timestamp}`;
+        } else {
+          // Fallback: use the code value directly if lookup fails
+          troubleNoteToAdd = `Trouble Code: ${troubleCode} - ${timestamp}`;
         }
       }
 
