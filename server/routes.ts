@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import path from "path";
 import { promises as fs } from "fs";
+import { randomUUID } from "crypto";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { insertProjectWorkOrderSchema, insertProjectSchema, createUserSchema, updateUserSchema, resetPasswordSchema, updateProfileSchema, permissionKeys, insertExternalDatabaseConfigSchema, updateExternalDatabaseConfigSchema, insertImportConfigSchema, updateImportConfigSchema, databaseTypeEnum, importScheduleFrequencyEnum } from "@shared/schema";
@@ -5006,7 +5007,7 @@ export async function registerRoutes(
       const folderName = workOrder.customerWoId || String(workOrder.id);
       const updatedByUsername = currentUser.username || currentUser.id;
       
-      // Save photos if provided (base64 encoded)
+      // Save photos if provided (base64 encoded) - always rename to standard format
       if (photos && Array.isArray(photos) && photos.length > 0) {
         const projectFilesPath = await getProjectFilesPath();
         const projectDirName = getProjectDirectoryName(project.name, project.id);
@@ -5019,9 +5020,15 @@ export async function registerRoutes(
         
         await fs.mkdir(workOrderFolder, { recursive: true });
         
+        // Generate date string in YYYYMMDD format
+        const now = new Date();
+        const dateStr = now.getFullYear().toString() +
+          (now.getMonth() + 1).toString().padStart(2, '0') +
+          now.getDate().toString().padStart(2, '0');
+        
         for (let i = 0; i < photos.length; i++) {
           const photo = photos[i];
-          if (photo.base64 && photo.filename) {
+          if (photo.base64) {
             // Remove data URL prefix if present
             let base64Data = photo.base64;
             if (base64Data.includes(",")) {
@@ -5029,7 +5036,11 @@ export async function registerRoutes(
             }
             
             const buffer = Buffer.from(base64Data, "base64");
-            const filePath = path.join(workOrderFolder, photo.filename);
+            // Use randomUUID() for guaranteed unique collision-proof naming
+            const uniqueId = randomUUID();
+            // Use standardized filename: {customerWoId}-trouble-{YYYYMMDD}-{uniqueId}.jpg
+            const filename = `${folderName}-trouble-${dateStr}-${uniqueId}.jpg`;
+            const filePath = path.join(workOrderFolder, filename);
             await fs.writeFile(filePath, buffer);
           }
         }
@@ -5130,8 +5141,8 @@ export async function registerRoutes(
       const folderName = workOrder.customerWoId || String(workOrder.id);
       const updatedByUsername = currentUser.username || currentUser.id;
       
-      // Helper to save base64 photos
-      const saveBase64Photos = async (photos: any[], prefix: string) => {
+      // Helper to save base64 photos - always rename to standard format with date and timestamp
+      const saveBase64Photos = async (photos: any[], photoType: string) => {
         if (!photos || !Array.isArray(photos) || photos.length === 0) return;
         
         const projectFilesPath = await getProjectFilesPath();
@@ -5145,6 +5156,12 @@ export async function registerRoutes(
         
         await fs.mkdir(workOrderFolder, { recursive: true });
         
+        // Generate date string in YYYYMMDD format
+        const now = new Date();
+        const dateStr = now.getFullYear().toString() +
+          (now.getMonth() + 1).toString().padStart(2, '0') +
+          now.getDate().toString().padStart(2, '0');
+        
         for (let i = 0; i < photos.length; i++) {
           const photo = photos[i];
           if (photo.base64) {
@@ -5155,7 +5172,10 @@ export async function registerRoutes(
             }
             
             const buffer = Buffer.from(base64Data, "base64");
-            const filename = photo.filename || `${folderName}-${prefix}-${i + 1}.jpg`;
+            // Use randomUUID() for guaranteed unique collision-proof naming
+            const uniqueId = randomUUID();
+            // Use standardized filename: {customerWoId}-{type}-{YYYYMMDD}-{uniqueId}.jpg
+            const filename = `${folderName}-${photoType}-${dateStr}-${uniqueId}.jpg`;
             const filePath = path.join(workOrderFolder, filename);
             await fs.writeFile(filePath, buffer);
           }
