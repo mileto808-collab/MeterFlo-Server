@@ -41,6 +41,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useTimezone } from "@/hooks/use-timezone";
+import { useProjectEvents } from "@/hooks/useProjectEvents";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, ArrowLeft, Search, ArrowUpDown, ArrowUp, ArrowDown, Download, FileSpreadsheet, FileText, Filter, X, Route, ChevronRight, Paperclip, Eye, FileIcon, ChevronsUp, UserPlus, UserMinus, AlertTriangle, Loader2, Wrench } from "lucide-react";
 import { BackToTop } from "@/components/ui/back-to-top";
@@ -95,6 +96,9 @@ type WorkOrderFormData = z.infer<typeof workOrderFormSchema>;
 export default function ProjectWorkOrders() {
   const [, params] = useRoute("/projects/:projectId/work-orders");
   const projectId = params?.projectId ? parseInt(params.projectId) : null;
+  
+  useProjectEvents(projectId);
+  
   const { user } = useAuth();
   const { hasPermission } = usePermissions();
   const { toast } = useToast();

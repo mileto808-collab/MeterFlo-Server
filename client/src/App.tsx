@@ -8,6 +8,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useAuth } from "@/hooks/useAuth";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useGlobalEvents } from "@/hooks/useProjectEvents";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import Landing from "@/pages/landing";
@@ -100,6 +101,8 @@ function AuthenticatedRouter() {
 }
 
 function AuthenticatedLayout() {
+  useGlobalEvents();
+  
   const style = {
     "--sidebar-width": "16rem",
     "--sidebar-width-icon": "3rem",
