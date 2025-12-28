@@ -1,4 +1,5 @@
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
+import { NavLink } from "@/components/nav-link";
 import { useQuery } from "@tanstack/react-query";
 import {
   Sidebar,
@@ -108,10 +109,10 @@ export function AppSidebar() {
                   isActive={location === "/"}
                   data-testid="nav-dashboard"
                 >
-                  <Link href="/">
+                  <NavLink href="/">
                     <LayoutDashboard className="h-4 w-4" />
                     <span>Dashboard</span>
-                  </Link>
+                  </NavLink>
                 </SidebarMenuButton>
               </SidebarMenuItem>
 
@@ -122,10 +123,10 @@ export function AppSidebar() {
                     isActive={location.startsWith("/work-orders")}
                     data-testid="nav-work-orders"
                   >
-                    <Link href="/work-orders">
+                    <NavLink href="/work-orders">
                       <ClipboardList className="h-4 w-4" />
                       <span>Work Orders</span>
-                    </Link>
+                    </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               )}
@@ -137,10 +138,10 @@ export function AppSidebar() {
                     isActive={location === "/projects"}
                     data-testid="nav-projects"
                   >
-                    <Link href="/projects">
+                    <NavLink href="/projects">
                       <FolderOpen className="h-4 w-4" />
                       <span>Projects</span>
-                    </Link>
+                    </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               )}
@@ -152,10 +153,10 @@ export function AppSidebar() {
                     isActive={location === "/users"}
                     data-testid="nav-users"
                   >
-                    <Link href="/users">
+                    <NavLink href="/users">
                       <Users className="h-4 w-4" />
                       <span>Users</span>
-                    </Link>
+                    </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               )}
@@ -167,10 +168,10 @@ export function AppSidebar() {
                     isActive={location === "/maintenance"}
                     data-testid="nav-maintenance"
                   >
-                    <Link href="/maintenance">
+                    <NavLink href="/maintenance">
                       <Wrench className="h-4 w-4" />
                       <span>Maintenance</span>
-                    </Link>
+                    </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               )}
@@ -182,10 +183,10 @@ export function AppSidebar() {
                     isActive={location === "/settings"}
                     data-testid="nav-settings"
                   >
-                    <Link href="/settings">
+                    <NavLink href="/settings">
                       <Settings className="h-4 w-4" />
                       <span>Settings</span>
-                    </Link>
+                    </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               )}
@@ -197,10 +198,10 @@ export function AppSidebar() {
                     isActive={location === "/search"}
                     data-testid="nav-search"
                   >
-                    <Link href="/search">
+                    <NavLink href="/search">
                       <Search className="h-4 w-4" />
                       <span>Search & Reports</span>
-                    </Link>
+                    </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               )}
@@ -244,13 +245,13 @@ export function AppSidebar() {
                               <SidebarMenuSubItem>
                                 <SidebarMenuSubButton
                                   asChild
-                                  isActive={location === `/projects/${project.id}/work-orders`}
+                                  isActive={location.startsWith(`/projects/${project.id}/work-orders`)}
                                   data-testid={`nav-project-${project.id}-work-orders`}
                                 >
-                                  <Link href={`/projects/${project.id}/work-orders`}>
+                                  <NavLink href={`/projects/${project.id}/work-orders`}>
                                     <ClipboardList className="h-3 w-3" />
                                     <span>Work Orders</span>
-                                  </Link>
+                                  </NavLink>
                                 </SidebarMenuSubButton>
                               </SidebarMenuSubItem>
                             )}
@@ -258,13 +259,13 @@ export function AppSidebar() {
                               <SidebarMenuSubItem>
                                 <SidebarMenuSubButton
                                   asChild
-                                  isActive={location === `/projects/${project.id}/files`}
+                                  isActive={location.startsWith(`/projects/${project.id}/files`)}
                                   data-testid={`nav-project-${project.id}-documents`}
                                 >
-                                  <Link href={`/projects/${project.id}/files`}>
+                                  <NavLink href={`/projects/${project.id}/files`}>
                                     <FileText className="h-3 w-3" />
                                     <span>Project Documents</span>
-                                  </Link>
+                                  </NavLink>
                                 </SidebarMenuSubButton>
                               </SidebarMenuSubItem>
                             )}
@@ -272,13 +273,13 @@ export function AppSidebar() {
                               <SidebarMenuSubItem>
                                 <SidebarMenuSubButton
                                   asChild
-                                  isActive={location === `/projects/${project.id}/import`}
+                                  isActive={location.startsWith(`/projects/${project.id}/import`)}
                                   data-testid={`nav-project-${project.id}-import`}
                                 >
-                                  <Link href={`/projects/${project.id}/import`}>
+                                  <NavLink href={`/projects/${project.id}/import`}>
                                     <Upload className="h-3 w-3" />
                                     <span>File Import</span>
-                                  </Link>
+                                  </NavLink>
                                 </SidebarMenuSubButton>
                               </SidebarMenuSubItem>
                             )}
@@ -286,13 +287,13 @@ export function AppSidebar() {
                               <SidebarMenuSubItem>
                                 <SidebarMenuSubButton
                                   asChild
-                                  isActive={location === `/projects/${project.id}/ftp-files`}
+                                  isActive={location.startsWith(`/projects/${project.id}/ftp-files`)}
                                   data-testid={`nav-project-${project.id}-ftp-files`}
                                 >
-                                  <Link href={`/projects/${project.id}/ftp-files`}>
+                                  <NavLink href={`/projects/${project.id}/ftp-files`}>
                                     <FolderSync className="h-3 w-3" />
                                     <span>FTP Files</span>
-                                  </Link>
+                                  </NavLink>
                                 </SidebarMenuSubButton>
                               </SidebarMenuSubItem>
                             )}
@@ -300,13 +301,13 @@ export function AppSidebar() {
                               <SidebarMenuSubItem>
                                 <SidebarMenuSubButton
                                   asChild
-                                  isActive={location === `/projects/${project.id}/db-import`}
+                                  isActive={location.startsWith(`/projects/${project.id}/db-import`)}
                                   data-testid={`nav-project-${project.id}-db-import`}
                                 >
-                                  <Link href={`/projects/${project.id}/db-import`}>
+                                  <NavLink href={`/projects/${project.id}/db-import`}>
                                     <Database className="h-3 w-3" />
                                     <span>Database Import/Export</span>
-                                  </Link>
+                                  </NavLink>
                                 </SidebarMenuSubButton>
                               </SidebarMenuSubItem>
                             )}

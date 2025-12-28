@@ -14,6 +14,7 @@ import { pool } from "./db";
 import { ensureProjectDirectory, renameProjectDirectory, saveWorkOrderFile, getWorkOrderFiles, deleteWorkOrderFile, deleteWorkOrderDirectory, getFilePath, getProjectFilesPath, setProjectFilesPath, deleteProjectDirectory, saveProjectFile, getProjectFiles, deleteProjectFile, getProjectFilePath, ensureProjectFtpDirectory, getProjectFtpFiles, deleteProjectFtpFile, getProjectFtpFilePath, saveProjectFtpFile, getProjectDirectoryName } from "./fileStorage";
 import { ExternalDatabaseService } from "./externalDbService";
 import { createBackupArchive, extractDatabaseBackupFromArchive, restoreFullSystem, restoreFilesFromArchive } from "./systemBackup";
+import { projectEventEmitter, emitWorkOrderCreated, emitWorkOrderUpdated, emitWorkOrderDeleted, emitFileAdded, emitFileDeleted, type ProjectEvent } from "./eventEmitter";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -1029,6 +1030,101 @@ export async function registerRoutes(
     }
   });
 
+  // SSE endpoint for project-scoped real-time events
+  app.get("/api/projects/:projectId/events", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // Check project access
+      const canViewProjects = await storage.hasPermission(currentUser, permissionKeys.PROJECTS_VIEW);
+      if (!canViewProjects && currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+      res.setHeader("X-Accel-Buffering", "no");
+      res.flushHeaders();
+      
+      res.write(`data: ${JSON.stringify({ type: "connected", projectId })}\n\n`);
+      
+      const sendEvent = (event: ProjectEvent) => {
+        if (event.userId !== currentUser.id) {
+          res.write(`data: ${JSON.stringify(event)}\n\n`);
+        }
+      };
+      
+      const unsubscribe = projectEventEmitter.subscribeToProject(projectId, sendEvent);
+      
+      const heartbeatInterval = setInterval(() => {
+        res.write(`:heartbeat\n\n`);
+      }, 30000);
+      
+      req.on("close", () => {
+        clearInterval(heartbeatInterval);
+        unsubscribe();
+      });
+    } catch (error) {
+      console.error("SSE connection error:", error);
+      res.status(500).json({ message: "SSE connection failed" });
+    }
+  });
+
+  // Global SSE endpoint for dashboard updates
+  app.get("/api/events", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+      res.setHeader("X-Accel-Buffering", "no");
+      res.flushHeaders();
+      
+      res.write(`data: ${JSON.stringify({ type: "connected" })}\n\n`);
+      
+      const sendEvent = async (event: ProjectEvent) => {
+        if (event.userId !== currentUser.id) {
+          if (currentUser.role === "admin") {
+            res.write(`data: ${JSON.stringify(event)}\n\n`);
+          } else {
+            const isAssigned = await storage.isUserAssignedToProject(currentUser.id, event.projectId);
+            if (isAssigned) {
+              res.write(`data: ${JSON.stringify(event)}\n\n`);
+            }
+          }
+        }
+      };
+      
+      const unsubscribe = projectEventEmitter.subscribeGlobal(sendEvent);
+      
+      const heartbeatInterval = setInterval(() => {
+        res.write(`:heartbeat\n\n`);
+      }, 30000);
+      
+      req.on("close", () => {
+        clearInterval(heartbeatInterval);
+        unsubscribe();
+      });
+    } catch (error) {
+      console.error("Global SSE connection error:", error);
+      res.status(500).json({ message: "SSE connection failed" });
+    }
+  });
+
   // Project-scoped work orders
   app.get("/api/projects/:projectId/work-orders", isAuthenticated, async (req: any, res) => {
     try {
@@ -1342,6 +1438,7 @@ export async function registerRoutes(
         createdBy: createdByName,
       });
       
+      emitWorkOrderCreated(projectId, workOrder.id, currentUser?.id);
       res.status(201).json(workOrder);
     } catch (error) {
       console.error("Error creating work order:", error);
@@ -1409,6 +1506,7 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Work order not found" });
       }
       
+      emitWorkOrderUpdated(projectId, workOrderId, currentUser?.id);
       res.json(workOrder);
     } catch (error) {
       console.error("Error updating work order:", error);
@@ -1446,6 +1544,7 @@ export async function registerRoutes(
       // Delete work order from database
       await workOrderStorage.deleteWorkOrder(workOrderId);
       
+      emitWorkOrderDeleted(projectId, workOrderId, currentUser?.id);
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting work order:", error);
