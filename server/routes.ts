@@ -4945,6 +4945,330 @@ export async function registerRoutes(
     }
   });
 
+  // ========== NEW MOBILE ENDPOINTS (JSON with base64 photos) ==========
+  // These endpoints match what the mobile app expects: /api/mobile/workorders/:id/trouble and /api/mobile/workorders/:id/complete
+  
+  // Mobile trouble endpoint - accepts JSON with base64 photos
+  app.post("/api/mobile/workorders/:workOrderId/trouble", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const workOrderId = parseInt(req.params.workOrderId);
+      
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const { projectId, troubleCode, notes, oldMeterReading, photos } = req.body;
+      
+      if (!projectId) {
+        return res.status(400).json({ message: "projectId is required" });
+      }
+      
+      if (!troubleCode) {
+        return res.status(400).json({ message: "troubleCode is required" });
+      }
+      
+      // Validate trouble code exists
+      const troubleCodes = await storage.getTroubleCodes();
+      const validTroubleCode = troubleCodes.find(tc => tc.code === troubleCode);
+      if (!validTroubleCode) {
+        return res.status(400).json({ message: `Invalid trouble code: ${troubleCode}` });
+      }
+      
+      // Check permission
+      const hasMeterChangeoutPermission = await storage.hasPermission(currentUser, "workOrders.meterChangeout");
+      if (!hasMeterChangeoutPermission) {
+        return res.status(403).json({ message: "You do not have permission to perform meter changeouts" });
+      }
+      
+      // Must be assigned to project (unless admin)
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      const workOrder = await workOrderStorage.getWorkOrder(workOrderId);
+      
+      if (!workOrder) {
+        return res.status(404).json({ message: "Work order not found" });
+      }
+      
+      const folderName = workOrder.customerWoId || String(workOrder.id);
+      const updatedByUsername = currentUser.username || currentUser.id;
+      
+      // Save photos if provided (base64 encoded)
+      if (photos && Array.isArray(photos) && photos.length > 0) {
+        const projectFilesPath = await getProjectFilesPath();
+        const workOrderFolder = path.join(
+          projectFilesPath,
+          `${project.name}_${project.id}`,
+          "Work Orders",
+          folderName
+        );
+        
+        await fs.mkdir(workOrderFolder, { recursive: true });
+        
+        for (let i = 0; i < photos.length; i++) {
+          const photo = photos[i];
+          if (photo.base64 && photo.filename) {
+            // Remove data URL prefix if present
+            let base64Data = photo.base64;
+            if (base64Data.includes(",")) {
+              base64Data = base64Data.split(",")[1];
+            }
+            
+            const buffer = Buffer.from(base64Data, "base64");
+            const filePath = path.join(workOrderFolder, photo.filename);
+            await fs.writeFile(filePath, buffer);
+          }
+        }
+      }
+      
+      // Build update data - notes will be appended by updateWorkOrder, troubleCode triggers auto-generated trouble note
+      const updateData: any = {
+        status: "Trouble",
+        trouble: troubleCode,
+        updatedAt: new Date().toISOString(),
+      };
+      
+      // Only set notes if user provided them - updateWorkOrder will append them to existing notes
+      if (notes && notes.trim()) {
+        updateData.notes = notes;
+      }
+      
+      if (oldMeterReading !== undefined && oldMeterReading !== null) {
+        updateData.oldMeterReading = parseInt(String(oldMeterReading), 10);
+      }
+      
+      // The trouble code is included in updateData.trouble, which triggers auto-generated trouble note in updateWorkOrder
+      const updatedWorkOrder = await workOrderStorage.updateWorkOrder(
+        workOrderId,
+        updateData,
+        updatedByUsername
+      );
+      
+      // Trigger webhook if configured
+      await triggerProjectWebhook(project, "work_order.trouble", updatedWorkOrder, currentUser);
+      
+      res.json({
+        success: true,
+        workOrder: updatedWorkOrder,
+        message: "Trouble reported successfully"
+      });
+    } catch (error: any) {
+      console.error("Error in mobile trouble endpoint:", error);
+      res.status(500).json({ message: error.message || "Failed to report trouble" });
+    }
+  });
+
+  // Mobile complete endpoint - accepts JSON with base64 photos
+  app.post("/api/mobile/workorders/:workOrderId/complete", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const workOrderId = parseInt(req.params.workOrderId);
+      
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const {
+        projectId,
+        oldMeterReading,
+        newMeterReading,
+        newMeterId,
+        newMeterType,
+        gpsCoordinates,
+        signatureData,
+        signatureName,
+        completedAt,
+        notes,
+        beforePhotos,
+        afterPhotos
+      } = req.body;
+      
+      if (!projectId) {
+        return res.status(400).json({ message: "projectId is required" });
+      }
+      
+      // Check permission
+      const hasMeterChangeoutPermission = await storage.hasPermission(currentUser, "workOrders.meterChangeout");
+      if (!hasMeterChangeoutPermission) {
+        return res.status(403).json({ message: "You do not have permission to perform meter changeouts" });
+      }
+      
+      // Must be assigned to project (unless admin)
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      const workOrder = await workOrderStorage.getWorkOrder(workOrderId);
+      
+      if (!workOrder) {
+        return res.status(404).json({ message: "Work order not found" });
+      }
+      
+      const folderName = workOrder.customerWoId || String(workOrder.id);
+      const updatedByUsername = currentUser.username || currentUser.id;
+      
+      // Helper to save base64 photos
+      const saveBase64Photos = async (photos: any[], prefix: string) => {
+        if (!photos || !Array.isArray(photos) || photos.length === 0) return;
+        
+        const projectFilesPath = await getProjectFilesPath();
+        const workOrderFolder = path.join(
+          projectFilesPath,
+          `${project.name}_${project.id}`,
+          "Work Orders",
+          folderName
+        );
+        
+        await fs.mkdir(workOrderFolder, { recursive: true });
+        
+        for (let i = 0; i < photos.length; i++) {
+          const photo = photos[i];
+          if (photo.base64) {
+            // Remove data URL prefix if present
+            let base64Data = photo.base64;
+            if (base64Data.includes(",")) {
+              base64Data = base64Data.split(",")[1];
+            }
+            
+            const buffer = Buffer.from(base64Data, "base64");
+            const filename = photo.filename || `${folderName}-${prefix}-${i + 1}.jpg`;
+            const filePath = path.join(workOrderFolder, filename);
+            await fs.writeFile(filePath, buffer);
+          }
+        }
+      };
+      
+      // Save before photos
+      await saveBase64Photos(beforePhotos, "before");
+      
+      // Save after photos
+      await saveBase64Photos(afterPhotos, "after");
+      
+      // Save signature if provided
+      if (signatureData) {
+        const projectFilesPath = await getProjectFilesPath();
+        const workOrderFolder = path.join(
+          projectFilesPath,
+          `${project.name}_${project.id}`,
+          "Work Orders",
+          folderName
+        );
+        
+        await fs.mkdir(workOrderFolder, { recursive: true });
+        
+        let sigBase64 = signatureData;
+        if (sigBase64.includes(",")) {
+          sigBase64 = sigBase64.split(",")[1];
+        }
+        
+        const sigBuffer = Buffer.from(sigBase64, "base64");
+        const sigFilename = `${folderName}-signature.png`;
+        const sigFilePath = path.join(workOrderFolder, sigFilename);
+        await fs.writeFile(sigFilePath, sigBuffer);
+      }
+      
+      // Validation for meter changeout completion
+      const isValidMeterReading = (reading: any): boolean => {
+        if (reading === undefined || reading === null) return false;
+        const str = String(reading).trim();
+        return str.length > 0 && /^\d+$/.test(str);
+      };
+      
+      const isValidGps = (gps: string): boolean => {
+        if (!gps || !gps.trim()) return false;
+        const match = gps.trim().match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
+        if (!match) return false;
+        const lat = parseFloat(match[1]);
+        const lng = parseFloat(match[2]);
+        return !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+      };
+      
+      // Validate required fields for completion
+      if (!newMeterId) {
+        return res.status(400).json({ message: "newMeterId is required for completion" });
+      }
+      if (!isValidMeterReading(newMeterReading)) {
+        return res.status(400).json({ message: "newMeterReading is required and must be numeric" });
+      }
+      if (gpsCoordinates && !isValidGps(gpsCoordinates)) {
+        return res.status(400).json({ message: "Invalid GPS coordinates format. Use 'lat,lng' format" });
+      }
+      
+      // Build update data
+      const updateData: any = {
+        status: "Completed",
+        trouble: null,
+        updatedAt: new Date().toISOString(),
+        completedAt: completedAt || new Date().toISOString(),
+        completedBy: currentUser.id,
+      };
+      
+      if (oldMeterReading !== undefined && oldMeterReading !== null) {
+        updateData.oldMeterReading = parseInt(String(oldMeterReading), 10);
+      }
+      if (newMeterReading !== undefined && newMeterReading !== null) {
+        updateData.newMeterReading = parseInt(String(newMeterReading), 10);
+      }
+      if (newMeterId) {
+        updateData.newMeterId = newMeterId;
+      }
+      if (newMeterType) {
+        updateData.newMeterType = newMeterType;
+      }
+      if (gpsCoordinates) {
+        updateData.newGps = gpsCoordinates;
+      }
+      if (signatureName) {
+        updateData.signatureName = signatureName;
+      }
+      if (signatureData) {
+        updateData.signatureData = signatureData;
+      }
+      // Only set notes if user provided them - updateWorkOrder will append them to existing notes
+      if (notes && notes.trim()) {
+        updateData.notes = notes;
+      }
+      
+      const updatedWorkOrder = await workOrderStorage.updateWorkOrder(
+        workOrderId,
+        updateData,
+        updatedByUsername
+      );
+      
+      // Trigger webhook if configured
+      await triggerProjectWebhook(project, "work_order.completed", updatedWorkOrder, currentUser);
+      
+      res.json({
+        success: true,
+        workOrder: updatedWorkOrder,
+        message: "Meter changeout completed successfully"
+      });
+    } catch (error: any) {
+      console.error("Error in mobile complete endpoint:", error);
+      res.status(500).json({ message: error.message || "Failed to complete meter changeout" });
+    }
+  });
+
   // Bulk claim work orders - mobile batch operation
   app.post("/api/projects/:projectId/mobile/work-orders/bulk-claim", isAuthenticated, async (req: any, res) => {
     try {

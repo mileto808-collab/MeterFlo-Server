@@ -10,8 +10,9 @@ Complete REST API reference for building the MeterFlo mobile application.
 3. [Sync Endpoints](#sync-endpoints)
 4. [Work Order Operations](#work-order-operations)
 5. [Bulk Operations](#bulk-operations)
-6. [Photo & Signature Upload](#photo--signature-upload)
-7. [Important Notes](#important-notes)
+6. [Mobile JSON Endpoints (Base64 Photos)](#mobile-json-endpoints-base64-photos)
+7. [Photo & Signature Upload (Multipart)](#photo--signature-upload-multipart)
+8. [Important Notes](#important-notes)
 
 ---
 
@@ -549,7 +550,116 @@ Update status on multiple work orders.
 
 ---
 
-## Photo & Signature Upload
+## Mobile JSON Endpoints (Base64 Photos)
+
+These endpoints accept JSON payloads with base64-encoded photos, ideal for mobile apps that don't use multipart form-data.
+
+### Report Trouble (JSON)
+```
+POST /api/mobile/workorders/:workOrderId/trouble
+```
+
+Report a trouble code with optional photos.
+
+**Request Body:**
+```json
+{
+  "projectId": 2,
+  "troubleCode": "02",
+  "notes": "Customer refused meter change",
+  "oldMeterReading": 12345,
+  "photos": [
+    {
+      "base64": "data:image/jpeg;base64,/9j/4AAQSkZJRg...",
+      "filename": "trouble_0.jpg"
+    }
+  ]
+}
+```
+
+**Required Fields:**
+- `projectId` - Project ID
+- `troubleCode` - Trouble code (e.g., "01", "02", "03")
+
+**Optional Fields:**
+- `notes` - Additional notes
+- `oldMeterReading` - Current meter reading
+- `photos` - Array of photo objects with `base64` and `filename`
+
+**Response:**
+```json
+{
+  "success": true,
+  "workOrder": { /* updated work order object */ },
+  "message": "Trouble reported successfully"
+}
+```
+
+---
+
+### Complete Meter Changeout (JSON)
+```
+POST /api/mobile/workorders/:workOrderId/complete
+```
+
+Complete a meter changeout with photos and signature.
+
+**Request Body:**
+```json
+{
+  "projectId": 2,
+  "oldMeterReading": 12345,
+  "newMeterReading": 12400,
+  "newMeterId": "ABC123",
+  "newMeterType": "AC250",
+  "gpsCoordinates": "39.7294,-104.8337",
+  "signatureData": "data:image/png;base64,iVBORw0KGgo...",
+  "signatureName": "John Smith",
+  "completedAt": "2025-12-28T04:00:00.000Z",
+  "notes": "Installation complete",
+  "beforePhotos": [
+    {
+      "base64": "data:image/jpeg;base64,/9j/4AAQSkZJRg...",
+      "filename": "1058-before-1.jpg"
+    }
+  ],
+  "afterPhotos": [
+    {
+      "base64": "data:image/jpeg;base64,/9j/4AAQSkZJRg...",
+      "filename": "1058-after-1.jpg"
+    }
+  ]
+}
+```
+
+**Required Fields:**
+- `projectId` - Project ID
+
+**Optional Fields:**
+- `oldMeterReading` - Old meter final reading
+- `newMeterReading` - New meter initial reading
+- `newMeterId` - New meter serial number
+- `newMeterType` - New meter type code
+- `gpsCoordinates` - GPS coordinates (format: "lat,lng")
+- `signatureData` - Base64-encoded signature image
+- `signatureName` - Customer name for signature
+- `completedAt` - Completion timestamp (ISO 8601)
+- `notes` - Additional notes
+- `beforePhotos` - Array of before photo objects
+- `afterPhotos` - Array of after photo objects
+
+**Response:**
+```json
+{
+  "success": true,
+  "workOrder": { /* updated work order object */ },
+  "message": "Meter changeout completed successfully"
+}
+```
+
+---
+
+## Photo & Signature Upload (Multipart)
 
 ### Upload Photos
 ```
