@@ -4660,9 +4660,10 @@ export async function registerRoutes(
       // Get work order folder
       const folderName = workOrder.customerWoId || String(workOrder.id);
       const projectFilesPath = await getProjectFilesPath();
+      const projectDirName = getProjectDirectoryName(project.name, project.id);
       const workOrderFolder = path.join(
         projectFilesPath,
-        `${project.name}_${project.id}`,
+        projectDirName,
         "Work Orders",
         folderName
       );
@@ -4859,9 +4860,10 @@ export async function registerRoutes(
       // Save photos if provided
       if (files && files.length > 0) {
         const projectFilesPath = await getProjectFilesPath();
+        const projectDirName = getProjectDirectoryName(project.name, project.id);
         const workOrderFolder = path.join(
           projectFilesPath,
-          `${project.name}_${project.id}`,
+          projectDirName,
           "Work Orders",
           folderName
         );
