@@ -163,6 +163,7 @@ export default function ProjectWorkOrders() {
     existingAssignments: number;
     completedCount: number;
     closedCount: number;
+    scheduledCount: number;
   } | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
@@ -3204,6 +3205,9 @@ export default function ProjectWorkOrders() {
                 )}
                 {bulkAssignCheckResult.closedCount > 0 && (
                   <p className="text-muted-foreground">{bulkAssignCheckResult.closedCount} Closed (will be skipped)</p>
+                )}
+                {bulkAssignCheckResult.scheduledCount > 0 && (
+                  <p className="text-muted-foreground">{bulkAssignCheckResult.scheduledCount} Scheduled (will be skipped)</p>
                 )}
               </div>
               
