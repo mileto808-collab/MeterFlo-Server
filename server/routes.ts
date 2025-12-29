@@ -4220,8 +4220,20 @@ export async function registerRoutes(
       const { targetProjectIds } = req.body;
       const projectIds = targetProjectIds || existing.projectIds;
       
+      // Generate a unique productId by appending " - Copy" or " - Copy N"
+      const allMeterTypes = await storage.getMeterTypes();
+      const baseProductId = existing.productId;
+      let newProductId = `${baseProductId} - Copy`;
+      let copyNumber = 1;
+      
+      // Check if the productId already exists
+      while (allMeterTypes.some(mt => mt.productId === newProductId)) {
+        copyNumber++;
+        newProductId = `${baseProductId} - Copy ${copyNumber}`;
+      }
+      
       const newMeterType = await storage.createMeterType({
-        productId: existing.productId,
+        productId: newProductId,
         productLabel: `Copy of ${existing.productLabel}`,
         productDescription: existing.productDescription,
         projectIds: projectIds,
