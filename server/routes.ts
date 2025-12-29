@@ -1289,13 +1289,17 @@ export async function registerRoutes(
           return res.status(404).json({ message: "Work order not found with meter ID: " + meterId });
         }
         
-        const workOrder = result.rows[0];
-        
-        if (currentUser?.role === "customer" && workOrder.status !== "completed") {
-          return res.status(403).json({ message: "Forbidden: Customers can only view completed work orders" });
+        // Filter for customer role - only show completed work orders
+        let workOrders = result.rows;
+        if (currentUser?.role === "customer") {
+          workOrders = workOrders.filter((wo: any) => wo.status === "completed");
+          if (workOrders.length === 0) {
+            return res.status(403).json({ message: "Forbidden: Customers can only view completed work orders" });
+          }
         }
         
-        res.json(workOrder);
+        // Return array format for mobile app compatibility (expects .map() on response)
+        res.json(workOrders);
       } finally {
         client.release();
       }
