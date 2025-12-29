@@ -167,6 +167,8 @@ export default function ProjectWorkOrders() {
   } | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
+  const [selectedWorkOrderIds, setSelectedWorkOrderIds] = useState<Set<number>>(new Set());
+  const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
 
   const signaturePadRef = useRef<SignaturePadRef>(null);
   const editSignaturePadRef = useRef<SignaturePadRef>(null);
@@ -769,6 +771,70 @@ export default function ProjectWorkOrders() {
       toast({ title: "Failed to assign work orders", description: error?.message, variant: "destructive" });
     },
   });
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (workOrderIds: number[]) => {
+      const res = await apiRequest("POST", `/api/projects/${projectId}/work-orders/bulk-delete`, { workOrderIds });
+      return res.json();
+    },
+    onSuccess: async (result) => {
+      await queryClient.refetchQueries({ queryKey: [`/api/projects/${projectId}/work-orders`] });
+      await queryClient.refetchQueries({ queryKey: [`/api/projects/${projectId}/work-orders/stats`] });
+      setSelectedWorkOrderIds(new Set());
+      setShowBulkDeleteDialog(false);
+      toast({ 
+        title: `${result.deletedCount} work order(s) deleted`,
+        description: result.errors?.length > 0 ? `${result.errors.length} failed` : undefined,
+      });
+    },
+    onError: (error: any) => {
+      const errorMsg = error?.message || "";
+      if (errorMsg.startsWith("403:") || errorMsg.includes("403")) {
+        toast({ title: "Access denied", description: "You don't have permission to delete work orders", variant: "destructive" });
+      } else {
+        toast({ title: "Failed to delete work orders", description: errorMsg, variant: "destructive" });
+      }
+    },
+  });
+
+  const handleBulkDelete = () => {
+    if (selectedWorkOrderIds.size === 0) {
+      toast({ title: "No work orders selected", variant: "destructive" });
+      return;
+    }
+    setShowBulkDeleteDialog(true);
+  };
+
+  const confirmBulkDelete = () => {
+    bulkDeleteMutation.mutate(Array.from(selectedWorkOrderIds));
+  };
+
+  const toggleWorkOrderSelection = (id: number) => {
+    setSelectedWorkOrderIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(id)) {
+        newSet.delete(id);
+      } else {
+        newSet.add(id);
+      }
+      return newSet;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    const currentPageIds = paginatedWorkOrders.map(wo => wo.id);
+    const allSelected = currentPageIds.every(id => selectedWorkOrderIds.has(id));
+    
+    setSelectedWorkOrderIds(prev => {
+      const newSet = new Set(prev);
+      if (allSelected) {
+        currentPageIds.forEach(id => newSet.delete(id));
+      } else {
+        currentPageIds.forEach(id => newSet.add(id));
+      }
+      return newSet;
+    });
+  };
 
   const resetBulkAssignState = () => {
     setBulkAssignAction("assign");
@@ -1438,6 +1504,7 @@ export default function ProjectWorkOrders() {
 
   useEffect(() => {
     setCurrentPage(1);
+    setSelectedWorkOrderIds(new Set());
   }, [workOrders, searchQuery, selectedStatus, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldMeterType, selectedNewMeterType, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterNewMeterId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo, pageSize]);
 
   useEffect(() => {
@@ -1448,6 +1515,7 @@ export default function ProjectWorkOrders() {
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
+    setSelectedWorkOrderIds(new Set());
     tableScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -2623,6 +2691,12 @@ export default function ProjectWorkOrders() {
                 Assign Work Orders
               </Button>
             )}
+            {hasPermission(permissionKeys.WORK_ORDERS_DELETE) && selectedWorkOrderIds.size > 0 && (
+              <Button variant="destructive" onClick={handleBulkDelete} data-testid="button-delete-selected">
+                <Trash2 className="h-4 w-4 mr-2" />
+                Delete Selected ({selectedWorkOrderIds.size})
+              </Button>
+            )}
             {hasPermission(permissionKeys.WORK_ORDERS_METER_CHANGEOUT) && (
               <Button variant="outline" onClick={() => setShowStartMeterChangeout(true)} data-testid="button-start-meter-changeout">
                 <Wrench className="h-4 w-4 mr-2" />
@@ -3102,6 +3176,16 @@ export default function ProjectWorkOrders() {
               <Table ref={tableRef} noWrapper>
                 <TableHeader>
                   <TableRow>
+                    {hasPermission(permissionKeys.WORK_ORDERS_DELETE) && (
+                      <TableHead className="sticky top-0 left-0 z-40 bg-muted w-10">
+                        <Checkbox
+                          checked={paginatedWorkOrders.length > 0 && paginatedWorkOrders.every(wo => selectedWorkOrderIds.has(wo.id))}
+                          onCheckedChange={toggleSelectAll}
+                          aria-label="Select all on this page"
+                          data-testid="checkbox-select-all"
+                        />
+                      </TableHead>
+                    )}
                     {visibleColumns.map((key, index) => renderHeaderCell(key, index === 0))}
                     {user?.role !== "customer" && <TableHead className="sticky top-0 z-30 bg-muted whitespace-nowrap">Actions</TableHead>}
                     <TableHead className="sticky top-0 z-30 bg-muted w-8"></TableHead>
@@ -3110,7 +3194,7 @@ export default function ProjectWorkOrders() {
                 <TableBody>
                   {paginatedWorkOrders.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={visibleColumns.length + (user?.role !== "customer" ? 1 : 0) + 1} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={visibleColumns.length + (user?.role !== "customer" ? 1 : 0) + 1 + (hasPermission(permissionKeys.WORK_ORDERS_DELETE) ? 1 : 0)} className="text-center py-8 text-muted-foreground">
                         No work orders match your search
                       </TableCell>
                     </TableRow>
@@ -3121,10 +3205,20 @@ export default function ProjectWorkOrders() {
                       className="cursor-pointer hover-elevate"
                       onClick={(e) => {
                         const target = e.target as HTMLElement;
-                        if (target.closest('button, a, [role="button"]')) return;
+                        if (target.closest('button, a, [role="button"], input[type="checkbox"]')) return;
                         handleEdit(workOrder);
                       }}
                     >
+                      {hasPermission(permissionKeys.WORK_ORDERS_DELETE) && (
+                        <TableCell className="w-10">
+                          <Checkbox
+                            checked={selectedWorkOrderIds.has(workOrder.id)}
+                            onCheckedChange={() => toggleWorkOrderSelection(workOrder.id)}
+                            aria-label={`Select work order ${workOrder.customerWoId}`}
+                            data-testid={`checkbox-select-${workOrder.id}`}
+                          />
+                        </TableCell>
+                      )}
                       {visibleColumns.map((key, index) => renderDataCell(key, workOrder, index === 0))}
                       {user?.role !== "customer" && (
                         <TableCell>
@@ -3339,6 +3433,37 @@ export default function ProjectWorkOrders() {
           }}
         />
       )}
+
+      <Dialog open={showBulkDeleteDialog} onOpenChange={setShowBulkDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Work Orders</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete {selectedWorkOrderIds.size} work order(s)? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBulkDeleteDialog(false)} data-testid="button-cancel-bulk-delete">
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={confirmBulkDelete}
+              disabled={bulkDeleteMutation.isPending}
+              data-testid="button-confirm-bulk-delete"
+            >
+              {bulkDeleteMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                `Delete ${selectedWorkOrderIds.size} Work Order(s)`
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <BackToTop containerRef={tableScrollRef} />
     </div>

@@ -1619,6 +1619,77 @@ export async function registerRoutes(
     }
   });
 
+  // Bulk delete work orders
+  app.post("/api/projects/:projectId/work-orders/bulk-delete", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const canDelete = await storage.hasPermission(currentUser, permissionKeys.WORK_ORDERS_DELETE);
+      if (!canDelete) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to delete work orders" });
+      }
+      
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const { workOrderIds } = req.body;
+      
+      if (!Array.isArray(workOrderIds) || workOrderIds.length === 0) {
+        return res.status(400).json({ message: "Work order IDs are required" });
+      }
+      
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      
+      let deletedCount = 0;
+      const errors: string[] = [];
+      
+      for (const workOrderId of workOrderIds) {
+        try {
+          const workOrder = await workOrderStorage.getWorkOrder(workOrderId);
+          if (!workOrder) {
+            errors.push(`Work order ${workOrderId} not found`);
+            continue;
+          }
+          
+          // Delete work order files/directory
+          const folderName = workOrder.customerWoId || String(workOrder.id);
+          await deleteWorkOrderDirectory(project.name, project.id, folderName, workOrder.id);
+          
+          // Delete work order from database
+          await workOrderStorage.deleteWorkOrder(workOrderId);
+          deletedCount++;
+          
+          emitWorkOrderDeleted(projectId, workOrderId, currentUser?.id);
+        } catch (err) {
+          errors.push(`Failed to delete work order ${workOrderId}`);
+        }
+      }
+      
+      res.json({
+        deletedCount,
+        totalRequested: workOrderIds.length,
+        errors: errors.length > 0 ? errors : undefined,
+      });
+    } catch (error) {
+      console.error("Error bulk deleting work orders:", error);
+      res.status(500).json({ message: "Failed to bulk delete work orders" });
+    }
+  });
+
   // Bulk assign work orders
   app.post("/api/projects/:projectId/work-orders/bulk-assign", isAuthenticated, async (req: any, res) => {
     try {
