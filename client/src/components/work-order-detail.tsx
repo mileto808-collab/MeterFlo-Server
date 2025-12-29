@@ -1100,8 +1100,8 @@ export function WorkOrderDetail({
         customerWoId={workOrder.customerWoId || `WO-${workOrder.id}`}
         address={workOrder.address}
         oldMeterId={workOrder.oldMeterId}
-        oldMeterType={workOrder.old_meter_type}
-        newMeterType={workOrder.new_meter_type}
+        oldMeterType={workOrder.oldMeterType}
+        newMeterType={workOrder.newMeterType}
         status={workOrder.status}
         trouble={workOrder.trouble}
         notes={workOrder.notes}
