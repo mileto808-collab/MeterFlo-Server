@@ -3323,6 +3323,7 @@ export default function ProjectWorkOrders() {
           customerWoId: wo.customerWoId || String(wo.id),
           address: wo.address || "",
           oldMeterNumber: wo.oldMeterId || null,
+          newMeterNumber: wo.newMeterId || null,
         }))}
         projectName={project?.name}
       />

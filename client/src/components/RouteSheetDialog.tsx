@@ -18,6 +18,7 @@ interface WorkOrderData {
   customerWoId: string;
   address: string;
   oldMeterNumber: string | null;
+  newMeterNumber?: string | null;
 }
 
 const escapeHtml = (text: string): string => {
@@ -40,6 +41,7 @@ export function RouteSheetDialog({
   projectName,
 }: RouteSheetDialogProps) {
   const [codeType, setCodeType] = useState<"barcode" | "qrcode">("barcode");
+  const [meterIdField, setMeterIdField] = useState<"old" | "new">("old");
   const [isGenerating, setIsGenerating] = useState(false);
 
   const generateBarcode = async (text: string): Promise<string> => {
@@ -85,7 +87,9 @@ export function RouteSheetDialog({
       const codeImages: { wo: WorkOrderData; codeImage: string }[] = [];
 
       for (const wo of workOrders) {
-        const meterNumber = wo.oldMeterNumber || "N/A";
+        const meterNumber = meterIdField === "old" 
+          ? (wo.oldMeterNumber || "N/A")
+          : (wo.newMeterNumber || "N/A");
         const codeImage =
           codeType === "barcode"
             ? await generateBarcode(meterNumber !== "N/A" ? meterNumber : "")
@@ -104,11 +108,13 @@ export function RouteSheetDialog({
       }
 
       const rows: string[] = [];
+      const meterIdLabel = meterIdField === "old" ? "Old Meter ID" : "New Meter ID";
       for (let i = 0; i < codeImages.length; i += columnsPerRow) {
         const rowItems = codeImages.slice(i, i + columnsPerRow);
         const cells = rowItems
           .map(({ wo, codeImage }) => {
-            const meterDisplay = escapeHtml(wo.oldMeterNumber || "N/A");
+            const meterValue = meterIdField === "old" ? wo.oldMeterNumber : wo.newMeterNumber;
+            const meterDisplay = escapeHtml(meterValue || "N/A");
             const escapedWoId = escapeHtml(wo.customerWoId);
             const escapedAddress = escapeHtml(wo.address || "No address");
             return `
@@ -120,7 +126,7 @@ export function RouteSheetDialog({
                   ? `<img src="${codeImage}" style="max-width: ${cellWidth - 20}px; max-height: ${codeType === "barcode" ? 50 : 70}px;" />`
                   : `<div style="font-size: 10px; color: #999; padding: 10px;">No meter number</div>`
               }
-              ${codeType === "barcode" && wo.oldMeterNumber ? "" : codeType === "qrcode" && wo.oldMeterNumber ? `<div style="font-size: 9px; color: #666; margin-top: 2px;">${meterDisplay}</div>` : ""}
+              ${codeType === "barcode" && meterValue ? "" : codeType === "qrcode" && meterValue ? `<div style="font-size: 9px; color: #666; margin-top: 2px;">${meterDisplay}</div>` : ""}
             </td>
           `;
           })
@@ -196,7 +202,7 @@ export function RouteSheetDialog({
             <button class="print-btn no-print" onclick="window.print()">Print Route Sheet</button>
             <div class="header">
               <h1>Route Sheet${projectTitle}</h1>
-              <p>Generated: ${dateStr} | Total Work Orders: ${workOrders.length} | Code Type: ${codeType === "barcode" ? "Barcode" : "QR Code"}</p>
+              <p>Generated: ${dateStr} | Total Work Orders: ${workOrders.length} | Code Type: ${codeType === "barcode" ? "Barcode" : "QR Code"} | Meter ID: ${meterIdLabel}</p>
             </div>
             <table>
               ${rows.join("")}
@@ -220,49 +226,92 @@ export function RouteSheetDialog({
         <DialogHeader>
           <DialogTitle>Generate Route Sheet</DialogTitle>
           <DialogDescription>
-            Choose the code type for meter identification. The route sheet will include 
+            Choose the meter ID field and code type. The route sheet will include 
             {workOrders.length} work order{workOrders.length !== 1 ? "s" : ""} with WO ID, address, and 
-            old meter number encoded as your selected code type.
+            your selected meter ID encoded as barcodes or QR codes.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="py-4">
-          <RadioGroup
-            value={codeType}
-            onValueChange={(value) => setCodeType(value as "barcode" | "qrcode")}
-            className="grid grid-cols-2 gap-4"
-          >
-            <div>
-              <RadioGroupItem
-                value="barcode"
-                id="barcode"
-                className="peer sr-only"
-              />
-              <Label
-                htmlFor="barcode"
-                className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover-elevate peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer"
-              >
-                <Barcode className="mb-3 h-8 w-8" />
-                <span className="font-medium">Barcodes</span>
-                <span className="text-xs text-muted-foreground mt-1">Code 128 format</span>
-              </Label>
-            </div>
-            <div>
-              <RadioGroupItem
-                value="qrcode"
-                id="qrcode"
-                className="peer sr-only"
-              />
-              <Label
-                htmlFor="qrcode"
-                className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover-elevate peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer"
-              >
-                <QrCode className="mb-3 h-8 w-8" />
-                <span className="font-medium">QR Codes</span>
-                <span className="text-xs text-muted-foreground mt-1">Scannable squares</span>
-              </Label>
-            </div>
-          </RadioGroup>
+        <div className="py-4 space-y-4">
+          <div>
+            <Label className="text-sm font-medium mb-2 block">Meter ID Field</Label>
+            <RadioGroup
+              value={meterIdField}
+              onValueChange={(value) => setMeterIdField(value as "old" | "new")}
+              className="grid grid-cols-2 gap-4"
+            >
+              <div>
+                <RadioGroupItem
+                  value="old"
+                  id="meter-old"
+                  className="peer sr-only"
+                />
+                <Label
+                  htmlFor="meter-old"
+                  className="flex flex-col items-center justify-center rounded-md border-2 border-muted bg-popover p-3 hover-elevate peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer"
+                  data-testid="radio-meter-old"
+                >
+                  <span className="font-medium">Old Meter ID</span>
+                </Label>
+              </div>
+              <div>
+                <RadioGroupItem
+                  value="new"
+                  id="meter-new"
+                  className="peer sr-only"
+                />
+                <Label
+                  htmlFor="meter-new"
+                  className="flex flex-col items-center justify-center rounded-md border-2 border-muted bg-popover p-3 hover-elevate peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer"
+                  data-testid="radio-meter-new"
+                >
+                  <span className="font-medium">New Meter ID</span>
+                </Label>
+              </div>
+            </RadioGroup>
+          </div>
+
+          <div>
+            <Label className="text-sm font-medium mb-2 block">Code Type</Label>
+            <RadioGroup
+              value={codeType}
+              onValueChange={(value) => setCodeType(value as "barcode" | "qrcode")}
+              className="grid grid-cols-2 gap-4"
+            >
+              <div>
+                <RadioGroupItem
+                  value="barcode"
+                  id="barcode"
+                  className="peer sr-only"
+                />
+                <Label
+                  htmlFor="barcode"
+                  className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover-elevate peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer"
+                  data-testid="radio-barcode"
+                >
+                  <Barcode className="mb-3 h-8 w-8" />
+                  <span className="font-medium">Barcodes</span>
+                  <span className="text-xs text-muted-foreground mt-1">Code 128 format</span>
+                </Label>
+              </div>
+              <div>
+                <RadioGroupItem
+                  value="qrcode"
+                  id="qrcode"
+                  className="peer sr-only"
+                />
+                <Label
+                  htmlFor="qrcode"
+                  className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover-elevate peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer"
+                  data-testid="radio-qrcode"
+                >
+                  <QrCode className="mb-3 h-8 w-8" />
+                  <span className="font-medium">QR Codes</span>
+                  <span className="text-xs text-muted-foreground mt-1">Scannable squares</span>
+                </Label>
+              </div>
+            </RadioGroup>
+          </div>
         </div>
 
         <DialogFooter className="gap-2 sm:gap-0">

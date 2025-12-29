@@ -1637,6 +1637,7 @@ export default function SearchReports() {
           customerWoId: r.workOrder.customerWoId || String(r.workOrder.id),
           address: r.workOrder.address || "",
           oldMeterNumber: r.workOrder.oldMeterId || null,
+          newMeterNumber: r.workOrder.newMeterId || null,
         }))}
       />
 
