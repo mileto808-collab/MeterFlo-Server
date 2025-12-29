@@ -90,6 +90,8 @@ interface MeterChangeoutWizardProps {
   customerWoId: string;
   address?: string | null;
   oldMeterId?: string | null;
+  oldMeterType?: string | null;
+  newMeterType?: string | null;
   status?: string | null;
   trouble?: string | null;
   notes?: string | null;
@@ -139,6 +141,8 @@ export function MeterChangeoutWizard({
   customerWoId,
   address,
   oldMeterId,
+  oldMeterType,
+  newMeterType,
   status,
   trouble,
   notes,
@@ -819,6 +823,20 @@ export function MeterChangeoutWizard({
               )}
               <p className="text-xs text-muted-foreground">Enter digits only. Leading zeros are preserved (e.g., 0001).</p>
             </div>
+
+            {oldMeterType && (
+              <Card className="bg-muted/50">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium flex items-center gap-2">
+                    <Gauge className="h-4 w-4" />
+                    Verify Old Meter Type
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm" data-testid="text-verify-old-meter-type">{oldMeterType}</p>
+                </CardContent>
+              </Card>
+            )}
           </div>
         );
       }
@@ -1072,6 +1090,20 @@ export function MeterChangeoutWizard({
               )}
               <p className="text-xs text-muted-foreground">Enter digits only. Leading zeros are preserved (e.g., 0001).</p>
             </div>
+
+            {newMeterType && (
+              <Card className="bg-muted/50">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium flex items-center gap-2">
+                    <Gauge className="h-4 w-4" />
+                    Verify New Meter Type
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm" data-testid="text-verify-new-meter-type">{newMeterType}</p>
+                </CardContent>
+              </Card>
+            )}
           </div>
         );
       }
