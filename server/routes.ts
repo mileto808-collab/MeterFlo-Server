@@ -1682,7 +1682,8 @@ export async function registerRoutes(
           continue;
         }
         
-        if (workOrder.status === "Completed" || workOrder.status === "Scheduled") {
+        // Skip work orders that are Completed or Closed - they should not be reassigned
+        if (workOrder.status === "Completed" || workOrder.status === "Closed") {
           skipped++;
           skippedReasons.push({ id: woId, reason: `Cannot assign work order with status: ${workOrder.status}` });
           continue;
@@ -1757,19 +1758,20 @@ export async function registerRoutes(
       let assignableCount = 0;
       let existingAssignments = 0;
       let completedCount = 0;
-      let scheduledCount = 0;
+      let closedCount = 0;
       
       for (const woId of workOrderIds) {
         const workOrder = await workOrderStorage.getWorkOrder(woId);
         if (!workOrder) continue;
         
+        // Skip work orders that are Completed or Closed - they should not be reassigned
         if (workOrder.status === "Completed") {
           completedCount++;
           continue;
         }
         
-        if (workOrder.status === "Scheduled") {
-          scheduledCount++;
+        if (workOrder.status === "Closed") {
+          closedCount++;
           continue;
         }
         
@@ -1784,7 +1786,7 @@ export async function registerRoutes(
         assignableCount,
         existingAssignments,
         completedCount,
-        scheduledCount
+        closedCount
       });
     } catch (error) {
       console.error("Error checking work order assignments:", error);
