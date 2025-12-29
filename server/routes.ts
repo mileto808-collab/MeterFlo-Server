@@ -1353,6 +1353,67 @@ export async function registerRoutes(
     }
   });
 
+  // Search work order by meter ID using query parameter (for mobile app compatibility)
+  // Searches both old_meter_id and new_meter_id fields
+  app.get("/api/projects/:projectId/work-orders/search", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      const meterId = req.query.meterId as string;
+      
+      if (!meterId) {
+        return res.status(400).json({ message: "meterId query parameter is required" });
+      }
+      
+      if (currentUser?.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      // Query directly with JOINs to get snake_case format matching mobile sync endpoint
+      // Searches both old_meter_id and new_meter_id fields
+      const client = await pool.connect();
+      try {
+        const result = await client.query(`
+          SELECT w.*, 
+                 sb.username as scheduled_by_username,
+                 cb.username as completed_by_username,
+                 au.username as assigned_user_username,
+                 COALESCE(au.first_name || ' ' || au.last_name, au.username) as assigned_user_display_name
+          FROM "${project.databaseName}".work_orders w
+          LEFT JOIN public.users sb ON w.scheduled_by = sb.id
+          LEFT JOIN public.users cb ON w.completed_by = cb.id
+          LEFT JOIN public.users au ON w.assigned_user_id = au.id
+          WHERE w.old_meter_id = $1 OR w.new_meter_id = $1
+        `, [meterId]);
+        
+        if (result.rows.length === 0) {
+          return res.status(404).json({ message: "Work order not found with meter ID: " + meterId });
+        }
+        
+        const workOrder = result.rows[0];
+        
+        if (currentUser?.role === "customer" && workOrder.status !== "completed") {
+          return res.status(403).json({ message: "Forbidden: Customers can only view completed work orders" });
+        }
+        
+        res.json(workOrder);
+      } finally {
+        client.release();
+      }
+    } catch (error) {
+      console.error("Error searching work order by meter ID:", error);
+      res.status(500).json({ message: "Failed to search work order" });
+    }
+  });
+
   // Claim a work order - auto-assign to current user when starting meter changeout
   app.post("/api/projects/:projectId/work-orders/:workOrderId/claim", isAuthenticated, async (req: any, res) => {
     try {
