@@ -650,6 +650,19 @@ export class ProjectWorkOrderStorage {
     });
   }
 
+  private async formatDateToTimezone(date: Date): Promise<string> {
+    const timezone = await storage.getSetting("default_timezone") || "America/Denver";
+    return date.toLocaleString('en-US', {
+      month: '2-digit',
+      day: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: timezone
+    });
+  }
+
   async updateWorkOrder(id: number, updates: Partial<InsertProjectWorkOrder>, updatedBy?: string): Promise<ProjectWorkOrder | undefined> {
     await this.ensureMigrated();
     const client = await pool.connect();
@@ -788,8 +801,9 @@ export class ProjectWorkOrderStorage {
           const isScheduleChanging = !existingScheduledAt || 
             newScheduledAt.getTime() !== new Date(existingScheduledAt).getTime();
           if (isScheduleChanging) {
-            const timestamp = await this.getTimezoneFormattedTimestamp();
-            scheduledNoteToAdd = `Scheduled at ${timestamp} by ${updatedBy || 'System'}`;
+            const actionTimestamp = await this.getTimezoneFormattedTimestamp();
+            const appointmentTimestamp = await this.formatDateToTimezone(newScheduledAt);
+            scheduledNoteToAdd = `Scheduled at ${actionTimestamp} by ${updatedBy || 'System'}\nAppointment set for ${appointmentTimestamp}`;
           }
         } else {
           // scheduledAt is being CLEARED - use the status from the update if provided
