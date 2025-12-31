@@ -751,14 +751,22 @@ export class ProjectWorkOrderStorage {
         setClauses.push(`new_gps = $${paramCount++}`);
         values.push(updates.newGps);
       }
-      // Fetch existing scheduledAt to determine if it's actually changing
+      // Fetch existing status and scheduledAt to determine if they're actually changing
       let existingScheduledAt: Date | null = null;
-      if (updates.scheduledAt !== undefined || updates.status === "Scheduled") {
-        const existingScheduleResult = await client.query(
-          `SELECT scheduled_at FROM "${this.schemaName}".work_orders WHERE id = $1`,
-          [id]
-        );
-        existingScheduledAt = existingScheduleResult.rows[0]?.scheduled_at || null;
+      let existingStatus: string | null = null;
+      let wasAlreadyCompleted = false;
+      
+      // Always fetch existing status to check for transitions
+      const existingStateResult = await client.query(
+        `SELECT scheduled_at, status FROM "${this.schemaName}".work_orders WHERE id = $1`,
+        [id]
+      );
+      existingScheduledAt = existingStateResult.rows[0]?.scheduled_at || null;
+      existingStatus = existingStateResult.rows[0]?.status || null;
+      
+      // Check if the work order was already in a completed status
+      if (existingStatus) {
+        wasAlreadyCompleted = await this.isCompletedStatus(existingStatus);
       }
       
       // Handle scheduledAt and status together for proper auto-scheduling behavior
@@ -793,9 +801,9 @@ export class ProjectWorkOrderStorage {
           } else if (updates.status !== undefined && updates.status !== null && updates.status !== "") {
             setClauses.push(`status = $${paramCount++}`);
             values.push(updates.status);
-            // Check if this status is a "Completed" type
+            // Check if this status is a "Completed" type AND we're transitioning from non-completed
             const isCompleted = await this.isCompletedStatus(updates.status);
-            if (isCompleted) {
+            if (isCompleted && !wasAlreadyCompleted) {
               setClauses.push(`completed_at = NOW()`);
               const timestamp = await this.getTimezoneFormattedTimestamp();
               completedNoteToAdd = `Completed at ${timestamp} by ${updatedBy || 'System'}`;
@@ -832,8 +840,9 @@ export class ProjectWorkOrderStorage {
           values.push(scheduledByUserId);
         }
         // Check if this status is a "Completed" type and set completed_at and completed_by
+        // Only add completion note if transitioning FROM non-completed TO completed
         const isCompleted = await this.isCompletedStatus(updates.status);
-        if (isCompleted) {
+        if (isCompleted && !wasAlreadyCompleted) {
           setClauses.push(`completed_at = NOW()`);
           // Add completed note
           const timestamp = await this.getTimezoneFormattedTimestamp();
