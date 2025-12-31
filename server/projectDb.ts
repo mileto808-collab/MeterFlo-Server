@@ -790,7 +790,7 @@ export class ProjectWorkOrderStorage {
             // Trouble code is set - force status to "Trouble"
             setClauses.push(`status = $${paramCount++}`);
             values.push("Trouble");
-          } else if (updates.status !== undefined) {
+          } else if (updates.status !== undefined && updates.status !== null && updates.status !== "") {
             setClauses.push(`status = $${paramCount++}`);
             values.push(updates.status);
             // Check if this status is a "Completed" type
@@ -811,8 +811,8 @@ export class ProjectWorkOrderStorage {
         // Handle status - if trouble code is set, force status to "Trouble"
         setClauses.push(`status = $${paramCount++}`);
         values.push("Trouble");
-      } else if (updates.status !== undefined) {
-        // scheduledAt was not in this update, handle status normally
+      } else if (updates.status !== undefined && updates.status !== null && updates.status !== "") {
+        // scheduledAt was not in this update, handle status normally (skip empty strings)
         setClauses.push(`status = $${paramCount++}`);
         values.push(updates.status);
         // Check if this is a "Scheduled" status and add scheduled note
