@@ -854,37 +854,49 @@ export class ProjectWorkOrderStorage {
         setClauses.push(`trouble = $${paramCount++}`);
         values.push((updates as any).trouble || null);
       }
-      // Handle notes - always append new notes to existing notes (never replace)
-      const notesToAppend: string[] = [];
-      if (scheduledNoteToAdd) notesToAppend.push(scheduledNoteToAdd);
-      if (completedNoteToAdd) notesToAppend.push(completedNoteToAdd);
-      if (troubleNoteToAdd) notesToAppend.push(troubleNoteToAdd);
+      // Handle notes - only update when there are actual changes
+      const autoNotesToAppend: string[] = [];
+      if (scheduledNoteToAdd) autoNotesToAppend.push(scheduledNoteToAdd);
+      if (completedNoteToAdd) autoNotesToAppend.push(completedNoteToAdd);
+      if (troubleNoteToAdd) autoNotesToAppend.push(troubleNoteToAdd);
       
-      // Check if we need to update notes (either user-provided notes or auto-generated notes)
-      if (notesToAppend.length > 0 || updates.notes !== undefined) {
-        // Get existing notes to append to
+      // Check if we need to update notes (auto-generated notes OR user-provided notes that actually changed)
+      const hasAutoNotes = autoNotesToAppend.length > 0;
+      const hasUserNotes = updates.notes !== undefined;
+      
+      if (hasAutoNotes || hasUserNotes) {
+        // Get existing notes first
         const existingResult = await client.query(
           `SELECT notes FROM "${this.schemaName}".work_orders WHERE id = $1`,
           [id]
         );
         const existingNotes = existingResult.rows[0]?.notes || "";
         
-        // Build final notes: existing + user-provided + auto-generated
         let finalNotes = existingNotes;
+        let notesChanged = false;
         
-        // Append user-provided notes if present
-        if (updates.notes !== undefined && updates.notes !== null && updates.notes.trim() !== "") {
-          finalNotes = finalNotes ? `${finalNotes}\n${updates.notes}` : updates.notes;
+        // Handle user-provided notes - only apply if they're different from existing
+        if (hasUserNotes) {
+          const userProvidedNotes = updates.notes || "";
+          // Only update if user has actually changed the notes content
+          if (userProvidedNotes !== existingNotes) {
+            finalNotes = userProvidedNotes;
+            notesChanged = true;
+          }
         }
         
-        // Append auto-generated notes (trouble, scheduled, completed)
-        if (notesToAppend.length > 0) {
-          const autoNotes = notesToAppend.join('\n');
+        // Always append auto-generated notes (trouble, scheduled, completed)
+        if (hasAutoNotes) {
+          const autoNotes = autoNotesToAppend.join('\n');
           finalNotes = finalNotes ? `${finalNotes}\n${autoNotes}` : autoNotes;
+          notesChanged = true;
         }
         
-        setClauses.push(`notes = $${paramCount++}`);
-        values.push(finalNotes);
+        // Only add to SET clause if notes actually changed
+        if (notesChanged) {
+          setClauses.push(`notes = $${paramCount++}`);
+          values.push(finalNotes);
+        }
       }
       if (updates.attachments !== undefined) {
         setClauses.push(`attachments = $${paramCount++}`);
