@@ -663,6 +663,42 @@ export class ProjectWorkOrderStorage {
     });
   }
 
+  // Format scheduledAt for notes - matches how frontend displays it
+  // The frontend sends datetime-local values as "YYYY-MM-DDTHH:mm" (local time without timezone)
+  // We should format this directly without re-interpreting through Date (which would assume UTC)
+  private async formatScheduledAtForNote(scheduledAt: string | Date): Promise<string> {
+    const timezone = await storage.getSetting("default_timezone") || "America/Denver";
+    
+    if (typeof scheduledAt === 'string') {
+      // Handle datetime-local format: "2026-01-01T11:40" (no timezone suffix)
+      if (scheduledAt.includes('T') && !scheduledAt.includes('Z') && !scheduledAt.includes('+')) {
+        // datetime-local format without timezone - parse directly (user's intended local time)
+        const [datePart, timePart] = scheduledAt.split('T');
+        const [year, month, day] = datePart.split('-');
+        const [hours, minutes] = timePart.split(':');
+        
+        const hour = parseInt(hours, 10);
+        const ampm = hour >= 12 ? 'PM' : 'AM';
+        const hour12 = hour % 12 || 12;
+        
+        return `${month}/${day}/${year} ${hour12.toString().padStart(2, '0')}:${minutes} ${ampm}`;
+      }
+    }
+    
+    // Fallback for Date objects or ISO strings with timezone (Z or +offset)
+    // These need to be converted to the project timezone
+    const date = typeof scheduledAt === 'string' ? new Date(scheduledAt) : scheduledAt;
+    return date.toLocaleString('en-US', {
+      month: '2-digit',
+      day: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+      timeZone: timezone
+    });
+  }
+
   async updateWorkOrder(id: number, updates: Partial<InsertProjectWorkOrder>, updatedBy?: string): Promise<ProjectWorkOrder | undefined> {
     await this.ensureMigrated();
     const client = await pool.connect();
@@ -802,8 +838,11 @@ export class ProjectWorkOrderStorage {
             newScheduledAt.getTime() !== new Date(existingScheduledAt).getTime();
           if (isScheduleChanging) {
             const actionTimestamp = await this.getTimezoneFormattedTimestamp();
-            const appointmentTimestamp = await this.formatDateToTimezone(newScheduledAt);
-            scheduledNoteToAdd = `Scheduled at ${actionTimestamp} by ${updatedBy || 'System'}\nAppointment set for ${appointmentTimestamp}`;
+            // Use the raw scheduledAt value directly - it's stored as-is in the database
+            // and the frontend displays it correctly, so format it the same way
+            const appointmentTimestamp = await this.formatScheduledAtForNote(updates.scheduledAt);
+            const userName = updatedBy || 'System';
+            scheduledNoteToAdd = `Scheduled by ${userName} at ${actionTimestamp}\nAppointment set for ${appointmentTimestamp} by ${userName}`;
           }
         } else {
           // scheduledAt is being CLEARED - use the status from the update if provided
@@ -841,7 +880,8 @@ export class ProjectWorkOrderStorage {
         // Only add note if there's no existing scheduledAt (i.e., this is a fresh scheduling)
         if (updates.status === "Scheduled" && !existingScheduledAt) {
           const timestamp = await this.getTimezoneFormattedTimestamp();
-          scheduledNoteToAdd = `Scheduled at ${timestamp} by ${updatedBy || 'System'}`;
+          const userName = updatedBy || 'System';
+          scheduledNoteToAdd = `Scheduled by ${userName} at ${timestamp}`;
           if (updatedBy) {
             const scheduledByUserId = await this.resolveUserId(updatedBy);
             setClauses.push(`scheduled_by = $${paramCount++}`);
