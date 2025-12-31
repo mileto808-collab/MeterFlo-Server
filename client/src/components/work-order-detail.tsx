@@ -104,7 +104,7 @@ export function WorkOrderDetail({
   onMeterChangeoutComplete,
   autoLaunchMeterChangeout = false,
 }: WorkOrderDetailProps) {
-  const [openSections, setOpenSections] = useState<string[]>(["customer", "meter", "scheduling"]);
+  const [openSections, setOpenSections] = useState<string[]>([]);
   const [showMeterChangeoutWizard, setShowMeterChangeoutWizard] = useState(false);
   const [isClaiming, setIsClaiming] = useState(false);
   const autoLaunchTriggered = useRef(false);
