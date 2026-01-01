@@ -177,7 +177,7 @@ Downloads work orders with incremental sync support.
 | `assignedUserId` | string | Filter by assigned user ID |
 | `assignedGroupId` | string | Filter by assigned group name |
 | `status` | string | Filter by status |
-| `includeCompleted` | boolean | Include completed work orders (default: false) |
+| `includeCompleted` | boolean | Include Completed and Closed work orders (default: false - these statuses are excluded) |
 | `limit` | number | Pagination limit |
 | `offset` | number | Pagination offset |
 
