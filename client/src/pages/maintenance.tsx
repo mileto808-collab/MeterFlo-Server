@@ -238,14 +238,25 @@ export default function Maintenance() {
         throw new Error(result.message || "Failed to restore full system backup");
       }
 
-      const mainTablesCount = Object.values(result.mainTablesRestored as Record<string, number>).reduce((a, b) => a + b, 0);
+      // Handle both new SQL format and legacy JSON format responses
+      let description: string;
+      if (result.format === "pg_dump_sql") {
+        // New SQL format
+        description = `Restored ${result.schemas?.length || 0} database schemas and ${result.filesRestored || 0} files${result.errors?.length > 0 ? ` with ${result.errors.length} errors` : ""}`;
+      } else {
+        // Legacy JSON format
+        const mainTablesCount = result.mainTablesRestored 
+          ? Object.values(result.mainTablesRestored as Record<string, number>).reduce((a, b) => a + b, 0) 
+          : 0;
+        description = `Restored ${mainTablesCount} main database records, ${result.projectsRestored || 0} project databases, and ${result.filesRestored || 0} files${result.errors?.length > 0 ? ` with ${result.errors.length} errors` : ""}`;
+      }
       
       toast({
         title: "Full System Restore Completed",
-        description: `Restored ${mainTablesCount} main database records, ${result.projectsRestored} project databases, and ${result.filesRestored} files${result.errors.length > 0 ? ` with ${result.errors.length} errors` : ""}`,
+        description,
       });
 
-      if (result.errors.length > 0) {
+      if (result.errors?.length > 0) {
         console.error("Restore errors:", result.errors);
       }
 
