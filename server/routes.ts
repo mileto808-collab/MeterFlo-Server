@@ -1985,6 +1985,14 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Status is required" });
       }
       
+      // If setting status to Closed, require the Close Work Orders permission
+      if (status.toLowerCase() === "closed") {
+        const canClose = await storage.hasPermission(currentUser, "workOrders.close");
+        if (!canClose) {
+          return res.status(403).json({ message: "Forbidden: You don't have permission to close work orders" });
+        }
+      }
+      
       const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
       const updatedByUsername = currentUser.firstName && currentUser.lastName 
         ? `${currentUser.firstName} ${currentUser.lastName}` 
