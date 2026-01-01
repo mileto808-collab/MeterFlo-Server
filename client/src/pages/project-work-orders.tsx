@@ -183,6 +183,7 @@ export default function ProjectWorkOrders() {
     scheduledCount: number;
     completedCount: number;
     troubleCount: number;
+    canClose: boolean;
   } | null>(null);
 
   const signaturePadRef = useRef<SignaturePadRef>(null);
@@ -3611,22 +3612,39 @@ export default function ProjectWorkOrders() {
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
               <span className="ml-2 text-muted-foreground">Checking work orders...</span>
             </div>
-          ) : bulkStatusCheckResult ? (
+          ) : bulkStatusCheckResult ? (() => {
+            // Calculate effective eligible count based on selected status
+            const isClosingSelected = bulkStatusValue.toLowerCase() === "closed";
+            const canCloseCompletedTrouble = isClosingSelected && bulkStatusCheckResult.canClose;
+            const effectiveEligibleCount = canCloseCompletedTrouble 
+              ? bulkStatusCheckResult.eligibleCount + bulkStatusCheckResult.completedCount + bulkStatusCheckResult.troubleCount
+              : bulkStatusCheckResult.eligibleCount;
+            const completedSkipCount = canCloseCompletedTrouble ? 0 : bulkStatusCheckResult.completedCount;
+            const troubleSkipCount = canCloseCompletedTrouble ? 0 : bulkStatusCheckResult.troubleCount;
+            const hasAnyEligible = bulkStatusCheckResult.eligibleCount > 0 || 
+              (bulkStatusCheckResult.canClose && (bulkStatusCheckResult.completedCount > 0 || bulkStatusCheckResult.troubleCount > 0));
+            
+            return (
             <div className="space-y-4">
               <div className="bg-muted p-3 rounded-md space-y-1 text-sm">
-                <p><strong>{bulkStatusCheckResult.eligibleCount}</strong> work order(s) can be updated</p>
+                <p><strong>{effectiveEligibleCount}</strong> work order(s) can be updated</p>
                 {bulkStatusCheckResult.scheduledCount > 0 && (
                   <p className="text-muted-foreground">{bulkStatusCheckResult.scheduledCount} Scheduled (will be skipped)</p>
                 )}
-                {bulkStatusCheckResult.completedCount > 0 && (
-                  <p className="text-muted-foreground">{bulkStatusCheckResult.completedCount} Completed (will be skipped)</p>
+                {completedSkipCount > 0 && (
+                  <p className="text-muted-foreground">{completedSkipCount} Completed (will be skipped)</p>
                 )}
-                {bulkStatusCheckResult.troubleCount > 0 && (
-                  <p className="text-muted-foreground">{bulkStatusCheckResult.troubleCount} Trouble (will be skipped)</p>
+                {troubleSkipCount > 0 && (
+                  <p className="text-muted-foreground">{troubleSkipCount} Trouble (will be skipped)</p>
+                )}
+                {isClosingSelected && canCloseCompletedTrouble && (bulkStatusCheckResult.completedCount > 0 || bulkStatusCheckResult.troubleCount > 0) && (
+                  <p className="text-green-600 dark:text-green-400">
+                    {bulkStatusCheckResult.completedCount + bulkStatusCheckResult.troubleCount} Completed/Trouble will be closed
+                  </p>
                 )}
               </div>
               
-              {bulkStatusCheckResult.eligibleCount > 0 && (
+              {hasAnyEligible && (
                 <div className="space-y-2">
                   <Label>Select New Status</Label>
                   <Select value={bulkStatusValue} onValueChange={setBulkStatusValue}>
@@ -3653,7 +3671,7 @@ export default function ProjectWorkOrders() {
                 </Button>
                 <Button
                   onClick={handleBulkStatusSubmit}
-                  disabled={bulkStatusMutation.isPending || checkBulkStatusMutation.isPending || !bulkStatusCheckResult || bulkStatusCheckResult.eligibleCount === 0 || !bulkStatusValue}
+                  disabled={bulkStatusMutation.isPending || checkBulkStatusMutation.isPending || !bulkStatusCheckResult || effectiveEligibleCount === 0 || !bulkStatusValue}
                   data-testid="button-confirm-bulk-status"
                 >
                   {bulkStatusMutation.isPending ? (
@@ -3662,12 +3680,13 @@ export default function ProjectWorkOrders() {
                       Updating...
                     </>
                   ) : (
-                    `Set Status for ${bulkStatusCheckResult?.eligibleCount || 0} Work Order(s)`
+                    `Set Status for ${effectiveEligibleCount} Work Order(s)`
                   )}
                 </Button>
               </DialogFooter>
             </div>
-          ) : null}
+            );
+          })() : null}
         </DialogContent>
       </Dialog>
 

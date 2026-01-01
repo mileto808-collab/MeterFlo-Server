@@ -1907,6 +1907,9 @@ export async function registerRoutes(
       
       const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
       
+      // Check if user has permission to close work orders
+      const canClose = await storage.hasPermission(currentUser, "workOrders.close");
+      
       let eligibleCount = 0;
       let scheduledCount = 0;
       let completedCount = 0;
@@ -1916,17 +1919,19 @@ export async function registerRoutes(
         const workOrder = await workOrderStorage.getWorkOrder(woId);
         if (!workOrder) continue;
         
-        // Skip work orders with Scheduled, Completed, or Trouble status
+        // Scheduled is always skipped
         if (workOrder.status === "Scheduled") {
           scheduledCount++;
           continue;
         }
         
+        // Track Completed count (may be eligible if closing)
         if (workOrder.status === "Completed") {
           completedCount++;
           continue;
         }
         
+        // Track Trouble count (may be eligible if closing)
         if (workOrder.status === "Trouble") {
           troubleCount++;
           continue;
@@ -1940,7 +1945,8 @@ export async function registerRoutes(
         eligibleCount,
         scheduledCount,
         completedCount,
-        troubleCount
+        troubleCount,
+        canClose  // User has permission to close work orders
       });
     } catch (error) {
       console.error("Error checking bulk status eligibility:", error);
@@ -1986,8 +1992,11 @@ export async function registerRoutes(
       }
       
       // If setting status to Closed, require the Close Work Orders permission
-      if (status.toLowerCase() === "closed") {
-        const canClose = await storage.hasPermission(currentUser, "workOrders.close");
+      const isClosingToStatus = status.toLowerCase() === "closed";
+      let canClose = false;
+      
+      if (isClosingToStatus) {
+        canClose = await storage.hasPermission(currentUser, "workOrders.close");
         if (!canClose) {
           return res.status(403).json({ message: "Forbidden: You don't have permission to close work orders" });
         }
@@ -2009,13 +2018,26 @@ export async function registerRoutes(
           continue;
         }
         
-        // Skip work orders with Scheduled, Completed, or Trouble status
-        if (workOrder.status === "Scheduled" || workOrder.status === "Completed" || workOrder.status === "Trouble") {
+        // Scheduled is always skipped
+        if (workOrder.status === "Scheduled") {
           skipped++;
           if (skippedReasons.length < 10) {
-            skippedReasons.push(`${workOrder.customerWoId || woId}: ${workOrder.status} status`);
+            skippedReasons.push(`${workOrder.customerWoId || woId}: Scheduled status`);
           }
           continue;
+        }
+        
+        // Completed and Trouble can only be updated if closing AND user has permission
+        if (workOrder.status === "Completed" || workOrder.status === "Trouble") {
+          if (isClosingToStatus && canClose) {
+            // Allow updating to Closed
+          } else {
+            skipped++;
+            if (skippedReasons.length < 10) {
+              skippedReasons.push(`${workOrder.customerWoId || woId}: ${workOrder.status} status`);
+            }
+            continue;
+          }
         }
         
         await workOrderStorage.updateWorkOrder(woId, { status }, updatedByUsername || undefined);
