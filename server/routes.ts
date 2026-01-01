@@ -4148,6 +4148,14 @@ export async function registerRoutes(
     }
   });
 
+  // Core statuses that cannot be deleted or have their code changed
+  const CORE_STATUS_CODES = ["Open", "Closed", "Completed", "Scheduled", "Trouble"];
+  
+  // Case-insensitive check for core status codes
+  function isCoreStatus(code: string): boolean {
+    return CORE_STATUS_CODES.some(c => c.toLowerCase() === code.toLowerCase());
+  }
+
   app.patch("/api/work-order-statuses/:id", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
@@ -4156,12 +4164,18 @@ export async function registerRoutes(
       }
       
       const id = parseInt(req.params.id);
-      const status = await storage.updateWorkOrderStatus(id, req.body);
+      const existingStatus = await storage.getWorkOrderStatus(id);
       
-      if (!status) {
+      if (!existingStatus) {
         return res.status(404).json({ message: "Status not found" });
       }
       
+      // If this is a core status, prevent changing the code
+      if (isCoreStatus(existingStatus.code) && req.body.code && req.body.code !== existingStatus.code) {
+        return res.status(400).json({ message: "Cannot change the code of a core status" });
+      }
+      
+      const status = await storage.updateWorkOrderStatus(id, req.body);
       res.json(status);
     } catch (error: any) {
       console.error("Error updating work order status:", error);
@@ -4184,6 +4198,11 @@ export async function registerRoutes(
       
       if (!status) {
         return res.status(404).json({ message: "Status not found" });
+      }
+      
+      // Prevent deletion of core statuses
+      if (isCoreStatus(status.code)) {
+        return res.status(400).json({ message: "Cannot delete a core status. Core statuses are required for system functionality." });
       }
       
       await storage.deleteWorkOrderStatus(id);

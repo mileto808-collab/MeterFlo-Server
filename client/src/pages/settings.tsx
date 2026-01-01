@@ -40,6 +40,15 @@ const statusColors = [
   { value: "gray", label: "Gray" },
 ];
 
+// Core statuses that cannot be deleted or renamed (code cannot be changed)
+// Users can still change the Label and Color of these statuses
+const CORE_STATUS_CODES = ["Open", "Closed", "Completed", "Scheduled", "Trouble"];
+
+// Case-insensitive check for core status codes
+function isCoreStatus(code: string): boolean {
+  return CORE_STATUS_CODES.some(c => c.toLowerCase() === code.toLowerCase());
+}
+
 const timezoneOptions = [
   { value: "America/New_York", label: "Eastern Time (ET)" },
   { value: "America/Chicago", label: "Central Time (CT)" },
@@ -1617,17 +1626,19 @@ export default function Settings() {
                               >
                                 <Pencil className="h-4 w-4" />
                               </Button>
-                              <Button 
-                                variant="ghost" 
-                                size="icon" 
-                                onClick={() => {
-                                  setSelectedStatus(status);
-                                  setDeleteStatusDialogOpen(true);
-                                }}
-                                data-testid={`button-delete-status-${status.id}`}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
+                              {!isCoreStatus(status.code) && (
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  onClick={() => {
+                                    setSelectedStatus(status);
+                                    setDeleteStatusDialogOpen(true);
+                                  }}
+                                  data-testid={`button-delete-status-${status.id}`}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
                             </div>
                           </TableCell>
                         </TableRow>
@@ -2194,8 +2205,13 @@ export default function Settings() {
                 placeholder="e.g. OPEN, COMPLETED"
                 className="mt-2"
                 data-testid="input-status-code"
+                disabled={!!(selectedStatus && isCoreStatus(selectedStatus.code))}
               />
-              <p className="text-sm text-muted-foreground mt-1">A unique identifier for the status</p>
+              <p className="text-sm text-muted-foreground mt-1">
+                {selectedStatus && isCoreStatus(selectedStatus.code)
+                  ? "Core status codes cannot be changed"
+                  : "A unique identifier for the status"}
+              </p>
             </div>
 
             <div>
