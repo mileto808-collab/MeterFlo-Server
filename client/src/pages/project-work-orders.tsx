@@ -3614,7 +3614,7 @@ export default function ProjectWorkOrders() {
             </div>
           ) : bulkStatusCheckResult ? (() => {
             // Calculate effective eligible count based on selected status
-            const isClosingSelected = bulkStatusValue.toLowerCase() === "closed";
+            const isClosingSelected = (bulkStatusValue || "").toLowerCase() === "closed";
             const canCloseCompletedTrouble = isClosingSelected && bulkStatusCheckResult.canClose;
             const effectiveEligibleCount = canCloseCompletedTrouble 
               ? bulkStatusCheckResult.eligibleCount + bulkStatusCheckResult.completedCount + bulkStatusCheckResult.troubleCount
