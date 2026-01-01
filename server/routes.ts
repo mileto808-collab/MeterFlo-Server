@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import path from "path";
-import { promises as fs } from "fs";
+import { promises as fs, existsSync, unlinkSync } from "fs";
 import { randomUUID } from "crypto";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
@@ -4795,38 +4795,40 @@ export async function registerRoutes(
         // New SQL format - use psql to restore with FK constraint handling
         console.log(`Restoring SQL backup from ${metadata.backupDate}, schemas: ${metadata.schemas.join(", ")}`);
         
-        const dbResult = await restorePgBackup(sqlFile, { disableForeignKeys: true });
-        
-        // Clean up temp SQL file
-        const fs = require("fs");
-        if (fs.existsSync(sqlFile)) {
-          fs.unlinkSync(sqlFile);
-        }
-        
         let filesResult = { filesRestored: 0, errors: [] as string[] };
-        if (restoreFiles) {
-          const filesPath = await getProjectFilesPath();
-          filesResult = await restoreFilesFromPgArchive(req.file.buffer, filesPath);
-        }
         
-        if (!dbResult.success) {
-          return res.status(500).json({
-            message: "Database restore failed",
-            error: dbResult.error,
-            warnings: dbResult.warnings,
+        try {
+          const dbResult = await restorePgBackup(sqlFile, { disableForeignKeys: true });
+          
+          if (restoreFiles) {
+            const filesPath = await getProjectFilesPath();
+            filesResult = await restoreFilesFromPgArchive(req.file.buffer, filesPath);
+          }
+          
+          if (!dbResult.success) {
+            return res.status(500).json({
+              message: "Database restore failed",
+              error: dbResult.error,
+              warnings: dbResult.warnings,
+              filesRestored: filesResult.filesRestored,
+            });
+          }
+          
+          return res.json({
+            message: "Full system restore completed (SQL format)",
+            format: "pg_dump_sql",
+            backupDate: metadata.backupDate,
+            schemas: metadata.schemas,
             filesRestored: filesResult.filesRestored,
+            warnings: dbResult.warnings,
+            errors: filesResult.errors,
           });
+        } finally {
+          // Always clean up temp SQL file
+          if (existsSync(sqlFile)) {
+            unlinkSync(sqlFile);
+          }
         }
-        
-        res.json({
-          message: "Full system restore completed (SQL format)",
-          format: "pg_dump_sql",
-          backupDate: metadata.backupDate,
-          schemas: metadata.schemas,
-          filesRestored: filesResult.filesRestored,
-          warnings: dbResult.warnings,
-          errors: filesResult.errors,
-        });
       } else if (legacyJson) {
         // Legacy JSON format - use old restore method for backward compatibility
         console.log("Restoring legacy JSON backup");
