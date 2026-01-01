@@ -4923,9 +4923,9 @@ export async function registerRoutes(
           values.push(status);
         }
         
-        // Exclude completed unless requested
+        // Exclude Completed and Closed unless explicitly requested
         if (includeCompleted !== "true") {
-          conditions.push(`w.status != 'Completed'`);
+          conditions.push(`LOWER(w.status) NOT IN ('completed', 'closed')`);
         }
         
         if (conditions.length > 0) {
