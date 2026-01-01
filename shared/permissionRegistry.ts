@@ -285,6 +285,13 @@ export const permissionRegistry: PermissionDefinition[] = [
     description: "Perform meter changeout workflow on work orders",
     defaultAccess: { administrator: true, projectManager: true, fieldTechnician: true, viewer: false, customer: false },
   },
+  {
+    key: "workOrders.close",
+    label: "Close Work Orders",
+    category: "Work Order Actions",
+    description: "Set work order status to Closed via bulk operations",
+    defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
+  },
 
   // User Action permissions - what users can do with user accounts
   {

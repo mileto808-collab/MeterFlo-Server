@@ -2791,10 +2791,10 @@ export default function ProjectWorkOrders() {
                 Assign Work Orders
               </Button>
             )}
-            {hasPermission(permissionKeys.WORK_ORDERS_EDIT) && (
+            {hasPermission(permissionKeys.WORK_ORDERS_EDIT) && selectedWorkOrderIds.size > 0 && (
               <Button variant="outline" onClick={handleOpenBulkStatus} data-testid="button-set-status">
                 <ArrowUpDown className="h-4 w-4 mr-2" />
-                Set Status
+                Set Status ({selectedWorkOrderIds.size})
               </Button>
             )}
             {hasPermission(permissionKeys.WORK_ORDERS_DELETE) && selectedWorkOrderIds.size > 0 && (
