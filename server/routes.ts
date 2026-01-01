@@ -1872,6 +1872,168 @@ export async function registerRoutes(
     }
   });
 
+  // Check bulk status eligibility (for pre-validation before bulk status update)
+  app.post("/api/projects/:projectId/work-orders/check-bulk-status", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const canEdit = await storage.hasPermission(currentUser, permissionKeys.WORK_ORDERS_EDIT);
+      if (!canEdit) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to edit work orders" });
+      }
+      
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const { workOrderIds } = req.body;
+      
+      if (!Array.isArray(workOrderIds) || workOrderIds.length === 0) {
+        return res.status(400).json({ message: "Work order IDs are required" });
+      }
+      
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      
+      let eligibleCount = 0;
+      let scheduledCount = 0;
+      let completedCount = 0;
+      let troubleCount = 0;
+      
+      for (const woId of workOrderIds) {
+        const workOrder = await workOrderStorage.getWorkOrder(woId);
+        if (!workOrder) continue;
+        
+        // Skip work orders with Scheduled, Completed, or Trouble status
+        if (workOrder.status === "Scheduled") {
+          scheduledCount++;
+          continue;
+        }
+        
+        if (workOrder.status === "Completed") {
+          completedCount++;
+          continue;
+        }
+        
+        if (workOrder.status === "Trouble") {
+          troubleCount++;
+          continue;
+        }
+        
+        eligibleCount++;
+      }
+      
+      res.json({
+        total: workOrderIds.length,
+        eligibleCount,
+        scheduledCount,
+        completedCount,
+        troubleCount
+      });
+    } catch (error) {
+      console.error("Error checking bulk status eligibility:", error);
+      res.status(500).json({ message: "Failed to check bulk status eligibility" });
+    }
+  });
+
+  // Bulk update work order status
+  app.post("/api/projects/:projectId/work-orders/bulk-status", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const canEdit = await storage.hasPermission(currentUser, permissionKeys.WORK_ORDERS_EDIT);
+      if (!canEdit) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to edit work orders" });
+      }
+      
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const { workOrderIds, status } = req.body;
+      
+      if (!Array.isArray(workOrderIds) || workOrderIds.length === 0) {
+        return res.status(400).json({ message: "Work order IDs are required" });
+      }
+      
+      if (!status) {
+        return res.status(400).json({ message: "Status is required" });
+      }
+      
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      const updatedByUsername = currentUser.firstName && currentUser.lastName 
+        ? `${currentUser.firstName} ${currentUser.lastName}` 
+        : currentUser.username;
+      
+      let updatedCount = 0;
+      let skipped = 0;
+      const skippedReasons: string[] = [];
+      
+      for (const woId of workOrderIds) {
+        const workOrder = await workOrderStorage.getWorkOrder(woId);
+        if (!workOrder) {
+          skipped++;
+          continue;
+        }
+        
+        // Skip work orders with Scheduled, Completed, or Trouble status
+        if (workOrder.status === "Scheduled" || workOrder.status === "Completed" || workOrder.status === "Trouble") {
+          skipped++;
+          if (skippedReasons.length < 10) {
+            skippedReasons.push(`${workOrder.customerWoId || woId}: ${workOrder.status} status`);
+          }
+          continue;
+        }
+        
+        await workOrderStorage.updateWorkOrder(woId, { status }, updatedByUsername || undefined);
+        updatedCount++;
+      }
+      
+      // Emit event for the project
+      projectEventEmitter.emit(`project:${projectId}`, { 
+        type: 'bulk-status-update',
+        updatedCount,
+        status 
+      });
+      
+      res.json({ 
+        success: true, 
+        updatedCount, 
+        skipped, 
+        skippedReasons: skippedReasons.slice(0, 10),
+        message: `Updated ${updatedCount} work order(s) to ${status}${skipped > 0 ? `, ${skipped} skipped` : ""}`
+      });
+    } catch (error) {
+      console.error("Error bulk updating work order status:", error);
+      res.status(500).json({ message: "Failed to bulk update work order status" });
+    }
+  });
+
   // Import work orders for a project
   app.post("/api/projects/:projectId/import", isAuthenticated, async (req: any, res) => {
     try {
