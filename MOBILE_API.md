@@ -177,9 +177,10 @@ Downloads work orders with incremental sync support.
 | `assignedUserId` | string | Filter by assigned user ID |
 | `assignedGroupId` | string | Filter by assigned group name |
 | `status` | string | Filter by status |
-| `includeCompleted` | boolean | Include Completed and Closed work orders (default: false - these statuses are excluded) |
 | `limit` | number | Pagination limit |
 | `offset` | number | Pagination offset |
+
+> **CRITICAL:** Work orders with status "Completed" or "Closed" are **always excluded** from mobile sync responses. This is a system-enforced rule that cannot be overridden. Mobile devices should only receive active work orders.
 
 **Response:**
 ```json

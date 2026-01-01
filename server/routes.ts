@@ -4906,12 +4906,12 @@ export async function registerRoutes(
       }
       
       // Parse query parameters for filtering
+      // Note: includeCompleted is intentionally NOT supported - mobile users must NEVER receive Closed or Completed work orders
       const {
         lastSyncTimestamp,
         assignedUserId,
         assignedGroupId,
         status,
-        includeCompleted,
         limit,
         offset
       } = req.query;
@@ -4972,10 +4972,9 @@ export async function registerRoutes(
           values.push(status);
         }
         
-        // Exclude Completed and Closed unless explicitly requested
-        if (includeCompleted !== "true") {
-          conditions.push(`LOWER(w.status) NOT IN ('completed', 'closed')`);
-        }
+        // CRITICAL: Mobile users must NEVER receive Closed or Completed work orders
+        // This filter is always applied - there is no option to override it
+        conditions.push(`LOWER(w.status) NOT IN ('completed', 'closed')`);
         
         if (conditions.length > 0) {
           query += ` WHERE ${conditions.join(" AND ")}`;
