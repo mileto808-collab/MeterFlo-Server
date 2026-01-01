@@ -14,6 +14,7 @@ import { pool } from "./db";
 import { ensureProjectDirectory, renameProjectDirectory, saveWorkOrderFile, getWorkOrderFiles, deleteWorkOrderFile, deleteWorkOrderDirectory, getFilePath, getProjectFilesPath, setProjectFilesPath, deleteProjectDirectory, saveProjectFile, getProjectFiles, deleteProjectFile, getProjectFilePath, ensureProjectFtpDirectory, getProjectFtpFiles, deleteProjectFtpFile, getProjectFtpFilePath, saveProjectFtpFile, getProjectDirectoryName } from "./fileStorage";
 import { ExternalDatabaseService } from "./externalDbService";
 import { createBackupArchive, extractDatabaseBackupFromArchive, restoreFullSystem, restoreFilesFromArchive } from "./systemBackup";
+import { createPgBackupArchive, extractBackupFromArchive, restorePgBackup, restoreFilesFromPgArchive } from "./pgBackup";
 import { projectEventEmitter, emitWorkOrderCreated, emitWorkOrderUpdated, emitWorkOrderDeleted, emitFileAdded, emitFileDeleted, type ProjectEvent } from "./eventEmitter";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
@@ -4742,6 +4743,7 @@ export async function registerRoutes(
   });
 
   // Full System Backup/Restore API Routes
+  // Uses pg_dump for SQL-format backup that handles foreign key constraints properly
   app.get("/api/system/backup", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
@@ -4753,7 +4755,8 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Forbidden: You don't have permission to create system backups" });
       }
       
-      await createBackupArchive(res);
+      // Use pg_dump-based backup for proper SQL format with FK support
+      await createPgBackupArchive(res);
     } catch (error) {
       console.error("Error creating full system backup:", error);
       if (!res.headersSent) {
@@ -4767,6 +4770,7 @@ export async function registerRoutes(
     limits: { fileSize: 1024 * 1024 * 1024 } 
   });
 
+  // Supports both new SQL format (pg_dump) and legacy JSON format for backward compatibility
   app.post("/api/system/restore", isAuthenticated, largeUpload.single("backup"), async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
@@ -4782,31 +4786,74 @@ export async function registerRoutes(
         return res.status(400).json({ message: "No backup file provided" });
       }
       
-      const clearExisting = req.body.clearExisting === "true";
       const restoreFiles = req.body.restoreFiles !== "false";
       
-      const backupData = await extractDatabaseBackupFromArchive(req.file.buffer);
+      // Extract and detect backup format (SQL or legacy JSON)
+      const { sqlFile, metadata, legacyJson } = await extractBackupFromArchive(req.file.buffer);
       
-      if (!backupData) {
-        return res.status(400).json({ message: "Invalid backup archive: could not find database_backup.json" });
+      if (sqlFile && metadata?.format === "pg_dump_sql") {
+        // New SQL format - use psql to restore with FK constraint handling
+        console.log(`Restoring SQL backup from ${metadata.backupDate}, schemas: ${metadata.schemas.join(", ")}`);
+        
+        const dbResult = await restorePgBackup(sqlFile, { disableForeignKeys: true });
+        
+        // Clean up temp SQL file
+        const fs = require("fs");
+        if (fs.existsSync(sqlFile)) {
+          fs.unlinkSync(sqlFile);
+        }
+        
+        let filesResult = { filesRestored: 0, errors: [] as string[] };
+        if (restoreFiles) {
+          const filesPath = await getProjectFilesPath();
+          filesResult = await restoreFilesFromPgArchive(req.file.buffer, filesPath);
+        }
+        
+        if (!dbResult.success) {
+          return res.status(500).json({
+            message: "Database restore failed",
+            error: dbResult.error,
+            warnings: dbResult.warnings,
+            filesRestored: filesResult.filesRestored,
+          });
+        }
+        
+        res.json({
+          message: "Full system restore completed (SQL format)",
+          format: "pg_dump_sql",
+          backupDate: metadata.backupDate,
+          schemas: metadata.schemas,
+          filesRestored: filesResult.filesRestored,
+          warnings: dbResult.warnings,
+          errors: filesResult.errors,
+        });
+      } else if (legacyJson) {
+        // Legacy JSON format - use old restore method for backward compatibility
+        console.log("Restoring legacy JSON backup");
+        const clearExisting = req.body.clearExisting === "true";
+        
+        const dbResult = await restoreFullSystem(legacyJson, { clearExisting });
+        
+        let filesResult = { filesRestored: 0, errors: [] as string[] };
+        if (restoreFiles) {
+          const filesPath = await getProjectFilesPath();
+          filesResult = await restoreFilesFromArchive(req.file.buffer, filesPath);
+        }
+        
+        res.json({
+          message: "Full system restore completed (legacy JSON format)",
+          format: "legacy_json",
+          mainTablesRestored: dbResult.mainTablesRestored,
+          projectsRestored: dbResult.projectsRestored,
+          filesRestored: filesResult.filesRestored,
+          errors: [...dbResult.errors, ...dbResult.projectErrors, ...filesResult.errors],
+          warnings: dbResult.warnings,
+        });
+      } else {
+        return res.status(400).json({ 
+          message: "Invalid backup archive: could not find database_backup.sql or database_backup.json" 
+        });
       }
-      
-      const dbResult = await restoreFullSystem(backupData, { clearExisting });
-      
-      let filesResult = { filesRestored: 0, errors: [] as string[] };
-      if (restoreFiles) {
-        const filesPath = await getProjectFilesPath();
-        filesResult = await restoreFilesFromArchive(req.file.buffer, filesPath);
-      }
-      
-      res.json({
-        message: "Full system restore completed",
-        mainTablesRestored: dbResult.mainTablesRestored,
-        projectsRestored: dbResult.projectsRestored,
-        filesRestored: filesResult.filesRestored,
-        errors: [...dbResult.errors, ...dbResult.projectErrors, ...filesResult.errors],
-        warnings: dbResult.warnings,
-      });
     } catch (error) {
       console.error("Error restoring full system backup:", error);
       res.status(500).json({ message: "Failed to restore full system backup" });

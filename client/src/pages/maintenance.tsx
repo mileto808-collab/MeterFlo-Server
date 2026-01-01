@@ -290,7 +290,7 @@ export default function Maintenance() {
             Full System Backup
           </CardTitle>
           <CardDescription>
-            Create or restore a complete backup of the entire system including the main database, all project databases, and all project files
+            Create or restore a complete backup using PostgreSQL native format (pg_dump). Supports foreign key constraints and can be restored to another PostgreSQL instance.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -304,6 +304,7 @@ export default function Maintenance() {
                 <li>Main database (users, projects, settings, groups, permissions)</li>
                 <li>All project databases ({projects.length} projects)</li>
                 <li>All project files and documents</li>
+                <li>SQL format compatible with pg_restore</li>
               </ul>
             </div>
             <div className="flex flex-col gap-2 justify-center">
