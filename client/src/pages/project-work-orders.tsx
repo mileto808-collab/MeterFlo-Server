@@ -68,6 +68,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Users, ChevronDown } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import SignaturePad, { SignaturePadRef } from "@/components/signature-pad";
 import { WorkOrderDetail } from "@/components/work-order-detail";
 import { ScannerInput } from "@/components/scanner-input";
@@ -169,6 +175,15 @@ export default function ProjectWorkOrders() {
   const [pageSize, setPageSize] = useState(50);
   const [selectedWorkOrderIds, setSelectedWorkOrderIds] = useState<Set<number>>(new Set());
   const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
+  const [showBulkStatusDialog, setShowBulkStatusDialog] = useState(false);
+  const [bulkStatusValue, setBulkStatusValue] = useState<string>("");
+  const [bulkStatusCheckResult, setBulkStatusCheckResult] = useState<{
+    total: number;
+    eligibleCount: number;
+    scheduledCount: number;
+    completedCount: number;
+    troubleCount: number;
+  } | null>(null);
 
   const signaturePadRef = useRef<SignaturePadRef>(null);
   const editSignaturePadRef = useRef<SignaturePadRef>(null);
@@ -797,6 +812,47 @@ export default function ProjectWorkOrders() {
     },
   });
 
+  const checkBulkStatusMutation = useMutation({
+    mutationFn: async (workOrderIds: number[]) => {
+      const res = await apiRequest("POST", `/api/projects/${projectId}/work-orders/check-bulk-status`, {
+        workOrderIds,
+      });
+      return res.json();
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to check work order statuses", description: error?.message, variant: "destructive" });
+    },
+  });
+
+  const bulkStatusMutation = useMutation({
+    mutationFn: async (params: {
+      workOrderIds: number[];
+      status: string;
+    }) => {
+      const res = await apiRequest("POST", `/api/projects/${projectId}/work-orders/bulk-status`, params);
+      return res.json();
+    },
+    onSuccess: async (result) => {
+      await queryClient.refetchQueries({ queryKey: [`/api/projects/${projectId}/work-orders`] });
+      await queryClient.refetchQueries({ queryKey: [`/api/projects/${projectId}/work-orders/stats`] });
+      setShowBulkStatusDialog(false);
+      setBulkStatusValue("");
+      setBulkStatusCheckResult(null);
+      toast({ 
+        title: `${result.updatedCount} work order(s) updated`,
+        description: result.skipped > 0 ? `${result.skipped} work order(s) were skipped (Scheduled/Completed/Trouble status)` : undefined,
+      });
+    },
+    onError: (error: any) => {
+      const errorMsg = error?.message || "";
+      if (errorMsg.startsWith("403:") || errorMsg.includes("403")) {
+        toast({ title: "Access denied", description: "You don't have permission to update work orders", variant: "destructive" });
+      } else {
+        toast({ title: "Failed to update work orders", description: errorMsg, variant: "destructive" });
+      }
+    },
+  });
+
   const handleBulkDelete = () => {
     if (selectedWorkOrderIds.size === 0) {
       toast({ title: "No work orders selected", variant: "destructive" });
@@ -807,6 +863,35 @@ export default function ProjectWorkOrders() {
 
   const confirmBulkDelete = () => {
     bulkDeleteMutation.mutate(Array.from(selectedWorkOrderIds));
+  };
+
+  const handleOpenBulkStatus = async () => {
+    const workOrderIds = filteredAndSortedWorkOrders.map(wo => wo.id);
+    if (workOrderIds.length === 0) {
+      toast({ title: "No work orders to update", description: "Apply filters to select work orders first", variant: "destructive" });
+      return;
+    }
+    
+    setBulkStatusValue("");
+    setBulkStatusCheckResult(null);
+    setShowBulkStatusDialog(true);
+    
+    const result = await checkBulkStatusMutation.mutateAsync(workOrderIds);
+    setBulkStatusCheckResult(result);
+  };
+
+  const handleBulkStatusSubmit = () => {
+    const workOrderIds = filteredAndSortedWorkOrders.map(wo => wo.id);
+    
+    if (!bulkStatusValue) {
+      toast({ title: "Please select a status", variant: "destructive" });
+      return;
+    }
+    
+    bulkStatusMutation.mutate({
+      workOrderIds,
+      status: bulkStatusValue,
+    });
   };
 
   const toggleWorkOrderSelection = (id: number) => {
@@ -834,6 +919,15 @@ export default function ProjectWorkOrders() {
       }
       return newSet;
     });
+  };
+
+  const selectAllFiltered = () => {
+    const allFilteredIds = filteredAndSortedWorkOrders.map(wo => wo.id);
+    setSelectedWorkOrderIds(new Set(allFilteredIds));
+  };
+
+  const clearAllSelections = () => {
+    setSelectedWorkOrderIds(new Set());
   };
 
   const resetBulkAssignState = () => {
@@ -1502,6 +1596,13 @@ export default function ProjectWorkOrders() {
     return filteredAndSortedWorkOrders.slice(startIndex, startIndex + pageSize);
   }, [filteredAndSortedWorkOrders, currentPage, pageSize]);
 
+  // Calculate selection states for UI
+  const allFilteredSelected = filteredAndSortedWorkOrders.length > 0 && 
+    filteredAndSortedWorkOrders.every(wo => selectedWorkOrderIds.has(wo.id));
+  const someSelected = selectedWorkOrderIds.size > 0;
+  const allCurrentPageSelected = paginatedWorkOrders.length > 0 && 
+    paginatedWorkOrders.every(wo => selectedWorkOrderIds.has(wo.id));
+
   useEffect(() => {
     setCurrentPage(1);
     setSelectedWorkOrderIds(new Set());
@@ -1515,7 +1616,6 @@ export default function ProjectWorkOrders() {
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
-    setSelectedWorkOrderIds(new Set());
     tableScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -2691,6 +2791,12 @@ export default function ProjectWorkOrders() {
                 Assign Work Orders
               </Button>
             )}
+            {hasPermission(permissionKeys.WORK_ORDERS_EDIT) && (
+              <Button variant="outline" onClick={handleOpenBulkStatus} data-testid="button-set-status">
+                <ArrowUpDown className="h-4 w-4 mr-2" />
+                Set Status
+              </Button>
+            )}
             {hasPermission(permissionKeys.WORK_ORDERS_DELETE) && selectedWorkOrderIds.size > 0 && (
               <Button variant="destructive" onClick={handleBulkDelete} data-testid="button-delete-selected">
                 <Trash2 className="h-4 w-4 mr-2" />
@@ -3178,12 +3284,32 @@ export default function ProjectWorkOrders() {
                   <TableRow>
                     {hasPermission(permissionKeys.WORK_ORDERS_DELETE) && (
                       <TableHead className="sticky top-0 left-0 z-40 bg-muted w-10">
-                        <Checkbox
-                          checked={paginatedWorkOrders.length > 0 && paginatedWorkOrders.every(wo => selectedWorkOrderIds.has(wo.id))}
-                          onCheckedChange={toggleSelectAll}
-                          aria-label="Select all on this page"
-                          data-testid="checkbox-select-all"
-                        />
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <div className="flex items-center gap-1 cursor-pointer">
+                              <Checkbox
+                                checked={allFilteredSelected ? true : someSelected ? "indeterminate" : false}
+                                onCheckedChange={toggleSelectAll}
+                                aria-label="Select all"
+                                data-testid="checkbox-select-all"
+                              />
+                              <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                            </div>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start">
+                            <DropdownMenuItem onClick={toggleSelectAll} data-testid="menu-select-page">
+                              {allCurrentPageSelected ? "Deselect This Page" : "Select This Page"}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={selectAllFiltered} data-testid="menu-select-all-filtered">
+                              Select All Filtered ({filteredAndSortedWorkOrders.length})
+                            </DropdownMenuItem>
+                            {someSelected && (
+                              <DropdownMenuItem onClick={clearAllSelections} data-testid="menu-clear-selection">
+                                Clear Selection ({selectedWorkOrderIds.size})
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </TableHead>
                     )}
                     {visibleColumns.map((key, index) => renderHeaderCell(key, index === 0))}
@@ -3462,6 +3588,86 @@ export default function ProjectWorkOrders() {
               )}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showBulkStatusDialog} onOpenChange={(open) => { 
+        setShowBulkStatusDialog(open); 
+        if (!open) {
+          setBulkStatusValue("");
+          setBulkStatusCheckResult(null);
+        }
+      }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Set Work Order Status</DialogTitle>
+            <DialogDescription>
+              Set status for the {filteredAndSortedWorkOrders.length} filtered work order(s).
+            </DialogDescription>
+          </DialogHeader>
+          
+          {checkBulkStatusMutation.isPending ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              <span className="ml-2 text-muted-foreground">Checking work orders...</span>
+            </div>
+          ) : bulkStatusCheckResult ? (
+            <div className="space-y-4">
+              <div className="bg-muted p-3 rounded-md space-y-1 text-sm">
+                <p><strong>{bulkStatusCheckResult.eligibleCount}</strong> work order(s) can be updated</p>
+                {bulkStatusCheckResult.scheduledCount > 0 && (
+                  <p className="text-muted-foreground">{bulkStatusCheckResult.scheduledCount} Scheduled (will be skipped)</p>
+                )}
+                {bulkStatusCheckResult.completedCount > 0 && (
+                  <p className="text-muted-foreground">{bulkStatusCheckResult.completedCount} Completed (will be skipped)</p>
+                )}
+                {bulkStatusCheckResult.troubleCount > 0 && (
+                  <p className="text-muted-foreground">{bulkStatusCheckResult.troubleCount} Trouble (will be skipped)</p>
+                )}
+              </div>
+              
+              {bulkStatusCheckResult.eligibleCount > 0 && (
+                <div className="space-y-2">
+                  <Label>Select New Status</Label>
+                  <Select value={bulkStatusValue} onValueChange={setBulkStatusValue}>
+                    <SelectTrigger data-testid="select-bulk-status">
+                      <SelectValue placeholder="Select status..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {workOrderStatuses
+                        .filter(s => !["Scheduled", "Completed", "Trouble"].includes(s.label))
+                        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+                        .map(status => (
+                          <SelectItem key={status.id} value={status.label} data-testid={`option-status-${status.label.toLowerCase().replace(/\s+/g, '-')}`}>
+                            {status.label}
+                          </SelectItem>
+                        ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowBulkStatusDialog(false)} data-testid="button-cancel-bulk-status">
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleBulkStatusSubmit}
+                  disabled={bulkStatusMutation.isPending || checkBulkStatusMutation.isPending || !bulkStatusCheckResult || bulkStatusCheckResult.eligibleCount === 0 || !bulkStatusValue}
+                  data-testid="button-confirm-bulk-status"
+                >
+                  {bulkStatusMutation.isPending ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Updating...
+                    </>
+                  ) : (
+                    `Set Status for ${bulkStatusCheckResult?.eligibleCount || 0} Work Order(s)`
+                  )}
+                </Button>
+              </DialogFooter>
+            </div>
+          ) : null}
         </DialogContent>
       </Dialog>
 
