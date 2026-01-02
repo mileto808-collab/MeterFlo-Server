@@ -1,4 +1,4 @@
-// PM2 Ecosystem Configuration for WorkFlow Pro
+// PM2 Ecosystem Configuration for MeterFlo
 // 
 // SETUP INSTRUCTIONS FOR WINDOWS:
 // 
@@ -20,15 +20,15 @@
 //
 // 6. Useful PM2 commands:
 //    pm2 list              - Show all running processes
-//    pm2 logs workflowpro  - View application logs
-//    pm2 restart workflowpro - Restart the app
-//    pm2 stop workflowpro  - Stop the app
-//    pm2 delete workflowpro - Remove from PM2
+//    pm2 logs meterflo     - View application logs
+//    pm2 restart meterflo  - Restart the app
+//    pm2 stop meterflo     - Stop the app
+//    pm2 delete meterflo   - Remove from PM2
 
 module.exports = {
   apps: [
     {
-      name: 'workflowpro',
+      name: 'meterflo',
       script: 'dist/index.cjs',
       cwd: 'C:\\xampp\\htdocs',  // Adjust this path to your installation directory
       
@@ -48,8 +48,8 @@ module.exports = {
       
       // Logging
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
-      error_file: 'logs/workflowpro-error.log',
-      out_file: 'logs/workflowpro-out.log',
+      error_file: 'logs/meterflo-error.log',
+      out_file: 'logs/meterflo-out.log',
       merge_logs: true,
       
       // Graceful shutdown
