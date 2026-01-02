@@ -80,7 +80,7 @@ export default function Landing() {
             <img 
               src="/meterflo-logo.png" 
               alt="MeterFlo" 
-              className="h-12 w-auto"
+              className="h-20 w-auto"
               data-testid="img-meterflo-logo"
             />
           </div>
