@@ -597,6 +597,95 @@ pm2 restart meterflo
 cd C:\xampp\htdocs && git pull origin main && npm install && npx tsx script/build.ts && pm2 restart meterflo
 ```
 
+### 10.7 Troubleshooting Git Issues
+
+> **Important**: Before running any `git reset --hard` command, always back up your entire htdocs folder. This command will overwrite ALL files.
+
+#### Complete Backup Before Git Reset
+
+Always create a full backup before destructive git commands. This protects:
+- `deploy\ecosystem.config.cjs` - Database connection and environment settings
+- `Project Files\` folder - Work order attachments and uploads
+
+**Full backup command:**
+```cmd
+cd C:\xampp
+
+# Create timestamped backup folder
+mkdir meterflo-backups
+
+# Copy everything except node_modules, dist, and .git
+robocopy htdocs meterflo-backups\htdocs-backup /MIR /XD node_modules dist .git
+```
+
+> **Note**: Running this command again will update the backup. To keep multiple backups, rename the previous backup folder first (e.g., `rename meterflo-backups\htdocs-backup htdocs-backup-old`).
+
+#### Problem: "origin does not appear to be a git repository"
+
+This occurs when the htdocs folder was created by extracting a ZIP file instead of using git clone.
+
+```cmd
+cd C:\xampp
+
+# STEP 1: Create full backup first (see backup commands above)
+robocopy htdocs meterflo-backups\htdocs-backup /MIR /XD node_modules dist .git
+
+cd htdocs
+
+# STEP 2: Initialize git and connect to GitHub
+git init
+git remote add origin https://github.com/mileto808-collab/meterflo-server.git
+git fetch origin
+git reset --hard origin/main
+
+# STEP 3: Restore all local data from backup
+robocopy C:\xampp\meterflo-backups\htdocs-backup\deploy deploy /E
+robocopy C:\xampp\meterflo-backups\htdocs-backup\"Project Files" "Project Files" /E
+
+# STEP 4: Reinstall and restart
+npm install
+npx tsx script/build.ts
+pm2 restart meterflo
+```
+
+#### Problem: "destination path 'htdocs' already exists and is not an empty directory"
+
+This occurs when you try to clone but htdocs already has files.
+
+```cmd
+cd C:\xampp
+
+# STEP 1: Stop the application
+pm2 stop meterflo
+
+# STEP 2: Rename existing folder as complete backup
+rename htdocs htdocs_backup
+
+# STEP 3: Clone fresh from GitHub
+git clone https://github.com/mileto808-collab/meterflo-server.git htdocs
+
+# STEP 4: Restore all local data from backup
+robocopy htdocs_backup\deploy htdocs\deploy /E
+robocopy htdocs_backup\"Project Files" htdocs\"Project Files" /E
+
+# STEP 5: Install dependencies and rebuild
+cd htdocs
+npm install
+npx tsx script/build.ts
+
+# STEP 6: Start application
+pm2 start deploy/ecosystem.config.cjs
+```
+
+> **Note**: Your complete backup is in `htdocs_backup`. After verifying everything works, you can delete it: `rmdir /s /q C:\xampp\htdocs_backup`
+
+#### Problem: "Could not read from remote repository"
+
+This usually means authentication failed. Ensure:
+1. The repository URL is correct
+2. You have a valid Personal Access Token with `repo` scope
+3. Git Credential Manager is configured: `git config --global credential.helper manager`
+
 ---
 
 ## 11. Useful Commands Reference
