@@ -483,34 +483,111 @@ C:\xampp\apache\bin\httpd.exe -k restart
 
 ## 10. Updating the Application
 
-### 10.1 Pull Latest Changes from Replit
+### 10.1 Setting Up GitHub for Updates (Recommended)
+
+If you want to manage your MeterFlo installation through GitHub instead of Replit, follow these steps:
+
+#### Step 1: Create a GitHub Repository
+
+1. Go to https://github.com and create a new repository (e.g., `meterflo-server`)
+2. Keep it private if you don't want the code publicly accessible
+
+#### Step 2: Push Code from Replit to GitHub
+
+In your Replit project, open the Shell and run:
+```bash
+git remote add github https://github.com/your-username/meterflo-server.git
+git push github main
+```
+
+#### Step 3: Set Up GitHub on Windows Server
+
+**Option A: New Installation (empty htdocs folder)**
+
+If you're setting up a fresh Windows server:
+```cmd
+cd C:\xampp
+git clone https://github.com/your-username/meterflo-server.git htdocs
+```
+
+**Option B: Existing Installation (already have MeterFlo in htdocs)**
+
+If you already have MeterFlo installed and want to switch to GitHub:
+```cmd
+cd C:\xampp\htdocs
+
+# Check current remote
+git remote -v
+
+# Change remote from Replit to GitHub
+git remote set-url origin https://github.com/your-username/meterflo-server.git
+
+# Verify the change
+git remote -v
+```
+
+**For private repositories**, use a Personal Access Token:
+
+1. Generate a token at: GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic)
+2. Select scopes: `repo` (full control of private repositories)
+3. For new installations, clone with the token:
+   ```cmd
+   git clone https://your-username:YOUR_TOKEN@github.com/your-username/meterflo-server.git htdocs
+   ```
+4. For existing installations, update the remote URL with the token:
+   ```cmd
+   git remote set-url origin https://your-username:YOUR_TOKEN@github.com/your-username/meterflo-server.git
+   ```
+
+#### Step 4: Save Git Credentials (Optional)
+
+To avoid re-entering credentials on every pull:
+```cmd
+git config --global credential.helper store
+```
+
+The next time you enter credentials, they'll be saved.
+
+#### Step 5: Verify Remote Configuration
+
+```cmd
+cd C:\xampp\htdocs
+git remote -v
+```
+
+You should see your GitHub URL. If it shows Replit instead, update it:
+```cmd
+git remote set-url origin https://github.com/your-username/meterflo-server.git
+```
+
+### 10.2 Pull Latest Changes
 
 ```cmd
 cd C:\xampp\htdocs
 git pull origin main
 ```
 
-If you downloaded manually, re-download and extract the files.
+If you downloaded manually without Git, re-download and extract the files.
 
-### 10.2 Install Any New Dependencies
+### 10.3 Install Any New Dependencies
 
 ```cmd
 npm install
 ```
 
-### 10.3 Rebuild the Application
+### 10.4 Rebuild the Application
 
 ```cmd
 node_modules\.bin\tsx script/build.ts
 ```
 
-### 10.4 Restart the Application
+### 10.5 Restart the Application
 
 ```cmd
 pm2 restart meterflo
 ```
 
-### 10.5 Quick Update Command (All-in-One)
+### 10.6 Quick Update Command (All-in-One)
 
 ```cmd
 cd C:\xampp\htdocs && git pull origin main && npm install && node_modules\.bin\tsx script/build.ts && pm2 restart meterflo
