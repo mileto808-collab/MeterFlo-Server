@@ -12,6 +12,10 @@ export function getSession() {
     ttl: sessionTtl,
     tableName: "sessions",
   });
+  // In production with HTTPS, secure should be true
+  // For HTTP (local/dev or reverse proxy without SSL), secure must be false
+  const isSecure = process.env.COOKIE_SECURE === 'true';
+  
   return session({
     secret: process.env.SESSION_SECRET!,
     store: sessionStore,
@@ -19,7 +23,8 @@ export function getSession() {
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: true,
+      secure: isSecure,
+      sameSite: 'lax',
       maxAge: sessionTtl,
     },
   });
