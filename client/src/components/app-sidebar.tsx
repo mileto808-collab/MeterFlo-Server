@@ -90,8 +90,8 @@ export function AppSidebar() {
             <ClipboardList className="h-4 w-4 text-primary-foreground" />
           </div>
           <div className="flex flex-col">
-            <span className="font-semibold text-sm">WorkFlow Pro</span>
-            <span className="text-xs text-muted-foreground">Work Orders</span>
+            <span className="font-semibold text-sm">MeterFlo</span>
+            <span className="text-xs text-muted-foreground">Meter Work Orders</span>
           </div>
         </div>
       </SidebarHeader>

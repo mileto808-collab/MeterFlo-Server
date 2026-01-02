@@ -177,7 +177,7 @@ export default function Landing() {
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4 flex-wrap text-sm text-muted-foreground">
           <div className="flex items-center gap-2">
             <ClipboardList className="h-4 w-4" />
-            <span>WorkFlow Pro</span>
+            <span>MeterFlo</span>
           </div>
           <p>Powered by enterprise-grade infrastructure</p>
         </div>

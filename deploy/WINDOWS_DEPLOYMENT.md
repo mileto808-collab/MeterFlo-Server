@@ -1,6 +1,6 @@
-# Complete Windows Deployment Guide
+# Complete Windows Deployment Guide for MeterFlo
 
-This comprehensive guide walks you through deploying a Replit Node.js/Express/React web application on a Windows server with XAMPP/Apache, PostgreSQL, Git, and Node.js.
+This comprehensive guide walks you through deploying MeterFlo (or any Replit Node.js/Express/React web application) on a Windows server with XAMPP/Apache, PostgreSQL, Git, and Node.js.
 
 ---
 
@@ -102,13 +102,13 @@ Enter the postgres password you set during installation.
 Run these SQL commands (replace `your_password` with a strong password):
 ```sql
 -- Create a dedicated user for the application
-CREATE USER workflowpro_user WITH PASSWORD 'your_password';
+CREATE USER meterflo_user WITH PASSWORD 'your_password';
 
 -- Create the database
-CREATE DATABASE workflowpro OWNER workflowpro_user;
+CREATE DATABASE meterflo OWNER meterflo_user;
 
 -- Grant privileges
-GRANT ALL PRIVILEGES ON DATABASE workflowpro TO workflowpro_user;
+GRANT ALL PRIVILEGES ON DATABASE meterflo TO meterflo_user;
 
 -- Exit psql
 \q
@@ -133,7 +133,7 @@ If your password contains special characters, you must URL-encode them in the DA
 
 **Example:** If password is `Pa$$word#123`, the DATABASE_URL becomes:
 ```
-postgresql://workflowpro_user:Pa%24%24word%23123@localhost:5432/workflowpro
+postgresql://meterflo_user:Pa%24%24word%23123@localhost:5432/meterflo
 ```
 
 ### 3.3 Configure PostgreSQL for Local Connections
@@ -197,7 +197,7 @@ Create a `.env` file in `C:\xampp\htdocs\` or set as Windows System Environment 
 NODE_ENV=production
 HOST=127.0.0.1
 PORT=3000
-DATABASE_URL=postgresql://workflowpro_user:your_password@localhost:5432/workflowpro
+DATABASE_URL=postgresql://meterflo_user:your_password@localhost:5432/meterflo
 SESSION_SECRET=generate-a-random-64-character-string-here
 ```
 
@@ -206,7 +206,7 @@ SESSION_SECRET=generate-a-random-64-character-string-here
 NODE_ENV=production
 HOST=127.0.0.1
 PORT=3000
-DATABASE_URL=postgresql://workflowpro_user:your_password@localhost:5432/workflowpro
+DATABASE_URL=postgresql://meterflo_user:your_password@localhost:5432/meterflo
 SESSION_SECRET=generate-a-random-64-character-string-here
 COOKIE_SECURE=true
 ```
@@ -285,7 +285,7 @@ The file `deploy/ecosystem.config.cjs` is already configured. Verify the path ma
 module.exports = {
   apps: [
     {
-      name: 'workflowpro',
+      name: 'meterflo',
       script: 'dist/index.cjs',
       cwd: 'C:\\xampp\\htdocs',  // Adjust if your path is different
       env: {
@@ -312,7 +312,7 @@ pm2 start deploy/ecosystem.config.cjs
 pm2 list
 ```
 
-You should see `workflowpro` with status `online`.
+You should see `meterflo` with status `online`.
 
 Test direct access:
 ```cmd
@@ -370,8 +370,8 @@ Add to the end of `C:\xampp\apache\conf\httpd.conf`:
     SetEnv proxy-sendchunked 1
     
     # Logging
-    ErrorLog "logs/workflowpro-error.log"
-    CustomLog "logs/workflowpro-access.log" common
+    ErrorLog "logs/meterflo-error.log"
+    CustomLog "logs/meterflo-access.log" common
 </VirtualHost>
 ```
 
@@ -438,8 +438,8 @@ Edit `C:\xampp\apache\conf\extra\httpd-ssl.conf` or add to `httpd.conf`:
     SetEnv proxy-sendchunked 1
     
     # Logging
-    ErrorLog "logs/workflowpro-ssl-error.log"
-    CustomLog "logs/workflowpro-ssl-access.log" common
+    ErrorLog "logs/meterflo-ssl-error.log"
+    CustomLog "logs/meterflo-ssl-access.log" common
 </VirtualHost>
 ```
 
@@ -464,7 +464,7 @@ After enabling HTTPS, set the cookie to be secure:
 
 2. Restart PM2:
    ```cmd
-   pm2 restart workflowpro
+   pm2 restart meterflo
    ```
 
 ### 9.6 Restart Apache
@@ -501,13 +501,13 @@ node_modules\.bin\tsx script/build.ts
 ### 10.4 Restart the Application
 
 ```cmd
-pm2 restart workflowpro
+pm2 restart meterflo
 ```
 
 ### 10.5 Quick Update Command (All-in-One)
 
 ```cmd
-cd C:\xampp\htdocs && git pull origin main && npm install && node_modules\.bin\tsx script/build.ts && pm2 restart workflowpro
+cd C:\xampp\htdocs && git pull origin main && npm install && node_modules\.bin\tsx script/build.ts && pm2 restart meterflo
 ```
 
 ---
@@ -519,12 +519,12 @@ cd C:\xampp\htdocs && git pull origin main && npm install && node_modules\.bin\t
 | Command | Description |
 |---------|-------------|
 | `pm2 list` | Show all running processes |
-| `pm2 logs workflowpro` | View live application logs |
-| `pm2 logs workflowpro --lines 100` | View last 100 log lines |
-| `pm2 restart workflowpro` | Restart the application |
-| `pm2 stop workflowpro` | Stop the application |
-| `pm2 start workflowpro` | Start the application |
-| `pm2 delete workflowpro` | Remove from PM2 |
+| `pm2 logs meterflo` | View live application logs |
+| `pm2 logs meterflo --lines 100` | View last 100 log lines |
+| `pm2 restart meterflo` | Restart the application |
+| `pm2 stop meterflo` | Stop the application |
+| `pm2 start meterflo` | Start the application |
+| `pm2 delete meterflo` | Remove from PM2 |
 | `pm2 monit` | Real-time monitoring dashboard |
 | `pm2 save` | Save current process list |
 | `pm2 resurrect` | Restore saved process list |
@@ -534,7 +534,7 @@ cd C:\xampp\htdocs && git pull origin main && npm install && node_modules\.bin\t
 | Command | Description |
 |---------|-------------|
 | `psql -U postgres` | Connect as superuser |
-| `psql -U workflowpro_user -d workflowpro` | Connect as app user |
+| `psql -U meterflo_user -d meterflo` | Connect as app user |
 | `\l` | List all databases |
 | `\dt` | List tables in current database |
 | `\q` | Exit psql |
@@ -572,18 +572,18 @@ cd C:\xampp\htdocs && git pull origin main && npm install && node_modules\.bin\t
 
 2. **Session secret not set:**
    - Verify `SESSION_SECRET` environment variable is set
-   - Restart PM2 after setting: `pm2 restart workflowpro`
+   - Restart PM2 after setting: `pm2 restart meterflo`
 
 3. **Database connection issue:**
    - Check `DATABASE_URL` is correct
    - Verify PostgreSQL is running
-   - Check PM2 logs: `pm2 logs workflowpro`
+   - Check PM2 logs: `pm2 logs meterflo`
 
 ### Application Won't Start
 
 **Check PM2 logs:**
 ```cmd
-pm2 logs workflowpro --lines 50
+pm2 logs meterflo --lines 50
 ```
 
 **Common issues:**
@@ -616,7 +616,7 @@ pm2 logs workflowpro --lines 50
 
 4. **Check Apache error logs:**
    - `C:\xampp\apache\logs\error.log`
-   - `C:\xampp\apache\logs\workflowpro-error.log`
+   - `C:\xampp\apache\logs\meterflo-error.log`
 
 ### Database Connection Errors
 
@@ -712,12 +712,12 @@ cd C:\xampp\htdocs
 git pull origin main
 npm install
 node_modules\.bin\tsx script/build.ts
-pm2 restart workflowpro
+pm2 restart meterflo
 ```
 
 ### Daily Operations
 ```cmd
 pm2 list                    # Check status
-pm2 logs workflowpro        # View logs
-pm2 restart workflowpro     # Restart if needed
+pm2 logs meterflo        # View logs
+pm2 restart meterflo     # Restart if needed
 ```

@@ -1,7 +1,7 @@
-# WorkFlow Pro - Work Order Management System
+# MeterFlo - Utility Meter Work Order Management System
 
 ## Overview
-WorkFlow Pro is a full-stack work order management system designed for field operations, offering role-based access control (RBAC) to create, assign, track, and manage work orders across projects. It features a modern React frontend, a Node.js/Express backend, PostgreSQL for data persistence, and Replit Auth for secure authentication. The system supports multi-tenancy with per-project database schemas, customizable work order statuses, advanced search and reporting capabilities, and robust file management, aiming to streamline field service operations for businesses.
+MeterFlo is a full-stack utility meter work order management system designed for field operations, offering role-based access control (RBAC) to create, assign, track, and manage meter work orders across projects. It features a modern React frontend, a Node.js/Express backend, PostgreSQL for data persistence, and Replit Auth for secure authentication. The system supports multi-tenancy with per-project database schemas, customizable work order statuses, advanced search and reporting capabilities, and robust file management, aiming to streamline field service operations for businesses.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
