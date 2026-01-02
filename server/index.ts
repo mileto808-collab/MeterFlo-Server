@@ -7,6 +7,11 @@ import { fileImportScheduler } from "./fileImportScheduler";
 import { storage } from "./storage";
 
 const app = express();
+
+// Trust reverse proxy (Apache, nginx) for proper session handling
+// This is required for sessions to work when behind a reverse proxy
+app.set('trust proxy', 1);
+
 const httpServer = createServer(app);
 
 declare module "http" {
