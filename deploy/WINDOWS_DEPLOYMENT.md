@@ -30,8 +30,10 @@ Before starting, ensure you have administrator access to your Windows server.
 |----------|-----------------|---------|
 | Node.js | 18.x or higher | JavaScript runtime |
 | PostgreSQL | 14.x or higher | Database server |
-| Git | 2.x or higher | Version control |
+| Git for Windows | 2.x or higher | Version control + Git Bash shell |
 | XAMPP | 8.x or higher | Apache web server |
+
+> **Note:** Git for Windows includes Git Bash, a Unix-like shell that can help resolve compatibility issues with certain npm/npx commands on Windows.
 
 ---
 
@@ -61,14 +63,18 @@ Before starting, ensure you have administrator access to your Windows server.
    psql --version
    ```
 
-### 2.3 Install Git
+### 2.3 Install Git for Windows (includes Git Bash)
 
 1. Download from: https://git-scm.com/download/win
 2. Run the installer with default options
+   - **Important:** Keep "Git Bash Here" option checked (default)
+   - This installs Git Bash, which provides Unix-like shell utilities
 3. Verify installation:
    ```cmd
    git --version
    ```
+
+> **Tip:** Most commands work in Command Prompt, but if you encounter issues with `npx` or build scripts, try running them in Git Bash instead.
 
 ### 2.4 Install XAMPP
 
