@@ -256,7 +256,7 @@ The build process compiles TypeScript and bundles the application:
 
 ```cmd
 cd C:\xampp\htdocs
-node_modules\.bin\tsx script/build.ts
+npx tsx script/build.ts
 ```
 
 This creates the `dist/` folder containing:
@@ -526,27 +526,31 @@ git remote set-url origin https://github.com/your-username/meterflo-server.git
 git remote -v
 ```
 
-**For private repositories**, use a Personal Access Token:
+**For private repositories**, use a Personal Access Token (PAT):
 
 1. Generate a token at: GitHub → Settings → Developer settings → Personal access tokens → Tokens (classic)
 2. Select scopes: `repo` (full control of private repositories)
-3. For new installations, clone with the token:
-   ```cmd
-   git clone https://your-username:YOUR_TOKEN@github.com/your-username/meterflo-server.git htdocs
-   ```
-4. For existing installations, update the remote URL with the token:
-   ```cmd
-   git remote set-url origin https://your-username:YOUR_TOKEN@github.com/your-username/meterflo-server.git
-   ```
+3. Copy and save the token securely (you won't see it again)
 
-#### Step 4: Save Git Credentials (Optional)
+When you run `git clone` or `git pull`, Git will prompt for credentials:
+- **Username**: Your GitHub username
+- **Password**: Paste your Personal Access Token (not your GitHub password)
 
-To avoid re-entering credentials on every pull:
+#### Step 4: Save Git Credentials (Recommended)
+
+Use Git Credential Manager to securely save your credentials:
+```cmd
+git config --global credential.helper manager
+```
+
+On the next `git clone` or `git pull`, a popup window will appear for GitHub authentication. Sign in once, and your credentials are saved securely.
+
+**Alternative**: Use the store helper (saves credentials in plain text):
 ```cmd
 git config --global credential.helper store
 ```
 
-The next time you enter credentials, they'll be saved.
+The next time you enter credentials, they'll be saved to `~/.git-credentials`.
 
 #### Step 5: Verify Remote Configuration
 
@@ -578,7 +582,7 @@ npm install
 ### 10.4 Rebuild the Application
 
 ```cmd
-node_modules\.bin\tsx script/build.ts
+npx tsx script/build.ts
 ```
 
 ### 10.5 Restart the Application
@@ -590,7 +594,7 @@ pm2 restart meterflo
 ### 10.6 Quick Update Command (All-in-One)
 
 ```cmd
-cd C:\xampp\htdocs && git pull origin main && npm install && node_modules\.bin\tsx script/build.ts && pm2 restart meterflo
+cd C:\xampp\htdocs && git pull origin main && npm install && npx tsx script/build.ts && pm2 restart meterflo
 ```
 
 ---
@@ -635,7 +639,7 @@ cd C:\xampp\htdocs && git pull origin main && npm install && node_modules\.bin\t
 
 | Command | Description |
 |---------|-------------|
-| `node_modules\.bin\tsx script/build.ts` | Build the application |
+| `npx tsx script/build.ts` | Build the application |
 | `npm install` | Install dependencies |
 | `npm ci` | Clean install dependencies |
 
@@ -672,7 +676,7 @@ pm2 logs meterflo --lines 50
 **Common issues:**
 
 1. **Missing dist/index.cjs:**
-   - Run the build: `node_modules\.bin\tsx script/build.ts`
+   - Run the build: `npx tsx script/build.ts`
 
 2. **Port already in use:**
    - Check if another process is using port 3000:
@@ -780,7 +784,7 @@ pm2 logs meterflo --lines 50
 4. git clone <repo-url> C:\xampp\htdocs
 5. cd C:\xampp\htdocs && npm install
 6. Set environment variables
-7. node_modules\.bin\tsx script/build.ts
+7. npx tsx script/build.ts
 8. mkdir logs
 9. pm2 start deploy/ecosystem.config.cjs
 10. pm2 save && pm2-startup install
@@ -794,7 +798,7 @@ pm2 logs meterflo --lines 50
 cd C:\xampp\htdocs
 git pull origin main
 npm install
-node_modules\.bin\tsx script/build.ts
+npx tsx script/build.ts
 pm2 restart meterflo
 ```
 
