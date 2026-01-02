@@ -37,7 +37,12 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: 3000,
         HOST: '127.0.0.1',
-        // Database connection (uses existing DATABASE_URL from system env)
+        // Database connection - UPDATE THIS with your PostgreSQL credentials
+        DATABASE_URL: 'postgresql://postgres:fa713777@localhost:5000/meterflo',
+        // Session secret - UPDATE THIS with a random 64-character string
+        SESSION_SECRET: 'change-this-to-a-random-64-character-secret-string-for-production',
+        // Cookie settings for HTTP (set to 'true' if using HTTPS)
+        COOKIE_SECURE: 'false',
       },
       
       // Process management
