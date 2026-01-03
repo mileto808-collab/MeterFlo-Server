@@ -26,6 +26,7 @@ import SearchReports from "@/pages/search-reports";
 import Maintenance from "@/pages/maintenance";
 import Users from "@/pages/users";
 import Settings from "@/pages/settings";
+import Documentation from "@/pages/documentation";
 import NotFound from "@/pages/not-found";
 
 function LoadingScreen() {
@@ -79,6 +80,10 @@ function AuthenticatedRouter() {
       
       {hasPermission("nav.settings") && (
         <Route path="/settings" component={Settings} />
+      )}
+      
+      {role === "admin" && (
+        <Route path="/documentation" component={Documentation} />
       )}
       
       {(role === "admin" || role === "user") && (
