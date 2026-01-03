@@ -43,32 +43,32 @@ export default function Landing() {
     {
       icon: ClipboardList,
       title: "Work Order Management",
-      description: "Create, assign, and track work orders with real-time status updates",
+      description: "Create, schedule, assign, and track work orders with real-time status updates.",
     },
     {
       icon: Smartphone,
       title: "Mobile Integration",
-      description: "Sync work orders with mobile apps for field technicians",
+      description: "Work orders assigned to individual meter installers, or groups of installers have their work orders AutoSynced to their mobile devices. Works offline. Data is saved persistently. Work orders are AutoSync when the device is back online.",
     },
     {
       icon: Shield,
       title: "Role-Based Access",
-      description: "Control who can view, edit, or manage work orders",
+      description: "Control who can view, edit work orders, manage projects, or run reports.",
     },
     {
       icon: FileUp,
       title: "Data Import",
-      description: "Import work orders from CSV or JSON files",
+      description: "Import work orders from CSV, Excel, or JSON files. REST API capable. Automated imports/exports. Backend data integration.",
     },
     {
       icon: Users,
       title: "Customer Portal",
-      description: "Customers can view completed work orders for their projects",
+      description: "Customers can view work orders, check work order status, resolve trouble work orders, upload or retrieve data files, and check on the progress of their projects, by running reports.",
     },
     {
       icon: BarChart3,
       title: "Admin Dashboard",
-      description: "Comprehensive tools for user and system management",
+      description: "Comprehensive tools for user and system management. Configure scheduled imports per project. Backup and Restore tools. And, more...",
     },
   ];
 
