@@ -149,9 +149,7 @@ export default function Landing() {
 
         <section className="py-16 px-6 bg-muted/30">
           <div className="max-w-7xl mx-auto">
-            <h2 className="text-3xl font-bold text-center mb-12">
-              Everything You Need
-            </h2>
+            <h2 className="text-3xl font-bold text-center mb-12">Smart Utility Seamless Changeout</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {features.map((feature) => (
                 <Card key={feature.title} className="hover-elevate">
