@@ -16,6 +16,7 @@ import { ExternalDatabaseService } from "./externalDbService";
 import { createBackupArchive, extractDatabaseBackupFromArchive, restoreFullSystem, restoreFilesFromArchive } from "./systemBackup";
 import { createPgBackupArchive, extractBackupFromArchive, restorePgBackup, restoreFilesFromPgArchive } from "./pgBackup";
 import { projectEventEmitter, emitWorkOrderCreated, emitWorkOrderUpdated, emitWorkOrderDeleted, emitFileAdded, emitFileDeleted, type ProjectEvent } from "./eventEmitter";
+import { sendWorkOrderToCustomerApi } from "./customerApiService";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -3214,6 +3215,9 @@ export async function registerRoutes(
         case "mobile-api":
           filePath = path.join(process.cwd(), "MOBILE_API.md");
           break;
+        case "customer-api":
+          filePath = path.join(process.cwd(), "CUSTOMER_API_INTEGRATION.md");
+          break;
         default:
           return res.status(404).json({ message: "Documentation not found" });
       }
@@ -5509,6 +5513,23 @@ export async function registerRoutes(
       // Trigger webhook if configured
       await triggerProjectWebhook(project, "work_order.completed", updatedWorkOrder, currentUser);
       
+      // Send to customer API if configured and work order is completed
+      if (canChange && updatedWorkOrder) {
+        const woFolderPath = path.join(
+          await getProjectFilesPath(),
+          getProjectDirectoryName(project.name, project.id),
+          "Work Orders",
+          folderName
+        );
+        
+        sendWorkOrderToCustomerApi(projectId, updatedWorkOrder, {
+          beforePhoto: existsSync(path.join(woFolderPath, "before")) ? path.join(woFolderPath, "before") : null,
+          afterPhoto: existsSync(path.join(woFolderPath, "after")) ? path.join(woFolderPath, "after") : null,
+          signature: existsSync(path.join(woFolderPath, `${folderName}-signature.png`)) ? path.join(woFolderPath, `${folderName}-signature.png`) : null,
+          workOrderFolderPath: woFolderPath,
+        }).catch(err => console.error("[CustomerAPI] Background send failed:", err));
+      }
+      
       res.json({
         success: true,
         workOrder: updatedWorkOrder,
@@ -5854,6 +5875,24 @@ export async function registerRoutes(
       
       // Trigger webhook if configured
       await triggerProjectWebhook(project, "work_order.completed", updatedWorkOrder, currentUser);
+      
+      // Send to customer API if configured
+      if (updatedWorkOrder) {
+        const woFolderPath = path.join(
+          await getProjectFilesPath(),
+          getProjectDirectoryName(project.name, project.id),
+          "Work Orders",
+          folderName
+        );
+        const signatureFilePath = path.join(woFolderPath, `${folderName}-signature.png`);
+        
+        sendWorkOrderToCustomerApi(projectId, updatedWorkOrder, {
+          beforePhoto: null,
+          afterPhoto: null,
+          signature: existsSync(signatureFilePath) ? signatureFilePath : null,
+          workOrderFolderPath: woFolderPath,
+        }).catch(err => console.error("[CustomerAPI] Background send failed:", err));
+      }
       
       res.json({
         success: true,

@@ -8,13 +8,15 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import type { Project } from "@shared/schema";
-import { ArrowLeft, Save, Loader2 } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Globe } from "lucide-react";
 
 const projectFormSchema = z.object({
   name: z.string().min(1, "Name is required").max(255),
@@ -26,6 +28,12 @@ const projectFormSchema = z.object({
   state: z.string().max(50).optional().or(z.literal("")),
   zip: z.string().max(20).optional().or(z.literal("")),
   notes: z.string().optional().or(z.literal("")),
+  customerApiEnabled: z.boolean().optional().default(false),
+  customerApiUrl: z.string().max(500).optional().or(z.literal("")),
+  customerApiAuthType: z.enum(["none", "api_key", "bearer_token", "basic_auth"]).optional().default("none"),
+  customerApiKeyHeader: z.string().max(100).optional().or(z.literal("")),
+  customerApiSecretEnvVar: z.string().max(100).optional().or(z.literal("")),
+  customerApiSendPhotos: z.boolean().optional().default(true),
 });
 
 type ProjectFormValues = z.infer<typeof projectFormSchema>;
@@ -45,7 +53,23 @@ export default function ProjectForm() {
 
   const form = useForm<ProjectFormValues>({
     resolver: zodResolver(projectFormSchema),
-    defaultValues: { name: "", description: "", customerEmail: "", phone: "", address: "", city: "", state: "", zip: "", notes: "" },
+    defaultValues: { 
+      name: "", 
+      description: "", 
+      customerEmail: "", 
+      phone: "", 
+      address: "", 
+      city: "", 
+      state: "", 
+      zip: "", 
+      notes: "",
+      customerApiEnabled: false,
+      customerApiUrl: "",
+      customerApiAuthType: "none",
+      customerApiKeyHeader: "",
+      customerApiSecretEnvVar: "",
+      customerApiSendPhotos: true,
+    },
   });
 
   useEffect(() => {
@@ -60,6 +84,12 @@ export default function ProjectForm() {
         state: project.state || "",
         zip: project.zip || "",
         notes: project.notes || "",
+        customerApiEnabled: project.customerApiEnabled || false,
+        customerApiUrl: project.customerApiUrl || "",
+        customerApiAuthType: (project.customerApiAuthType as "none" | "api_key" | "bearer_token" | "basic_auth") || "none",
+        customerApiKeyHeader: project.customerApiKeyHeader || "",
+        customerApiSecretEnvVar: project.customerApiSecretEnvVar || "",
+        customerApiSendPhotos: project.customerApiSendPhotos !== false,
       });
     }
   }, [project, form]);
@@ -263,6 +293,153 @@ export default function ProjectForm() {
                   </FormItem>
                 )}
               />
+
+              <div className="border-t pt-6 mt-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <Globe className="h-5 w-5 text-muted-foreground" />
+                  <h3 className="text-lg font-medium">Customer API Integration</h3>
+                </div>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Configure outbound API calls to push work order data to the customer's backend system when meter changeouts are completed.
+                </p>
+
+                <FormField
+                  control={form.control}
+                  name="customerApiEnabled"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center justify-between rounded-lg border p-4 mb-4">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base">Enable Customer API</FormLabel>
+                        <FormDescription>
+                          Send work order data to the customer's backend when completed
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                          data-testid="switch-customer-api-enabled"
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+
+                {form.watch("customerApiEnabled") && (
+                  <div className="space-y-4 pl-4 border-l-2 border-muted">
+                    <FormField
+                      control={form.control}
+                      name="customerApiUrl"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>API Endpoint URL</FormLabel>
+                          <FormControl>
+                            <Input 
+                              placeholder="https://api.customer.com/work-orders" 
+                              {...field} 
+                              data-testid="input-customer-api-url" 
+                            />
+                          </FormControl>
+                          <FormDescription>The URL to POST work order data to</FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="customerApiAuthType"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Authentication Type</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-customer-api-auth-type">
+                                <SelectValue placeholder="Select authentication type" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="none">No Authentication</SelectItem>
+                              <SelectItem value="api_key">API Key (Header)</SelectItem>
+                              <SelectItem value="bearer_token">Bearer Token</SelectItem>
+                              <SelectItem value="basic_auth">Basic Authentication</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {form.watch("customerApiAuthType") === "api_key" && (
+                      <FormField
+                        control={form.control}
+                        name="customerApiKeyHeader"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>API Key Header Name</FormLabel>
+                            <FormControl>
+                              <Input 
+                                placeholder="X-API-Key" 
+                                {...field} 
+                                data-testid="input-customer-api-key-header" 
+                              />
+                            </FormControl>
+                            <FormDescription>The header name for the API key</FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+
+                    {form.watch("customerApiAuthType") !== "none" && (
+                      <FormField
+                        control={form.control}
+                        name="customerApiSecretEnvVar"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Secret Environment Variable</FormLabel>
+                            <FormControl>
+                              <Input 
+                                placeholder="PROJECT_1_API_SECRET" 
+                                {...field} 
+                                data-testid="input-customer-api-secret-env-var" 
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              Name of the environment variable containing the API secret. 
+                              Store the actual secret in your server's environment variables.
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    )}
+
+                    <FormField
+                      control={form.control}
+                      name="customerApiSendPhotos"
+                      render={({ field }) => (
+                        <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                          <div className="space-y-0.5">
+                            <FormLabel className="text-base">Include Photos</FormLabel>
+                            <FormDescription>
+                              Send before/after photos and signature as base64 data
+                            </FormDescription>
+                          </div>
+                          <FormControl>
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                              data-testid="switch-customer-api-send-photos"
+                            />
+                          </FormControl>
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                )}
+              </div>
+
               <div className="flex items-center justify-end gap-4 pt-4">
                 <Link href="/projects">
                   <Button variant="outline" type="button" data-testid="button-cancel">Cancel</Button>
