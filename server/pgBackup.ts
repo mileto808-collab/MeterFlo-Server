@@ -33,21 +33,34 @@ function getPgToolPath(toolName: string): string {
   const isWindows = process.platform === "win32";
   const exeName = isWindows ? `${toolName}.exe` : toolName;
   
+  // Try to find via system command first
   try {
     const findCmd = isWindows ? `where ${exeName}` : `which ${toolName}`;
-    const result = execSync(findCmd, { encoding: "utf-8" }).trim();
+    const result = execSync(findCmd, { encoding: "utf-8", windowsHide: true });
     if (result) {
-      const firstPath = result.split("\n")[0].trim();
-      if (firstPath) return firstPath;
+      // Windows uses \r\n, need to handle both line endings
+      const lines = result.split(/\r?\n/).filter(line => line.trim());
+      if (lines.length > 0) {
+        const foundPath = lines[0].trim();
+        // Verify the path actually exists
+        if (fs.existsSync(foundPath)) {
+          console.log(`[Backup] Found ${toolName} via system command at: ${foundPath}`);
+          return foundPath;
+        }
+      }
     }
-  } catch {}
+  } catch (err: any) {
+    console.log(`[Backup] System command failed to find ${toolName}: ${err.message}`);
+  }
   
+  // Try standard installation paths
   if (isWindows) {
     const windowsPaths = [
       `C:\\Program Files\\PostgreSQL\\17\\bin\\${exeName}`,
       `C:\\Program Files\\PostgreSQL\\16\\bin\\${exeName}`,
       `C:\\Program Files\\PostgreSQL\\15\\bin\\${exeName}`,
       `C:\\Program Files\\PostgreSQL\\14\\bin\\${exeName}`,
+      `C:\\Program Files\\PostgreSQL\\13\\bin\\${exeName}`,
       `C:\\Program Files (x86)\\PostgreSQL\\17\\bin\\${exeName}`,
       `C:\\Program Files (x86)\\PostgreSQL\\16\\bin\\${exeName}`,
       `C:\\Program Files (x86)\\PostgreSQL\\15\\bin\\${exeName}`,
@@ -55,8 +68,12 @@ function getPgToolPath(toolName: string): string {
     ];
     
     for (const p of windowsPaths) {
-      if (fs.existsSync(p)) return p;
+      if (fs.existsSync(p)) {
+        console.log(`[Backup] Found ${toolName} at standard path: ${p}`);
+        return p;
+      }
     }
+    console.log(`[Backup] ${toolName} not found in standard Windows paths`);
   } else {
     const linuxPaths = [
       `/usr/bin/${toolName}`,
@@ -64,13 +81,18 @@ function getPgToolPath(toolName: string): string {
       `/usr/lib/postgresql/14/bin/${toolName}`,
       `/usr/lib/postgresql/15/bin/${toolName}`,
       `/usr/lib/postgresql/16/bin/${toolName}`,
+      `/usr/lib/postgresql/17/bin/${toolName}`,
     ];
     
     for (const p of linuxPaths) {
-      if (fs.existsSync(p)) return p;
+      if (fs.existsSync(p)) {
+        console.log(`[Backup] Found ${toolName} at standard path: ${p}`);
+        return p;
+      }
     }
   }
   
+  console.log(`[Backup] WARNING: ${toolName} not found, will try using bare command: ${exeName}`);
   return exeName;
 }
 
@@ -82,15 +104,24 @@ async function runPgCommand(
 ): Promise<{ success: boolean; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     const toolPath = getPgToolPath(command);
+    const isWindows = process.platform === "win32";
     let stdout = "";
     let stderr = "";
     
+    console.log(`[Backup] Running ${command} from: ${toolPath}`);
+    
     const options: any = {
       env: { ...process.env, ...env },
-      stdio: outputFile ? ["pipe", "pipe", "pipe"] : ["pipe", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
+      // Use shell on Windows to handle paths with spaces and proper PATH resolution
+      shell: isWindows,
+      windowsHide: true,
     };
     
-    const proc = spawn(toolPath, args, options);
+    // On Windows with shell mode, quote paths that contain spaces
+    const execPath = isWindows && toolPath.includes(" ") ? `"${toolPath}"` : toolPath;
+    
+    const proc = spawn(execPath, args, options);
     
     let outputStream: fs.WriteStream | null = null;
     if (outputFile) {
@@ -117,14 +148,18 @@ async function runPgCommand(
       });
     });
     
-    proc.on("error", (err) => {
+    proc.on("error", (err: any) => {
       if (outputStream) {
         outputStream.close();
       }
+      const errorDetail = err.code === "ENOENT" 
+        ? `PostgreSQL tool '${command}' could not be executed. Path tried: ${toolPath}. Ensure PostgreSQL client tools are installed and accessible.`
+        : err.message;
+      console.error(`[Backup] Process spawn error for ${command}:`, errorDetail);
       resolve({
         success: false,
         stdout,
-        stderr: stderr + "\n" + err.message,
+        stderr: stderr + "\n" + errorDetail,
       });
     });
   });
