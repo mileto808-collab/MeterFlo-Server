@@ -71,6 +71,10 @@ export const users = pgTable("users", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Customer API auth types
+export const customerApiAuthTypes = ["none", "api_key", "bearer_token", "basic_auth"] as const;
+export type CustomerApiAuthType = (typeof customerApiAuthTypes)[number];
+
 // Projects table - for customer organization with per-project database support
 export const projects = pgTable("projects", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -87,6 +91,12 @@ export const projects = pgTable("projects", {
   isActive: boolean("is_active").default(true),
   webhookUrl: varchar("webhook_url", { length: 500 }),
   webhookEnabled: boolean("webhook_enabled").default(false),
+  customerApiEnabled: boolean("customer_api_enabled").default(false),
+  customerApiUrl: varchar("customer_api_url", { length: 500 }),
+  customerApiAuthType: varchar("customer_api_auth_type", { length: 20 }).default("none"),
+  customerApiKeyHeader: varchar("customer_api_key_header", { length: 100 }),
+  customerApiSecretEnvVar: varchar("customer_api_secret_env_var", { length: 100 }),
+  customerApiSendPhotos: boolean("customer_api_send_photos").default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -121,6 +131,23 @@ export const userGroupProjects = pgTable("user_group_projects", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   groupId: integer("group_id").notNull().references(() => userGroups.id, { onDelete: "cascade" }),
   projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Customer API Logs - tracks outbound API calls to customer backends
+export const customerApiLogs = pgTable("customer_api_logs", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  workOrderId: integer("work_order_id"),
+  customerWoId: varchar("customer_wo_id", { length: 100 }),
+  requestUrl: varchar("request_url", { length: 500 }).notNull(),
+  requestMethod: varchar("request_method", { length: 10 }).notNull().default("POST"),
+  requestPayload: text("request_payload"),
+  responseStatus: integer("response_status"),
+  responseBody: text("response_body"),
+  success: boolean("success").default(false),
+  errorMessage: text("error_message"),
+  retryCount: integer("retry_count").default(0),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -431,6 +458,12 @@ export const insertProjectSchema = z.object({
   state: z.string().max(50).optional().nullable(),
   zip: z.string().max(20).optional().nullable(),
   notes: z.string().optional().nullable(),
+  customerApiEnabled: z.boolean().optional().default(false),
+  customerApiUrl: z.string().max(500).optional().nullable(),
+  customerApiAuthType: z.enum(["none", "api_key", "bearer_token", "basic_auth"]).optional().default("none"),
+  customerApiKeyHeader: z.string().max(100).optional().nullable(),
+  customerApiSecretEnvVar: z.string().max(100).optional().nullable(),
+  customerApiSendPhotos: z.boolean().optional().default(true),
 });
 
 export const insertSubroleSchema = z.object({
@@ -623,6 +656,22 @@ export type InsertUserGroupMember = z.infer<typeof insertUserGroupMemberSchema>;
 
 export type UserGroupProject = typeof userGroupProjects.$inferSelect;
 export type InsertUserGroupProject = z.infer<typeof insertUserGroupProjectSchema>;
+
+export type CustomerApiLog = typeof customerApiLogs.$inferSelect;
+export const insertCustomerApiLogSchema = z.object({
+  projectId: z.number(),
+  workOrderId: z.number().optional().nullable(),
+  customerWoId: z.string().max(100).optional().nullable(),
+  requestUrl: z.string().max(500),
+  requestMethod: z.string().max(10).optional().default("POST"),
+  requestPayload: z.string().optional().nullable(),
+  responseStatus: z.number().optional().nullable(),
+  responseBody: z.string().optional().nullable(),
+  success: z.boolean().optional().default(false),
+  errorMessage: z.string().optional().nullable(),
+  retryCount: z.number().optional().default(0),
+});
+export type InsertCustomerApiLog = z.infer<typeof insertCustomerApiLogSchema>;
 
 export type UserColumnPreferences = typeof userColumnPreferences.$inferSelect;
 export type InsertUserColumnPreferences = z.infer<typeof insertUserColumnPreferencesSchema>;
