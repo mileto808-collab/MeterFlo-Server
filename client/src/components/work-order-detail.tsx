@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { apiRequest } from "@/lib/queryClient";
-import { UseFormReturn } from "react-hook-form";
+import { UseFormReturn, useWatch } from "react-hook-form";
 import { Link } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -110,8 +110,9 @@ export function WorkOrderDetail({
   const autoLaunchTriggered = useRef(false);
   
   // Watch form fields for header display - ensures UI updates immediately when form values change
-  const watchedAssignedUserId = form.watch('assignedUserId');
-  const watchedScheduledAt = form.watch('scheduledAt');
+  // Using useWatch hook for proper subscription to form updates
+  const watchedAssignedUserId = useWatch({ control: form.control, name: 'assignedUserId' });
+  const watchedScheduledAt = useWatch({ control: form.control, name: 'scheduledAt' });
 
   // Claim work order and open meter changeout wizard
   const handleStartMeterChangeout = useCallback(async () => {
