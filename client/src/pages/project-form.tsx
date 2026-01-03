@@ -16,7 +16,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import type { Project } from "@shared/schema";
-import { ArrowLeft, Save, Loader2, Globe } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Globe, Clock } from "lucide-react";
 
 const projectFormSchema = z.object({
   name: z.string().min(1, "Name is required").max(255),
@@ -34,6 +34,9 @@ const projectFormSchema = z.object({
   customerApiKeyHeader: z.string().max(100).optional().or(z.literal("")),
   customerApiSecretEnvVar: z.string().max(100).optional().or(z.literal("")),
   customerApiSendPhotos: z.boolean().optional().default(true),
+  operationalHoursEnabled: z.boolean().optional().default(false),
+  operationalHoursStart: z.string().max(10).optional().or(z.literal("")),
+  operationalHoursEnd: z.string().max(10).optional().or(z.literal("")),
 });
 
 type ProjectFormValues = z.infer<typeof projectFormSchema>;
@@ -69,6 +72,9 @@ export default function ProjectForm() {
       customerApiKeyHeader: "",
       customerApiSecretEnvVar: "",
       customerApiSendPhotos: true,
+      operationalHoursEnabled: false,
+      operationalHoursStart: "",
+      operationalHoursEnd: "",
     },
   });
 
@@ -90,6 +96,9 @@ export default function ProjectForm() {
         customerApiKeyHeader: project.customerApiKeyHeader || "",
         customerApiSecretEnvVar: project.customerApiSecretEnvVar || "",
         customerApiSendPhotos: project.customerApiSendPhotos !== false,
+        operationalHoursEnabled: project.operationalHoursEnabled || false,
+        operationalHoursStart: project.operationalHoursStart || "",
+        operationalHoursEnd: project.operationalHoursEnd || "",
       });
     }
   }, [project, form]);
@@ -436,6 +445,81 @@ export default function ProjectForm() {
                         </FormItem>
                       )}
                     />
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t pt-6 mt-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <Clock className="h-5 w-5 text-muted-foreground" />
+                  <h3 className="text-lg font-medium">Operational Hours</h3>
+                </div>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Set the daily operational hours for this project. Work orders can only be scheduled within these hours.
+                </p>
+
+                <FormField
+                  control={form.control}
+                  name="operationalHoursEnabled"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center justify-between rounded-lg border p-4 mb-4">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base">Enable Operational Hours</FormLabel>
+                        <FormDescription>
+                          Restrict work order scheduling to specific hours
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                          data-testid="switch-operational-hours-enabled"
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+
+                {form.watch("operationalHoursEnabled") && (
+                  <div className="space-y-4 pl-4 border-l-2 border-muted">
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="operationalHoursStart"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Start Time</FormLabel>
+                            <FormControl>
+                              <Input 
+                                type="time" 
+                                {...field} 
+                                data-testid="input-operational-hours-start" 
+                              />
+                            </FormControl>
+                            <FormDescription>When operations begin</FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="operationalHoursEnd"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>End Time</FormLabel>
+                            <FormControl>
+                              <Input 
+                                type="time" 
+                                {...field} 
+                                data-testid="input-operational-hours-end" 
+                              />
+                            </FormControl>
+                            <FormDescription>When operations end</FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
                   </div>
                 )}
               </div>
