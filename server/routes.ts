@@ -20,6 +20,19 @@ import { sendWorkOrderToCustomerApi } from "./customerApiService";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
+async function getTimezoneFormattedTimestamp(): Promise<string> {
+  const timezone = await storage.getSetting("default_timezone") || "America/Denver";
+  return new Date().toLocaleString('en-US', {
+    month: '2-digit',
+    day: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: true,
+    timeZone: timezone
+  });
+}
+
 async function initializeAdminUser() {
   const existingAdmin = await storage.getUserByUsername("admin");
   if (!existingAdmin) {
@@ -2504,9 +2517,10 @@ export async function registerRoutes(
         
         // Add completion notes if provided
         if (completionNotes && completionNotes.trim()) {
+          const timestamp = await getTimezoneFormattedTimestamp();
           updateData.notes = workOrder.notes 
-            ? `${workOrder.notes}\n\n[Meter Changeout Notes - ${new Date().toLocaleString()}]\n${completionNotes.trim()}`
-            : `[Meter Changeout Notes - ${new Date().toLocaleString()}]\n${completionNotes.trim()}`;
+            ? `${workOrder.notes}\n\n[Meter Changeout Notes - ${timestamp}]\n${completionNotes.trim()}`
+            : `[Meter Changeout Notes - ${timestamp}]\n${completionNotes.trim()}`;
         }
         
         // Get the "Completed" status from system
@@ -2524,9 +2538,10 @@ export async function registerRoutes(
         
         updateData.trouble = troubleCode;
         if (troubleNote) {
+          const timestamp = await getTimezoneFormattedTimestamp();
           updateData.notes = workOrder.notes 
-            ? `${workOrder.notes}\n\n[Trouble Report - ${new Date().toLocaleString()}]\n${troubleNote}`
-            : `[Trouble Report - ${new Date().toLocaleString()}]\n${troubleNote}`;
+            ? `${workOrder.notes}\n\n[Trouble Report - ${timestamp}]\n${troubleNote}`
+            : `[Trouble Report - ${timestamp}]\n${troubleNote}`;
         }
         
         // Get the "Unable to Complete" or similar status
@@ -5542,7 +5557,7 @@ export async function registerRoutes(
         updateData.trouble = null;
         // Append completion notes to existing notes (mobile pattern)
         if (troubleNote && troubleNote.trim()) {
-          const timestamp = new Date().toLocaleString();
+          const timestamp = await getTimezoneFormattedTimestamp();
           const noteEntry = `[Meter Changeout Notes - ${timestamp} by ${currentUser.username || currentUser.id}]\n${troubleNote.trim()}`;
           updateData.notes = workOrder.notes 
             ? `${workOrder.notes}\n\n${noteEntry}`
@@ -5562,7 +5577,7 @@ export async function registerRoutes(
         updateData.trouble = troubleCode;
         // Append trouble notes to existing notes (mobile pattern)
         if (troubleNote && troubleNote.trim()) {
-          const timestamp = new Date().toLocaleString();
+          const timestamp = await getTimezoneFormattedTimestamp();
           const noteEntry = `[Trouble Report - ${timestamp} by ${currentUser.username || currentUser.id}]\n${troubleNote.trim()}`;
           updateData.notes = workOrder.notes 
             ? `${workOrder.notes}\n\n${noteEntry}`
@@ -5934,7 +5949,7 @@ export async function registerRoutes(
       }
       // Append user notes to existing notes (mobile pattern) - don't replace
       if (notes && notes.trim()) {
-        const timestamp = new Date().toLocaleString();
+        const timestamp = await getTimezoneFormattedTimestamp();
         const noteEntry = `[Meter Changeout Notes - ${timestamp} by ${currentUser.username || currentUser.id}]\n${notes.trim()}`;
         updateData.notes = workOrder.notes 
           ? `${workOrder.notes}\n\n${noteEntry}`
