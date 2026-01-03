@@ -39,6 +39,7 @@ Preferred communication style: Simple, everyday language.
 - **Filter Preferences**: User-customizable filter visibility for work orders, search, and user pages.
 - **Data Integrity**: Foreign key constraints with `ON DELETE RESTRICT` for critical relationships. ID-based assignment for users and groups.
 - **Real-Time Updates**: SSE-based live updates eliminate manual browser refreshes. Server-side event emitter broadcasts work order changes to connected clients. Client hooks (`useProjectEvents`, `useGlobalEvents`) automatically invalidate TanStack Query cache on events. 30-second heartbeat with automatic reconnection.
+- **Customer API Integration**: Outbound REST API to push completed work order data to customer backend systems. Per-project configuration with support for multiple auth types (API key, bearer token, basic auth). Credentials stored as environment variables for security. Optional base64 photo encoding for before/after images and signatures. All API calls logged in `customer_api_logs` table for debugging.
 
 ### System Design Choices
 - **Storage Interface**: `IStorage` interface abstracts database operations.
