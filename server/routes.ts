@@ -33,6 +33,57 @@ async function getTimezoneFormattedTimestamp(): Promise<string> {
   });
 }
 
+interface OperationalHoursValidationResult {
+  valid: boolean;
+  message?: string;
+}
+
+function validateOperationalHours(
+  scheduledAt: string | Date | null | undefined,
+  project: { operationalHoursEnabled?: boolean | null; operationalHoursStart?: string | null; operationalHoursEnd?: string | null }
+): OperationalHoursValidationResult {
+  if (!scheduledAt || !project.operationalHoursEnabled) {
+    return { valid: true };
+  }
+  
+  if (!project.operationalHoursStart || !project.operationalHoursEnd) {
+    return { valid: true };
+  }
+  
+  const scheduledDate = typeof scheduledAt === 'string' ? new Date(scheduledAt) : scheduledAt;
+  if (isNaN(scheduledDate.getTime())) {
+    return { valid: true };
+  }
+  
+  const scheduledHours = scheduledDate.getHours();
+  const scheduledMinutes = scheduledDate.getMinutes();
+  const scheduledTimeMinutes = scheduledHours * 60 + scheduledMinutes;
+  
+  const [startHour, startMin] = project.operationalHoursStart.split(':').map(Number);
+  const [endHour, endMin] = project.operationalHoursEnd.split(':').map(Number);
+  
+  if (isNaN(startHour) || isNaN(startMin) || isNaN(endHour) || isNaN(endMin)) {
+    return { valid: true };
+  }
+  
+  const startTimeMinutes = startHour * 60 + startMin;
+  const endTimeMinutes = endHour * 60 + endMin;
+  
+  if (scheduledTimeMinutes < startTimeMinutes || scheduledTimeMinutes > endTimeMinutes) {
+    const formatTime = (h: number, m: number) => {
+      const period = h >= 12 ? 'PM' : 'AM';
+      const hour12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+      return `${hour12}:${m.toString().padStart(2, '0')} ${period}`;
+    };
+    return { 
+      valid: false, 
+      message: `Scheduled time is outside operational hours. Work orders can only be scheduled between ${formatTime(startHour, startMin)} and ${formatTime(endHour, endMin)}.`
+    };
+  }
+  
+  return { valid: true };
+}
+
 async function initializeAdminUser() {
   const existingAdmin = await storage.getUserByUsername("admin");
   if (!existingAdmin) {
@@ -1509,6 +1560,14 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Project not found" });
       }
       
+      // Validate operational hours if scheduledAt is provided
+      if (req.body.scheduledAt) {
+        const hoursValidation = validateOperationalHours(req.body.scheduledAt, project);
+        if (!hoursValidation.valid) {
+          return res.status(400).json({ message: hoursValidation.message });
+        }
+      }
+      
       // Get the user's display name for createdBy
       const createdByName = currentUser?.firstName 
         ? `${currentUser.firstName}${currentUser.lastName ? ' ' + currentUser.lastName : ''}`
@@ -1548,6 +1607,14 @@ export async function registerRoutes(
       const project = await storage.getProject(projectId);
       if (!project || !project.databaseName) {
         return res.status(404).json({ message: "Project not found" });
+      }
+      
+      // Validate operational hours if scheduledAt is being updated
+      if (req.body.scheduledAt) {
+        const hoursValidation = validateOperationalHours(req.body.scheduledAt, project);
+        if (!hoursValidation.valid) {
+          return res.status(400).json({ message: hoursValidation.message });
+        }
       }
       
       const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
