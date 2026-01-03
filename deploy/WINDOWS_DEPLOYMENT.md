@@ -517,7 +517,7 @@ If you already have MeterFlo installed and want to switch to GitHub:
 cd C:\xampp\htdocs
 
 # Check current remote
-git remote -v
+Customers can view work orders, check work order status, resolve trouble work orders, upload or retrieve data files, and check on the progress of their projects, by running reports.
 
 # Change remote from Replit to GitHub
 git remote set-url origin https://github.com/your-username/meterflo-server.git
