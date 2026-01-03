@@ -944,7 +944,8 @@ export class ProjectWorkOrderStorage {
         let finalNotes = existingNotes;
         let notesChanged = false;
         
-        // Handle user-provided notes - only apply if they're different from existing
+        // Handle user-provided notes - REPLACE existing notes (for web UI edits)
+        // Mobile endpoints handle their own append logic before calling updateWorkOrder
         if (hasUserNotes) {
           const userProvidedNotes = updates.notes || "";
           // Only update if user has actually changed the notes content
