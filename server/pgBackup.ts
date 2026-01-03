@@ -33,6 +33,18 @@ function getPgToolPath(toolName: string): string {
   const isWindows = process.platform === "win32";
   const exeName = isWindows ? `${toolName}.exe` : toolName;
   
+  // First check for explicit PG_BIN_PATH environment variable override
+  const pgBinPath = process.env.PG_BIN_PATH;
+  if (pgBinPath) {
+    const customPath = path.join(pgBinPath, exeName);
+    if (fs.existsSync(customPath)) {
+      console.log(`[Backup] Found ${toolName} via PG_BIN_PATH at: ${customPath}`);
+      return customPath;
+    } else {
+      console.log(`[Backup] PG_BIN_PATH set to ${pgBinPath} but ${exeName} not found there`);
+    }
+  }
+  
   // Try to find via system command first
   try {
     const findCmd = isWindows ? `where ${exeName}` : `which ${toolName}`;
@@ -56,11 +68,15 @@ function getPgToolPath(toolName: string): string {
   // Try standard installation paths
   if (isWindows) {
     const windowsPaths = [
+      `C:\\Program Files\\PostgreSQL\\19\\bin\\${exeName}`,
+      `C:\\Program Files\\PostgreSQL\\18\\bin\\${exeName}`,
       `C:\\Program Files\\PostgreSQL\\17\\bin\\${exeName}`,
       `C:\\Program Files\\PostgreSQL\\16\\bin\\${exeName}`,
       `C:\\Program Files\\PostgreSQL\\15\\bin\\${exeName}`,
       `C:\\Program Files\\PostgreSQL\\14\\bin\\${exeName}`,
       `C:\\Program Files\\PostgreSQL\\13\\bin\\${exeName}`,
+      `C:\\Program Files (x86)\\PostgreSQL\\19\\bin\\${exeName}`,
+      `C:\\Program Files (x86)\\PostgreSQL\\18\\bin\\${exeName}`,
       `C:\\Program Files (x86)\\PostgreSQL\\17\\bin\\${exeName}`,
       `C:\\Program Files (x86)\\PostgreSQL\\16\\bin\\${exeName}`,
       `C:\\Program Files (x86)\\PostgreSQL\\15\\bin\\${exeName}`,

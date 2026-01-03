@@ -76,6 +76,8 @@ Before starting, ensure you have administrator access to your Windows server.
 
 > **Important:** The `pg_dump.exe` tool must be accessible from the command line for the Database Backup feature to work. If `pg_dump --version` returns an error, the backup/restore functionality will not work.
 
+> **Alternative:** If adding to PATH doesn't work, you can set the `PG_BIN_PATH` environment variable to point directly to your PostgreSQL bin folder (e.g., `C:\Program Files\PostgreSQL\18\bin`). Add this to your PM2 ecosystem file or Windows system environment variables, then restart PM2.
+
 ### 2.3 Install Git for Windows (includes Git Bash)
 
 1. Download from: https://git-scm.com/download/win
