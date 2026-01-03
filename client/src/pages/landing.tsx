@@ -94,7 +94,7 @@ export default function Landing() {
               <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">
                 Streamline Your Field Operations
               </h1>
-              <p className="text-lg text-muted-foreground mb-8">Get up and running FAST with an out-of-box solution to manage work orders for utility meter changeout projects. Track progress, assign tasks, and sync with mobile teams seamlessly.</p>
+              <p className="text-lg text-muted-foreground mb-8">Get up and running FAST with an out-of-box solution to manage work orders for utility meter changeout projects. Track progress, assign tasks, and sync with mobile teams and backend systems seamlessly.</p>
             </div>
             
             <Card className="max-w-md mx-auto w-full">
