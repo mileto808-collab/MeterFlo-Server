@@ -1947,6 +1947,11 @@ export default function ProjectWorkOrders() {
           canEdit={hasPermission('workOrders.edit')}
           canMeterChangeout={hasPermission('workOrders.meterChangeout')}
           autoLaunchMeterChangeout={autoLaunchMeterChangeout}
+          operationalHours={{
+            enabled: project?.operationalHoursEnabled ?? false,
+            start: project?.operationalHoursStart ?? null,
+            end: project?.operationalHoursEnd ?? null,
+          }}
           onMeterChangeoutComplete={async () => {
             // Use refetchQueries instead of invalidateQueries to ensure data is loaded before closing
             // Also invalidate the files query so attachment count is fresh when work order is reopened

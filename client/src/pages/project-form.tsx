@@ -37,6 +37,14 @@ const projectFormSchema = z.object({
   operationalHoursEnabled: z.boolean().optional().default(false),
   operationalHoursStart: z.string().max(10).optional().or(z.literal("")),
   operationalHoursEnd: z.string().max(10).optional().or(z.literal("")),
+}).refine((data) => {
+  if (data.operationalHoursEnabled) {
+    return data.operationalHoursStart && data.operationalHoursEnd;
+  }
+  return true;
+}, {
+  message: "Both start and end times are required when operational hours are enabled",
+  path: ["operationalHoursStart"],
 });
 
 type ProjectFormValues = z.infer<typeof projectFormSchema>;

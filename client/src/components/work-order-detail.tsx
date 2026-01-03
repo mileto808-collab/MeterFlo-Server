@@ -53,6 +53,12 @@ import { FileIcon } from "lucide-react";
 import SignaturePad, { type SignaturePadRef } from "@/components/signature-pad";
 import { MeterChangeoutWizard } from "@/components/meter-changeout-wizard";
 
+interface OperationalHoursConfig {
+  enabled: boolean;
+  start: string | null;
+  end: string | null;
+}
+
 interface WorkOrderDetailProps {
   workOrder: any;
   form: UseFormReturn<any>;
@@ -77,6 +83,7 @@ interface WorkOrderDetailProps {
   canMeterChangeout?: boolean;
   onMeterChangeoutComplete?: () => void | Promise<void>;
   autoLaunchMeterChangeout?: boolean;
+  operationalHours?: OperationalHoursConfig;
 }
 
 export function WorkOrderDetail({
@@ -103,6 +110,7 @@ export function WorkOrderDetail({
   canMeterChangeout = false,
   onMeterChangeoutComplete,
   autoLaunchMeterChangeout = false,
+  operationalHours,
 }: WorkOrderDetailProps) {
   const [openSections, setOpenSections] = useState<string[]>([]);
   const [showMeterChangeoutWizard, setShowMeterChangeoutWizard] = useState(false);
@@ -113,6 +121,39 @@ export function WorkOrderDetail({
   // Using useWatch hook for proper subscription to form updates
   const watchedAssignedUserId = useWatch({ control: form.control, name: 'assignedUserId' });
   const watchedScheduledAt = useWatch({ control: form.control, name: 'scheduledAt' });
+
+  // Helper to validate scheduled time against operational hours
+  const getOperationalHoursWarning = (scheduledAt: string | null | undefined): string | null => {
+    if (!scheduledAt || !operationalHours?.enabled) return null;
+    if (!operationalHours.start || !operationalHours.end) return null;
+    
+    const scheduledDate = new Date(scheduledAt);
+    if (isNaN(scheduledDate.getTime())) return null;
+    
+    const scheduledHours = scheduledDate.getHours();
+    const scheduledMinutes = scheduledDate.getMinutes();
+    const scheduledTimeMinutes = scheduledHours * 60 + scheduledMinutes;
+    
+    const [startHour, startMin] = operationalHours.start.split(':').map(Number);
+    const [endHour, endMin] = operationalHours.end.split(':').map(Number);
+    
+    if (isNaN(startHour) || isNaN(startMin) || isNaN(endHour) || isNaN(endMin)) return null;
+    
+    const startTimeMinutes = startHour * 60 + startMin;
+    const endTimeMinutes = endHour * 60 + endMin;
+    
+    if (scheduledTimeMinutes < startTimeMinutes || scheduledTimeMinutes > endTimeMinutes) {
+      const formatTime = (h: number, m: number) => {
+        const period = h >= 12 ? 'PM' : 'AM';
+        const hour12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+        return `${hour12}:${m.toString().padStart(2, '0')} ${period}`;
+      };
+      return `Outside operational hours (${formatTime(startHour, startMin)} - ${formatTime(endHour, endMin)})`;
+    }
+    return null;
+  };
+
+  const scheduledAtWarning = getOperationalHoursWarning(watchedScheduledAt);
 
   // Claim work order and open meter changeout wizard
   const handleStartMeterChangeout = useCallback(async () => {
@@ -791,6 +832,7 @@ export function WorkOrderDetail({
                               value={field.value || ""}
                               disabled={!canEdit}
                               data-testid="input-scheduled-at"
+                              className={scheduledAtWarning ? "border-destructive" : ""}
                             />
                           </FormControl>
                           {field.value && canEdit && (
@@ -807,6 +849,12 @@ export function WorkOrderDetail({
                           )}
                         </div>
                         <p className="text-xs text-muted-foreground mt-1">Setting a date/time will auto-set status to "Scheduled"</p>
+                        {scheduledAtWarning && (
+                          <p className="text-xs text-destructive mt-1 flex items-center gap-1" data-testid="text-operational-hours-warning">
+                            <AlertTriangle className="h-3 w-3" />
+                            {scheduledAtWarning}
+                          </p>
+                        )}
                         <FormMessage />
                       </FormItem>
                     )}
