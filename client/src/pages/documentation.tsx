@@ -6,11 +6,11 @@ import html2pdf from "html2pdf.js";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FileText, Server, Smartphone, ChevronLeft, Download } from "lucide-react";
+import { FileText, Server, Smartphone, ChevronLeft, Download, Globe } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 
-type DocType = "windows-deployment" | "mobile-api" | null;
+type DocType = "windows-deployment" | "mobile-api" | "customer-api" | null;
 
 const docOptions = [
   {
@@ -24,6 +24,12 @@ const docOptions = [
     title: "Mobile API Documentation",
     description: "REST API reference for mobile app integration, work order sync, and offline support.",
     icon: Smartphone,
+  },
+  {
+    id: "customer-api" as DocType,
+    title: "Customer API Integration",
+    description: "Configure outbound API calls to push work order data to customer backend systems.",
+    icon: Globe,
   },
 ];
 
