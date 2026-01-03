@@ -97,6 +97,9 @@ export const projects = pgTable("projects", {
   customerApiKeyHeader: varchar("customer_api_key_header", { length: 100 }),
   customerApiSecretEnvVar: varchar("customer_api_secret_env_var", { length: 100 }),
   customerApiSendPhotos: boolean("customer_api_send_photos").default(true),
+  operationalHoursEnabled: boolean("operational_hours_enabled").default(false),
+  operationalHoursStart: varchar("operational_hours_start", { length: 10 }),
+  operationalHoursEnd: varchar("operational_hours_end", { length: 10 }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -464,6 +467,9 @@ export const insertProjectSchema = z.object({
   customerApiKeyHeader: z.string().max(100).optional().nullable(),
   customerApiSecretEnvVar: z.string().max(100).optional().nullable(),
   customerApiSendPhotos: z.boolean().optional().default(true),
+  operationalHoursEnabled: z.boolean().optional().default(false),
+  operationalHoursStart: z.string().max(10).optional().nullable(),
+  operationalHoursEnd: z.string().max(10).optional().nullable(),
 });
 
 export const insertSubroleSchema = z.object({
