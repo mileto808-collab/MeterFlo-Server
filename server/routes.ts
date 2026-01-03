@@ -1575,6 +1575,22 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Work order not found" });
       }
       
+      // Send to customer API if work order was just completed
+      const wasCompleted = existingWorkOrder.status !== "Completed" && workOrder.status === "Completed";
+      if (wasCompleted) {
+        const folderName = workOrder.customerWoId || String(workOrder.id);
+        const woFolderPath = path.join(
+          await getProjectFilesPath(),
+          getProjectDirectoryName(project.name, project.id),
+          "Work Orders",
+          folderName
+        );
+        
+        sendWorkOrderToCustomerApi(projectId, workOrder, {
+          workOrderFolderPath: woFolderPath,
+        }).catch(err => console.error("[CustomerAPI] Background send failed:", err));
+      }
+      
       emitWorkOrderUpdated(projectId, workOrderId, currentUser?.id);
       res.json(workOrder);
     } catch (error) {

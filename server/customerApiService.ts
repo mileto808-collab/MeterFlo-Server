@@ -242,7 +242,7 @@ export async function sendWorkOrderToCustomerApi(
       ? rawCompletedAt.toISOString() 
       : (typeof rawCompletedAt === 'string' ? rawCompletedAt : null);
     
-    const gpsString = workOrder.newGps || workOrder.new_gps || "";
+    const gpsString = workOrder.newGps || workOrder.new_gps || workOrder.oldGps || workOrder.old_gps || "";
     const gpsParts = gpsString.split(",").map((s: string) => s.trim());
     const latitude = workOrder.latitude || (gpsParts[0] || null);
     const longitude = workOrder.longitude || (gpsParts[1] || null);
