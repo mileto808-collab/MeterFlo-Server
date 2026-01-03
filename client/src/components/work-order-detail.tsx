@@ -261,11 +261,11 @@ export function WorkOrderDetail({
             <div className="flex gap-2 flex-wrap">
               {canMeterChangeout && workOrder.status !== 'Completed' && (
                 <Button 
-                  variant="default" 
                   size="sm" 
                   onClick={handleStartMeterChangeout}
                   disabled={isClaiming}
                   data-testid="button-start-meter-changeout"
+                  className="bg-green-600 text-white dark:bg-green-600"
                 >
                   {isClaiming ? (
                     <>
