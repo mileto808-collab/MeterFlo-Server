@@ -86,9 +86,11 @@ export function AppSidebar() {
     <Sidebar>
       <SidebarHeader className="p-4 border-b border-sidebar-border">
         <div className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-md bg-primary flex items-center justify-center">
-            <ClipboardList className="h-4 w-4 text-primary-foreground" />
-          </div>
+          <img 
+            src="/meterflo-sidebar-icon.png" 
+            alt="MeterFlo" 
+            className="h-8 w-8 rounded-md object-cover"
+          />
           <div className="flex flex-col">
             <span className="font-semibold text-sm">MeterFlo</span>
             <span className="text-xs text-muted-foreground">Meter Work Orders</span>
