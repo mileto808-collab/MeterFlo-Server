@@ -50,6 +50,8 @@ Before starting, ensure you have administrator access to your Windows server.
    npm --version
    ```
 
+> **Note:** MeterFlo runs on **port 3000** by default. This is configured in the PM2 ecosystem file and environment variables. Apache will reverse proxy requests to this port.
+
 ### 2.2 Install PostgreSQL
 
 1. Download from: https://www.postgresql.org/download/windows/
@@ -58,10 +60,21 @@ Before starting, ensure you have administrator access to your Windows server.
    - Set a strong password for the `postgres` superuser (remember this!)
    - Default port: `5432`
    - Check "Stack Builder" if you want additional tools
-4. Verify installation:
+4. **Add PostgreSQL bin folder to Windows PATH** (required for backup/restore functionality):
+   - Right-click "This PC" → Properties → Advanced system settings
+   - Click "Environment Variables"
+   - Under "System variables", find and select "Path", then click "Edit"
+   - Click "New" and add: `C:\Program Files\PostgreSQL\{version}\bin`
+     - Replace `{version}` with your PostgreSQL version (e.g., `16`, `17`)
+   - Click OK to save all dialogs
+   - **Restart Command Prompt** for the change to take effect
+5. Verify installation:
    ```cmd
    psql --version
+   pg_dump --version
    ```
+
+> **Important:** The `pg_dump.exe` tool must be accessible from the command line for the Database Backup feature to work. If `pg_dump --version` returns an error, the backup/restore functionality will not work.
 
 ### 2.3 Install Git for Windows (includes Git Bash)
 
