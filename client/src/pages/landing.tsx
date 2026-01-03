@@ -63,7 +63,7 @@ export default function Landing() {
     {
       icon: Users,
       title: "Customer Portal",
-      description: "Customers can view work orders, check work order status, resolve trouble work orders, upload or retrieve data files, and check on the progress of their projects, by running reports.",
+      description: "Customers can view work orders, check work order status, resolve trouble work orders, upload or retrieve data files, and track the progress of projects by running reports.",
     },
     {
       icon: BarChart3,
