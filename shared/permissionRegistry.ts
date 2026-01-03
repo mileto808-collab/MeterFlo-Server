@@ -181,6 +181,13 @@ export const permissionRegistry: PermissionDefinition[] = [
     description: "Configure meter type definitions",
     defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
   },
+  {
+    key: "settings.customerApiLogs",
+    label: "Customer API Logs",
+    category: "Settings",
+    description: "View logs of API calls sent to customer backend systems",
+    defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
+  },
 
   // Maintenance action permissions - what users can do in the maintenance area
   {

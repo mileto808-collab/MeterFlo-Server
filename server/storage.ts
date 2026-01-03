@@ -24,6 +24,7 @@ import {
   userGroupProjects,
   userColumnPreferences,
   userFilterPreferences,
+  customerApiLogs,
   type User,
   type UpsertUser,
   type Project,
@@ -65,6 +66,7 @@ import {
   type UserGroupWithProjects,
   type UserColumnPreferences,
   type UserFilterPreferences,
+  type CustomerApiLog,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and } from "drizzle-orm";
@@ -218,6 +220,9 @@ export interface IStorage {
   // User filter preferences operations
   getUserFilterPreferences(userId: string, pageKey: string): Promise<UserFilterPreferences | undefined>;
   setUserFilterPreferences(userId: string, pageKey: string, visibleFilters: string[], knownFilters?: string[]): Promise<UserFilterPreferences>;
+
+  // Customer API logs operations
+  getCustomerApiLogs(options?: { projectId?: number; success?: boolean; limit?: number }): Promise<CustomerApiLog[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1540,6 +1545,27 @@ export class DatabaseStorage implements IStorage {
       .values({ userId, pageKey, visibleFilters, knownFilters: knownFilters || null })
       .returning();
     return created;
+  }
+
+  // Customer API logs operations
+  async getCustomerApiLogs(options?: { projectId?: number; success?: boolean; limit?: number }): Promise<CustomerApiLog[]> {
+    const limit = options?.limit || 100;
+    
+    let query = db.select().from(customerApiLogs).orderBy(desc(customerApiLogs.createdAt)).limit(limit);
+    
+    const conditions = [];
+    if (options?.projectId !== undefined) {
+      conditions.push(eq(customerApiLogs.projectId, options.projectId));
+    }
+    if (options?.success !== undefined) {
+      conditions.push(eq(customerApiLogs.success, options.success));
+    }
+    
+    if (conditions.length > 0) {
+      query = query.where(and(...conditions)) as typeof query;
+    }
+    
+    return await query;
   }
 }
 

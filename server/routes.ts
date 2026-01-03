@@ -3407,6 +3407,42 @@ export async function registerRoutes(
     }
   });
 
+  // Customer API Logs endpoint
+  app.get("/api/customer-api-logs", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const hasLogsPermission = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_CUSTOMER_API_LOGS);
+      if (!hasLogsPermission) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to view customer API logs" });
+      }
+      
+      const projectId = req.query.projectId ? parseInt(req.query.projectId as string) : undefined;
+      const success = req.query.success === "true" ? true : req.query.success === "false" ? false : undefined;
+      const limit = parseInt(req.query.limit as string) || 100;
+      
+      const logs = await storage.getCustomerApiLogs({ projectId, success, limit });
+      
+      // Enrich with project names
+      const enrichedLogs = await Promise.all(logs.map(async (log) => {
+        let projectName = null;
+        if (log.projectId) {
+          const project = await storage.getProject(log.projectId);
+          projectName = project?.name || null;
+        }
+        return { ...log, projectName };
+      }));
+      
+      res.json(enrichedLogs);
+    } catch (error) {
+      console.error("Error fetching customer API logs:", error);
+      res.status(500).json({ message: "Failed to fetch customer API logs" });
+    }
+  });
+
   // File Import History endpoints (Admin only)
   app.get("/api/file-import-history", isAuthenticated, async (req: any, res) => {
     try {

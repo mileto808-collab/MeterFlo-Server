@@ -855,6 +855,7 @@ export const permissionKeys = {
   SETTINGS_USER_GROUPS: "settings.userGroups",
   SETTINGS_SERVICE_TYPES: "settings.serviceTypes",
   SETTINGS_METER_TYPES: "settings.meterTypes",
+  SETTINGS_CUSTOMER_API_LOGS: "settings.customerApiLogs",
   // Maintenance permissions
   MAINTENANCE_PROJECT_BACKUP: "maintenance.projectBackup",
   MAINTENANCE_PROJECT_RESTORE: "maintenance.projectRestore",
