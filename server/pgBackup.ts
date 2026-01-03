@@ -30,24 +30,48 @@ function parseConnectionString(connectionString: string): PgConnectionParams {
 }
 
 function getPgToolPath(toolName: string): string {
+  const isWindows = process.platform === "win32";
+  const exeName = isWindows ? `${toolName}.exe` : toolName;
+  
   try {
-    const whichResult = execSync(`which ${toolName}`, { encoding: "utf-8" }).trim();
-    if (whichResult) return whichResult;
+    const findCmd = isWindows ? `where ${exeName}` : `which ${toolName}`;
+    const result = execSync(findCmd, { encoding: "utf-8" }).trim();
+    if (result) {
+      const firstPath = result.split("\n")[0].trim();
+      if (firstPath) return firstPath;
+    }
   } catch {}
   
-  const commonPaths = [
-    `/usr/bin/${toolName}`,
-    `/usr/local/bin/${toolName}`,
-    `/usr/lib/postgresql/14/bin/${toolName}`,
-    `/usr/lib/postgresql/15/bin/${toolName}`,
-    `/usr/lib/postgresql/16/bin/${toolName}`,
-  ];
-  
-  for (const p of commonPaths) {
-    if (fs.existsSync(p)) return p;
+  if (isWindows) {
+    const windowsPaths = [
+      `C:\\Program Files\\PostgreSQL\\17\\bin\\${exeName}`,
+      `C:\\Program Files\\PostgreSQL\\16\\bin\\${exeName}`,
+      `C:\\Program Files\\PostgreSQL\\15\\bin\\${exeName}`,
+      `C:\\Program Files\\PostgreSQL\\14\\bin\\${exeName}`,
+      `C:\\Program Files (x86)\\PostgreSQL\\17\\bin\\${exeName}`,
+      `C:\\Program Files (x86)\\PostgreSQL\\16\\bin\\${exeName}`,
+      `C:\\Program Files (x86)\\PostgreSQL\\15\\bin\\${exeName}`,
+      `C:\\Program Files (x86)\\PostgreSQL\\14\\bin\\${exeName}`,
+    ];
+    
+    for (const p of windowsPaths) {
+      if (fs.existsSync(p)) return p;
+    }
+  } else {
+    const linuxPaths = [
+      `/usr/bin/${toolName}`,
+      `/usr/local/bin/${toolName}`,
+      `/usr/lib/postgresql/14/bin/${toolName}`,
+      `/usr/lib/postgresql/15/bin/${toolName}`,
+      `/usr/lib/postgresql/16/bin/${toolName}`,
+    ];
+    
+    for (const p of linuxPaths) {
+      if (fs.existsSync(p)) return p;
+    }
   }
   
-  return toolName;
+  return exeName;
 }
 
 async function runPgCommand(
@@ -239,24 +263,80 @@ export async function createPgBackup(): Promise<PgBackupResult> {
   };
 }
 
-export async function createPgBackupArchive(res: any): Promise<void> {
-  const backupResult = await createPgBackup();
+function addDirectoryToArchiveRecursive(
+  archive: archiver.Archiver,
+  dirPath: string,
+  archivePrefix: string,
+  skippedFiles: string[]
+): void {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  } catch (error: any) {
+    console.warn(`[Backup] Cannot read directory: ${dirPath} - ${error.message}`);
+    skippedFiles.push(dirPath);
+    return;
+  }
   
-  if (!backupResult.success) {
-    throw new Error(backupResult.error || "Failed to create database backup");
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name);
+    const archivePath = archivePrefix ? `${archivePrefix}/${entry.name}` : entry.name;
+    
+    if (entry.isDirectory()) {
+      addDirectoryToArchiveRecursive(archive, fullPath, archivePath, skippedFiles);
+    } else if (entry.isFile()) {
+      try {
+        const fileStream = fs.createReadStream(fullPath);
+        archive.append(fileStream, { name: archivePath });
+      } catch (error: any) {
+        console.warn(`[Backup] Skipping file: ${fullPath} - ${error.message}`);
+        skippedFiles.push(fullPath);
+      }
+    }
+  }
+}
+
+export async function createPgBackupArchive(res: any): Promise<void> {
+  console.log("[Backup] Starting pg_dump backup...");
+  
+  let backupResult: PgBackupResult;
+  try {
+    backupResult = await createPgBackup();
+    
+    if (!backupResult.success) {
+      console.error("[Backup] pg_dump failed:", backupResult.error);
+      throw new Error(backupResult.error || "Failed to create database backup");
+    }
+    console.log(`[Backup] Database dump complete. Schemas: ${backupResult.schemas.join(", ")}`);
+  } catch (error: any) {
+    console.error("[Backup] Database backup error:", error);
+    throw new Error(`Database backup failed: ${error.message}`);
   }
   
   const filesPath = await getProjectFilesPath();
   const filesExist = fs.existsSync(filesPath);
+  const skippedFiles: string[] = [];
   
-  const archive = archiver("zip", { zlib: { level: 9 } });
+  const archive = archiver("zip", { zlib: { level: 6 } });
   
   archive.on("error", (err) => {
-    console.error("Archive error:", err);
+    console.error("[Backup] Archive error:", err);
     if (fs.existsSync(backupResult.backupFile)) {
-      fs.unlinkSync(backupResult.backupFile);
+      try { fs.unlinkSync(backupResult.backupFile); } catch {}
     }
-    throw err;
+    if (!res.headersSent) {
+      res.status(500).json({ message: `Archive creation failed: ${err.message}` });
+    }
+  });
+  
+  archive.on("warning", (err) => {
+    if (err.code === "ENOENT") {
+      console.warn("[Backup] Archive warning (file not found):", err.message);
+    } else if (err.code === "EBUSY" || err.code === "EPERM") {
+      console.warn("[Backup] Archive warning (file locked/permission):", err.message);
+    } else {
+      console.warn("[Backup] Archive warning:", err);
+    }
   });
   
   res.setHeader("Content-Type", "application/zip");
@@ -268,6 +348,7 @@ export async function createPgBackupArchive(res: any): Promise<void> {
   archive.pipe(res);
   
   archive.file(backupResult.backupFile, { name: "database_backup.sql" });
+  console.log("[Backup] Added database_backup.sql to archive");
   
   const metadata = {
     version: "2.0",
@@ -279,13 +360,37 @@ export async function createPgBackupArchive(res: any): Promise<void> {
   archive.append(JSON.stringify(metadata, null, 2), { name: "backup_metadata.json" });
   
   if (filesPath && filesExist) {
-    archive.directory(filesPath, "project_files");
+    console.log(`[Backup] Adding project files from: ${filesPath}`);
+    try {
+      addDirectoryToArchiveRecursive(archive, filesPath, "project_files", skippedFiles);
+      
+      if (skippedFiles.length > 0) {
+        console.warn(`[Backup] Skipped ${skippedFiles.length} locked/inaccessible files`);
+        archive.append(
+          JSON.stringify({ 
+            skippedFiles, 
+            reason: "Files were locked, inaccessible, or permission denied during backup" 
+          }, null, 2),
+          { name: "backup_warnings.json" }
+        );
+      }
+    } catch (error: any) {
+      console.error(`[Backup] Error adding project files: ${error.message}`);
+      archive.append(
+        JSON.stringify({ error: error.message, path: filesPath }, null, 2),
+        { name: "file_backup_error.json" }
+      );
+    }
+  } else {
+    console.log("[Backup] No project files directory to backup");
   }
   
+  console.log("[Backup] Finalizing archive...");
   await archive.finalize();
+  console.log("[Backup] Archive complete");
   
   if (fs.existsSync(backupResult.backupFile)) {
-    fs.unlinkSync(backupResult.backupFile);
+    try { fs.unlinkSync(backupResult.backupFile); } catch {}
   }
 }
 
