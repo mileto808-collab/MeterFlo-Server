@@ -108,6 +108,10 @@ export function WorkOrderDetail({
   const [showMeterChangeoutWizard, setShowMeterChangeoutWizard] = useState(false);
   const [isClaiming, setIsClaiming] = useState(false);
   const autoLaunchTriggered = useRef(false);
+  
+  // Watch form fields for header display - ensures UI updates immediately when form values change
+  const watchedAssignedUserId = form.watch('assignedUserId');
+  const watchedScheduledAt = form.watch('scheduledAt');
 
   // Claim work order and open meter changeout wizard
   const handleStartMeterChangeout = useCallback(async () => {
@@ -237,16 +241,16 @@ export function WorkOrderDetail({
                     <span>{workOrder.address}{workOrder.city ? `, ${workOrder.city}` : ""}</span>
                   </div>
                 )}
-                {(workOrder as any).scheduledAt && (
+                {watchedScheduledAt && (
                   <div className="flex items-center gap-1.5">
                     <Calendar className="h-4 w-4" />
-                    <span>Scheduled: {formatDateTime((workOrder as any).scheduledAt)}</span>
+                    <span>Scheduled: {formatDateTime(watchedScheduledAt)}</span>
                   </div>
                 )}
-                {(workOrder as any).assignedUserId && (
+                {watchedAssignedUserId && (
                   <div className="flex items-center gap-1.5">
                     <User className="h-4 w-4" />
-                    <span>Assigned: {getAssignedUserName((workOrder as any).assignedUserId) || "-"}</span>
+                    <span>Assigned: {getAssignedUserName(watchedAssignedUserId) || "-"}</span>
                   </div>
                 )}
               </div>
