@@ -2805,7 +2805,11 @@ export default function ProjectWorkOrders() {
               </Button>
             )}
             {hasPermission(permissionKeys.WORK_ORDERS_METER_CHANGEOUT) && (
-              <Button variant="outline" onClick={() => setShowStartMeterChangeout(true)} data-testid="button-start-meter-changeout">
+              <Button 
+                onClick={() => setShowStartMeterChangeout(true)} 
+                data-testid="button-start-meter-changeout"
+                className="bg-green-600 text-white dark:bg-green-600"
+              >
                 <Wrench className="h-4 w-4 mr-2" />
                 Start Meter Changeout
               </Button>
@@ -3279,7 +3283,7 @@ export default function ProjectWorkOrders() {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <div ref={tableScrollRef} className="overflow-x-auto w-full min-h-[200px] max-h-[calc(100vh-350px)] overflow-y-auto">
+            <div ref={tableScrollRef} className="overflow-x-auto w-full min-h-[500px] max-h-[calc(100vh-350px)] overflow-y-auto">
               <Table ref={tableRef} noWrapper>
                 <TableHeader>
                   <TableRow>

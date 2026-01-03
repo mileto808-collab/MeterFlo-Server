@@ -1541,7 +1541,7 @@ export default function SearchReports() {
                     onPageSizeChange={handlePageSizeChange}
                     className="mb-4"
                   />
-                  <div ref={tableScrollRef} className="overflow-x-auto w-full max-h-[calc(100vh-350px)] overflow-y-auto">
+                  <div ref={tableScrollRef} className="overflow-x-auto w-full min-h-[500px] max-h-[calc(100vh-350px)] overflow-y-auto">
                     <Table ref={tableRef} noWrapper>
                       <TableHeader>
                         <TableRow>
