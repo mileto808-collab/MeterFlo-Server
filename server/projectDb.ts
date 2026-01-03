@@ -458,18 +458,19 @@ export class ProjectWorkOrderStorage {
       const troubleCode = (workOrder as any).trouble;
       let troubleCodeId: number | null = null;
       
-      // If trouble code is set, auto-set status to "Trouble" and add note
+      // If trouble code is set, auto-set status to "Trouble" and add note with username
       if (troubleCode) {
         status = "Trouble";
         const troubleCodeDetails = await this.getTroubleCodeDetails(troubleCode);
         const timestamp = await this.getTimezoneFormattedTimestamp();
+        const userName = createdBy || 'System';
         let troubleNote: string;
         if (troubleCodeDetails) {
-          troubleNote = `Trouble Code: ${troubleCodeDetails.code} - ${troubleCodeDetails.label} - ${timestamp}`;
+          troubleNote = `Trouble Code: ${troubleCodeDetails.code} - ${troubleCodeDetails.label} - ${timestamp} by ${userName}`;
           troubleCodeId = troubleCodeDetails.id;
         } else {
           // Fallback: use the code value directly if lookup fails
-          troubleNote = `Trouble Code: ${troubleCode} - ${timestamp}`;
+          troubleNote = `Trouble Code: ${troubleCode} - ${timestamp} by ${userName}`;
         }
         notes = notes ? `${notes}\n${troubleNote}` : troubleNote;
       }
@@ -716,16 +717,6 @@ export class ProjectWorkOrderStorage {
       
       if (troubleCode) {
         forceStatusToTrouble = true;
-        
-        // Always add a trouble note when a trouble code is submitted (supports multiple attempts)
-        const troubleCodeDetails = await this.getTroubleCodeDetails(troubleCode);
-        const timestamp = await this.getTimezoneFormattedTimestamp();
-        if (troubleCodeDetails) {
-          troubleNoteToAdd = `Trouble Code: ${troubleCodeDetails.code} - ${troubleCodeDetails.label} - ${timestamp}`;
-        } else {
-          // Fallback: use the code value directly if lookup fails
-          troubleNoteToAdd = `Trouble Code: ${troubleCode} - ${timestamp}`;
-        }
       }
 
       if (updates.customerWoId !== undefined) {
@@ -800,22 +791,37 @@ export class ProjectWorkOrderStorage {
         setClauses.push(`new_gps = $${paramCount++}`);
         values.push(updates.newGps);
       }
-      // Fetch existing status and scheduledAt to determine if they're actually changing
+      // Fetch existing status, scheduledAt, and trouble code to determine if they're actually changing
       let existingScheduledAt: Date | null = null;
       let existingStatus: string | null = null;
+      let existingTroubleCode: string | null = null;
       let wasAlreadyCompleted = false;
       
-      // Always fetch existing status to check for transitions
+      // Always fetch existing state to check for transitions
       const existingStateResult = await client.query(
-        `SELECT scheduled_at, status FROM "${this.schemaName}".work_orders WHERE id = $1`,
+        `SELECT scheduled_at, status, trouble FROM "${this.schemaName}".work_orders WHERE id = $1`,
         [id]
       );
       existingScheduledAt = existingStateResult.rows[0]?.scheduled_at || null;
       existingStatus = existingStateResult.rows[0]?.status || null;
+      existingTroubleCode = existingStateResult.rows[0]?.trouble || null;
       
       // Check if the work order was already in a completed status
       if (existingStatus) {
         wasAlreadyCompleted = await this.isCompletedStatus(existingStatus);
+      }
+      
+      // Only add trouble note if the trouble code is actually changing (different from existing)
+      if (troubleCode && troubleCode !== existingTroubleCode) {
+        const troubleCodeDetails = await this.getTroubleCodeDetails(troubleCode);
+        const timestamp = await this.getTimezoneFormattedTimestamp();
+        const userName = updatedBy || 'System';
+        if (troubleCodeDetails) {
+          troubleNoteToAdd = `Trouble Code: ${troubleCodeDetails.code} - ${troubleCodeDetails.label} - ${timestamp} by ${userName}`;
+        } else {
+          // Fallback: use the code value directly if lookup fails
+          troubleNoteToAdd = `Trouble Code: ${troubleCode} - ${timestamp} by ${userName}`;
+        }
       }
       
       // Handle scheduledAt and status together for proper auto-scheduling behavior
