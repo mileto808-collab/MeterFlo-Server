@@ -989,15 +989,26 @@ export class ProjectWorkOrderStorage {
       }
 
       // Handle assignedUserId and assignedGroupId directly
-      if (updates.assignedUserId !== undefined) {
-        setClauses.push(`assigned_user_id = $${paramCount++}`);
-        values.push(updates.assignedUserId || null);
-      }
-      if (updates.assignedGroupId !== undefined) {
-        // Resolve group ID/name to group name (FK references user_groups.name)
-        const resolvedGroupName = await this.resolveGroupName(updates.assignedGroupId);
-        setClauses.push(`assigned_group_id = $${paramCount++}`);
-        values.push(resolvedGroupName);
+      // When status is being set to "Closed", automatically unassign all users and groups
+      const newStatus = updates.status?.toLowerCase();
+      const isClosingWorkOrder = newStatus === 'closed';
+      
+      if (isClosingWorkOrder) {
+        // Force clear assignments when closing work order
+        setClauses.push(`assigned_user_id = NULL`);
+        setClauses.push(`assigned_group_id = NULL`);
+      } else {
+        // Normal assignment handling
+        if (updates.assignedUserId !== undefined) {
+          setClauses.push(`assigned_user_id = $${paramCount++}`);
+          values.push(updates.assignedUserId || null);
+        }
+        if (updates.assignedGroupId !== undefined) {
+          // Resolve group ID/name to group name (FK references user_groups.name)
+          const resolvedGroupName = await this.resolveGroupName(updates.assignedGroupId);
+          setClauses.push(`assigned_group_id = $${paramCount++}`);
+          values.push(resolvedGroupName);
+        }
       }
 
       // Always set updatedBy and updated_at
