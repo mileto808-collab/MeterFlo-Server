@@ -5540,7 +5540,14 @@ export async function registerRoutes(
         updateData.completedAt = clientCompletedAt || new Date().toISOString();
         updateData.completedBy = currentUser.id;
         updateData.trouble = null;
-        updateData.notes = troubleNote || null;
+        // Append completion notes to existing notes (mobile pattern)
+        if (troubleNote && troubleNote.trim()) {
+          const timestamp = new Date().toLocaleString();
+          const noteEntry = `[Meter Changeout Notes - ${timestamp} by ${currentUser.username || currentUser.id}]\n${troubleNote.trim()}`;
+          updateData.notes = workOrder.notes 
+            ? `${workOrder.notes}\n\n${noteEntry}`
+            : noteEntry;
+        }
         
         if (signatureData) {
           updateData.signatureData = signatureData;
@@ -5553,7 +5560,14 @@ export async function registerRoutes(
         
         updateData.status = "Trouble";
         updateData.trouble = troubleCode;
-        updateData.notes = troubleNote || null;
+        // Append trouble notes to existing notes (mobile pattern)
+        if (troubleNote && troubleNote.trim()) {
+          const timestamp = new Date().toLocaleString();
+          const noteEntry = `[Trouble Report - ${timestamp} by ${currentUser.username || currentUser.id}]\n${troubleNote.trim()}`;
+          updateData.notes = workOrder.notes 
+            ? `${workOrder.notes}\n\n${noteEntry}`
+            : noteEntry;
+        }
       }
       
       const updatedWorkOrder = await workOrderStorage.updateWorkOrder(
@@ -5691,16 +5705,20 @@ export async function registerRoutes(
         }
       }
       
-      // Build update data - notes will be appended by updateWorkOrder, troubleCode triggers auto-generated trouble note
+      // Build update data - troubleCode triggers auto-generated trouble note in updateWorkOrder
       const updateData: any = {
         status: "Trouble",
         trouble: troubleCode,
         updatedAt: new Date().toISOString(),
       };
       
-      // Only set notes if user provided them - updateWorkOrder will append them to existing notes
+      // Append user notes to existing notes (mobile pattern) - don't replace
       if (notes && notes.trim()) {
-        updateData.notes = notes;
+        const timestamp = new Date().toLocaleString();
+        const noteEntry = `[Trouble Report - ${timestamp} by ${currentUser.username || currentUser.id}]\n${notes.trim()}`;
+        updateData.notes = workOrder.notes 
+          ? `${workOrder.notes}\n\n${noteEntry}`
+          : noteEntry;
       }
       
       if (oldMeterReading !== undefined && oldMeterReading !== null) {
@@ -5914,9 +5932,13 @@ export async function registerRoutes(
       if (signatureData) {
         updateData.signatureData = signatureData;
       }
-      // Only set notes if user provided them - updateWorkOrder will append them to existing notes
+      // Append user notes to existing notes (mobile pattern) - don't replace
       if (notes && notes.trim()) {
-        updateData.notes = notes;
+        const timestamp = new Date().toLocaleString();
+        const noteEntry = `[Meter Changeout Notes - ${timestamp} by ${currentUser.username || currentUser.id}]\n${notes.trim()}`;
+        updateData.notes = workOrder.notes 
+          ? `${workOrder.notes}\n\n${noteEntry}`
+          : noteEntry;
       }
       
       const updatedWorkOrder = await workOrderStorage.updateWorkOrder(
