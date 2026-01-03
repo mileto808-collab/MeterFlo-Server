@@ -14,7 +14,7 @@ This comprehensive guide walks you through deploying MeterFlo (or any Replit Nod
 6. [Build the Application](#6-build-the-application)
 7. [PM2 Process Manager Setup](#7-pm2-process-manager-setup)
 8. [Apache Reverse Proxy Configuration](#8-apache-reverse-proxy-configuration)
-9. [HTTPS Configuration (Optional)](#9-https-configuration-optional)
+9. [HTTPS/SSL Configuration](#9-httpsssl-configuration)
 10. [Updating the Application](#10-updating-the-application)
 11. [Useful Commands Reference](#11-useful-commands-reference)
 12. [Troubleshooting](#12-troubleshooting)
@@ -398,21 +398,27 @@ You should see the application login page.
 
 ---
 
-## 9. HTTPS Configuration (Optional)
+## 9. HTTPS/SSL Configuration
 
-### 9.1 Obtain an SSL Certificate
+Setting up HTTPS ensures secure encrypted connections to your MeterFlo server.
 
-Options:
-- **Let's Encrypt** (free): Use Certbot or win-acme
-- **Commercial SSL**: Purchase from a certificate authority
-- **Self-signed** (testing only): Generate with OpenSSL
+### 9.1 SSL Certificate Options
 
-### 9.2 Enable SSL Module in Apache
+| Option | Cost | Best For | Validity |
+|--------|------|----------|----------|
+| **Self-Signed** | Free | Internal/testing | Unlimited |
+| **Let's Encrypt** | Free | Production with public domain | 90 days (auto-renew) |
+| **Commercial SSL** | $10-$200/year | Enterprise/regulated environments | 1-2 years |
 
-Edit `C:\xampp\apache\conf\httpd.conf` and uncomment:
+### 9.2 Enable Required Apache Modules
+
+Edit `C:\xampp\apache\conf\httpd.conf` and ensure these lines are **uncommented** (no `#` at the start):
 
 ```apache
 LoadModule ssl_module modules/mod_ssl.so
+LoadModule proxy_module modules/mod_proxy.so
+LoadModule proxy_http_module modules/mod_proxy_http.so
+LoadModule rewrite_module modules/mod_rewrite.so
 ```
 
 Also uncomment:
@@ -420,64 +426,215 @@ Also uncomment:
 Include conf/extra/httpd-ssl.conf
 ```
 
-### 9.3 Configure HTTPS Virtual Host
+---
 
-Edit `C:\xampp\apache\conf\extra\httpd-ssl.conf` or add to `httpd.conf`:
+### 9.3 Option A: Self-Signed Certificate (Quick Setup)
+
+Self-signed certificates are ideal for internal networks or testing. Browsers will show a security warning, but the connection is still encrypted.
+
+#### Step 1: Generate the Certificate
+
+1. Navigate to `C:\xampp\apache`
+2. Double-click `makecert.bat`
+3. Answer the prompts:
+   - **PEM Pass Phrase**: Enter a password (you'll need it twice)
+   - **Country Code**: 2-letter code (e.g., `US`)
+   - **State/Province**: Your state
+   - **City**: Your city
+   - **Organization**: Your company name
+   - **Common Name**: Your server IP or domain (e.g., `192.168.1.152`)
+
+The script creates:
+- `C:\xampp\apache\conf\ssl.crt\server.crt`
+- `C:\xampp\apache\conf\ssl.key\server.key`
+
+#### Step 2: Configure HTTPS VirtualHost
+
+Edit `C:\xampp\apache\conf\extra\httpd-vhosts.conf` and add:
 
 ```apache
 <VirtualHost *:443>
-    ServerName yourdomain.com
+    ServerName 192.168.1.152
     
-    # SSL Configuration
     SSLEngine on
-    SSLCertificateFile "C:/path/to/your/certificate.crt"
-    SSLCertificateKeyFile "C:/path/to/your/private.key"
-    SSLCertificateChainFile "C:/path/to/your/chain.crt"
+    SSLCertificateFile "conf/ssl.crt/server.crt"
+    SSLCertificateKeyFile "conf/ssl.key/server.key"
     
-    # Proxy to Node.js
+    # Reverse proxy to Node.js app
     ProxyPreserveHost On
-    ProxyPass / http://127.0.0.1:3000/
-    ProxyPassReverse / http://127.0.0.1:3000/
+    ProxyPass / http://localhost:3000/
+    ProxyPassReverse / http://localhost:3000/
+    
+    # WebSocket support for SSE
+    RewriteEngine On
+    RewriteCond %{HTTP:Upgrade} websocket [NC]
+    RewriteRule /(.*) ws://localhost:3000/$1 [P,L]
     
     # SSE support
     ProxyTimeout 600
     SetEnv proxy-sendchunked 1
-    
-    # Logging
-    ErrorLog "logs/meterflo-ssl-error.log"
-    CustomLog "logs/meterflo-ssl-access.log" common
 </VirtualHost>
 ```
 
-### 9.4 Redirect HTTP to HTTPS
+> **Note:** Replace `192.168.1.152` with your server's IP address and `3000` with your Node.js port.
 
-Add this to your HTTP VirtualHost (port 80):
+---
+
+### 9.4 Option B: Let's Encrypt with win-acme (Production)
+
+Let's Encrypt provides free, trusted SSL certificates. Requires a public domain pointing to your server.
+
+#### Prerequisites
+- A domain name (e.g., `meterflo.yourdomain.com`)
+- Port 80 open to the internet (for certificate validation)
+- DNS pointing to your server's public IP
+
+#### Step 1: Download win-acme
+
+1. Download from: https://github.com/win-acme/win-acme/releases
+2. Get the `win-acme.v2.x.x.x64.pluggable.zip` file
+3. Extract to `C:\win-acme`
+
+#### Step 2: Run win-acme
+
+Open Command Prompt as Administrator:
+```cmd
+cd C:\win-acme
+wacs.exe --verbose
+```
+
+#### Step 3: Follow the Prompts
+
+1. Press **M** (Create certificate with full options)
+2. Select **Option 2** (Manual input for host names)
+3. Enter your domain: `meterflo.yourdomain.com`
+4. Select **Option 1** (Save verification file in webroot)
+5. Enter webroot path: `C:\xampp\htdocs`
+6. Choose **N** when asked about web.config
+7. Select **Option 2** for RSA key
+8. Select **Option 2** for PEM files output
+9. Specify output folder: `C:\xampp\apache\conf\ssl`
+10. Select **Option 5** (No additional storage)
+11. Select **Option 3** for restart script (see below)
+
+#### Step 4: Create Apache Restart Script
+
+Create `C:\win-acme\Scripts\RestartApache.bat`:
+```batch
+@echo off
+echo [INFO] Restarting Apache...
+C:\xampp\apache\bin\httpd.exe -k restart
+echo [INFO] Apache restarted successfully
+```
+
+#### Step 5: Configure HTTPS VirtualHost
+
+Edit `C:\xampp\apache\conf\extra\httpd-vhosts.conf`:
+
+```apache
+<VirtualHost *:443>
+    ServerName meterflo.yourdomain.com
+    
+    SSLEngine on
+    SSLCertificateFile "C:/xampp/apache/conf/ssl/meterflo.yourdomain.com-chain.pem"
+    SSLCertificateKeyFile "C:/xampp/apache/conf/ssl/meterflo.yourdomain.com-key.pem"
+    
+    # Reverse proxy to Node.js app
+    ProxyPreserveHost On
+    ProxyPass / http://localhost:3000/
+    ProxyPassReverse / http://localhost:3000/
+    
+    # WebSocket support for SSE
+    RewriteEngine On
+    RewriteCond %{HTTP:Upgrade} websocket [NC]
+    RewriteRule /(.*) ws://localhost:3000/$1 [P,L]
+    
+    # SSE support
+    ProxyTimeout 600
+    SetEnv proxy-sendchunked 1
+</VirtualHost>
+```
+
+> **Note:** win-acme automatically creates a scheduled task to renew certificates before they expire.
+
+---
+
+### 9.5 Force HTTP to HTTPS Redirect
+
+Add this VirtualHost to redirect all HTTP traffic to HTTPS:
 
 ```apache
 <VirtualHost *:80>
-    ServerName yourdomain.com
-    Redirect permanent / https://yourdomain.com/
+    ServerName 192.168.1.152
+    Redirect permanent / https://192.168.1.152/
 </VirtualHost>
 ```
 
-### 9.5 Update Environment Variable
+For domain-based setup:
+```apache
+<VirtualHost *:80>
+    ServerName meterflo.yourdomain.com
+    Redirect permanent / https://meterflo.yourdomain.com/
+</VirtualHost>
+```
 
-After enabling HTTPS, set the cookie to be secure:
+---
 
-1. Add to Windows System Environment Variables:
-   - Variable: `COOKIE_SECURE`
-   - Value: `true`
+### 9.6 Update Environment for Secure Cookies
+
+After enabling HTTPS, configure the application to use secure cookies:
+
+1. Edit `C:\xampp\htdocs\deploy\ecosystem.config.cjs` and add to the `env` section:
+   ```javascript
+   COOKIE_SECURE: "true",
+   ```
 
 2. Restart PM2:
    ```cmd
    pm2 restart meterflo
    ```
 
-### 9.6 Restart Apache
+---
+
+### 9.7 Restart Apache and Test
 
 ```cmd
+C:\xampp\apache\bin\httpd.exe -t
 C:\xampp\apache\bin\httpd.exe -k restart
 ```
+
+Test your setup:
+- Visit `http://192.168.1.152` - should redirect to HTTPS
+- Visit `https://192.168.1.152` - should show MeterFlo login page
+
+---
+
+### 9.8 Firewall Configuration
+
+Ensure these ports are open:
+
+| Port | Protocol | Purpose |
+|------|----------|---------|
+| 80 | TCP | HTTP (for redirect and Let's Encrypt validation) |
+| 443 | TCP | HTTPS |
+
+Windows Firewall commands:
+```cmd
+netsh advfirewall firewall add rule name="HTTP" dir=in action=allow protocol=TCP localport=80
+netsh advfirewall firewall add rule name="HTTPS" dir=in action=allow protocol=TCP localport=443
+```
+
+---
+
+### 9.9 Troubleshooting SSL
+
+| Issue | Solution |
+|-------|----------|
+| **502 Proxy Error** | Node.js app not running. Check: `pm2 status` |
+| **Browser shows "Not Secure"** | Self-signed cert (expected) or certificate doesn't match domain |
+| **Apache won't start** | Check syntax: `httpd.exe -t` and logs: `C:\xampp\apache\logs\error.log` |
+| **Port 443 in use** | Another service using port 443. Check: `netstat -an | findstr 443` |
+| **Certificate expired** | For Let's Encrypt, run: `wacs.exe --renew --force` |
 
 ---
 
@@ -517,7 +674,7 @@ If you already have MeterFlo installed and want to switch to GitHub:
 cd C:\xampp\htdocs
 
 # Check current remote
-Customers can view work orders, check work order status, resolve trouble work orders, upload or retrieve data files, and check on the progress of their projects, by running reports.
+git remote -v
 
 # Change remote from Replit to GitHub
 git remote set-url origin https://github.com/your-username/meterflo-server.git
