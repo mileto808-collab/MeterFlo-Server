@@ -3196,6 +3196,40 @@ export async function registerRoutes(
     }
   });
 
+  // Documentation (Admin only)
+  app.get("/api/documentation/:docType", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const { docType } = req.params;
+      let filePath: string;
+      
+      switch (docType) {
+        case "windows-deployment":
+          filePath = path.join(process.cwd(), "deploy", "WINDOWS_DEPLOYMENT.md");
+          break;
+        case "mobile-api":
+          filePath = path.join(process.cwd(), "MOBILE_API.md");
+          break;
+        default:
+          return res.status(404).json({ message: "Documentation not found" });
+      }
+      
+      if (!existsSync(filePath)) {
+        return res.status(404).json({ message: "Documentation file not found" });
+      }
+      
+      const content = await fs.readFile(filePath, "utf-8");
+      res.json(content);
+    } catch (error) {
+      console.error("Error fetching documentation:", error);
+      res.status(500).json({ message: "Failed to fetch documentation" });
+    }
+  });
+
   // System settings (Admin only)
   app.get("/api/settings", isAuthenticated, async (req: any, res) => {
     try {

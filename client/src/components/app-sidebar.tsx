@@ -207,6 +207,21 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               )}
+
+              {role === "admin" && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={location === "/documentation"}
+                    data-testid="nav-documentation"
+                  >
+                    <NavLink href="/documentation">
+                      <FileText className="h-4 w-4" />
+                      <span>Documentation</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
