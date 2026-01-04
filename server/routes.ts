@@ -5,7 +5,7 @@ import { promises as fs, existsSync, unlinkSync } from "fs";
 import { randomUUID } from "crypto";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
-import { insertProjectWorkOrderSchema, insertProjectSchema, createUserSchema, updateUserSchema, resetPasswordSchema, updateProfileSchema, permissionKeys, insertExternalDatabaseConfigSchema, updateExternalDatabaseConfigSchema, insertImportConfigSchema, updateImportConfigSchema, databaseTypeEnum, importScheduleFrequencyEnum } from "@shared/schema";
+import { insertProjectWorkOrderSchema, insertProjectSchema, createUserSchema, updateUserSchema, resetPasswordSchema, updateProfileSchema, permissionKeys, insertExternalDatabaseConfigSchema, updateExternalDatabaseConfigSchema, insertImportConfigSchema, updateImportConfigSchema, databaseTypeEnum, importScheduleFrequencyEnum, ADMINISTRATOR_SUBROLE_KEY } from "@shared/schema";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import multer from "multer";
@@ -223,6 +223,12 @@ export async function registerRoutes(
       if (!["admin", "user", "customer"].includes(role)) {
         return res.status(400).json({ message: "Invalid role" });
       }
+      
+      // Prevent non-admin users from promoting users to admin role
+      if (role === "admin" && currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Only administrators can promote users to admin" });
+      }
+      
       const user = await storage.updateUserRole(req.params.id, role);
       if (!user) {
         return res.status(404).json({ message: "User not found" });
@@ -252,6 +258,19 @@ export async function registerRoutes(
       }
       
       const { username, password, firstName, lastName, email, role, subroleId } = parsed.data;
+      
+      // Prevent non-admin users from creating admin accounts
+      if (role === "admin" && currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Only administrators can create admin accounts" });
+      }
+      
+      // Prevent non-admin users from assigning Administrator subrole to new users
+      if (subroleId && currentUser.role !== "admin") {
+        const targetSubrole = await storage.getSubrole(subroleId);
+        if (targetSubrole?.key === ADMINISTRATOR_SUBROLE_KEY) {
+          return res.status(403).json({ message: "Forbidden: Only administrators can assign the Administrator role" });
+        }
+      }
       
       const existingUser = await storage.getUserByUsername(username);
       if (existingUser) {
@@ -302,10 +321,23 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Forbidden: Only administrators can modify admin accounts" });
       }
       
+      // Prevent non-admin users from promoting users to admin role
+      if (parsed.data.role === "admin" && currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Only administrators can promote users to admin" });
+      }
+      
       if (parsed.data.role && parsed.data.role !== "admin" && existingUser.role === "admin") {
         const adminCount = await storage.countActiveAdmins();
         if (adminCount <= 1) {
           return res.status(400).json({ message: "Cannot demote the last admin. Create another admin first." });
+        }
+      }
+      
+      // Prevent non-admin users from assigning Administrator subrole
+      if (parsed.data.subroleId && currentUser.role !== "admin") {
+        const targetSubrole = await storage.getSubrole(parsed.data.subroleId);
+        if (targetSubrole?.key === ADMINISTRATOR_SUBROLE_KEY) {
+          return res.status(403).json({ message: "Forbidden: Only administrators can assign the Administrator role" });
         }
       }
       
