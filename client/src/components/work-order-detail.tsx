@@ -167,8 +167,12 @@ export function WorkOrderDetail({
       setShowMeterChangeoutWizard(true);
     } catch (error: any) {
       console.error("Error claiming work order:", error);
+      
+      // Check if this is a "already claimed by another user" conflict (409)
+      const isAlreadyClaimed = error.message?.toLowerCase().includes("claimed");
+      
       toast({
-        title: "Error",
+        title: isAlreadyClaimed ? "Work Order Unavailable" : "Error",
         description: error.message || "Failed to claim work order",
         variant: "destructive",
       });
