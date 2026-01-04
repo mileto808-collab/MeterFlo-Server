@@ -209,6 +209,16 @@ export async function registerRoutes(
       if (!canEditUsers) {
         return res.status(403).json({ message: "Forbidden: You don't have permission to edit users" });
       }
+      
+      const targetUser = await storage.getUser(req.params.id);
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      if (targetUser.role === "admin" && currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Only administrators can modify admin accounts" });
+      }
+      
       const { role } = req.body;
       if (!["admin", "user", "customer"].includes(role)) {
         return res.status(400).json({ message: "Invalid role" });
@@ -288,6 +298,10 @@ export async function registerRoutes(
         return res.status(404).json({ message: "User not found" });
       }
       
+      if (existingUser.role === "admin" && currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Only administrators can modify admin accounts" });
+      }
+      
       if (parsed.data.role && parsed.data.role !== "admin" && existingUser.role === "admin") {
         const adminCount = await storage.countActiveAdmins();
         if (adminCount <= 1) {
@@ -338,6 +352,10 @@ export async function registerRoutes(
       const existingUser = await storage.getUser(targetUserId);
       if (!existingUser) {
         return res.status(404).json({ message: "User not found" });
+      }
+      
+      if (existingUser.role === "admin" && currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Only administrators can reset admin passwords" });
       }
       
       const passwordHash = await bcrypt.hash(parsed.data.newPassword, 10);
@@ -403,6 +421,10 @@ export async function registerRoutes(
         return res.status(404).json({ message: "User not found" });
       }
       
+      if (existingUser.role === "admin" && currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Only administrators can lock admin accounts" });
+      }
+      
       if (existingUser.role === "admin") {
         const adminCount = await storage.countActiveAdmins();
         if (adminCount <= 1) {
@@ -438,6 +460,10 @@ export async function registerRoutes(
         return res.status(404).json({ message: "User not found" });
       }
       
+      if (existingUser.role === "admin" && currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Only administrators can unlock admin accounts" });
+      }
+      
       const user = await storage.unlockUser(targetUserId);
       res.json(user);
     } catch (error) {
@@ -467,6 +493,10 @@ export async function registerRoutes(
       const existingUser = await storage.getUser(targetUserId);
       if (!existingUser) {
         return res.status(404).json({ message: "User not found" });
+      }
+      
+      if (existingUser.role === "admin" && currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Only administrators can delete admin accounts" });
       }
       
       if (existingUser.role === "admin") {
@@ -515,6 +545,15 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Forbidden: You don't have permission to assign projects" });
       }
       
+      const targetUser = await storage.getUser(req.params.id);
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      if (targetUser.role === "admin" && currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Only administrators can modify admin accounts" });
+      }
+      
       const { projectId } = req.body;
       if (!projectId) {
         return res.status(400).json({ message: "projectId is required" });
@@ -537,6 +576,15 @@ export async function registerRoutes(
       const canEditUsers = await storage.hasPermission(currentUser, permissionKeys.USERS_EDIT);
       if (!canEditUsers) {
         return res.status(403).json({ message: "Forbidden: You don't have permission to remove projects" });
+      }
+      
+      const targetUser = await storage.getUser(req.params.userId);
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      if (targetUser.role === "admin" && currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Only administrators can modify admin accounts" });
       }
       
       await storage.removeUserFromProject(req.params.userId, parseInt(req.params.projectId));
@@ -578,6 +626,15 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Forbidden: You don't have permission to manage user groups" });
       }
       
+      const targetUser = await storage.getUser(req.params.id);
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      if (targetUser.role === "admin" && currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Only administrators can modify admin accounts" });
+      }
+      
       const { groupId } = req.body;
       if (!groupId) {
         return res.status(400).json({ message: "groupId is required" });
@@ -600,6 +657,15 @@ export async function registerRoutes(
       const canManageUserGroups = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_USER_GROUPS);
       if (!canManageUserGroups) {
         return res.status(403).json({ message: "Forbidden: You don't have permission to manage user groups" });
+      }
+      
+      const targetUser = await storage.getUser(req.params.userId);
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      if (targetUser.role === "admin" && currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Only administrators can modify admin accounts" });
       }
       
       await storage.removeUserFromGroup(parseInt(req.params.groupId), req.params.userId);
@@ -1011,6 +1077,69 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching project users:", error);
       res.status(500).json({ message: "Failed to fetch project users" });
+    }
+  });
+
+  // Add user to project
+  app.post("/api/projects/:id/users", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canEditProjects = await storage.hasPermission(currentUser, permissionKeys.PROJECTS_EDIT);
+      if (!canEditProjects) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to assign users to projects" });
+      }
+      
+      const { userId } = req.body;
+      if (!userId) {
+        return res.status(400).json({ message: "userId is required" });
+      }
+      
+      const targetUser = await storage.getUser(userId);
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      if (targetUser.role === "admin" && currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Only administrators can modify admin accounts" });
+      }
+      
+      const assignment = await storage.assignUserToProject(userId, parseInt(req.params.id));
+      res.status(201).json(assignment);
+    } catch (error) {
+      console.error("Error assigning user to project:", error);
+      res.status(500).json({ message: "Failed to assign user to project" });
+    }
+  });
+
+  // Remove user from project
+  app.delete("/api/projects/:projectId/users/:userId", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canEditProjects = await storage.hasPermission(currentUser, permissionKeys.PROJECTS_EDIT);
+      if (!canEditProjects) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to remove users from projects" });
+      }
+      
+      const targetUser = await storage.getUser(req.params.userId);
+      if (!targetUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      if (targetUser.role === "admin" && currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Only administrators can modify admin accounts" });
+      }
+      
+      await storage.removeUserFromProject(req.params.userId, parseInt(req.params.projectId));
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error removing user from project:", error);
+      res.status(500).json({ message: "Failed to remove user from project" });
     }
   });
 
