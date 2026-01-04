@@ -341,6 +341,7 @@ export default function Users() {
       toast({ title: "Success", description: "User deleted successfully" });
       setDeleteDialogOpen(false);
       setSelectedUser(null);
+      setEditingUser(null);
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message || "Failed to delete user", variant: "destructive" });
@@ -1817,11 +1818,27 @@ export default function Users() {
                   </div>
                 )}
 
-                <div className="flex gap-4 pt-4">
-                  <Button type="button" variant="outline" onClick={() => setEditingUser(null)}>Cancel</Button>
-                  <Button type="submit" disabled={updateUserMutation.isPending} data-testid="button-submit-edit">
-                    {updateUserMutation.isPending ? "Saving..." : "Save Changes"}
-                  </Button>
+                <div className="flex gap-4 pt-4 justify-between">
+                  <div className="flex gap-4">
+                    <Button type="button" variant="outline" onClick={() => setEditingUser(null)}>Cancel</Button>
+                    <Button type="submit" disabled={updateUserMutation.isPending} data-testid="button-submit-edit">
+                      {updateUserMutation.isPending ? "Saving..." : "Save Changes"}
+                    </Button>
+                  </div>
+                  {canDeleteUser && (editingUser.role !== "admin" || isAdmin) && (
+                    <Button 
+                      type="button" 
+                      variant="destructive" 
+                      onClick={() => {
+                        setSelectedUser(editingUser);
+                        setDeleteDialogOpen(true);
+                      }}
+                      data-testid="button-delete-user-inline"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete User
+                    </Button>
+                  )}
                 </div>
               </form>
             </Form>
@@ -2233,11 +2250,15 @@ export default function Users() {
               Are you sure you want to delete {selectedUser?.username || selectedUser?.email}? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {selectedUser?.role === "admin" && !isAdmin && (
+            <p className="text-sm text-destructive">You do not have permission to delete administrator accounts.</p>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => selectedUser && deleteUserMutation.mutate(selectedUser.id)}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={selectedUser?.role === "admin" && !isAdmin}
               data-testid="button-confirm-delete"
             >
               Delete User
