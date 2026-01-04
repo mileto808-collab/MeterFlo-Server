@@ -2828,24 +2828,24 @@ export default function ProjectWorkOrders() {
       </div>
 
       {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
           {workOrderStatuses
             .slice()
             .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
             .map((status) => (
-              <Card key={status.id}>
-                <CardHeader className="pb-2">
-                  <CardDescription>{status.label}</CardDescription>
-                  <CardTitle className="text-2xl" data-testid={`stat-${status.label.toLowerCase().replace(/\s+/g, '-')}`}>
+              <Card key={status.id} className="py-1">
+                <CardHeader className="py-1 px-3">
+                  <CardDescription className="text-xs">{status.label}</CardDescription>
+                  <CardTitle className="text-lg" data-testid={`stat-${status.label.toLowerCase().replace(/\s+/g, '-')}`}>
                     {stats.statusCounts[status.label] || 0}
                   </CardTitle>
                 </CardHeader>
               </Card>
             ))}
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>Total</CardDescription>
-              <CardTitle className="text-2xl" data-testid="stat-total">{stats.total}</CardTitle>
+          <Card className="py-1">
+            <CardHeader className="py-1 px-3">
+              <CardDescription className="text-xs">Total</CardDescription>
+              <CardTitle className="text-lg" data-testid="stat-total">{stats.total}</CardTitle>
             </CardHeader>
           </Card>
         </div>
@@ -3288,7 +3288,7 @@ export default function ProjectWorkOrders() {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <div ref={tableScrollRef} className="overflow-x-auto w-full min-h-[500px] max-h-[calc(100vh-350px)] overflow-y-auto">
+            <div ref={tableScrollRef} className="overflow-x-auto w-full min-h-[500px] max-h-[calc(100vh-260px)] overflow-y-auto">
               <Table ref={tableRef} noWrapper>
                 <TableHeader>
                   <TableRow>
