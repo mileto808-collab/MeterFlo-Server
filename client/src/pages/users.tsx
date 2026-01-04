@@ -1964,12 +1964,17 @@ export default function Users() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredUsers.map((user) => (
+                  {filteredUsers.map((user) => {
+                    const isTargetAdmin = user.role === "admin";
+                    const canModifyAdminTarget = isAdmin || !isTargetAdmin;
+                    
+                    return (
                     <TableRow 
                       key={user.id} 
                       data-testid={`row-user-${user.id}`}
-                      className="cursor-pointer hover-elevate"
+                      className={canEditUser && canModifyAdminTarget ? "cursor-pointer hover-elevate" : ""}
                       onClick={(e) => {
+                        if (!canEditUser || !canModifyAdminTarget) return;
                         const target = e.target as HTMLElement;
                         if (target.closest('button, a, [role="button"], [role="menuitem"]')) return;
                         handleEditUser(user);
@@ -1984,43 +1989,52 @@ export default function Users() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            {canEditUser && (
-                              <DropdownMenuItem onClick={() => handleEditUser(user)} data-testid={`menu-edit-${user.id}`}>
-                                <Pencil className="h-4 w-4 mr-2" />
-                                Edit User
-                              </DropdownMenuItem>
-                            )}
-                            {canResetPassword && (
-                              <DropdownMenuItem onClick={() => handleResetPassword(user)} data-testid={`menu-reset-password-${user.id}`}>
-                                <Key className="h-4 w-4 mr-2" />
-                                Reset Password
-                              </DropdownMenuItem>
-                            )}
-                            {canEditUser && (
-                              <DropdownMenuItem onClick={() => handleAssignProject(user)} data-testid={`menu-assign-project-${user.id}`}>
-                                <FolderPlus className="h-4 w-4 mr-2" />
-                                Assign Projects
-                              </DropdownMenuItem>
-                            )}
-                            {canLockUser && (
-                              user.isLocked ? (
-                                <DropdownMenuItem onClick={() => unlockUserMutation.mutate(user.id)} data-testid={`menu-unlock-${user.id}`}>
-                                  <Unlock className="h-4 w-4 mr-2" />
-                                  Unlock User
-                                </DropdownMenuItem>
-                              ) : (
-                                <DropdownMenuItem onClick={() => handleLockUser(user)} data-testid={`menu-lock-${user.id}`}>
-                                  <Lock className="h-4 w-4 mr-2" />
-                                  Lock User
-                                </DropdownMenuItem>
-                              )
-                            )}
-                            {canDeleteUser && (
-                              <DropdownMenuItem onClick={() => handleDeleteUser(user)} className="text-destructive" data-testid={`menu-delete-${user.id}`}>
-                                <Trash2 className="h-4 w-4 mr-2" />
-                                Delete User
-                              </DropdownMenuItem>
-                            )}
+                            {(() => {
+                              const isTargetAdmin = user.role === "admin";
+                              const canModifyAdminTarget = isAdmin || !isTargetAdmin;
+                              
+                              return (
+                                <>
+                                  {canEditUser && canModifyAdminTarget && (
+                                    <DropdownMenuItem onClick={() => handleEditUser(user)} data-testid={`menu-edit-${user.id}`}>
+                                      <Pencil className="h-4 w-4 mr-2" />
+                                      Edit User
+                                    </DropdownMenuItem>
+                                  )}
+                                  {canResetPassword && canModifyAdminTarget && (
+                                    <DropdownMenuItem onClick={() => handleResetPassword(user)} data-testid={`menu-reset-password-${user.id}`}>
+                                      <Key className="h-4 w-4 mr-2" />
+                                      Reset Password
+                                    </DropdownMenuItem>
+                                  )}
+                                  {canEditUser && canModifyAdminTarget && (
+                                    <DropdownMenuItem onClick={() => handleAssignProject(user)} data-testid={`menu-assign-project-${user.id}`}>
+                                      <FolderPlus className="h-4 w-4 mr-2" />
+                                      Assign Projects
+                                    </DropdownMenuItem>
+                                  )}
+                                  {canLockUser && canModifyAdminTarget && (
+                                    user.isLocked ? (
+                                      <DropdownMenuItem onClick={() => unlockUserMutation.mutate(user.id)} data-testid={`menu-unlock-${user.id}`}>
+                                        <Unlock className="h-4 w-4 mr-2" />
+                                        Unlock User
+                                      </DropdownMenuItem>
+                                    ) : (
+                                      <DropdownMenuItem onClick={() => handleLockUser(user)} data-testid={`menu-lock-${user.id}`}>
+                                        <Lock className="h-4 w-4 mr-2" />
+                                        Lock User
+                                      </DropdownMenuItem>
+                                    )
+                                  )}
+                                  {canDeleteUser && canModifyAdminTarget && (
+                                    <DropdownMenuItem onClick={() => handleDeleteUser(user)} className="text-destructive" data-testid={`menu-delete-${user.id}`}>
+                                      <Trash2 className="h-4 w-4 mr-2" />
+                                      Delete User
+                                    </DropdownMenuItem>
+                                  )}
+                                </>
+                              );
+                            })()}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
@@ -2028,7 +2042,7 @@ export default function Users() {
                         <ChevronRight className="h-4 w-4" />
                       </TableCell>
                     </TableRow>
-                  ))}
+                  );})}
                 </TableBody>
               </Table>
             </div>

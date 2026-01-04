@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -12,11 +12,12 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDes
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
-import type { Project } from "@shared/schema";
-import { ArrowLeft, Save, Loader2, Globe, Clock } from "lucide-react";
+import type { Project, User } from "@shared/schema";
+import { ArrowLeft, Save, Loader2, Globe, Clock, Users, X } from "lucide-react";
 
 const projectFormSchema = z.object({
   name: z.string().min(1, "Name is required").max(255),
@@ -149,6 +150,49 @@ export default function ProjectForm() {
         return;
       }
       toast({ title: "Error", description: "Failed to update project", variant: "destructive" });
+    },
+  });
+
+  const [selectedUserId, setSelectedUserId] = useState<string>("");
+
+  const { data: projectUsers = [], isLoading: usersLoading } = useQuery<User[]>({
+    queryKey: ["/api/projects", id, "users"],
+    enabled: isEditing,
+  });
+
+  const { data: allUsers = [] } = useQuery<User[]>({
+    queryKey: ["/api/users"],
+    enabled: isEditing,
+  });
+
+  const availableUsers = allUsers.filter(
+    (u) => !projectUsers.some((pu) => pu.id === u.id)
+  );
+
+  const addUserMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      await apiRequest("POST", `/api/projects/${id}/users`, { userId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "users"] });
+      setSelectedUserId("");
+      toast({ title: "Success", description: "User assigned to project" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message || "Failed to assign user", variant: "destructive" });
+    },
+  });
+
+  const removeUserMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      await apiRequest("DELETE", `/api/projects/${id}/users/${userId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "users"] });
+      toast({ title: "Success", description: "User removed from project" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message || "Failed to remove user", variant: "destructive" });
     },
   });
 
@@ -531,6 +575,84 @@ export default function ProjectForm() {
                   </div>
                 )}
               </div>
+
+              {isEditing && (
+                <div className="border-t pt-6 mt-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Users className="h-5 w-5 text-muted-foreground" />
+                    <h3 className="text-lg font-medium">Assigned Users</h3>
+                  </div>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Manage which users have access to this project.
+                  </p>
+
+                  {usersLoading ? (
+                    <div className="space-y-2">
+                      <Skeleton className="h-10 w-full" />
+                      <Skeleton className="h-6 w-32" />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2 mb-4">
+                        <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+                          <SelectTrigger className="flex-1" data-testid="select-add-user">
+                            <SelectValue placeholder="Select a user to add..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {availableUsers.length === 0 ? (
+                              <SelectItem value="none" disabled>No users available</SelectItem>
+                            ) : (
+                              availableUsers.map((u) => (
+                                <SelectItem key={u.id} value={u.id}>
+                                  {u.firstName && u.lastName
+                                    ? `${u.firstName} ${u.lastName}`
+                                    : u.username || u.email || u.id}
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          disabled={!selectedUserId || selectedUserId === "none" || addUserMutation.isPending}
+                          onClick={() => selectedUserId && addUserMutation.mutate(selectedUserId)}
+                          data-testid="button-add-user"
+                        >
+                          {addUserMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add"}
+                        </Button>
+                      </div>
+
+                      {projectUsers.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {projectUsers.map((u) => (
+                            <Badge 
+                              key={u.id} 
+                              variant="secondary"
+                              className="flex items-center gap-1 pr-1"
+                            >
+                              {u.firstName && u.lastName
+                                ? `${u.firstName} ${u.lastName}`
+                                : u.username || u.email || u.id}
+                              <button
+                                type="button"
+                                className="ml-1 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none"
+                                onClick={() => removeUserMutation.mutate(u.id)}
+                                disabled={removeUserMutation.isPending}
+                                data-testid={`button-remove-user-${u.id}`}
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </Badge>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">No users assigned to this project</p>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
 
               <div className="flex items-center justify-end gap-4 pt-4">
                 <Link href="/projects">
