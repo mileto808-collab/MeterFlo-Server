@@ -1148,7 +1148,10 @@ export default function Users() {
                           </FormControl>
                           <SelectContent>
                             <SelectItem value="none">No Access Level (View Only)</SelectItem>
-                            {subroles?.filter(s => s.baseRole === "user" || s.baseRole === "admin").map((subrole) => (
+                            {subroles?.filter(s => 
+                              (s.baseRole === "user" || s.baseRole === "admin") &&
+                              (isAdmin || s.key !== "administrator")
+                            ).map((subrole) => (
                               <SelectItem key={subrole.id} value={subrole.id.toString()}>
                                 {subrole.label}
                               </SelectItem>
@@ -1443,7 +1446,10 @@ export default function Users() {
                           </FormControl>
                           <SelectContent>
                             <SelectItem value="none">No Access Level (View Only)</SelectItem>
-                            {subroles?.filter(s => s.baseRole === "user" || s.baseRole === "admin").map((subrole) => (
+                            {subroles?.filter(s => 
+                              (s.baseRole === "user" || s.baseRole === "admin") &&
+                              (isAdmin || s.key !== "administrator")
+                            ).map((subrole) => (
                               <SelectItem key={subrole.id} value={subrole.id.toString()}>
                                 {subrole.label}
                               </SelectItem>
