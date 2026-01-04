@@ -144,6 +144,8 @@ export default function Users() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [lockReason, setLockReason] = useState("");
   const [showFilters, setShowFilters] = useState(false);
+  const [inlineNewPassword, setInlineNewPassword] = useState("");
+  const [inlineConfirmPassword, setInlineConfirmPassword] = useState("");
 
   const { data: users, isLoading } = useQuery<User[]>({ queryKey: ["/api/users"] });
   const { data: projects } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
@@ -982,7 +984,22 @@ export default function Users() {
       website: user.website || "",
       notes: user.notes || "",
     });
+    setInlineNewPassword("");
+    setInlineConfirmPassword("");
     setEditingUser(user);
+  };
+
+  const handleInlinePasswordReset = () => {
+    if (!editingUser || !inlineNewPassword || inlineNewPassword !== inlineConfirmPassword) return;
+    resetPasswordMutation.mutate(
+      { userId: editingUser.id, newPassword: inlineNewPassword },
+      {
+        onSuccess: () => {
+          setInlineNewPassword("");
+          setInlineConfirmPassword("");
+        }
+      }
+    );
   };
 
   const handleResetPassword = (user: User) => {
@@ -1740,6 +1757,63 @@ export default function Users() {
                         </Select>
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* Password Reset Section */}
+                {canResetPassword && (editingUser.role !== "admin" || isAdmin) && (
+                  <div className="border-t pt-4 mt-4">
+                    <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                      <Key className="h-4 w-4" />
+                      Reset Password
+                    </h3>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-sm text-muted-foreground mb-1 block">New Password</label>
+                        <Input
+                          type="password"
+                          value={inlineNewPassword}
+                          onChange={(e) => setInlineNewPassword(e.target.value)}
+                          placeholder="Enter new password"
+                          data-testid="input-inline-new-password"
+                        />
+                        {inlineNewPassword && inlineNewPassword.length < 8 && (
+                          <p className="text-xs text-destructive mt-1">Password must be at least 8 characters</p>
+                        )}
+                        {inlineNewPassword && inlineNewPassword.length >= 8 && !/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(inlineNewPassword) && (
+                          <p className="text-xs text-destructive mt-1">Password must contain uppercase, lowercase, and a number</p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="text-sm text-muted-foreground mb-1 block">Confirm Password</label>
+                        <Input
+                          type="password"
+                          value={inlineConfirmPassword}
+                          onChange={(e) => setInlineConfirmPassword(e.target.value)}
+                          placeholder="Confirm new password"
+                          data-testid="input-inline-confirm-password"
+                        />
+                        {inlineNewPassword && inlineConfirmPassword && inlineNewPassword !== inlineConfirmPassword && (
+                          <p className="text-xs text-destructive mt-1">Passwords do not match</p>
+                        )}
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleInlinePasswordReset}
+                        disabled={
+                          !inlineNewPassword || 
+                          !inlineConfirmPassword || 
+                          inlineNewPassword !== inlineConfirmPassword || 
+                          inlineNewPassword.length < 8 ||
+                          !/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(inlineNewPassword) ||
+                          resetPasswordMutation.isPending
+                        }
+                        data-testid="button-inline-reset-password"
+                      >
+                        {resetPasswordMutation.isPending ? "Resetting..." : "Reset Password"}
+                      </Button>
+                    </div>
                   </div>
                 )}
 
