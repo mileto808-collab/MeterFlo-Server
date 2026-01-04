@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/hooks/useAuth";
 import type { WorkOrder, Project, User, UserGroup } from "@shared/schema";
-import { ArrowLeft, Edit, Calendar, User as UserIcon, FolderOpen, Clock, Users } from "lucide-react";
+import { ArrowLeft, Edit, Calendar, User as UserIcon, FolderOpen, Clock, Users, Eye, Download, FileIcon } from "lucide-react";
 import { useTimezone } from "@/hooks/use-timezone";
 
 export default function WorkOrderDetail() {
@@ -226,12 +226,37 @@ export default function WorkOrderDetail() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  {workOrder.attachments.map((attachment, index) => (
+                  {workOrder.attachments.map((attachment: string, index: number) => (
                     <div
                       key={index}
-                      className="flex items-center gap-3 p-3 rounded-md bg-muted"
+                      className="flex items-center justify-between gap-3 p-3 rounded-md bg-muted"
+                      data-testid={`attachment-${index}`}
                     >
-                      <span className="text-sm">{attachment}</span>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <FileIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <span className="text-sm truncate">{attachment}</span>
+                      </div>
+                      {workOrder.projectId && (
+                        <div className="flex gap-1 shrink-0">
+                          <a
+                            href={`/api/projects/${workOrder.projectId}/work-orders/${workOrder.id}/files/${encodeURIComponent(attachment)}/download?mode=view`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <Button type="button" variant="ghost" size="icon" data-testid={`button-view-attachment-${index}`}>
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </a>
+                          <a
+                            href={`/api/projects/${workOrder.projectId}/work-orders/${workOrder.id}/files/${encodeURIComponent(attachment)}/download`}
+                            download
+                          >
+                            <Button type="button" variant="ghost" size="icon" data-testid={`button-download-attachment-${index}`}>
+                              <Download className="h-4 w-4" />
+                            </Button>
+                          </a>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
