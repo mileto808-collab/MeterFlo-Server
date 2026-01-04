@@ -547,6 +547,69 @@ export async function registerRoutes(
     }
   });
 
+  // User-Group membership endpoints (get/add/remove group memberships for a specific user)
+  app.get("/api/users/:id/groups", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const targetUserId = req.params.id;
+      
+      // Allow users with nav.users permission OR if viewing their own groups
+      const hasNavUsers = currentUser ? await storage.hasPermission(currentUser, permissionKeys.NAV_USERS) : false;
+      if (!hasNavUsers && currentUser?.id !== targetUserId) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      
+      const groups = await storage.getUserGroupMemberships(targetUserId);
+      res.json(groups);
+    } catch (error) {
+      console.error("Error fetching user groups:", error);
+      res.status(500).json({ message: "Failed to fetch user groups" });
+    }
+  });
+
+  app.post("/api/users/:id/groups", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canManageUserGroups = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_USER_GROUPS);
+      if (!canManageUserGroups) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to manage user groups" });
+      }
+      
+      const { groupId } = req.body;
+      if (!groupId) {
+        return res.status(400).json({ message: "groupId is required" });
+      }
+      
+      await storage.addUserToGroup(parseInt(groupId), req.params.id);
+      res.status(201).json({ message: "User added to group" });
+    } catch (error) {
+      console.error("Error adding user to group:", error);
+      res.status(500).json({ message: "Failed to add user to group" });
+    }
+  });
+
+  app.delete("/api/users/:userId/groups/:groupId", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canManageUserGroups = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_USER_GROUPS);
+      if (!canManageUserGroups) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to manage user groups" });
+      }
+      
+      await storage.removeUserFromGroup(parseInt(req.params.groupId), req.params.userId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error removing user from group:", error);
+      res.status(500).json({ message: "Failed to remove user from group" });
+    }
+  });
+
   // Subroles and Permissions endpoints
   app.get("/api/subroles", isAuthenticated, async (req: any, res) => {
     try {
