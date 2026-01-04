@@ -26,8 +26,8 @@ import { useTimezone } from "@/hooks/use-timezone";
 import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
-import type { User, Project, Subrole } from "@shared/schema";
-import { Search, Users as UsersIcon, Plus, MoreHorizontal, Pencil, Lock, Unlock, Key, Trash2, FolderPlus, X, Folder, ArrowLeft, ArrowUpDown, ArrowUp, ArrowDown, Filter, Download, FileSpreadsheet, FileText, ChevronRight } from "lucide-react";
+import type { User, Project, Subrole, UserGroup } from "@shared/schema";
+import { Search, Users as UsersIcon, Plus, MoreHorizontal, Pencil, Lock, Unlock, Key, Trash2, FolderPlus, X, Folder, ArrowLeft, ArrowUpDown, ArrowUp, ArrowDown, Filter, Download, FileSpreadsheet, FileText, ChevronRight, UsersRound } from "lucide-react";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
 
@@ -368,10 +368,96 @@ export default function Users() {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       queryClient.invalidateQueries({ queryKey: ["/api/users/all-projects"] });
       queryClient.invalidateQueries({ queryKey: ["/api/users", selectedUser?.id, "projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users", editingUser?.id, "projects"] });
       toast({ title: "Success", description: "User removed from project" });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message || "Failed to remove from project", variant: "destructive" });
+    },
+  });
+
+  // Query for all user groups (for assignment selection)
+  const { data: userGroups } = useQuery<UserGroup[]>({
+    queryKey: ["/api/user-groups"],
+    enabled: !!editingUser || assignProjectDialogOpen,
+  });
+
+  // Query for editing user's current project assignments
+  const { data: editingUserProjects, isLoading: loadingEditingUserProjects } = useQuery<Project[]>({
+    queryKey: ["/api/users", editingUser?.id, "projects"],
+    queryFn: async () => {
+      if (!editingUser) return [];
+      const res = await fetch(`/api/users/${editingUser.id}/projects`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch user projects");
+      return res.json();
+    },
+    enabled: !!editingUser,
+  });
+
+  // Query for editing user's current group memberships
+  const { data: editingUserGroups, isLoading: loadingEditingUserGroups } = useQuery<UserGroup[]>({
+    queryKey: ["/api/users", editingUser?.id, "groups"],
+    queryFn: async () => {
+      if (!editingUser) return [];
+      const res = await fetch(`/api/users/${editingUser.id}/groups`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch user groups");
+      return res.json();
+    },
+    enabled: !!editingUser,
+  });
+
+  // Mutations for editing user's project/group assignments
+  const assignEditingUserProjectMutation = useMutation({
+    mutationFn: async ({ userId, projectId }: { userId: string; projectId: number }) => {
+      await apiRequest("POST", `/api/users/${userId}/projects`, { projectId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users", editingUser?.id, "projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users/all-projects"] });
+      toast({ title: "Success", description: "Project assigned" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message || "Failed to assign project", variant: "destructive" });
+    },
+  });
+
+  const removeEditingUserProjectMutation = useMutation({
+    mutationFn: async ({ userId, projectId }: { userId: string; projectId: number }) => {
+      await apiRequest("DELETE", `/api/users/${userId}/projects/${projectId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users", editingUser?.id, "projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users/all-projects"] });
+      toast({ title: "Success", description: "Project removed" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message || "Failed to remove project", variant: "destructive" });
+    },
+  });
+
+  const assignGroupMutation = useMutation({
+    mutationFn: async ({ userId, groupId }: { userId: string; groupId: number }) => {
+      await apiRequest("POST", `/api/users/${userId}/groups`, { groupId });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users", editingUser?.id, "groups"] });
+      toast({ title: "Success", description: "User added to group" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message || "Failed to add user to group", variant: "destructive" });
+    },
+  });
+
+  const removeGroupMutation = useMutation({
+    mutationFn: async ({ userId, groupId }: { userId: string; groupId: number }) => {
+      await apiRequest("DELETE", `/api/users/${userId}/groups/${groupId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/users", editingUser?.id, "groups"] });
+      toast({ title: "Success", description: "User removed from group" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message || "Failed to remove user from group", variant: "destructive" });
     },
   });
 
@@ -1509,6 +1595,152 @@ export default function Users() {
                   </div>
                 </div>
 
+                {/* Project Assignments Section */}
+                {canEditUser && (
+                  <div className="border-t pt-4 mt-4">
+                    <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                      <Folder className="h-4 w-4" />
+                      Project Assignments
+                    </h3>
+                    
+                    {/* Current Projects */}
+                    {loadingEditingUserProjects ? (
+                      <div className="text-sm text-muted-foreground">Loading projects...</div>
+                    ) : editingUserProjects && editingUserProjects.length > 0 ? (
+                      <div className="mb-4">
+                        <p className="text-xs text-muted-foreground mb-2">Assigned Projects</p>
+                        <div className="flex flex-wrap gap-2">
+                          {editingUserProjects.map((project) => (
+                            <Badge 
+                              key={project.id} 
+                              variant="secondary"
+                              className="flex items-center gap-1"
+                            >
+                              {project.name}
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-4 w-4 p-0 ml-1"
+                                onClick={() => removeEditingUserProjectMutation.mutate({ 
+                                  userId: editingUser.id, 
+                                  projectId: project.id 
+                                })}
+                                disabled={removeEditingUserProjectMutation.isPending}
+                                data-testid={`button-remove-project-${project.id}`}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground mb-4">No projects assigned</p>
+                    )}
+
+                    {/* Available Projects */}
+                    {projects && projects.filter(p => !editingUserProjects?.some(ep => ep.id === p.id)).length > 0 && (
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-2">Add Project</p>
+                        <Select
+                          onValueChange={(value) => {
+                            const projectId = parseInt(value);
+                            assignEditingUserProjectMutation.mutate({ userId: editingUser.id, projectId });
+                          }}
+                          value=""
+                        >
+                          <SelectTrigger className="w-full max-w-xs" data-testid="select-add-project">
+                            <SelectValue placeholder="Select a project to add" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {projects
+                              .filter(p => !editingUserProjects?.some(ep => ep.id === p.id))
+                              .map((project) => (
+                                <SelectItem key={project.id} value={project.id.toString()}>
+                                  {project.name}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* User Group Assignments Section */}
+                {canEditUser && (
+                  <div className="border-t pt-4 mt-4">
+                    <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                      <UsersRound className="h-4 w-4" />
+                      User Group Memberships
+                    </h3>
+                    
+                    {/* Current Groups */}
+                    {loadingEditingUserGroups ? (
+                      <div className="text-sm text-muted-foreground">Loading groups...</div>
+                    ) : editingUserGroups && editingUserGroups.length > 0 ? (
+                      <div className="mb-4">
+                        <p className="text-xs text-muted-foreground mb-2">Member of Groups</p>
+                        <div className="flex flex-wrap gap-2">
+                          {editingUserGroups.map((group) => (
+                            <Badge 
+                              key={group.id} 
+                              variant="outline"
+                              className="flex items-center gap-1"
+                            >
+                              {group.name}
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-4 w-4 p-0 ml-1"
+                                onClick={() => removeGroupMutation.mutate({ 
+                                  userId: editingUser.id, 
+                                  groupId: group.id 
+                                })}
+                                disabled={removeGroupMutation.isPending}
+                                data-testid={`button-remove-group-${group.id}`}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground mb-4">Not a member of any groups</p>
+                    )}
+
+                    {/* Available Groups */}
+                    {userGroups && userGroups.filter(g => !editingUserGroups?.some(eg => eg.id === g.id)).length > 0 && (
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-2">Add to Group</p>
+                        <Select
+                          onValueChange={(value) => {
+                            const groupId = parseInt(value);
+                            assignGroupMutation.mutate({ userId: editingUser.id, groupId });
+                          }}
+                          value=""
+                        >
+                          <SelectTrigger className="w-full max-w-xs" data-testid="select-add-group">
+                            <SelectValue placeholder="Select a group to add" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {userGroups
+                              .filter(g => !editingUserGroups?.some(eg => eg.id === g.id))
+                              .map((group) => (
+                                <SelectItem key={group.id} value={group.id.toString()}>
+                                  {group.name}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div className="flex gap-4 pt-4">
                   <Button type="button" variant="outline" onClick={() => setEditingUser(null)}>Cancel</Button>
                   <Button type="submit" disabled={updateUserMutation.isPending} data-testid="button-submit-edit">
@@ -1743,7 +1975,7 @@ export default function Users() {
                       className="cursor-pointer hover-elevate"
                       onClick={(e) => {
                         const target = e.target as HTMLElement;
-                        if (target.closest('button, a, [role="button"]')) return;
+                        if (target.closest('button, a, [role="button"], [role="menuitem"]')) return;
                         handleEditUser(user);
                       }}
                     >
