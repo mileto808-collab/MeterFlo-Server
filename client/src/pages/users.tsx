@@ -1614,14 +1614,12 @@ export default function Users() {
                             <Badge 
                               key={project.id} 
                               variant="secondary"
-                              className="flex items-center gap-1"
+                              className="flex items-center gap-1 pr-1"
                             >
                               {project.name}
-                              <Button
+                              <button
                                 type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-4 w-4 p-0 ml-1"
+                                className="ml-1 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none"
                                 onClick={() => removeEditingUserProjectMutation.mutate({ 
                                   userId: editingUser.id, 
                                   projectId: project.id 
@@ -1630,7 +1628,7 @@ export default function Users() {
                                 data-testid={`button-remove-project-${project.id}`}
                               >
                                 <X className="h-3 w-3" />
-                              </Button>
+                              </button>
                             </Badge>
                           ))}
                         </div>
@@ -1687,14 +1685,12 @@ export default function Users() {
                             <Badge 
                               key={group.id} 
                               variant="outline"
-                              className="flex items-center gap-1"
+                              className="flex items-center gap-1 pr-1"
                             >
                               {group.name}
-                              <Button
+                              <button
                                 type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-4 w-4 p-0 ml-1"
+                                className="ml-1 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none"
                                 onClick={() => removeGroupMutation.mutate({ 
                                   userId: editingUser.id, 
                                   groupId: group.id 
@@ -1703,7 +1699,7 @@ export default function Users() {
                                 data-testid={`button-remove-group-${group.id}`}
                               >
                                 <X className="h-3 w-3" />
-                              </Button>
+                              </button>
                             </Badge>
                           ))}
                         </div>
