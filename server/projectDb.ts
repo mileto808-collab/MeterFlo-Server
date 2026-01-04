@@ -1040,6 +1040,40 @@ export class ProjectWorkOrderStorage {
     }
   }
 
+  /**
+   * Atomically claim a work order for a user.
+   * Only succeeds if the work order is not already assigned to another user.
+   * Uses WHERE condition to prevent race conditions.
+   * 
+   * @returns The claimed work order if successful, or null if already claimed by another user
+   */
+  async claimWorkOrder(id: number, userId: string, updatedBy: string): Promise<ProjectWorkOrder | null> {
+    const client = await pool.connect();
+    try {
+      // Atomic update: only claim if assigned_user_id is NULL or already assigned to this user
+      // This prevents race conditions where two users try to claim simultaneously
+      const result = await client.query(`
+        UPDATE "${this.schemaName}".work_orders 
+        SET assigned_user_id = $1, 
+            assigned_group_id = NULL, 
+            updated_by = $2, 
+            updated_at = NOW()
+        WHERE id = $3 
+          AND (assigned_user_id IS NULL OR assigned_user_id = $1)
+        RETURNING *
+      `, [userId, updatedBy, id]);
+      
+      // If no rows were updated, the work order was already claimed by someone else
+      if (result.rowCount === 0) {
+        return null;
+      }
+      
+      return this.mapRowToWorkOrder(result.rows[0]);
+    } finally {
+      client.release();
+    }
+  }
+
   async getWorkOrderStats(): Promise<{ statusCounts: Record<string, number>; total: number }> {
     const client = await pool.connect();
     try {

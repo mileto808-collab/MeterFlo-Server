@@ -1230,6 +1230,7 @@ export async function registerRoutes(
       let workOrders = await workOrderStorage.getWorkOrders(filters);
       
       // Filter for field technicians - only show work orders assigned to them or their groups
+      // IMPORTANT: Work orders claimed by other users should NOT be shown
       if (currentUser?.subroleId) {
         const subrole = await storage.getSubrole(currentUser.subroleId);
         if (subrole?.key === "field_technician") {
@@ -1238,10 +1239,11 @@ export async function registerRoutes(
           const userGroupNames = userGroups.map(g => g.name);
           
           workOrders = workOrders.filter(wo => {
-            // Check if directly assigned to user
+            // Check if directly assigned to user (claimed by current user)
             if (wo.assignedUserId === currentUser.id) return true;
-            // Check if assigned to one of user's groups (by name)
-            if (wo.assignedGroupId && userGroupNames.includes(wo.assignedGroupId)) return true;
+            // Check if assigned to one of user's groups AND not yet claimed by another user
+            // (assignedUserId must be null for unclaimed group work orders)
+            if (wo.assignedGroupId && userGroupNames.includes(wo.assignedGroupId) && !wo.assignedUserId) return true;
             return false;
           });
         }
@@ -1274,6 +1276,7 @@ export async function registerRoutes(
       const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
       
       // For field technicians, compute stats from their filtered work orders
+      // IMPORTANT: Work orders claimed by other users should NOT be counted
       if (currentUser?.subroleId) {
         const subrole = await storage.getSubrole(currentUser.subroleId);
         if (subrole?.key === "field_technician") {
@@ -1283,8 +1286,10 @@ export async function registerRoutes(
           
           const allWorkOrders = await workOrderStorage.getWorkOrders({});
           const filteredWorkOrders = allWorkOrders.filter(wo => {
+            // Check if directly assigned to user (claimed by current user)
             if (wo.assignedUserId === currentUser.id) return true;
-            if (wo.assignedGroupId && userGroupNames.includes(wo.assignedGroupId)) return true;
+            // Check if assigned to one of user's groups AND not yet claimed by another user
+            if (wo.assignedGroupId && userGroupNames.includes(wo.assignedGroupId) && !wo.assignedUserId) return true;
             return false;
           });
           
@@ -1486,6 +1491,7 @@ export async function registerRoutes(
   });
 
   // Claim a work order - auto-assign to current user when starting meter changeout
+  // Uses atomic claim operation to prevent race conditions
   app.post("/api/projects/:projectId/work-orders/:workOrderId/claim", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
@@ -1510,8 +1516,9 @@ export async function registerRoutes(
       }
       
       const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
-      const workOrder = await workOrderStorage.getWorkOrder(workOrderId);
       
+      // First check if work order exists
+      const workOrder = await workOrderStorage.getWorkOrder(workOrderId);
       if (!workOrder) {
         return res.status(404).json({ message: "Work order not found" });
       }
@@ -1521,18 +1528,28 @@ export async function registerRoutes(
         return res.json({ message: "Already assigned to you", workOrder, claimed: false });
       }
       
-      // Always perform claim when launching wizard - this assigns to the user and clears group
-      // Use username for updated_by since it has a foreign key constraint to users table
+      // Use atomic claim operation - this prevents race conditions where two users
+      // try to claim the same work order simultaneously
       const updatedByUsername = currentUser.username || currentUser.id;
-      
-      // Assign work order to current user (clear group assignment)
-      const updatedWorkOrder = await workOrderStorage.updateWorkOrder(
+      const claimedWorkOrder = await workOrderStorage.claimWorkOrder(
         workOrderId, 
-        { assignedUserId: currentUser.id, assignedGroupId: null },
+        currentUser.id,
         updatedByUsername
       );
       
-      res.json({ message: "Work order assigned to you", workOrder: updatedWorkOrder, claimed: true });
+      // If claimWorkOrder returns null, someone else claimed it first
+      if (!claimedWorkOrder) {
+        return res.status(409).json({ 
+          message: "This work order has already been claimed by another user", 
+          claimed: false,
+          alreadyClaimed: true 
+        });
+      }
+      
+      // Emit SSE event to notify other users
+      emitWorkOrderUpdated(projectId, workOrderId, currentUser.id);
+      
+      res.json({ message: "Work order assigned to you", workOrder: claimedWorkOrder, claimed: true });
     } catch (error) {
       console.error("Error claiming work order:", error);
       res.status(500).json({ message: "Failed to claim work order" });
@@ -5107,14 +5124,16 @@ export async function registerRoutes(
         let paramCount = 1;
         
         // Field technician filtering - only show work orders assigned to them or their groups
+        // IMPORTANT: Work orders claimed by other users should NOT be shown
         if (isFieldTechnician) {
           const assignmentConditions: string[] = [];
-          // Assigned directly to user
+          // Assigned directly to user (claimed by current user)
           assignmentConditions.push(`w.assigned_user_id = $${paramCount++}`);
           values.push(currentUser.id);
-          // Assigned to one of user's groups
+          // Assigned to one of user's groups AND not yet claimed by another user
+          // (assigned_user_id must be null for unclaimed group work orders)
           if (userGroupNames.length > 0) {
-            assignmentConditions.push(`w.assigned_group_id = ANY($${paramCount++})`);
+            assignmentConditions.push(`(w.assigned_group_id = ANY($${paramCount++}) AND w.assigned_user_id IS NULL)`);
             values.push(userGroupNames);
           }
           conditions.push(`(${assignmentConditions.join(" OR ")})`);
@@ -6110,14 +6129,20 @@ export async function registerRoutes(
             continue;
           }
           
-          // Claim the work order
-          await workOrderStorage.updateWorkOrder(
+          // Use atomic claim to prevent race conditions
+          const claimedWorkOrder = await workOrderStorage.claimWorkOrder(
             workOrderId,
-            { assignedUserId: currentUser.id, assignedGroupId: null },
+            currentUser.id,
             updatedByUsername
           );
           
-          results.push({ id: workOrderId, claimed: true });
+          if (claimedWorkOrder) {
+            // Emit SSE event to notify other users
+            emitWorkOrderUpdated(projectId, workOrderId, currentUser.id);
+            results.push({ id: workOrderId, claimed: true });
+          } else {
+            results.push({ id: workOrderId, claimed: false, message: "Already claimed by another user" });
+          }
         } catch (error) {
           console.error(`Error claiming work order ${workOrderId}:`, error);
           results.push({ id: workOrderId, claimed: false, message: String(error) });
