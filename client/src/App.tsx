@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import Landing from "@/pages/landing";
 import Dashboard from "@/pages/dashboard";
 import WorkOrders from "@/pages/work-orders";
+import WorkOrderDetail from "@/pages/work-order-detail";
 import Projects from "@/pages/projects";
 import ProjectForm from "@/pages/project-form";
 import ProjectWorkOrders from "@/pages/project-work-orders";
@@ -58,7 +59,10 @@ function AuthenticatedRouter() {
       <Route path="/" component={Dashboard} />
       
       {role === "customer" && (
-        <Route path="/work-orders" component={WorkOrders} />
+        <>
+          <Route path="/work-orders" component={WorkOrders} />
+          <Route path="/work-orders/:id" component={WorkOrderDetail} />
+        </>
       )}
       
       {hasPermission("nav.projects") && (

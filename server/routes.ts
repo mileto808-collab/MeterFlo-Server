@@ -1052,6 +1052,12 @@ export async function registerRoutes(
         return res.status(401).json({ message: "Unauthorized" });
       }
       
+      // For customer role: Return empty array until proper tenant mapping is configured
+      // This ensures multi-tenant isolation by not exposing project metadata
+      if (currentUser.role === "customer") {
+        return res.json([]);
+      }
+      
       // Users with nav.projects permission can see all projects
       const hasNavProjects = await storage.hasPermission(currentUser, permissionKeys.NAV_PROJECTS);
       if (hasNavProjects) {
@@ -1071,12 +1077,21 @@ export async function registerRoutes(
   app.get("/api/projects/:id", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // For customer role: Block access until proper tenant mapping is configured
+      if (currentUser.role === "customer") {
+        return res.status(403).json({ message: "Forbidden: Customer portal configuration required" });
+      }
+      
       const projectId = parseInt(req.params.id);
       
       // Check if user has nav.projects permission (can see all projects) or is assigned to this project
-      const hasNavProjects = currentUser ? await storage.hasPermission(currentUser, permissionKeys.NAV_PROJECTS) : false;
+      const hasNavProjects = await storage.hasPermission(currentUser, permissionKeys.NAV_PROJECTS);
       if (!hasNavProjects) {
-        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
         if (!isAssigned) {
           return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
         }
@@ -1324,11 +1339,16 @@ export async function registerRoutes(
   app.get("/api/projects/:projectId/events", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      const projectId = parseInt(req.params.projectId);
-      
       if (!currentUser) {
         return res.status(401).json({ message: "Unauthorized" });
       }
+      
+      // For customer role: Block access until proper tenant mapping is configured
+      if (currentUser.role === "customer") {
+        return res.status(403).json({ message: "Forbidden: Customer portal configuration required" });
+      }
+      
+      const projectId = parseInt(req.params.projectId);
       
       // Check project access
       const canViewProjects = await storage.hasPermission(currentUser, permissionKeys.PROJECTS_VIEW);
@@ -1415,22 +1435,136 @@ export async function registerRoutes(
     }
   });
 
+  // Global work orders endpoint (for customers and cross-project views)
+  app.get("/api/work-orders", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // For customer role: Return empty array until proper tenant mapping is configured
+      // This ensures multi-tenant isolation by not exposing any cross-tenant data
+      if (currentUser.role === "customer") {
+        // TODO: Implement proper customer-work order tenant mapping
+        // When configured, filter by customerTenantKey matching work_orders.customerId
+        return res.json([]);
+      }
+      
+      // For internal users (admin/user), aggregate work orders from assigned projects
+      let projects: any[] = [];
+      if (currentUser.role === "admin") {
+        projects = await storage.getProjects();
+      } else {
+        projects = await storage.getUserProjects(currentUser.id);
+      }
+      
+      const allWorkOrders: any[] = [];
+      
+      for (const project of projects) {
+        if (!project.databaseName) continue;
+        
+        try {
+          const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+          let workOrders = await workOrderStorage.getWorkOrders({});
+          
+          // Add project info to each work order
+          workOrders = workOrders.map((wo: any) => ({
+            ...wo,
+            projectId: project.id,
+            projectName: project.name
+          }));
+          
+          allWorkOrders.push(...workOrders);
+        } catch (err) {
+          console.error(`Error fetching work orders for project ${project.id}:`, err);
+        }
+      }
+      
+      res.json(allWorkOrders);
+    } catch (error) {
+      console.error("Error fetching global work orders:", error);
+      res.status(500).json({ message: "Failed to fetch work orders" });
+    }
+  });
+  
+  // Get single work order by ID (for detail view)
+  app.get("/api/work-orders/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // For customer role: Return 404 until proper tenant mapping is configured
+      // This ensures multi-tenant isolation by not exposing any cross-tenant data
+      if (currentUser.role === "customer") {
+        // TODO: Implement proper customer-work order tenant mapping
+        return res.status(404).json({ message: "Work order not found" });
+      }
+      
+      const workOrderId = parseInt(req.params.id);
+      
+      // For internal users, get projects they have access to
+      let projects: any[] = [];
+      if (currentUser.role === "admin") {
+        projects = await storage.getProjects();
+      } else {
+        projects = await storage.getUserProjects(currentUser.id);
+      }
+      
+      // Search for the work order across all accessible projects
+      for (const project of projects) {
+        if (!project.databaseName) continue;
+        
+        try {
+          const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+          const workOrder = await workOrderStorage.getWorkOrder(workOrderId);
+          
+          if (workOrder) {
+            return res.json({
+              ...workOrder,
+              projectId: project.id,
+              projectName: project.name
+            });
+          }
+        } catch (err) {
+          // Work order not in this project, continue searching
+        }
+      }
+      
+      res.status(404).json({ message: "Work order not found" });
+    } catch (error) {
+      console.error("Error fetching work order:", error);
+      res.status(500).json({ message: "Failed to fetch work order" });
+    }
+  });
+
   // Project-scoped work orders
   app.get("/api/projects/:projectId/work-orders", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // For customer role: Block access until proper tenant mapping is configured
+      if (currentUser.role === "customer") {
+        return res.status(403).json({ message: "Forbidden: Customer portal configuration required" });
+      }
+      
       const projectId = parseInt(req.params.projectId);
       
       // Check if user has permission to view work orders
-      const canViewWorkOrders = currentUser ? await storage.hasPermission(currentUser, permissionKeys.WORK_ORDERS_VIEW) : false;
+      const canViewWorkOrders = await storage.hasPermission(currentUser, permissionKeys.WORK_ORDERS_VIEW);
       if (!canViewWorkOrders) {
         return res.status(403).json({ message: "Forbidden: You don't have permission to view work orders" });
       }
       
       // Check project access - either has projects.view (can see all) or is assigned
-      const canViewProjects = currentUser ? await storage.hasPermission(currentUser, permissionKeys.PROJECTS_VIEW) : false;
+      const canViewProjects = await storage.hasPermission(currentUser, permissionKeys.PROJECTS_VIEW);
       if (!canViewProjects) {
-        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
         if (!isAssigned) {
           return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
         }
@@ -1446,10 +1580,6 @@ export async function registerRoutes(
       
       if (req.query.status) filters.status = req.query.status;
       if (req.query.assignedTo) filters.assignedTo = req.query.assignedTo;
-      
-      if (currentUser?.role === "customer") {
-        filters.status = "completed";
-      }
       
       let workOrders = await workOrderStorage.getWorkOrders(filters);
       
@@ -1483,10 +1613,19 @@ export async function registerRoutes(
   app.get("/api/projects/:projectId/work-orders/stats", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // For customer role: Block access until proper tenant mapping is configured
+      if (currentUser.role === "customer") {
+        return res.status(403).json({ message: "Forbidden: Customer portal configuration required" });
+      }
+      
       const projectId = parseInt(req.params.projectId);
       
-      if (currentUser?.role !== "admin") {
-        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
         if (!isAssigned) {
           return res.status(403).json({ message: "Forbidden" });
         }
@@ -1544,6 +1683,15 @@ export async function registerRoutes(
   app.get("/api/projects/:projectId/work-orders/search", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // For customer role: Block access until proper tenant mapping is configured
+      if (currentUser.role === "customer") {
+        return res.status(403).json({ message: "Forbidden: Customer portal configuration required" });
+      }
+      
       const projectId = parseInt(req.params.projectId);
       const meterId = req.query.meterId as string;
       
@@ -1551,8 +1699,8 @@ export async function registerRoutes(
         return res.status(400).json({ message: "meterId query parameter is required" });
       }
       
-      if (currentUser?.role !== "admin") {
-        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
         if (!isAssigned) {
           return res.status(403).json({ message: "Forbidden" });
         }
@@ -1607,11 +1755,20 @@ export async function registerRoutes(
   app.get("/api/projects/:projectId/work-orders/:workOrderId", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // For customer role: Block access until proper tenant mapping is configured
+      if (currentUser.role === "customer") {
+        return res.status(403).json({ message: "Forbidden: Customer portal configuration required" });
+      }
+      
       const projectId = parseInt(req.params.projectId);
       const workOrderId = parseInt(req.params.workOrderId);
       
-      if (currentUser?.role !== "admin") {
-        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
         if (!isAssigned) {
           return res.status(403).json({ message: "Forbidden" });
         }
@@ -1662,11 +1819,20 @@ export async function registerRoutes(
   app.get("/api/projects/:projectId/work-orders/by-meter/:meterId", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // For customer role: Block access until proper tenant mapping is configured
+      if (currentUser.role === "customer") {
+        return res.status(403).json({ message: "Forbidden: Customer portal configuration required" });
+      }
+      
       const projectId = parseInt(req.params.projectId);
       const meterId = decodeURIComponent(req.params.meterId);
       
-      if (currentUser?.role !== "admin") {
-        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
         if (!isAssigned) {
           return res.status(403).json({ message: "Forbidden" });
         }
@@ -2556,11 +2722,20 @@ export async function registerRoutes(
   app.get("/api/projects/:projectId/work-orders/:workOrderId/files", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // For customer role: Block access until proper tenant mapping is configured
+      if (currentUser.role === "customer") {
+        return res.status(403).json({ message: "Forbidden: Customer portal configuration required" });
+      }
+      
       const projectId = parseInt(req.params.projectId);
       const workOrderId = parseInt(req.params.workOrderId);
       
-      if (currentUser?.role !== "admin") {
-        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
         if (!isAssigned) {
           return res.status(403).json({ message: "Forbidden" });
         }
@@ -2631,11 +2806,20 @@ export async function registerRoutes(
   app.get("/api/projects/:projectId/work-orders/:workOrderId/files/:filename/download", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // For customer role: Block access until proper tenant mapping is configured
+      if (currentUser.role === "customer") {
+        return res.status(403).json({ message: "Forbidden: Customer portal configuration required" });
+      }
+      
       const projectId = parseInt(req.params.projectId);
       const workOrderId = parseInt(req.params.workOrderId);
       
-      if (currentUser?.role !== "admin") {
-        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
         if (!isAssigned) {
           return res.status(403).json({ message: "Forbidden" });
         }
@@ -2958,10 +3142,19 @@ export async function registerRoutes(
   app.get("/api/projects/:projectId/files", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // For customer role: Block access until proper tenant mapping is configured
+      if (currentUser.role === "customer") {
+        return res.status(403).json({ message: "Forbidden: Customer portal configuration required" });
+      }
+      
       const projectId = parseInt(req.params.projectId);
       
-      if (currentUser?.role !== "admin") {
-        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
         if (!isAssigned) {
           return res.status(403).json({ message: "Forbidden" });
         }
@@ -3064,10 +3257,19 @@ export async function registerRoutes(
   app.get("/api/projects/:projectId/files/:filename/download", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // For customer role: Block access until proper tenant mapping is configured
+      if (currentUser.role === "customer") {
+        return res.status(403).json({ message: "Forbidden: Customer portal configuration required" });
+      }
+      
       const projectId = parseInt(req.params.projectId);
       
-      if (currentUser?.role !== "admin") {
-        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
         if (!isAssigned) {
           return res.status(403).json({ message: "Forbidden" });
         }
@@ -3112,10 +3314,19 @@ export async function registerRoutes(
   app.get("/api/projects/:projectId/ftp-files", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // For customer role: Block access until proper tenant mapping is configured
+      if (currentUser.role === "customer") {
+        return res.status(403).json({ message: "Forbidden: Customer portal configuration required" });
+      }
+      
       const projectId = parseInt(req.params.projectId);
       
-      if (currentUser?.role !== "admin") {
-        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
         if (!isAssigned) {
           return res.status(403).json({ message: "Forbidden" });
         }
@@ -3217,10 +3428,19 @@ export async function registerRoutes(
   app.get("/api/projects/:projectId/ftp-files/:filename/download", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // For customer role: Block access until proper tenant mapping is configured
+      if (currentUser.role === "customer") {
+        return res.status(403).json({ message: "Forbidden: Customer portal configuration required" });
+      }
+      
       const projectId = parseInt(req.params.projectId);
       
-      if (currentUser?.role !== "admin") {
-        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
         if (!isAssigned) {
           return res.status(403).json({ message: "Forbidden" });
         }
@@ -3250,10 +3470,19 @@ export async function registerRoutes(
   app.get("/api/projects/:projectId/file-import-configs", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // For customer role: Block access until proper tenant mapping is configured
+      if (currentUser.role === "customer") {
+        return res.status(403).json({ message: "Forbidden: Customer portal configuration required" });
+      }
+      
       const projectId = parseInt(req.params.projectId);
       
-      if (currentUser?.role !== "admin") {
-        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
         if (!isAssigned) {
           return res.status(403).json({ message: "Forbidden" });
         }
@@ -5285,11 +5514,16 @@ export async function registerRoutes(
   app.get("/api/projects/:projectId/mobile/sync/download", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      const projectId = parseInt(req.params.projectId);
-      
       if (!currentUser) {
         return res.status(401).json({ message: "Unauthorized" });
       }
+      
+      // For customer role: Block access until proper tenant mapping is configured
+      if (currentUser.role === "customer") {
+        return res.status(403).json({ message: "Forbidden: Customer portal configuration required" });
+      }
+      
+      const projectId = parseInt(req.params.projectId);
       
       // Must be assigned to project
       if (currentUser.role !== "admin") {
