@@ -1815,9 +1815,10 @@ export async function registerRoutes(
     }
   });
 
-  // Look up work order by meter ID, address, customer ID, or work order ID
-  // Used by meter changeout wizard and mobile app to find work orders
-  app.get("/api/projects/:projectId/work-orders/by-meter/:meterId", isAuthenticated, async (req: any, res) => {
+  // Look up work order by system ID, address, customer ID, or work order ID
+  // Used by system changeout wizard and mobile app to find work orders
+  // Note: /by-meter route kept for backward compatibility with mobile apps
+  app.get(["/api/projects/:projectId/work-orders/by-system/:systemId", "/api/projects/:projectId/work-orders/by-meter/:systemId"], isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       if (!currentUser) {
@@ -1830,7 +1831,7 @@ export async function registerRoutes(
       }
       
       const projectId = parseInt(req.params.projectId);
-      const searchTerm = decodeURIComponent(req.params.meterId);
+      const searchTerm = decodeURIComponent(req.params.systemId);
       
       if (currentUser.role !== "admin") {
         const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
@@ -1845,7 +1846,7 @@ export async function registerRoutes(
       }
       
       // Query directly with JOINs to get snake_case format matching mobile sync endpoint
-      // Searches: meter IDs (old/new), customer_id, work order IDs (customer_wo_id, system id), and address (partial/case-insensitive)
+      // Searches: system IDs (old/new), customer_id, work order IDs (customer_wo_id, system id), and address (partial/case-insensitive)
       const client = await pool.connect();
       try {
         // Try to parse as numeric ID for system work order ID matching
@@ -1862,8 +1863,8 @@ export async function registerRoutes(
           LEFT JOIN public.users sb ON w.scheduled_by = sb.id
           LEFT JOIN public.users cb ON w.completed_by = cb.id
           LEFT JOIN public.users au ON w.assigned_user_id = au.id
-          WHERE w.old_meter_id = $1 
-             OR w.new_meter_id = $1
+          WHERE w.old_system_id = $1 
+             OR w.new_system_id = $1
              OR w.customer_id = $1
              OR w.customer_wo_id = $1
              OR ($3 AND w.id = $4)
@@ -1885,12 +1886,12 @@ export async function registerRoutes(
         client.release();
       }
     } catch (error) {
-      console.error("Error fetching work order by meter ID:", error);
+      console.error("Error fetching work order by system ID:", error);
       res.status(500).json({ message: "Failed to fetch work order" });
     }
   });
 
-  // Claim a work order - auto-assign to current user when starting meter changeout
+  // Claim a work order - auto-assign to current user when starting system changeout
   // Uses atomic claim operation to prevent race conditions
   app.post("/api/projects/:projectId/work-orders/:workOrderId/claim", isAuthenticated, async (req: any, res) => {
     try {

@@ -2077,7 +2077,7 @@ export default function ProjectWorkOrders() {
                             </FormControl>
                             <SelectContent>
                               <SelectItem value="__none__">None</SelectItem>
-                              {systemTypes.map((mt) => (
+                              {Array.isArray(systemTypes) && systemTypes.map((mt) => (
                                 <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
                               ))}
                             </SelectContent>
@@ -2120,7 +2120,7 @@ export default function ProjectWorkOrders() {
                             </FormControl>
                             <SelectContent>
                               <SelectItem value="__none__">None</SelectItem>
-                              {systemTypes.map((mt) => (
+                              {Array.isArray(systemTypes) && systemTypes.map((mt) => (
                                 <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
                               ))}
                             </SelectContent>
@@ -3034,7 +3034,7 @@ export default function ProjectWorkOrders() {
                   </Select>
                 </div>
               )}
-              {isFilterVisible("oldSystemType") && systemTypes.length > 0 && (
+              {isFilterVisible("oldSystemType") && Array.isArray(systemTypes) && systemTypes.length > 0 && (
                 <div className="min-w-[180px]">
                   <Label htmlFor="filter-old-system-type">Old System Type</Label>
                   <Select value={selectedOldSystemType} onValueChange={setSelectedOldSystemType}>
@@ -3050,7 +3050,7 @@ export default function ProjectWorkOrders() {
                   </Select>
                 </div>
               )}
-              {isFilterVisible("newSystemType") && systemTypes.length > 0 && (
+              {isFilterVisible("newSystemType") && Array.isArray(systemTypes) && systemTypes.length > 0 && (
                 <div className="min-w-[180px]">
                   <Label htmlFor="filter-new-system-type">New System Type</Label>
                   <Select value={selectedNewSystemType} onValueChange={setSelectedNewSystemType}>
