@@ -2927,9 +2927,9 @@ export async function registerRoutes(
         canChange,
         troubleCode,
         troubleNote,
-        oldMeterReading,
-        newMeterId,
-        newMeterReading,
+        oldSystemReading,
+        newSystemId,
+        newSystemReading,
         gpsCoordinates,
         completionNotes,
         signatureData,
@@ -2960,8 +2960,8 @@ export async function registerRoutes(
         }
       }
       
-      // Validate meter reading format (digits only)
-      const isValidMeterReading = (reading: string): boolean => {
+      // Validate system reading format (digits only)
+      const isValidSystemReading = (reading: string): boolean => {
         if (!reading || reading.trim().length === 0) return false;
         return /^\d+$/.test(reading.trim());
       };
@@ -2981,23 +2981,23 @@ export async function registerRoutes(
       const updateData: any = {};
       
       if (canChange) {
-        // Success path - meter was changed
+        // Success path - system was changed
         // Validate required fields for success path
-        if (!oldMeterReading || !newMeterId || !newMeterReading || !gpsCoordinates || !signatureName) {
+        if (!oldSystemReading || !newSystemId || !newSystemReading || !gpsCoordinates || !signatureName) {
           return res.status(400).json({ 
-            message: "Missing required fields for meter changeout: old reading, new meter ID, new reading, GPS, and signature name are required" 
+            message: "Missing required fields for system changeout: old reading, new system ID, new reading, GPS, and signature name are required" 
           });
         }
         
-        // Validate meter readings are digits only
-        if (!isValidMeterReading(oldMeterReading)) {
+        // Validate system readings are digits only
+        if (!isValidSystemReading(oldSystemReading)) {
           return res.status(400).json({ 
-            message: "Old meter reading must contain only digits (0-9)" 
+            message: "Old system reading must contain only digits (0-9)" 
           });
         }
-        if (!isValidMeterReading(newMeterReading)) {
+        if (!isValidSystemReading(newSystemReading)) {
           return res.status(400).json({ 
-            message: "New meter reading must contain only digits (0-9)" 
+            message: "New system reading must contain only digits (0-9)" 
           });
         }
         
@@ -3008,9 +3008,9 @@ export async function registerRoutes(
           });
         }
         
-        updateData.oldMeterReading = oldMeterReading;
-        updateData.newMeterId = newMeterId;
-        updateData.newMeterReading = newMeterReading;
+        updateData.oldSystemReading = oldSystemReading;
+        updateData.newSystemId = newSystemId;
+        updateData.newSystemReading = newSystemReading;
         updateData.newGps = gpsCoordinates;
         updateData.signatureData = signatureData || null;
         updateData.signatureName = signatureName || null;
@@ -3021,8 +3021,8 @@ export async function registerRoutes(
         if (completionNotes && completionNotes.trim()) {
           const timestamp = await getTimezoneFormattedTimestamp();
           updateData.notes = workOrder.notes 
-            ? `${workOrder.notes}\n\n[Meter Changeout Notes - ${timestamp}]\n${completionNotes.trim()}`
-            : `[Meter Changeout Notes - ${timestamp}]\n${completionNotes.trim()}`;
+            ? `${workOrder.notes}\n\n[System Changeout Notes - ${timestamp}]\n${completionNotes.trim()}`
+            : `[System Changeout Notes - ${timestamp}]\n${completionNotes.trim()}`;
         }
         
         // Get the "Completed" status from system
@@ -3032,10 +3032,10 @@ export async function registerRoutes(
           updateData.status = completedStatus.code;
         }
       } else {
-        // Trouble path - meter could not be changed
+        // Trouble path - system could not be changed
         // Validate required fields for trouble path (GPS and signature NOT required)
         if (!troubleCode) {
-          return res.status(400).json({ message: "Trouble code is required when meter cannot be changed" });
+          return res.status(400).json({ message: "Trouble code is required when system cannot be changed" });
         }
         
         updateData.trouble = troubleCode;
@@ -3127,11 +3127,11 @@ export async function registerRoutes(
       const updatedWorkOrder = await workOrderStorage.updateWorkOrder(workOrderId, updateData, updatedByUsername);
       
       if (!updatedWorkOrder) {
-        console.error("Meter changeout: updateWorkOrder returned undefined for work order", workOrderId);
+        console.error("System changeout: updateWorkOrder returned undefined for work order", workOrderId);
         return res.status(500).json({ message: "Failed to update work order" });
       }
       
-      console.log("Meter changeout updated work order:", { 
+      console.log("System changeout updated work order:", { 
         id: updatedWorkOrder.id, 
         status: updatedWorkOrder.status, 
         trouble: updatedWorkOrder.trouble 
@@ -3139,12 +3139,12 @@ export async function registerRoutes(
       
       res.json({ 
         success: true, 
-        message: canChange ? "Meter changeout completed successfully" : "Trouble report submitted successfully",
+        message: canChange ? "System changeout completed successfully" : "Trouble report submitted successfully",
         uploadedPhotos 
       });
     } catch (error: any) {
-      console.error("Error processing meter changeout:", error);
-      res.status(500).json({ message: error.message || "Failed to process meter changeout" });
+      console.error("Error processing system changeout:", error);
+      res.status(500).json({ message: error.message || "Failed to process system changeout" });
     }
   });
 
