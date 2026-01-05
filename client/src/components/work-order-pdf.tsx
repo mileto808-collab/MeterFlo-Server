@@ -86,9 +86,9 @@ export function WorkOrderPdf({
       const moreText = imageFiles.length > 6 ? `<p style="font-size: 10px; color: #666; margin-top: 10px;">+${imageFiles.length - 6} more photos</p>` : "";
       
       photosHtml = `
-        <div style="margin-bottom: 15px;">
-          <h3 style="margin: 0 0 10px 0; font-size: 13px; font-weight: bold; color: #333;">Captured Photos</h3>
-          <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+        <div style="margin-bottom: 10px;">
+          <h3 style="margin: 0 0 8px 0; font-size: 12px; font-weight: bold; color: #333;">Captured Photos</h3>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px;">
             ${thumbnailsHtml}
           </div>
           ${moreText}
@@ -100,8 +100,8 @@ export function WorkOrderPdf({
       `).join("");
       
       photosHtml = `
-        <div style="margin-bottom: 15px;">
-          <h3 style="margin: 0 0 10px 0; font-size: 13px; font-weight: bold; color: #333;">Attached Photos (${imageFiles.length})</h3>
+        <div style="margin-bottom: 10px;">
+          <h3 style="margin: 0 0 6px 0; font-size: 12px; font-weight: bold; color: #333;">Attached Photos (${imageFiles.length})</h3>
           <ul style="margin: 0; padding-left: 20px;">
             ${listHtml}
           </ul>
@@ -114,8 +114,8 @@ export function WorkOrderPdf({
       : null;
 
     const signatureHtml = (signatureFile || workOrder.signatureData || workOrder.signatureName) ? `
-      <div style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; margin-bottom: 15px;">
-        <h3 style="margin: 0 0 8px 0; font-size: 13px; font-weight: bold; color: #333;">Signature</h3>
+      <div style="background-color: #f5f5f5; padding: 8px; border-radius: 4px; margin-bottom: 10px;">
+        <h3 style="margin: 0 0 6px 0; font-size: 12px; font-weight: bold; color: #333;">Signature</h3>
         ${signatureImageUrl ? `
           <div style="margin-bottom: 8px;">
             <img
@@ -144,27 +144,27 @@ export function WorkOrderPdf({
     ` : "";
 
     const notesHtml = workOrder.notes ? `
-      <div style="background-color: #fff9e6; padding: 10px; border-radius: 4px; margin-bottom: 15px;">
-        <h3 style="margin: 0 0 8px 0; font-size: 13px; font-weight: bold; color: #333;">Notes</h3>
+      <div style="background-color: #fff9e6; padding: 8px; border-radius: 4px; margin-bottom: 10px;">
+        <h3 style="margin: 0 0 6px 0; font-size: 12px; font-weight: bold; color: #333;">Notes</h3>
         <p style="margin: 0; white-space: pre-wrap; font-size: 11px;">${workOrder.notes}</p>
       </div>
     ` : "";
 
     return `
-      <div id="pdf-content" style="width: 190mm; padding: 10mm; background-color: white; color: black; font-family: Arial, sans-serif; font-size: 11px; line-height: 1.4;">
-        <div style="margin-bottom: 20px; border-bottom: 2px solid #333; padding-bottom: 10px;">
-          <h1 style="margin: 0; font-size: 22px; font-weight: bold;">Work Order Report</h1>
+      <div id="pdf-content" style="width: 194mm; padding: 8mm; padding-bottom: 0; background-color: white; color: black; font-family: Arial, sans-serif; font-size: 11px; line-height: 1.4;">
+        <div style="margin-bottom: 12px; border-bottom: 2px solid #333; padding-bottom: 8px;">
+          <h1 style="margin: 0; font-size: 20px; font-weight: bold;">Work Order Report</h1>
           <p style="margin: 5px 0 0 0; color: #666;">
             ${woId} | Generated: ${new Date().toLocaleString()}
           </p>
         </div>
 
-        <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px;">
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 10px;">
           <tbody>
             <tr>
               <td style="width: 50%; vertical-align: top; padding-right: 10px;">
-                <div style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; margin-bottom: 10px;">
-                  <h3 style="margin: 0 0 8px 0; font-size: 13px; font-weight: bold; color: #333;">Customer Information</h3>
+                <div style="background-color: #f5f5f5; padding: 8px; border-radius: 4px; margin-bottom: 8px;">
+                  <h3 style="margin: 0 0 6px 0; font-size: 12px; font-weight: bold; color: #333;">Customer Information</h3>
                   <table style="width: 100%; font-size: 11px;">
                     <tbody>
                       <tr>
@@ -206,8 +206,8 @@ export function WorkOrderPdf({
                 </div>
               </td>
               <td style="width: 50%; vertical-align: top; padding-left: 10px;">
-                <div style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; margin-bottom: 10px;">
-                  <h3 style="margin: 0 0 8px 0; font-size: 13px; font-weight: bold; color: #333;">Work Order Details</h3>
+                <div style="background-color: #f5f5f5; padding: 8px; border-radius: 4px; margin-bottom: 8px;">
+                  <h3 style="margin: 0 0 6px 0; font-size: 12px; font-weight: bold; color: #333;">Work Order Details</h3>
                   <table style="width: 100%; font-size: 11px;">
                     <tbody>
                       <tr>
@@ -258,12 +258,12 @@ export function WorkOrderPdf({
           </tbody>
         </table>
 
-        <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px;">
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 10px;">
           <tbody>
             <tr>
               <td style="width: 50%; vertical-align: top; padding-right: 10px;">
-                <div style="background-color: #e8f4f8; padding: 10px; border-radius: 4px;">
-                  <h3 style="margin: 0 0 8px 0; font-size: 13px; font-weight: bold; color: #333;">Old System</h3>
+                <div style="background-color: #e8f4f8; padding: 8px; border-radius: 4px;">
+                  <h3 style="margin: 0 0 6px 0; font-size: 12px; font-weight: bold; color: #333;">Old System</h3>
                   <table style="width: 100%; font-size: 11px;">
                     <tbody>
                       <tr>
@@ -287,8 +287,8 @@ export function WorkOrderPdf({
                 </div>
               </td>
               <td style="width: 50%; vertical-align: top; padding-left: 10px;">
-                <div style="background-color: #e8f8e8; padding: 10px; border-radius: 4px;">
-                  <h3 style="margin: 0 0 8px 0; font-size: 13px; font-weight: bold; color: #333;">New System</h3>
+                <div style="background-color: #e8f8e8; padding: 8px; border-radius: 4px;">
+                  <h3 style="margin: 0 0 6px 0; font-size: 12px; font-weight: bold; color: #333;">New System</h3>
                   <table style="width: 100%; font-size: 11px;">
                     <tbody>
                       <tr>
@@ -319,7 +319,7 @@ export function WorkOrderPdf({
         ${signatureHtml}
         ${photosHtml}
 
-        <div style="border-top: 1px solid #ccc; padding-top: 10px; margin-top: 15px;">
+        <div style="border-top: 1px solid #ccc; padding-top: 8px; margin-top: 10px;">
           <table style="width: 100%; font-size: 10px; color: #666;">
             <tbody>
               <tr>
@@ -440,12 +440,12 @@ export function WorkOrderPdf({
       }
 
       const opt = {
-        margin: [10, 10, 10, 10] as [number, number, number, number],
+        margin: [8, 8, 8, 8] as [number, number, number, number],
         filename,
         image: { type: "jpeg" as const, quality: 0.95 },
         html2canvas: { scale: 2, useCORS: true, logging: false },
         jsPDF: { unit: "mm" as const, format: "a4" as const, orientation: "portrait" as const },
-        pagebreak: { mode: ["avoid-all", "css", "legacy"] },
+        pagebreak: { mode: ["css", "legacy"] },
       };
 
       await html2pdf().set(opt).from(contentElement).save();
