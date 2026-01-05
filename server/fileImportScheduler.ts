@@ -249,11 +249,27 @@ class FileImportScheduler {
               mappedData.serviceType = "Water";
             }
 
+            if (mappedData.oldSystemReading) {
+              mappedData.oldSystemReading = parseInt(String(mappedData.oldSystemReading)) || null;
+            }
             if (mappedData.oldMeterReading) {
-              mappedData.oldMeterReading = parseInt(String(mappedData.oldMeterReading)) || null;
+              mappedData.oldSystemReading = parseInt(String(mappedData.oldMeterReading)) || null;
+              delete mappedData.oldMeterReading;
+            }
+            if (mappedData.newSystemReading) {
+              mappedData.newSystemReading = parseInt(String(mappedData.newSystemReading)) || null;
             }
             if (mappedData.newMeterReading) {
-              mappedData.newMeterReading = parseInt(String(mappedData.newMeterReading)) || null;
+              mappedData.newSystemReading = parseInt(String(mappedData.newMeterReading)) || null;
+              delete mappedData.newMeterReading;
+            }
+            if (mappedData.oldMeterId) {
+              mappedData.oldSystemId = mappedData.oldMeterId;
+              delete mappedData.oldMeterId;
+            }
+            if (mappedData.newMeterId) {
+              mappedData.newSystemId = mappedData.newMeterId;
+              delete mappedData.newMeterId;
             }
 
             // Set default status and createdBy
