@@ -53,6 +53,7 @@ import { FileIcon } from "lucide-react";
 import SignaturePad, { type SignaturePadRef } from "@/components/signature-pad";
 import { SystemChangeoutWizard } from "@/components/system-changeout-wizard";
 import { DateTimePicker } from "@/components/ui/datetime-picker";
+import { WorkOrderPdf } from "@/components/work-order-pdf";
 
 interface OperationalHoursConfig {
   enabled: boolean;
@@ -82,6 +83,7 @@ interface WorkOrderDetailProps {
   toast: any;
   canEdit?: boolean;
   canSystemChangeout?: boolean;
+  canPrint?: boolean;
   onSystemChangeoutComplete?: () => void | Promise<void>;
   autoLaunchSystemChangeout?: boolean;
   operationalHours?: OperationalHoursConfig;
@@ -109,6 +111,7 @@ export function WorkOrderDetail({
   toast,
   canEdit = true,
   canSystemChangeout = false,
+  canPrint = true,
   onSystemChangeoutComplete,
   autoLaunchSystemChangeout = false,
   operationalHours,
@@ -1112,25 +1115,40 @@ export function WorkOrderDetail({
 
           {/* Sticky Footer */}
           <div className="sticky bottom-0 bg-background border-t py-4 -mx-4 px-4 md:-mx-6 md:px-6">
-            <div className="flex justify-end gap-3">
-              <Button type="button" variant="outline" onClick={onBack} data-testid="button-cancel">
-                {canEdit ? "Cancel" : "Back"}
-              </Button>
-              {canEdit && (
-                <Button type="submit" disabled={isSubmitting} data-testid="button-save">
-                  {isSubmitting ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="mr-2 h-4 w-4" />
-                      Save Changes
-                    </>
-                  )}
+            <div className="flex justify-between gap-3">
+              <div>
+                {canPrint && (
+                  <WorkOrderPdf
+                    workOrder={workOrder}
+                    projectId={projectId}
+                    workOrderFiles={workOrderFiles}
+                    formatDateTime={formatDateTime}
+                    getAssignedUserName={getAssignedUserName}
+                    serviceTypes={serviceTypes}
+                    troubleCodes={troubleCodes}
+                  />
+                )}
+              </div>
+              <div className="flex gap-3">
+                <Button type="button" variant="outline" onClick={onBack} data-testid="button-cancel">
+                  {canEdit ? "Cancel" : "Back"}
                 </Button>
-              )}
+                {canEdit && (
+                  <Button type="submit" disabled={isSubmitting} data-testid="button-save">
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <Save className="mr-2 h-4 w-4" />
+                        Save Changes
+                      </>
+                    )}
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         </form>
