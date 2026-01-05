@@ -528,7 +528,7 @@ export class ProjectWorkOrderStorage {
         `INSERT INTO "${this.schemaName}".work_orders 
          (status, created_by, completed_at, notes, attachments, customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_system_id, new_system_id, old_gps, new_gps, old_system_reading, new_system_reading, scheduled_at, updated_by, trouble, old_system_type, new_system_type, signature_data, signature_name, assigned_user_id, assigned_group_id, completed_by, scheduled_by)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34)
-         RETURNING *`,
+         RETURNING id`,
         [
           status,
           createdByValue,
@@ -566,7 +566,10 @@ export class ProjectWorkOrderStorage {
           scheduledBy,
         ]
       );
-      return this.mapRowToWorkOrder(result.rows[0]);
+      
+      // Re-fetch with JOINs to get display fields (scheduledByDisplay, completedByDisplay)
+      const createdId = result.rows[0].id;
+      return await this.getWorkOrder(createdId) as ProjectWorkOrder;
     } finally {
       client.release();
     }
@@ -1054,10 +1057,16 @@ export class ProjectWorkOrderStorage {
       values.push(id);
 
       const result = await client.query(
-        `UPDATE "${this.schemaName}".work_orders SET ${setClauses.join(", ")} WHERE id = $${paramCount} RETURNING *`,
+        `UPDATE "${this.schemaName}".work_orders SET ${setClauses.join(", ")} WHERE id = $${paramCount} RETURNING id`,
         values
       );
-      return result.rows[0] ? this.mapRowToWorkOrder(result.rows[0]) : undefined;
+      
+      if (!result.rows[0]) {
+        return undefined;
+      }
+      
+      // Re-fetch with JOINs to get display fields (scheduledByDisplay, completedByDisplay)
+      return await this.getWorkOrder(id);
     } finally {
       client.release();
     }
@@ -1093,7 +1102,7 @@ export class ProjectWorkOrderStorage {
             updated_at = NOW()
         WHERE id = $3 
           AND (assigned_user_id IS NULL OR assigned_user_id = $1)
-        RETURNING *
+        RETURNING id
       `, [userId, updatedBy, id]);
       
       // If no rows were updated, the work order was already claimed by someone else
@@ -1101,7 +1110,8 @@ export class ProjectWorkOrderStorage {
         return null;
       }
       
-      return this.mapRowToWorkOrder(result.rows[0]);
+      // Re-fetch with JOINs to get display fields
+      return await this.getWorkOrder(id) ?? null;
     } finally {
       client.release();
     }
