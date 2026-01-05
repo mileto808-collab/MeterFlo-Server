@@ -52,7 +52,9 @@ export function WorkOrderPdf({
 
   const imageFiles = workOrderFiles.filter((f) => {
     const ext = f.toLowerCase().split(".").pop();
-    return ["jpg", "jpeg", "png", "gif", "webp", "bmp"].includes(ext || "");
+    const isImage = ["jpg", "jpeg", "png", "gif", "webp", "bmp"].includes(ext || "");
+    const isSignature = f.toLowerCase().includes("signature");
+    return isImage && !isSignature;
   });
 
   const buildPdfContent = (selectedPhotoOption: PhotoOption): string => {
@@ -106,7 +108,8 @@ export function WorkOrderPdf({
         ${workOrder.signatureData ? `
           <div style="margin-bottom: 8px;">
             <img
-              src="${workOrder.signatureData}"
+              id="pdf-signature-img"
+              data-signature-placeholder="true"
               alt="Signature"
               style="max-width: 200px; max-height: 80px; border: 1px solid #ccc;"
             />
@@ -312,7 +315,7 @@ export function WorkOrderPdf({
     `;
   };
 
-  const renderPdfInIframe = async (htmlContent: string, filename: string): Promise<void> => {
+  const renderPdfInIframe = async (htmlContent: string, filename: string, signatureData?: string): Promise<void> => {
     const overlay = document.createElement("div");
     overlay.setAttribute("data-pdf-overlay", "true");
     overlay.style.cssText = `
@@ -379,6 +382,13 @@ export function WorkOrderPdf({
       `);
       iframeDoc.close();
 
+      if (signatureData) {
+        const signatureImg = iframeDoc.getElementById("pdf-signature-img") as HTMLImageElement | null;
+        if (signatureImg) {
+          signatureImg.src = signatureData.replace(/\s+/g, "");
+        }
+      }
+
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
       if (iframeDoc.fonts) {
@@ -436,7 +446,7 @@ export function WorkOrderPdf({
       const filename = `WorkOrder_${woId}.pdf`;
       const htmlContent = buildPdfContent(photoOption);
       
-      await renderPdfInIframe(htmlContent, filename);
+      await renderPdfInIframe(htmlContent, filename, workOrder.signatureData);
     } catch (err) {
       console.error("PDF generation error:", err);
     } finally {
