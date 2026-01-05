@@ -361,7 +361,7 @@ export default function ProjectForm() {
                   <h3 className="text-lg font-medium">Customer API Integration</h3>
                 </div>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Configure outbound API calls to push work order data to the customer's backend system when meter changeouts are completed.
+                  Configure outbound API calls to push work order data to the customer's backend system when system changeouts are completed.
                 </p>
 
                 <FormField

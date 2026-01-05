@@ -31,17 +31,17 @@ export const projectWorkOrders = pgTable("work_orders", {
   route: varchar("route", { length: 100 }),
   zone: varchar("zone", { length: 100 }),
   serviceType: varchar("service_type", { length: 50 }),
-  oldMeterId: varchar("old_meter_id", { length: 100 }),
-  newMeterId: varchar("new_meter_id", { length: 100 }),
+  oldSystemId: varchar("old_system_id", { length: 100 }),
+  newSystemId: varchar("new_system_id", { length: 100 }),
   oldGps: varchar("old_gps", { length: 100 }),
   newGps: varchar("new_gps", { length: 100 }),
-  oldMeterReading: integer("old_meter_reading"),
-  newMeterReading: integer("new_meter_reading"),
+  oldSystemReading: integer("old_system_reading"),
+  newSystemReading: integer("new_system_reading"),
   scheduledAt: timestamp("scheduled_at"),
   updatedBy: varchar("updated_by", { length: 100 }),
   trouble: varchar("trouble", { length: 50 }),
-  oldMeterType: varchar("old_meter_type", { length: 100 }),
-  newMeterType: varchar("new_meter_type", { length: 100 }),
+  oldSystemType: varchar("old_system_type", { length: 100 }),
+  newSystemType: varchar("new_system_type", { length: 100 }),
   signatureData: text("signature_data"),
   signatureName: varchar("signature_name", { length: 100 }),
   assignedUserId: varchar("assigned_user_id", { length: 50 }),
@@ -96,17 +96,17 @@ export async function createProjectSchema(projectName: string, projectId: number
         route VARCHAR(100),
         zone VARCHAR(100),
         service_type VARCHAR(50),
-        old_meter_id VARCHAR(100),
-        new_meter_id VARCHAR(100),
+        old_system_id VARCHAR(100),
+        new_system_id VARCHAR(100),
         old_gps VARCHAR(100),
         new_gps VARCHAR(100),
-        old_meter_reading INTEGER,
-        new_meter_reading INTEGER,
+        old_system_reading INTEGER,
+        new_system_reading INTEGER,
         scheduled_at TIMESTAMP,
         updated_by VARCHAR(100),
         trouble VARCHAR(50),
-        old_meter_type VARCHAR(100),
-        new_meter_type VARCHAR(100),
+        old_system_type VARCHAR(100),
+        new_system_type VARCHAR(100),
         signature_data TEXT,
         signature_name VARCHAR(100),
         assigned_user_id VARCHAR(50),
@@ -116,8 +116,8 @@ export async function createProjectSchema(projectName: string, projectId: number
         CONSTRAINT fk_status_code FOREIGN KEY (status) REFERENCES public.work_order_statuses(code) ON DELETE RESTRICT ON UPDATE CASCADE,
         CONSTRAINT fk_service_types FOREIGN KEY (service_type) REFERENCES public.service_types(code) ON DELETE RESTRICT ON UPDATE CASCADE,
         CONSTRAINT fk_trouble_code FOREIGN KEY (trouble) REFERENCES public.trouble_codes(code) ON DELETE RESTRICT ON UPDATE CASCADE,
-        CONSTRAINT fk_old_meter_type FOREIGN KEY (old_meter_type) REFERENCES public.meter_types(product_id) ON DELETE RESTRICT ON UPDATE CASCADE,
-        CONSTRAINT fk_new_meter_type FOREIGN KEY (new_meter_type) REFERENCES public.meter_types(product_id) ON DELETE RESTRICT ON UPDATE CASCADE,
+        CONSTRAINT fk_old_system_type FOREIGN KEY (old_system_type) REFERENCES public.system_types(product_id) ON DELETE RESTRICT ON UPDATE CASCADE,
+        CONSTRAINT fk_new_system_type FOREIGN KEY (new_system_type) REFERENCES public.system_types(product_id) ON DELETE RESTRICT ON UPDATE CASCADE,
         CONSTRAINT fk_assigned_user FOREIGN KEY (assigned_user_id) REFERENCES public.users(id) ON DELETE RESTRICT ON UPDATE CASCADE,
         CONSTRAINT fk_assigned_group FOREIGN KEY (assigned_group_id) REFERENCES public.user_groups(name) ON DELETE RESTRICT ON UPDATE CASCADE,
         CONSTRAINT fk_created_by FOREIGN KEY (created_by) REFERENCES public.users(username) ON DELETE RESTRICT ON UPDATE CASCADE,
@@ -191,17 +191,50 @@ export async function migrateProjectSchema(schemaName: string): Promise<void> {
       }
     }
     
-    // Step 3: Handle old_meter_type/new_meter_type type changes (INTEGER -> VARCHAR for product_id FK)
-    const meterTypeCheck = await client.query(`
+    // Step 3: Rename meter columns to system columns
+    const meterToSystemRenames = [
+      { old: 'old_meter_id', new: 'old_system_id' },
+      { old: 'new_meter_id', new: 'new_system_id' },
+      { old: 'old_meter_reading', new: 'old_system_reading' },
+      { old: 'new_meter_reading', new: 'new_system_reading' },
+      { old: 'old_meter_type', new: 'old_system_type' },
+      { old: 'new_meter_type', new: 'new_system_type' },
+    ];
+    
+    for (const rename of meterToSystemRenames) {
+      const oldExists = await client.query(`
+        SELECT column_name FROM information_schema.columns 
+        WHERE table_schema = $1 AND table_name = 'work_orders' AND column_name = $2
+      `, [schemaName, rename.old]);
+      
+      const newExists = await client.query(`
+        SELECT column_name FROM information_schema.columns 
+        WHERE table_schema = $1 AND table_name = 'work_orders' AND column_name = $2
+      `, [schemaName, rename.new]);
+      
+      if (oldExists.rows.length > 0 && newExists.rows.length === 0) {
+        // Drop old FK constraints before rename
+        if (rename.old === 'old_meter_type') {
+          await client.query(`ALTER TABLE "${schemaName}".work_orders DROP CONSTRAINT IF EXISTS fk_old_meter_type CASCADE`);
+        } else if (rename.old === 'new_meter_type') {
+          await client.query(`ALTER TABLE "${schemaName}".work_orders DROP CONSTRAINT IF EXISTS fk_new_meter_type CASCADE`);
+        }
+        await client.query(`ALTER TABLE "${schemaName}".work_orders RENAME COLUMN ${rename.old} TO ${rename.new}`);
+        console.log(`Renamed ${rename.old} to ${rename.new} for ${schemaName}`);
+      }
+    }
+    
+    // Step 3b: Handle old_system_type/new_system_type type changes (INTEGER -> VARCHAR for product_id FK)
+    const systemTypeCheck = await client.query(`
       SELECT column_name, data_type FROM information_schema.columns 
       WHERE table_schema = $1 AND table_name = 'work_orders' 
-      AND column_name IN ('old_meter_type', 'new_meter_type')
+      AND column_name IN ('old_system_type', 'new_system_type')
     `, [schemaName]);
     
-    for (const col of meterTypeCheck.rows) {
+    for (const col of systemTypeCheck.rows) {
       if (col.data_type === 'integer') {
         // Drop FK constraint before type change
-        const fkName = col.column_name === 'old_meter_type' ? 'fk_old_meter_type' : 'fk_new_meter_type';
+        const fkName = col.column_name === 'old_system_type' ? 'fk_old_system_type' : 'fk_new_system_type';
         await client.query(`
           ALTER TABLE "${schemaName}".work_orders 
           DROP CONSTRAINT IF EXISTS ${fkName} CASCADE
@@ -210,7 +243,7 @@ export async function migrateProjectSchema(schemaName: string): Promise<void> {
         await client.query(`
           ALTER TABLE "${schemaName}".work_orders 
           ALTER COLUMN ${col.column_name} TYPE VARCHAR(100) USING 
-            (SELECT product_id FROM public.meter_types WHERE id = ${col.column_name})
+            (SELECT product_id FROM public.system_types WHERE id = ${col.column_name})
         `);
         console.log(`Converted ${col.column_name} from INTEGER to VARCHAR (product_id) for ${schemaName}`);
       }
@@ -241,7 +274,7 @@ export async function migrateProjectSchema(schemaName: string): Promise<void> {
     // Step 5: Drop deprecated _id suffix columns (consolidate to text-based references)
     const deprecatedColumns = [
       'service_type_id', 'status_id', 'created_by_id', 'updated_by_id', 
-      'trouble_code_id', 'old_meter_type_id', 'new_meter_type_id'
+      'trouble_code_id', 'old_meter_type_id', 'new_meter_type_id', 'old_system_type_id', 'new_system_type_id'
     ];
     
     for (const colName of deprecatedColumns) {
@@ -272,8 +305,8 @@ export async function migrateProjectSchema(schemaName: string): Promise<void> {
       { column: 'status', ref_table: 'public.work_order_statuses', ref_column: 'code', constraint_name: 'fk_status_code' },
       { column: 'service_type', ref_table: 'public.service_types', ref_column: 'code', constraint_name: 'fk_service_types' },
       { column: 'trouble', ref_table: 'public.trouble_codes', ref_column: 'code', constraint_name: 'fk_trouble_code' },
-      { column: 'old_meter_type', ref_table: 'public.meter_types', ref_column: 'product_id', constraint_name: 'fk_old_meter_type' },
-      { column: 'new_meter_type', ref_table: 'public.meter_types', ref_column: 'product_id', constraint_name: 'fk_new_meter_type' },
+      { column: 'old_system_type', ref_table: 'public.system_types', ref_column: 'product_id', constraint_name: 'fk_old_system_type' },
+      { column: 'new_system_type', ref_table: 'public.system_types', ref_column: 'product_id', constraint_name: 'fk_new_system_type' },
       { column: 'assigned_user_id', ref_table: 'public.users', ref_column: 'id', constraint_name: 'fk_assigned_user' },
       { column: 'assigned_group_id', ref_table: 'public.user_groups', ref_column: 'name', constraint_name: 'fk_assigned_group' },
       { column: 'created_by', ref_table: 'public.users', ref_column: 'username', constraint_name: 'fk_created_by' },
@@ -424,7 +457,7 @@ export class ProjectWorkOrderStorage {
     }
   }
 
-  async getWorkOrderByOldMeterId(oldMeterId: string): Promise<ProjectWorkOrder | undefined> {
+  async getWorkOrderByOldSystemId(oldSystemId: string): Promise<ProjectWorkOrder | undefined> {
     await this.ensureMigrated();
     const client = await pool.connect();
     try {
@@ -435,8 +468,8 @@ export class ProjectWorkOrderStorage {
          FROM "${this.schemaName}".work_orders w
          LEFT JOIN public.users sb ON w.scheduled_by = sb.id
          LEFT JOIN public.users cb ON w.completed_by = cb.id
-         WHERE w.old_meter_id = $1`,
-        [oldMeterId]
+         WHERE w.old_system_id = $1`,
+        [oldSystemId]
       );
       return result.rows[0] ? this.mapRowToWorkOrder(result.rows[0]) : undefined;
     } finally {
@@ -493,7 +526,7 @@ export class ProjectWorkOrderStorage {
       
       const result = await client.query(
         `INSERT INTO "${this.schemaName}".work_orders 
-         (status, created_by, completed_at, notes, attachments, customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, new_meter_id, old_gps, new_gps, old_meter_reading, new_meter_reading, scheduled_at, updated_by, trouble, old_meter_type, new_meter_type, signature_data, signature_name, assigned_user_id, assigned_group_id, completed_by, scheduled_by)
+         (status, created_by, completed_at, notes, attachments, customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_system_id, new_system_id, old_gps, new_gps, old_system_reading, new_system_reading, scheduled_at, updated_by, trouble, old_system_type, new_system_type, signature_data, signature_name, assigned_user_id, assigned_group_id, completed_by, scheduled_by)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34)
          RETURNING *`,
         [
@@ -514,17 +547,17 @@ export class ProjectWorkOrderStorage {
           workOrder.route || null,
           workOrder.zone || null,
           workOrder.serviceType,
-          workOrder.oldMeterId || null,
-          workOrder.newMeterId || null,
+          workOrder.oldSystemId || null,
+          workOrder.newSystemId || null,
           workOrder.oldGps || null,
           workOrder.newGps || null,
-          workOrder.oldMeterReading ?? null,
-          workOrder.newMeterReading ?? null,
+          workOrder.oldSystemReading ?? null,
+          workOrder.newSystemReading ?? null,
           workOrder.scheduledAt || null,
           createdByValue,
           troubleCode || null,
-          workOrder.oldMeterType ?? null,
-          workOrder.newMeterType ?? null,
+          workOrder.oldSystemType ?? null,
+          workOrder.newSystemType ?? null,
           (workOrder as any).signatureData || null,
           (workOrder as any).signatureName || null,
           assignedUserId,
@@ -584,10 +617,10 @@ export class ProjectWorkOrderStorage {
     }
   }
   
-  private async resolveMeterTypeId(meterTypeLabel: string): Promise<number | null> {
+  private async resolveSystemTypeId(systemTypeLabel: string): Promise<number | null> {
     try {
-      const meterTypes = await storage.getMeterTypes();
-      const found = meterTypes.find(m => m.productLabel === meterTypeLabel || m.productId === meterTypeLabel);
+      const systemTypes = await storage.getSystemTypes();
+      const found = systemTypes.find(m => m.productLabel === systemTypeLabel || m.productId === systemTypeLabel);
       return found?.id || null;
     } catch {
       return null;
@@ -767,21 +800,21 @@ export class ProjectWorkOrderStorage {
         setClauses.push(`service_type = $${paramCount++}`);
         values.push(updates.serviceType || null);
       }
-      if (updates.oldMeterId !== undefined) {
-        setClauses.push(`old_meter_id = $${paramCount++}`);
-        values.push(updates.oldMeterId);
+      if (updates.oldSystemId !== undefined) {
+        setClauses.push(`old_system_id = $${paramCount++}`);
+        values.push(updates.oldSystemId);
       }
-      if (updates.oldMeterReading !== undefined) {
-        setClauses.push(`old_meter_reading = $${paramCount++}`);
-        values.push(updates.oldMeterReading);
+      if (updates.oldSystemReading !== undefined) {
+        setClauses.push(`old_system_reading = $${paramCount++}`);
+        values.push(updates.oldSystemReading);
       }
-      if (updates.newMeterId !== undefined) {
-        setClauses.push(`new_meter_id = $${paramCount++}`);
-        values.push(updates.newMeterId);
+      if (updates.newSystemId !== undefined) {
+        setClauses.push(`new_system_id = $${paramCount++}`);
+        values.push(updates.newSystemId);
       }
-      if (updates.newMeterReading !== undefined) {
-        setClauses.push(`new_meter_reading = $${paramCount++}`);
-        values.push(updates.newMeterReading);
+      if (updates.newSystemReading !== undefined) {
+        setClauses.push(`new_system_reading = $${paramCount++}`);
+        values.push(updates.newSystemReading);
       }
       if (updates.oldGps !== undefined) {
         setClauses.push(`old_gps = $${paramCount++}`);
@@ -972,13 +1005,13 @@ export class ProjectWorkOrderStorage {
         setClauses.push(`attachments = $${paramCount++}`);
         values.push(updates.attachments);
       }
-      if ((updates as any).oldMeterType !== undefined) {
-        setClauses.push(`old_meter_type = $${paramCount++}`);
-        values.push((updates as any).oldMeterType ?? null);
+      if ((updates as any).oldSystemType !== undefined) {
+        setClauses.push(`old_system_type = $${paramCount++}`);
+        values.push((updates as any).oldSystemType ?? null);
       }
-      if ((updates as any).newMeterType !== undefined) {
-        setClauses.push(`new_meter_type = $${paramCount++}`);
-        values.push((updates as any).newMeterType ?? null);
+      if ((updates as any).newSystemType !== undefined) {
+        setClauses.push(`new_system_type = $${paramCount++}`);
+        values.push((updates as any).newSystemType ?? null);
       }
       if ((updates as any).signatureData !== undefined) {
         setClauses.push(`signature_data = $${paramCount++}`);
@@ -1161,17 +1194,17 @@ export class ProjectWorkOrderStorage {
       route: row.route,
       zone: row.zone,
       serviceType: row.service_type,
-      oldMeterId: row.old_meter_id,
-      newMeterId: row.new_meter_id,
+      oldSystemId: row.old_system_id,
+      newSystemId: row.new_system_id,
       oldGps: row.old_gps,
       newGps: row.new_gps,
-      oldMeterReading: row.old_meter_reading,
-      newMeterReading: row.new_meter_reading,
+      oldSystemReading: row.old_system_reading,
+      newSystemReading: row.new_system_reading,
       scheduledAt: row.scheduled_at,
       updatedBy: row.updated_by,
       trouble: row.trouble,
-      oldMeterType: row.old_meter_type,
-      newMeterType: row.new_meter_type,
+      oldSystemType: row.old_system_type,
+      newSystemType: row.new_system_type,
       signatureData: row.signature_data,
       signatureName: row.signature_name,
       assignedUserId: row.assigned_user_id,
@@ -1231,17 +1264,17 @@ export async function backupProjectDatabase(schemaName: string): Promise<{
       route: row.route,
       zone: row.zone,
       serviceType: row.service_type,
-      oldMeterId: row.old_meter_id,
-      newMeterId: row.new_meter_id,
+      oldSystemId: row.old_system_id,
+      newSystemId: row.new_system_id,
       oldGps: row.old_gps,
       newGps: row.new_gps,
-      oldMeterReading: row.old_meter_reading,
-      newMeterReading: row.new_meter_reading,
+      oldSystemReading: row.old_system_reading,
+      newSystemReading: row.new_system_reading,
       scheduledAt: row.scheduled_at,
       updatedBy: row.updated_by,
       trouble: row.trouble,
-      oldMeterType: row.old_meter_type,
-      newMeterType: row.new_meter_type,
+      oldSystemType: row.old_system_type,
+      newSystemType: row.new_system_type,
       signatureData: row.signature_data,
       signatureName: row.signature_name,
       assignedUserId: row.assigned_user_id,
@@ -1281,7 +1314,7 @@ export async function restoreProjectDatabase(
       try {
         await client.query(
           `INSERT INTO "${schemaName}".work_orders 
-           (status, created_by, completed_at, notes, attachments, customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_meter_id, new_meter_id, old_gps, new_gps, old_meter_reading, new_meter_reading, scheduled_at, updated_by, trouble, old_meter_type, new_meter_type, signature_data, signature_name, assigned_user_id, assigned_group_id, completed_by, scheduled_by)
+           (status, created_by, completed_at, notes, attachments, customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_system_id, new_system_id, old_gps, new_gps, old_system_reading, new_system_reading, scheduled_at, updated_by, trouble, old_system_type, new_system_type, signature_data, signature_name, assigned_user_id, assigned_group_id, completed_by, scheduled_by)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34)`,
           [
             wo.status || "Open",
@@ -1301,17 +1334,17 @@ export async function restoreProjectDatabase(
             wo.route || null,
             wo.zone || null,
             wo.serviceType || null,
-            wo.oldMeterId || null,
-            wo.newMeterId || null,
+            wo.oldSystemId || null,
+            wo.newSystemId || null,
             wo.oldGps || null,
             wo.newGps || null,
-            wo.oldMeterReading ?? null,
-            wo.newMeterReading ?? null,
+            wo.oldSystemReading ?? null,
+            wo.newSystemReading ?? null,
             wo.scheduledAt || null,
             wo.updatedBy || null,
             wo.trouble || null,
-            wo.oldMeterType ?? null,
-            wo.newMeterType ?? null,
+            wo.oldSystemType ?? null,
+            wo.newSystemType ?? null,
             wo.signatureData || null,
             wo.signatureName || null,
             wo.assignedUserId || null,

@@ -65,11 +65,11 @@ type ParsedWorkOrder = {
   route?: string;
   zone?: string;
   serviceType: string;
-  oldMeterId?: string;
-  oldMeterReading?: number;
+  oldSystemId?: string;
+  oldSystemReading?: number;
   oldGps?: string;
-  oldMeterType?: string;
-  newMeterType?: string;
+  oldSystemType?: string;
+  newSystemType?: string;
   status?: string;
   scheduledAt?: string;
   scheduledBy?: string;
@@ -95,11 +95,11 @@ type ColumnMapping = {
   route: string;
   zone: string;
   serviceType: string;
-  oldMeterId: string;
-  oldMeterReading: string;
+  oldSystemId: string;
+  oldSystemReading: string;
   oldGps: string;
-  oldMeterType: string;
-  newMeterType: string;
+  oldSystemType: string;
+  newSystemType: string;
   status: string;
   scheduledAt: string;
   scheduledBy: string;
@@ -125,11 +125,11 @@ const defaultColumnMapping: ColumnMapping = {
   route: "",
   zone: "",
   serviceType: "",
-  oldMeterId: "",
-  oldMeterReading: "",
+  oldSystemId: "",
+  oldSystemReading: "",
   oldGps: "",
-  oldMeterType: "",
-  newMeterType: "",
+  oldSystemType: "",
+  newSystemType: "",
   status: "",
   scheduledAt: "",
   scheduledBy: "",
@@ -462,11 +462,11 @@ export default function ProjectImport() {
       { field: "route", variants: ["route", "route id", "route_id", "routeid"] },
       { field: "zone", variants: ["zone", "zone id", "zone_id", "zoneid", "area", "district"] },
       { field: "serviceType", variants: ["service type", "servicetype", "service_type", "type", "utility", "utility type", "meter type"] },
-      { field: "oldMeterId", variants: ["old meter", "old meter id", "oldmeterid", "old_meter_id", "current meter", "existing meter", "old_meter"] },
-      { field: "oldMeterReading", variants: ["old meter reading", "old reading", "oldmeterreading", "old_meter_reading", "current reading", "existing reading"] },
+      { field: "oldSystemId", variants: ["old system", "old system id", "oldmeterid", "old_meter_id", "current system", "existing system", "old_meter"] },
+      { field: "oldSystemReading", variants: ["old system reading", "old reading", "oldmeterreading", "old_meter_reading", "current reading", "existing reading"] },
       { field: "oldGps", variants: ["old gps", "old_gps", "oldgps", "current gps", "existing gps", "old coordinates"] },
-      { field: "oldMeterType", variants: ["old meter type", "old_meter_type", "oldmetertype", "current meter type", "existing meter type"] },
-      { field: "newMeterType", variants: ["new meter type", "new_meter_type", "newmetertype", "replacement meter type"] },
+      { field: "oldSystemType", variants: ["old system type", "old_meter_type", "oldmetertype", "current system type", "existing system type"] },
+      { field: "newSystemType", variants: ["new meter type", "new_meter_type", "newmetertype", "replacement system type"] },
       { field: "status", variants: ["status", "state", "condition", "wo status"] },
       { field: "scheduledAt", variants: ["scheduled date", "scheduled_date", "scheduleddate", "schedule date", "schedule", "due date", "due_date", "scheduled datetime", "scheduled_datetime", "scheduled at", "scheduled_at", "scheduledat"] },
       { field: "scheduledBy", variants: ["scheduled by", "scheduled_by", "scheduledby", "scheduler"] },
@@ -519,11 +519,11 @@ export default function ProjectImport() {
         route: getValueByHeader(columnMapping.route) || undefined,
         zone: getValueByHeader(columnMapping.zone) || undefined,
         serviceType: getValueByHeader(columnMapping.serviceType) || "Water",
-        oldMeterId: getValueByHeader(columnMapping.oldMeterId) || undefined,
-        oldMeterReading: columnMapping.oldMeterReading ? parseIntOrUndefined(getValueByHeader(columnMapping.oldMeterReading)) : undefined,
+        oldSystemId: getValueByHeader(columnMapping.oldSystemId) || undefined,
+        oldSystemReading: columnMapping.oldSystemReading ? parseIntOrUndefined(getValueByHeader(columnMapping.oldSystemReading)) : undefined,
         oldGps: getValueByHeader(columnMapping.oldGps) || undefined,
-        oldMeterType: getValueByHeader(columnMapping.oldMeterType) || undefined,
-        newMeterType: getValueByHeader(columnMapping.newMeterType) || undefined,
+        oldSystemType: getValueByHeader(columnMapping.oldSystemType) || undefined,
+        newSystemType: getValueByHeader(columnMapping.newSystemType) || undefined,
         status: getValueByHeader(columnMapping.status) || undefined,
         scheduledAt: getValueByHeader(columnMapping.scheduledAt) || undefined,
         scheduledBy: getValueByHeader(columnMapping.scheduledBy) || undefined,
@@ -588,11 +588,11 @@ export default function ProjectImport() {
         route: getValueByHeader(columnMapping.route) || undefined,
         zone: getValueByHeader(columnMapping.zone) || undefined,
         serviceType,
-        oldMeterId: getValueByHeader(columnMapping.oldMeterId) || undefined,
-        oldMeterReading: columnMapping.oldMeterReading ? parseIntOrUndefined(getValueByHeader(columnMapping.oldMeterReading)) : undefined,
+        oldSystemId: getValueByHeader(columnMapping.oldSystemId) || undefined,
+        oldSystemReading: columnMapping.oldSystemReading ? parseIntOrUndefined(getValueByHeader(columnMapping.oldSystemReading)) : undefined,
         oldGps: getValueByHeader(columnMapping.oldGps) || undefined,
-        oldMeterType: getValueByHeader(columnMapping.oldMeterType) || undefined,
-        newMeterType: getValueByHeader(columnMapping.newMeterType) || undefined,
+        oldSystemType: getValueByHeader(columnMapping.oldSystemType) || undefined,
+        newSystemType: getValueByHeader(columnMapping.newSystemType) || undefined,
         status: status || undefined,
         scheduledAt: getValueByHeader(columnMapping.scheduledAt) || undefined,
         scheduledBy: getValueByHeader(columnMapping.scheduledBy) || undefined,
@@ -720,7 +720,7 @@ export default function ProjectImport() {
                 Upload File
               </CardTitle>
               <CardDescription>
-                Upload a CSV or Excel file containing utility meter work orders
+                Upload a CSV or Excel file containing utility system work orders
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -789,7 +789,7 @@ export default function ProjectImport() {
                 Expected Data Format
               </CardTitle>
               <CardDescription>
-                Prepare your file with utility meter work order data
+                Prepare your file with utility system work order data
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -811,9 +811,9 @@ export default function ProjectImport() {
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">city, state, zip</span> - Location details</div>
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">phone, email</span> - Contact information</div>
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">route, zone</span> - Service routing</div>
-                    <div><span className="font-mono bg-muted px-2 py-1 rounded">old_meter_id, old_meter_reading</span> - Old meter info</div>
+                    <div><span className="font-mono bg-muted px-2 py-1 rounded">old_system_id, old_system_reading</span> - Old system info</div>
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">old_gps</span> - GPS coordinates</div>
-                    <div><span className="font-mono bg-muted px-2 py-1 rounded">old_meter_type, new_meter_type</span> - Meter types</div>
+                    <div><span className="font-mono bg-muted px-2 py-1 rounded">old_system_type, new_system_type</span> - System types</div>
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">status, scheduled_at, scheduled_by, trouble, notes</span> - Work order details</div>
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">assigned_user_id, assigned_group_id, created_by, completed_at</span> - Assignment and tracking</div>
                   </div>
@@ -822,10 +822,10 @@ export default function ProjectImport() {
                 <div>
                   <h4 className="font-medium mb-2">Example CSV</h4>
                   <pre className="text-xs bg-muted p-3 rounded overflow-x-auto">
-{`customer_wo_id,customer_id,customer_name,address,city,state,zip,service_type,route,zone,old_meter_id
-WO-001,CUST-123,John Smith,123 Main St,Springfield,IL,62701,Water,Route A,Zone 1,MTR-OLD-001
-WO-002,CUST-456,Jane Doe,456 Oak Ave,Springfield,IL,62702,Electric,Route B,Zone 2,MTR-OLD-002
-WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,MTR-OLD-003`}
+{`customer_wo_id,customer_id,customer_name,address,city,state,zip,service_type,route,zone,old_system_id
+WO-001,CUST-123,John Smith,123 Main St,Springfield,IL,62701,Water,Route A,Zone 1,SYS-OLD-001
+WO-002,CUST-456,Jane Doe,456 Oak Ave,Springfield,IL,62702,Electric,Route B,Zone 2,SYS-OLD-002
+WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,SYS-OLD-003`}
                   </pre>
                 </div>
               </div>
@@ -854,11 +854,11 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,M
                   <MappingSelect field="email" label="Email" />
                   <MappingSelect field="route" label="Route" />
                   <MappingSelect field="zone" label="Zone" />
-                  <MappingSelect field="oldMeterId" label="Old Meter ID" />
-                  <MappingSelect field="oldMeterReading" label="Old Meter Reading" />
+                  <MappingSelect field="oldSystemId" label="Old System ID" />
+                  <MappingSelect field="oldSystemReading" label="Old System Reading" />
                   <MappingSelect field="oldGps" label="Old GPS" />
-                  <MappingSelect field="oldMeterType" label="Old Meter Type" />
-                  <MappingSelect field="newMeterType" label="New Meter Type" />
+                  <MappingSelect field="oldSystemType" label="Old System Type" />
+                  <MappingSelect field="newSystemType" label="New System Type" />
                   <MappingSelect field="status" label="Status" />
                   <MappingSelect field="scheduledAt" label="Scheduled At" />
                   <MappingSelect field="scheduledBy" label="Scheduled By" />
@@ -893,7 +893,7 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,M
                         <TableHead>Service</TableHead>
                         <TableHead>Route</TableHead>
                         <TableHead>Zone</TableHead>
-                        <TableHead>Old Meter</TableHead>
+                        <TableHead>Old System</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -905,7 +905,7 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,M
                           <TableCell>{wo.serviceType || "-"}</TableCell>
                           <TableCell>{wo.route || "-"}</TableCell>
                           <TableCell>{wo.zone || "-"}</TableCell>
-                          <TableCell>{wo.oldMeterId || "-"}</TableCell>
+                          <TableCell>{wo.oldSystemId || "-"}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
@@ -1190,7 +1190,7 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,M
               <div>
                 <h4 className="font-medium mb-2">Optional Columns</h4>
                 <div className="text-sm text-muted-foreground">
-                  city, state, zip, phone, email, route, zone, old_meter_id, old_meter_reading, old_gps, old_meter_type, new_meter_type, status, scheduled_at, scheduled_by, trouble, notes, assigned_user_id, assigned_group_id, created_by, completed_by, completed_at
+                  city, state, zip, phone, email, route, zone, old_system_id, old_system_reading, old_gps, old_system_type, new_system_type, status, scheduled_at, scheduled_by, trouble, notes, assigned_user_id, assigned_group_id, created_by, completed_by, completed_at
                 </div>
               </div>
             </CardContent>

@@ -2636,10 +2636,10 @@ export async function registerRoutes(
         route: wo.route || null,
         zone: wo.zone || null,
         serviceType: wo.serviceType || "Water",
-        oldMeterId: wo.oldMeterId || wo.old_meter_id || null,
-        oldMeterReading: wo.oldMeterReading || wo.old_meter_reading || null,
-        newMeterId: wo.newMeterId || wo.new_meter_id || null,
-        newMeterReading: wo.newMeterReading || wo.new_meter_reading || null,
+        oldSystemId: wo.oldSystemId || wo.old_system_id || null,
+        oldSystemReading: wo.oldSystemReading || wo.old_system_reading || null,
+        newSystemId: wo.newSystemId || wo.new_system_id || null,
+        newSystemReading: wo.newSystemReading || wo.new_system_reading || null,
         oldGps: wo.oldGps || wo.old_gps || null,
         newGps: wo.newGps || wo.new_gps || null,
         status: wo.status || "Open",
@@ -2650,8 +2650,8 @@ export async function registerRoutes(
         trouble: wo.trouble || null,
         notes: wo.notes || null,
         attachments: wo.attachments || null,
-        oldMeterType: wo.oldMeterType || wo.old_meter_type || null,
-        newMeterType: wo.newMeterType || wo.new_meter_type || null,
+        oldSystemType: wo.oldSystemType || wo.old_system_type || null,
+        newSystemType: wo.newSystemType || wo.new_system_type || null,
       }));
       
       const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
@@ -2882,8 +2882,8 @@ export async function registerRoutes(
     }
   });
 
-  // Meter changeout workflow endpoint
-  app.post("/api/projects/:projectId/work-orders/:workOrderId/meter-changeout", isAuthenticated, upload.array("photos", 20), async (req: any, res) => {
+  // System changeout workflow endpoint
+  app.post("/api/projects/:projectId/work-orders/:workOrderId/system-changeout", isAuthenticated, upload.array("photos", 20), async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       const projectId = parseInt(req.params.projectId);
@@ -2896,11 +2896,11 @@ export async function registerRoutes(
       // Check permission
       const hasMeterChangeoutPermission = await storage.hasPermission(currentUser, "workOrders.meterChangeout");
       if (!hasMeterChangeoutPermission) {
-        return res.status(403).json({ message: "You do not have permission to perform meter changeouts" });
+        return res.status(403).json({ message: "You do not have permission to perform system changeouts" });
       }
       
       if (currentUser.role === "customer") {
-        return res.status(403).json({ message: "Customers cannot perform meter changeouts" });
+        return res.status(403).json({ message: "Customers cannot perform system changeouts" });
       }
       
       if (currentUser.role !== "admin") {
@@ -3670,7 +3670,7 @@ export async function registerRoutes(
         projectId,
         status,
         serviceType,
-        oldMeterType,
+        oldSystemType,
         dateFrom,
         dateTo,
         assignedTo,
@@ -3708,26 +3708,26 @@ export async function registerRoutes(
           
           // Apply additional filters
           const filteredOrders = workOrders.filter(wo => {
-            // Text search in customerWoId, customerName, address, notes, oldMeterId, newMeterId
+            // Text search in customerWoId, customerName, address, notes, oldSystemId, newSystemId
             if (query) {
               const searchQuery = query.toLowerCase();
               const matchesWoId = wo.customerWoId?.toLowerCase().includes(searchQuery);
               const matchesName = wo.customerName?.toLowerCase().includes(searchQuery);
               const matchesAddress = wo.address?.toLowerCase().includes(searchQuery);
               const matchesNotes = wo.notes?.toLowerCase().includes(searchQuery);
-              const matchesOldMeter = wo.oldMeterId?.toLowerCase().includes(searchQuery);
-              const matchesNewMeter = wo.newMeterId?.toLowerCase().includes(searchQuery);
+              const matchesOldSystem = wo.oldSystemId?.toLowerCase().includes(searchQuery);
+              const matchesNewSystem = wo.newSystemId?.toLowerCase().includes(searchQuery);
               const matchesRoute = wo.route?.toLowerCase().includes(searchQuery);
               const matchesZone = wo.zone?.toLowerCase().includes(searchQuery);
               if (!matchesWoId && !matchesName && !matchesAddress && !matchesNotes && 
-                  !matchesOldMeter && !matchesNewMeter && !matchesRoute && !matchesZone) return false;
+                  !matchesOldSystem && !matchesNewSystem && !matchesRoute && !matchesZone) return false;
             }
             
             // Service type filter
             if (serviceType && wo.serviceType !== serviceType) return false;
             
-            // Old meter type filter
-            if (oldMeterType && (wo as any).oldMeterType !== oldMeterType) return false;
+            // Old system type filter
+            if (oldSystemType && (wo as any).oldSystemType !== oldSystemType) return false;
             
             // Date range filter
             if (dateFrom) {
@@ -5046,53 +5046,53 @@ export async function registerRoutes(
     }
   });
 
-  // Meter Types API Routes
-  app.get("/api/meter-types", isAuthenticated, async (req: any, res) => {
+  // System Types API Routes
+  app.get("/api/system-types", isAuthenticated, async (req: any, res) => {
     try {
       const projectId = req.query.projectId ? parseInt(req.query.projectId) : undefined;
-      const meterTypes = await storage.getMeterTypes(projectId);
-      res.json(meterTypes);
+      const systemTypes = await storage.getSystemTypes(projectId);
+      res.json(systemTypes);
     } catch (error) {
-      console.error("Error fetching meter types:", error);
-      res.status(500).json({ message: "Failed to fetch meter types" });
+      console.error("Error fetching system types:", error);
+      res.status(500).json({ message: "Failed to fetch system types" });
     }
   });
 
-  app.get("/api/meter-types/:id", isAuthenticated, async (req: any, res) => {
+  app.get("/api/system-types/:id", isAuthenticated, async (req: any, res) => {
     try {
       const id = parseInt(req.params.id);
-      const meterType = await storage.getMeterType(id);
+      const systemType = await storage.getSystemType(id);
       
-      if (!meterType) {
-        return res.status(404).json({ message: "Meter type not found" });
+      if (!systemType) {
+        return res.status(404).json({ message: "System type not found" });
       }
       
-      res.json(meterType);
+      res.json(systemType);
     } catch (error) {
-      console.error("Error fetching meter type:", error);
-      res.status(500).json({ message: "Failed to fetch meter type" });
+      console.error("Error fetching system type:", error);
+      res.status(500).json({ message: "Failed to fetch system type" });
     }
   });
 
-  app.post("/api/meter-types", isAuthenticated, async (req: any, res) => {
+  app.post("/api/system-types", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       if (!currentUser || currentUser.role !== "admin") {
         return res.status(403).json({ message: "Forbidden: Admin access required" });
       }
       
-      const meterType = await storage.createMeterType(req.body);
-      res.status(201).json(meterType);
+      const systemType = await storage.createSystemType(req.body);
+      res.status(201).json(systemType);
     } catch (error: any) {
-      console.error("Error creating meter type:", error);
+      console.error("Error creating system type:", error);
       if (error.code === "23505") {
-        return res.status(400).json({ message: "Meter type already exists" });
+        return res.status(400).json({ message: "System type already exists" });
       }
-      res.status(500).json({ message: "Failed to create meter type" });
+      res.status(500).json({ message: "Failed to create system type" });
     }
   });
 
-  app.patch("/api/meter-types/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/system-types/:id", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       if (!currentUser || currentUser.role !== "admin") {
@@ -5100,23 +5100,23 @@ export async function registerRoutes(
       }
       
       const id = parseInt(req.params.id);
-      const meterType = await storage.updateMeterType(id, req.body);
+      const systemType = await storage.updateSystemType(id, req.body);
       
-      if (!meterType) {
-        return res.status(404).json({ message: "Meter type not found" });
+      if (!systemType) {
+        return res.status(404).json({ message: "System type not found" });
       }
       
-      res.json(meterType);
+      res.json(systemType);
     } catch (error: any) {
-      console.error("Error updating meter type:", error);
+      console.error("Error updating system type:", error);
       if (error.code === "23505") {
-        return res.status(400).json({ message: "Meter type already exists" });
+        return res.status(400).json({ message: "System type already exists" });
       }
-      res.status(500).json({ message: "Failed to update meter type" });
+      res.status(500).json({ message: "Failed to update system type" });
     }
   });
 
-  app.delete("/api/meter-types/:id", isAuthenticated, async (req: any, res) => {
+  app.delete("/api/system-types/:id", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       if (!currentUser || currentUser.role !== "admin") {
@@ -5124,21 +5124,21 @@ export async function registerRoutes(
       }
       
       const id = parseInt(req.params.id);
-      const meterType = await storage.getMeterType(id);
+      const systemType = await storage.getSystemType(id);
       
-      if (!meterType) {
-        return res.status(404).json({ message: "Meter type not found" });
+      if (!systemType) {
+        return res.status(404).json({ message: "System type not found" });
       }
       
-      await storage.deleteMeterType(id);
+      await storage.deleteSystemType(id);
       res.status(204).send();
     } catch (error) {
-      console.error("Error deleting meter type:", error);
-      res.status(500).json({ message: "Failed to delete meter type" });
+      console.error("Error deleting system type:", error);
+      res.status(500).json({ message: "Failed to delete system type" });
     }
   });
 
-  app.post("/api/meter-types/:id/copy", isAuthenticated, async (req: any, res) => {
+  app.post("/api/system-types/:id/copy", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       if (!currentUser || currentUser.role !== "admin") {
@@ -5146,38 +5146,38 @@ export async function registerRoutes(
       }
       
       const id = parseInt(req.params.id);
-      const existing = await storage.getMeterType(id);
+      const existing = await storage.getSystemType(id);
       
       if (!existing) {
-        return res.status(404).json({ message: "Meter type not found" });
+        return res.status(404).json({ message: "System type not found" });
       }
       
       const { targetProjectIds } = req.body;
       const projectIds = targetProjectIds || existing.projectIds;
       
       // Generate a unique productId by appending " - Copy" or " - Copy N"
-      const allMeterTypes = await storage.getMeterTypes();
+      const allSystemTypes = await storage.getSystemTypes();
       const baseProductId = existing.productId;
       let newProductId = `${baseProductId} - Copy`;
       let copyNumber = 1;
       
       // Check if the productId already exists
-      while (allMeterTypes.some(mt => mt.productId === newProductId)) {
+      while (allSystemTypes.some(mt => mt.productId === newProductId)) {
         copyNumber++;
         newProductId = `${baseProductId} - Copy ${copyNumber}`;
       }
       
-      const newMeterType = await storage.createMeterType({
+      const newSystemType = await storage.createSystemType({
         productId: newProductId,
         productLabel: `Copy of ${existing.productLabel}`,
         productDescription: existing.productDescription,
         projectIds: projectIds,
       });
       
-      res.status(201).json(newMeterType);
+      res.status(201).json(newSystemType);
     } catch (error) {
-      console.error("Error copying meter type:", error);
-      res.status(500).json({ message: "Failed to copy meter type" });
+      console.error("Error copying system type:", error);
+      res.status(500).json({ message: "Failed to copy system type" });
     }
   });
 
@@ -5657,10 +5657,10 @@ export async function registerRoutes(
         const serverTimestamp = new Date().toISOString();
         
         // Get reference data for offline use (including assignees)
-        const [workOrderStatuses, troubleCodes, meterTypes, serviceTypes, projectUsers, allGroupsWithProjects] = await Promise.all([
+        const [workOrderStatuses, troubleCodes, systemTypes, serviceTypes, projectUsers, allGroupsWithProjects] = await Promise.all([
           storage.getWorkOrderStatuses(),
           storage.getTroubleCodes(),
-          storage.getMeterTypes(),
+          storage.getSystemTypes(),
           storage.getServiceTypes(),
           storage.getProjectUsers(projectId),
           storage.getAllUserGroupsWithProjects()
@@ -5694,7 +5694,7 @@ export async function registerRoutes(
           referenceData: {
             workOrderStatuses,
             troubleCodes,
-            meterTypes,
+            systemTypes,
             serviceTypes,
             assignees: { users, groups }
           },
@@ -5993,7 +5993,7 @@ export async function registerRoutes(
       // Check permission
       const hasMeterChangeoutPermission = await storage.hasPermission(currentUser, "workOrders.meterChangeout");
       if (!hasMeterChangeoutPermission) {
-        return res.status(403).json({ message: "You do not have permission to perform meter changeouts" });
+        return res.status(403).json({ message: "You do not have permission to perform system changeouts" });
       }
       
       // Must be assigned to project
@@ -6209,7 +6209,7 @@ export async function registerRoutes(
       // Check permission
       const hasMeterChangeoutPermission = await storage.hasPermission(currentUser, "workOrders.meterChangeout");
       if (!hasMeterChangeoutPermission) {
-        return res.status(403).json({ message: "You do not have permission to perform meter changeouts" });
+        return res.status(403).json({ message: "You do not have permission to perform system changeouts" });
       }
       
       // Must be assigned to project (unless admin)
@@ -6327,10 +6327,10 @@ export async function registerRoutes(
       
       const {
         projectId,
-        oldMeterReading,
-        newMeterReading,
-        newMeterId,
-        newMeterType,
+        oldSystemReading,
+        newSystemReading,
+        newSystemId,
+        newSystemType,
         gpsCoordinates,
         signatureData,
         signatureName,
@@ -6347,7 +6347,7 @@ export async function registerRoutes(
       // Check permission
       const hasMeterChangeoutPermission = await storage.hasPermission(currentUser, "workOrders.meterChangeout");
       if (!hasMeterChangeoutPermission) {
-        return res.status(403).json({ message: "You do not have permission to perform meter changeouts" });
+        return res.status(403).json({ message: "You do not have permission to perform system changeouts" });
       }
       
       // Must be assigned to project (unless admin)
@@ -6461,11 +6461,11 @@ export async function registerRoutes(
       };
       
       // Validate required fields for completion
-      if (!newMeterId) {
-        return res.status(400).json({ message: "newMeterId is required for completion" });
+      if (!newSystemId) {
+        return res.status(400).json({ message: "newSystemId is required for completion" });
       }
-      if (!isValidMeterReading(newMeterReading)) {
-        return res.status(400).json({ message: "newMeterReading is required and must be numeric" });
+      if (!isValidMeterReading(newSystemReading)) {
+        return res.status(400).json({ message: "newSystemReading is required and must be numeric" });
       }
       if (gpsCoordinates && !isValidGps(gpsCoordinates)) {
         return res.status(400).json({ message: "Invalid GPS coordinates format. Use 'lat,lng' format" });
@@ -6480,17 +6480,17 @@ export async function registerRoutes(
         completedBy: currentUser.id,
       };
       
-      if (oldMeterReading !== undefined && oldMeterReading !== null) {
-        updateData.oldMeterReading = parseInt(String(oldMeterReading), 10);
+      if (oldSystemReading !== undefined && oldSystemReading !== null) {
+        updateData.oldSystemReading = parseInt(String(oldSystemReading), 10);
       }
-      if (newMeterReading !== undefined && newMeterReading !== null) {
-        updateData.newMeterReading = parseInt(String(newMeterReading), 10);
+      if (newSystemReading !== undefined && newSystemReading !== null) {
+        updateData.newSystemReading = parseInt(String(newSystemReading), 10);
       }
-      if (newMeterId) {
-        updateData.newMeterId = newMeterId;
+      if (newSystemId) {
+        updateData.newSystemId = newSystemId;
       }
-      if (newMeterType) {
-        updateData.newMeterType = newMeterType;
+      if (newSystemType) {
+        updateData.newSystemType = newSystemType;
       }
       if (gpsCoordinates) {
         updateData.newGps = gpsCoordinates;
@@ -6504,7 +6504,7 @@ export async function registerRoutes(
       // Append user notes to existing notes (mobile pattern) - don't replace
       if (notes && notes.trim()) {
         const timestamp = await getTimezoneFormattedTimestamp();
-        const noteEntry = `[Meter Changeout Notes - ${timestamp} by ${currentUser.username || currentUser.id}]\n${notes.trim()}`;
+        const noteEntry = `[System Changeout Notes - ${timestamp} by ${currentUser.username || currentUser.id}]\n${notes.trim()}`;
         updateData.notes = workOrder.notes 
           ? `${workOrder.notes}\n\n${noteEntry}`
           : noteEntry;
@@ -6540,11 +6540,11 @@ export async function registerRoutes(
       res.json({
         success: true,
         workOrder: updatedWorkOrder,
-        message: "Meter changeout completed successfully"
+        message: "System changeout completed successfully"
       });
     } catch (error: any) {
       console.error("Error in mobile complete endpoint:", error);
-      res.status(500).json({ message: error.message || "Failed to complete meter changeout" });
+      res.status(500).json({ message: error.message || "Failed to complete system changeout" });
     }
   });
 

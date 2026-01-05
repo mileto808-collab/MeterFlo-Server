@@ -20,7 +20,7 @@ import { Switch } from "@/components/ui/switch";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Moon, Sun, User as UserIcon, Shield, FolderOpen, Save, FileUp, Users, Plus, Pencil, Trash2, UsersRound, Clock, Copy, Gauge, Download, History, Send, ChevronDown, ChevronRight, Filter, CheckCircle2, XCircle, RefreshCw, Eye } from "lucide-react";
-import type { Subrole, Permission, WorkOrderStatus, UserGroup, UserGroupWithProjects, User, TroubleCode, ServiceTypeRecord, MeterType, Project, FileImportHistory, ImportHistory, CustomerApiLog } from "@shared/schema";
+import type { Subrole, Permission, WorkOrderStatus, UserGroup, UserGroupWithProjects, User, TroubleCode, ServiceTypeRecord, SystemType, Project, FileImportHistory, ImportHistory, CustomerApiLog } from "@shared/schema";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Database } from "lucide-react";
@@ -158,14 +158,14 @@ export default function Settings() {
     isDefault: false,
   });
 
-  // Meter Types state
-  const [meterTypeDialogOpen, setMeterTypeDialogOpen] = useState(false);
-  const [deleteMeterTypeDialogOpen, setDeleteMeterTypeDialogOpen] = useState(false);
-  const [copyMeterTypeDialogOpen, setCopyMeterTypeDialogOpen] = useState(false);
-  const [copyMeterTypeProjectIds, setCopyMeterTypeProjectIds] = useState<number[]>([]);
-  const [selectedMeterType, setSelectedMeterType] = useState<MeterType | null>(null);
-  const [meterTypeProjectFilter, setMeterTypeProjectFilter] = useState<string>("all");
-  const [meterTypeForm, setMeterTypeForm] = useState({
+  // System Types state
+  const [systemTypeDialogOpen, setSystemTypeDialogOpen] = useState(false);
+  const [deleteSystemTypeDialogOpen, setDeleteSystemTypeDialogOpen] = useState(false);
+  const [copySystemTypeDialogOpen, setCopySystemTypeDialogOpen] = useState(false);
+  const [copySystemTypeProjectIds, setCopySystemTypeProjectIds] = useState<number[]>([]);
+  const [selectedSystemType, setSelectedSystemType] = useState<SystemType | null>(null);
+  const [systemTypeProjectFilter, setSystemTypeProjectFilter] = useState<string>("all");
+  const [systemTypeForm, setSystemTypeForm] = useState({
     productId: "",
     productLabel: "",
     productDescription: "",
@@ -260,22 +260,22 @@ export default function Settings() {
     enabled: isAdmin || hasPermission("settings.serviceTypes"),
   });
 
-  // Meter Types queries
-  const { data: meterTypesList, isLoading: loadingMeterTypes } = useQuery<MeterType[]>({
-    queryKey: ["/api/meter-types", meterTypeProjectFilter],
+  // System Types queries
+  const { data: systemTypesList, isLoading: loadingSystemTypes } = useQuery<SystemType[]>({
+    queryKey: ["/api/system-types", systemTypeProjectFilter],
     queryFn: async () => {
-      const url = meterTypeProjectFilter !== "all" 
-        ? `/api/meter-types?projectId=${meterTypeProjectFilter}` 
-        : "/api/meter-types";
+      const url = systemTypeProjectFilter !== "all" 
+        ? `/api/system-types?projectId=${systemTypeProjectFilter}` 
+        : "/api/system-types";
       const res = await fetch(url, { credentials: "include" });
       return res.json();
     },
-    enabled: isAdmin || hasPermission("settings.meterTypes"),
+    enabled: isAdmin || hasPermission("settings.systemTypes"),
   });
 
   const { data: projectsList } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
-    enabled: isAdmin || hasPermission("settings.meterTypes") || hasPermission("settings.userGroups") || hasPermission("settings.customerApiLogs"),
+    enabled: isAdmin || hasPermission("settings.systemTypes") || hasPermission("settings.userGroups") || hasPermission("settings.customerApiLogs"),
   });
 
   // File Import History query
@@ -617,66 +617,66 @@ export default function Settings() {
     },
   });
 
-  // Meter Types mutations
-  const createMeterTypeMutation = useMutation({
+  // System Types mutations
+  const createSystemTypeMutation = useMutation({
     mutationFn: async (data: { productId: string; productLabel: string; productDescription?: string; projectIds: number[] }) => {
-      return apiRequest("POST", "/api/meter-types", data);
+      return apiRequest("POST", "/api/system-types", data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/meter-types"] });
-      toast({ title: "Meter type created successfully" });
-      setMeterTypeDialogOpen(false);
-      resetMeterTypeForm();
+      queryClient.invalidateQueries({ queryKey: ["/api/system-types"] });
+      toast({ title: "System type created successfully" });
+      setSystemTypeDialogOpen(false);
+      resetSystemTypeForm();
     },
     onError: () => {
-      toast({ title: "Failed to create meter type", variant: "destructive" });
+      toast({ title: "Failed to create system type", variant: "destructive" });
     },
   });
 
-  const updateMeterTypeMutation = useMutation({
+  const updateSystemTypeMutation = useMutation({
     mutationFn: async ({ id, data }: { id: number; data: { productId?: string; productLabel?: string; productDescription?: string; projectIds?: number[] } }) => {
-      return apiRequest("PATCH", `/api/meter-types/${id}`, data);
+      return apiRequest("PATCH", `/api/system-types/${id}`, data);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/meter-types"] });
-      toast({ title: "Meter type updated successfully" });
-      setMeterTypeDialogOpen(false);
-      setSelectedMeterType(null);
-      resetMeterTypeForm();
+      queryClient.invalidateQueries({ queryKey: ["/api/system-types"] });
+      toast({ title: "System type updated successfully" });
+      setSystemTypeDialogOpen(false);
+      setSelectedSystemType(null);
+      resetSystemTypeForm();
     },
     onError: () => {
-      toast({ title: "Failed to update meter type", variant: "destructive" });
+      toast({ title: "Failed to update system type", variant: "destructive" });
     },
   });
 
-  const deleteMeterTypeMutation = useMutation({
+  const deleteSystemTypeMutation = useMutation({
     mutationFn: async (id: number) => {
-      return apiRequest("DELETE", `/api/meter-types/${id}`);
+      return apiRequest("DELETE", `/api/system-types/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/meter-types"] });
-      toast({ title: "Meter type deleted successfully" });
-      setDeleteMeterTypeDialogOpen(false);
-      setSelectedMeterType(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/system-types"] });
+      toast({ title: "System type deleted successfully" });
+      setDeleteSystemTypeDialogOpen(false);
+      setSelectedSystemType(null);
     },
     onError: () => {
-      toast({ title: "Failed to delete meter type", variant: "destructive" });
+      toast({ title: "Failed to delete system type", variant: "destructive" });
     },
   });
 
-  const copyMeterTypeMutation = useMutation({
+  const copySystemTypeMutation = useMutation({
     mutationFn: async ({ id, projectIds }: { id: number; projectIds?: number[] }) => {
-      return apiRequest("POST", `/api/meter-types/${id}/copy`, projectIds && projectIds.length > 0 ? { projectIds } : {});
+      return apiRequest("POST", `/api/system-types/${id}/copy`, projectIds && projectIds.length > 0 ? { projectIds } : {});
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/meter-types"] });
-      toast({ title: "Meter type copied successfully" });
-      setCopyMeterTypeDialogOpen(false);
-      setCopyMeterTypeProjectIds([]);
-      setSelectedMeterType(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/system-types"] });
+      toast({ title: "System type copied successfully" });
+      setCopySystemTypeDialogOpen(false);
+      setCopySystemTypeProjectIds([]);
+      setSelectedSystemType(null);
     },
     onError: () => {
-      toast({ title: "Failed to copy meter type", variant: "destructive" });
+      toast({ title: "Failed to copy system type", variant: "destructive" });
     },
   });
 
@@ -933,9 +933,9 @@ export default function Settings() {
     }
   };
 
-  // Meter Type helper functions
-  const resetMeterTypeForm = () => {
-    setMeterTypeForm({
+  // System Type helper functions
+  const resetSystemTypeForm = () => {
+    setSystemTypeForm({
       productId: "",
       productLabel: "",
       productDescription: "",
@@ -943,40 +943,40 @@ export default function Settings() {
     });
   };
 
-  const openCreateMeterTypeDialog = () => {
-    setSelectedMeterType(null);
-    resetMeterTypeForm();
-    setMeterTypeDialogOpen(true);
+  const openCreateSystemTypeDialog = () => {
+    setSelectedSystemType(null);
+    resetSystemTypeForm();
+    setSystemTypeDialogOpen(true);
   };
 
-  const openEditMeterTypeDialog = (meterType: MeterType & { projectIds?: number[] }) => {
-    setSelectedMeterType(meterType);
-    setMeterTypeForm({
-      productId: meterType.productId,
-      productLabel: meterType.productLabel,
-      productDescription: meterType.productDescription || "",
-      projectIds: meterType.projectIds || [],
+  const openEditSystemTypeDialog = (systemType: SystemType & { projectIds?: number[] }) => {
+    setSelectedSystemType(systemType);
+    setSystemTypeForm({
+      productId: systemType.productId,
+      productLabel: systemType.productLabel,
+      productDescription: systemType.productDescription || "",
+      projectIds: systemType.projectIds || [],
     });
-    setMeterTypeDialogOpen(true);
+    setSystemTypeDialogOpen(true);
   };
 
-  const handleMeterTypeSubmit = () => {
-    if (selectedMeterType) {
-      updateMeterTypeMutation.mutate({
-        id: selectedMeterType.id,
+  const handleSystemTypeSubmit = () => {
+    if (selectedSystemType) {
+      updateSystemTypeMutation.mutate({
+        id: selectedSystemType.id,
         data: {
-          productId: meterTypeForm.productId,
-          productLabel: meterTypeForm.productLabel,
-          productDescription: meterTypeForm.productDescription || undefined,
-          projectIds: meterTypeForm.projectIds,
+          productId: systemTypeForm.productId,
+          productLabel: systemTypeForm.productLabel,
+          productDescription: systemTypeForm.productDescription || undefined,
+          projectIds: systemTypeForm.projectIds,
         },
       });
     } else {
-      createMeterTypeMutation.mutate({
-        productId: meterTypeForm.productId,
-        productLabel: meterTypeForm.productLabel,
-        productDescription: meterTypeForm.productDescription || undefined,
-        projectIds: meterTypeForm.projectIds,
+      createSystemTypeMutation.mutate({
+        productId: systemTypeForm.productId,
+        productLabel: systemTypeForm.productLabel,
+        productDescription: systemTypeForm.productDescription || undefined,
+        projectIds: systemTypeForm.projectIds,
       });
     }
   };
@@ -991,8 +991,8 @@ export default function Settings() {
     return projectIds.map(id => getProjectName(id)).join(", ");
   };
 
-  const toggleMeterTypeProject = (projectId: number) => {
-    setMeterTypeForm(prev => ({
+  const toggleSystemTypeProject = (projectId: number) => {
+    setSystemTypeForm(prev => ({
       ...prev,
       projectIds: prev.projectIds.includes(projectId)
         ? prev.projectIds.filter(id => id !== projectId)
@@ -1000,8 +1000,8 @@ export default function Settings() {
     }));
   };
 
-  const toggleCopyMeterTypeProject = (projectId: number) => {
-    setCopyMeterTypeProjectIds(prev => 
+  const toggleCopySystemTypeProject = (projectId: number) => {
+    setCopySystemTypeProjectIds(prev => 
       prev.includes(projectId)
         ? prev.filter(id => id !== projectId)
         : [...prev, projectId]
@@ -2074,20 +2074,20 @@ export default function Settings() {
             </Card>
         )}
 
-        {hasPermission("settings.meterTypes") && (
+        {hasPermission("settings.systemTypes") && (
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between gap-4 flex-wrap">
                   <div className="flex items-center gap-2">
                     <Gauge className="h-5 w-5 text-muted-foreground" />
                     <div>
-                      <CardTitle>Meter Types</CardTitle>
-                      <CardDescription className="mt-1">Define meter types for work orders by project</CardDescription>
+                      <CardTitle>System Types</CardTitle>
+                      <CardDescription className="mt-1">Define system types for work orders by project</CardDescription>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
-                    <Select value={meterTypeProjectFilter} onValueChange={setMeterTypeProjectFilter}>
-                      <SelectTrigger className="w-48" data-testid="select-meter-type-filter">
+                    <Select value={systemTypeProjectFilter} onValueChange={setSystemTypeProjectFilter}>
+                      <SelectTrigger className="w-48" data-testid="select-system-type-filter">
                         <SelectValue placeholder="Filter by project" />
                       </SelectTrigger>
                       <SelectContent>
@@ -2099,17 +2099,17 @@ export default function Settings() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <Button onClick={openCreateMeterTypeDialog} data-testid="button-add-meter-type">
+                    <Button onClick={openCreateSystemTypeDialog} data-testid="button-add-system-type">
                       <Plus className="h-4 w-4 mr-2" />
-                      Add Meter Type
+                      Add System Type
                     </Button>
                   </div>
                 </div>
               </CardHeader>
               <CardContent>
-                {loadingMeterTypes ? (
+                {loadingSystemTypes ? (
                   <p className="text-muted-foreground">Loading...</p>
-                ) : meterTypesList && meterTypesList.length > 0 ? (
+                ) : systemTypesList && systemTypesList.length > 0 ? (
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -2121,15 +2121,15 @@ export default function Settings() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {meterTypesList.map((meterType: MeterType & { projectIds?: number[] }) => (
-                        <TableRow key={meterType.id} data-testid={`row-meter-type-${meterType.id}`}>
-                          <TableCell className="font-medium">{meterType.productId}</TableCell>
-                          <TableCell>{meterType.productLabel}</TableCell>
-                          <TableCell className="text-muted-foreground">{meterType.productDescription || "—"}</TableCell>
+                      {systemTypesList.map((systemType: SystemType & { projectIds?: number[] }) => (
+                        <TableRow key={systemType.id} data-testid={`row-system-type-${systemType.id}`}>
+                          <TableCell className="font-medium">{systemType.productId}</TableCell>
+                          <TableCell>{systemType.productLabel}</TableCell>
+                          <TableCell className="text-muted-foreground">{systemType.productDescription || "—"}</TableCell>
                           <TableCell>
                             <div className="flex flex-wrap gap-1">
-                              {(meterType.projectIds && meterType.projectIds.length > 0) ? (
-                                meterType.projectIds.map(pId => (
+                              {(systemType.projectIds && systemType.projectIds.length > 0) ? (
+                                systemType.projectIds.map((pId: number) => (
                                   <Badge key={pId} variant="outline">{getProjectName(pId)}</Badge>
                                 ))
                               ) : (
@@ -2142,8 +2142,8 @@ export default function Settings() {
                               <Button 
                                 variant="ghost" 
                                 size="icon" 
-                                onClick={() => openEditMeterTypeDialog(meterType)}
-                                data-testid={`button-edit-meter-type-${meterType.id}`}
+                                onClick={() => openEditSystemTypeDialog(systemType)}
+                                data-testid={`button-edit-system-type-${systemType.id}`}
                               >
                                 <Pencil className="h-4 w-4" />
                               </Button>
@@ -2151,11 +2151,11 @@ export default function Settings() {
                                 variant="ghost" 
                                 size="icon" 
                                 onClick={() => {
-                                  setSelectedMeterType(meterType);
-                                  setCopyMeterTypeProjectIds([]);
-                                  setCopyMeterTypeDialogOpen(true);
+                                  setSelectedSystemType(systemType);
+                                  setCopySystemTypeProjectIds([]);
+                                  setCopySystemTypeDialogOpen(true);
                                 }}
-                                data-testid={`button-copy-meter-type-${meterType.id}`}
+                                data-testid={`button-copy-system-type-${systemType.id}`}
                               >
                                 <Copy className="h-4 w-4" />
                               </Button>
@@ -2163,10 +2163,10 @@ export default function Settings() {
                                 variant="ghost" 
                                 size="icon" 
                                 onClick={() => {
-                                  setSelectedMeterType(meterType);
-                                  setDeleteMeterTypeDialogOpen(true);
+                                  setSelectedSystemType(systemType);
+                                  setDeleteSystemTypeDialogOpen(true);
                                 }}
-                                data-testid={`button-delete-meter-type-${meterType.id}`}
+                                data-testid={`button-delete-system-type-${systemType.id}`}
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -2177,7 +2177,7 @@ export default function Settings() {
                     </TableBody>
                   </Table>
                 ) : (
-                  <p className="text-muted-foreground text-center py-4">No meter types defined yet.</p>
+                  <p className="text-muted-foreground text-center py-4">No system types defined yet.</p>
                 )}
               </CardContent>
             </Card>
@@ -2507,7 +2507,7 @@ export default function Settings() {
                 id="trouble-code-label"
                 value={troubleCodeForm.label}
                 onChange={(e) => setTroubleCodeForm(prev => ({ ...prev, label: e.target.value }))}
-                placeholder="e.g. Damaged Meter, No Access"
+                placeholder="e.g. Damaged System, No Access"
                 className="mt-2"
                 data-testid="input-trouble-code-label"
               />
@@ -2880,51 +2880,51 @@ export default function Settings() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Meter Type Create/Edit Dialog */}
-      <Dialog open={meterTypeDialogOpen} onOpenChange={setMeterTypeDialogOpen}>
+      {/* System Type Create/Edit Dialog */}
+      <Dialog open={systemTypeDialogOpen} onOpenChange={setSystemTypeDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{selectedMeterType ? "Edit Meter Type" : "Create Meter Type"}</DialogTitle>
+            <DialogTitle>{selectedSystemType ? "Edit System Type" : "Create System Type"}</DialogTitle>
             <DialogDescription>
-              {selectedMeterType ? "Update the meter type settings" : "Define a new meter type for work orders"}
+              {selectedSystemType ? "Update the system type settings" : "Define a new system type for work orders"}
             </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-4 py-4">
             <div>
-              <Label htmlFor="meter-type-product-id">Product ID</Label>
+              <Label htmlFor="system-type-product-id">Product ID</Label>
               <Input
-                id="meter-type-product-id"
-                value={meterTypeForm.productId}
-                onChange={(e) => setMeterTypeForm(prev => ({ ...prev, productId: e.target.value }))}
+                id="system-type-product-id"
+                value={systemTypeForm.productId}
+                onChange={(e) => setSystemTypeForm(prev => ({ ...prev, productId: e.target.value }))}
                 placeholder="e.g. MTR-001"
                 className="mt-2"
-                data-testid="input-meter-type-product-id"
+                data-testid="input-system-type-product-id"
               />
             </div>
 
             <div>
-              <Label htmlFor="meter-type-product-label">Product Label</Label>
+              <Label htmlFor="system-type-product-label">Product Label</Label>
               <Input
-                id="meter-type-product-label"
-                value={meterTypeForm.productLabel}
-                onChange={(e) => setMeterTypeForm(prev => ({ ...prev, productLabel: e.target.value }))}
-                placeholder="e.g. Standard Water Meter"
+                id="system-type-product-label"
+                value={systemTypeForm.productLabel}
+                onChange={(e) => setSystemTypeForm(prev => ({ ...prev, productLabel: e.target.value }))}
+                placeholder="e.g. Standard Water System"
                 className="mt-2"
-                data-testid="input-meter-type-product-label"
+                data-testid="input-system-type-product-label"
               />
             </div>
 
             <div>
-              <Label htmlFor="meter-type-description">Description (optional)</Label>
+              <Label htmlFor="system-type-description">Description (optional)</Label>
               <Textarea
-                id="meter-type-description"
-                value={meterTypeForm.productDescription}
-                onChange={(e) => setMeterTypeForm(prev => ({ ...prev, productDescription: e.target.value }))}
-                placeholder="Brief description of this meter type"
+                id="system-type-description"
+                value={systemTypeForm.productDescription}
+                onChange={(e) => setSystemTypeForm(prev => ({ ...prev, productDescription: e.target.value }))}
+                placeholder="Brief description of this system type"
                 className="mt-2"
                 rows={2}
-                data-testid="input-meter-type-description"
+                data-testid="input-system-type-description"
               />
             </div>
 
@@ -2935,12 +2935,12 @@ export default function Settings() {
                   projectsList.map((project) => (
                     <div key={project.id} className="flex items-center gap-2">
                       <Checkbox
-                        id={`meter-type-project-${project.id}`}
-                        checked={meterTypeForm.projectIds.includes(project.id)}
-                        onCheckedChange={() => toggleMeterTypeProject(project.id)}
-                        data-testid={`checkbox-meter-type-project-${project.id}`}
+                        id={`system-type-project-${project.id}`}
+                        checked={systemTypeForm.projectIds.includes(project.id)}
+                        onCheckedChange={() => toggleSystemTypeProject(project.id)}
+                        data-testid={`checkbox-system-type-project-${project.id}`}
                       />
-                      <Label htmlFor={`meter-type-project-${project.id}`} className="text-sm font-normal cursor-pointer">
+                      <Label htmlFor={`system-type-project-${project.id}`} className="text-sm font-normal cursor-pointer">
                         {project.name}
                       </Label>
                     </div>
@@ -2949,56 +2949,56 @@ export default function Settings() {
                   <p className="text-muted-foreground text-sm">No projects available</p>
                 )}
               </div>
-              {meterTypeForm.projectIds.length > 0 && (
+              {systemTypeForm.projectIds.length > 0 && (
                 <p className="text-sm text-muted-foreground mt-2">
-                  Selected: {meterTypeForm.projectIds.length} project(s)
+                  Selected: {systemTypeForm.projectIds.length} project(s)
                 </p>
               )}
             </div>
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setMeterTypeDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setSystemTypeDialogOpen(false)}>
               Cancel
             </Button>
             <Button
-              onClick={handleMeterTypeSubmit}
-              disabled={!meterTypeForm.productId || !meterTypeForm.productLabel || createMeterTypeMutation.isPending || updateMeterTypeMutation.isPending}
-              data-testid="button-save-meter-type"
+              onClick={handleSystemTypeSubmit}
+              disabled={!systemTypeForm.productId || !systemTypeForm.productLabel || createSystemTypeMutation.isPending || updateSystemTypeMutation.isPending}
+              data-testid="button-save-system-type"
             >
-              {createMeterTypeMutation.isPending || updateMeterTypeMutation.isPending ? "Saving..." : selectedMeterType ? "Update" : "Create"}
+              {createSystemTypeMutation.isPending || updateSystemTypeMutation.isPending ? "Saving..." : selectedSystemType ? "Update" : "Create"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={deleteMeterTypeDialogOpen} onOpenChange={setDeleteMeterTypeDialogOpen}>
+      <AlertDialog open={deleteSystemTypeDialogOpen} onOpenChange={setDeleteSystemTypeDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Meter Type</AlertDialogTitle>
+            <AlertDialogTitle>Delete System Type</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete "{selectedMeterType?.productLabel}"? This action cannot be undone.
+              Are you sure you want to delete "{selectedSystemType?.productLabel}"? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => selectedMeterType && deleteMeterTypeMutation.mutate(selectedMeterType.id)}
+              onClick={() => selectedSystemType && deleteSystemTypeMutation.mutate(selectedSystemType.id)}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              data-testid="button-confirm-delete-meter-type"
+              data-testid="button-confirm-delete-system-type"
             >
-              {deleteMeterTypeMutation.isPending ? "Deleting..." : "Delete"}
+              {deleteSystemTypeMutation.isPending ? "Deleting..." : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog open={copyMeterTypeDialogOpen} onOpenChange={setCopyMeterTypeDialogOpen}>
+      <Dialog open={copySystemTypeDialogOpen} onOpenChange={setCopySystemTypeDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Copy Meter Type</DialogTitle>
+            <DialogTitle>Copy System Type</DialogTitle>
             <DialogDescription>
-              Copy this meter type to additional projects (optional).
+              Copy this system type to additional projects (optional).
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
@@ -3008,12 +3008,12 @@ export default function Settings() {
                 projectsList.map((project) => (
                   <div key={project.id} className="flex items-center gap-2">
                     <Checkbox
-                      id={`copy-meter-type-project-${project.id}`}
-                      checked={copyMeterTypeProjectIds.includes(project.id)}
-                      onCheckedChange={() => toggleCopyMeterTypeProject(project.id)}
-                      data-testid={`checkbox-copy-meter-type-project-${project.id}`}
+                      id={`copy-system-type-project-${project.id}`}
+                      checked={copySystemTypeProjectIds.includes(project.id)}
+                      onCheckedChange={() => toggleCopySystemTypeProject(project.id)}
+                      data-testid={`checkbox-copy-system-type-project-${project.id}`}
                     />
-                    <Label htmlFor={`copy-meter-type-project-${project.id}`} className="text-sm font-normal cursor-pointer">
+                    <Label htmlFor={`copy-system-type-project-${project.id}`} className="text-sm font-normal cursor-pointer">
                       {project.name}
                     </Label>
                   </div>
@@ -3023,24 +3023,24 @@ export default function Settings() {
               )}
             </div>
             <p className="text-sm text-muted-foreground mt-2">
-              {copyMeterTypeProjectIds.length > 0 
-                ? `Selected: ${copyMeterTypeProjectIds.length} project(s)` 
+              {copySystemTypeProjectIds.length > 0 
+                ? `Selected: ${copySystemTypeProjectIds.length} project(s)` 
                 : "Leave empty to copy with same project assignments."}
             </p>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCopyMeterTypeDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setCopySystemTypeDialogOpen(false)}>
               Cancel
             </Button>
             <Button
-              onClick={() => selectedMeterType && copyMeterTypeMutation.mutate({ 
-                id: selectedMeterType.id, 
-                projectIds: copyMeterTypeProjectIds.length > 0 ? copyMeterTypeProjectIds : undefined 
+              onClick={() => selectedSystemType && copySystemTypeMutation.mutate({ 
+                id: selectedSystemType.id, 
+                projectIds: copySystemTypeProjectIds.length > 0 ? copySystemTypeProjectIds : undefined 
               })}
-              disabled={copyMeterTypeMutation.isPending}
-              data-testid="button-confirm-copy-meter-type"
+              disabled={copySystemTypeMutation.isPending}
+              data-testid="button-confirm-copy-system-type"
             >
-              {copyMeterTypeMutation.isPending ? "Copying..." : "Copy"}
+              {copySystemTypeMutation.isPending ? "Copying..." : "Copy"}
             </Button>
           </DialogFooter>
         </DialogContent>
