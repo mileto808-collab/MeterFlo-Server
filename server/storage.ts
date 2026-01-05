@@ -1,6 +1,7 @@
 import {
   users,
   projects,
+  projectHolidays,
   userProjects,
   systemSettings,
   subroles,
@@ -29,6 +30,8 @@ import {
   type UpsertUser,
   type Project,
   type InsertProject,
+  type ProjectHoliday,
+  type InsertProjectHoliday,
   type UserProject,
   type InsertUserProject,
   type SystemSetting,
@@ -95,6 +98,11 @@ export interface IStorage {
   updateProject(id: number, project: Partial<InsertProject>): Promise<Project | undefined>;
   updateProjectDatabaseName(id: number, databaseName: string): Promise<Project | undefined>;
   deleteProject(id: number): Promise<boolean>;
+
+  // Project holiday operations
+  getProjectHolidays(projectId: number): Promise<ProjectHoliday[]>;
+  createProjectHoliday(data: InsertProjectHoliday): Promise<ProjectHoliday>;
+  deleteProjectHoliday(id: number): Promise<boolean>;
 
   // User-Project assignment operations
   getUserProjects(userId: string): Promise<Project[]>;
@@ -434,6 +442,21 @@ export class DatabaseStorage implements IStorage {
   async deleteProject(id: number): Promise<boolean> {
     await db.delete(projects).where(eq(projects.id, id));
     return true;
+  }
+
+  // Project holiday operations
+  async getProjectHolidays(projectId: number): Promise<ProjectHoliday[]> {
+    return await db.select().from(projectHolidays).where(eq(projectHolidays.projectId, projectId)).orderBy(projectHolidays.date);
+  }
+
+  async createProjectHoliday(data: InsertProjectHoliday): Promise<ProjectHoliday> {
+    const [holiday] = await db.insert(projectHolidays).values(data).returning();
+    return holiday;
+  }
+
+  async deleteProjectHoliday(id: number): Promise<boolean> {
+    const result = await db.delete(projectHolidays).where(eq(projectHolidays.id, id));
+    return (result.rowCount ?? 0) > 0;
   }
 
   // User-Project assignment operations

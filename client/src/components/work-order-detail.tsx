@@ -52,6 +52,7 @@ import {
 import { FileIcon } from "lucide-react";
 import SignaturePad, { type SignaturePadRef } from "@/components/signature-pad";
 import { SystemChangeoutWizard } from "@/components/system-changeout-wizard";
+import { DateTimePicker } from "@/components/ui/datetime-picker";
 
 interface OperationalHoursConfig {
   enabled: boolean;
@@ -828,30 +829,16 @@ export function WorkOrderDetail({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Scheduled At</FormLabel>
-                        <div className="flex gap-2">
-                          <FormControl>
-                            <Input
-                              type="datetime-local"
-                              {...field}
-                              value={field.value || ""}
-                              disabled={!canEdit}
-                              data-testid="input-scheduled-at"
-                              className={scheduledAtWarning ? "border-destructive" : ""}
-                            />
-                          </FormControl>
-                          {field.value && canEdit && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="icon"
-                              onClick={() => field.onChange("")}
-                              title="Clear schedule"
-                              data-testid="button-clear-schedule"
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </div>
+                        <FormControl>
+                          <DateTimePicker
+                            value={field.value}
+                            onChange={field.onChange}
+                            disabled={!canEdit}
+                            data-testid="input-scheduled-at"
+                            className={scheduledAtWarning ? "border-destructive" : ""}
+                            placeholder="Select schedule date/time"
+                          />
+                        </FormControl>
                         <p className="text-xs text-muted-foreground mt-1">Setting a date/time will auto-set status to "Scheduled"</p>
                         {scheduledAtWarning && (
                           <p className="text-xs text-destructive mt-1 flex items-center gap-1" data-testid="text-operational-hours-warning">
