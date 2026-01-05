@@ -1815,7 +1815,8 @@ export async function registerRoutes(
     }
   });
 
-  // Look up work order by meter ID (searches both old and new meter IDs)
+  // Look up work order by meter ID, address, or customer ID
+  // Used by meter changeout wizard to find work orders
   app.get("/api/projects/:projectId/work-orders/by-meter/:meterId", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
@@ -1829,7 +1830,7 @@ export async function registerRoutes(
       }
       
       const projectId = parseInt(req.params.projectId);
-      const meterId = decodeURIComponent(req.params.meterId);
+      const searchTerm = decodeURIComponent(req.params.meterId);
       
       if (currentUser.role !== "admin") {
         const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
@@ -1844,7 +1845,7 @@ export async function registerRoutes(
       }
       
       // Query directly with JOINs to get snake_case format matching mobile sync endpoint
-      // Searches both old_meter_id and new_meter_id fields
+      // Searches meter IDs (old/new), address, and customer_id fields
       const client = await pool.connect();
       try {
         const result = await client.query(`
@@ -1857,11 +1858,14 @@ export async function registerRoutes(
           LEFT JOIN public.users sb ON w.scheduled_by = sb.id
           LEFT JOIN public.users cb ON w.completed_by = cb.id
           LEFT JOIN public.users au ON w.assigned_user_id = au.id
-          WHERE w.old_meter_id = $1 OR w.new_meter_id = $1
-        `, [meterId]);
+          WHERE w.old_meter_id = $1 
+             OR w.new_meter_id = $1
+             OR w.customer_id = $1
+             OR w.address ILIKE $2
+        `, [searchTerm, `%${searchTerm}%`]);
         
         if (result.rows.length === 0) {
-          return res.status(404).json({ message: "Work order not found with meter ID: " + meterId });
+          return res.status(404).json({ message: "No work order found matching: " + searchTerm });
         }
         
         const workOrder = result.rows[0];
