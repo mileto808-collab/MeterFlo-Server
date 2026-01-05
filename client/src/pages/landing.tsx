@@ -92,7 +92,7 @@ export default function Landing() {
           <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
             <div>
               <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">Streamline Meter Changeout Operations</h1>
-              <p className="text-lg text-muted-foreground mb-8">Get up and running FAST with an out-of-box solution to manage work orders for utility meter changeout projects. Track progress, assign tasks, and sync with mobile teams and backend systems seamlessly.</p>
+              <p className="text-lg text-muted-foreground mb-8">Get up and running FAST with an out-of-box solution to manage work orders for utility meter & module changeout projects. Track progress, assign tasks, and sync with mobile teams and backend systems seamlessly.</p>
             </div>
             
             <Card className="max-w-md mx-auto w-full">
