@@ -2148,10 +2148,10 @@ export async function registerRoutes(
         const mergedData = { ...existingWorkOrder, ...req.body };
         const missingFields: string[] = [];
         
-        if (!mergedData.oldMeterId) missingFields.push("Old Meter ID");
-        if (mergedData.oldMeterReading === null || mergedData.oldMeterReading === undefined) missingFields.push("Old Meter Reading");
-        if (!mergedData.newMeterId) missingFields.push("New Meter ID");
-        if (mergedData.newMeterReading === null || mergedData.newMeterReading === undefined) missingFields.push("New Meter Reading");
+        if (!mergedData.oldSystemId) missingFields.push("Old System ID");
+        if (mergedData.oldSystemReading === null || mergedData.oldSystemReading === undefined) missingFields.push("Old System Reading");
+        if (!mergedData.newSystemId) missingFields.push("New System ID");
+        if (mergedData.newSystemReading === null || mergedData.newSystemReading === undefined) missingFields.push("New System Reading");
         if (!mergedData.newGps) missingFields.push("New GPS");
         if (!mergedData.signatureData && !req.body.signatureData) missingFields.push("Signature");
         if (!mergedData.signatureName && !req.body.signatureName) missingFields.push("Signature Name");
@@ -4857,11 +4857,11 @@ export async function registerRoutes(
               mappedData.serviceType = "Water";
             }
             
-            if (mappedData.oldMeterReading) {
-              mappedData.oldMeterReading = parseInt(String(mappedData.oldMeterReading)) || null;
+            if (mappedData.oldSystemReading) {
+              mappedData.oldSystemReading = parseInt(String(mappedData.oldSystemReading)) || null;
             }
-            if (mappedData.newMeterReading) {
-              mappedData.newMeterReading = parseInt(String(mappedData.newMeterReading)) || null;
+            if (mappedData.newSystemReading) {
+              mappedData.newSystemReading = parseInt(String(mappedData.newSystemReading)) || null;
             }
             
             mappedData.status = String(mappedData.status || "pending");
@@ -6101,7 +6101,7 @@ export async function registerRoutes(
     }
   });
 
-  // Mobile meter changeout - complete a meter changeout from mobile device
+  // Mobile system changeout - complete a system changeout from mobile device
   app.post("/api/projects/:projectId/mobile/work-orders/:workOrderId/complete-changeout", isAuthenticated, upload.array("photos", 20), async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
@@ -6144,9 +6144,9 @@ export async function registerRoutes(
         canChange,
         troubleCode,
         troubleNote,
-        oldMeterReading,
-        newMeterId,
-        newMeterReading,
+        oldSystemReading,
+        newSystemId,
+        newSystemReading,
         gpsCoordinates,
         signatureData,
         signatureName,
@@ -6158,7 +6158,7 @@ export async function registerRoutes(
       const folderName = workOrder.customerWoId || String(workOrder.id);
       
       // Validation
-      const isValidMeterReading = (reading: string): boolean => {
+      const isValidSystemReading = (reading: string): boolean => {
         if (!reading || reading.trim().length === 0) return false;
         return /^\d+$/.test(reading.trim());
       };
@@ -6205,27 +6205,27 @@ export async function registerRoutes(
       }
       
       if (canChange) {
-        // Success path - meter was changed
-        if (!oldMeterReading || !newMeterId || !newMeterReading || !gpsCoordinates || !signatureName) {
+        // Success path - system was changed
+        if (!oldSystemReading || !newSystemId || !newSystemReading || !gpsCoordinates || !signatureName) {
           return res.status(400).json({ 
-            message: "Missing required fields for meter changeout" 
+            message: "Missing required fields for system changeout" 
           });
         }
         
-        if (!isValidMeterReading(oldMeterReading)) {
-          return res.status(400).json({ message: "Old meter reading must contain only digits" });
+        if (!isValidSystemReading(oldSystemReading)) {
+          return res.status(400).json({ message: "Old system reading must contain only digits" });
         }
-        if (!isValidMeterReading(newMeterReading)) {
-          return res.status(400).json({ message: "New meter reading must contain only digits" });
+        if (!isValidSystemReading(newSystemReading)) {
+          return res.status(400).json({ message: "New system reading must contain only digits" });
         }
         if (!isValidGps(gpsCoordinates)) {
           return res.status(400).json({ message: "Invalid GPS coordinates format" });
         }
         
         updateData.status = "Completed";
-        updateData.oldMeterReading = parseInt(oldMeterReading.trim(), 10);
-        updateData.newMeterId = newMeterId;
-        updateData.newMeterReading = parseInt(newMeterReading.trim(), 10);
+        updateData.oldSystemReading = parseInt(oldSystemReading.trim(), 10);
+        updateData.newSystemId = newSystemId;
+        updateData.newSystemReading = parseInt(newSystemReading.trim(), 10);
         updateData.newGps = gpsCoordinates;
         updateData.signatureName = signatureName;
         updateData.completedAt = clientCompletedAt || new Date().toISOString();
@@ -6234,7 +6234,7 @@ export async function registerRoutes(
         // Append completion notes to existing notes (mobile pattern)
         if (troubleNote && troubleNote.trim()) {
           const timestamp = await getTimezoneFormattedTimestamp();
-          const noteEntry = `[Meter Changeout Notes - ${timestamp} by ${currentUser.username || currentUser.id}]\n${troubleNote.trim()}`;
+          const noteEntry = `[System Changeout Notes - ${timestamp} by ${currentUser.username || currentUser.id}]\n${troubleNote.trim()}`;
           updateData.notes = workOrder.notes 
             ? `${workOrder.notes}\n\n${noteEntry}`
             : noteEntry;
@@ -6244,7 +6244,7 @@ export async function registerRoutes(
           updateData.signatureData = signatureData;
         }
       } else {
-        // Trouble path - could not change meter
+        // Trouble path - could not change system
         if (!troubleCode) {
           return res.status(400).json({ message: "Trouble code is required" });
         }
@@ -6290,11 +6290,11 @@ export async function registerRoutes(
       res.json({
         success: true,
         workOrder: updatedWorkOrder,
-        message: canChange ? "Meter changeout completed successfully" : "Trouble reported successfully"
+        message: canChange ? "System changeout completed successfully" : "Trouble reported successfully"
       });
     } catch (error) {
-      console.error("Error completing mobile meter changeout:", error);
-      res.status(500).json({ message: "Failed to complete meter changeout" });
+      console.error("Error completing mobile system changeout:", error);
+      res.status(500).json({ message: "Failed to complete system changeout" });
     }
   });
 
@@ -6311,7 +6311,7 @@ export async function registerRoutes(
         return res.status(401).json({ message: "Unauthorized" });
       }
       
-      const { projectId, troubleCode, notes, oldMeterReading, photos } = req.body;
+      const { projectId, troubleCode, notes, oldSystemReading, photos } = req.body;
       
       if (!projectId) {
         return res.status(400).json({ message: "projectId is required" });
@@ -6412,8 +6412,8 @@ export async function registerRoutes(
           : noteEntry;
       }
       
-      if (oldMeterReading !== undefined && oldMeterReading !== null) {
-        updateData.oldMeterReading = parseInt(String(oldMeterReading), 10);
+      if (oldSystemReading !== undefined && oldSystemReading !== null) {
+        updateData.oldSystemReading = parseInt(String(oldSystemReading), 10);
       }
       
       // The trouble code is included in updateData.trouble, which triggers auto-generated trouble note in updateWorkOrder
@@ -6566,8 +6566,8 @@ export async function registerRoutes(
         await fs.writeFile(sigFilePath, sigBuffer);
       }
       
-      // Validation for meter changeout completion
-      const isValidMeterReading = (reading: any): boolean => {
+      // Validation for system changeout completion
+      const isValidSystemReading = (reading: any): boolean => {
         if (reading === undefined || reading === null) return false;
         const str = String(reading).trim();
         return str.length > 0 && /^\d+$/.test(str);
@@ -6586,7 +6586,7 @@ export async function registerRoutes(
       if (!newSystemId) {
         return res.status(400).json({ message: "newSystemId is required for completion" });
       }
-      if (!isValidMeterReading(newSystemReading)) {
+      if (!isValidSystemReading(newSystemReading)) {
         return res.status(400).json({ message: "newSystemReading is required and must be numeric" });
       }
       if (gpsCoordinates && !isValidGps(gpsCoordinates)) {
