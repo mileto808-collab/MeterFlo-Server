@@ -50,6 +50,13 @@ export function WorkOrderPdf({
     return tc ? `${tc.code} - ${tc.label}` : code;
   };
 
+  const signatureFile = workOrderFiles.find((f) => {
+    const ext = f.toLowerCase().split(".").pop();
+    const isImage = ["jpg", "jpeg", "png", "gif", "webp", "bmp"].includes(ext || "");
+    const isSignature = f.toLowerCase().includes("signature");
+    return isImage && isSignature;
+  });
+
   const imageFiles = workOrderFiles.filter((f) => {
     const ext = f.toLowerCase().split(".").pop();
     const isImage = ["jpg", "jpeg", "png", "gif", "webp", "bmp"].includes(ext || "");
@@ -102,10 +109,23 @@ export function WorkOrderPdf({
       `;
     }
 
-    const signatureHtml = (workOrder.signatureData || workOrder.signatureName) ? `
+    const signatureImageUrl = signatureFile 
+      ? `${window.location.origin}/api/projects/${projectId}/work-orders/${workOrder.id}/files/${encodeURIComponent(signatureFile)}/download?mode=view`
+      : null;
+
+    const signatureHtml = (signatureFile || workOrder.signatureData || workOrder.signatureName) ? `
       <div style="background-color: #f5f5f5; padding: 10px; border-radius: 4px; margin-bottom: 15px;">
         <h3 style="margin: 0 0 8px 0; font-size: 13px; font-weight: bold; color: #333;">Signature</h3>
-        ${workOrder.signatureData ? `
+        ${signatureImageUrl ? `
+          <div style="margin-bottom: 8px;">
+            <img
+              src="${signatureImageUrl}"
+              alt="Signature"
+              style="max-width: 200px; max-height: 80px; border: 1px solid #ccc;"
+              crossorigin="anonymous"
+            />
+          </div>
+        ` : workOrder.signatureData ? `
           <div style="margin-bottom: 8px;">
             <img
               id="pdf-signature-img"
