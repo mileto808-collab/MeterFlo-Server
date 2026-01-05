@@ -467,7 +467,7 @@ export function StartMeterChangeoutDialog({
             Start Meter Changeout
           </DialogTitle>
           <DialogDescription>
-            Search by meter ID, address, or customer ID
+            Search by work order ID, meter ID, address, or customer ID
           </DialogDescription>
         </DialogHeader>
 
@@ -516,7 +516,7 @@ export function StartMeterChangeoutDialog({
                 </div>
                 <div className="flex-1">
                   <h3 className="font-medium">Manual Entry</h3>
-                  <p className="text-sm text-muted-foreground">Search by meter ID, address, or customer ID</p>
+                  <p className="text-sm text-muted-foreground">Search by work order ID, meter ID, address, or customer ID</p>
                 </div>
               </CardContent>
             </Card>
@@ -646,7 +646,7 @@ export function StartMeterChangeoutDialog({
                   setManualInput(e.target.value);
                   setLookupError(null);
                 }}
-                placeholder="Meter ID, address, or customer ID..."
+                placeholder="Work order ID, meter ID, address, or customer ID..."
                 disabled={isLookingUp}
                 data-testid="input-search"
               />

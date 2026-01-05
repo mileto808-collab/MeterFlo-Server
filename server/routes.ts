@@ -1815,8 +1815,8 @@ export async function registerRoutes(
     }
   });
 
-  // Look up work order by meter ID, address, or customer ID
-  // Used by meter changeout wizard to find work orders
+  // Look up work order by meter ID, address, customer ID, or work order ID
+  // Used by meter changeout wizard and mobile app to find work orders
   app.get("/api/projects/:projectId/work-orders/by-meter/:meterId", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
@@ -1845,9 +1845,13 @@ export async function registerRoutes(
       }
       
       // Query directly with JOINs to get snake_case format matching mobile sync endpoint
-      // Searches meter IDs (old/new), address, and customer_id fields
+      // Searches: meter IDs (old/new), customer_id, work order IDs (customer_wo_id, system id), and address (partial/case-insensitive)
       const client = await pool.connect();
       try {
+        // Try to parse as numeric ID for system work order ID matching
+        const numericId = parseInt(searchTerm, 10);
+        const isNumeric = !isNaN(numericId) && numericId > 0;
+        
         const result = await client.query(`
           SELECT w.*, 
                  sb.username as scheduled_by_username,
@@ -1861,8 +1865,10 @@ export async function registerRoutes(
           WHERE w.old_meter_id = $1 
              OR w.new_meter_id = $1
              OR w.customer_id = $1
+             OR w.customer_wo_id = $1
+             OR ($3 AND w.id = $4)
              OR w.address ILIKE $2
-        `, [searchTerm, `%${searchTerm}%`]);
+        `, [searchTerm, `%${searchTerm}%`, isNumeric, isNumeric ? numericId : null]);
         
         if (result.rows.length === 0) {
           return res.status(404).json({ message: "No work order found matching: " + searchTerm });
