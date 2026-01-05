@@ -713,7 +713,7 @@ export function StartMeterChangeoutDialog({
                     <div className="min-w-0">
                       <p className="text-sm text-muted-foreground">Work Order</p>
                       <p className="font-medium break-all" data-testid="text-confirm-wo-id">
-                        {foundWorkOrder.customerWoId || `WO-${foundWorkOrder.id}`}
+                        {(foundWorkOrder as any).customer_wo_id || foundWorkOrder.customerWoId || `WO-${foundWorkOrder.id}`}
                       </p>
                     </div>
                   </div>
@@ -732,11 +732,23 @@ export function StartMeterChangeoutDialog({
                     <Gauge className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
                     <div className="min-w-0">
                       <p className="text-sm text-muted-foreground">Old Meter ID</p>
-                      <p className="font-medium break-all" data-testid="text-confirm-meter-id">
-                        {foundWorkOrder.oldMeterId || "N/A"}
+                      <p className="font-medium break-all" data-testid="text-confirm-old-meter-id">
+                        {(foundWorkOrder as any).old_meter_id || foundWorkOrder.oldMeterId || "N/A"}
                       </p>
                     </div>
                   </div>
+
+                  {((foundWorkOrder as any).new_meter_id || foundWorkOrder.newMeterId) && (
+                    <div className="flex items-start gap-3">
+                      <Gauge className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-sm text-muted-foreground">New Meter ID</p>
+                        <p className="font-medium break-all" data-testid="text-confirm-new-meter-id">
+                          {(foundWorkOrder as any).new_meter_id || foundWorkOrder.newMeterId}
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="flex items-start gap-3">
                     <ClipboardCheck className={`h-5 w-5 mt-0.5 shrink-0 ${isCompleted ? "text-destructive" : (isTrouble ? "text-amber-500" : "text-muted-foreground")}`} />
