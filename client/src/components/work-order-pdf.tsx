@@ -63,7 +63,7 @@ export function WorkOrderPdf({
       const thumbnailsHtml = imageFiles.slice(0, 6).map((filename) => `
         <div style="text-align: center; display: inline-block; margin: 5px;">
           <img
-            src="/api/projects/${projectId}/work-orders/${workOrder.id}/files/${encodeURIComponent(filename)}/download?mode=view"
+            src="${window.location.origin}/api/projects/${projectId}/work-orders/${workOrder.id}/files/${encodeURIComponent(filename)}/download?mode=view"
             alt="${filename}"
             style="width: 120px; height: 90px; object-fit: cover; border-radius: 4px; border: 1px solid #ccc;"
             crossorigin="anonymous"
@@ -128,7 +128,7 @@ export function WorkOrderPdf({
     ` : "";
 
     return `
-      <div style="width: 190mm; padding: 10mm; background-color: white; color: black; font-family: Arial, sans-serif; font-size: 11px; line-height: 1.4;">
+      <div id="pdf-content" style="width: 190mm; padding: 10mm; background-color: white; color: black; font-family: Arial, sans-serif; font-size: 11px; line-height: 1.4;">
         <div style="margin-bottom: 20px; border-bottom: 2px solid #333; padding-bottom: 10px;">
           <h1 style="margin: 0; font-size: 22px; font-weight: bold;">Work Order Report</h1>
           <p style="margin: 5px 0 0 0; color: #666;">
@@ -312,27 +312,102 @@ export function WorkOrderPdf({
     `;
   };
 
-  const handleGeneratePdf = async () => {
-    setIsGenerating(true);
-    setShowDialog(false);
+  const renderPdfInIframe = async (htmlContent: string, filename: string): Promise<void> => {
+    const overlay = document.createElement("div");
+    overlay.setAttribute("data-pdf-overlay", "true");
+    overlay.style.cssText = `
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.95);
+      z-index: 2147483646;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-family: Arial, sans-serif;
+      font-size: 16px;
+    `;
+    overlay.innerHTML = `
+      <div style="text-align: center;">
+        <div style="margin-bottom: 12px;">
+          <svg style="animation: spin 1s linear infinite; width: 32px; height: 32px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10" stroke-opacity="0.25"></circle>
+            <path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"></path>
+          </svg>
+        </div>
+        <div>Generating PDF...</div>
+      </div>
+      <style>@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }</style>
+    `;
+    document.body.appendChild(overlay);
+
+    const iframe = document.createElement("iframe");
+    iframe.setAttribute("data-pdf-iframe", "true");
+    iframe.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 210mm;
+      height: 297mm;
+      border: 0;
+      background: white;
+      z-index: 2147483645;
+      pointer-events: none;
+    `;
+    iframe.setAttribute("aria-hidden", "true");
+    document.body.appendChild(iframe);
 
     try {
-      const woId = workOrder.customerWoId || `WO-${workOrder.id}`;
-      const filename = `WorkOrder_${woId}.pdf`;
+      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+      if (!iframeDoc) {
+        throw new Error("Could not access iframe document");
+      }
 
-      const htmlContent = buildPdfContent(photoOption);
-      
-      const container = document.createElement("div");
-      container.setAttribute("data-pdf-container", "true");
-      container.innerHTML = htmlContent;
-      container.style.position = "absolute";
-      container.style.left = "-9999px";
-      container.style.top = "0";
-      container.style.width = "210mm";
-      container.style.backgroundColor = "white";
-      document.body.appendChild(container);
+      iframeDoc.open();
+      iframeDoc.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="UTF-8">
+            <style>
+              * { box-sizing: border-box; }
+              body { margin: 0; padding: 0; background: white; }
+            </style>
+          </head>
+          <body>${htmlContent}</body>
+        </html>
+      `);
+      iframeDoc.close();
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+
+      if (iframeDoc.fonts) {
+        await iframeDoc.fonts.ready;
+      }
+
+      const images = iframeDoc.querySelectorAll("img");
+      if (images.length > 0) {
+        await Promise.all(
+          Array.from(images).map(
+            (img) =>
+              new Promise<void>((resolve) => {
+                if (img.complete) {
+                  resolve();
+                } else {
+                  img.onload = () => resolve();
+                  img.onerror = () => resolve();
+                }
+              })
+          )
+        );
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      const contentElement = iframeDoc.getElementById("pdf-content");
+      if (!contentElement) {
+        throw new Error("PDF content element not found in iframe");
+      }
 
       const opt = {
         margin: [10, 10, 10, 10] as [number, number, number, number],
@@ -343,14 +418,28 @@ export function WorkOrderPdf({
         pagebreak: { mode: ["avoid-all", "css", "legacy"] },
       };
 
-      await html2pdf().set(opt).from(container).save();
+      await html2pdf().set(opt).from(contentElement).save();
+    } finally {
+      const existingOverlay = document.body.querySelector('[data-pdf-overlay]');
+      const existingIframe = document.body.querySelector('[data-pdf-iframe]');
+      if (existingOverlay) document.body.removeChild(existingOverlay);
+      if (existingIframe) document.body.removeChild(existingIframe);
+    }
+  };
+
+  const handleGeneratePdf = async () => {
+    setIsGenerating(true);
+    setShowDialog(false);
+
+    try {
+      const woId = workOrder.customerWoId || `WO-${workOrder.id}`;
+      const filename = `WorkOrder_${woId}.pdf`;
+      const htmlContent = buildPdfContent(photoOption);
+      
+      await renderPdfInIframe(htmlContent, filename);
     } catch (err) {
       console.error("PDF generation error:", err);
     } finally {
-      const existingContainer = document.body.querySelector('[data-pdf-container]');
-      if (existingContainer) {
-        document.body.removeChild(existingContainer);
-      }
       setIsGenerating(false);
     }
   };
