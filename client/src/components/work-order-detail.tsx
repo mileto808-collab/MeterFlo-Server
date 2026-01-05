@@ -607,7 +607,7 @@ export function WorkOrderDetail({
                                 </FormControl>
                                 <SelectContent>
                                   <SelectItem value="__none__">None</SelectItem>
-                                  {systemTypes.map((mt) => (
+                                  {(systemTypes || []).map((mt) => (
                                     <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
                                   ))}
                                 </SelectContent>
@@ -716,7 +716,7 @@ export function WorkOrderDetail({
                                 </FormControl>
                                 <SelectContent>
                                   <SelectItem value="__none__">None</SelectItem>
-                                  {systemTypes.map((mt) => (
+                                  {(systemTypes || []).map((mt) => (
                                     <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
                                   ))}
                                 </SelectContent>
