@@ -79,6 +79,7 @@ import { WorkOrderDetail } from "@/components/work-order-detail";
 import { ScannerInput } from "@/components/scanner-input";
 import { GPSCapture } from "@/components/gps-capture";
 import { StartSystemChangeoutDialog } from "@/components/start-system-changeout-dialog";
+import { DateTimePicker } from "@/components/ui/datetime-picker";
 
 type Assignee = {
   type: "user" | "group";
@@ -2418,28 +2419,14 @@ export default function ProjectWorkOrders() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Scheduled At</FormLabel>
-                        <div className="flex gap-2">
-                          <FormControl>
-                            <Input
-                              type="datetime-local"
-                              {...field}
-                              value={field.value || ""}
-                              data-testid="input-create-scheduled-at"
-                            />
-                          </FormControl>
-                          {field.value && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="icon"
-                              onClick={() => field.onChange("")}
-                              title="Clear schedule"
-                              data-testid="button-clear-create-schedule"
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </div>
+                        <FormControl>
+                          <DateTimePicker
+                            value={field.value}
+                            onChange={field.onChange}
+                            data-testid="input-create-scheduled-at"
+                            placeholder="Select schedule date/time"
+                          />
+                        </FormControl>
                         <p className="text-xs text-muted-foreground">Setting a date/time will auto-set status to "Scheduled"</p>
                         <FormMessage />
                       </FormItem>

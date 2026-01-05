@@ -100,8 +100,18 @@ export const projects = pgTable("projects", {
   operationalHoursEnabled: boolean("operational_hours_enabled").default(false),
   operationalHoursStart: varchar("operational_hours_start", { length: 10 }),
   operationalHoursEnd: varchar("operational_hours_end", { length: 10 }),
+  operationalHoursDays: text("operational_hours_days").array(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Project Holidays - dates to exclude from scheduling
+export const projectHolidays = pgTable("project_holidays", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  date: varchar("date", { length: 10 }).notNull(),
+  name: varchar("name", { length: 100 }),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // User-Project junction table (many-to-many relationship)
@@ -470,6 +480,13 @@ export const insertProjectSchema = z.object({
   operationalHoursEnabled: z.boolean().optional().default(false),
   operationalHoursStart: z.string().max(10).optional().nullable(),
   operationalHoursEnd: z.string().max(10).optional().nullable(),
+  operationalHoursDays: z.array(z.string()).optional().nullable(),
+});
+
+export const insertProjectHolidaySchema = z.object({
+  projectId: z.number(),
+  date: z.string().max(10),
+  name: z.string().max(100).optional().nullable(),
 });
 
 export const insertSubroleSchema = z.object({
@@ -650,6 +667,9 @@ export type ResetPassword = z.infer<typeof resetPasswordSchema>;
 
 export type Project = typeof projects.$inferSelect;
 export type InsertProject = z.infer<typeof insertProjectSchema>;
+
+export type ProjectHoliday = typeof projectHolidays.$inferSelect;
+export type InsertProjectHoliday = z.infer<typeof insertProjectHolidaySchema>;
 
 export type UserProject = typeof userProjects.$inferSelect;
 export type InsertUserProject = z.infer<typeof insertUserProjectSchema>;

@@ -17,7 +17,18 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import type { Project, User } from "@shared/schema";
-import { ArrowLeft, Save, Loader2, Globe, Clock, Users, X } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Globe, Clock, Users, X, CalendarDays, Plus } from "lucide-react";
+import type { ProjectHoliday } from "@shared/schema";
+
+const DAYS_OF_WEEK = [
+  { value: 'monday', label: 'Mon' },
+  { value: 'tuesday', label: 'Tue' },
+  { value: 'wednesday', label: 'Wed' },
+  { value: 'thursday', label: 'Thu' },
+  { value: 'friday', label: 'Fri' },
+  { value: 'saturday', label: 'Sat' },
+  { value: 'sunday', label: 'Sun' },
+] as const;
 
 const projectFormSchema = z.object({
   name: z.string().min(1, "Name is required").max(255),
@@ -38,6 +49,7 @@ const projectFormSchema = z.object({
   operationalHoursEnabled: z.boolean().optional().default(false),
   operationalHoursStart: z.string().max(10).optional().or(z.literal("")),
   operationalHoursEnd: z.string().max(10).optional().or(z.literal("")),
+  operationalHoursDays: z.array(z.string()).optional().default([]),
 }).refine((data) => {
   if (data.operationalHoursEnabled) {
     return data.operationalHoursStart && data.operationalHoursEnd;
@@ -84,6 +96,7 @@ export default function ProjectForm() {
       operationalHoursEnabled: false,
       operationalHoursStart: "",
       operationalHoursEnd: "",
+      operationalHoursDays: [],
     },
   });
 
@@ -108,6 +121,7 @@ export default function ProjectForm() {
         operationalHoursEnabled: project.operationalHoursEnabled || false,
         operationalHoursStart: project.operationalHoursStart || "",
         operationalHoursEnd: project.operationalHoursEnd || "",
+        operationalHoursDays: project.operationalHoursDays || [],
       });
     }
   }, [project, form]);
@@ -193,6 +207,43 @@ export default function ProjectForm() {
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message || "Failed to remove user", variant: "destructive" });
+    },
+  });
+
+  // Holidays management
+  const [newHolidayDate, setNewHolidayDate] = useState<string>("");
+  const [newHolidayName, setNewHolidayName] = useState<string>("");
+
+  const { data: holidays = [], isLoading: holidaysLoading } = useQuery<ProjectHoliday[]>({
+    queryKey: ["/api/projects", id, "holidays"],
+    enabled: isEditing && form.watch("operationalHoursEnabled"),
+  });
+
+  const addHolidayMutation = useMutation({
+    mutationFn: async (data: { date: string; name: string }) => {
+      await apiRequest("POST", `/api/projects/${id}/holidays`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "holidays"] });
+      setNewHolidayDate("");
+      setNewHolidayName("");
+      toast({ title: "Success", description: "Holiday added" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message || "Failed to add holiday", variant: "destructive" });
+    },
+  });
+
+  const deleteHolidayMutation = useMutation({
+    mutationFn: async (holidayId: number) => {
+      await apiRequest("DELETE", `/api/projects/${id}/holidays/${holidayId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "holidays"] });
+      toast({ title: "Success", description: "Holiday removed" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message || "Failed to remove holiday", variant: "destructive" });
     },
   });
 
@@ -572,6 +623,119 @@ export default function ProjectForm() {
                         )}
                       />
                     </div>
+
+                    <FormField
+                      control={form.control}
+                      name="operationalHoursDays"
+                      render={({ field }) => (
+                        <FormItem className="mt-4">
+                          <FormLabel>Operational Days</FormLabel>
+                          <FormDescription className="mb-2">
+                            Select which days work orders can be scheduled (leave empty for all days)
+                          </FormDescription>
+                          <div className="flex flex-wrap gap-2">
+                            {DAYS_OF_WEEK.map((day) => {
+                              const isChecked = field.value?.includes(day.value) || false;
+                              return (
+                                <button
+                                  type="button"
+                                  key={day.value}
+                                  className={`px-3 py-2 rounded-md border cursor-pointer transition-colors ${
+                                    isChecked 
+                                      ? 'bg-primary text-primary-foreground border-primary' 
+                                      : 'bg-background hover:bg-muted border-input'
+                                  }`}
+                                  data-testid={`button-day-${day.value}`}
+                                  onClick={() => {
+                                    const current = field.value || [];
+                                    if (isChecked) {
+                                      field.onChange(current.filter(d => d !== day.value));
+                                    } else {
+                                      field.onChange([...current, day.value]);
+                                    }
+                                  }}
+                                >
+                                  {day.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {isEditing && (
+                      <div className="mt-6 pt-4 border-t border-muted">
+                        <div className="flex items-center gap-2 mb-2">
+                          <CalendarDays className="h-4 w-4 text-muted-foreground" />
+                          <FormLabel className="mb-0">Holidays</FormLabel>
+                        </div>
+                        <FormDescription className="mb-3">
+                          Add dates when scheduling should be blocked (holidays, closures)
+                        </FormDescription>
+
+                        <div className="flex flex-wrap items-center gap-2 mb-4">
+                          <Input
+                            type="date"
+                            value={newHolidayDate}
+                            onChange={(e) => setNewHolidayDate(e.target.value)}
+                            className="w-auto"
+                            data-testid="input-holiday-date"
+                          />
+                          <Input
+                            type="text"
+                            placeholder="Holiday name (optional)"
+                            value={newHolidayName}
+                            onChange={(e) => setNewHolidayName(e.target.value)}
+                            className="flex-1 min-w-[150px]"
+                            data-testid="input-holiday-name"
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            disabled={!newHolidayDate || addHolidayMutation.isPending}
+                            onClick={() => addHolidayMutation.mutate({ date: newHolidayDate, name: newHolidayName })}
+                            data-testid="button-add-holiday"
+                          >
+                            {addHolidayMutation.isPending ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Plus className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </div>
+
+                        {holidaysLoading ? (
+                          <Skeleton className="h-8 w-full" />
+                        ) : holidays.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {holidays.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map((holiday) => (
+                              <Badge 
+                                key={holiday.id} 
+                                variant="secondary"
+                                className="flex items-center gap-1 pr-1"
+                              >
+                                {new Date(holiday.date).toLocaleDateString()}
+                                {holiday.name && ` - ${holiday.name}`}
+                                <button
+                                  type="button"
+                                  className="ml-1 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none"
+                                  onClick={() => deleteHolidayMutation.mutate(holiday.id)}
+                                  disabled={deleteHolidayMutation.isPending}
+                                  data-testid={`button-remove-holiday-${holiday.id}`}
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">No holidays configured</p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

@@ -38,20 +38,54 @@ interface OperationalHoursValidationResult {
   message?: string;
 }
 
-function validateOperationalHours(
+const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
+
+async function validateOperationalHours(
   scheduledAt: string | Date | null | undefined,
-  project: { operationalHoursEnabled?: boolean | null; operationalHoursStart?: string | null; operationalHoursEnd?: string | null }
-): OperationalHoursValidationResult {
-  if (!scheduledAt || !project.operationalHoursEnabled) {
-    return { valid: true };
+  project: { 
+    id: number;
+    operationalHoursEnabled?: boolean | null; 
+    operationalHoursStart?: string | null; 
+    operationalHoursEnd?: string | null;
+    operationalHoursDays?: string[] | null;
   }
-  
-  if (!project.operationalHoursStart || !project.operationalHoursEnd) {
+): Promise<OperationalHoursValidationResult> {
+  if (!scheduledAt || !project.operationalHoursEnabled) {
     return { valid: true };
   }
   
   const scheduledDate = typeof scheduledAt === 'string' ? new Date(scheduledAt) : scheduledAt;
   if (isNaN(scheduledDate.getTime())) {
+    return { valid: true };
+  }
+  
+  // Check day of week if days are configured
+  if (project.operationalHoursDays && project.operationalHoursDays.length > 0) {
+    const dayOfWeek = DAY_NAMES[scheduledDate.getDay()];
+    if (!project.operationalHoursDays.includes(dayOfWeek)) {
+      const allowedDays = project.operationalHoursDays
+        .map(d => d.charAt(0).toUpperCase() + d.slice(1))
+        .join(', ');
+      return { 
+        valid: false, 
+        message: `Scheduling is only allowed on: ${allowedDays}.`
+      };
+    }
+  }
+  
+  // Check if date falls on a holiday
+  const holidays = await storage.getProjectHolidays(project.id);
+  const scheduledDateStr = scheduledDate.toISOString().split('T')[0];
+  const holiday = holidays.find(h => h.date === scheduledDateStr);
+  if (holiday) {
+    return { 
+      valid: false, 
+      message: `Cannot schedule on ${holiday.name || scheduledDateStr} - this date is marked as a holiday.`
+    };
+  }
+  
+  // Check time of day if hours are configured
+  if (!project.operationalHoursStart || !project.operationalHoursEnd) {
     return { valid: true };
   }
   
@@ -1335,6 +1369,71 @@ export async function registerRoutes(
     }
   });
 
+  // Project Holidays endpoints
+  app.get("/api/projects/:projectId/holidays", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canViewProjects = await storage.hasPermission(currentUser, permissionKeys.PROJECTS_VIEW);
+      if (!canViewProjects && currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      
+      const projectId = parseInt(req.params.projectId);
+      const holidays = await storage.getProjectHolidays(projectId);
+      res.json(holidays);
+    } catch (error) {
+      console.error("Error fetching project holidays:", error);
+      res.status(500).json({ message: "Failed to fetch holidays" });
+    }
+  });
+
+  app.post("/api/projects/:projectId/holidays", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canEditProjects = await storage.hasPermission(currentUser, permissionKeys.PROJECTS_EDIT);
+      if (!canEditProjects) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      
+      const projectId = parseInt(req.params.projectId);
+      const holiday = await storage.createProjectHoliday({
+        projectId,
+        date: req.body.date,
+        name: req.body.name || null,
+      });
+      res.status(201).json(holiday);
+    } catch (error) {
+      console.error("Error creating project holiday:", error);
+      res.status(500).json({ message: "Failed to create holiday" });
+    }
+  });
+
+  app.delete("/api/projects/:projectId/holidays/:holidayId", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canEditProjects = await storage.hasPermission(currentUser, permissionKeys.PROJECTS_EDIT);
+      if (!canEditProjects) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      
+      const holidayId = parseInt(req.params.holidayId);
+      await storage.deleteProjectHoliday(holidayId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting project holiday:", error);
+      res.status(500).json({ message: "Failed to delete holiday" });
+    }
+  });
+
   // SSE endpoint for project-scoped real-time events
   app.get("/api/projects/:projectId/events", isAuthenticated, async (req: any, res) => {
     try {
@@ -1980,7 +2079,7 @@ export async function registerRoutes(
       
       // Validate operational hours if scheduledAt is provided
       if (req.body.scheduledAt) {
-        const hoursValidation = validateOperationalHours(req.body.scheduledAt, project);
+        const hoursValidation = await validateOperationalHours(req.body.scheduledAt, project);
         if (!hoursValidation.valid) {
           return res.status(400).json({ message: hoursValidation.message });
         }
@@ -2029,7 +2128,7 @@ export async function registerRoutes(
       
       // Validate operational hours if scheduledAt is being updated
       if (req.body.scheduledAt) {
-        const hoursValidation = validateOperationalHours(req.body.scheduledAt, project);
+        const hoursValidation = await validateOperationalHours(req.body.scheduledAt, project);
         if (!hoursValidation.valid) {
           return res.status(400).json({ message: hoursValidation.message });
         }
@@ -2060,6 +2159,28 @@ export async function registerRoutes(
         if (missingFields.length > 0) {
           return res.status(400).json({ 
             message: `Cannot set status to Completed. Missing required fields: ${missingFields.join(", ")}` 
+          });
+        }
+      }
+      
+      // Check if status is being set to "Scheduled" and validate required fields
+      if (finalStatus === "Scheduled") {
+        const mergedData = { ...existingWorkOrder, ...req.body };
+        const missingFields: string[] = [];
+        
+        // Require an assigned user
+        if (!mergedData.assignedUserId) {
+          missingFields.push("Assigned User");
+        }
+        
+        // Require a scheduled date/time
+        if (!mergedData.scheduledAt) {
+          missingFields.push("Scheduled Date/Time");
+        }
+        
+        if (missingFields.length > 0) {
+          return res.status(400).json({ 
+            message: `Cannot set status to Scheduled. Missing required fields: ${missingFields.join(", ")}` 
           });
         }
       }
