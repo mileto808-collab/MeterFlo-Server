@@ -294,7 +294,7 @@ export function StartMeterChangeoutDialog({
 
   const lookupWorkOrder = useCallback(async (meterId: string) => {
     if (!meterId.trim()) {
-      setLookupError("Please enter an old meter ID");
+      setLookupError("Please enter a meter ID");
       return;
     }
 
@@ -311,7 +311,7 @@ export function StartMeterChangeoutDialog({
     } catch (error: any) {
       console.error("Lookup error:", error);
       if (error.message?.includes("404") || error.message?.includes("not found")) {
-        setLookupError(`No work order found with old meter ID: ${meterId}`);
+        setLookupError(`No work order found with meter ID: ${meterId}`);
       } else {
         setLookupError(error.message || "Failed to look up work order");
       }
@@ -467,7 +467,7 @@ export function StartMeterChangeoutDialog({
             Start Meter Changeout
           </DialogTitle>
           <DialogDescription>
-            Scan or enter the old meter ID to find the work order
+            Scan or enter meter ID to find the work order
           </DialogDescription>
         </DialogHeader>
 
@@ -516,7 +516,7 @@ export function StartMeterChangeoutDialog({
                 </div>
                 <div className="flex-1">
                   <h3 className="font-medium">Manual Entry</h3>
-                  <p className="text-sm text-muted-foreground">Type the old meter ID</p>
+                  <p className="text-sm text-muted-foreground">Type the meter ID</p>
                 </div>
               </CardContent>
             </Card>
@@ -638,7 +638,7 @@ export function StartMeterChangeoutDialog({
         {scanMode === "manual" && (
           <form onSubmit={handleManualSubmit} className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Old Meter ID</label>
+              <label className="text-sm font-medium">Meter ID</label>
               <Input
                 ref={inputRef}
                 value={manualInput}
@@ -646,9 +646,9 @@ export function StartMeterChangeoutDialog({
                   setManualInput(e.target.value);
                   setLookupError(null);
                 }}
-                placeholder="Enter old meter ID..."
+                placeholder="Enter meter ID..."
                 disabled={isLookingUp}
-                data-testid="input-old-meter-id"
+                data-testid="input-meter-id"
               />
               {lookupError && (
                 <div className="flex items-center gap-2 text-destructive text-sm">
