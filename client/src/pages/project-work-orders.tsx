@@ -49,7 +49,7 @@ import { TablePagination } from "@/components/ui/table-pagination";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
 import { Label } from "@/components/ui/label";
-import type { Project, WorkOrderStatus, TroubleCode, ServiceTypeRecord, MeterType } from "@shared/schema";
+import type { Project, WorkOrderStatus, TroubleCode, ServiceTypeRecord, SystemType } from "@shared/schema";
 import { insertProjectWorkOrderSchema, permissionKeys } from "@shared/schema";
 import { usePermissions } from "@/hooks/usePermissions";
 import type { ProjectWorkOrder } from "../../../server/projectDb";
@@ -78,7 +78,7 @@ import SignaturePad, { SignaturePadRef } from "@/components/signature-pad";
 import { WorkOrderDetail } from "@/components/work-order-detail";
 import { ScannerInput } from "@/components/scanner-input";
 import { GPSCapture } from "@/components/gps-capture";
-import { StartMeterChangeoutDialog } from "@/components/start-meter-changeout-dialog";
+import { StartSystemChangeoutDialog } from "@/components/start-system-changeout-dialog";
 
 type Assignee = {
   type: "user" | "group";
@@ -116,15 +116,15 @@ export default function ProjectWorkOrders() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortCriteria, setSortCriteria] = useState<Array<{ column: string; direction: "asc" | "desc" }>>([]);
   const [showRouteSheetDialog, setShowRouteSheetDialog] = useState(false);
-  const [showStartMeterChangeout, setShowStartMeterChangeout] = useState(false);
-  const [autoLaunchMeterChangeout, setAutoLaunchMeterChangeout] = useState(false);
+  const [showStartSystemChangeout, setShowStartSystemChangeout] = useState(false);
+  const [autoLaunchSystemChangeout, setAutoLaunchSystemChangeout] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [selectedServiceType, setSelectedServiceType] = useState<string>("all");
   const [selectedAssignedTo, setSelectedAssignedTo] = useState<string>("all");
   const [selectedAssignedGroup, setSelectedAssignedGroup] = useState<string>("all");
   const [selectedTrouble, setSelectedTrouble] = useState<string>("all");
-  const [selectedOldMeterType, setSelectedOldMeterType] = useState<string>("all");
-  const [selectedNewMeterType, setSelectedNewMeterType] = useState<string>("all");
+  const [selectedOldSystemType, setSelectedOldSystemType] = useState<string>("all");
+  const [selectedNewSystemType, setSelectedNewSystemType] = useState<string>("all");
   const [showFilters, setShowFilters] = useState(false);
   const [filterSystemWoId, setFilterSystemWoId] = useState("");
   const [filterCustomerId, setFilterCustomerId] = useState("");
@@ -137,8 +137,8 @@ export default function ProjectWorkOrders() {
   const [filterEmail, setFilterEmail] = useState("");
   const [filterRoute, setFilterRoute] = useState("");
   const [filterZone, setFilterZone] = useState("");
-  const [filterOldMeterId, setFilterOldMeterId] = useState("");
-  const [filterNewMeterId, setFilterNewMeterId] = useState("");
+  const [filterOldSystemId, setFilterOldSystemId] = useState("");
+  const [filterNewSystemId, setFilterNewSystemId] = useState("");
   const [filterScheduledDateFrom, setFilterScheduledDateFrom] = useState("");
   const [filterScheduledDateTo, setFilterScheduledDateTo] = useState("");
   const [filterCreatedBy, setFilterCreatedBy] = useState("all");
@@ -152,12 +152,12 @@ export default function ProjectWorkOrders() {
   const [filterCreatedAtTo, setFilterCreatedAtTo] = useState("");
   const [filterUpdatedAtFrom, setFilterUpdatedAtFrom] = useState("");
   const [filterUpdatedAtTo, setFilterUpdatedAtTo] = useState("");
-  const [createMeterTypeOpen, setCreateMeterTypeOpen] = useState(false);
-  const [meterTypeField, setMeterTypeField] = useState<"oldMeterType" | "newMeterType" | "editOldMeterType" | "editNewMeterType" | null>(null);
+  const [createSystemTypeOpen, setCreateSystemTypeOpen] = useState(false);
+  const [systemTypeField, setSystemTypeField] = useState<"oldSystemType" | "newSystemType" | "editOldSystemType" | "editNewSystemType" | null>(null);
   const [cameFromSearch, setCameFromSearch] = useState(false);
-  const [newMeterTypeProductId, setNewMeterTypeProductId] = useState("");
-  const [newMeterTypeLabel, setNewMeterTypeLabel] = useState("");
-  const [newMeterTypeDescription, setNewMeterTypeDescription] = useState("");
+  const [newSystemTypeProductId, setNewSystemTypeProductId] = useState("");
+  const [newSystemTypeLabel, setNewSystemTypeLabel] = useState("");
+  const [newSystemTypeDescription, setNewSystemTypeDescription] = useState("");
   const [showBulkAssignDialog, setShowBulkAssignDialog] = useState(false);
   const [bulkAssignAction, setBulkAssignAction] = useState<"assign" | "unassign">("assign");
   const [bulkAssigneeType, setBulkAssigneeType] = useState<"user" | "group">("user");
@@ -207,12 +207,12 @@ export default function ProjectWorkOrders() {
     { key: "route", label: "Route" },
     { key: "zone", label: "Zone" },
     { key: "serviceType", label: "Service" },
-    { key: "oldMeterId", label: "Old Meter ID" },
-    { key: "oldMeterReading", label: "Old Meter Reading" },
-    { key: "oldMeterType", label: "Old Meter Type" },
-    { key: "newMeterId", label: "New Meter ID" },
-    { key: "newMeterReading", label: "New Meter Reading" },
-    { key: "newMeterType", label: "New Meter Type" },
+    { key: "oldSystemId", label: "Old System ID" },
+    { key: "oldSystemReading", label: "Old System Reading" },
+    { key: "oldSystemType", label: "Old System Type" },
+    { key: "newSystemId", label: "New System ID" },
+    { key: "newSystemReading", label: "New System Reading" },
+    { key: "newSystemType", label: "New System Type" },
     { key: "oldGps", label: "Old GPS" },
     { key: "newGps", label: "New GPS" },
     { key: "status", label: "Status" },
@@ -247,10 +247,10 @@ export default function ProjectWorkOrders() {
     { key: "route", label: "Route" },
     { key: "zone", label: "Zone" },
     { key: "serviceType", label: "Service Type" },
-    { key: "oldMeterId", label: "Old Meter ID" },
-    { key: "oldMeterType", label: "Old Meter Type" },
-    { key: "newMeterId", label: "New Meter ID" },
-    { key: "newMeterType", label: "New Meter Type" },
+    { key: "oldSystemId", label: "Old System ID" },
+    { key: "oldSystemType", label: "Old System Type" },
+    { key: "newSystemId", label: "New System ID" },
+    { key: "newSystemType", label: "New System Type" },
     { key: "status", label: "Status" },
     { key: "scheduledAt", label: "Scheduled At" },
     { key: "scheduledBy", label: "Scheduled By" },
@@ -283,10 +283,10 @@ export default function ProjectWorkOrders() {
       route: "",
       zone: "",
       serviceType: "",
-      oldMeterId: "",
-      oldMeterReading: undefined,
-      newMeterId: "",
-      newMeterReading: undefined,
+      oldSystemId: "",
+      oldSystemReading: undefined,
+      newSystemId: "",
+      newSystemReading: undefined,
       oldGps: "",
       newGps: "",
       notes: "",
@@ -294,8 +294,8 @@ export default function ProjectWorkOrders() {
       assignedGroupId: undefined,
       scheduledAt: "",
       trouble: "",
-      oldMeterType: "",
-      newMeterType: "",
+      oldSystemType: "",
+      newSystemType: "",
     },
   });
 
@@ -314,10 +314,10 @@ export default function ProjectWorkOrders() {
       route: "",
       zone: "",
       serviceType: "",
-      oldMeterId: "",
-      oldMeterReading: undefined,
-      newMeterId: "",
-      newMeterReading: undefined,
+      oldSystemId: "",
+      oldSystemReading: undefined,
+      newSystemId: "",
+      newSystemReading: undefined,
       oldGps: "",
       newGps: "",
       notes: "",
@@ -326,8 +326,8 @@ export default function ProjectWorkOrders() {
       assignedGroupId: undefined,
       scheduledAt: "",
       trouble: "",
-      oldMeterType: "",
-      newMeterType: "",
+      oldSystemType: "",
+      newSystemType: "",
     },
   });
 
@@ -366,10 +366,10 @@ export default function ProjectWorkOrders() {
     queryKey: ["/api/service-types"],
   });
 
-  const { data: meterTypes = [] } = useQuery<MeterType[]>({
-    queryKey: ["/api/meter-types", projectId],
+  const { data: systemTypes = [] } = useQuery<SystemType[]>({
+    queryKey: ["/api/system-types", projectId],
     queryFn: async () => {
-      const res = await fetch(`/api/meter-types?projectId=${projectId}`, { credentials: "include" });
+      const res = await fetch(`/api/system-types?projectId=${projectId}`, { credentials: "include" });
       return res.json();
     },
     enabled: !!projectId && !accessDenied,
@@ -510,7 +510,7 @@ export default function ProjectWorkOrders() {
       setCameFromSearch(false);
     }
     // Reset auto-launch flag when closing
-    setAutoLaunchMeterChangeout(false);
+    setAutoLaunchSystemChangeout(false);
   }, [projectId]);
 
   // Scroll to top when opening a work order detail
@@ -537,10 +537,10 @@ export default function ProjectWorkOrders() {
         route: editingWorkOrder.route || "",
         zone: editingWorkOrder.zone || "",
         serviceType: (editingWorkOrder.serviceType as any) || "",
-        oldMeterId: editingWorkOrder.oldMeterId || "",
-        oldMeterReading: editingWorkOrder.oldMeterReading ?? undefined,
-        newMeterId: editingWorkOrder.newMeterId || "",
-        newMeterReading: editingWorkOrder.newMeterReading ?? undefined,
+        oldSystemId: editingWorkOrder.oldSystemId || "",
+        oldSystemReading: editingWorkOrder.oldSystemReading ?? undefined,
+        newSystemId: editingWorkOrder.newSystemId || "",
+        newSystemReading: editingWorkOrder.newSystemReading ?? undefined,
         oldGps: editingWorkOrder.oldGps || "",
         newGps: editingWorkOrder.newGps || "",
         notes: editingWorkOrder.notes || "",
@@ -549,8 +549,8 @@ export default function ProjectWorkOrders() {
         assignedGroupId: (editingWorkOrder as any).assignedGroupId || undefined,
         scheduledAt: (editingWorkOrder as any).scheduledAt || "",
         trouble: (editingWorkOrder as any).trouble || "",
-        oldMeterType: (editingWorkOrder as any).oldMeterType || "",
-        newMeterType: (editingWorkOrder as any).newMeterType || "",
+        oldSystemType: (editingWorkOrder as any).oldSystemType || "",
+        newSystemType: (editingWorkOrder as any).newSystemType || "",
       });
       // Set signature data after a brief delay to ensure the ref is ready
       setTimeout(() => {
@@ -565,10 +565,10 @@ export default function ProjectWorkOrders() {
   // Validation for Completed status - requires all work order fields to be filled
   const validateCompletedStatus = (data: any, signatureData: string | null, signatureName: string): string[] => {
     const missingFields: string[] = [];
-    if (!data.oldMeterId) missingFields.push("Old Meter ID");
-    if (data.oldMeterReading === null || data.oldMeterReading === undefined || data.oldMeterReading === "") missingFields.push("Old Meter Reading");
-    if (!data.newMeterId) missingFields.push("New Meter ID");
-    if (data.newMeterReading === null || data.newMeterReading === undefined || data.newMeterReading === "") missingFields.push("New Meter Reading");
+    if (!data.oldSystemId) missingFields.push("Old System ID");
+    if (data.oldSystemReading === null || data.oldSystemReading === undefined || data.oldSystemReading === "") missingFields.push("Old System Reading");
+    if (!data.newSystemId) missingFields.push("New System ID");
+    if (data.newSystemReading === null || data.newSystemReading === undefined || data.newSystemReading === "") missingFields.push("New System Reading");
     if (!data.newGps) missingFields.push("New GPS");
     if (!signatureData) missingFields.push("Signature");
     if (!signatureName) missingFields.push("Signature Name");
@@ -584,16 +584,16 @@ export default function ProjectWorkOrders() {
     email: data.email || null,
     route: data.route || null,
     zone: data.zone || null,
-    oldMeterId: data.oldMeterId || null,
-    oldMeterReading: data.oldMeterReading ?? null,
-    newMeterId: data.newMeterId || null,
-    newMeterReading: data.newMeterReading ?? null,
+    oldSystemId: data.oldSystemId || null,
+    oldSystemReading: data.oldSystemReading ?? null,
+    newSystemId: data.newSystemId || null,
+    newSystemReading: data.newSystemReading ?? null,
     oldGps: data.oldGps || null,
     newGps: data.newGps || null,
     notes: data.notes || null,
     trouble: (data as any).trouble || null,
-    oldMeterType: (data as any).oldMeterType || null,
-    newMeterType: (data as any).newMeterType || null,
+    oldSystemType: (data as any).oldSystemType || null,
+    newSystemType: (data as any).newSystemType || null,
     assignedUserId: (data as any).assignedUserId ?? null,
     assignedGroupId: (data as any).assignedGroupId ?? null,
     scheduledAt: (data as any).scheduledAt || null,
@@ -720,34 +720,34 @@ export default function ProjectWorkOrders() {
     },
   });
 
-  const createMeterTypeMutation = useMutation({
-    mutationFn: async (data: { productId: string; productLabel: string; productDescription?: string }): Promise<MeterType> => {
-      const res = await apiRequest("POST", "/api/meter-types", {
+  const createSystemTypeMutation = useMutation({
+    mutationFn: async (data: { productId: string; productLabel: string; productDescription?: string }): Promise<SystemType> => {
+      const res = await apiRequest("POST", "/api/system-types", {
         ...data,
         projectIds: [projectId],
       });
       return res.json();
     },
-    onSuccess: (newMeterType: MeterType) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/meter-types", projectId] });
-      if (meterTypeField === "oldMeterType") {
-        form.setValue("oldMeterType", newMeterType.productId);
-      } else if (meterTypeField === "newMeterType") {
-        form.setValue("newMeterType", newMeterType.productId);
-      } else if (meterTypeField === "editOldMeterType") {
-        editForm.setValue("oldMeterType", newMeterType.productId);
-      } else if (meterTypeField === "editNewMeterType") {
-        editForm.setValue("newMeterType", newMeterType.productId);
+    onSuccess: (newSystemType: SystemType) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/system-types", projectId] });
+      if (systemTypeField === "oldSystemType") {
+        form.setValue("oldSystemType", newSystemType.productId);
+      } else if (systemTypeField === "newSystemType") {
+        form.setValue("newSystemType", newSystemType.productId);
+      } else if (systemTypeField === "editOldSystemType") {
+        editForm.setValue("oldSystemType", newSystemType.productId);
+      } else if (systemTypeField === "editNewSystemType") {
+        editForm.setValue("newSystemType", newSystemType.productId);
       }
-      setCreateMeterTypeOpen(false);
-      setNewMeterTypeProductId("");
-      setNewMeterTypeLabel("");
-      setNewMeterTypeDescription("");
-      setMeterTypeField(null);
-      toast({ title: "Meter type created" });
+      setCreateSystemTypeOpen(false);
+      setNewSystemTypeProductId("");
+      setNewSystemTypeLabel("");
+      setNewSystemTypeDescription("");
+      setSystemTypeField(null);
+      toast({ title: "System type created" });
     },
     onError: (error: any) => {
-      toast({ title: "Failed to create meter type", description: error?.message, variant: "destructive" });
+      toast({ title: "Failed to create system type", description: error?.message, variant: "destructive" });
     },
   });
 
@@ -975,19 +975,19 @@ export default function ProjectWorkOrders() {
     }
   };
 
-  const handleCreateMeterTypeSubmit = () => {
-    if (!newMeterTypeProductId.trim() || !newMeterTypeLabel.trim()) {
+  const handleCreateSystemTypeSubmit = () => {
+    if (!newSystemTypeProductId.trim() || !newSystemTypeLabel.trim()) {
       toast({ title: "Product ID and Label are required", variant: "destructive" });
       return;
     }
-    createMeterTypeMutation.mutate({
-      productId: newMeterTypeProductId.trim(),
-      productLabel: newMeterTypeLabel.trim(),
-      productDescription: newMeterTypeDescription.trim() || undefined,
+    createSystemTypeMutation.mutate({
+      productId: newSystemTypeProductId.trim(),
+      productLabel: newSystemTypeLabel.trim(),
+      productDescription: newSystemTypeDescription.trim() || undefined,
     });
   };
 
-  const openCreateMeterTypeDialog = (field: "oldMeterType" | "newMeterType" | "editOldMeterType" | "editNewMeterType") => {
+  const openCreateSystemTypeDialog = (field: "oldSystemType" | "newSystemType" | "editOldSystemType" | "editNewSystemType") => {
     if (!hasPermission('workOrders.edit')) {
       return;
     }
@@ -995,11 +995,11 @@ export default function ProjectWorkOrders() {
       toast({ title: "Project not loaded", description: "Please wait for the project to load", variant: "destructive" });
       return;
     }
-    setMeterTypeField(field);
-    setNewMeterTypeProductId("");
-    setNewMeterTypeLabel("");
-    setNewMeterTypeDescription("");
-    setCreateMeterTypeOpen(true);
+    setSystemTypeField(field);
+    setNewSystemTypeProductId("");
+    setNewSystemTypeLabel("");
+    setNewSystemTypeDescription("");
+    setCreateSystemTypeOpen(true);
   };
 
   const onSubmit = (data: WorkOrderFormData) => {
@@ -1173,12 +1173,12 @@ export default function ProjectWorkOrders() {
     route: { label: "Route", sortKey: "route" },
     zone: { label: "Zone", sortKey: "zone" },
     serviceType: { label: "Service", sortKey: "serviceType" },
-    oldMeterId: { label: "Old Meter ID", sortKey: "oldMeterId" },
-    oldMeterReading: { label: "Old Meter Reading", sortKey: "oldMeterReading" },
-    oldMeterType: { label: "Old Meter Type", sortKey: "oldMeterType" },
-    newMeterId: { label: "New Meter ID", sortKey: "newMeterId" },
-    newMeterReading: { label: "New Meter Reading", sortKey: "newMeterReading" },
-    newMeterType: { label: "New Meter Type", sortKey: "newMeterType" },
+    oldSystemId: { label: "Old System ID", sortKey: "oldSystemId" },
+    oldSystemReading: { label: "Old System Reading", sortKey: "oldSystemReading" },
+    oldSystemType: { label: "Old System Type", sortKey: "oldSystemType" },
+    newSystemId: { label: "New System ID", sortKey: "newSystemId" },
+    newSystemReading: { label: "New System Reading", sortKey: "newSystemReading" },
+    newSystemType: { label: "New System Type", sortKey: "newSystemType" },
     oldGps: { label: "Old GPS", sortKey: "oldGps" },
     newGps: { label: "New GPS", sortKey: "newGps" },
     status: { label: "Status", sortKey: "status" },
@@ -1274,18 +1274,18 @@ export default function ProjectWorkOrders() {
         return <TableCell key={key} className={baseClass} style={cellStyle} data-testid={`text-zone-${workOrder.id}`}>{workOrder.zone || "-"}</TableCell>;
       case "serviceType":
         return <TableCell key={key} className={baseClass} style={cellStyle} data-testid={`text-service-${workOrder.id}`}>{getServiceTypeBadge(workOrder.serviceType)}</TableCell>;
-      case "oldMeterId":
-        return <TableCell key={key} className={baseClass} style={cellStyle} data-testid={`text-old-meter-${workOrder.id}`}>{workOrder.oldMeterId || "-"}</TableCell>;
-      case "oldMeterReading":
-        return <TableCell key={key} className={baseClass} style={cellStyle}>{workOrder.oldMeterReading ?? "-"}</TableCell>;
-      case "oldMeterType":
-        return <TableCell key={key} className={baseClass} style={cellStyle}>{woAny.oldMeterType || "-"}</TableCell>;
-      case "newMeterId":
-        return <TableCell key={key} className={baseClass} style={cellStyle}>{workOrder.newMeterId || "-"}</TableCell>;
-      case "newMeterReading":
-        return <TableCell key={key} className={baseClass} style={cellStyle}>{workOrder.newMeterReading ?? "-"}</TableCell>;
-      case "newMeterType":
-        return <TableCell key={key} className={baseClass} style={cellStyle}>{woAny.newMeterType || "-"}</TableCell>;
+      case "oldSystemId":
+        return <TableCell key={key} className={baseClass} style={cellStyle} data-testid={`text-old-system-${workOrder.id}`}>{workOrder.oldSystemId || "-"}</TableCell>;
+      case "oldSystemReading":
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{workOrder.oldSystemReading ?? "-"}</TableCell>;
+      case "oldSystemType":
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{woAny.oldSystemType || "-"}</TableCell>;
+      case "newSystemId":
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{workOrder.newSystemId || "-"}</TableCell>;
+      case "newSystemReading":
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{workOrder.newSystemReading ?? "-"}</TableCell>;
+      case "newSystemType":
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{woAny.newSystemType || "-"}</TableCell>;
       case "oldGps":
         return <TableCell key={key} className={baseClass} style={cellStyle}>{workOrder.oldGps || "-"}</TableCell>;
       case "newGps":
@@ -1335,8 +1335,8 @@ export default function ProjectWorkOrders() {
           wo.city,
           wo.route,
           wo.zone,
-          wo.oldMeterId,
-          wo.newMeterId,
+          wo.oldSystemId,
+          wo.newSystemId,
           wo.status,
           wo.serviceType
         ];
@@ -1405,30 +1405,30 @@ export default function ProjectWorkOrders() {
       }
     }
     
-    // Filter by old meter type (handle both productId and productLabel formats)
-    if (selectedOldMeterType !== "all") {
+    // Filter by old system type (handle both productId and productLabel formats)
+    if (selectedOldSystemType !== "all") {
       result = result.filter(wo => {
-        const oldMeterType = (wo as any).oldMeterType;
-        if (!oldMeterType) return false;
+        const oldSystemType = (wo as any).oldSystemType;
+        if (!oldSystemType) return false;
         // Direct match with productId
-        if (oldMeterType === selectedOldMeterType) return true;
-        // Check if it matches the productLabel of the selected meter type
-        const selectedMeterType = meterTypes.find(mt => mt.productId === selectedOldMeterType);
-        if (selectedMeterType && oldMeterType === selectedMeterType.productLabel) return true;
+        if (oldSystemType === selectedOldSystemType) return true;
+        // Check if it matches the productLabel of the selected system type
+        const selectedSystemType = systemTypes.find(mt => mt.productId === selectedOldSystemType);
+        if (selectedSystemType && oldSystemType === selectedSystemType.productLabel) return true;
         return false;
       });
     }
     
-    // Filter by new meter type (handle both productId and productLabel formats)
-    if (selectedNewMeterType !== "all") {
+    // Filter by new system type (handle both productId and productLabel formats)
+    if (selectedNewSystemType !== "all") {
       result = result.filter(wo => {
-        const newMeterType = (wo as any).newMeterType;
-        if (!newMeterType) return false;
+        const newSystemType = (wo as any).newSystemType;
+        if (!newSystemType) return false;
         // Direct match with productId
-        if (newMeterType === selectedNewMeterType) return true;
-        // Check if it matches the productLabel of the selected meter type
-        const selectedMeterType = meterTypes.find(mt => mt.productId === selectedNewMeterType);
-        if (selectedMeterType && newMeterType === selectedMeterType.productLabel) return true;
+        if (newSystemType === selectedNewSystemType) return true;
+        // Check if it matches the productLabel of the selected system type
+        const selectedSystemType = systemTypes.find(mt => mt.productId === selectedNewSystemType);
+        if (selectedSystemType && newSystemType === selectedSystemType.productLabel) return true;
         return false;
       });
     }
@@ -1469,11 +1469,11 @@ export default function ProjectWorkOrders() {
     if (filterZone.trim()) {
       result = result.filter(wo => wo.zone?.toLowerCase().includes(filterZone.toLowerCase()));
     }
-    if (filterOldMeterId.trim()) {
-      result = result.filter(wo => wo.oldMeterId?.toLowerCase().includes(filterOldMeterId.toLowerCase()));
+    if (filterOldSystemId.trim()) {
+      result = result.filter(wo => wo.oldSystemId?.toLowerCase().includes(filterOldSystemId.toLowerCase()));
     }
-    if (filterNewMeterId.trim()) {
-      result = result.filter(wo => wo.newMeterId?.toLowerCase().includes(filterNewMeterId.toLowerCase()));
+    if (filterNewSystemId.trim()) {
+      result = result.filter(wo => wo.newSystemId?.toLowerCase().includes(filterNewSystemId.toLowerCase()));
     }
     if (filterScheduledDateFrom || filterScheduledDateTo) {
       result = result.filter(wo => {
@@ -1557,7 +1557,7 @@ export default function ProjectWorkOrders() {
     // Multi-column sort with proper value normalization
     if (sortCriteria.length > 0) {
       const dateColumns = ['scheduledAt', 'completedAt', 'createdAt', 'updatedAt'];
-      const numericColumns = ['oldMeterReading', 'newMeterReading'];
+      const numericColumns = ['oldSystemReading', 'newSystemReading'];
       
       result.sort((a, b) => {
         for (const criterion of sortCriteria) {
@@ -1589,7 +1589,7 @@ export default function ProjectWorkOrders() {
     }
     
     return result;
-  }, [workOrders, searchQuery, sortCriteria, selectedStatus, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldMeterType, selectedNewMeterType, meterTypes, assigneesData, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterNewMeterId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
+  }, [workOrders, searchQuery, sortCriteria, selectedStatus, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldSystemType, selectedNewSystemType, systemTypes, assigneesData, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterNewSystemId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
 
   const totalPages = Math.ceil(filteredAndSortedWorkOrders.length / pageSize);
   const paginatedWorkOrders = useMemo(() => {
@@ -1607,7 +1607,7 @@ export default function ProjectWorkOrders() {
   useEffect(() => {
     setCurrentPage(1);
     setSelectedWorkOrderIds(new Set());
-  }, [workOrders, searchQuery, selectedStatus, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldMeterType, selectedNewMeterType, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterNewMeterId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo, pageSize]);
+  }, [workOrders, searchQuery, selectedStatus, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldSystemType, selectedNewSystemType, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterNewSystemId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo, pageSize]);
 
   useEffect(() => {
     if (currentPage > totalPages && totalPages > 0) {
@@ -1632,8 +1632,8 @@ export default function ProjectWorkOrders() {
     setSelectedAssignedTo("all");
     setSelectedAssignedGroup("all");
     setSelectedTrouble("all");
-    setSelectedOldMeterType("all");
-    setSelectedNewMeterType("all");
+    setSelectedOldSystemType("all");
+    setSelectedNewSystemType("all");
     setFilterSystemWoId("");
     setFilterCustomerId("");
     setFilterCustomerName("");
@@ -1645,8 +1645,8 @@ export default function ProjectWorkOrders() {
     setFilterEmail("");
     setFilterRoute("");
     setFilterZone("");
-    setFilterOldMeterId("");
-    setFilterNewMeterId("");
+    setFilterOldSystemId("");
+    setFilterNewSystemId("");
     setFilterScheduledDateFrom("");
     setFilterScheduledDateTo("");
     setFilterCreatedBy("all");
@@ -1663,7 +1663,7 @@ export default function ProjectWorkOrders() {
     setCurrentPage(1);
   };
 
-  const hasActiveFilters = selectedStatus !== "all" || selectedServiceType !== "all" || selectedAssignedTo !== "all" || selectedAssignedGroup !== "all" || selectedTrouble !== "all" || selectedOldMeterType !== "all" || selectedNewMeterType !== "all" || filterSystemWoId !== "" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldMeterId !== "" || filterNewMeterId !== "" || filterScheduledDateFrom !== "" || filterScheduledDateTo !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterScheduledBy !== "all" || filterCompletedBy !== "all" || filterCompletedAtFrom !== "" || filterCompletedAtTo !== "" || filterNotes !== "" || filterCreatedAtFrom !== "" || filterCreatedAtTo !== "" || filterUpdatedAtFrom !== "" || filterUpdatedAtTo !== "";
+  const hasActiveFilters = selectedStatus !== "all" || selectedServiceType !== "all" || selectedAssignedTo !== "all" || selectedAssignedGroup !== "all" || selectedTrouble !== "all" || selectedOldSystemType !== "all" || selectedNewSystemType !== "all" || filterSystemWoId !== "" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldSystemId !== "" || filterNewSystemId !== "" || filterScheduledDateFrom !== "" || filterScheduledDateTo !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterScheduledBy !== "all" || filterCompletedBy !== "all" || filterCompletedAtFrom !== "" || filterCompletedAtTo !== "" || filterNotes !== "" || filterCreatedAtFrom !== "" || filterCreatedAtTo !== "" || filterUpdatedAtFrom !== "" || filterUpdatedAtTo !== "";
 
   const getStatusLabel = (status: string): string => {
     if (!status) return "";
@@ -1687,12 +1687,12 @@ export default function ProjectWorkOrders() {
       case "route": return wo.route || "";
       case "zone": return wo.zone || "";
       case "serviceType": return wo.serviceType || "";
-      case "oldMeterId": return wo.oldMeterId || "";
-      case "oldMeterType": return wo.oldMeterType?.toString() || "";
-      case "oldMeterReading": return wo.oldMeterReading?.toString() ?? "";
-      case "newMeterId": return wo.newMeterId || "";
-      case "newMeterReading": return wo.newMeterReading?.toString() ?? "";
-      case "newMeterType": return wo.newMeterType?.toString() || "";
+      case "oldSystemId": return wo.oldSystemId || "";
+      case "oldSystemType": return wo.oldSystemType?.toString() || "";
+      case "oldSystemReading": return wo.oldSystemReading?.toString() ?? "";
+      case "newSystemId": return wo.newSystemId || "";
+      case "newSystemReading": return wo.newSystemReading?.toString() ?? "";
+      case "newSystemType": return wo.newSystemType?.toString() || "";
       case "oldGps": return wo.oldGps || "";
       case "newGps": return wo.newGps || "";
       case "status": return getStatusLabel(wo.status);
@@ -1863,13 +1863,13 @@ export default function ProjectWorkOrders() {
     );
   }
 
-  const meterTypeDialog = (
-    <Dialog open={createMeterTypeOpen} onOpenChange={setCreateMeterTypeOpen}>
+  const systemTypeDialog = (
+    <Dialog open={createSystemTypeOpen} onOpenChange={setCreateSystemTypeOpen}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Create New Meter Type</DialogTitle>
+          <DialogTitle>Create New System Type</DialogTitle>
           <DialogDescription>
-            Add a new meter type to this project.
+            Add a new system type to this project.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
@@ -1877,43 +1877,43 @@ export default function ProjectWorkOrders() {
             <Label htmlFor="product-id">Product ID *</Label>
             <Input
               id="product-id"
-              value={newMeterTypeProductId}
-              onChange={(e) => setNewMeterTypeProductId(e.target.value)}
+              value={newSystemTypeProductId}
+              onChange={(e) => setNewSystemTypeProductId(e.target.value)}
               placeholder="e.g. MTR-001"
-              data-testid="input-new-meter-type-product-id"
+              data-testid="input-new-system-type-product-id"
             />
           </div>
           <div className="grid gap-2">
             <Label htmlFor="product-label">Product Label *</Label>
             <Input
               id="product-label"
-              value={newMeterTypeLabel}
-              onChange={(e) => setNewMeterTypeLabel(e.target.value)}
-              placeholder="e.g. 5/8 Inch Water Meter"
-              data-testid="input-new-meter-type-label"
+              value={newSystemTypeLabel}
+              onChange={(e) => setNewSystemTypeLabel(e.target.value)}
+              placeholder="e.g. 5/8 Inch Water System"
+              data-testid="input-new-system-type-label"
             />
           </div>
           <div className="grid gap-2">
             <Label htmlFor="product-description">Description (optional)</Label>
             <Textarea
               id="product-description"
-              value={newMeterTypeDescription}
-              onChange={(e) => setNewMeterTypeDescription(e.target.value)}
+              value={newSystemTypeDescription}
+              onChange={(e) => setNewSystemTypeDescription(e.target.value)}
               placeholder="Optional description..."
-              data-testid="input-new-meter-type-description"
+              data-testid="input-new-system-type-description"
             />
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setCreateMeterTypeOpen(false)}>
+          <Button variant="outline" onClick={() => setCreateSystemTypeOpen(false)}>
             Cancel
           </Button>
           <Button 
-            onClick={handleCreateMeterTypeSubmit}
-            disabled={createMeterTypeMutation.isPending}
-            data-testid="button-create-meter-type-submit"
+            onClick={handleCreateSystemTypeSubmit}
+            disabled={createSystemTypeMutation.isPending}
+            data-testid="button-create-system-type-submit"
           >
-            {createMeterTypeMutation.isPending ? "Creating..." : "Create Meter Type"}
+            {createSystemTypeMutation.isPending ? "Creating..." : "Create System Type"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1933,7 +1933,7 @@ export default function ProjectWorkOrders() {
           projectId={projectId!}
           cameFromSearch={cameFromSearch}
           serviceTypes={serviceTypes}
-          meterTypes={meterTypes}
+          systemTypes={systemTypes}
           workOrderStatuses={workOrderStatuses}
           troubleCodes={troubleCodes}
           assigneesData={assigneesData}
@@ -1942,17 +1942,17 @@ export default function ProjectWorkOrders() {
           formatDateTime={formatDateTime}
           getAssignedUserName={getAssignedUserName}
           signaturePadRef={editSignaturePadRef}
-          openCreateMeterTypeDialog={openCreateMeterTypeDialog}
+          openCreateSystemTypeDialog={openCreateSystemTypeDialog}
           toast={toast}
           canEdit={hasPermission('workOrders.edit')}
-          canMeterChangeout={hasPermission('workOrders.meterChangeout')}
-          autoLaunchMeterChangeout={autoLaunchMeterChangeout}
+          canSystemChangeout={hasPermission('workOrders.meterChangeout')}
+          autoLaunchSystemChangeout={autoLaunchSystemChangeout}
           operationalHours={{
             enabled: project?.operationalHoursEnabled ?? false,
             start: project?.operationalHoursStart ?? null,
             end: project?.operationalHoursEnd ?? null,
           }}
-          onMeterChangeoutComplete={async () => {
+          onSystemChangeoutComplete={async () => {
             // Use refetchQueries instead of invalidateQueries to ensure data is loaded before closing
             // Also invalidate the files query so attachment count is fresh when work order is reopened
             await Promise.all([
@@ -1962,12 +1962,12 @@ export default function ProjectWorkOrders() {
             ]);
             toast({
               title: "Success",
-              description: "Meter changeout completed successfully!",
+              description: "System changeout completed successfully!",
             });
             closeDetailView();
           }}
         />
-        {meterTypeDialog}
+        {systemTypeDialog}
       </>
     );
   }
@@ -1989,7 +1989,7 @@ export default function ProjectWorkOrders() {
             Back to Work Orders
           </Button>
           <h1 className="text-2xl font-bold" data-testid="text-create-work-order-title">Create Work Order</h1>
-          <p className="text-muted-foreground mt-1">Add a new utility meter work order to {project?.name}</p>
+          <p className="text-muted-foreground mt-1">Add a new utility system work order to {project?.name}</p>
         </div>
         <Card>
           <CardContent className="pt-6">
@@ -2059,10 +2059,10 @@ export default function ProjectWorkOrders() {
                   />
                   <FormField
                     control={form.control}
-                    name="oldMeterType"
+                    name="oldSystemType"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Old Meter Type</FormLabel>
+                        <FormLabel>Old System Type</FormLabel>
                         <div className="flex gap-1">
                           <Select 
                             value={field.value || "__none__"} 
@@ -2071,13 +2071,13 @@ export default function ProjectWorkOrders() {
                             }}
                           >
                             <FormControl>
-                              <SelectTrigger data-testid="select-create-old-meter-type" className="flex-1">
-                                <SelectValue placeholder="Select old meter type..." />
+                              <SelectTrigger data-testid="select-create-old-system-type" className="flex-1">
+                                <SelectValue placeholder="Select old system type..." />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
                               <SelectItem value="__none__">None</SelectItem>
-                              {meterTypes.map((mt) => (
+                              {systemTypes.map((mt) => (
                                 <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
                               ))}
                             </SelectContent>
@@ -2089,9 +2089,9 @@ export default function ProjectWorkOrders() {
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              openCreateMeterTypeDialog("oldMeterType");
+                              openCreateSystemTypeDialog("oldSystemType");
                             }}
-                            data-testid="button-create-old-meter-type"
+                            data-testid="button-create-old-system-type"
                           >
                             <Plus className="h-4 w-4" />
                           </Button>
@@ -2102,10 +2102,10 @@ export default function ProjectWorkOrders() {
                   />
                   <FormField
                     control={form.control}
-                    name="newMeterType"
+                    name="newSystemType"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>New Meter Type</FormLabel>
+                        <FormLabel>New System Type</FormLabel>
                         <div className="flex gap-1">
                           <Select 
                             value={field.value || "__none__"} 
@@ -2114,13 +2114,13 @@ export default function ProjectWorkOrders() {
                             }}
                           >
                             <FormControl>
-                              <SelectTrigger data-testid="select-create-new-meter-type" className="flex-1">
-                                <SelectValue placeholder="Select new meter type..." />
+                              <SelectTrigger data-testid="select-create-new-system-type" className="flex-1">
+                                <SelectValue placeholder="Select new system type..." />
                               </SelectTrigger>
                             </FormControl>
                             <SelectContent>
                               <SelectItem value="__none__">None</SelectItem>
-                              {meterTypes.map((mt) => (
+                              {systemTypes.map((mt) => (
                                 <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
                               ))}
                             </SelectContent>
@@ -2132,9 +2132,9 @@ export default function ProjectWorkOrders() {
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              openCreateMeterTypeDialog("newMeterType");
+                              openCreateSystemTypeDialog("newSystemType");
                             }}
-                            data-testid="button-create-new-meter-type"
+                            data-testid="button-create-new-system-type"
                           >
                             <Plus className="h-4 w-4" />
                           </Button>
@@ -2252,16 +2252,16 @@ export default function ProjectWorkOrders() {
                   />
                   <FormField
                     control={form.control}
-                    name="oldMeterId"
+                    name="oldSystemId"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Old Meter ID</FormLabel>
+                        <FormLabel>Old System ID</FormLabel>
                         <FormControl>
                           <ScannerInput 
                             value={field.value || ""} 
                             onChange={field.onChange} 
                             placeholder="OLD-12345" 
-                            data-testid="input-create-old-meter-id" 
+                            data-testid="input-create-old-system-id" 
                           />
                         </FormControl>
                         <FormMessage />
@@ -2270,10 +2270,10 @@ export default function ProjectWorkOrders() {
                   />
                   <FormField
                     control={form.control}
-                    name="oldMeterReading"
+                    name="oldSystemReading"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Old Meter Reading</FormLabel>
+                        <FormLabel>Old System Reading</FormLabel>
                         <FormControl>
                           <Input 
                             type="number" 
@@ -2281,7 +2281,7 @@ export default function ProjectWorkOrders() {
                             value={field.value ?? ""} 
                             onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
                             placeholder="12345" 
-                            data-testid="input-create-old-meter-reading" 
+                            data-testid="input-create-old-system-reading" 
                           />
                         </FormControl>
                         <FormMessage />
@@ -2290,16 +2290,16 @@ export default function ProjectWorkOrders() {
                   />
                   <FormField
                     control={form.control}
-                    name="newMeterId"
+                    name="newSystemId"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>New Meter ID</FormLabel>
+                        <FormLabel>New System ID</FormLabel>
                         <FormControl>
                           <ScannerInput 
                             value={field.value || ""} 
                             onChange={field.onChange} 
                             placeholder="NEW-67890" 
-                            data-testid="input-create-new-meter-id" 
+                            data-testid="input-create-new-system-id" 
                           />
                         </FormControl>
                         <FormMessage />
@@ -2308,10 +2308,10 @@ export default function ProjectWorkOrders() {
                   />
                   <FormField
                     control={form.control}
-                    name="newMeterReading"
+                    name="newSystemReading"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>New Meter Reading</FormLabel>
+                        <FormLabel>New System Reading</FormLabel>
                         <FormControl>
                           <Input 
                             type="number" 
@@ -2319,7 +2319,7 @@ export default function ProjectWorkOrders() {
                             value={field.value ?? ""} 
                             onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
                             placeholder="67890" 
-                            data-testid="input-create-new-meter-reading" 
+                            data-testid="input-create-new-system-reading" 
                           />
                         </FormControl>
                         <FormMessage />
@@ -2670,12 +2670,12 @@ export default function ProjectWorkOrders() {
       />
       <FormField
         control={formInstance.control}
-        name="oldMeterId"
+        name="oldSystemId"
         render={({ field }) => (
           <FormItem>
-            <FormLabel>Old Meter ID</FormLabel>
+            <FormLabel>Old System ID</FormLabel>
             <FormControl>
-              <Input {...field} value={field.value || ""} placeholder="OLD-12345" data-testid="input-old-meter-id" />
+              <Input {...field} value={field.value || ""} placeholder="OLD-12345" data-testid="input-old-system-id" />
             </FormControl>
             <FormMessage />
           </FormItem>
@@ -2683,10 +2683,10 @@ export default function ProjectWorkOrders() {
       />
       <FormField
         control={formInstance.control}
-        name="oldMeterReading"
+        name="oldSystemReading"
         render={({ field }) => (
           <FormItem>
-            <FormLabel>Old Meter Reading</FormLabel>
+            <FormLabel>Old System Reading</FormLabel>
             <FormControl>
               <Input 
                 type="number" 
@@ -2694,7 +2694,7 @@ export default function ProjectWorkOrders() {
                 value={field.value ?? ""} 
                 onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
                 placeholder="12345" 
-                data-testid="input-old-meter-reading" 
+                data-testid="input-old-system-reading" 
               />
             </FormControl>
             <FormMessage />
@@ -2703,12 +2703,12 @@ export default function ProjectWorkOrders() {
       />
       <FormField
         control={formInstance.control}
-        name="newMeterId"
+        name="newSystemId"
         render={({ field }) => (
           <FormItem>
-            <FormLabel>New Meter ID</FormLabel>
+            <FormLabel>New System ID</FormLabel>
             <FormControl>
-              <Input {...field} value={field.value || ""} placeholder="NEW-67890" data-testid="input-new-meter-id" />
+              <Input {...field} value={field.value || ""} placeholder="NEW-67890" data-testid="input-new-system-id" />
             </FormControl>
             <FormMessage />
           </FormItem>
@@ -2716,10 +2716,10 @@ export default function ProjectWorkOrders() {
       />
       <FormField
         control={formInstance.control}
-        name="newMeterReading"
+        name="newSystemReading"
         render={({ field }) => (
           <FormItem>
-            <FormLabel>New Meter Reading</FormLabel>
+            <FormLabel>New System Reading</FormLabel>
             <FormControl>
               <Input 
                 type="number" 
@@ -2727,7 +2727,7 @@ export default function ProjectWorkOrders() {
                 value={field.value ?? ""} 
                 onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
                 placeholder="67890" 
-                data-testid="input-new-meter-reading" 
+                data-testid="input-new-system-reading" 
               />
             </FormControl>
             <FormMessage />
@@ -2811,12 +2811,12 @@ export default function ProjectWorkOrders() {
             )}
             {hasPermission(permissionKeys.WORK_ORDERS_METER_CHANGEOUT) && (
               <Button 
-                onClick={() => setShowStartMeterChangeout(true)} 
-                data-testid="button-start-meter-changeout"
+                onClick={() => setShowStartSystemChangeout(true)} 
+                data-testid="button-start-system-changeout"
                 className="bg-green-600 text-white dark:bg-green-600"
               >
                 <Wrench className="h-4 w-4 mr-2" />
-                Start Meter Changeout
+                Start System Changeout
               </Button>
             )}
             <Button onClick={() => setIsCreatingWorkOrder(true)} data-testid="button-create-work-order">
@@ -2946,7 +2946,7 @@ export default function ProjectWorkOrders() {
                   <Label htmlFor="filter-search">Search</Label>
                   <Input
                     id="filter-search"
-                    placeholder="Search WO ID, name, address, meter..."
+                    placeholder="Search WO ID, name, address, system..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     data-testid="input-filter-search"
@@ -3034,32 +3034,32 @@ export default function ProjectWorkOrders() {
                   </Select>
                 </div>
               )}
-              {isFilterVisible("oldMeterType") && meterTypes.length > 0 && (
+              {isFilterVisible("oldSystemType") && systemTypes.length > 0 && (
                 <div className="min-w-[180px]">
-                  <Label htmlFor="filter-old-meter-type">Old Meter Type</Label>
-                  <Select value={selectedOldMeterType} onValueChange={setSelectedOldMeterType}>
-                    <SelectTrigger id="filter-old-meter-type" data-testid="select-filter-old-meter-type">
-                      <SelectValue placeholder="All Meter Types" />
+                  <Label htmlFor="filter-old-system-type">Old System Type</Label>
+                  <Select value={selectedOldSystemType} onValueChange={setSelectedOldSystemType}>
+                    <SelectTrigger id="filter-old-system-type" data-testid="select-filter-old-system-type">
+                      <SelectValue placeholder="All System Types" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All Meter Types</SelectItem>
-                      {meterTypes.map((mt) => (
+                      <SelectItem value="all">All System Types</SelectItem>
+                      {systemTypes.map((mt) => (
                         <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
               )}
-              {isFilterVisible("newMeterType") && meterTypes.length > 0 && (
+              {isFilterVisible("newSystemType") && systemTypes.length > 0 && (
                 <div className="min-w-[180px]">
-                  <Label htmlFor="filter-new-meter-type">New Meter Type</Label>
-                  <Select value={selectedNewMeterType} onValueChange={setSelectedNewMeterType}>
-                    <SelectTrigger id="filter-new-meter-type" data-testid="select-filter-new-meter-type">
-                      <SelectValue placeholder="All Meter Types" />
+                  <Label htmlFor="filter-new-system-type">New System Type</Label>
+                  <Select value={selectedNewSystemType} onValueChange={setSelectedNewSystemType}>
+                    <SelectTrigger id="filter-new-system-type" data-testid="select-filter-new-system-type">
+                      <SelectValue placeholder="All System Types" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All Meter Types</SelectItem>
-                      {meterTypes.map((mt) => (
+                      <SelectItem value="all">All System Types</SelectItem>
+                      {systemTypes.map((mt) => (
                         <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
                       ))}
                     </SelectContent>
@@ -3126,16 +3126,16 @@ export default function ProjectWorkOrders() {
                   <Input id="filter-zone" placeholder="Filter..." value={filterZone} onChange={(e) => setFilterZone(e.target.value)} data-testid="input-filter-zone" />
                 </div>
               )}
-              {isFilterVisible("oldMeterId") && (
+              {isFilterVisible("oldSystemId") && (
                 <div className="min-w-[120px]">
-                  <Label htmlFor="filter-old-meter-id">Old Meter ID</Label>
-                  <Input id="filter-old-meter-id" placeholder="Filter..." value={filterOldMeterId} onChange={(e) => setFilterOldMeterId(e.target.value)} data-testid="input-filter-old-meter-id" />
+                  <Label htmlFor="filter-old-system-id">Old System ID</Label>
+                  <Input id="filter-old-system-id" placeholder="Filter..." value={filterOldSystemId} onChange={(e) => setFilterOldSystemId(e.target.value)} data-testid="input-filter-old-system-id" />
                 </div>
               )}
-              {isFilterVisible("newMeterId") && (
+              {isFilterVisible("newSystemId") && (
                 <div className="min-w-[120px]">
-                  <Label htmlFor="filter-new-meter-id">New Meter ID</Label>
-                  <Input id="filter-new-meter-id" placeholder="Filter..." value={filterNewMeterId} onChange={(e) => setFilterNewMeterId(e.target.value)} data-testid="input-filter-new-meter-id" />
+                  <Label htmlFor="filter-new-system-id">New System ID</Label>
+                  <Input id="filter-new-system-id" placeholder="Filter..." value={filterNewSystemId} onChange={(e) => setFilterNewSystemId(e.target.value)} data-testid="input-filter-new-system-id" />
                 </div>
               )}
               {isFilterVisible("scheduledAt") && (
@@ -3544,7 +3544,7 @@ export default function ProjectWorkOrders() {
         </DialogContent>
       </Dialog>
 
-      {meterTypeDialog}
+      {systemTypeDialog}
 
       <RouteSheetDialog
         open={showRouteSheetDialog}
@@ -3552,19 +3552,19 @@ export default function ProjectWorkOrders() {
         workOrders={filteredAndSortedWorkOrders.map(wo => ({
           customerWoId: wo.customerWoId || String(wo.id),
           address: wo.address || "",
-          oldMeterNumber: wo.oldMeterId || null,
-          newMeterNumber: wo.newMeterId || null,
+          oldSystemNumber: wo.oldSystemId || null,
+          newSystemNumber: wo.newSystemId || null,
         }))}
         projectName={project?.name}
       />
 
       {projectId && (
-        <StartMeterChangeoutDialog
-          isOpen={showStartMeterChangeout}
-          onClose={() => setShowStartMeterChangeout(false)}
+        <StartSystemChangeoutDialog
+          isOpen={showStartSystemChangeout}
+          onClose={() => setShowStartSystemChangeout(false)}
           projectId={projectId}
           onWorkOrderFound={(workOrder) => {
-            setAutoLaunchMeterChangeout(true);
+            setAutoLaunchSystemChangeout(true);
             setEditingWorkOrder(workOrder);
           }}
         />

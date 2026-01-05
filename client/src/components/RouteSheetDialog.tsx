@@ -14,11 +14,11 @@ import { Barcode, QrCode, FileDown, Loader2 } from "lucide-react";
 import QRCode from "qrcode";
 import bwipjs from "bwip-js";
 
-interface WorkOrderData {
+export interface WorkOrderData {
   customerWoId: string;
   address: string;
-  oldMeterNumber: string | null;
-  newMeterNumber?: string | null;
+  oldSystemNumber: string | null;
+  newSystemNumber?: string | null;
 }
 
 const escapeHtml = (text: string): string => {
@@ -41,7 +41,7 @@ export function RouteSheetDialog({
   projectName,
 }: RouteSheetDialogProps) {
   const [codeType, setCodeType] = useState<"barcode" | "qrcode">("barcode");
-  const [meterIdField, setMeterIdField] = useState<"old" | "new">("old");
+  const [systemIdField, setSystemIdField] = useState<"old" | "new">("old");
   const [isGenerating, setIsGenerating] = useState(false);
 
   const generateBarcode = async (text: string): Promise<string> => {
@@ -87,13 +87,13 @@ export function RouteSheetDialog({
       const codeImages: { wo: WorkOrderData; codeImage: string }[] = [];
 
       for (const wo of workOrders) {
-        const meterNumber = meterIdField === "old" 
-          ? (wo.oldMeterNumber || "N/A")
-          : (wo.newMeterNumber || "N/A");
+        const systemNumber = systemIdField === "old" 
+          ? (wo.oldSystemNumber || "N/A")
+          : (wo.newSystemNumber || "N/A");
         const codeImage =
           codeType === "barcode"
-            ? await generateBarcode(meterNumber !== "N/A" ? meterNumber : "")
-            : await generateQRCode(meterNumber !== "N/A" ? meterNumber : "");
+            ? await generateBarcode(systemNumber !== "N/A" ? systemNumber : "")
+            : await generateQRCode(systemNumber !== "N/A" ? systemNumber : "");
         codeImages.push({ wo, codeImage });
       }
 
@@ -108,13 +108,13 @@ export function RouteSheetDialog({
       }
 
       const rows: string[] = [];
-      const meterIdLabel = meterIdField === "old" ? "Old Meter ID" : "New Meter ID";
+      const systemIdLabel = systemIdField === "old" ? "Old System ID" : "New System ID";
       for (let i = 0; i < codeImages.length; i += columnsPerRow) {
         const rowItems = codeImages.slice(i, i + columnsPerRow);
         const cells = rowItems
           .map(({ wo, codeImage }) => {
-            const meterValue = meterIdField === "old" ? wo.oldMeterNumber : wo.newMeterNumber;
-            const meterDisplay = escapeHtml(meterValue || "N/A");
+            const systemValue = systemIdField === "old" ? wo.oldSystemNumber : wo.newSystemNumber;
+            const systemDisplay = escapeHtml(systemValue || "N/A");
             const escapedWoId = escapeHtml(wo.customerWoId);
             const escapedAddress = escapeHtml(wo.address || "No address");
             return `
@@ -124,9 +124,9 @@ export function RouteSheetDialog({
               ${
                 codeImage
                   ? `<img src="${codeImage}" style="max-width: ${cellWidth - 20}px; max-height: ${codeType === "barcode" ? 50 : 70}px;" />`
-                  : `<div style="font-size: 10px; color: #999; padding: 10px;">No meter number</div>`
+                  : `<div style="font-size: 10px; color: #999; padding: 10px;">No system number</div>`
               }
-              ${codeType === "barcode" && meterValue ? "" : codeType === "qrcode" && meterValue ? `<div style="font-size: 9px; color: #666; margin-top: 2px;">${meterDisplay}</div>` : ""}
+              ${codeType === "barcode" && systemValue ? "" : codeType === "qrcode" && systemValue ? `<div style="font-size: 9px; color: #666; margin-top: 2px;">${systemDisplay}</div>` : ""}
             </td>
           `;
           })
@@ -202,7 +202,7 @@ export function RouteSheetDialog({
             <button class="print-btn no-print" onclick="window.print()">Print Route Sheet</button>
             <div class="header">
               <h1>Route Sheet${projectTitle}</h1>
-              <p>Generated: ${dateStr} | Total Work Orders: ${workOrders.length} | Code Type: ${codeType === "barcode" ? "Barcode" : "QR Code"} | Meter ID: ${meterIdLabel}</p>
+              <p>Generated: ${dateStr} | Total Work Orders: ${workOrders.length} | Code Type: ${codeType === "barcode" ? "Barcode" : "QR Code"} | System ID: ${systemIdLabel}</p>
             </div>
             <table>
               ${rows.join("")}
@@ -226,46 +226,46 @@ export function RouteSheetDialog({
         <DialogHeader>
           <DialogTitle>Generate Route Sheet</DialogTitle>
           <DialogDescription>
-            Choose the meter ID field and code type. The route sheet will include 
+            Choose the system ID field and code type. The route sheet will include 
             {workOrders.length} work order{workOrders.length !== 1 ? "s" : ""} with WO ID, address, and 
-            your selected meter ID encoded as barcodes or QR codes.
+            your selected system ID encoded as barcodes or QR codes.
           </DialogDescription>
         </DialogHeader>
 
         <div className="py-4 space-y-4">
           <div>
-            <Label className="text-sm font-medium mb-2 block">Meter ID Field</Label>
+            <Label className="text-sm font-medium mb-2 block">System ID Field</Label>
             <RadioGroup
-              value={meterIdField}
-              onValueChange={(value) => setMeterIdField(value as "old" | "new")}
+              value={systemIdField}
+              onValueChange={(value) => setSystemIdField(value as "old" | "new")}
               className="grid grid-cols-2 gap-4"
             >
               <div>
                 <RadioGroupItem
                   value="old"
-                  id="meter-old"
+                  id="system-old"
                   className="peer sr-only"
                 />
                 <Label
-                  htmlFor="meter-old"
+                  htmlFor="system-old"
                   className="flex flex-col items-center justify-center rounded-md border-2 border-muted bg-popover p-3 hover-elevate peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer"
-                  data-testid="radio-meter-old"
+                  data-testid="radio-system-old"
                 >
-                  <span className="font-medium">Old Meter ID</span>
+                  <span className="font-medium">Old System ID</span>
                 </Label>
               </div>
               <div>
                 <RadioGroupItem
                   value="new"
-                  id="meter-new"
+                  id="system-new"
                   className="peer sr-only"
                 />
                 <Label
-                  htmlFor="meter-new"
+                  htmlFor="system-new"
                   className="flex flex-col items-center justify-center rounded-md border-2 border-muted bg-popover p-3 hover-elevate peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer"
-                  data-testid="radio-meter-new"
+                  data-testid="radio-system-new"
                 >
-                  <span className="font-medium">New Meter ID</span>
+                  <span className="font-medium">New System ID</span>
                 </Label>
               </div>
             </RadioGroup>

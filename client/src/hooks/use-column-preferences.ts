@@ -10,7 +10,7 @@ interface ColumnPreferencesData {
 }
 
 // Default columns for field technicians on work orders page
-const FIELD_TECH_WORK_ORDER_COLUMNS = ["customerWoId", "address", "oldMeterId", "status"];
+const FIELD_TECH_WORK_ORDER_COLUMNS = ["customerWoId", "address", "oldSystemId", "status"];
 
 export function useColumnPreferences(
   pageKey: string,

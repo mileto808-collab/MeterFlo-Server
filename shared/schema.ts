@@ -324,8 +324,8 @@ export const serviceTypes = pgTable("service_types", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// Meter types table - product types (no longer tied to a single project)
-export const meterTypes = pgTable("meter_types", {
+// System types table - product types (no longer tied to a single project)
+export const systemTypes = pgTable("system_types", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   productId: varchar("product_id", { length: 100 }).notNull().unique(),
   productLabel: varchar("product_label", { length: 255 }).notNull(),
@@ -334,10 +334,10 @@ export const meterTypes = pgTable("meter_types", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// Junction table for meter types to projects (many-to-many)
-export const meterTypeProjects = pgTable("meter_type_projects", {
+// Junction table for system types to projects (many-to-many)
+export const systemTypeProjects = pgTable("system_type_projects", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  meterTypeId: integer("meter_type_id").notNull().references(() => meterTypes.id, { onDelete: "cascade" }),
+  systemTypeId: integer("system_type_id").notNull().references(() => systemTypes.id, { onDelete: "cascade" }),
   projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -544,10 +544,10 @@ export const insertProjectWorkOrderSchema = z.object({
   route: z.string().max(100).optional().nullable(),
   zone: z.string().max(100).optional().nullable(),
   serviceType: z.string().min(1, "Service type is required"),
-  oldMeterId: z.string().max(100).optional().nullable(),
-  oldMeterReading: z.number().int().optional().nullable(),
-  newMeterId: z.string().max(100).optional().nullable(),
-  newMeterReading: z.number().int().optional().nullable(),
+  oldSystemId: z.string().max(100).optional().nullable(),
+  oldSystemReading: z.number().int().optional().nullable(),
+  newSystemId: z.string().max(100).optional().nullable(),
+  newSystemReading: z.number().int().optional().nullable(),
   oldGps: z.string().max(100).optional().nullable(),
   newGps: z.string().max(100).optional().nullable(),
   status: z.string().max(50).optional().nullable(),
@@ -560,8 +560,8 @@ export const insertProjectWorkOrderSchema = z.object({
   trouble: z.string().max(100).optional().nullable(),
   notes: z.string().optional().nullable(),
   attachments: z.array(z.string()).optional().nullable(),
-  oldMeterType: z.string().max(255).optional().nullable(),
-  newMeterType: z.string().max(255).optional().nullable(),
+  oldSystemType: z.string().max(255).optional().nullable(),
+  newSystemType: z.string().max(255).optional().nullable(),
   signatureData: z.string().optional().nullable(),
   signatureName: z.string().max(255).optional().nullable(),
 });
@@ -617,24 +617,24 @@ export const updateServiceTypeSchema = z.object({
   sortOrder: z.number().int().optional(),
 });
 
-// Schema for meter type management
-export const insertMeterTypeSchema = z.object({
+// Schema for system type management
+export const insertSystemTypeSchema = z.object({
   productId: z.string().min(1).max(100),
   productLabel: z.string().min(1).max(255),
   productDescription: z.string().optional().nullable(),
   projectIds: z.array(z.number()).optional(),
 });
 
-export const updateMeterTypeSchema = z.object({
+export const updateSystemTypeSchema = z.object({
   productId: z.string().min(1).max(100).optional(),
   productLabel: z.string().min(1).max(255).optional(),
   productDescription: z.string().optional().nullable(),
   projectIds: z.array(z.number()).optional(),
 });
 
-// Schema for meter type project assignment
-export const insertMeterTypeProjectSchema = z.object({
-  meterTypeId: z.number(),
+// Schema for system type project assignment
+export const insertSystemTypeProjectSchema = z.object({
+  systemTypeId: z.number(),
   projectId: z.number(),
 });
 
@@ -702,15 +702,15 @@ export type InsertPermission = z.infer<typeof insertPermissionSchema>;
 export type SubrolePermission = typeof subrolePermissions.$inferSelect;
 export type InsertSubrolePermission = z.infer<typeof insertSubrolePermissionSchema>;
 
-export type MeterType = typeof meterTypes.$inferSelect;
-export type InsertMeterType = z.infer<typeof insertMeterTypeSchema>;
-export type UpdateMeterType = z.infer<typeof updateMeterTypeSchema>;
+export type SystemType = typeof systemTypes.$inferSelect;
+export type InsertSystemType = z.infer<typeof insertSystemTypeSchema>;
+export type UpdateSystemType = z.infer<typeof updateSystemTypeSchema>;
 
-export type MeterTypeProject = typeof meterTypeProjects.$inferSelect;
-export type InsertMeterTypeProject = z.infer<typeof insertMeterTypeProjectSchema>;
+export type SystemTypeProject = typeof systemTypeProjects.$inferSelect;
+export type InsertSystemTypeProject = z.infer<typeof insertSystemTypeProjectSchema>;
 
-// Extended meter type with project associations
-export type MeterTypeWithProjects = MeterType & { projectIds: number[] };
+// Extended system type with project associations
+export type SystemTypeWithProjects = SystemType & { projectIds: number[] };
 
 // External database config schemas and types
 export const insertExternalDatabaseConfigSchema = z.object({
@@ -860,7 +860,7 @@ export const permissionKeys = {
   SETTINGS_TROUBLE_CODES: "settings.troubleCodes",
   SETTINGS_USER_GROUPS: "settings.userGroups",
   SETTINGS_SERVICE_TYPES: "settings.serviceTypes",
-  SETTINGS_METER_TYPES: "settings.meterTypes",
+  SETTINGS_SYSTEM_TYPES: "settings.systemTypes",
   SETTINGS_CUSTOMER_API_LOGS: "settings.customerApiLogs",
   // Maintenance permissions
   MAINTENANCE_PROJECT_BACKUP: "maintenance.projectBackup",

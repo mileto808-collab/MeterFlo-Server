@@ -53,7 +53,7 @@ type WizardStep =
   | "oldReading"
   | "beforePhotos"
   | "physicalChange"
-  | "newMeterId"
+  | "newSystemId"
   | "newReading"
   | "afterPhotos"
   | "gps"
@@ -67,15 +67,15 @@ interface CapturedPhoto {
   type: "trouble" | "before" | "after";
 }
 
-interface MeterChangeoutData {
+interface SystemChangeoutData {
   canChange: boolean;
   troubleCode: string | null;
   troubleNote: string;
   troublePhotos: CapturedPhoto[];
-  oldMeterReading: string;
+  oldSystemReading: string;
   beforePhotos: CapturedPhoto[];
-  newMeterId: string;
-  newMeterReading: string;
+  newSystemId: string;
+  newSystemReading: string;
   afterPhotos: CapturedPhoto[];
   gpsCoordinates: string;
   completionNotes: string;
@@ -83,15 +83,15 @@ interface MeterChangeoutData {
   signatureName: string;
 }
 
-interface MeterChangeoutWizardProps {
+interface SystemChangeoutWizardProps {
   isOpen: boolean;
   onClose: () => void;
   workOrderId: number;
   customerWoId: string;
   address?: string | null;
-  oldMeterId?: string | null;
-  oldMeterType?: string | null;
-  newMeterType?: string | null;
+  oldSystemId?: string | null;
+  oldSystemType?: string | null;
+  newSystemType?: string | null;
   status?: string | null;
   trouble?: string | null;
   notes?: string | null;
@@ -100,17 +100,17 @@ interface MeterChangeoutWizardProps {
   existingOldReading?: string | null;
   existingNewReading?: string | null;
   existingGps?: string | null;
-  onComplete: (data: MeterChangeoutData) => Promise<void>;
+  onComplete: (data: SystemChangeoutData) => Promise<void>;
 }
 
 const stepLabels: Record<WizardStep, string> = {
-  canChange: "Can Meter Be Changed?",
+  canChange: "Can System Be Changed?",
   troubleCapture: "Report Issue",
-  oldReading: "Old Meter Reading",
+  oldReading: "Old System Reading",
   beforePhotos: "Before Photos",
   physicalChange: "Perform Changeout",
-  newMeterId: "New Meter ID",
-  newReading: "New Meter Reading",
+  newSystemId: "New System ID",
+  newReading: "New System Reading",
   afterPhotos: "After Photos",
   gps: "Capture GPS",
   notes: "Notes",
@@ -123,7 +123,7 @@ const successSteps: WizardStep[] = [
   "oldReading",
   "beforePhotos",
   "physicalChange",
-  "newMeterId",
+  "newSystemId",
   "newReading",
   "afterPhotos",
   "gps",
@@ -134,15 +134,15 @@ const successSteps: WizardStep[] = [
 
 const troubleSteps: WizardStep[] = ["canChange", "troubleCapture", "confirm"];
 
-export function MeterChangeoutWizard({
+export function SystemChangeoutWizard({
   isOpen,
   onClose,
   workOrderId,
   customerWoId,
   address,
-  oldMeterId,
-  oldMeterType,
-  newMeterType,
+  oldSystemId,
+  oldSystemType,
+  newSystemType,
   status,
   trouble,
   notes,
@@ -152,7 +152,7 @@ export function MeterChangeoutWizard({
   existingNewReading,
   existingGps,
   onComplete,
-}: MeterChangeoutWizardProps) {
+}: SystemChangeoutWizardProps) {
   const { toast } = useToast();
   const signaturePadRef = useRef<SignaturePadRef>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -161,21 +161,21 @@ export function MeterChangeoutWizard({
   const [photoType, setPhotoType] = useState<"trouble" | "before" | "after">("before");
   const [isCapturingPhoto, setIsCapturingPhoto] = useState(false);
   const captureSessionActive = useRef(false);
-  const [meterIdInputMode, setMeterIdInputMode] = useState<"choose" | "barcode" | "qr" | "manual" | null>(null);
-  const [manualMeterIdInput, setManualMeterIdInput] = useState("");
+  const [systemIdInputMode, setSystemIdInputMode] = useState<"choose" | "barcode" | "qr" | "manual" | null>(null);
+  const [manualSystemIdInput, setManualSystemIdInput] = useState("");
   const [isScanning, setIsScanning] = useState(false);
   const scannerRef = useRef<HTMLDivElement>(null);
   const [previewPhoto, setPreviewPhoto] = useState<{ photo: CapturedPhoto; type: "trouble" | "before" | "after"; index: number } | null>(null);
 
-  const [data, setData] = useState<MeterChangeoutData>({
+  const [data, setData] = useState<SystemChangeoutData>({
     canChange: true,
     troubleCode: null,
     troubleNote: "",
     troublePhotos: [],
-    oldMeterReading: existingOldReading || "",
+    oldSystemReading: existingOldReading || "",
     beforePhotos: [],
-    newMeterId: "",
-    newMeterReading: existingNewReading || "",
+    newSystemId: "",
+    newSystemReading: existingNewReading || "",
     afterPhotos: [],
     gpsCoordinates: existingGps || "",
     completionNotes: "",
@@ -243,10 +243,10 @@ export function MeterChangeoutWizard({
       troubleCode: null,
       troubleNote: "",
       troublePhotos: [],
-      oldMeterReading: existingOldReading || "",
+      oldSystemReading: existingOldReading || "",
       beforePhotos: [],
-      newMeterId: "",
-      newMeterReading: existingNewReading || "",
+      newSystemId: "",
+      newSystemReading: existingNewReading || "",
       afterPhotos: [],
       gpsCoordinates: existingGps || "",
       completionNotes: "",
@@ -264,7 +264,7 @@ export function MeterChangeoutWizard({
   };
 
   // Validation helpers
-  const isValidMeterReading = (reading: string | undefined | null): boolean => {
+  const isValidSystemReading = (reading: string | undefined | null): boolean => {
     // Must be digits only (allows leading zeros like "0001")
     if (!reading || typeof reading !== 'string') return false;
     const trimmed = reading.trim();
@@ -286,7 +286,7 @@ export function MeterChangeoutWizard({
     return !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
   };
 
-  const getMeterReadingError = (reading: string | undefined | null): string | null => {
+  const getSystemReadingError = (reading: string | undefined | null): string | null => {
     if (!reading || typeof reading !== 'string' || !reading.trim()) return "Reading is required";
     if (!/^\d+$/.test(reading.trim())) return "Reading must contain only digits (0-9)";
     return null;
@@ -313,15 +313,15 @@ export function MeterChangeoutWizard({
       case "troubleCapture":
         return !!data.troubleCode && data.troublePhotos.length >= 1;
       case "oldReading":
-        return isValidMeterReading(data.oldMeterReading);
+        return isValidSystemReading(data.oldSystemReading);
       case "beforePhotos":
         return data.beforePhotos.length >= 1;
       case "physicalChange":
         return true;
-      case "newMeterId":
-        return !!data.newMeterId.trim();
+      case "newSystemId":
+        return !!data.newSystemId.trim();
       case "newReading":
-        return isValidMeterReading(data.newMeterReading);
+        return isValidSystemReading(data.newSystemReading);
       case "afterPhotos":
         return data.afterPhotos.length >= 1;
       case "gps":
@@ -333,11 +333,11 @@ export function MeterChangeoutWizard({
       case "confirm":
         // Final validation: check all required fields based on path
         if (data.canChange) {
-          // Success path requires: old reading, new meter ID, new reading, before/after photos, GPS, signature
+          // Success path requires: old reading, new system ID, new reading, before/after photos, GPS, signature
           return (
-            isValidMeterReading(data.oldMeterReading) &&
-            !!data.newMeterId.trim() &&
-            isValidMeterReading(data.newMeterReading) &&
+            isValidSystemReading(data.oldSystemReading) &&
+            !!data.newSystemId.trim() &&
+            isValidSystemReading(data.newSystemReading) &&
             data.beforePhotos.length >= 1 &&
             data.afterPhotos.length >= 1 &&
             isValidGps(data.gpsCoordinates) &&
@@ -475,7 +475,7 @@ export function MeterChangeoutWizard({
       toast({
         title: "Success",
         description: data.canChange 
-          ? "Meter changeout completed successfully!" 
+          ? "System changeout completed successfully!" 
           : "Trouble report submitted successfully!",
       });
       handleClose();
@@ -539,14 +539,14 @@ export function MeterChangeoutWizard({
         config,
         (decodedText) => {
           // Success - stop scanner and set the value
-          setData((prev) => ({ ...prev, newMeterId: decodedText }));
+          setData((prev) => ({ ...prev, newSystemId: decodedText }));
           setIsScanning(false);
-          setMeterIdInputMode(null);
+          setSystemIdInputMode(null);
           html5QrCode.stop().catch(() => {});
           scannerInstanceRef.current = null;
           toast({
             title: "Scanned Successfully",
-            description: `Meter ID: ${decodedText}`,
+            description: `System ID: ${decodedText}`,
           });
         },
         () => {
@@ -561,7 +561,7 @@ export function MeterChangeoutWizard({
         description: error.message || "Could not access camera. Try manual entry instead.",
         variant: "destructive",
       });
-      setMeterIdInputMode(null);
+      setSystemIdInputMode(null);
     }
   }, [toast]);
 
@@ -575,16 +575,16 @@ export function MeterChangeoutWizard({
     };
   }, []);
 
-  // Stop scanner when leaving the newMeterId step or changing mode
+  // Stop scanner when leaving the newSystemId step or changing mode
   useEffect(() => {
-    if (currentStep !== "newMeterId" || (!meterIdInputMode || meterIdInputMode === "manual" || meterIdInputMode === "choose")) {
+    if (currentStep !== "newSystemId" || (!systemIdInputMode || systemIdInputMode === "manual" || systemIdInputMode === "choose")) {
       if (scannerInstanceRef.current) {
         scannerInstanceRef.current.stop().catch(() => {});
         scannerInstanceRef.current = null;
         setIsScanning(false);
       }
     }
-  }, [currentStep, meterIdInputMode]);
+  }, [currentStep, systemIdInputMode]);
 
   const renderStepIndicator = () => {
     return (
@@ -682,9 +682,9 @@ export function MeterChangeoutWizard({
                 <div className="flex items-start gap-3">
                   <Gauge className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
                   <div className="min-w-0">
-                    <p className="text-sm text-muted-foreground">Old Meter ID</p>
-                    <p className="font-medium break-all" data-testid="text-wizard-meter-id">
-                      {oldMeterId || "N/A"}
+                    <p className="text-sm text-muted-foreground">Old System ID</p>
+                    <p className="font-medium break-all" data-testid="text-wizard-system-id">
+                      {oldSystemId || "N/A"}
                     </p>
                   </div>
                 </div>
@@ -719,7 +719,7 @@ export function MeterChangeoutWizard({
             </Card>
 
             <p className="text-center text-muted-foreground">
-              Can this meter be changed today?
+              Can this system be changed today?
             </p>
             <div className="grid grid-cols-2 gap-4">
               <Button
@@ -727,7 +727,7 @@ export function MeterChangeoutWizard({
                 variant="outline"
                 className="h-24 flex flex-col gap-2"
                 onClick={() => handleCanChangeChoice(false)}
-                data-testid="button-meter-cannot-change"
+                data-testid="button-system-cannot-change"
               >
                 <AlertTriangle className="h-8 w-8 text-destructive" />
                 <span>No - Report Issue</span>
@@ -737,7 +737,7 @@ export function MeterChangeoutWizard({
                 variant="outline"
                 className="h-24 flex flex-col gap-2"
                 onClick={() => handleCanChangeChoice(true)}
-                data-testid="button-meter-can-change"
+                data-testid="button-system-can-change"
               >
                 <Check className="h-8 w-8 text-green-600" />
                 <span>Yes - Proceed</span>
@@ -798,42 +798,42 @@ export function MeterChangeoutWizard({
         );
 
       case "oldReading": {
-        const oldReadingError = getMeterReadingError(data.oldMeterReading);
+        const oldReadingError = getSystemReadingError(data.oldSystemReading);
         return (
           <div className="space-y-4">
             <div className="text-center mb-4">
               <Wrench className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
               <p className="text-muted-foreground">
-                Record the final reading from the old meter before removal.
+                Record the final reading from the old system before removal.
               </p>
             </div>
             <div className="space-y-2">
-              <Label>Old Meter Final Reading *</Label>
+              <Label>Old System Final Reading *</Label>
               <Input
                 type="text"
                 inputMode="numeric"
-                value={data.oldMeterReading}
-                onChange={(e) => setData((prev) => ({ ...prev, oldMeterReading: e.target.value }))}
-                placeholder="Enter meter reading (digits only)..."
-                className={`text-lg text-center ${oldReadingError && data.oldMeterReading ? "border-destructive" : ""}`}
-                data-testid="input-old-meter-reading"
+                value={data.oldSystemReading}
+                onChange={(e) => setData((prev) => ({ ...prev, oldSystemReading: e.target.value }))}
+                placeholder="Enter system reading (digits only)..."
+                className={`text-lg text-center ${oldReadingError && data.oldSystemReading ? "border-destructive" : ""}`}
+                data-testid="input-old-system-reading"
               />
-              {oldReadingError && data.oldMeterReading && (
+              {oldReadingError && data.oldSystemReading && (
                 <p className="text-sm text-destructive">{oldReadingError}</p>
               )}
               <p className="text-xs text-muted-foreground">Enter digits only. Leading zeros are preserved (e.g., 0001).</p>
             </div>
 
-            {oldMeterType && (
+            {oldSystemType && (
               <Card className="bg-muted/50">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium flex items-center gap-2">
                     <Gauge className="h-4 w-4" />
-                    Verify Old Meter Type
+                    Verify Old System Type
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-sm" data-testid="text-verify-old-meter-type">{oldMeterType}</p>
+                  <p className="text-sm" data-testid="text-verify-old-system-type">{oldSystemType}</p>
                 </CardContent>
               </Card>
             )}
@@ -847,7 +847,7 @@ export function MeterChangeoutWizard({
             <div className="text-center mb-4">
               <ImageIcon className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
               <p className="text-muted-foreground">
-                Take at least one photo of the meter BEFORE the changeout.
+                Take at least one photo of the system BEFORE the changeout.
               </p>
             </div>
             <Button
@@ -871,9 +871,9 @@ export function MeterChangeoutWizard({
         return (
           <div className="space-y-4 text-center">
             <Wrench className="h-16 w-16 mx-auto text-primary" />
-            <h3 className="text-lg font-semibold">Perform Physical Meter Changeout</h3>
+            <h3 className="text-lg font-semibold">Perform Physical System Changeout</h3>
             <p className="text-muted-foreground">
-              Safely remove the old meter and install the new meter.
+              Safely remove the old system and install the new system.
               When complete, click Next to continue.
             </p>
             <Card className="bg-muted/50">
@@ -881,7 +881,7 @@ export function MeterChangeoutWizard({
                 <ul className="text-left text-sm space-y-2">
                   <li className="flex items-center gap-2">
                     <Check className="h-4 w-4 text-green-600" />
-                    Old meter reading recorded: {data.oldMeterReading}
+                    Old system reading recorded: {data.oldSystemReading}
                   </li>
                   <li className="flex items-center gap-2">
                     <Check className="h-4 w-4 text-green-600" />
@@ -893,34 +893,34 @@ export function MeterChangeoutWizard({
           </div>
         );
 
-      case "newMeterId":
+      case "newSystemId":
         return (
           <div className="space-y-4">
             <div className="text-center mb-4">
               <ScanBarcode className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
               <p className="text-muted-foreground">
-                Capture the new meter ID by scanning or entering manually.
+                Capture the new system ID by scanning or entering manually.
               </p>
             </div>
             
-            {data.newMeterId ? (
+            {data.newSystemId ? (
               <div className="space-y-3">
                 <Card className="bg-muted/50">
                   <CardContent className="pt-4">
                     <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <Label className="text-xs text-muted-foreground">New Meter ID</Label>
-                        <p className="text-lg font-medium break-all" data-testid="text-new-meter-id">{data.newMeterId}</p>
+                        <Label className="text-xs text-muted-foreground">New System ID</Label>
+                        <p className="text-lg font-medium break-all" data-testid="text-new-system-id">{data.newSystemId}</p>
                       </div>
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
                         onClick={() => {
-                          setData((prev) => ({ ...prev, newMeterId: "" }));
-                          setMeterIdInputMode(null);
+                          setData((prev) => ({ ...prev, newSystemId: "" }));
+                          setSystemIdInputMode(null);
                         }}
-                        data-testid="button-clear-meter-id"
+                        data-testid="button-clear-system-id"
                       >
                         Clear
                       </Button>
@@ -928,7 +928,7 @@ export function MeterChangeoutWizard({
                   </CardContent>
                 </Card>
               </div>
-            ) : meterIdInputMode === "barcode" || meterIdInputMode === "qr" ? (
+            ) : systemIdInputMode === "barcode" || systemIdInputMode === "qr" ? (
               <div className="space-y-4">
                 <div 
                   ref={scannerRef} 
@@ -939,7 +939,7 @@ export function MeterChangeoutWizard({
                 {isScanning && (
                   <div className="flex items-center justify-center gap-2 text-muted-foreground">
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Scanning for {meterIdInputMode === "qr" ? "QR code" : "barcode"}...</span>
+                    <span>Scanning for {systemIdInputMode === "qr" ? "QR code" : "barcode"}...</span>
                   </div>
                 )}
                 <Button
@@ -947,7 +947,7 @@ export function MeterChangeoutWizard({
                   variant="outline"
                   className="w-full"
                   onClick={() => {
-                    setMeterIdInputMode(null);
+                    setSystemIdInputMode(null);
                     setIsScanning(false);
                   }}
                   data-testid="button-cancel-scan"
@@ -956,27 +956,27 @@ export function MeterChangeoutWizard({
                   Back to Options
                 </Button>
               </div>
-            ) : meterIdInputMode === "manual" ? (
+            ) : systemIdInputMode === "manual" ? (
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Enter New Meter ID *</Label>
+                  <Label>Enter New System ID *</Label>
                   <Input
                     type="text"
-                    placeholder="Type or paste meter ID..."
+                    placeholder="Type or paste system ID..."
                     className="text-lg"
                     autoFocus
-                    value={manualMeterIdInput}
-                    onChange={(e) => setManualMeterIdInput(e.target.value)}
+                    value={manualSystemIdInput}
+                    onChange={(e) => setManualSystemIdInput(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") {
-                        const input = manualMeterIdInput.trim();
+                        const input = manualSystemIdInput.trim();
                         if (input) {
-                          setData((prev) => ({ ...prev, newMeterId: input }));
-                          setManualMeterIdInput("");
+                          setData((prev) => ({ ...prev, newSystemId: input }));
+                          setManualSystemIdInput("");
                         }
                       }
                     }}
-                    data-testid="input-new-meter-id"
+                    data-testid="input-new-system-id"
                   />
                 </div>
                 <div className="flex gap-2">
@@ -985,8 +985,8 @@ export function MeterChangeoutWizard({
                     variant="outline"
                     className="flex-1"
                     onClick={() => {
-                      setMeterIdInputMode(null);
-                      setManualMeterIdInput("");
+                      setSystemIdInputMode(null);
+                      setManualSystemIdInput("");
                     }}
                     data-testid="button-cancel-manual"
                   >
@@ -996,19 +996,19 @@ export function MeterChangeoutWizard({
                     type="button"
                     className="flex-1"
                     onClick={() => {
-                      const input = manualMeterIdInput.trim();
+                      const input = manualSystemIdInput.trim();
                       if (input) {
-                        setData((prev) => ({ ...prev, newMeterId: input }));
-                        setManualMeterIdInput("");
+                        setData((prev) => ({ ...prev, newSystemId: input }));
+                        setManualSystemIdInput("");
                       } else {
                         toast({
                           title: "Required",
-                          description: "Please enter a meter ID",
+                          description: "Please enter a system ID",
                           variant: "destructive",
                         });
                       }
                     }}
-                    data-testid="button-confirm-meter-id"
+                    data-testid="button-confirm-system-id"
                   >
                     <Check className="h-4 w-4 mr-2" />
                     Confirm
@@ -1022,7 +1022,7 @@ export function MeterChangeoutWizard({
                   variant="outline"
                   className="h-16 flex items-center justify-center gap-3"
                   onClick={() => {
-                    setMeterIdInputMode("barcode");
+                    setSystemIdInputMode("barcode");
                     setIsScanning(true);
                     setTimeout(() => {
                       startScanner("barcode");
@@ -1038,7 +1038,7 @@ export function MeterChangeoutWizard({
                   variant="outline"
                   className="h-16 flex items-center justify-center gap-3"
                   onClick={() => {
-                    setMeterIdInputMode("qr");
+                    setSystemIdInputMode("qr");
                     setIsScanning(true);
                     setTimeout(() => {
                       startScanner("qr");
@@ -1053,7 +1053,7 @@ export function MeterChangeoutWizard({
                   type="button"
                   variant="outline"
                   className="h-16 flex items-center justify-center gap-3"
-                  onClick={() => setMeterIdInputMode("manual")}
+                  onClick={() => setSystemIdInputMode("manual")}
                   data-testid="button-enter-manual"
                 >
                   <Keyboard className="h-6 w-6" />
@@ -1065,42 +1065,42 @@ export function MeterChangeoutWizard({
         );
 
       case "newReading": {
-        const newReadingError = getMeterReadingError(data.newMeterReading);
+        const newReadingError = getSystemReadingError(data.newSystemReading);
         return (
           <div className="space-y-4">
             <div className="text-center mb-4">
               <Wrench className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
               <p className="text-muted-foreground">
-                Record the initial reading from the new meter.
+                Record the initial reading from the new system.
               </p>
             </div>
             <div className="space-y-2">
-              <Label>New Meter Initial Reading *</Label>
+              <Label>New System Initial Reading *</Label>
               <Input
                 type="text"
                 inputMode="numeric"
-                value={data.newMeterReading}
-                onChange={(e) => setData((prev) => ({ ...prev, newMeterReading: e.target.value }))}
-                placeholder="Enter meter reading (digits only)..."
-                className={`text-lg text-center ${newReadingError && data.newMeterReading ? "border-destructive" : ""}`}
-                data-testid="input-new-meter-reading"
+                value={data.newSystemReading}
+                onChange={(e) => setData((prev) => ({ ...prev, newSystemReading: e.target.value }))}
+                placeholder="Enter system reading (digits only)..."
+                className={`text-lg text-center ${newReadingError && data.newSystemReading ? "border-destructive" : ""}`}
+                data-testid="input-new-system-reading"
               />
-              {newReadingError && data.newMeterReading && (
+              {newReadingError && data.newSystemReading && (
                 <p className="text-sm text-destructive">{newReadingError}</p>
               )}
               <p className="text-xs text-muted-foreground">Enter digits only. Leading zeros are preserved (e.g., 0001).</p>
             </div>
 
-            {newMeterType && (
+            {newSystemType && (
               <Card className="bg-muted/50">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium flex items-center gap-2">
                     <Gauge className="h-4 w-4" />
-                    Verify New Meter Type
+                    Verify New System Type
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-sm" data-testid="text-verify-new-meter-type">{newMeterType}</p>
+                  <p className="text-sm" data-testid="text-verify-new-system-type">{newSystemType}</p>
                 </CardContent>
               </Card>
             )}
@@ -1114,7 +1114,7 @@ export function MeterChangeoutWizard({
             <div className="text-center mb-4">
               <ImageIcon className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
               <p className="text-muted-foreground">
-                Take at least one photo of the meter AFTER the changeout.
+                Take at least one photo of the system AFTER the changeout.
               </p>
             </div>
             <Button
@@ -1207,7 +1207,7 @@ export function MeterChangeoutWizard({
         return (
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-center">
-              {data.canChange ? "Confirm Meter Changeout" : "Confirm Trouble Report"}
+              {data.canChange ? "Confirm System Changeout" : "Confirm Trouble Report"}
             </h3>
             
             {data.canChange ? (
@@ -1220,17 +1220,17 @@ export function MeterChangeoutWizard({
                     <span className="text-muted-foreground">Address:</span>
                     <span className="font-medium">{address || "-"}</span>
                     
-                    <span className="text-muted-foreground">Old Meter ID:</span>
-                    <span className="font-medium">{oldMeterId || "-"}</span>
+                    <span className="text-muted-foreground">Old System ID:</span>
+                    <span className="font-medium">{oldSystemId || "-"}</span>
                     
                     <span className="text-muted-foreground">Old Reading:</span>
-                    <span className="font-medium">{data.oldMeterReading}</span>
+                    <span className="font-medium">{data.oldSystemReading}</span>
                     
-                    <span className="text-muted-foreground">New Meter ID:</span>
-                    <span className="font-medium">{data.newMeterId}</span>
+                    <span className="text-muted-foreground">New System ID:</span>
+                    <span className="font-medium">{data.newSystemId}</span>
                     
                     <span className="text-muted-foreground">New Reading:</span>
-                    <span className="font-medium">{data.newMeterReading}</span>
+                    <span className="font-medium">{data.newSystemReading}</span>
                     
                     <span className="text-muted-foreground">GPS:</span>
                     <span className="font-medium">{data.gpsCoordinates}</span>
@@ -1427,4 +1427,4 @@ export function MeterChangeoutWizard({
   );
 }
 
-export default MeterChangeoutWizard;
+export default SystemChangeoutWizard;

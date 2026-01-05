@@ -28,7 +28,7 @@ import { apiRequest } from "@/lib/queryClient";
 import type { ProjectWorkOrder } from "../../../server/projectDb";
 import type { UserGroup, TroubleCode } from "@shared/schema";
 
-interface StartMeterChangeoutDialogProps {
+interface StartSystemChangeoutDialogProps {
   isOpen: boolean;
   onClose: () => void;
   projectId: number;
@@ -37,12 +37,12 @@ interface StartMeterChangeoutDialogProps {
 
 type ScanMode = "select" | "barcode" | "qrcode" | "manual" | "confirm";
 
-export function StartMeterChangeoutDialog({
+export function StartSystemChangeoutDialog({
   isOpen,
   onClose,
   projectId,
   onWorkOrderFound,
-}: StartMeterChangeoutDialogProps) {
+}: StartSystemChangeoutDialogProps) {
   const { toast } = useToast();
   const { user } = useAuth();
   
@@ -184,7 +184,7 @@ export function StartMeterChangeoutDialog({
 
     setIsFocusing(true);
     try {
-      const videoElement = document.querySelector('#meter-scanner-container video') as HTMLVideoElement;
+      const videoElement = document.querySelector('#system-scanner-container video') as HTMLVideoElement;
       if (!videoElement?.srcObject) {
         return;
       }
@@ -247,7 +247,7 @@ export function StartMeterChangeoutDialog({
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     try {
-      const scanner = new Html5Qrcode("meter-scanner-container");
+      const scanner = new Html5Qrcode("system-scanner-container");
       scannerRef.current = scanner;
 
       const formats = mode === "barcode"
@@ -302,7 +302,7 @@ export function StartMeterChangeoutDialog({
     setLookupError(null);
 
     try {
-      const response = await apiRequest("GET", `/api/projects/${projectId}/work-orders/by-meter/${encodeURIComponent(searchTerm.trim())}`);
+      const response = await apiRequest("GET", `/api/projects/${projectId}/work-orders/by-system/${encodeURIComponent(searchTerm.trim())}`);
       const workOrder = await response.json();
       
       stopScanning();
@@ -464,10 +464,10 @@ export function StartMeterChangeoutDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Wrench className="h-5 w-5" />
-            Start Meter Changeout
+            Start System Changeout
           </DialogTitle>
           <DialogDescription>
-            Search by work order ID, meter ID, address, or customer ID
+            Search by work order ID, system ID, address, or customer ID
           </DialogDescription>
         </DialogHeader>
 
@@ -516,7 +516,7 @@ export function StartMeterChangeoutDialog({
                 </div>
                 <div className="flex-1">
                   <h3 className="font-medium">Manual Entry</h3>
-                  <p className="text-sm text-muted-foreground">Search by work order ID, meter ID, address, or customer ID</p>
+                  <p className="text-sm text-muted-foreground">Search by work order ID, system ID, address, or customer ID</p>
                 </div>
               </CardContent>
             </Card>
@@ -527,7 +527,7 @@ export function StartMeterChangeoutDialog({
           <div className="space-y-4">
             <div className="relative">
               <div
-                id="meter-scanner-container"
+                id="system-scanner-container"
                 className="w-full min-h-[250px] rounded-lg overflow-hidden bg-muted"
               />
               
@@ -646,7 +646,7 @@ export function StartMeterChangeoutDialog({
                   setManualInput(e.target.value);
                   setLookupError(null);
                 }}
-                placeholder="Work order ID, meter ID, address, or customer ID..."
+                placeholder="Work order ID, system ID, address, or customer ID..."
                 disabled={isLookingUp}
                 data-testid="input-search"
               />
@@ -731,20 +731,20 @@ export function StartMeterChangeoutDialog({
                   <div className="flex items-start gap-3">
                     <Gauge className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
                     <div className="min-w-0">
-                      <p className="text-sm text-muted-foreground">Old Meter ID</p>
-                      <p className="font-medium break-all" data-testid="text-confirm-old-meter-id">
-                        {(foundWorkOrder as any).old_meter_id || foundWorkOrder.oldMeterId || "N/A"}
+                      <p className="text-sm text-muted-foreground">Old System ID</p>
+                      <p className="font-medium break-all" data-testid="text-confirm-old-system-id">
+                        {(foundWorkOrder as any).old_system_id || foundWorkOrder.oldSystemId || "N/A"}
                       </p>
                     </div>
                   </div>
 
-                  {((foundWorkOrder as any).new_meter_id || foundWorkOrder.newMeterId) && (
+                  {((foundWorkOrder as any).new_system_id || foundWorkOrder.newSystemId) && (
                     <div className="flex items-start gap-3">
                       <Gauge className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
                       <div className="min-w-0">
-                        <p className="text-sm text-muted-foreground">New Meter ID</p>
-                        <p className="font-medium break-all" data-testid="text-confirm-new-meter-id">
-                          {(foundWorkOrder as any).new_meter_id || foundWorkOrder.newMeterId}
+                        <p className="text-sm text-muted-foreground">New System ID</p>
+                        <p className="font-medium break-all" data-testid="text-confirm-new-system-id">
+                          {(foundWorkOrder as any).new_system_id || foundWorkOrder.newSystemId}
                         </p>
                       </div>
                     </div>
@@ -782,7 +782,7 @@ export function StartMeterChangeoutDialog({
               {isCompleted && (
                 <div className="flex items-center gap-2 p-3 rounded-md bg-destructive/10 text-destructive" data-testid="alert-completed-warning">
                   <Ban className="h-5 w-5 shrink-0" />
-                  <p className="text-sm" data-testid="text-completed-warning">This work order has already been completed. A meter changeout cannot be started.</p>
+                  <p className="text-sm" data-testid="text-completed-warning">This work order has already been completed. A system changeout cannot be started.</p>
                 </div>
               )}
 
@@ -826,7 +826,7 @@ export function StartMeterChangeoutDialog({
         <AlertDialogHeader>
           <AlertDialogTitle data-testid="title-claim-confirm">Claim Work Order?</AlertDialogTitle>
           <AlertDialogDescription data-testid="text-claim-description">
-            Claiming this work order will assign it to you and open the meter changeout wizard. 
+            Claiming this work order will assign it to you and open the system changeout wizard. 
             {foundWorkOrder?.assignedGroupId && (
               <span className="block mt-2">
                 Currently assigned to group: <strong>{foundWorkOrder.assignedGroupId}</strong>

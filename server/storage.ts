@@ -14,8 +14,8 @@ import {
   workOrderStatuses,
   troubleCodes,
   serviceTypes,
-  meterTypes,
-  meterTypeProjects,
+  systemTypes,
+  systemTypeProjects,
   defaultWorkOrderStatuses,
   permissionKeys,
   ADMINISTRATOR_SUBROLE_KEY,
@@ -56,10 +56,10 @@ import {
   type ServiceTypeRecord,
   type InsertServiceType,
   type UpdateServiceType,
-  type MeterType,
-  type InsertMeterType,
-  type UpdateMeterType,
-  type MeterTypeWithProjects,
+  type SystemType,
+  type InsertSystemType,
+  type UpdateSystemType,
+  type SystemTypeWithProjects,
   type UserGroup,
   type InsertUserGroup,
   type UserGroupMember,
@@ -204,14 +204,14 @@ export interface IStorage {
   getGroupProjectIds(groupId: number): Promise<number[]>;
   setGroupProjects(groupId: number, projectIds: number[]): Promise<void>;
 
-  // Meter type operations
-  getMeterTypes(projectId?: number): Promise<MeterTypeWithProjects[]>;
-  getMeterType(id: number): Promise<MeterTypeWithProjects | undefined>;
-  createMeterType(data: InsertMeterType): Promise<MeterTypeWithProjects>;
-  updateMeterType(id: number, data: UpdateMeterType): Promise<MeterTypeWithProjects | undefined>;
-  deleteMeterType(id: number): Promise<boolean>;
-  getMeterTypeProjectIds(meterTypeId: number): Promise<number[]>;
-  setMeterTypeProjects(meterTypeId: number, projectIds: number[]): Promise<void>;
+  // System type operations
+  getSystemTypes(projectId?: number): Promise<SystemTypeWithProjects[]>;
+  getSystemType(id: number): Promise<SystemTypeWithProjects | undefined>;
+  createSystemType(data: InsertSystemType): Promise<SystemTypeWithProjects>;
+  updateSystemType(id: number, data: UpdateSystemType): Promise<SystemTypeWithProjects | undefined>;
+  deleteSystemType(id: number): Promise<boolean>;
+  getSystemTypeProjectIds(systemTypeId: number): Promise<number[]>;
+  setSystemTypeProjects(systemTypeId: number, projectIds: number[]): Promise<void>;
 
   // User column preferences operations
   getUserColumnPreferences(userId: string, pageKey: string): Promise<UserColumnPreferences | undefined>;
@@ -1370,119 +1370,119 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  // Meter type operations
-  async getMeterTypes(projectId?: number): Promise<MeterTypeWithProjects[]> {
-    let allMeterTypes: MeterType[];
+  // System type operations
+  async getSystemTypes(projectId?: number): Promise<SystemTypeWithProjects[]> {
+    let allSystemTypes: SystemType[];
     
     if (projectId) {
-      // Get meter types that are assigned to this project
-      const meterTypeIds = await db
-        .select({ meterTypeId: meterTypeProjects.meterTypeId })
-        .from(meterTypeProjects)
-        .where(eq(meterTypeProjects.projectId, projectId));
+      // Get system types that are assigned to this project
+      const systemTypeIds = await db
+        .select({ systemTypeId: systemTypeProjects.systemTypeId })
+        .from(systemTypeProjects)
+        .where(eq(systemTypeProjects.projectId, projectId));
       
-      if (meterTypeIds.length === 0) {
+      if (systemTypeIds.length === 0) {
         return [];
       }
       
-      const ids = meterTypeIds.map(r => r.meterTypeId);
-      allMeterTypes = await db
+      const ids = systemTypeIds.map(r => r.systemTypeId);
+      allSystemTypes = await db
         .select()
-        .from(meterTypes)
-        .where(eq(meterTypes.id, ids[0])) // First ID filter
-        .orderBy(meterTypes.productLabel);
+        .from(systemTypes)
+        .where(eq(systemTypes.id, ids[0])) // First ID filter
+        .orderBy(systemTypes.productLabel);
       
       // If there are more IDs, we need to filter properly
       if (ids.length > 1) {
-        allMeterTypes = await db
+        allSystemTypes = await db
           .select()
-          .from(meterTypes)
-          .orderBy(meterTypes.productLabel);
-        allMeterTypes = allMeterTypes.filter(mt => ids.includes(mt.id));
+          .from(systemTypes)
+          .orderBy(systemTypes.productLabel);
+        allSystemTypes = allSystemTypes.filter(mt => ids.includes(mt.id));
       }
     } else {
-      allMeterTypes = await db
+      allSystemTypes = await db
         .select()
-        .from(meterTypes)
-        .orderBy(meterTypes.productLabel);
+        .from(systemTypes)
+        .orderBy(systemTypes.productLabel);
     }
     
-    // Get project IDs for each meter type
-    const result: MeterTypeWithProjects[] = [];
-    for (const mt of allMeterTypes) {
-      const projectIds = await this.getMeterTypeProjectIds(mt.id);
+    // Get project IDs for each system type
+    const result: SystemTypeWithProjects[] = [];
+    for (const mt of allSystemTypes) {
+      const projectIds = await this.getSystemTypeProjectIds(mt.id);
       result.push({ ...mt, projectIds });
     }
     return result;
   }
 
-  async getMeterType(id: number): Promise<MeterTypeWithProjects | undefined> {
-    const [meterType] = await db
+  async getSystemType(id: number): Promise<SystemTypeWithProjects | undefined> {
+    const [systemType] = await db
       .select()
-      .from(meterTypes)
-      .where(eq(meterTypes.id, id));
+      .from(systemTypes)
+      .where(eq(systemTypes.id, id));
     
-    if (!meterType) return undefined;
+    if (!systemType) return undefined;
     
-    const projectIds = await this.getMeterTypeProjectIds(id);
-    return { ...meterType, projectIds };
+    const projectIds = await this.getSystemTypeProjectIds(id);
+    return { ...systemType, projectIds };
   }
 
-  async createMeterType(data: InsertMeterType): Promise<MeterTypeWithProjects> {
-    const { projectIds, ...meterTypeData } = data;
-    const [meterType] = await db
-      .insert(meterTypes)
-      .values(meterTypeData)
+  async createSystemType(data: InsertSystemType): Promise<SystemTypeWithProjects> {
+    const { projectIds, ...systemTypeData } = data;
+    const [systemType] = await db
+      .insert(systemTypes)
+      .values(systemTypeData)
       .returning();
     
     // Assign to projects if provided
     if (projectIds && projectIds.length > 0) {
-      await this.setMeterTypeProjects(meterType.id, projectIds);
+      await this.setSystemTypeProjects(systemType.id, projectIds);
     }
     
-    return { ...meterType, projectIds: projectIds || [] };
+    return { ...systemType, projectIds: projectIds || [] };
   }
 
-  async updateMeterType(id: number, data: UpdateMeterType): Promise<MeterTypeWithProjects | undefined> {
-    const { projectIds, ...meterTypeData } = data;
+  async updateSystemType(id: number, data: UpdateSystemType): Promise<SystemTypeWithProjects | undefined> {
+    const { projectIds, ...systemTypeData } = data;
     
-    // Only update meter type fields if there are any
-    if (Object.keys(meterTypeData).length > 0) {
+    // Only update system type fields if there are any
+    if (Object.keys(systemTypeData).length > 0) {
       await db
-        .update(meterTypes)
-        .set({ ...meterTypeData, updatedAt: new Date() })
-        .where(eq(meterTypes.id, id));
+        .update(systemTypes)
+        .set({ ...systemTypeData, updatedAt: new Date() })
+        .where(eq(systemTypes.id, id));
     }
     
     // Update project assignments if provided
     if (projectIds !== undefined) {
-      await this.setMeterTypeProjects(id, projectIds);
+      await this.setSystemTypeProjects(id, projectIds);
     }
     
-    return await this.getMeterType(id);
+    return await this.getSystemType(id);
   }
 
-  async deleteMeterType(id: number): Promise<boolean> {
-    await db.delete(meterTypes).where(eq(meterTypes.id, id));
+  async deleteSystemType(id: number): Promise<boolean> {
+    await db.delete(systemTypes).where(eq(systemTypes.id, id));
     return true;
   }
 
-  async getMeterTypeProjectIds(meterTypeId: number): Promise<number[]> {
+  async getSystemTypeProjectIds(systemTypeId: number): Promise<number[]> {
     const rows = await db
-      .select({ projectId: meterTypeProjects.projectId })
-      .from(meterTypeProjects)
-      .where(eq(meterTypeProjects.meterTypeId, meterTypeId));
+      .select({ projectId: systemTypeProjects.projectId })
+      .from(systemTypeProjects)
+      .where(eq(systemTypeProjects.systemTypeId, systemTypeId));
     return rows.map(r => r.projectId);
   }
 
-  async setMeterTypeProjects(meterTypeId: number, projectIds: number[]): Promise<void> {
+  async setSystemTypeProjects(systemTypeId: number, projectIds: number[]): Promise<void> {
     // Delete existing assignments
-    await db.delete(meterTypeProjects).where(eq(meterTypeProjects.meterTypeId, meterTypeId));
+    await db.delete(systemTypeProjects).where(eq(systemTypeProjects.systemTypeId, systemTypeId));
     
     // Add new assignments
     if (projectIds.length > 0) {
-      await db.insert(meterTypeProjects).values(
-        projectIds.map(projectId => ({ meterTypeId, projectId }))
+      await db.insert(systemTypeProjects).values(
+        projectIds.map(projectId => ({ systemTypeId, projectId }))
       );
     }
   }

@@ -51,7 +51,7 @@ import {
 } from "lucide-react";
 import { FileIcon } from "lucide-react";
 import SignaturePad, { type SignaturePadRef } from "@/components/signature-pad";
-import { MeterChangeoutWizard } from "@/components/meter-changeout-wizard";
+import { SystemChangeoutWizard } from "@/components/system-changeout-wizard";
 
 interface OperationalHoursConfig {
   enabled: boolean;
@@ -68,7 +68,7 @@ interface WorkOrderDetailProps {
   projectId: string | number;
   cameFromSearch?: boolean;
   serviceTypes: Array<{ id: number; code: string; label: string; color?: string | null }>;
-  meterTypes: Array<{ id: number; productId: string; productLabel: string }>;
+  systemTypes: Array<{ id: number; productId: string; productLabel: string }>;
   workOrderStatuses: Array<{ id: number; code: string; label: string }>;
   troubleCodes: Array<{ id: number; code: string; label: string }>;
   assigneesData: any;
@@ -77,12 +77,12 @@ interface WorkOrderDetailProps {
   formatDateTime: (date: string | Date) => string;
   getAssignedUserName: (userId: string | null | undefined) => string | null;
   signaturePadRef: React.RefObject<SignaturePadRef | null>;
-  openCreateMeterTypeDialog: (field: string) => void;
+  openCreateSystemTypeDialog: (field: "oldSystemType" | "newSystemType" | "editOldSystemType" | "editNewSystemType") => void;
   toast: any;
   canEdit?: boolean;
-  canMeterChangeout?: boolean;
-  onMeterChangeoutComplete?: () => void | Promise<void>;
-  autoLaunchMeterChangeout?: boolean;
+  canSystemChangeout?: boolean;
+  onSystemChangeoutComplete?: () => void | Promise<void>;
+  autoLaunchSystemChangeout?: boolean;
   operationalHours?: OperationalHoursConfig;
 }
 
@@ -95,7 +95,7 @@ export function WorkOrderDetail({
   projectId,
   cameFromSearch,
   serviceTypes,
-  meterTypes,
+  systemTypes,
   workOrderStatuses,
   troubleCodes,
   assigneesData,
@@ -104,16 +104,16 @@ export function WorkOrderDetail({
   formatDateTime,
   getAssignedUserName,
   signaturePadRef,
-  openCreateMeterTypeDialog,
+  openCreateSystemTypeDialog,
   toast,
   canEdit = true,
-  canMeterChangeout = false,
-  onMeterChangeoutComplete,
-  autoLaunchMeterChangeout = false,
+  canSystemChangeout = false,
+  onSystemChangeoutComplete,
+  autoLaunchSystemChangeout = false,
   operationalHours,
 }: WorkOrderDetailProps) {
   const [openSections, setOpenSections] = useState<string[]>([]);
-  const [showMeterChangeoutWizard, setShowMeterChangeoutWizard] = useState(false);
+  const [showSystemChangeoutWizard, setShowSystemChangeoutWizard] = useState(false);
   const [isClaiming, setIsClaiming] = useState(false);
   const autoLaunchTriggered = useRef(false);
   
@@ -155,8 +155,8 @@ export function WorkOrderDetail({
 
   const scheduledAtWarning = getOperationalHoursWarning(watchedScheduledAt);
 
-  // Claim work order and open meter changeout wizard
-  const handleStartMeterChangeout = useCallback(async () => {
+  // Claim work order and open system changeout wizard
+  const handleStartSystemChangeout = useCallback(async () => {
     setIsClaiming(true);
     try {
       // Call claim endpoint - this will assign the work order to the current user
@@ -164,7 +164,7 @@ export function WorkOrderDetail({
       await apiRequest("POST", `/api/projects/${projectId}/work-orders/${workOrder.id}/claim`);
       
       // Open the wizard after successful claim
-      setShowMeterChangeoutWizard(true);
+      setShowSystemChangeoutWizard(true);
     } catch (error: any) {
       console.error("Error claiming work order:", error);
       
@@ -186,16 +186,16 @@ export function WorkOrderDetail({
     window.scrollTo({ top: 0, behavior: 'instant' });
   }, []);
 
-  // Auto-launch meter changeout wizard if requested (with claim)
+  // Auto-launch system changeout wizard if requested (with claim)
   useEffect(() => {
-    if (autoLaunchMeterChangeout && canMeterChangeout && !autoLaunchTriggered.current) {
+    if (autoLaunchSystemChangeout && canSystemChangeout && !autoLaunchTriggered.current) {
       autoLaunchTriggered.current = true;
       // Wrap in async IIFE to ensure claim completes before wizard opens
       void (async () => {
-        await handleStartMeterChangeout();
+        await handleStartSystemChangeout();
       })();
     }
-  }, [autoLaunchMeterChangeout, canMeterChangeout, handleStartMeterChangeout]);
+  }, [autoLaunchSystemChangeout, canSystemChangeout, handleStartSystemChangeout]);
 
   const getStatusBadge = (status: string) => {
     const statusConfig: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; className?: string }> = {
@@ -304,12 +304,12 @@ export function WorkOrderDetail({
 
             {/* Right: Quick Actions */}
             <div className="flex gap-2 flex-wrap">
-              {canMeterChangeout && workOrder.status !== 'Completed' && (
+              {canSystemChangeout && workOrder.status !== 'Completed' && (
                 <Button 
                   size="sm" 
-                  onClick={handleStartMeterChangeout}
+                  onClick={handleStartSystemChangeout}
                   disabled={isClaiming}
-                  data-testid="button-start-meter-changeout"
+                  data-testid="button-start-system-changeout"
                   className="bg-green-600 text-white dark:bg-green-600"
                 >
                   {isClaiming ? (
@@ -320,7 +320,7 @@ export function WorkOrderDetail({
                   ) : (
                     <>
                       <Wrench className="h-4 w-4 mr-1" />
-                      Start Meter Changeout
+                      Start System Changeout
                     </>
                   )}
                 </Button>
@@ -511,12 +511,12 @@ export function WorkOrderDetail({
               </AccordionContent>
             </AccordionItem>
 
-            {/* Meter & Installation Details */}
-            <AccordionItem value="meter" className="border rounded-lg px-4">
-              <AccordionTrigger className="hover:no-underline py-4" data-testid="accordion-meter">
+            {/* System & Installation Details */}
+            <AccordionItem value="system" className="border rounded-lg px-4">
+              <AccordionTrigger className="hover:no-underline py-4" data-testid="accordion-system">
                 <div className="flex items-center gap-2">
                   <Gauge className="h-4 w-4 text-primary" />
-                  <span className="font-medium">Meter & Installation Details</span>
+                  <span className="font-medium">System & Installation Details</span>
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pb-4">
@@ -544,23 +544,23 @@ export function WorkOrderDetail({
                     )}
                   />
                   
-                  {/* Old Meter Section */}
+                  {/* Old System Section */}
                   <div className="md:col-span-2 border-t pt-4 mt-2">
-                    <h4 className="text-sm font-medium mb-3 text-muted-foreground">Old Meter</h4>
+                    <h4 className="text-sm font-medium mb-3 text-muted-foreground">Old System</h4>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <FormField
                         control={form.control}
-                        name="oldMeterId"
+                        name="oldSystemId"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Meter ID</FormLabel>
+                            <FormLabel>System ID</FormLabel>
                             <FormControl>
                               <ScannerInput 
                                 value={field.value || ""} 
                                 onChange={field.onChange} 
                                 placeholder="OLD-12345" 
                                 disabled={!canEdit}
-                                data-testid="input-old-meter-id" 
+                                data-testid="input-old-system-id" 
                               />
                             </FormControl>
                             <FormMessage />
@@ -569,7 +569,7 @@ export function WorkOrderDetail({
                       />
                       <FormField
                         control={form.control}
-                        name="oldMeterReading"
+                        name="oldSystemReading"
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Reading</FormLabel>
@@ -581,7 +581,7 @@ export function WorkOrderDetail({
                                 onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
                                 placeholder="12345" 
                                 disabled={!canEdit}
-                                data-testid="input-old-meter-reading" 
+                                data-testid="input-old-system-reading" 
                               />
                             </FormControl>
                             <FormMessage />
@@ -590,7 +590,7 @@ export function WorkOrderDetail({
                       />
                       <FormField
                         control={form.control}
-                        name="oldMeterType"
+                        name="oldSystemType"
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Type</FormLabel>
@@ -601,13 +601,13 @@ export function WorkOrderDetail({
                                 disabled={!canEdit}
                               >
                                 <FormControl>
-                                  <SelectTrigger data-testid="select-old-meter-type" className="flex-1" disabled={!canEdit}>
+                                  <SelectTrigger data-testid="select-old-system-type" className="flex-1" disabled={!canEdit}>
                                     <SelectValue placeholder="Select type..." />
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
                                   <SelectItem value="__none__">None</SelectItem>
-                                  {meterTypes.map((mt) => (
+                                  {systemTypes.map((mt) => (
                                     <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
                                   ))}
                                 </SelectContent>
@@ -619,9 +619,9 @@ export function WorkOrderDetail({
                                   variant="outline"
                                   onClick={(e) => {
                                     e.preventDefault();
-                                    openCreateMeterTypeDialog("editOldMeterType");
+                                    openCreateSystemTypeDialog("editOldSystemType");
                                   }}
-                                  data-testid="button-create-old-meter-type"
+                                  data-testid="button-create-old-system-type"
                                 >
                                   <Plus className="h-4 w-4" />
                                 </Button>
@@ -653,23 +653,23 @@ export function WorkOrderDetail({
                     </div>
                   </div>
 
-                  {/* New Meter Section */}
+                  {/* New System Section */}
                   <div className="md:col-span-2 border-t pt-4 mt-2">
-                    <h4 className="text-sm font-medium mb-3 text-muted-foreground">New Meter</h4>
+                    <h4 className="text-sm font-medium mb-3 text-muted-foreground">New System</h4>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <FormField
                         control={form.control}
-                        name="newMeterId"
+                        name="newSystemId"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Meter ID</FormLabel>
+                            <FormLabel>System ID</FormLabel>
                             <FormControl>
                               <ScannerInput 
                                 value={field.value || ""} 
                                 onChange={field.onChange} 
                                 placeholder="NEW-67890" 
                                 disabled={!canEdit}
-                                data-testid="input-new-meter-id" 
+                                data-testid="input-new-system-id" 
                               />
                             </FormControl>
                             <FormMessage />
@@ -678,7 +678,7 @@ export function WorkOrderDetail({
                       />
                       <FormField
                         control={form.control}
-                        name="newMeterReading"
+                        name="newSystemReading"
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Reading</FormLabel>
@@ -690,7 +690,7 @@ export function WorkOrderDetail({
                                 onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
                                 placeholder="67890" 
                                 disabled={!canEdit}
-                                data-testid="input-new-meter-reading" 
+                                data-testid="input-new-system-reading" 
                               />
                             </FormControl>
                             <FormMessage />
@@ -699,7 +699,7 @@ export function WorkOrderDetail({
                       />
                       <FormField
                         control={form.control}
-                        name="newMeterType"
+                        name="newSystemType"
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Type</FormLabel>
@@ -710,13 +710,13 @@ export function WorkOrderDetail({
                                 disabled={!canEdit}
                               >
                                 <FormControl>
-                                  <SelectTrigger data-testid="select-new-meter-type" className="flex-1" disabled={!canEdit}>
+                                  <SelectTrigger data-testid="select-new-system-type" className="flex-1" disabled={!canEdit}>
                                     <SelectValue placeholder="Select type..." />
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
                                   <SelectItem value="__none__">None</SelectItem>
-                                  {meterTypes.map((mt) => (
+                                  {systemTypes.map((mt) => (
                                     <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
                                   ))}
                                 </SelectContent>
@@ -728,9 +728,9 @@ export function WorkOrderDetail({
                                   variant="outline"
                                   onClick={(e) => {
                                     e.preventDefault();
-                                    openCreateMeterTypeDialog("editNewMeterType");
+                                    openCreateSystemTypeDialog("editNewSystemType");
                                   }}
-                                  data-testid="button-create-new-meter-type"
+                                  data-testid="button-create-new-system-type"
                                 >
                                   <Plus className="h-4 w-4" />
                                 </Button>
@@ -1149,23 +1149,23 @@ export function WorkOrderDetail({
         </form>
       </Form>
 
-      {/* Meter Changeout Wizard */}
-      <MeterChangeoutWizard
-        isOpen={showMeterChangeoutWizard}
-        onClose={() => setShowMeterChangeoutWizard(false)}
+      {/* System Changeout Wizard */}
+      <SystemChangeoutWizard
+        isOpen={showSystemChangeoutWizard}
+        onClose={() => setShowSystemChangeoutWizard(false)}
         workOrderId={workOrder.id}
         customerWoId={workOrder.customerWoId || `WO-${workOrder.id}`}
         address={workOrder.address}
-        oldMeterId={workOrder.oldMeterId}
-        oldMeterType={workOrder.oldMeterType}
-        newMeterType={workOrder.newMeterType}
+        oldSystemId={workOrder.oldSystemId}
+        oldSystemType={workOrder.oldSystemType}
+        newSystemType={workOrder.newSystemType}
         status={workOrder.status}
         trouble={workOrder.trouble}
         notes={workOrder.notes}
         projectId={typeof projectId === 'string' ? parseInt(projectId) : projectId}
         troubleCodes={troubleCodes}
-        existingOldReading={workOrder.oldMeterReading}
-        existingNewReading={workOrder.newMeterReading}
+        existingOldReading={workOrder.oldSystemReading}
+        existingNewReading={workOrder.newSystemReading}
         existingGps={workOrder.gps}
         onComplete={async (data) => {
           const formData = new FormData();
@@ -1197,9 +1197,9 @@ export function WorkOrderDetail({
             canChange: data.canChange,
             troubleCode: data.troubleCode,
             troubleNote: data.troubleNote,
-            oldMeterReading: data.oldMeterReading,
-            newMeterId: data.newMeterId,
-            newMeterReading: data.newMeterReading,
+            oldSystemReading: data.oldSystemReading,
+            newSystemId: data.newSystemId,
+            newSystemReading: data.newSystemReading,
             gpsCoordinates: data.gpsCoordinates,
             completionNotes: data.completionNotes,
             signatureData: data.signatureData,
@@ -1207,7 +1207,7 @@ export function WorkOrderDetail({
             photoTypes,
           }));
           
-          const response = await fetch(`/api/projects/${projectId}/work-orders/${workOrder.id}/meter-changeout`, {
+          const response = await fetch(`/api/projects/${projectId}/work-orders/${workOrder.id}/system-changeout`, {
             method: "POST",
             body: formData,
             credentials: "include",
@@ -1215,11 +1215,11 @@ export function WorkOrderDetail({
           
           if (!response.ok) {
             const error = await response.json();
-            throw new Error(error.message || "Failed to submit meter changeout");
+            throw new Error(error.message || "Failed to submit system changeout");
           }
           
-          if (onMeterChangeoutComplete) {
-            await onMeterChangeoutComplete();
+          if (onSystemChangeoutComplete) {
+            await onSystemChangeoutComplete();
           }
         }}
       />

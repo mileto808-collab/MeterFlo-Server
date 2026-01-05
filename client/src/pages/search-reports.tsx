@@ -33,7 +33,7 @@ import { useFilterPreferences } from "@/hooks/use-filter-preferences";
 import { SortDialog } from "@/components/SortDialog";
 import { RouteSheetDialog } from "@/components/RouteSheetDialog";
 import { Search, Download, FileSpreadsheet, FileText, FileDown, Filter, X, ArrowUpDown, ArrowUp, ArrowDown, Route, ChevronRight } from "lucide-react";
-import type { Project, ServiceTypeRecord, WorkOrderStatus, MeterType, TroubleCode, User, UserGroup } from "@shared/schema";
+import type { Project, ServiceTypeRecord, WorkOrderStatus, SystemType, TroubleCode, User, UserGroup } from "@shared/schema";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
 
@@ -54,10 +54,10 @@ type SearchResult = {
     route?: string | null;
     zone?: string | null;
     serviceType?: string | null;
-    oldMeterId?: string | null;
-    oldMeterReading?: number | null;
-    newMeterId?: string | null;
-    newMeterReading?: number | null;
+    oldSystemId?: string | null;
+    oldSystemReading?: number | null;
+    newSystemId?: string | null;
+    newSystemReading?: number | null;
     oldGps?: string | null;
     newGps?: string | null;
     status: string;
@@ -73,8 +73,8 @@ type SearchResult = {
     notes?: string | null;
     createdAt?: string | null;
     updatedAt?: string | null;
-    oldMeterType?: string | null;
-    newMeterType?: string | null;
+    oldSystemType?: string | null;
+    newSystemType?: string | null;
   };
 };
 
@@ -110,10 +110,10 @@ export default function SearchReports() {
   const [filterEmail, setFilterEmail] = useState("");
   const [filterRoute, setFilterRoute] = useState("");
   const [filterZone, setFilterZone] = useState("");
-  const [filterOldMeterId, setFilterOldMeterId] = useState("");
-  const [filterOldMeterType, setFilterOldMeterType] = useState("all");
-  const [filterNewMeterId, setFilterNewMeterId] = useState("");
-  const [filterNewMeterType, setFilterNewMeterType] = useState("all");
+  const [filterOldSystemId, setFilterOldSystemId] = useState("");
+  const [filterOldSystemType, setFilterOldSystemType] = useState("all");
+  const [filterNewSystemId, setFilterNewSystemId] = useState("");
+  const [filterNewSystemType, setFilterNewSystemType] = useState("all");
   const [filterScheduledDateFrom, setFilterScheduledDateFrom] = useState("");
   const [filterScheduledDateTo, setFilterScheduledDateTo] = useState("");
   const [filterAssignedTo, setFilterAssignedTo] = useState("all");
@@ -156,12 +156,12 @@ export default function SearchReports() {
     { key: "route", label: "Route" },
     { key: "zone", label: "Zone" },
     { key: "serviceType", label: "Service" },
-    { key: "oldMeterId", label: "Old Meter ID" },
-    { key: "oldMeterReading", label: "Old Meter Reading" },
-    { key: "oldMeterType", label: "Old Meter Type" },
-    { key: "newMeterId", label: "New Meter ID" },
-    { key: "newMeterReading", label: "New Meter Reading" },
-    { key: "newMeterType", label: "New Meter Type" },
+    { key: "oldSystemId", label: "Old System ID" },
+    { key: "oldSystemReading", label: "Old System Reading" },
+    { key: "oldSystemType", label: "Old System Type" },
+    { key: "newSystemId", label: "New System ID" },
+    { key: "newSystemReading", label: "New System Reading" },
+    { key: "newSystemType", label: "New System Type" },
     { key: "oldGps", label: "Old GPS" },
     { key: "newGps", label: "New GPS" },
     { key: "status", label: "Status" },
@@ -199,10 +199,10 @@ export default function SearchReports() {
     { key: "route", label: "Route" },
     { key: "zone", label: "Zone" },
     { key: "serviceType", label: "Service Type" },
-    { key: "oldMeterId", label: "Old Meter ID" },
-    { key: "oldMeterType", label: "Old Meter Type" },
-    { key: "newMeterId", label: "New Meter ID" },
-    { key: "newMeterType", label: "New Meter Type" },
+    { key: "oldSystemId", label: "Old System ID" },
+    { key: "oldSystemType", label: "Old System Type" },
+    { key: "newSystemId", label: "New System ID" },
+    { key: "newSystemType", label: "New System Type" },
     { key: "status", label: "Status" },
     { key: "scheduledAt", label: "Scheduled At" },
     { key: "scheduledBy", label: "Scheduled By" },
@@ -252,14 +252,14 @@ export default function SearchReports() {
     queryKey: ["/api/work-order-statuses"],
   });
 
-  const { data: meterTypes = [] } = useQuery<MeterType[]>({
-    queryKey: ["/api/meter-types", { projectId: selectedProject !== "all" ? selectedProject : undefined }],
+  const { data: systemTypes = [] } = useQuery<SystemType[]>({
+    queryKey: ["/api/system-types", { projectId: selectedProject !== "all" ? selectedProject : undefined }],
     queryFn: async () => {
       const url = selectedProject !== "all" 
-        ? `/api/meter-types?projectId=${selectedProject}`
-        : "/api/meter-types";
+        ? `/api/system-types?projectId=${selectedProject}`
+        : "/api/system-types";
       const response = await fetch(url, { credentials: "include" });
-      if (!response.ok) throw new Error("Failed to fetch meter types");
+      if (!response.ok) throw new Error("Failed to fetch system types");
       return response.json();
     },
   });
@@ -361,10 +361,10 @@ export default function SearchReports() {
     setFilterEmail("");
     setFilterRoute("");
     setFilterZone("");
-    setFilterOldMeterId("");
-    setFilterOldMeterType("all");
-    setFilterNewMeterId("");
-    setFilterNewMeterType("all");
+    setFilterOldSystemId("");
+    setFilterOldSystemType("all");
+    setFilterNewSystemId("");
+    setFilterNewSystemType("all");
     setFilterScheduledDateFrom("");
     setFilterScheduledDateTo("");
     setFilterAssignedTo("all");
@@ -453,12 +453,12 @@ export default function SearchReports() {
     route: { label: "Route", sortKey: "route" },
     zone: { label: "Zone", sortKey: "zone" },
     serviceType: { label: "Service", sortKey: "serviceType" },
-    oldMeterId: { label: "Old Meter ID", sortKey: "oldMeterId" },
-    oldMeterReading: { label: "Old Meter Reading", sortKey: "oldMeterReading" },
-    oldMeterType: { label: "Old Meter Type", sortKey: "oldMeterType" },
-    newMeterId: { label: "New Meter ID", sortKey: "newMeterId" },
-    newMeterReading: { label: "New Meter Reading", sortKey: "newMeterReading" },
-    newMeterType: { label: "New Meter Type", sortKey: "newMeterType" },
+    oldSystemId: { label: "Old System ID", sortKey: "oldSystemId" },
+    oldSystemReading: { label: "Old System Reading", sortKey: "oldSystemReading" },
+    oldSystemType: { label: "Old System Type", sortKey: "oldSystemType" },
+    newSystemId: { label: "New System ID", sortKey: "newSystemId" },
+    newSystemReading: { label: "New System Reading", sortKey: "newSystemReading" },
+    newSystemType: { label: "New System Type", sortKey: "newSystemType" },
     oldGps: { label: "Old GPS", sortKey: "oldGps" },
     newGps: { label: "New GPS", sortKey: "newGps" },
     status: { label: "Status", sortKey: "status" },
@@ -557,18 +557,18 @@ export default function SearchReports() {
         return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.zone || "-"}</TableCell>;
       case "serviceType":
         return <TableCell key={key} className={baseClass} style={cellStyle}>{getServiceTypeBadge(wo.serviceType)}</TableCell>;
-      case "oldMeterId":
-        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.oldMeterId || "-"}</TableCell>;
-      case "oldMeterReading":
-        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.oldMeterReading ?? "-"}</TableCell>;
-      case "oldMeterType":
-        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.oldMeterType || "-"}</TableCell>;
-      case "newMeterId":
-        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.newMeterId || "-"}</TableCell>;
-      case "newMeterReading":
-        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.newMeterReading ?? "-"}</TableCell>;
-      case "newMeterType":
-        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.newMeterType || "-"}</TableCell>;
+      case "oldSystemId":
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.oldSystemId || "-"}</TableCell>;
+      case "oldSystemReading":
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.oldSystemReading ?? "-"}</TableCell>;
+      case "oldSystemType":
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.oldSystemType || "-"}</TableCell>;
+      case "newSystemId":
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.newSystemId || "-"}</TableCell>;
+      case "newSystemReading":
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.newSystemReading ?? "-"}</TableCell>;
+      case "newSystemType":
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.newSystemType || "-"}</TableCell>;
       case "oldGps":
         return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.oldGps || "-"}</TableCell>;
       case "newGps":
@@ -645,17 +645,17 @@ export default function SearchReports() {
     if (filterZone) {
       results = results.filter(r => (r.workOrder.zone || '').toLowerCase().includes(filterZone.toLowerCase()));
     }
-    if (filterOldMeterId) {
-      results = results.filter(r => (r.workOrder.oldMeterId || '').toLowerCase().includes(filterOldMeterId.toLowerCase()));
+    if (filterOldSystemId) {
+      results = results.filter(r => (r.workOrder.oldSystemId || '').toLowerCase().includes(filterOldSystemId.toLowerCase()));
     }
-    if (filterOldMeterType !== "all") {
-      results = results.filter(r => (r.workOrder.oldMeterType || '') === filterOldMeterType);
+    if (filterOldSystemType !== "all") {
+      results = results.filter(r => (r.workOrder.oldSystemType || '') === filterOldSystemType);
     }
-    if (filterNewMeterId) {
-      results = results.filter(r => (r.workOrder.newMeterId || '').toLowerCase().includes(filterNewMeterId.toLowerCase()));
+    if (filterNewSystemId) {
+      results = results.filter(r => (r.workOrder.newSystemId || '').toLowerCase().includes(filterNewSystemId.toLowerCase()));
     }
-    if (filterNewMeterType !== "all") {
-      results = results.filter(r => (r.workOrder.newMeterType || '') === filterNewMeterType);
+    if (filterNewSystemType !== "all") {
+      results = results.filter(r => (r.workOrder.newSystemType || '') === filterNewSystemType);
     }
     if (filterAssignedTo !== "all") {
       // Look up user label from selected ID for fallback comparison
@@ -770,7 +770,7 @@ export default function SearchReports() {
     // Apply multi-column sorting with proper value normalization
     if (sortCriteria.length > 0) {
       const dateColumns = ['scheduledAt', 'completedAt', 'createdAt', 'updatedAt'];
-      const numericColumns = ['oldMeterReading', 'newMeterReading'];
+      const numericColumns = ['oldSystemReading', 'newSystemReading'];
       
       results.sort((a, b) => {
         for (const criterion of sortCriteria) {
@@ -808,7 +808,7 @@ export default function SearchReports() {
       });
     }
     return results;
-  }, [searchResults?.results, sortCriteria, filterSystemWoId, filterCustomerWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterOldMeterType, filterNewMeterId, filterNewMeterType, filterAssignedTo, filterAssignedGroup, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterTroubleCode, filterNotes, filterScheduledDateFrom, filterScheduledDateTo, filterCompletedAtFrom, filterCompletedAtTo, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo, users, userGroups]);
+  }, [searchResults?.results, sortCriteria, filterSystemWoId, filterCustomerWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterOldSystemType, filterNewSystemId, filterNewSystemType, filterAssignedTo, filterAssignedGroup, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterTroubleCode, filterNotes, filterScheduledDateFrom, filterScheduledDateTo, filterCompletedAtFrom, filterCompletedAtTo, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo, users, userGroups]);
 
   const totalPages = Math.ceil(filteredAndSortedResults.length / pageSize);
   const paginatedResults = useMemo(() => {
@@ -818,7 +818,7 @@ export default function SearchReports() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchResults, sortCriteria, filterSystemWoId, filterCustomerWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldMeterId, filterOldMeterType, filterNewMeterId, filterNewMeterType, filterAssignedTo, filterAssignedGroup, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterTroubleCode, filterNotes, filterScheduledDateFrom, filterScheduledDateTo, filterCompletedAtFrom, filterCompletedAtTo, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo, pageSize]);
+  }, [searchResults, sortCriteria, filterSystemWoId, filterCustomerWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterOldSystemType, filterNewSystemId, filterNewSystemType, filterAssignedTo, filterAssignedGroup, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterTroubleCode, filterNotes, filterScheduledDateFrom, filterScheduledDateTo, filterCompletedAtFrom, filterCompletedAtTo, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo, pageSize]);
 
   useEffect(() => {
     if (currentPage > totalPages && totalPages > 0) {
@@ -853,10 +853,10 @@ export default function SearchReports() {
     filterEmail !== "",
     filterRoute !== "",
     filterZone !== "",
-    filterOldMeterId !== "",
-    filterOldMeterType !== "all",
-    filterNewMeterId !== "",
-    filterNewMeterType !== "all",
+    filterOldSystemId !== "",
+    filterOldSystemType !== "all",
+    filterNewSystemId !== "",
+    filterNewSystemType !== "all",
     filterScheduledDateFrom !== "",
     filterScheduledDateTo !== "",
     filterAssignedTo !== "all",
@@ -957,12 +957,12 @@ export default function SearchReports() {
       case "route": return r.workOrder.route || "";
       case "zone": return r.workOrder.zone || "";
       case "serviceType": return r.workOrder.serviceType || "";
-      case "oldMeterId": return r.workOrder.oldMeterId || "";
-      case "oldMeterType": return r.workOrder.oldMeterType || "";
-      case "oldMeterReading": return r.workOrder.oldMeterReading?.toString() ?? "";
-      case "newMeterId": return r.workOrder.newMeterId || "";
-      case "newMeterReading": return r.workOrder.newMeterReading?.toString() ?? "";
-      case "newMeterType": return r.workOrder.newMeterType || "";
+      case "oldSystemId": return r.workOrder.oldSystemId || "";
+      case "oldSystemType": return r.workOrder.oldSystemType || "";
+      case "oldSystemReading": return r.workOrder.oldSystemReading?.toString() ?? "";
+      case "newSystemId": return r.workOrder.newSystemId || "";
+      case "newSystemReading": return r.workOrder.newSystemReading?.toString() ?? "";
+      case "newSystemType": return r.workOrder.newSystemType || "";
       case "oldGps": return r.workOrder.oldGps || "";
       case "newGps": return r.workOrder.newGps || "";
       case "status": return getStatusLabel(r.workOrder.status);
@@ -1060,7 +1060,7 @@ export default function SearchReports() {
         </style>
       </head>
       <body>
-        <h1>Utility Meter Work Orders Report</h1>
+        <h1>Utility System Work Orders Report</h1>
         <div class="meta">
           <p>Generated: ${formatCustom(new Date(), "MMMM d, yyyy 'at' h:mm a")}</p>
           <p>Total Results: ${searchResults.total}</p>
@@ -1269,44 +1269,44 @@ export default function SearchReports() {
                 <Input id="filter-zone" placeholder="Filter..." value={filterZone} onChange={(e) => setFilterZone(e.target.value)} data-testid="input-filter-zone" />
               </div>
             )}
-            {isFilterVisible("oldMeterId") && (
+            {isFilterVisible("oldSystemId") && (
               <div className="min-w-[150px]">
-                <Label htmlFor="filter-old-meter-id">Old Meter ID</Label>
-                <Input id="filter-old-meter-id" placeholder="Filter..." value={filterOldMeterId} onChange={(e) => setFilterOldMeterId(e.target.value)} data-testid="input-filter-old-meter-id" />
+                <Label htmlFor="filter-old-system-id">Old System ID</Label>
+                <Input id="filter-old-system-id" placeholder="Filter..." value={filterOldSystemId} onChange={(e) => setFilterOldSystemId(e.target.value)} data-testid="input-filter-old-system-id" />
               </div>
             )}
-            {isFilterVisible("oldMeterType") && meterTypes.length > 0 && (
+            {isFilterVisible("oldSystemType") && systemTypes.length > 0 && (
               <div className="min-w-[180px]">
-                <Label htmlFor="filter-old-meter-type">Old Meter Type</Label>
-                <Select value={filterOldMeterType} onValueChange={setFilterOldMeterType}>
-                  <SelectTrigger id="filter-old-meter-type" data-testid="select-filter-old-meter-type">
-                    <SelectValue placeholder="All Meter Types" />
+                <Label htmlFor="filter-old-system-type">Old System Type</Label>
+                <Select value={filterOldSystemType} onValueChange={setFilterOldSystemType}>
+                  <SelectTrigger id="filter-old-system-type" data-testid="select-filter-old-system-type">
+                    <SelectValue placeholder="All System Types" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Meter Types</SelectItem>
-                    {meterTypes.map((mt) => (
+                    <SelectItem value="all">All System Types</SelectItem>
+                    {systemTypes.map((mt) => (
                       <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             )}
-            {isFilterVisible("newMeterId") && (
+            {isFilterVisible("newSystemId") && (
               <div className="min-w-[150px]">
-                <Label htmlFor="filter-new-meter-id">New Meter ID</Label>
-                <Input id="filter-new-meter-id" placeholder="Filter..." value={filterNewMeterId} onChange={(e) => setFilterNewMeterId(e.target.value)} data-testid="input-filter-new-meter-id" />
+                <Label htmlFor="filter-new-system-id">New System ID</Label>
+                <Input id="filter-new-system-id" placeholder="Filter..." value={filterNewSystemId} onChange={(e) => setFilterNewSystemId(e.target.value)} data-testid="input-filter-new-system-id" />
               </div>
             )}
-            {isFilterVisible("newMeterType") && meterTypes.length > 0 && (
+            {isFilterVisible("newSystemType") && systemTypes.length > 0 && (
               <div className="min-w-[180px]">
-                <Label htmlFor="filter-new-meter-type">New Meter Type</Label>
-                <Select value={filterNewMeterType} onValueChange={setFilterNewMeterType}>
-                  <SelectTrigger id="filter-new-meter-type" data-testid="select-filter-new-meter-type">
-                    <SelectValue placeholder="All Meter Types" />
+                <Label htmlFor="filter-new-system-type">New System Type</Label>
+                <Select value={filterNewSystemType} onValueChange={setFilterNewSystemType}>
+                  <SelectTrigger id="filter-new-system-type" data-testid="select-filter-new-system-type">
+                    <SelectValue placeholder="All System Types" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All Meter Types</SelectItem>
-                    {meterTypes.map((mt) => (
+                    <SelectItem value="all">All System Types</SelectItem>
+                    {systemTypes.map((mt) => (
                       <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
                     ))}
                   </SelectContent>
@@ -1636,8 +1636,8 @@ export default function SearchReports() {
         workOrders={filteredAndSortedResults.map(r => ({
           customerWoId: r.workOrder.customerWoId || String(r.workOrder.id),
           address: r.workOrder.address || "",
-          oldMeterNumber: r.workOrder.oldMeterId || null,
-          newMeterNumber: r.workOrder.newMeterId || null,
+          oldSystemNumber: r.workOrder.oldSystemId || null,
+          newSystemNumber: r.workOrder.newSystemId || null,
         }))}
       />
 
