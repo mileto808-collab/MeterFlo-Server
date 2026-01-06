@@ -70,7 +70,7 @@ export function WorkOrderPdf({
     let photosHtml = "";
     if (selectedPhotoOption === "thumbnails" && imageFiles.length > 0) {
       const thumbnailsHtml = imageFiles.slice(0, 6).map((filename) => `
-        <div style="text-align: center; display: inline-block; margin: 5px;">
+        <div style="text-align: center; display: inline-block; margin: 5px; page-break-inside: avoid;">
           <img
             src="${window.location.origin}/api/projects/${projectId}/work-orders/${workOrder.id}/files/${encodeURIComponent(filename)}/download?mode=view"
             alt="${filename}"
@@ -86,7 +86,7 @@ export function WorkOrderPdf({
       const moreText = imageFiles.length > 6 ? `<p style="font-size: 10px; color: #666; margin-top: 10px;">+${imageFiles.length - 6} more photos</p>` : "";
       
       photosHtml = `
-        <div style="margin-bottom: 10px;">
+        <div style="margin-bottom: 10px; page-break-inside: avoid;">
           <h3 style="margin: 0 0 8px 0; font-size: 12px; font-weight: bold; color: #333;">Captured Photos</h3>
           <div style="display: flex; flex-wrap: wrap; gap: 8px;">
             ${thumbnailsHtml}
@@ -114,7 +114,7 @@ export function WorkOrderPdf({
       : null;
 
     const signatureHtml = (signatureFile || workOrder.signatureData || workOrder.signatureName) ? `
-      <div style="background-color: #f5f5f5; padding: 8px; border-radius: 4px; margin-bottom: 10px;">
+      <div style="background-color: #f5f5f5; padding: 8px; border-radius: 4px; margin-bottom: 10px; page-break-inside: avoid;">
         <h3 style="margin: 0 0 6px 0; font-size: 12px; font-weight: bold; color: #333;">Signature</h3>
         ${signatureImageUrl ? `
           <div style="margin-bottom: 8px;">
@@ -144,7 +144,7 @@ export function WorkOrderPdf({
     ` : "";
 
     const notesHtml = workOrder.notes ? `
-      <div style="background-color: #fff9e6; padding: 8px; border-radius: 4px; margin-bottom: 10px;">
+      <div style="background-color: #fff9e6; padding: 8px; border-radius: 4px; margin-bottom: 10px; page-break-inside: avoid;">
         <h3 style="margin: 0 0 6px 0; font-size: 12px; font-weight: bold; color: #333;">Notes</h3>
         <p style="margin: 0; white-space: pre-wrap; font-size: 11px;">${workOrder.notes}</p>
       </div>
@@ -319,7 +319,7 @@ export function WorkOrderPdf({
         ${signatureHtml}
         ${photosHtml}
 
-        <div style="border-top: 1px solid #ccc; padding-top: 8px; margin-top: 10px;">
+        <div style="border-top: 1px solid #ccc; padding-top: 8px; margin-top: 10px; page-break-inside: avoid;">
           <table style="width: 100%; font-size: 10px; color: #666;">
             <tbody>
               <tr>
