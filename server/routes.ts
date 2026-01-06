@@ -6426,6 +6426,9 @@ export async function registerRoutes(
       // Trigger webhook if configured
       await triggerProjectWebhook(project, "work_order.trouble", updatedWorkOrder, currentUser);
       
+      // Emit SSE event to notify dashboard users
+      emitWorkOrderUpdated(projectId, workOrderId, currentUser.id);
+      
       res.json({
         success: true,
         workOrder: updatedWorkOrder,
@@ -6658,6 +6661,9 @@ export async function registerRoutes(
           workOrderFolderPath: woFolderPath,
         }).catch(err => console.error("[CustomerAPI] Background send failed:", err));
       }
+      
+      // Emit SSE event to notify dashboard users
+      emitWorkOrderUpdated(projectId, workOrderId, currentUser.id);
       
       res.json({
         success: true,
