@@ -34,7 +34,8 @@ export default function ProjectFtpFiles() {
   const [, navigate] = useLocation();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
-  const [accessDenied, setAccessDenied] = useState(false);
+  const [accessDeniedForProject, setAccessDeniedForProject] = useState<number | null>(null);
+  const accessDenied = accessDeniedForProject === projectId;
 
   const { data: project, error: projectError } = useQuery<Project>({
     queryKey: ["/api/projects", projectId],
@@ -53,7 +54,7 @@ export default function ProjectFtpFiles() {
     if (error) {
       const errorMsg = (error as any).message || "";
       if (errorMsg.startsWith("403:") || errorMsg.includes("403")) {
-        setAccessDenied(true);
+        setAccessDeniedForProject(projectId);
       }
     }
   }, [projectError, filesError]);
@@ -76,7 +77,7 @@ export default function ProjectFtpFiles() {
       });
       
       if (response.status === 403) {
-        setAccessDenied(true);
+        setAccessDeniedForProject(projectId);
         toast({ title: "Access denied", description: "You are not assigned to this project", variant: "destructive" });
         return;
       }
