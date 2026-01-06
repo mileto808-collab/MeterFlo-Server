@@ -1476,7 +1476,7 @@ export async function registerRoutes(
       
       const heartbeatInterval = setInterval(() => {
         res.write(`:heartbeat\n\n`);
-      }, 30000);
+      }, 20000);
       
       req.on("close", () => {
         clearInterval(heartbeatInterval);
@@ -1522,7 +1522,7 @@ export async function registerRoutes(
       
       const heartbeatInterval = setInterval(() => {
         res.write(`:heartbeat\n\n`);
-      }, 30000);
+      }, 20000);
       
       req.on("close", () => {
         clearInterval(heartbeatInterval);
