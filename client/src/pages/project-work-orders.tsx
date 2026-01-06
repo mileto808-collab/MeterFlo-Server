@@ -138,7 +138,8 @@ export default function ProjectWorkOrders() {
   useEffect(() => {
     editingWorkOrderIdRef.current = editingWorkOrder?.id ?? null;
   }, [editingWorkOrder]);
-  const [accessDenied, setAccessDenied] = useState(false);
+  const [accessDeniedForProject, setAccessDeniedForProject] = useState<number | null>(null);
+  const accessDenied = accessDeniedForProject === projectId;
   const [searchQuery, setSearchQuery] = useState("");
   const [sortCriteria, setSortCriteria] = useState<Array<{ column: string; direction: "asc" | "desc" }>>([]);
   const [showRouteSheetDialog, setShowRouteSheetDialog] = useState(false);
@@ -429,7 +430,7 @@ export default function ProjectWorkOrders() {
     if (error) {
       const errorMsg = (error as any).message || "";
       if (errorMsg.startsWith("403:") || errorMsg.includes("403")) {
-        setAccessDenied(true);
+        setAccessDeniedForProject(projectId);
       }
     }
   }, [projectError, workOrdersError, statsError]);
@@ -651,7 +652,7 @@ export default function ProjectWorkOrders() {
     onError: (error: any) => {
       const errorMsg = error?.message || "";
       if (errorMsg.startsWith("403:") || errorMsg.includes("403")) {
-        setAccessDenied(true);
+        setAccessDeniedForProject(projectId);
         toast({ title: "Access denied", description: "You are not assigned to this project", variant: "destructive" });
       } else {
         toast({ title: "Failed to create work order", description: errorMsg, variant: "destructive" });
@@ -717,7 +718,7 @@ export default function ProjectWorkOrders() {
     onError: (error: any) => {
       const errorMsg = error?.message || "";
       if (errorMsg.startsWith("403:") || errorMsg.includes("403")) {
-        setAccessDenied(true);
+        setAccessDeniedForProject(projectId);
         toast({ title: "Access denied", variant: "destructive" });
       } else {
         toast({ title: "Failed to update work order", description: errorMsg, variant: "destructive" });
@@ -738,7 +739,7 @@ export default function ProjectWorkOrders() {
     onError: (error: any) => {
       const errorMsg = error?.message || "";
       if (errorMsg.startsWith("403:") || errorMsg.includes("403")) {
-        setAccessDenied(true);
+        setAccessDeniedForProject(projectId);
         toast({ title: "Access denied", variant: "destructive" });
       } else {
         toast({ title: "Failed to delete work order", variant: "destructive" });

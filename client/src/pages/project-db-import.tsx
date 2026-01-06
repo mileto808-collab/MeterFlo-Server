@@ -167,7 +167,8 @@ export default function ProjectDbImport() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [, navigate] = useLocation();
-  const [accessDenied, setAccessDenied] = useState(false);
+  const [accessDeniedForProject, setAccessDeniedForProject] = useState<number | null>(null);
+  const accessDenied = accessDeniedForProject === projectId;
   
   const [activeTab, setActiveTab] = useState("connections");
   const [showConnectionDialog, setShowConnectionDialog] = useState(false);
@@ -216,7 +217,7 @@ export default function ProjectDbImport() {
     if (projectError) {
       const errorMsg = (projectError as any).message || "";
       if (errorMsg.startsWith("403:") || errorMsg.includes("403")) {
-        setAccessDenied(true);
+        setAccessDeniedForProject(projectId);
       }
     }
   }, [projectError]);

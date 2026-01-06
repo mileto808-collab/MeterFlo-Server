@@ -158,7 +158,8 @@ export default function ProjectImport() {
   const [, navigate] = useLocation();
   const [jsonInput, setJsonInput] = useState("");
   const [importResult, setImportResult] = useState<{ imported: number; errors: string[] } | null>(null);
-  const [accessDenied, setAccessDenied] = useState(false);
+  const [accessDeniedForProject, setAccessDeniedForProject] = useState<number | null>(null);
+  const accessDenied = accessDeniedForProject === projectId;
   const [activeTab, setActiveTab] = useState("file");
   
   const [delimiter, setDelimiter] = useState(",");
@@ -199,7 +200,7 @@ export default function ProjectImport() {
     if (projectError) {
       const errorMsg = (projectError as any).message || "";
       if (errorMsg.startsWith("403:") || errorMsg.includes("403")) {
-        setAccessDenied(true);
+        setAccessDeniedForProject(projectId);
       }
     }
   }, [projectError]);
@@ -226,7 +227,7 @@ export default function ProjectImport() {
     onError: (error: any) => {
       const errorMsg = error?.message || "";
       if (errorMsg.startsWith("403:") || errorMsg.includes("403")) {
-        setAccessDenied(true);
+        setAccessDeniedForProject(projectId);
         toast({ title: "Access denied", description: "You are not assigned to this project", variant: "destructive" });
       } else {
         toast({ title: "Import failed", description: errorMsg, variant: "destructive" });
