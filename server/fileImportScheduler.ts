@@ -4,7 +4,7 @@ import { getProjectWorkOrderStorage } from "./projectDb";
 import { insertProjectWorkOrderSchema } from "@shared/schema";
 import { getProjectFtpFiles, getProjectFtpFilePath } from "./fileStorage";
 import * as fs from "fs";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 
 class FileImportScheduler {
   private scheduledTasks: Map<number, cron.ScheduledTask> = new Map();
@@ -161,10 +161,50 @@ class FileImportScheduler {
 
         const ext = latestFile.name.toLowerCase().split('.').pop();
         if (ext === 'xlsx' || ext === 'xls') {
-          const workbook = XLSX.read(fileContent, { type: "buffer" });
-          const sheetName = workbook.SheetNames[0];
-          const sheet = workbook.Sheets[sheetName];
-          rows = XLSX.utils.sheet_to_json(sheet, { raw: false });
+          const workbook = new ExcelJS.Workbook();
+          await workbook.xlsx.load(fileContent);
+          const worksheet = workbook.worksheets[0];
+          if (worksheet) {
+            // Get the actual column count from worksheet dimensions (includes all populated cells)
+            const colCount = worksheet.actualColumnCount || worksheet.columnCount || 1;
+            
+            // Get header values - note: ExcelJS row.values is 1-indexed (first element is undefined)
+            const headerRowValues = worksheet.getRow(1).values as (ExcelJS.CellValue | undefined)[];
+            const headers: string[] = [];
+            let emptyCount = 0;
+            
+            // Build headers for all columns up to colCount
+            for (let colNum = 1; colNum <= colCount; colNum++) {
+              const val = headerRowValues[colNum];
+              if (val) {
+                headers[colNum - 1] = String(val);
+              } else {
+                // Match xlsx placeholder naming: __EMPTY, __EMPTY_1, __EMPTY_2, etc.
+                headers[colNum - 1] = emptyCount === 0 ? '__EMPTY' : `__EMPTY_${emptyCount}`;
+                emptyCount++;
+              }
+            }
+            
+            worksheet.eachRow((row, rowNumber) => {
+              if (rowNumber > 1) {
+                const rowData: Record<string, any> = {};
+                // Iterate through all columns to include empty cells
+                for (let colNum = 1; colNum <= colCount; colNum++) {
+                  const header = headers[colNum - 1];
+                  const cell = row.getCell(colNum);
+                  // Use cell.text to get formatted string (like raw: false in xlsx)
+                  // cell.text returns the displayed text value including number formatting
+                  let value = '';
+                  if (cell.value !== null && cell.value !== undefined) {
+                    // cell.text gives formatted display value, similar to sheet_to_json({ raw: false })
+                    value = cell.text || String(cell.value);
+                  }
+                  rowData[header] = value;
+                }
+                rows.push(rowData);
+              }
+            });
+          }
         } else if (ext === 'json') {
           // Parse JSON file
           const text = fileContent.toString("utf-8");
