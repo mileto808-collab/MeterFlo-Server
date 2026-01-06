@@ -46,7 +46,7 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, ArrowLeft, Search, ArrowUpDown, ArrowUp, ArrowDown, Download, FileSpreadsheet, FileText, Filter, X, Route, ChevronRight, Paperclip, Eye, FileIcon, ChevronsUp, UserPlus, UserMinus, AlertTriangle, Loader2, Wrench } from "lucide-react";
 import { BackToTop } from "@/components/ui/back-to-top";
 import { TablePagination } from "@/components/ui/table-pagination";
-import writeXlsxFile from "write-excel-file";
+import * as XLSX from "xlsx";
 import { format } from "date-fns";
 import { Label } from "@/components/ui/label";
 import type { Project, WorkOrderStatus, TroubleCode, ServiceTypeRecord, SystemType } from "@shared/schema";
@@ -1744,7 +1744,7 @@ export default function ProjectWorkOrders() {
     toast({ title: "CSV exported successfully" });
   };
 
-  const exportToExcel = async () => {
+  const exportToExcel = () => {
     if (!filteredAndSortedWorkOrders.length) {
       toast({ title: "No data to export", variant: "destructive" });
       return;
@@ -1764,13 +1764,10 @@ export default function ProjectWorkOrders() {
       return row;
     });
 
-    const headers = exportColumns.map(col => col.label);
-    const headerRow = headers.map(h => ({ value: h, fontWeight: 'bold' as const }));
-    const dataRows = data.map(row => headers.map(h => ({ value: row[h] || '' })));
-    const excelData = [headerRow, ...dataRows];
-    await writeXlsxFile(excelData, {
-      fileName: `${project?.name || "work-orders"}-${formatCustom(new Date(), "yyyy-MM-dd")}.xlsx`,
-    });
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Work Orders");
+    XLSX.writeFile(workbook, `${project?.name || "work-orders"}-${formatCustom(new Date(), "yyyy-MM-dd")}.xlsx`);
 
     toast({ title: "Excel file exported successfully" });
   };

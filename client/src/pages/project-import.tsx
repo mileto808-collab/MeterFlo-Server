@@ -50,7 +50,7 @@ import { Link } from "wouter";
 import { useTimezone } from "@/hooks/use-timezone";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import readXlsxFile from "read-excel-file";
+import * as XLSX from "xlsx";
 
 type ParsedWorkOrder = {
   customerWoId: string;
@@ -408,11 +408,12 @@ export default function ProjectImport() {
 
     try {
       if (extension === "xlsx" || extension === "xls") {
-        const rows = await readXlsxFile(file);
-        const data: string[][] = rows.map(row => 
-          row.map(cell => cell !== null && cell !== undefined ? String(cell) : '')
-        );
-        processData(data);
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: "array" });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const data = XLSX.utils.sheet_to_json<string[]>(worksheet, { header: 1 });
+        processData(data as string[][]);
       } else if (extension === "csv" || extension === "txt") {
         const text = await file.text();
         const data = parseCSV(text, delimiter);
