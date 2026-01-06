@@ -43,7 +43,7 @@ export default function Landing() {
     {
       icon: ClipboardList,
       title: "Work Order Management",
-      description: "Create, schedule, assign, and track work orders with real-time status updates. Supports multiple projects.",
+      description: "Create, schedule, assign, and track work orders with real-time status updates. Manage multiple projects.",
     },
     {
       icon: Smartphone,
