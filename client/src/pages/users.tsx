@@ -29,7 +29,7 @@ import { isUnauthorizedError } from "@/lib/authUtils";
 import type { User, Project, Subrole, UserGroup } from "@shared/schema";
 import { Search, Users as UsersIcon, Plus, MoreHorizontal, Pencil, Lock, Unlock, Key, Trash2, FolderPlus, X, Folder, ArrowLeft, ArrowUpDown, ArrowUp, ArrowDown, Filter, Download, FileSpreadsheet, FileText, ChevronRight, UsersRound } from "lucide-react";
 import { format } from "date-fns";
-import * as XLSX from "xlsx";
+import writeXlsxFile from "write-excel-file";
 
 type UserWithProjects = User & { assignedProjects?: Project[] };
 
@@ -857,7 +857,7 @@ export default function Users() {
     toast({ title: "CSV exported successfully" });
   };
 
-  const exportToExcel = () => {
+  const exportToExcel = async () => {
     if (!filteredUsers?.length) {
       toast({ title: "No data to export", variant: "destructive" });
       return;
@@ -874,10 +874,13 @@ export default function Users() {
       return row;
     });
 
-    const worksheet = XLSX.utils.json_to_sheet(data);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Users");
-    XLSX.writeFile(workbook, `users-${formatCustom(new Date(), "yyyy-MM-dd")}.xlsx`);
+    const headers = exportColumns.map(col => col.label);
+    const headerRow = headers.map(h => ({ value: h, fontWeight: 'bold' as const }));
+    const dataRows = data.map(row => headers.map(h => ({ value: row[h] || '' })));
+    const excelData = [headerRow, ...dataRows];
+    await writeXlsxFile(excelData, {
+      fileName: `users-${formatCustom(new Date(), "yyyy-MM-dd")}.xlsx`,
+    });
 
     toast({ title: "Excel file exported successfully" });
   };

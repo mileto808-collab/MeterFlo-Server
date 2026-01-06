@@ -34,7 +34,7 @@ import { SortDialog } from "@/components/SortDialog";
 import { RouteSheetDialog } from "@/components/RouteSheetDialog";
 import { Search, Download, FileSpreadsheet, FileText, FileDown, Filter, X, ArrowUpDown, ArrowUp, ArrowDown, Route, ChevronRight } from "lucide-react";
 import type { Project, ServiceTypeRecord, WorkOrderStatus, SystemType, TroubleCode, User, UserGroup } from "@shared/schema";
-import * as XLSX from "xlsx";
+import writeXlsxFile from "write-excel-file";
 import { format } from "date-fns";
 
 type SearchResult = {
@@ -1010,7 +1010,7 @@ export default function SearchReports() {
     toast({ title: "CSV exported successfully" });
   };
 
-  const exportToExcel = () => {
+  const exportToExcel = async () => {
     if (!searchResults?.results.length) {
       toast({ title: "No data to export", variant: "destructive" });
       return;
@@ -1027,10 +1027,13 @@ export default function SearchReports() {
       return row;
     });
 
-    const worksheet = XLSX.utils.json_to_sheet(data);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Work Orders");
-    XLSX.writeFile(workbook, `work-orders-${formatCustom(new Date(), "yyyy-MM-dd")}.xlsx`);
+    const headers = exportColumns.map(col => col.label);
+    const headerRow = headers.map(h => ({ value: h, fontWeight: 'bold' as const }));
+    const dataRows = data.map(row => headers.map(h => ({ value: row[h] || '' })));
+    const excelData = [headerRow, ...dataRows];
+    await writeXlsxFile(excelData, {
+      fileName: `work-orders-${formatCustom(new Date(), "yyyy-MM-dd")}.xlsx`,
+    });
 
     toast({ title: "Excel file exported successfully" });
   };
