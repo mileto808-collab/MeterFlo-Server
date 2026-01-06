@@ -104,7 +104,27 @@ export default function ProjectWorkOrders() {
   const [, params] = useRoute("/projects/:projectId/work-orders");
   const projectId = params?.projectId ? parseInt(params.projectId) : null;
   
-  useProjectEvents(projectId);
+  // Track editing work order ID in a ref for SSE callback (avoids stale closure)
+  const editingWorkOrderIdRef = useRef<number | null>(null);
+  
+  // SSE callback to refresh work order detail when updated by another user
+  const handleWorkOrderUpdated = useCallback(async (workOrderId: number) => {
+    if (editingWorkOrderIdRef.current === workOrderId && projectId) {
+      try {
+        const response = await fetch(`/api/projects/${projectId}/work-orders/${workOrderId}`, {
+          credentials: "include",
+        });
+        if (response.ok) {
+          const updatedWorkOrder = await response.json();
+          setEditingWorkOrder(updatedWorkOrder);
+        }
+      } catch (error) {
+        console.error("Failed to refresh work order from SSE event:", error);
+      }
+    }
+  }, [projectId]);
+  
+  useProjectEvents(projectId, { onWorkOrderUpdated: handleWorkOrderUpdated });
   
   const { user } = useAuth();
   const { hasPermission } = usePermissions();
@@ -113,6 +133,11 @@ export default function ProjectWorkOrders() {
   const [, navigate] = useLocation();
   const [isCreatingWorkOrder, setIsCreatingWorkOrder] = useState(false);
   const [editingWorkOrder, setEditingWorkOrder] = useState<ProjectWorkOrder | null>(null);
+  
+  // Keep ref in sync with editingWorkOrder state for SSE callback
+  useEffect(() => {
+    editingWorkOrderIdRef.current = editingWorkOrder?.id ?? null;
+  }, [editingWorkOrder]);
   const [accessDenied, setAccessDenied] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortCriteria, setSortCriteria] = useState<Array<{ column: string; direction: "asc" | "desc" }>>([]);

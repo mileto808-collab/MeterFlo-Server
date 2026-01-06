@@ -10,7 +10,11 @@ interface ProjectEvent {
   timestamp: string;
 }
 
-export function useProjectEvents(projectId: number | null) {
+interface UseProjectEventsOptions {
+  onWorkOrderUpdated?: (workOrderId: number) => void;
+}
+
+export function useProjectEvents(projectId: number | null, options?: UseProjectEventsOptions) {
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
@@ -31,6 +35,10 @@ export function useProjectEvents(projectId: number | null) {
             return false;
           }
         });
+        // Call the optional callback for work order updates
+        if (event.type === "workorder_updated" && event.workOrderId && options?.onWorkOrderUpdated) {
+          options.onWorkOrderUpdated(event.workOrderId);
+        }
         break;
       case "file_added":
       case "file_deleted":
@@ -46,7 +54,7 @@ export function useProjectEvents(projectId: number | null) {
         });
         break;
     }
-  }, []);
+  }, [options?.onWorkOrderUpdated]);
 
   const connect = useCallback(() => {
     if (!projectId) return;
