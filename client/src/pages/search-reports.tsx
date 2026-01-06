@@ -26,6 +26,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useTimezone } from "@/hooks/use-timezone";
+import { useGlobalEvents } from "@/hooks/useProjectEvents";
 import { ColumnSelector, type ColumnConfig } from "@/components/column-selector";
 import { useColumnPreferences } from "@/hooks/use-column-preferences";
 import { FilterSelector, type FilterConfig } from "@/components/filter-selector";
@@ -85,6 +86,9 @@ type SearchResponse = {
 };
 
 export default function SearchReports() {
+  // Subscribe to global SSE events for real-time search result updates
+  useGlobalEvents();
+  
   const { user } = useAuth();
   const { toast } = useToast();
   const { formatExport, formatCustom } = useTimezone();

@@ -142,6 +142,16 @@ export function useGlobalEvents() {
             return false;
           }
         });
+        // Also invalidate search results queries
+        queryClient.invalidateQueries({ 
+          predicate: (query) => {
+            const key = query.queryKey;
+            if (Array.isArray(key) && typeof key[0] === 'string') {
+              return key[0].startsWith('/api/search/work-orders');
+            }
+            return false;
+          }
+        });
         break;
     }
   }, []);
