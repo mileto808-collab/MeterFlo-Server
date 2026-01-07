@@ -207,13 +207,15 @@ export function WorkOrderCalendar({
   }, [workOrders]);
 
   const unscheduledWorkOrders = useMemo(() => {
-    return workOrders.filter((wo) => !wo.scheduledAt);
+    return workOrders.filter((wo) => !wo.scheduledAt && wo.status !== "Completed" && wo.status !== "Closed");
   }, [workOrders]);
 
   const filteredSearchResults = useMemo(() => {
+    // Exclude Completed and Closed work orders from scheduling
+    const schedulableWorkOrders = workOrders.filter((wo) => wo.status !== "Completed" && wo.status !== "Closed");
     if (!searchQuery.trim()) return unscheduledWorkOrders.slice(0, 20);
     const query = searchQuery.toLowerCase();
-    return workOrders
+    return schedulableWorkOrders
       .filter(
         (wo) =>
           wo.customerWoId?.toLowerCase().includes(query) ||
