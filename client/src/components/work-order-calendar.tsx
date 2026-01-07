@@ -17,6 +17,7 @@ import {
   parseISO,
   setHours,
   setMinutes,
+  setSeconds,
   getHours,
   getMinutes,
 } from "date-fns";
@@ -252,8 +253,9 @@ export function WorkOrderCalendar({
       let scheduledDate = rescheduleDialog.targetDate;
       scheduledDate = setHours(scheduledDate, hours);
       scheduledDate = setMinutes(scheduledDate, minutes);
+      scheduledDate = setSeconds(scheduledDate, 0);
       
-      const scheduledAt = format(scheduledDate, "yyyy-MM-dd'T'HH:mm");
+      const scheduledAt = scheduledDate.toISOString();
       await onReschedule(rescheduleDialog.workOrder.id, scheduledAt);
       
       setRescheduleDialog({ open: false, workOrder: null, targetDate: null, time: "09:00" });
