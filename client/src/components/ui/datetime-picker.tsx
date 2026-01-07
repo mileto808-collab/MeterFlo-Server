@@ -54,8 +54,8 @@ export function DateTimePicker({
     const [hours, minutes] = time.split(":").map(Number);
     date.setHours(hours || 0, minutes || 0, 0, 0);
     
-    const formattedValue = format(date, "yyyy-MM-dd'T'HH:mm");
-    onChange(formattedValue);
+    // Use toISOString() to send UTC time, preserving the user's local time correctly
+    onChange(date.toISOString());
   };
 
   const handleTimeChange = (newTime: string) => {
@@ -66,8 +66,8 @@ export function DateTimePicker({
       const newDate = new Date(selectedDate);
       newDate.setHours(hours || 0, minutes || 0, 0, 0);
       
-      const formattedValue = format(newDate, "yyyy-MM-dd'T'HH:mm");
-      onChange(formattedValue);
+      // Use toISOString() to send UTC time, preserving the user's local time correctly
+      onChange(newDate.toISOString());
     }
   };
 
