@@ -2883,7 +2883,7 @@ export default function ProjectWorkOrders() {
         )}
       </div>
 
-      {stats && (
+      {stats && viewMode !== "calendar" && (
         <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
           {workOrderStatuses
             .slice()
@@ -2907,8 +2907,9 @@ export default function ProjectWorkOrders() {
         </div>
       )}
 
-      {/* Search and Filters */}
-      <Card>
+      {/* Search and Filters - hidden in calendar view */}
+      {viewMode !== "calendar" && (
+        <Card>
         <CardContent className="pt-4">
           <div className="flex items-center gap-2 flex-wrap">
             <div className="relative flex-1 min-w-[200px] max-w-md">
@@ -3307,10 +3308,11 @@ export default function ProjectWorkOrders() {
             </div>
           )}
         </CardContent>
-      </Card>
+        </Card>
+      )}
 
-      {/* Results count and top pagination */}
-      {workOrders.length > 0 && (
+      {/* Results count and top pagination - hidden in calendar view */}
+      {viewMode !== "calendar" && workOrders.length > 0 && (
         <div className="flex flex-col gap-2">
           {(searchQuery || hasActiveFilters) && (
             <div className="text-sm text-muted-foreground">
@@ -3330,7 +3332,7 @@ export default function ProjectWorkOrders() {
 
       {viewMode === "calendar" && hasPermission('workOrders.calendar') ? (
         <Card className="overflow-hidden">
-          <CardContent className="p-0 h-[calc(100vh-320px)] min-h-[500px]">
+          <CardContent className="p-0 h-[calc(100vh-180px)] min-h-[500px]">
             <WorkOrderCalendar
               workOrders={workOrders}
               statuses={workOrderStatuses}
