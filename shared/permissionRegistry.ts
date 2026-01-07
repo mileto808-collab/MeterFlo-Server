@@ -188,6 +188,13 @@ export const permissionRegistry: PermissionDefinition[] = [
     description: "View logs of API calls sent to customer backend systems",
     defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
   },
+  {
+    key: "settings.mobileConfig",
+    label: "Mobile App Configuration",
+    category: "Settings",
+    description: "Configure mobile app update URL and settings",
+    defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
+  },
 
   // Maintenance action permissions - what users can do in the maintenance area
   {

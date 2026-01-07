@@ -593,7 +593,15 @@ export async function registerRoutes(
       }
       
       const projects = await storage.getUserProjects(targetUserId);
-      res.json(projects);
+      
+      // Get mobile app configuration
+      const mobileUpdateUrl = await storage.getSetting("mobileUpdateUrl");
+      
+      // Return response with projects and optional mobileConfig
+      res.json({
+        projects,
+        mobileConfig: mobileUpdateUrl ? { updateUrl: mobileUpdateUrl } : null
+      });
     } catch (error) {
       console.error("Error fetching user projects:", error);
       res.status(500).json({ message: "Failed to fetch user projects" });
@@ -4088,6 +4096,62 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error updating timezone:", error);
       res.status(500).json({ message: "Failed to update timezone" });
+    }
+  });
+
+  // Mobile App Configuration endpoints
+  app.get("/api/settings/mobile-config", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const hasMobileConfigPermission = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_MOBILE_CONFIG);
+      if (!hasMobileConfigPermission) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to view mobile configuration" });
+      }
+      
+      const mobileUpdateUrl = await storage.getSetting("mobileUpdateUrl");
+      res.json({ mobileUpdateUrl: mobileUpdateUrl || null });
+    } catch (error) {
+      console.error("Error fetching mobile config:", error);
+      res.status(500).json({ message: "Failed to fetch mobile configuration" });
+    }
+  });
+
+  app.put("/api/settings/mobile-config", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const hasMobileConfigPermission = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_MOBILE_CONFIG);
+      if (!hasMobileConfigPermission) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to update mobile configuration" });
+      }
+      
+      const { mobileUpdateUrl } = req.body;
+      
+      // Validate GitHub API URL format if provided
+      if (mobileUpdateUrl && mobileUpdateUrl.trim() !== "") {
+        const pattern = /^https:\/\/api\.github\.com\/repos\/[\w.-]+\/[\w.-]+\/releases\/(latest|\d+)$/;
+        if (!pattern.test(mobileUpdateUrl.trim())) {
+          return res.status(400).json({ 
+            message: "Invalid GitHub releases API URL format. Must be: https://api.github.com/repos/ORG/REPO/releases/latest" 
+          });
+        }
+        await storage.setSetting("mobileUpdateUrl", mobileUpdateUrl.trim(), "GitHub releases API URL for mobile app updates");
+      } else {
+        // Empty URL - disable update checks
+        await storage.setSetting("mobileUpdateUrl", "", "GitHub releases API URL for mobile app updates");
+      }
+      
+      res.json({ message: "Mobile configuration updated" });
+    } catch (error) {
+      console.error("Error updating mobile config:", error);
+      res.status(500).json({ message: "Failed to update mobile configuration" });
     }
   });
 
