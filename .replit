@@ -44,4 +44,3 @@ integrations = ["javascript_log_in_with_replit:1.0.0", "javascript_database:1.0.
 [userenv]
 
 [userenv.shared]
-JWT_SECRET = "Eozjbt3HRM1cla7C6yy7K7pFEm/eAGtDkCEk1Slw6Ns7BRK3fgtH0AsW/QgO+/hW"
