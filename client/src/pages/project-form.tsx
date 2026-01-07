@@ -50,6 +50,7 @@ const projectFormSchema = z.object({
   operationalHoursStart: z.string().max(10).optional().or(z.literal("")),
   operationalHoursEnd: z.string().max(10).optional().or(z.literal("")),
   operationalHoursDays: z.array(z.string()).optional().default([]),
+  timezone: z.string().max(100).optional().or(z.literal("")),
 }).refine((data) => {
   if (data.operationalHoursEnabled) {
     return data.operationalHoursStart && data.operationalHoursEnd;
@@ -97,6 +98,7 @@ export default function ProjectForm() {
       operationalHoursStart: "",
       operationalHoursEnd: "",
       operationalHoursDays: [],
+      timezone: "",
     },
   });
 
@@ -122,6 +124,7 @@ export default function ProjectForm() {
         operationalHoursStart: project.operationalHoursStart || "",
         operationalHoursEnd: project.operationalHoursEnd || "",
         operationalHoursDays: project.operationalHoursDays || [],
+        timezone: project.timezone || "",
       });
     }
   }, [project, form]);
@@ -660,6 +663,41 @@ export default function ProjectForm() {
                               );
                             })}
                           </div>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="timezone"
+                      render={({ field }) => (
+                        <FormItem className="mt-4">
+                          <FormLabel>Timezone</FormLabel>
+                          <FormDescription className="mb-2">
+                            Timezone for operational hours validation (uses global setting if not set)
+                          </FormDescription>
+                          <Select
+                            value={field.value || "__global__"}
+                            onValueChange={(val) => field.onChange(val === "__global__" ? "" : val)}
+                          >
+                            <FormControl>
+                              <SelectTrigger data-testid="select-timezone">
+                                <SelectValue placeholder="Use global timezone setting" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="__global__">Use global timezone setting</SelectItem>
+                              <SelectItem value="America/New_York">Eastern Time (ET)</SelectItem>
+                              <SelectItem value="America/Chicago">Central Time (CT)</SelectItem>
+                              <SelectItem value="America/Denver">Mountain Time (MT)</SelectItem>
+                              <SelectItem value="America/Phoenix">Arizona (MST - no DST)</SelectItem>
+                              <SelectItem value="America/Los_Angeles">Pacific Time (PT)</SelectItem>
+                              <SelectItem value="America/Anchorage">Alaska Time (AKT)</SelectItem>
+                              <SelectItem value="Pacific/Honolulu">Hawaii Time (HST)</SelectItem>
+                              <SelectItem value="UTC">UTC (Coordinated Universal Time)</SelectItem>
+                            </SelectContent>
+                          </Select>
                           <FormMessage />
                         </FormItem>
                       )}
