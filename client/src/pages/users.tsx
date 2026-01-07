@@ -392,7 +392,9 @@ export default function Users() {
       if (!editingUser) return [];
       const res = await fetch(`/api/users/${editingUser.id}/projects`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch user projects");
-      return res.json();
+      const payload = await res.json();
+      // Normalize response to always return an array
+      return Array.isArray(payload) ? payload : (payload?.projects ?? []);
     },
     enabled: !!editingUser,
   });
