@@ -24,43 +24,95 @@ interface SignaturePadProps {
 const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(
   ({ initialSignatureData, initialSignatureName, onSignatureChange, disabled = false }, ref) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
+    const signatureDataRef = useRef<string | null>(initialSignatureData || null);
     const [isDrawing, setIsDrawing] = useState(false);
     const [signatureName, setSignatureName] = useState(initialSignatureName || "");
     const [useTypedName, setUseTypedName] = useState(!initialSignatureData && !!initialSignatureName);
     const [hasSignature, setHasSignature] = useState(!!initialSignatureData);
 
-    useEffect(() => {
+    const setupCanvas = (preserveData?: string | null) => {
       const canvas = canvasRef.current;
-      if (!canvas) return;
+      const container = containerRef.current;
+      if (!canvas || !container) return;
 
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
+      const dpr = window.devicePixelRatio || 1;
+      const rect = container.getBoundingClientRect();
+      
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      
+      canvas.style.width = `${rect.width}px`;
+      canvas.style.height = `${rect.height}px`;
+      
+      ctx.scale(dpr, dpr);
       ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillRect(0, 0, rect.width, rect.height);
       ctx.strokeStyle = "#000000";
       ctx.lineWidth = 2;
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
 
-      if (initialSignatureData) {
+      if (preserveData) {
         const img = new Image();
         img.onload = () => {
-          ctx.drawImage(img, 0, 0);
+          ctx.drawImage(img, 0, 0, rect.width, rect.height);
+        };
+        img.src = preserveData;
+      }
+
+      return { ctx, rect };
+    };
+
+    useEffect(() => {
+      if (useTypedName) return;
+      
+      const result = setupCanvas(signatureDataRef.current);
+      if (!result) return;
+      const { ctx, rect } = result;
+
+      if (initialSignatureData && !signatureDataRef.current) {
+        signatureDataRef.current = initialSignatureData;
+        const img = new Image();
+        img.onload = () => {
+          ctx.drawImage(img, 0, 0, rect.width, rect.height);
           setHasSignature(true);
         };
         img.src = initialSignatureData;
       }
-    }, []);
+
+      const handleResize = () => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const currentData = signatureDataRef.current;
+        const result = setupCanvas();
+        if (result && currentData) {
+          const img = new Image();
+          img.onload = () => {
+            result.ctx.drawImage(img, 0, 0, result.rect.width, result.rect.height);
+          };
+          img.src = currentData;
+        }
+      };
+
+      window.addEventListener("resize", handleResize);
+      return () => window.removeEventListener("resize", handleResize);
+    }, [useTypedName]);
 
     useImperativeHandle(ref, () => ({
       clear: () => {
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        const container = containerRef.current;
+        if (!canvas || !container) return;
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
+        const rect = container.getBoundingClientRect();
         ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillRect(0, 0, rect.width, rect.height);
+        signatureDataRef.current = null;
         setHasSignature(false);
         notifyChange(null, signatureName);
       },
@@ -72,25 +124,24 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(
       },
       getSignatureName: () => signatureName,
       setSignatureData: (data: string | null) => {
+        const canvas = canvasRef.current;
+        const container = containerRef.current;
+        if (!canvas || !container) return;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        const rect = container.getBoundingClientRect();
+        signatureDataRef.current = data;
         if (!data) {
-          const canvas = canvasRef.current;
-          if (!canvas) return;
-          const ctx = canvas.getContext("2d");
-          if (!ctx) return;
           ctx.fillStyle = "#ffffff";
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.fillRect(0, 0, rect.width, rect.height);
           setHasSignature(false);
           return;
         }
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
         const img = new Image();
         img.onload = () => {
           ctx.fillStyle = "#ffffff";
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(img, 0, 0);
+          ctx.fillRect(0, 0, rect.width, rect.height);
+          ctx.drawImage(img, 0, 0, rect.width, rect.height);
           setHasSignature(true);
         };
         img.src = data;
@@ -112,19 +163,24 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(
       if (!canvas) return { x: 0, y: 0 };
 
       const rect = canvas.getBoundingClientRect();
-      const scaleX = canvas.width / rect.width;
-      const scaleY = canvas.height / rect.height;
-
-      if ("touches" in e) {
-        return {
-          x: (e.touches[0].clientX - rect.left) * scaleX,
-          y: (e.touches[0].clientY - rect.top) * scaleY,
-        };
+      
+      let clientX: number;
+      let clientY: number;
+      
+      if ("touches" in e && e.touches.length > 0) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+      } else if ("clientX" in e) {
+        clientX = e.clientX;
+        clientY = e.clientY;
+      } else {
+        return { x: 0, y: 0 };
       }
-      return {
-        x: (e.clientX - rect.left) * scaleX,
-        y: (e.clientY - rect.top) * scaleY,
-      };
+      
+      const x = clientX - rect.left;
+      const y = clientY - rect.top;
+      
+      return { x, y };
     };
 
     const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
@@ -159,7 +215,9 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(
       if (isDrawing && hasSignature) {
         const canvas = canvasRef.current;
         if (canvas) {
-          notifyChange(canvas.toDataURL("image/png"), signatureName);
+          const data = canvas.toDataURL("image/png");
+          signatureDataRef.current = data;
+          notifyChange(data, signatureName);
         }
       }
       setIsDrawing(false);
@@ -167,11 +225,14 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(
 
     const clearSignature = () => {
       const canvas = canvasRef.current;
-      if (!canvas) return;
+      const container = containerRef.current;
+      if (!canvas || !container) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
+      const rect = container.getBoundingClientRect();
       ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillRect(0, 0, rect.width, rect.height);
+      signatureDataRef.current = null;
       setHasSignature(false);
       notifyChange(null, signatureName);
     };
@@ -232,13 +293,14 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(
 
           {!useTypedName && (
             <div className="space-y-2">
-              <div className="relative border rounded-md bg-white overflow-hidden">
+              <div 
+                ref={containerRef}
+                className="relative border rounded-md bg-white overflow-hidden"
+                style={{ height: "150px" }}
+              >
                 <canvas
                   ref={canvasRef}
-                  width={400}
-                  height={150}
-                  className="w-full touch-none cursor-crosshair"
-                  style={{ maxWidth: "100%", height: "auto", aspectRatio: "400/150" }}
+                  className="absolute inset-0 touch-none cursor-crosshair block"
                   onMouseDown={startDrawing}
                   onMouseMove={draw}
                   onMouseUp={stopDrawing}
