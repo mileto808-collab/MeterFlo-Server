@@ -382,7 +382,8 @@ export class ProjectWorkOrderStorage {
                cb.username as completed_by_username,
                au.first_name as assigned_user_first_name,
                au.last_name as assigned_user_last_name,
-               au.username as assigned_user_username
+               au.username as assigned_user_username,
+               au.email as assigned_user_email
         FROM "${this.schemaName}".work_orders w
         LEFT JOIN public.users sb ON w.scheduled_by = sb.id
         LEFT JOIN public.users cb ON w.completed_by = cb.id
@@ -431,7 +432,8 @@ export class ProjectWorkOrderStorage {
                 cb.username as completed_by_username,
                 au.first_name as assigned_user_first_name,
                 au.last_name as assigned_user_last_name,
-                au.username as assigned_user_username
+                au.username as assigned_user_username,
+                au.email as assigned_user_email
          FROM "${this.schemaName}".work_orders w
          LEFT JOIN public.users sb ON w.scheduled_by = sb.id
          LEFT JOIN public.users cb ON w.completed_by = cb.id
@@ -455,7 +457,8 @@ export class ProjectWorkOrderStorage {
                 cb.username as completed_by_username,
                 au.first_name as assigned_user_first_name,
                 au.last_name as assigned_user_last_name,
-                au.username as assigned_user_username
+                au.username as assigned_user_username,
+                au.email as assigned_user_email
          FROM "${this.schemaName}".work_orders w
          LEFT JOIN public.users sb ON w.scheduled_by = sb.id
          LEFT JOIN public.users cb ON w.completed_by = cb.id
@@ -479,7 +482,8 @@ export class ProjectWorkOrderStorage {
                 cb.username as completed_by_username,
                 au.first_name as assigned_user_first_name,
                 au.last_name as assigned_user_last_name,
-                au.username as assigned_user_username
+                au.username as assigned_user_username,
+                au.email as assigned_user_email
          FROM "${this.schemaName}".work_orders w
          LEFT JOIN public.users sb ON w.scheduled_by = sb.id
          LEFT JOIN public.users cb ON w.completed_by = cb.id
@@ -1241,10 +1245,10 @@ export class ProjectWorkOrderStorage {
       // Add display fields with resolved usernames for UI
       completedByDisplay: row.completed_by_username || row.completed_by,
       scheduledByDisplay: row.scheduled_by_username || row.scheduled_by,
-      // Resolve assigned user display name - prefer first/last name, fallback to username, then ID
+      // Resolve assigned user display name - prefer first/last name, fallback to username, email, then null
       assignedUserDisplay: row.assigned_user_first_name && row.assigned_user_last_name
         ? `${row.assigned_user_first_name} ${row.assigned_user_last_name}`
-        : row.assigned_user_username || row.assigned_user_id || null,
+        : row.assigned_user_username || row.assigned_user_email || null,
     };
     return result as ProjectWorkOrder;
   }
