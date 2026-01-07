@@ -67,9 +67,6 @@ export const users = pgTable("users", {
   phone: varchar("phone", { length: 50 }),
   website: varchar("website", { length: 255 }),
   notes: text("notes"),
-  mobileSessionToken: varchar("mobile_session_token", { length: 255 }),
-  mobileDeviceId: varchar("mobile_device_id", { length: 255 }),
-  mobileSessionCreatedAt: timestamp("mobile_session_created_at"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

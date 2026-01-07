@@ -21,37 +21,6 @@ import { toZonedTime, format as formatTz } from "date-fns-tz";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
-// Middleware to validate mobile session token for single-device enforcement
-// This middleware REQUIRES the x-mobile-session-token header for mobile endpoints
-async function validateMobileSession(req: any, res: any, next: any) {
-  const mobileSessionToken = req.headers["x-mobile-session-token"];
-  
-  // Mobile endpoints REQUIRE the session token header
-  if (!mobileSessionToken) {
-    return res.status(401).json({ 
-      message: "Mobile session token required. Please log in again.",
-      sessionInvalid: true,
-      requiresReauth: true
-    });
-  }
-  
-  // Validate the session token
-  const userId = req.user?.claims?.sub;
-  if (!userId) {
-    return res.status(401).json({ message: "Unauthorized", sessionInvalid: true });
-  }
-  
-  const isValid = await storage.validateMobileSession(userId, mobileSessionToken);
-  if (!isValid) {
-    return res.status(401).json({ 
-      message: "Session invalid. You have been logged out because another device logged in with this account.",
-      sessionInvalid: true
-    });
-  }
-  
-  next();
-}
-
 async function getTimezoneFormattedTimestamp(): Promise<string> {
   const timezone = await storage.getSetting("default_timezone") || "America/Denver";
   return new Date().toLocaleString('en-US', {
@@ -221,89 +190,6 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Local login error:", error);
       res.status(500).json({ message: "Login failed" });
-    }
-  });
-
-  // Mobile-specific login with single-device enforcement
-  app.post("/api/auth/mobile/login", async (req, res) => {
-    try {
-      const { username, password, deviceId } = req.body;
-      if (!username || !password) {
-        return res.status(400).json({ message: "Username and password are required" });
-      }
-      if (!deviceId) {
-        return res.status(400).json({ message: "Device ID is required for mobile login" });
-      }
-      
-      const user = await storage.getUserByUsername(username);
-      if (!user || !user.passwordHash) {
-        return res.status(401).json({ message: "Invalid username or password" });
-      }
-      
-      if (user.isLocked) {
-        return res.status(403).json({ 
-          message: "Account is locked", 
-          reason: user.lockedReason || "Contact administrator for assistance" 
-        });
-      }
-      
-      const isValid = await bcrypt.compare(password, user.passwordHash);
-      if (!isValid) {
-        return res.status(401).json({ message: "Invalid username or password" });
-      }
-      
-      // Generate a unique session token for this mobile device
-      const sessionToken = randomUUID();
-      
-      // Store the new session token (this invalidates any previous mobile session)
-      await storage.setMobileSession(user.id, sessionToken, deviceId);
-      await storage.updateLastLogin(user.id);
-      
-      res.json({ 
-        message: "Login successful", 
-        user: { id: user.id, username: user.username, role: user.role },
-        mobileSessionToken: sessionToken
-      });
-    } catch (error) {
-      console.error("Mobile login error:", error);
-      res.status(500).json({ message: "Login failed" });
-    }
-  });
-
-  // Validate mobile session (for mobile app to check if session is still valid)
-  app.post("/api/auth/mobile/validate", async (req, res) => {
-    try {
-      const { userId, sessionToken } = req.body;
-      if (!userId || !sessionToken) {
-        return res.status(400).json({ valid: false, message: "Missing credentials" });
-      }
-      
-      const isValid = await storage.validateMobileSession(userId, sessionToken);
-      if (!isValid) {
-        return res.status(401).json({ 
-          valid: false, 
-          message: "Session invalid. You have been logged out because another device logged in with this account."
-        });
-      }
-      
-      res.json({ valid: true });
-    } catch (error) {
-      console.error("Mobile session validation error:", error);
-      res.status(500).json({ valid: false, message: "Validation failed" });
-    }
-  });
-
-  // Mobile logout - clear mobile session
-  app.post("/api/auth/mobile/logout", async (req, res) => {
-    try {
-      const { userId } = req.body;
-      if (userId) {
-        await storage.clearMobileSession(userId);
-      }
-      res.json({ message: "Logged out successfully" });
-    } catch (error) {
-      console.error("Mobile logout error:", error);
-      res.status(500).json({ message: "Logout failed" });
     }
   });
 
@@ -5848,7 +5734,7 @@ export async function registerRoutes(
 
   // Mobile sync download - bulk fetch work orders for offline cache
   // Supports filters and last-sync timestamp for incremental sync
-  app.get("/api/projects/:projectId/mobile/sync/download", isAuthenticated, validateMobileSession, async (req: any, res) => {
+  app.get("/api/projects/:projectId/mobile/sync/download", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       if (!currentUser) {
@@ -6041,7 +5927,7 @@ export async function registerRoutes(
   });
 
   // Mobile sync upload - batch submit completed work orders with conflict detection
-  app.post("/api/projects/:projectId/mobile/sync/upload", isAuthenticated, validateMobileSession, async (req: any, res) => {
+  app.post("/api/projects/:projectId/mobile/sync/upload", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       const projectId = parseInt(req.params.projectId);
@@ -6137,7 +6023,7 @@ export async function registerRoutes(
   });
 
   // Mobile photo upload - upload photos for work orders (supports offline queue)
-  app.post("/api/projects/:projectId/mobile/work-orders/:workOrderId/photos", isAuthenticated, validateMobileSession, upload.array("photos", 20), async (req: any, res) => {
+  app.post("/api/projects/:projectId/mobile/work-orders/:workOrderId/photos", isAuthenticated, upload.array("photos", 20), async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       const projectId = parseInt(req.params.projectId);
@@ -6231,7 +6117,7 @@ export async function registerRoutes(
   });
 
   // Mobile signature upload - upload signature image for work order
-  app.post("/api/projects/:projectId/mobile/work-orders/:workOrderId/signature", isAuthenticated, validateMobileSession, upload.single("signature"), async (req: any, res) => {
+  app.post("/api/projects/:projectId/mobile/work-orders/:workOrderId/signature", isAuthenticated, upload.single("signature"), async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       const projectId = parseInt(req.params.projectId);
@@ -6307,7 +6193,7 @@ export async function registerRoutes(
   });
 
   // Mobile system changeout - complete a system changeout from mobile device
-  app.post("/api/projects/:projectId/mobile/work-orders/:workOrderId/complete-changeout", isAuthenticated, validateMobileSession, upload.array("photos", 20), async (req: any, res) => {
+  app.post("/api/projects/:projectId/mobile/work-orders/:workOrderId/complete-changeout", isAuthenticated, upload.array("photos", 20), async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       const projectId = parseInt(req.params.projectId);
@@ -6507,7 +6393,7 @@ export async function registerRoutes(
   // These endpoints match what the mobile app expects: /api/mobile/workorders/:id/trouble and /api/mobile/workorders/:id/complete
   
   // Mobile trouble endpoint - accepts JSON with base64 photos
-  app.post("/api/mobile/workorders/:workOrderId/trouble", isAuthenticated, validateMobileSession, async (req: any, res) => {
+  app.post("/api/mobile/workorders/:workOrderId/trouble", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       const workOrderId = parseInt(req.params.workOrderId);
@@ -6646,7 +6532,7 @@ export async function registerRoutes(
   });
 
   // Mobile complete endpoint - accepts JSON with base64 photos
-  app.post("/api/mobile/workorders/:workOrderId/complete", isAuthenticated, validateMobileSession, async (req: any, res) => {
+  app.post("/api/mobile/workorders/:workOrderId/complete", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       const workOrderId = parseInt(req.params.workOrderId);
@@ -6882,7 +6768,7 @@ export async function registerRoutes(
   });
 
   // Bulk claim work orders - mobile batch operation
-  app.post("/api/projects/:projectId/mobile/work-orders/bulk-claim", isAuthenticated, validateMobileSession, async (req: any, res) => {
+  app.post("/api/projects/:projectId/mobile/work-orders/bulk-claim", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       const projectId = parseInt(req.params.projectId);
@@ -6966,7 +6852,7 @@ export async function registerRoutes(
   });
 
   // Bulk update work order status - mobile batch operation
-  app.post("/api/projects/:projectId/mobile/work-orders/bulk-status", isAuthenticated, validateMobileSession, async (req: any, res) => {
+  app.post("/api/projects/:projectId/mobile/work-orders/bulk-status", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       const projectId = parseInt(req.params.projectId);

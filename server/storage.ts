@@ -90,9 +90,6 @@ export interface IStorage {
   updateLastLogin(id: string): Promise<User | undefined>;
   deleteUser(id: string): Promise<boolean>;
   countActiveAdmins(): Promise<number>;
-  setMobileSession(userId: string, sessionToken: string, deviceId: string): Promise<User | undefined>;
-  validateMobileSession(userId: string, sessionToken: string): Promise<boolean>;
-  clearMobileSession(userId: string): Promise<User | undefined>;
 
   // Project operations
   getProjects(): Promise<Project[]>;
@@ -403,40 +400,6 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(users.role, "admin"), eq(users.isLocked, false)));
     const legacyCount = legacyAdmins.filter(u => u.subroleId !== adminSubrole.id).length;
     return adminUsers.length + legacyCount;
-  }
-
-  async setMobileSession(userId: string, sessionToken: string, deviceId: string): Promise<User | undefined> {
-    const [user] = await db
-      .update(users)
-      .set({ 
-        mobileSessionToken: sessionToken,
-        mobileDeviceId: deviceId,
-        mobileSessionCreatedAt: new Date(),
-        updatedAt: new Date() 
-      })
-      .where(eq(users.id, userId))
-      .returning();
-    return user;
-  }
-
-  async validateMobileSession(userId: string, sessionToken: string): Promise<boolean> {
-    const [user] = await db.select().from(users).where(eq(users.id, userId));
-    if (!user) return false;
-    return user.mobileSessionToken === sessionToken;
-  }
-
-  async clearMobileSession(userId: string): Promise<User | undefined> {
-    const [user] = await db
-      .update(users)
-      .set({ 
-        mobileSessionToken: null,
-        mobileDeviceId: null,
-        mobileSessionCreatedAt: null,
-        updatedAt: new Date() 
-      })
-      .where(eq(users.id, userId))
-      .returning();
-    return user;
   }
 
   // Project operations
