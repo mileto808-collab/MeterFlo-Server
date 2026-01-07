@@ -20,6 +20,40 @@ declare module "http" {
   }
 }
 
+// BAREBONES TEST ENDPOINT - No middleware, no CORS, no auth
+// This endpoint exists BEFORE any other middleware to test if requests reach Express at all
+app.get('/api/mobile/ping', (req, res) => {
+  const headers = {
+    origin: req.headers.origin || '(none)',
+    referer: req.headers.referer || '(none)',
+    'x-mobile-app': req.headers['x-mobile-app'] || '(none)',
+    'x-requested-with': req.headers['x-requested-with'] || '(none)',
+    'user-agent': (req.headers['user-agent'] || '(none)').substring(0, 100),
+  };
+  console.log('[PING] Request received:', JSON.stringify(headers));
+  
+  // Set permissive CORS headers for this test endpoint
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.header('Access-Control-Allow-Headers', '*');
+  
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    message: 'Express server is reachable',
+    receivedHeaders: headers
+  });
+});
+
+// Handle OPTIONS preflight for the ping endpoint
+app.options('/api/mobile/ping', (req, res) => {
+  console.log('[PING] OPTIONS preflight received');
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.header('Access-Control-Allow-Headers', '*');
+  res.sendStatus(200);
+});
+
 // CORS middleware for mobile app connections (including native Android/iOS apps)
 app.use((req, res, next) => {
   const origin = req.headers.origin;
