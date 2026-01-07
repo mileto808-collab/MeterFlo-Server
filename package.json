@@ -70,6 +70,7 @@
     "html2pdf.js": "^0.12.1",
     "html5-qrcode": "^2.3.8",
     "input-otp": "^1.4.2",
+    "jsonwebtoken": "^9.0.3",
     "lucide-react": "^0.453.0",
     "mariadb": "^3.4.5",
     "memoizee": "^0.4.17",
