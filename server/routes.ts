@@ -137,81 +137,11 @@ export async function registerRoutes(
   await storage.syncPermissionsFromRegistry();
   await storage.ensureDefaultSubroles();
 
-  // Mobile-specific login endpoint that doesn't rely on Origin/Referer headers
-  // This endpoint validates using X-Requested-With or X-Mobile-App headers instead
-  app.post("/api/mobile/auth/login", async (req, res) => {
-    console.log('[MOBILE-LOGIN] *** ENDPOINT REACHED ***');
-    try {
-      // Accept requests with X-Requested-With: XMLHttpRequest OR X-Mobile-App header
-      const xRequestedWith = req.headers['x-requested-with'];
-      const xMobileApp = req.headers['x-mobile-app'];
-      
-      // Log all headers for debugging
-      console.log('[MOBILE-LOGIN] Full headers:', JSON.stringify(req.headers, null, 2));
-      console.log('[MOBILE-LOGIN] Headers received:', {
-        origin: req.headers.origin || '(none)',
-        referer: req.headers.referer || '(none)',
-        'x-requested-with': xRequestedWith || '(none)',
-        'x-mobile-app': xMobileApp || '(none)',
-      });
-      
-      // Allow if X-Requested-With is XMLHttpRequest OR if X-Mobile-App header is present
-      const isValidMobileRequest = 
-        xRequestedWith === 'XMLHttpRequest' || 
-        xMobileApp === 'MeterFlo' ||
-        xMobileApp === 'true';
-      
-      if (!isValidMobileRequest) {
-        console.log('[MOBILE-LOGIN] Invalid request - missing valid X-Requested-With or X-Mobile-App header');
-        return res.status(403).json({ 
-          message: "Invalid mobile request",
-          hint: "Set X-Requested-With: XMLHttpRequest or X-Mobile-App: MeterFlo header"
-        });
-      }
-      
-      const { username, password } = req.body;
-      if (!username || !password) {
-        return res.status(400).json({ message: "Username and password are required" });
-      }
-      
-      const user = await storage.getUserByUsername(username);
-      if (!user || !user.passwordHash) {
-        return res.status(401).json({ message: "Invalid username or password" });
-      }
-      
-      if (user.isLocked) {
-        return res.status(403).json({ 
-          message: "Account is locked", 
-          reason: user.lockedReason || "Contact administrator for assistance" 
-        });
-      }
-      
-      const isValid = await bcrypt.compare(password, user.passwordHash);
-      if (!isValid) {
-        return res.status(401).json({ message: "Invalid username or password" });
-      }
-      
-      await storage.updateLastLogin(user.id);
-      
-      const sessionUser = {
-        claims: { sub: user.id },
-        expires_at: Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60),
-      };
-      (req as any).login(sessionUser, (err: any) => {
-        if (err) {
-          console.error("Mobile login error:", err);
-          return res.status(500).json({ message: "Login failed" });
-        }
-        console.log('[MOBILE-LOGIN] Success for user:', user.username);
-        res.json({ message: "Login successful", user: { id: user.id, username: user.username, role: user.role } });
-      });
-    } catch (error) {
-      console.error("Mobile login error:", error);
-      res.status(500).json({ message: "Login failed" });
-    }
-  });
+  // NOTE: Mobile JWT authentication is handled in server/index.ts BEFORE middleware
+  // The /api/mobile/auth/login endpoint uses JWT tokens (stateless, no session)
+  // The /api/mobile/auth/me endpoint verifies JWT tokens
 
-  // Local authentication
+  // Local authentication (web browser sessions)
   app.post("/api/auth/local/login", async (req, res) => {
     try {
       const { username, password } = req.body;
