@@ -5,6 +5,8 @@ import { createServer } from "http";
 import { importScheduler } from "./importScheduler";
 import { fileImportScheduler } from "./fileImportScheduler";
 import { storage } from "./storage";
+import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
 
 const app = express();
 
@@ -53,6 +55,149 @@ app.options('/api/mobile/ping', (req, res) => {
   res.header('Access-Control-Allow-Headers', '*');
   res.sendStatus(200);
 });
+
+// ============================================================================
+// MOBILE API ENDPOINTS - These run BEFORE any middleware to bypass CORS/session issues
+// ============================================================================
+
+const JWT_SECRET = process.env.JWT_SECRET || 'fallback-secret-for-dev';
+const JWT_EXPIRY = '7d';
+
+// Helper to set mobile CORS headers
+function setMobileCorsHeaders(res: Response) {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Mobile-App');
+}
+
+// OPTIONS preflight for all mobile endpoints
+app.options('/api/mobile/*', (req, res) => {
+  console.log('[MOBILE] OPTIONS preflight for:', req.path);
+  setMobileCorsHeaders(res);
+  res.sendStatus(200);
+});
+
+// Mobile login endpoint - JWT based, no session dependency
+app.post('/api/mobile/auth/login', express.json(), async (req, res) => {
+  console.log('[MOBILE-AUTH] Login attempt received');
+  setMobileCorsHeaders(res);
+  
+  try {
+    const { username, password } = req.body;
+    
+    if (!username || !password) {
+      console.log('[MOBILE-AUTH] Missing username or password');
+      return res.status(400).json({ message: 'Username and password are required' });
+    }
+    
+    const user = await storage.getUserByUsername(username);
+    if (!user || !user.passwordHash) {
+      console.log('[MOBILE-AUTH] User not found:', username);
+      return res.status(401).json({ message: 'Invalid username or password' });
+    }
+    
+    if (user.isLocked) {
+      console.log('[MOBILE-AUTH] Account locked:', username);
+      return res.status(403).json({ 
+        message: 'Account is locked', 
+        reason: user.lockedReason || 'Contact administrator for assistance' 
+      });
+    }
+    
+    const isValid = await bcrypt.compare(password, user.passwordHash);
+    if (!isValid) {
+      console.log('[MOBILE-AUTH] Invalid password for:', username);
+      return res.status(401).json({ message: 'Invalid username or password' });
+    }
+    
+    // Update last login
+    await storage.updateLastLogin(user.id);
+    
+    // Generate JWT token
+    const token = jwt.sign(
+      { 
+        userId: user.id, 
+        username: user.username, 
+        role: user.role,
+        subroleId: user.subroleId
+      },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRY }
+    );
+    
+    console.log('[MOBILE-AUTH] Login successful for:', username);
+    res.json({
+      message: 'Login successful',
+      token,
+      user: {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        subroleId: user.subroleId,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email
+      }
+    });
+  } catch (error) {
+    console.error('[MOBILE-AUTH] Login error:', error);
+    res.status(500).json({ message: 'Login failed' });
+  }
+});
+
+// Mobile auth verification endpoint - verifies JWT and returns user info
+app.get('/api/mobile/auth/me', async (req, res) => {
+  console.log('[MOBILE-AUTH] Verify token request');
+  setMobileCorsHeaders(res);
+  
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ message: 'No token provided' });
+    }
+    
+    const token = authHeader.substring(7);
+    const decoded = jwt.verify(token, JWT_SECRET) as { userId: number; username: string; role: string; subroleId: number | null };
+    
+    // Fetch fresh user data
+    const user = await storage.getUser(String(decoded.userId));
+    if (!user) {
+      return res.status(401).json({ message: 'User not found' });
+    }
+    
+    if (user.isLocked) {
+      return res.status(403).json({ 
+        message: 'Account is locked', 
+        reason: user.lockedReason || 'Contact administrator for assistance' 
+      });
+    }
+    
+    res.json({
+      user: {
+        id: user.id,
+        username: user.username,
+        role: user.role,
+        subroleId: user.subroleId,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email
+      }
+    });
+  } catch (error: any) {
+    if (error.name === 'TokenExpiredError') {
+      return res.status(401).json({ message: 'Token expired' });
+    }
+    if (error.name === 'JsonWebTokenError') {
+      return res.status(401).json({ message: 'Invalid token' });
+    }
+    console.error('[MOBILE-AUTH] Token verification error:', error);
+    res.status(500).json({ message: 'Token verification failed' });
+  }
+});
+
+// ============================================================================
+// END MOBILE API ENDPOINTS
+// ============================================================================
 
 // CORS middleware for mobile app connections (including native Android/iOS apps)
 app.use((req, res, next) => {
