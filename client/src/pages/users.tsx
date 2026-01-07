@@ -51,6 +51,8 @@ const createUserSchema = z.object({
   phone: z.string().max(50).optional().or(z.literal("")),
   website: z.string().max(255).optional().or(z.literal("")),
   notes: z.string().optional().or(z.literal("")),
+  projectIds: z.array(z.number()).optional(),
+  groupIds: z.array(z.number()).optional(),
 });
 
 const editUserSchema = z.object({
@@ -238,7 +240,7 @@ export default function Users() {
 
   const createForm = useForm<CreateUserForm>({
     resolver: zodResolver(createUserSchema),
-    defaultValues: { username: "", password: "", firstName: "", lastName: "", email: "", role: "user", subroleId: null, address: "", city: "", state: "", zip: "", phone: "", website: "", notes: "" },
+    defaultValues: { username: "", password: "", firstName: "", lastName: "", email: "", role: "user", subroleId: null, address: "", city: "", state: "", zip: "", phone: "", website: "", notes: "", projectIds: [], groupIds: [] },
   });
 
   const editForm = useForm<EditUserForm>({
@@ -253,7 +255,12 @@ export default function Users() {
 
   const createUserMutation = useMutation({
     mutationFn: async (data: CreateUserForm) => {
-      const payload = { ...data, email: data.email || null };
+      const payload = { 
+        ...data, 
+        email: data.email || null,
+        projectIds: data.projectIds || [],
+        groupIds: data.groupIds || [],
+      };
       await apiRequest("POST", "/api/users", payload);
     },
     onSuccess: () => {
@@ -386,7 +393,7 @@ export default function Users() {
   // Query for all user groups (for assignment selection)
   const { data: userGroups } = useQuery<UserGroup[]>({
     queryKey: ["/api/user-groups"],
-    enabled: !!editingUser || assignProjectDialogOpen,
+    enabled: !!editingUser || assignProjectDialogOpen || isCreatingUser,
   });
 
   // Query for editing user's current project assignments
@@ -1228,6 +1235,80 @@ export default function Users() {
                   />
                 )}
                 
+                <div className="border-t pt-4 mt-4">
+                  <h3 className="text-sm font-medium mb-3">Assign to Projects</h3>
+                  <div className="space-y-2">
+                    {projects && projects.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {projects.map((project) => {
+                          const selectedProjectIds = createForm.watch("projectIds") || [];
+                          const isSelected = selectedProjectIds.includes(project.id);
+                          return (
+                            <Badge
+                              key={project.id}
+                              variant={isSelected ? "default" : "outline"}
+                              className={`cursor-pointer ${isSelected ? "" : "opacity-60"}`}
+                              onClick={() => {
+                                const current = createForm.getValues("projectIds") || [];
+                                if (isSelected) {
+                                  createForm.setValue("projectIds", current.filter(id => id !== project.id));
+                                } else {
+                                  createForm.setValue("projectIds", [...current, project.id]);
+                                }
+                              }}
+                              data-testid={`badge-create-project-${project.id}`}
+                            >
+                              <Folder className="h-3 w-3 mr-1" />
+                              {project.name}
+                              {isSelected && <X className="h-3 w-3 ml-1" />}
+                            </Badge>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No projects available</p>
+                    )}
+                    <p className="text-xs text-muted-foreground">Click to select projects this user should have access to</p>
+                  </div>
+                </div>
+
+                <div className="border-t pt-4 mt-4">
+                  <h3 className="text-sm font-medium mb-3">Assign to User Groups</h3>
+                  <div className="space-y-2">
+                    {userGroups && userGroups.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {userGroups.map((group) => {
+                          const selectedGroupIds = createForm.watch("groupIds") || [];
+                          const isSelected = selectedGroupIds.includes(group.id);
+                          return (
+                            <Badge
+                              key={group.id}
+                              variant={isSelected ? "default" : "outline"}
+                              className={`cursor-pointer ${isSelected ? "" : "opacity-60"}`}
+                              onClick={() => {
+                                const current = createForm.getValues("groupIds") || [];
+                                if (isSelected) {
+                                  createForm.setValue("groupIds", current.filter(id => id !== group.id));
+                                } else {
+                                  createForm.setValue("groupIds", [...current, group.id]);
+                                }
+                              }}
+                              data-testid={`badge-create-group-${group.id}`}
+                            >
+                              <UsersRound className="h-3 w-3 mr-1" />
+                              {group.name}
+                              {isSelected && <X className="h-3 w-3 ml-1" />}
+                            </Badge>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">No user groups available</p>
+                    )}
+                    <p className="text-xs text-muted-foreground">Click to select user groups this user should belong to</p>
+                  </div>
+                </div>
+
                 <div className="border-t pt-4 mt-4">
                   <h3 className="text-sm font-medium mb-3">Contact Information</h3>
                   <div className="space-y-4">

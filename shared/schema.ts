@@ -420,6 +420,8 @@ export const createUserSchema = z.object({
   phone: z.string().max(50).optional().nullable(),
   website: z.string().max(255).optional().nullable(),
   notes: z.string().optional().nullable(),
+  projectIds: z.array(z.number()).optional(),
+  groupIds: z.array(z.number()).optional(),
 });
 
 // Schema for updating a user

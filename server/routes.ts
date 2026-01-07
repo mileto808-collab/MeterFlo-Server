@@ -304,7 +304,7 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Invalid user data", errors: parsed.error.errors });
       }
       
-      const { username, password, firstName, lastName, email, role, subroleId } = parsed.data;
+      const { username, password, firstName, lastName, email, role, subroleId, projectIds, groupIds } = parsed.data;
       
       // Prevent non-admin users from creating admin accounts
       if (role === "admin" && currentUser.role !== "admin") {
@@ -333,6 +333,20 @@ export async function registerRoutes(
       
       const passwordHash = await bcrypt.hash(password, 10);
       const user = await storage.createLocalUser(username, passwordHash, role, firstName, lastName, email, subroleId);
+      
+      // Assign to projects if specified
+      if (projectIds && projectIds.length > 0) {
+        for (const projectId of projectIds) {
+          await storage.assignUserToProject(user.id, projectId);
+        }
+      }
+      
+      // Assign to user groups if specified
+      if (groupIds && groupIds.length > 0) {
+        for (const groupId of groupIds) {
+          await storage.addUserToGroup(groupId, user.id);
+        }
+      }
       
       res.status(201).json(user);
     } catch (error) {
