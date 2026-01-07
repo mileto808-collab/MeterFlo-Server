@@ -301,7 +301,7 @@ export function WorkOrderDetail({
                 {watchedAssignedUserId && (
                   <div className="flex items-center gap-1.5">
                     <User className="h-4 w-4" />
-                    <span>Assigned: {getAssignedUserName(watchedAssignedUserId) || "-"}</span>
+                    <span>Assigned: {(workOrder as any).assignedUserDisplay || getAssignedUserName(watchedAssignedUserId) || "-"}</span>
                   </div>
                 )}
               </div>
