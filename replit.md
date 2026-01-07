@@ -28,7 +28,8 @@ Preferred communication style: Simple, everyday language.
 - **Multi-Tenancy**:
     - **Database Isolation**: Each project gets its own PostgreSQL schema (e.g., `projectName_projectID`).
     - **File Storage**: Configurable root directory with structure: `Project Files/ProjectName_ID/Work Orders/customerWoId/` for work order attachments, plus `Project Documents/` and `Project FTP Files/` subfolders. Legacy folders are automatically migrated.
-- **Work Order Management**: Create, edit, assign, track. Customizable statuses, audit fields (scheduledAt, scheduledBy, completedAt, completedBy), and completion validation.
+- **Work Order Management**: Create, edit, assign, track. Customizable statuses, audit fields (scheduledAt, scheduledBy, completedAt, completedBy), and completion validation. Calendar view with month/week/day views, drag-and-drop rescheduling, and unscheduled work order search panel.
+- **Operational Hours**: Per-project scheduling restrictions with configurable start/end times, operational days (Mon-Sun), and holiday exclusions. Per-project timezone support with fallback to global timezone setting. Uses `date-fns-tz` for deterministic timezone conversion.
 - **User Management**: Role assignment via subroles, user lock/unlock, password reset.
 - **Project Management**: Project creation, editing, and per-project database backup/restore.
 - **File Management**: Project-level and work order-specific file uploads, secure storage, and folder renaming on project updates.

@@ -101,6 +101,7 @@ export const projects = pgTable("projects", {
   operationalHoursStart: varchar("operational_hours_start", { length: 10 }),
   operationalHoursEnd: varchar("operational_hours_end", { length: 10 }),
   operationalHoursDays: text("operational_hours_days").array(),
+  timezone: varchar("timezone", { length: 100 }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -481,6 +482,7 @@ export const insertProjectSchema = z.object({
   operationalHoursStart: z.string().max(10).optional().nullable(),
   operationalHoursEnd: z.string().max(10).optional().nullable(),
   operationalHoursDays: z.array(z.string()).optional().nullable(),
+  timezone: z.string().max(100).optional().nullable(),
 });
 
 export const insertProjectHolidaySchema = z.object({

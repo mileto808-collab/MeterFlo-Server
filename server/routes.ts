@@ -49,6 +49,7 @@ async function validateOperationalHours(
     operationalHoursStart?: string | null; 
     operationalHoursEnd?: string | null;
     operationalHoursDays?: string[] | null;
+    timezone?: string | null;
   }
 ): Promise<OperationalHoursValidationResult> {
   if (!scheduledAt || !project.operationalHoursEnabled) {
@@ -60,8 +61,9 @@ async function validateOperationalHours(
     return { valid: true };
   }
   
-  // Get the configured timezone for proper time comparisons
-  const timezone = await storage.getSetting("default_timezone") || "America/Denver";
+  // Get the configured timezone - project timezone takes precedence over global setting
+  const globalTimezone = await storage.getSetting("default_timezone") || "America/Denver";
+  const timezone = project.timezone || globalTimezone;
   
   // Convert UTC date to the configured timezone using date-fns-tz
   const zonedDate = toZonedTime(scheduledDate, timezone);
