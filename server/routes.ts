@@ -17,6 +17,7 @@ import { createBackupArchive, extractDatabaseBackupFromArchive, restoreFullSyste
 import { createPgBackupArchive, extractBackupFromArchive, restorePgBackup, restoreFilesFromPgArchive } from "./pgBackup";
 import { projectEventEmitter, emitWorkOrderCreated, emitWorkOrderUpdated, emitWorkOrderDeleted, emitFileAdded, emitFileDeleted, type ProjectEvent } from "./eventEmitter";
 import { sendWorkOrderToCustomerApi } from "./customerApiService";
+import { toZonedTime, format as formatTz } from "date-fns-tz";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -59,9 +60,23 @@ async function validateOperationalHours(
     return { valid: true };
   }
   
+  // Get the configured timezone for proper time comparisons
+  const timezone = await storage.getSetting("default_timezone") || "America/Denver";
+  
+  // Convert UTC date to the configured timezone using date-fns-tz
+  const zonedDate = toZonedTime(scheduledDate, timezone);
+  
+  // Get the local hours and minutes in the configured timezone
+  const scheduledHours = zonedDate.getHours();
+  const scheduledMinutes = zonedDate.getMinutes();
+  const scheduledTimeMinutes = scheduledHours * 60 + scheduledMinutes;
+  
+  // Get day of week in the configured timezone (0 = Sunday, 6 = Saturday)
+  const dayIndex = zonedDate.getDay();
+  const dayOfWeek = DAY_NAMES[dayIndex];
+  
   // Check day of week if days are configured
   if (project.operationalHoursDays && project.operationalHoursDays.length > 0) {
-    const dayOfWeek = DAY_NAMES[scheduledDate.getDay()];
     if (!project.operationalHoursDays.includes(dayOfWeek)) {
       const allowedDays = project.operationalHoursDays
         .map(d => d.charAt(0).toUpperCase() + d.slice(1))
@@ -73,14 +88,14 @@ async function validateOperationalHours(
     }
   }
   
-  // Check if date falls on a holiday
+  // Check if date falls on a holiday - format as YYYY-MM-DD in configured timezone
+  const localDateStr = formatTz(zonedDate, 'yyyy-MM-dd', { timeZone: timezone });
   const holidays = await storage.getProjectHolidays(project.id);
-  const scheduledDateStr = scheduledDate.toISOString().split('T')[0];
-  const holiday = holidays.find(h => h.date === scheduledDateStr);
+  const holiday = holidays.find(h => h.date === localDateStr);
   if (holiday) {
     return { 
       valid: false, 
-      message: `Cannot schedule on ${holiday.name || scheduledDateStr} - this date is marked as a holiday.`
+      message: `Cannot schedule on ${holiday.name || localDateStr} - this date is marked as a holiday.`
     };
   }
   
@@ -88,10 +103,6 @@ async function validateOperationalHours(
   if (!project.operationalHoursStart || !project.operationalHoursEnd) {
     return { valid: true };
   }
-  
-  const scheduledHours = scheduledDate.getHours();
-  const scheduledMinutes = scheduledDate.getMinutes();
-  const scheduledTimeMinutes = scheduledHours * 60 + scheduledMinutes;
   
   const [startHour, startMin] = project.operationalHoursStart.split(':').map(Number);
   const [endHour, endMin] = project.operationalHoursEnd.split(':').map(Number);
