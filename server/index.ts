@@ -9,6 +9,7 @@ import { pool } from "./db";
 import { getProjectWorkOrderStorage } from "./projectDb";
 import { emitWorkOrderUpdated } from "./eventEmitter";
 import { sendWorkOrderToCustomerApi } from "./customerApiService";
+import { getProjectFilesPath, getProjectDirectoryName } from "./fileStorage";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { promises as fs, existsSync } from "fs";
@@ -49,19 +50,6 @@ async function triggerProjectWebhook(
   } catch (error) {
     console.error("Error triggering webhook:", error);
   }
-}
-
-// Helper to get project files path
-async function getProjectFilesPath(): Promise<string> {
-  const basePath = process.env.PROJECT_FILES_PATH || path.join(process.cwd(), "Project Files");
-  await fs.mkdir(basePath, { recursive: true });
-  return basePath;
-}
-
-// Helper to get project directory name
-function getProjectDirectoryName(projectName: string, projectId: number): string {
-  const safeName = projectName.replace(/[^a-zA-Z0-9\s-_]/g, "").trim();
-  return `${safeName}_${projectId}`;
 }
 
 const app = express();
