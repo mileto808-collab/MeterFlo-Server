@@ -80,6 +80,8 @@ import { ScannerInput } from "@/components/scanner-input";
 import { GPSCapture } from "@/components/gps-capture";
 import { StartSystemChangeoutDialog } from "@/components/start-system-changeout-dialog";
 import { DateTimePicker } from "@/components/ui/datetime-picker";
+import { WorkOrderCalendar } from "@/components/work-order-calendar";
+import { Calendar as CalendarIcon, List } from "lucide-react";
 
 type Assignee = {
   type: "user" | "group";
@@ -212,6 +214,7 @@ export default function ProjectWorkOrders() {
     troubleCount: number;
     canClose: boolean;
   } | null>(null);
+  const [viewMode, setViewMode] = useState<"table" | "calendar">("table");
 
   const signaturePadRef = useRef<SignaturePadRef>(null);
   const editSignaturePadRef = useRef<SignaturePadRef>(null);
@@ -1045,6 +1048,24 @@ export default function ProjectWorkOrders() {
 
   const handleEdit = (workOrder: ProjectWorkOrder) => {
     setEditingWorkOrder(workOrder);
+  };
+
+  const handleReschedule = async (workOrderId: number, scheduledAt: string) => {
+    if (!hasPermission('workOrders.calendar')) {
+      toast({ title: "Permission denied", description: "You do not have permission to reschedule work orders.", variant: "destructive" });
+      return;
+    }
+    try {
+      await apiRequest("PATCH", `/api/projects/${projectId}/work-orders/${workOrderId}`, {
+        scheduledAt,
+      });
+      await queryClient.refetchQueries({ queryKey: [`/api/projects/${projectId}/work-orders`] });
+      await queryClient.refetchQueries({ queryKey: [`/api/projects/${projectId}/work-orders/stats`] });
+      toast({ title: "Work order rescheduled" });
+    } catch (error: any) {
+      const errorMsg = error?.message || "";
+      toast({ title: "Failed to reschedule work order", description: errorMsg, variant: "destructive" });
+    }
   };
 
   const getStatusColorHex = (color: string): string => {
@@ -2836,6 +2857,28 @@ export default function ProjectWorkOrders() {
               <Plus className="h-4 w-4 mr-2" />
               New Work Order
             </Button>
+            {hasPermission('workOrders.calendar') && (
+              <div className="flex items-center border rounded-md">
+                <Button
+                  variant={viewMode === "table" ? "secondary" : "ghost"}
+                  size="sm"
+                  onClick={() => setViewMode("table")}
+                  className="rounded-r-none"
+                  data-testid="view-table"
+                >
+                  <List className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant={viewMode === "calendar" ? "secondary" : "ghost"}
+                  size="sm"
+                  onClick={() => setViewMode("calendar")}
+                  className="rounded-l-none"
+                  data-testid="view-calendar"
+                >
+                  <CalendarIcon className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -3285,7 +3328,19 @@ export default function ProjectWorkOrders() {
         </div>
       )}
 
-      {workOrders.length === 0 ? (
+      {viewMode === "calendar" && hasPermission('workOrders.calendar') ? (
+        <Card className="overflow-hidden">
+          <CardContent className="p-0 h-[calc(100vh-320px)] min-h-[500px]">
+            <WorkOrderCalendar
+              workOrders={workOrders}
+              statuses={workOrderStatuses}
+              onWorkOrderClick={handleEdit}
+              onReschedule={handleReschedule}
+              projectId={projectId!}
+            />
+          </CardContent>
+        </Card>
+      ) : workOrders.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
             <ClipboardList className="h-12 w-12 text-muted-foreground mb-4" />
