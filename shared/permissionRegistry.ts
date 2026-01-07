@@ -306,6 +306,13 @@ export const permissionRegistry: PermissionDefinition[] = [
     description: "Set work order status to Closed via bulk operations",
     defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
   },
+  {
+    key: "workOrders.calendar",
+    label: "Calendar View",
+    category: "Work Order Actions",
+    description: "Access calendar view to visualize and reschedule work orders",
+    defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
+  },
 
   // User Action permissions - what users can do with user accounts
   {
