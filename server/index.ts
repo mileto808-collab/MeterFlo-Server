@@ -195,6 +195,67 @@ app.get('/api/mobile/auth/me', async (req, res) => {
   }
 });
 
+// JWT verification helper for mobile endpoints
+async function verifyMobileJwt(req: Request, res: Response): Promise<{ userId: number; username: string; role: string; subroleId: number | null } | null> {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    res.status(401).json({ message: 'No token provided' });
+    return null;
+  }
+  
+  try {
+    const token = authHeader.substring(7);
+    const decoded = jwt.verify(token, JWT_SECRET) as { userId: number; username: string; role: string; subroleId: number | null };
+    
+    const user = await storage.getUser(String(decoded.userId));
+    if (!user) {
+      res.status(401).json({ message: 'User not found' });
+      return null;
+    }
+    
+    if (user.isLocked) {
+      res.status(403).json({ message: 'Account is locked', reason: user.lockedReason || 'Contact administrator for assistance' });
+      return null;
+    }
+    
+    return decoded;
+  } catch (error: any) {
+    if (error.name === 'TokenExpiredError') {
+      res.status(401).json({ message: 'Token expired' });
+    } else if (error.name === 'JsonWebTokenError') {
+      res.status(401).json({ message: 'Invalid token' });
+    } else {
+      res.status(500).json({ message: 'Token verification failed' });
+    }
+    return null;
+  }
+}
+
+// Mobile endpoint: Get user's assigned projects
+app.get('/api/mobile/users/:id/projects', async (req, res) => {
+  console.log('[MOBILE-API] GET /api/mobile/users/:id/projects');
+  setMobileCorsHeaders(res);
+  
+  const decoded = await verifyMobileJwt(req, res);
+  if (!decoded) return;
+  
+  try {
+    const targetUserId = req.params.id;
+    
+    // Users can only view their own projects via mobile
+    if (String(decoded.userId) !== targetUserId) {
+      return res.status(403).json({ message: 'Forbidden: Can only access your own projects' });
+    }
+    
+    const projects = await storage.getUserProjects(targetUserId);
+    console.log('[MOBILE-API] Returning', projects.length, 'projects for user', targetUserId);
+    res.json(projects);
+  } catch (error) {
+    console.error('[MOBILE-API] Error fetching user projects:', error);
+    res.status(500).json({ message: 'Failed to fetch user projects' });
+  }
+});
+
 // ============================================================================
 // END MOBILE API ENDPOINTS
 // ============================================================================
