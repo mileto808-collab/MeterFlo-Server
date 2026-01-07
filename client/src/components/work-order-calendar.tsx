@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, type DragEvent } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef, type DragEvent } from "react";
 import {
   format,
   startOfMonth,
@@ -40,6 +40,14 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import {
   ChevronLeft,
   ChevronRight,
   Calendar as CalendarIcon,
@@ -51,6 +59,8 @@ import {
   CalendarDays,
   CalendarRange,
   LayoutGrid,
+  User,
+  Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ProjectWorkOrder } from "../../../server/projectDb";
@@ -58,13 +68,27 @@ import type { WorkOrderStatus, ServiceTypeRecord } from "@shared/schema";
 
 type CalendarView = "month" | "week" | "day";
 
+type Assignee = {
+  id: string;
+  label: string;
+  key?: string;
+};
+
+type AssigneesData = {
+  users: Assignee[];
+  groups: Assignee[];
+};
+
 interface WorkOrderCalendarProps {
   workOrders: ProjectWorkOrder[];
   statuses: WorkOrderStatus[];
   serviceTypes: ServiceTypeRecord[];
   onWorkOrderClick: (workOrder: ProjectWorkOrder) => void;
-  onReschedule: (workOrderId: number, newScheduledAt: string) => Promise<void>;
+  onReschedule: (workOrderId: number, newScheduledAt: string, assignedUserId?: string | null, assignedGroupId?: string | null) => Promise<void>;
   projectId: number;
+  assigneesData?: AssigneesData;
+  initialWorkOrderForScheduling?: ProjectWorkOrder | null;
+  onInitialSchedulingHandled?: () => void;
 }
 
 interface DragState {
@@ -79,6 +103,9 @@ export function WorkOrderCalendar({
   onWorkOrderClick,
   onReschedule,
   projectId,
+  assigneesData,
+  initialWorkOrderForScheduling,
+  onInitialSchedulingHandled,
 }: WorkOrderCalendarProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<CalendarView>("month");
@@ -88,11 +115,23 @@ export function WorkOrderCalendar({
     workOrder: ProjectWorkOrder | null;
     targetDate: Date | null;
     time: string;
-  }>({ open: false, workOrder: null, targetDate: null, time: "09:00" });
+    assignedUserId: string | null;
+    assignedGroupId: string | null;
+  }>({ open: false, workOrder: null, targetDate: null, time: "09:00", assignedUserId: null, assignedGroupId: null });
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedForScheduling, setSelectedForScheduling] = useState<ProjectWorkOrder | null>(null);
   const [isRescheduling, setIsRescheduling] = useState(false);
+  const lastHandledWorkOrderIdRef = useRef<number | null>(null);
+
+  // Handle initial work order for scheduling from work order detail (via useEffect to avoid state update during render)
+  useEffect(() => {
+    if (initialWorkOrderForScheduling && lastHandledWorkOrderIdRef.current !== initialWorkOrderForScheduling.id) {
+      lastHandledWorkOrderIdRef.current = initialWorkOrderForScheduling.id;
+      setSelectedForScheduling(initialWorkOrderForScheduling);
+      onInitialSchedulingHandled?.();
+    }
+  }, [initialWorkOrderForScheduling, onInitialSchedulingHandled]);
 
   const getStatusColor = useCallback((statusCode: string) => {
     const status = statuses.find((s) => s.code === statusCode || s.label === statusCode);
@@ -260,6 +299,8 @@ export function WorkOrderCalendar({
         workOrder,
         targetDate,
         time,
+        assignedUserId: workOrder.assignedUserId || null,
+        assignedGroupId: workOrder.assignedGroupId || null,
       });
     }
     setDragState({ workOrder: null, isDragging: false });
@@ -276,6 +317,8 @@ export function WorkOrderCalendar({
         workOrder: selectedForScheduling,
         targetDate: date,
         time,
+        assignedUserId: selectedForScheduling.assignedUserId || null,
+        assignedGroupId: selectedForScheduling.assignedGroupId || null,
       });
     }
   };
@@ -292,9 +335,14 @@ export function WorkOrderCalendar({
       scheduledDate = setSeconds(scheduledDate, 0);
       
       const scheduledAt = scheduledDate.toISOString();
-      await onReschedule(rescheduleDialog.workOrder.id, scheduledAt);
+      await onReschedule(
+        rescheduleDialog.workOrder.id, 
+        scheduledAt, 
+        rescheduleDialog.assignedUserId, 
+        rescheduleDialog.assignedGroupId
+      );
       
-      setRescheduleDialog({ open: false, workOrder: null, targetDate: null, time: "09:00" });
+      closeSchedulingDialog();
       setSelectedForScheduling(null);
       setSearchOpen(false);
       setSearchQuery("");
@@ -310,7 +358,16 @@ export function WorkOrderCalendar({
 
   const cancelSchedulingMode = () => {
     setSelectedForScheduling(null);
+    // Reset the ref so the same work order can be scheduled again later
+    lastHandledWorkOrderIdRef.current = null;
   };
+
+  // Shared function to reset scheduling dialog state and ref
+  const closeSchedulingDialog = useCallback(() => {
+    setRescheduleDialog({ open: false, workOrder: null, targetDate: null, time: "09:00", assignedUserId: null, assignedGroupId: null });
+    // Reset the ref so the same work order can be scheduled again later
+    lastHandledWorkOrderIdRef.current = null;
+  }, []);
 
   const renderWorkOrderCard = (workOrder: ProjectWorkOrder, compact = false) => {
     const isDraggable = workOrder.status !== "Completed" && workOrder.status !== "Closed";
@@ -668,7 +725,11 @@ export function WorkOrderCalendar({
         {view === "day" && renderDayView()}
       </div>
 
-      <Dialog open={rescheduleDialog.open} onOpenChange={(open) => !open && setRescheduleDialog({ open: false, workOrder: null, targetDate: null, time: "09:00" })}>
+      <Dialog open={rescheduleDialog.open} onOpenChange={(open) => {
+        if (!open) {
+          closeSchedulingDialog();
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
@@ -682,14 +743,14 @@ export function WorkOrderCalendar({
           <div className="space-y-4 py-4">
             <div className="flex items-center gap-4">
               <div className="flex-1">
-                <label className="text-sm font-medium">Date</label>
+                <Label className="text-sm font-medium">Date</Label>
                 <div className="text-lg font-semibold">
                   {rescheduleDialog.targetDate && format(rescheduleDialog.targetDate, "EEEE, MMMM d, yyyy")}
                 </div>
               </div>
             </div>
             <div>
-              <label className="text-sm font-medium">Time</label>
+              <Label className="text-sm font-medium">Time</Label>
               <Input
                 type="time"
                 value={rescheduleDialog.time}
@@ -698,11 +759,60 @@ export function WorkOrderCalendar({
                 data-testid="reschedule-time"
               />
             </div>
+            
+            {assigneesData && (
+              <>
+                <div>
+                  <Label className="text-sm font-medium flex items-center gap-2">
+                    <User className="h-4 w-4" />
+                    Assigned User
+                  </Label>
+                  <Select
+                    value={rescheduleDialog.assignedUserId || "__none__"}
+                    onValueChange={(v) => setRescheduleDialog((prev) => ({ ...prev, assignedUserId: v === "__none__" ? null : v }))}
+                  >
+                    <SelectTrigger className="mt-1" data-testid="schedule-assigned-user">
+                      <SelectValue placeholder="Select user..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">None</SelectItem>
+                      {assigneesData.users.map((user) => (
+                        <SelectItem key={user.id} value={user.id}>
+                          {user.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium flex items-center gap-2">
+                    <Users className="h-4 w-4" />
+                    Assigned Group
+                  </Label>
+                  <Select
+                    value={rescheduleDialog.assignedGroupId || "__none__"}
+                    onValueChange={(v) => setRescheduleDialog((prev) => ({ ...prev, assignedGroupId: v === "__none__" ? null : v }))}
+                  >
+                    <SelectTrigger className="mt-1" data-testid="schedule-assigned-group">
+                      <SelectValue placeholder="Select group..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">None</SelectItem>
+                      {assigneesData.groups.map((group) => (
+                        <SelectItem key={group.id} value={group.key || group.label}>
+                          {group.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
+            )}
           </div>
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setRescheduleDialog({ open: false, workOrder: null, targetDate: null, time: "09:00" })}
+              onClick={closeSchedulingDialog}
               disabled={isRescheduling}
             >
               Cancel
