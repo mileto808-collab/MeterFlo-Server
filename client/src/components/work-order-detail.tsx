@@ -866,7 +866,9 @@ export function WorkOrderDetail({
                             value={selectValue} 
                             onValueChange={(v) => {
                               if (v === "__none__") {
-                                // Use setValue with explicit options for undefined to force RHF update
+                                // Call field.onChange first to update the Controller's internal value (triggers key change/remount)
+                                // Then call setValue to ensure watchers and dirty state are updated
+                                field.onChange(undefined);
                                 form.setValue("assignedUserId", undefined, { shouldDirty: true, shouldTouch: true, shouldValidate: true });
                               } else {
                                 field.onChange(v);
@@ -906,6 +908,9 @@ export function WorkOrderDetail({
                             value={selectValue} 
                             onValueChange={(v) => {
                               if (v === "__none__") {
+                                // Call field.onChange first to update the Controller's internal value (triggers key change/remount)
+                                // Then call setValue to ensure watchers and dirty state are updated
+                                field.onChange(undefined);
                                 form.setValue("assignedGroupId", undefined, { shouldDirty: true, shouldTouch: true, shouldValidate: true });
                               } else {
                                 field.onChange(v);
