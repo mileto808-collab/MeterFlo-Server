@@ -859,7 +859,12 @@ export function WorkOrderDetail({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Assigned User</FormLabel>
-                        <Select value={field.value ?? "__none__"} onValueChange={(v) => field.onChange(v === "__none__" ? undefined : v)} disabled={!canEdit}>
+                        <Select 
+                          key={`assigned-user-${field.value ?? "__none__"}`}
+                          value={field.value ?? "__none__"} 
+                          onValueChange={(v) => field.onChange(v === "__none__" ? undefined : v)} 
+                          disabled={!canEdit}
+                        >
                           <FormControl>
                             <SelectTrigger data-testid="select-assigned-user" disabled={!canEdit}>
                               <SelectValue placeholder="Select user..." />
@@ -884,7 +889,12 @@ export function WorkOrderDetail({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Assigned Group</FormLabel>
-                        <Select value={field.value ?? "__none__"} onValueChange={(v) => field.onChange(v === "__none__" ? undefined : v)} disabled={!canEdit}>
+                        <Select 
+                          key={`assigned-group-${field.value ?? "__none__"}`}
+                          value={field.value ?? "__none__"} 
+                          onValueChange={(v) => field.onChange(v === "__none__" ? undefined : v)} 
+                          disabled={!canEdit}
+                        >
                           <FormControl>
                             <SelectTrigger data-testid="select-assigned-group" disabled={!canEdit}>
                               <SelectValue placeholder="Select group..." />
