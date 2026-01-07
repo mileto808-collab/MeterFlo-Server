@@ -140,12 +140,14 @@ export async function registerRoutes(
   // Mobile-specific login endpoint that doesn't rely on Origin/Referer headers
   // This endpoint validates using X-Requested-With or X-Mobile-App headers instead
   app.post("/api/mobile/auth/login", async (req, res) => {
+    console.log('[MOBILE-LOGIN] *** ENDPOINT REACHED ***');
     try {
       // Accept requests with X-Requested-With: XMLHttpRequest OR X-Mobile-App header
       const xRequestedWith = req.headers['x-requested-with'];
       const xMobileApp = req.headers['x-mobile-app'];
       
-      // Log headers for debugging
+      // Log all headers for debugging
+      console.log('[MOBILE-LOGIN] Full headers:', JSON.stringify(req.headers, null, 2));
       console.log('[MOBILE-LOGIN] Headers received:', {
         origin: req.headers.origin || '(none)',
         referer: req.headers.referer || '(none)',

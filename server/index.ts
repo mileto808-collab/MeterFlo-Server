@@ -26,6 +26,11 @@ app.use((req, res, next) => {
   const refererHeader = req.headers.referer || req.headers.referrer;
   const referer = Array.isArray(refererHeader) ? refererHeader[0] : refererHeader;
   
+  // Check for mobile app headers - these bypass Origin/Referer validation entirely
+  // ONLY X-Mobile-App triggers bypass (not X-Requested-With, which browsers send)
+  const xMobileApp = req.headers['x-mobile-app'];
+  const isMobileAppRequest = xMobileApp === 'MeterFlo' || xMobileApp === 'true';
+  
   // Helper to extract hostname from a URL string
   const getHostname = (urlString: string): string | null => {
     try {
@@ -73,7 +78,12 @@ app.use((req, res, next) => {
   // Determine if this request should get CORS headers
   let allowedOriginForHeader: string | null = null;
   
-  if (origin && isAllowedOrigin(origin)) {
+  // PRIORITY 1: Mobile app with X-Mobile-App or X-Requested-With header
+  // These requests bypass Origin/Referer validation entirely
+  if (isMobileAppRequest) {
+    // Mobile app request - always allow and use production domain for CORS
+    allowedOriginForHeader = 'https://meterflo.com';
+  } else if (origin && isAllowedOrigin(origin)) {
     // Browser request with valid Origin header
     allowedOriginForHeader = origin;
   } else if (!origin && referer && isAllowedOrigin(referer)) {
@@ -125,11 +135,14 @@ app.use((req, res, next) => {
     const origin = req.headers.origin || '(none)';
     const referer = req.headers.referer || req.headers.referrer || '(none)';
     const xRequestedWith = req.headers['x-requested-with'] || '(none)';
+    const xMobileApp = req.headers['x-mobile-app'] || '(none)';
     const userAgent = req.headers['user-agent'] || '(none)';
-    console.log(`[MOBILE-DEBUG] ${req.method} ${req.path}`);
+    const isMobile = xMobileApp !== '(none)' || xRequestedWith === 'XMLHttpRequest';
+    console.log(`[MOBILE-DEBUG] ${req.method} ${req.path} (mobile=${isMobile})`);
     console.log(`  Origin: ${origin}`);
     console.log(`  Referer: ${referer}`);
     console.log(`  X-Requested-With: ${xRequestedWith}`);
+    console.log(`  X-Mobile-App: ${xMobileApp}`);
     console.log(`  User-Agent: ${userAgent?.substring(0, 100)}`);
   }
   next();
