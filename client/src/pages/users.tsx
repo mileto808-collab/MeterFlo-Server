@@ -206,7 +206,9 @@ export default function Users() {
       if (!selectedUser) return [];
       const res = await fetch(`/api/users/${selectedUser.id}/projects`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch user projects");
-      return res.json();
+      const payload = await res.json();
+      // API returns { projects, mobileConfig } - extract projects array
+      return Array.isArray(payload) ? payload : (payload?.projects ?? []);
     },
     enabled: !!selectedUser && assignProjectDialogOpen,
   });
@@ -221,7 +223,9 @@ export default function Users() {
         try {
           const res = await fetch(`/api/users/${user.id}/projects`, { credentials: "include" });
           if (res.ok) {
-            map[user.id] = await res.json();
+            const payload = await res.json();
+            // API returns { projects, mobileConfig } - extract projects array
+            map[user.id] = Array.isArray(payload) ? payload : (payload?.projects ?? []);
           }
         } catch {
           map[user.id] = [];
@@ -393,7 +397,7 @@ export default function Users() {
       const res = await fetch(`/api/users/${editingUser.id}/projects`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch user projects");
       const payload = await res.json();
-      // Normalize response to always return an array
+      // API returns { projects, mobileConfig } - extract projects array
       return Array.isArray(payload) ? payload : (payload?.projects ?? []);
     },
     enabled: !!editingUser,
