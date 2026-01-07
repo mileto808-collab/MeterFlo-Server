@@ -24,12 +24,40 @@ declare module "http" {
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   
-  // Allow requests from Replit dev/app domains (mobile app)
-  if (origin && (
-    origin.endsWith('.replit.dev') || 
-    origin.endsWith('.replit.app') ||
-    origin.includes('localhost')
-  )) {
+  // Helper to check if origin is allowed
+  const isAllowedOrigin = (originHeader: string): boolean => {
+    try {
+      const url = new URL(originHeader);
+      const hostname = url.hostname.toLowerCase();
+      
+      // Allow Replit dev/app domains
+      if (hostname.endsWith('.replit.dev') || hostname.endsWith('.replit.app')) {
+        return true;
+      }
+      
+      // Allow localhost for development
+      if (hostname === 'localhost' || hostname === '127.0.0.1') {
+        return true;
+      }
+      
+      // Allow production domain meterflo.com and any subdomains
+      if (hostname === 'meterflo.com' || hostname.endsWith('.meterflo.com')) {
+        return true;
+      }
+      
+      return false;
+    } catch {
+      // If URL parsing fails, fall back to simple string checks
+      const lowerOrigin = originHeader.toLowerCase();
+      return lowerOrigin.includes('replit.dev') || 
+             lowerOrigin.includes('replit.app') || 
+             lowerOrigin.includes('localhost') ||
+             lowerOrigin.includes('meterflo.com');
+    }
+  };
+  
+  // Allow requests from allowed origins (Replit domains, localhost, production domains)
+  if (origin && isAllowedOrigin(origin)) {
     res.header('Access-Control-Allow-Origin', origin);
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
     res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
