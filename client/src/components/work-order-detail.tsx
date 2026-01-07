@@ -858,20 +858,18 @@ export function WorkOrderDetail({
                     control={form.control}
                     name="assignedUserId"
                     render={({ field }) => {
-                      // Use "__none__" as display value for Select, but keep undefined in form state
-                      const displayValue = field.value || "__none__";
-                      // Use watched value for key to ensure remount when value changes reactively
-                      const keyValue = watchedAssignedUserId || "__none__";
+                      // Use watched value for display to ensure UI updates reactively
+                      const displayValue = watchedAssignedUserId || "__none__";
                       return (
                         <FormItem>
                           <FormLabel>Assigned User</FormLabel>
                           <Select 
-                            key={`assigned-user-${keyValue}`}
+                            key={`assigned-user-${displayValue}`}
                             value={displayValue} 
                             onValueChange={(v) => {
-                              // Convert "__none__" back to undefined for form state
+                              // Use form.setValue for proper state updates, especially when clearing to undefined
                               const newValue = v === "__none__" ? undefined : v;
-                              field.onChange(newValue);
+                              form.setValue('assignedUserId', newValue, { shouldDirty: true });
                             }} 
                             disabled={!canEdit}
                           >
@@ -898,17 +896,16 @@ export function WorkOrderDetail({
                     control={form.control}
                     name="assignedGroupId"
                     render={({ field }) => {
-                      const displayValue = field.value || "__none__";
-                      const keyValue = watchedAssignedGroupId || "__none__";
+                      const displayValue = watchedAssignedGroupId || "__none__";
                       return (
                         <FormItem>
                           <FormLabel>Assigned Group</FormLabel>
                           <Select 
-                            key={`assigned-group-${keyValue}`}
+                            key={`assigned-group-${displayValue}`}
                             value={displayValue} 
                             onValueChange={(v) => {
                               const newValue = v === "__none__" ? undefined : v;
-                              field.onChange(newValue);
+                              form.setValue('assignedGroupId', newValue, { shouldDirty: true });
                             }} 
                             disabled={!canEdit}
                           >
