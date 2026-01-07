@@ -379,10 +379,14 @@ export class ProjectWorkOrderStorage {
       let query = `
         SELECT w.*, 
                sb.username as scheduled_by_username,
-               cb.username as completed_by_username
+               cb.username as completed_by_username,
+               au.first_name as assigned_user_first_name,
+               au.last_name as assigned_user_last_name,
+               au.username as assigned_user_username
         FROM "${this.schemaName}".work_orders w
         LEFT JOIN public.users sb ON w.scheduled_by = sb.id
         LEFT JOIN public.users cb ON w.completed_by = cb.id
+        LEFT JOIN public.users au ON w.assigned_user_id = au.id
       `;
       const conditions: string[] = [];
       const values: any[] = [];
@@ -424,10 +428,14 @@ export class ProjectWorkOrderStorage {
       const result = await client.query(
         `SELECT w.*, 
                 sb.username as scheduled_by_username,
-                cb.username as completed_by_username
+                cb.username as completed_by_username,
+                au.first_name as assigned_user_first_name,
+                au.last_name as assigned_user_last_name,
+                au.username as assigned_user_username
          FROM "${this.schemaName}".work_orders w
          LEFT JOIN public.users sb ON w.scheduled_by = sb.id
          LEFT JOIN public.users cb ON w.completed_by = cb.id
+         LEFT JOIN public.users au ON w.assigned_user_id = au.id
          WHERE w.id = $1`,
         [id]
       );
@@ -444,10 +452,14 @@ export class ProjectWorkOrderStorage {
       const result = await client.query(
         `SELECT w.*, 
                 sb.username as scheduled_by_username,
-                cb.username as completed_by_username
+                cb.username as completed_by_username,
+                au.first_name as assigned_user_first_name,
+                au.last_name as assigned_user_last_name,
+                au.username as assigned_user_username
          FROM "${this.schemaName}".work_orders w
          LEFT JOIN public.users sb ON w.scheduled_by = sb.id
          LEFT JOIN public.users cb ON w.completed_by = cb.id
+         LEFT JOIN public.users au ON w.assigned_user_id = au.id
          WHERE w.customer_wo_id = $1`,
         [customerWoId]
       );
@@ -464,10 +476,14 @@ export class ProjectWorkOrderStorage {
       const result = await client.query(
         `SELECT w.*, 
                 sb.username as scheduled_by_username,
-                cb.username as completed_by_username
+                cb.username as completed_by_username,
+                au.first_name as assigned_user_first_name,
+                au.last_name as assigned_user_last_name,
+                au.username as assigned_user_username
          FROM "${this.schemaName}".work_orders w
          LEFT JOIN public.users sb ON w.scheduled_by = sb.id
          LEFT JOIN public.users cb ON w.completed_by = cb.id
+         LEFT JOIN public.users au ON w.assigned_user_id = au.id
          WHERE w.old_system_id = $1`,
         [oldSystemId]
       );
@@ -1225,6 +1241,10 @@ export class ProjectWorkOrderStorage {
       // Add display fields with resolved usernames for UI
       completedByDisplay: row.completed_by_username || row.completed_by,
       scheduledByDisplay: row.scheduled_by_username || row.scheduled_by,
+      // Resolve assigned user display name - prefer first/last name, fallback to username, then ID
+      assignedUserDisplay: row.assigned_user_first_name && row.assigned_user_last_name
+        ? `${row.assigned_user_first_name} ${row.assigned_user_last_name}`
+        : row.assigned_user_username || row.assigned_user_id || null,
     };
     return result as ProjectWorkOrder;
   }

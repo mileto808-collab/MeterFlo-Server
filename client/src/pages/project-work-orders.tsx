@@ -1127,7 +1127,7 @@ export default function ProjectWorkOrders() {
   // Helper to get combined assignment display (for exports and legacy display)
   const getAssignmentDisplay = (workOrder: ProjectWorkOrder): string => {
     const woAny = workOrder as any;
-    const userName = getAssignedUserName(woAny.assignedUserId);
+    const userName = woAny.assignedUserDisplay || getAssignedUserName(woAny.assignedUserId);
     const groupName = getAssignedGroupName(woAny.assignedGroupId);
     if (userName && groupName) return `${userName} / ${groupName}`;
     return userName || groupName || "";
@@ -1345,7 +1345,7 @@ export default function ProjectWorkOrders() {
       case "scheduledBy":
         return <TableCell key={key} className={baseClass} style={cellStyle}>{woAny.scheduledByDisplay || getAssignedUserName(woAny.scheduledBy) || "-"}</TableCell>;
       case "assignedTo":
-        return <TableCell key={key} className={baseClass} style={cellStyle}>{getAssignedUserName(woAny.assignedUserId) || "-"}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{woAny.assignedUserDisplay || getAssignedUserName(woAny.assignedUserId) || "-"}</TableCell>;
       case "assignedGroup":
         return <TableCell key={key} className={baseClass} style={cellStyle}>{getAssignedGroupName(woAny.assignedGroupId) || "-"}</TableCell>;
       case "createdBy":
@@ -1746,7 +1746,7 @@ export default function ProjectWorkOrders() {
       case "status": return getStatusLabel(wo.status);
       case "scheduledAt": return (wo as any).scheduledAt ? formatExport((wo as any).scheduledAt) : "";
       case "scheduledBy": return (wo as any).scheduledByDisplay || getAssignedUserName((wo as any).scheduledBy) || "";
-      case "assignedTo": return getAssignedUserName((wo as any).assignedUserId) || "";
+      case "assignedTo": return (wo as any).assignedUserDisplay || getAssignedUserName((wo as any).assignedUserId) || "";
       case "assignedGroup": return getAssignedGroupName((wo as any).assignedGroupId) || "";
       case "createdBy": return wo.createdBy || "";
       case "updatedBy": return wo.updatedBy || "";
