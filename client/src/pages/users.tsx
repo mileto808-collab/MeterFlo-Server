@@ -265,6 +265,7 @@ export default function Users() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users/all-projects"] });
       toast({ title: "Success", description: "User created successfully" });
       setIsCreatingUser(false);
       createForm.reset();
