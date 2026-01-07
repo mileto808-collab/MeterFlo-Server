@@ -19,7 +19,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Moon, Sun, User as UserIcon, Shield, FolderOpen, Save, FileUp, Users, Plus, Pencil, Trash2, UsersRound, Clock, Copy, Gauge, Download, History, Send, ChevronDown, ChevronRight, Filter, CheckCircle2, XCircle, RefreshCw, Eye } from "lucide-react";
+import { Moon, Sun, User as UserIcon, Shield, FolderOpen, Save, FileUp, Users, Plus, Pencil, Trash2, UsersRound, Clock, Copy, Gauge, Download, History, Send, ChevronDown, ChevronRight, Filter, CheckCircle2, XCircle, RefreshCw, Eye, Smartphone } from "lucide-react";
 import type { Subrole, Permission, WorkOrderStatus, UserGroup, UserGroupWithProjects, User, TroubleCode, ServiceTypeRecord, SystemType, Project, FileImportHistory, ImportHistory, CustomerApiLog } from "@shared/schema";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -310,6 +310,39 @@ export default function Settings() {
     },
     enabled: isAdmin || hasPermission("settings.customerApiLogs"),
   });
+
+  // Mobile App Configuration state and query
+  const [mobileUpdateUrl, setMobileUpdateUrl] = useState("");
+  
+  const { data: mobileConfigData } = useQuery<{ mobileUpdateUrl: string | null }>({
+    queryKey: ["/api/settings/mobile-config"],
+    enabled: isAdmin || hasPermission("settings.mobileConfig"),
+  });
+
+  useEffect(() => {
+    if (mobileConfigData?.mobileUpdateUrl) {
+      setMobileUpdateUrl(mobileConfigData.mobileUpdateUrl);
+    }
+  }, [mobileConfigData]);
+
+  const saveMobileConfigMutation = useMutation({
+    mutationFn: async (url: string) => {
+      return apiRequest("PUT", "/api/settings/mobile-config", { mobileUpdateUrl: url });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/mobile-config"] });
+      toast({ title: "Mobile app configuration saved" });
+    },
+    onError: () => {
+      toast({ title: "Failed to save mobile configuration", variant: "destructive" });
+    },
+  });
+
+  const validateGitHubApiUrl = (url: string): boolean => {
+    if (!url || url.trim() === "") return true; // Empty is valid (disables update checks)
+    const pattern = /^https:\/\/api\.github\.com\/repos\/[\w.-]+\/[\w.-]+\/releases\/(latest|\d+)$/;
+    return pattern.test(url.trim());
+  };
 
   useEffect(() => {
     if (pathData?.path) {
@@ -1504,6 +1537,56 @@ export default function Settings() {
                 ) : (
                   <p className="text-muted-foreground">No API logs found. API calls are logged when work orders are completed and customer API integration is configured for the project.</p>
                 )}
+              </CardContent>
+            </Card>
+        )}
+
+        {hasPermission("settings.mobileConfig") && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <Smartphone className="h-5 w-5 text-muted-foreground" />
+                  <div>
+                    <CardTitle>Mobile App Configuration</CardTitle>
+                    <CardDescription className="mt-1">Configure mobile app update settings for the MeterFlo mobile application</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="mobileUpdateUrl">GitHub Releases API URL</Label>
+                  <Input
+                    id="mobileUpdateUrl"
+                    placeholder="https://api.github.com/repos/yourorg/meterflo-mobile/releases/latest"
+                    value={mobileUpdateUrl}
+                    onChange={(e) => setMobileUpdateUrl(e.target.value)}
+                    data-testid="input-mobile-update-url"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Enter the GitHub releases API URL to enable mobile app update checks. Leave empty to disable update checks.
+                    <br />
+                    Format: https://api.github.com/repos/ORG/REPO/releases/latest
+                  </p>
+                  {mobileUpdateUrl && !validateGitHubApiUrl(mobileUpdateUrl) && (
+                    <p className="text-xs text-destructive">
+                      Invalid GitHub releases API URL format. Must be: https://api.github.com/repos/ORG/REPO/releases/latest
+                    </p>
+                  )}
+                </div>
+                <Button 
+                  onClick={() => {
+                    if (!validateGitHubApiUrl(mobileUpdateUrl)) {
+                      toast({ title: "Invalid GitHub URL format", variant: "destructive" });
+                      return;
+                    }
+                    saveMobileConfigMutation.mutate(mobileUpdateUrl.trim());
+                  }}
+                  disabled={saveMobileConfigMutation.isPending || (!validateGitHubApiUrl(mobileUpdateUrl))}
+                  data-testid="button-save-mobile-config"
+                >
+                  <Save className="h-4 w-4 mr-2" />
+                  {saveMobileConfigMutation.isPending ? "Saving..." : "Save Configuration"}
+                </Button>
               </CardContent>
             </Card>
         )}

@@ -708,10 +708,11 @@ export class DatabaseStorage implements IStorage {
         baseRole: "admin",
         description: "Full system access with all permissions",
       });
-      // Grant all permissions to the administrator subrole
-      const allPermissions = Object.values(permissionKeys);
-      await this.setSubrolePermissions(adminSubrole.id, allPermissions);
     }
+    // Always ensure administrator subrole has all current permissions
+    // This handles new permissions being added to the registry
+    const allPermissions = Object.values(permissionKeys);
+    await this.setSubrolePermissions(adminSubrole.id, allPermissions);
     // Migrate existing admin users to have the administrator subrole
     await this.migrateAdminUsersToSubrole(adminSubrole.id);
     return adminSubrole;

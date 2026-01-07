@@ -882,6 +882,7 @@ export const permissionKeys = {
   SETTINGS_SERVICE_TYPES: "settings.serviceTypes",
   SETTINGS_SYSTEM_TYPES: "settings.systemTypes",
   SETTINGS_CUSTOMER_API_LOGS: "settings.customerApiLogs",
+  SETTINGS_MOBILE_CONFIG: "settings.mobileConfig",
   // Maintenance permissions
   MAINTENANCE_PROJECT_BACKUP: "maintenance.projectBackup",
   MAINTENANCE_PROJECT_RESTORE: "maintenance.projectRestore",
