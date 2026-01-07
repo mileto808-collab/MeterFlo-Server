@@ -137,11 +137,7 @@ export async function registerRoutes(
   await storage.syncPermissionsFromRegistry();
   await storage.ensureDefaultSubroles();
 
-  // NOTE: Mobile JWT authentication is handled in server/index.ts BEFORE middleware
-  // The /api/mobile/auth/login endpoint uses JWT tokens (stateless, no session)
-  // The /api/mobile/auth/me endpoint verifies JWT tokens
-
-  // Local authentication (web browser sessions)
+  // Local authentication
   app.post("/api/auth/local/login", async (req, res) => {
     try {
       const { username, password } = req.body;
