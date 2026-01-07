@@ -766,6 +766,16 @@ export function WorkOrderDetail({
                       />
                     </div>
                   </div>
+
+                  {/* Signature */}
+                  <div className="md:col-span-2 border-t pt-4 mt-2">
+                    <SignaturePad 
+                      ref={signaturePadRef}
+                      initialSignatureData={(workOrder as any)?.signatureData}
+                      initialSignatureName={(workOrder as any)?.signatureName}
+                      disabled={!canEdit}
+                    />
+                  </div>
                 </div>
               </AccordionContent>
             </AccordionItem>
@@ -943,16 +953,6 @@ export function WorkOrderDetail({
                       </FormItem>
                     )}
                   />
-
-                  {/* Customer Signature */}
-                  <div className="md:col-span-2 border-t pt-4 mt-2">
-                    <SignaturePad 
-                      ref={signaturePadRef}
-                      initialSignatureData={(workOrder as any)?.signatureData}
-                      initialSignatureName={(workOrder as any)?.signatureName}
-                      disabled={!canEdit}
-                    />
-                  </div>
                 </div>
               </AccordionContent>
             </AccordionItem>
