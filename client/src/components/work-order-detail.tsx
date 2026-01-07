@@ -856,62 +856,81 @@ export function WorkOrderDetail({
                   <FormField
                     control={form.control}
                     name="assignedUserId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Assigned User</FormLabel>
-                        <Select 
-                          key={`assigned-user-${field.value ?? "__none__"}`}
-                          value={field.value ?? "__none__"} 
-                          onValueChange={(v) => field.onChange(v === "__none__" ? undefined : v)} 
-                          disabled={!canEdit}
-                        >
-                          <FormControl>
-                            <SelectTrigger data-testid="select-assigned-user" disabled={!canEdit}>
-                              <SelectValue placeholder="Select user..." />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="__none__">None</SelectItem>
-                            {assigneesData?.users?.map((user: { id: string; label: string }) => (
-                              <SelectItem key={user.id} value={user.id}>
-                                {user.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+                    render={({ field }) => {
+                      const selectValue = field.value ?? "__none__";
+                      return (
+                        <FormItem>
+                          <FormLabel>Assigned User</FormLabel>
+                          <Select 
+                            key={`assigned-user-${selectValue}`}
+                            value={selectValue} 
+                            onValueChange={(v) => {
+                              if (v === "__none__") {
+                                // Use setValue with explicit options for undefined to force RHF update
+                                form.setValue("assignedUserId", undefined, { shouldDirty: true, shouldTouch: true, shouldValidate: true });
+                              } else {
+                                field.onChange(v);
+                              }
+                            }} 
+                            disabled={!canEdit}
+                          >
+                            <FormControl>
+                              <SelectTrigger data-testid="select-assigned-user" disabled={!canEdit}>
+                                <SelectValue placeholder="Select user..." />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="__none__">None</SelectItem>
+                              {assigneesData?.users?.map((user: { id: string; label: string }) => (
+                                <SelectItem key={user.id} value={user.id}>
+                                  {user.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      );
+                    }}
                   />
                   <FormField
                     control={form.control}
                     name="assignedGroupId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Assigned Group</FormLabel>
-                        <Select 
-                          key={`assigned-group-${field.value ?? "__none__"}`}
-                          value={field.value ?? "__none__"} 
-                          onValueChange={(v) => field.onChange(v === "__none__" ? undefined : v)} 
-                          disabled={!canEdit}
-                        >
-                          <FormControl>
-                            <SelectTrigger data-testid="select-assigned-group" disabled={!canEdit}>
-                              <SelectValue placeholder="Select group..." />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            <SelectItem value="__none__">None</SelectItem>
-                            {assigneesData?.groups?.map((group: { id: number; key?: string; label: string }) => (
-                              <SelectItem key={group.id} value={group.key || group.label}>
-                                {group.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
+                    render={({ field }) => {
+                      const selectValue = field.value ?? "__none__";
+                      return (
+                        <FormItem>
+                          <FormLabel>Assigned Group</FormLabel>
+                          <Select 
+                            key={`assigned-group-${selectValue}`}
+                            value={selectValue} 
+                            onValueChange={(v) => {
+                              if (v === "__none__") {
+                                form.setValue("assignedGroupId", undefined, { shouldDirty: true, shouldTouch: true, shouldValidate: true });
+                              } else {
+                                field.onChange(v);
+                              }
+                            }} 
+                            disabled={!canEdit}
+                          >
+                            <FormControl>
+                              <SelectTrigger data-testid="select-assigned-group" disabled={!canEdit}>
+                                <SelectValue placeholder="Select group..." />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="__none__">None</SelectItem>
+                              {assigneesData?.groups?.map((group: { id: number; key?: string; label: string }) => (
+                                <SelectItem key={group.id} value={group.key || group.label}>
+                                  {group.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      );
+                    }}
                   />
                   <FormField
                     control={form.control}
