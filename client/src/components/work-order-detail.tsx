@@ -839,13 +839,13 @@ export function WorkOrderDetail({
                       <FormItem>
                         <div className="flex items-center justify-between gap-2">
                           <FormLabel>Scheduled At</FormLabel>
-                          {canScheduleInCalendar && onScheduleInCalendar && (
+                          {canScheduleInCalendar && onScheduleInCalendar && workOrder.status !== "Completed" && workOrder.status !== "Closed" && (
                             <Button
                               type="button"
-                              variant="outline"
                               size="sm"
                               onClick={onScheduleInCalendar}
                               data-testid="button-schedule-in-calendar"
+                              className="bg-blue-600 text-white dark:bg-blue-600"
                             >
                               <CalendarDays className="h-4 w-4 mr-1" />
                               Schedule in Calendar
