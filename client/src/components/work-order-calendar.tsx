@@ -126,6 +126,23 @@ export function WorkOrderCalendar({
     return "border-l-gray-500";
   }, [statuses]);
 
+  const getStatusBackgroundColor = useCallback((statusCode: string) => {
+    const status = statuses.find((s) => s.code === statusCode || s.label === statusCode);
+    if (status?.color) {
+      const colorMap: Record<string, string> = {
+        blue: "bg-blue-100 dark:bg-blue-900/40 border-blue-300 dark:border-blue-700",
+        green: "bg-green-100 dark:bg-green-900/40 border-green-300 dark:border-green-700",
+        orange: "bg-orange-100 dark:bg-orange-900/40 border-orange-300 dark:border-orange-700",
+        red: "bg-red-100 dark:bg-red-900/40 border-red-300 dark:border-red-700",
+        yellow: "bg-yellow-100 dark:bg-yellow-900/40 border-yellow-300 dark:border-yellow-700",
+        purple: "bg-purple-100 dark:bg-purple-900/40 border-purple-300 dark:border-purple-700",
+        gray: "bg-gray-100 dark:bg-gray-800/40 border-gray-300 dark:border-gray-600",
+      };
+      return colorMap[status.color] || "bg-gray-100 dark:bg-gray-800/40 border-gray-300 dark:border-gray-600";
+    }
+    return "bg-gray-100 dark:bg-gray-800/40 border-gray-300 dark:border-gray-600";
+  }, [statuses]);
+
   const scheduledWorkOrders = useMemo(() => {
     return workOrders.filter((wo) => wo.scheduledAt);
   }, [workOrders]);
@@ -290,8 +307,8 @@ export function WorkOrderCalendar({
           onWorkOrderClick(workOrder);
         }}
         className={cn(
-          "rounded-md border-l-4 bg-card p-1.5 cursor-pointer hover-elevate text-xs",
-          getStatusBorderColor(workOrder.status || "Open"),
+          "rounded-md border p-1.5 cursor-pointer hover-elevate text-xs",
+          getStatusBackgroundColor(workOrder.status || "Open"),
           isDraggable && "cursor-grab active:cursor-grabbing",
           dragState.workOrder?.id === workOrder.id && "opacity-50"
         )}
@@ -300,8 +317,8 @@ export function WorkOrderCalendar({
         <div className="flex items-start gap-1">
           {isDraggable && <GripVertical className="h-3 w-3 text-muted-foreground flex-shrink-0 mt-0.5" />}
           <div className="flex-1 min-w-0">
-            <div className="font-medium truncate">{workOrder.customerWoId || `#${workOrder.id}`}</div>
-            {!compact && workOrder.address && (
+            <div className="font-medium truncate">WO {workOrder.customerWoId || workOrder.id}</div>
+            {workOrder.address && (
               <div className="text-muted-foreground truncate flex items-center gap-0.5">
                 <MapPin className="h-2.5 w-2.5" />
                 {workOrder.address}
@@ -527,7 +544,7 @@ export function WorkOrderCalendar({
             <div className="flex items-center gap-2 bg-primary/10 px-3 py-1.5 rounded-md">
               <CalendarIcon className="h-4 w-4 text-primary" />
               <span className="text-sm">
-                Click a date to schedule: <strong>{selectedForScheduling.customerWoId || `#${selectedForScheduling.id}`}</strong>
+                Click a date to schedule: <strong>WO {selectedForScheduling.customerWoId || selectedForScheduling.id}</strong>
               </span>
               <Button variant="ghost" size="icon" onClick={cancelSchedulingMode} className="h-6 w-6">
                 <X className="h-3 w-3" />
@@ -572,7 +589,7 @@ export function WorkOrderCalendar({
                           >
                             {wo.status || "Open"}
                           </Badge>
-                          <span className="font-medium text-sm">{wo.customerWoId || `#${wo.id}`}</span>
+                          <span className="font-medium text-sm">WO {wo.customerWoId || wo.id}</span>
                         </div>
                         {wo.address && (
                           <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
@@ -639,7 +656,7 @@ export function WorkOrderCalendar({
               {rescheduleDialog.workOrder?.scheduledAt ? "Reschedule" : "Schedule"} Work Order
             </DialogTitle>
             <DialogDescription>
-              {rescheduleDialog.workOrder?.customerWoId || `#${rescheduleDialog.workOrder?.id}`}
+              WO {rescheduleDialog.workOrder?.customerWoId || rescheduleDialog.workOrder?.id}
               {rescheduleDialog.workOrder?.address && ` - ${rescheduleDialog.workOrder.address}`}
             </DialogDescription>
           </DialogHeader>
