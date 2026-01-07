@@ -124,6 +124,7 @@ export function WorkOrderDetail({
   // Watch form fields for header display - ensures UI updates immediately when form values change
   // Using useWatch hook for proper subscription to form updates
   const watchedAssignedUserId = useWatch({ control: form.control, name: 'assignedUserId' });
+  const watchedAssignedGroupId = useWatch({ control: form.control, name: 'assignedGroupId' });
   const watchedScheduledAt = useWatch({ control: form.control, name: 'scheduledAt' });
 
   // Helper to validate scheduled time against operational hours
@@ -857,22 +858,20 @@ export function WorkOrderDetail({
                     control={form.control}
                     name="assignedUserId"
                     render={({ field }) => {
-                      const selectValue = field.value ?? "__none__";
+                      // Use "__none__" as display value for Select, but keep undefined in form state
+                      const displayValue = field.value || "__none__";
+                      // Use watched value for key to ensure remount when value changes reactively
+                      const keyValue = watchedAssignedUserId || "__none__";
                       return (
                         <FormItem>
                           <FormLabel>Assigned User</FormLabel>
                           <Select 
-                            key={`assigned-user-${selectValue}`}
-                            value={selectValue} 
+                            key={`assigned-user-${keyValue}`}
+                            value={displayValue} 
                             onValueChange={(v) => {
-                              if (v === "__none__") {
-                                // Call field.onChange first to update the Controller's internal value (triggers key change/remount)
-                                // Then call setValue to ensure watchers and dirty state are updated
-                                field.onChange(undefined);
-                                form.setValue("assignedUserId", undefined, { shouldDirty: true, shouldTouch: true, shouldValidate: true });
-                              } else {
-                                field.onChange(v);
-                              }
+                              // Convert "__none__" back to undefined for form state
+                              const newValue = v === "__none__" ? undefined : v;
+                              field.onChange(newValue);
                             }} 
                             disabled={!canEdit}
                           >
@@ -899,22 +898,17 @@ export function WorkOrderDetail({
                     control={form.control}
                     name="assignedGroupId"
                     render={({ field }) => {
-                      const selectValue = field.value ?? "__none__";
+                      const displayValue = field.value || "__none__";
+                      const keyValue = watchedAssignedGroupId || "__none__";
                       return (
                         <FormItem>
                           <FormLabel>Assigned Group</FormLabel>
                           <Select 
-                            key={`assigned-group-${selectValue}`}
-                            value={selectValue} 
+                            key={`assigned-group-${keyValue}`}
+                            value={displayValue} 
                             onValueChange={(v) => {
-                              if (v === "__none__") {
-                                // Call field.onChange first to update the Controller's internal value (triggers key change/remount)
-                                // Then call setValue to ensure watchers and dirty state are updated
-                                field.onChange(undefined);
-                                form.setValue("assignedGroupId", undefined, { shouldDirty: true, shouldTouch: true, shouldValidate: true });
-                              } else {
-                                field.onChange(v);
-                              }
+                              const newValue = v === "__none__" ? undefined : v;
+                              field.onChange(newValue);
                             }} 
                             disabled={!canEdit}
                           >
