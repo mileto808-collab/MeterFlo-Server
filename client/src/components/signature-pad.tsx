@@ -32,7 +32,7 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(
     const [useTypedName, setUseTypedName] = useState(!initialSignatureData && !!initialSignatureName);
     const [hasSignature, setHasSignature] = useState(!!initialSignatureData);
 
-    const initCanvas = () => {
+    const clearCanvas = () => {
       const canvas = canvasRef.current;
       if (!canvas) return;
 
@@ -41,40 +41,74 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(
 
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    };
+
+    const setupDrawingContext = () => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
       ctx.strokeStyle = "#000000";
       ctx.lineWidth = 2;
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
     };
 
+    const loadSignatureImage = (dataUrl: string) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      const img = new Image();
+      img.onload = () => {
+        clearCanvas();
+        
+        const imgAspect = img.width / img.height;
+        const canvasAspect = CANVAS_WIDTH / CANVAS_HEIGHT;
+        
+        let drawWidth: number;
+        let drawHeight: number;
+        let offsetX: number;
+        let offsetY: number;
+        
+        if (imgAspect > canvasAspect) {
+          drawWidth = CANVAS_WIDTH;
+          drawHeight = CANVAS_WIDTH / imgAspect;
+          offsetX = 0;
+          offsetY = (CANVAS_HEIGHT - drawHeight) / 2;
+        } else {
+          drawHeight = CANVAS_HEIGHT;
+          drawWidth = CANVAS_HEIGHT * imgAspect;
+          offsetX = (CANVAS_WIDTH - drawWidth) / 2;
+          offsetY = 0;
+        }
+        
+        ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+        setupDrawingContext();
+        setHasSignature(true);
+      };
+      img.src = dataUrl;
+    };
+
     useEffect(() => {
       if (useTypedName) return;
       
-      initCanvas();
+      clearCanvas();
+      setupDrawingContext();
       
       if (initialSignatureData) {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-        
-        const img = new Image();
-        img.onload = () => {
-          ctx.drawImage(img, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-          setHasSignature(true);
-        };
-        img.src = initialSignatureData;
+        loadSignatureImage(initialSignatureData);
       }
     }, [useTypedName, initialSignatureData]);
 
     useImperativeHandle(ref, () => ({
       clear: () => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+        clearCanvas();
+        setupDrawingContext();
         setHasSignature(false);
         notifyChange(null, signatureName);
       },
@@ -86,25 +120,13 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(
       },
       getSignatureName: () => signatureName,
       setSignatureData: (data: string | null) => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-        
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-        
         if (!data) {
+          clearCanvas();
+          setupDrawingContext();
           setHasSignature(false);
           return;
         }
-        
-        const img = new Image();
-        img.onload = () => {
-          ctx.drawImage(img, 0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-          setHasSignature(true);
-        };
-        img.src = data;
+        loadSignatureImage(data);
       },
       setSignatureName: (name: string) => {
         setSignatureName(name);
@@ -153,6 +175,7 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
+      setupDrawingContext();
       const { x, y } = getCoordinates(e);
       ctx.beginPath();
       ctx.moveTo(x, y);
@@ -184,12 +207,8 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(
     };
 
     const clearSignature = () => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+      clearCanvas();
+      setupDrawingContext();
       setHasSignature(false);
       notifyChange(null, signatureName);
     };
