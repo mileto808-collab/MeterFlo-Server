@@ -91,6 +91,25 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(
       }
     }, [mode]);
 
+    useEffect(() => {
+      if (initialSignatureData !== undefined) {
+        setSignatureData(initialSignatureData || null);
+        if (initialSignatureData) {
+          setMode("view");
+          setPreviousSignatureData(initialSignatureData);
+        }
+      }
+    }, [initialSignatureData]);
+
+    useEffect(() => {
+      if (initialSignatureName !== undefined) {
+        setSignatureName(initialSignatureName || "");
+        if (initialSignatureName) {
+          setPreviousSignatureName(initialSignatureName);
+        }
+      }
+    }, [initialSignatureName]);
+
     useImperativeHandle(ref, () => ({
       clear: () => {
         setSignatureData(null);
