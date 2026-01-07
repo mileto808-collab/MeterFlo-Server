@@ -54,13 +54,14 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ProjectWorkOrder } from "../../../server/projectDb";
-import type { WorkOrderStatus } from "@shared/schema";
+import type { WorkOrderStatus, ServiceTypeRecord } from "@shared/schema";
 
 type CalendarView = "month" | "week" | "day";
 
 interface WorkOrderCalendarProps {
   workOrders: ProjectWorkOrder[];
   statuses: WorkOrderStatus[];
+  serviceTypes: ServiceTypeRecord[];
   onWorkOrderClick: (workOrder: ProjectWorkOrder) => void;
   onReschedule: (workOrderId: number, newScheduledAt: string) => Promise<void>;
   projectId: number;
@@ -74,6 +75,7 @@ interface DragState {
 export function WorkOrderCalendar({
   workOrders,
   statuses,
+  serviceTypes,
   onWorkOrderClick,
   onReschedule,
   projectId,
@@ -142,6 +144,23 @@ export function WorkOrderCalendar({
     }
     return "bg-gray-100 dark:bg-gray-800/40 border-gray-300 dark:border-gray-600";
   }, [statuses]);
+
+  const getServiceTypeBackgroundColor = useCallback((serviceTypeCode: string) => {
+    const serviceType = serviceTypes.find((st) => st.code === serviceTypeCode || st.label === serviceTypeCode);
+    if (serviceType?.color) {
+      const colorMap: Record<string, string> = {
+        blue: "bg-blue-100 dark:bg-blue-900/40 border-blue-300 dark:border-blue-700",
+        green: "bg-green-100 dark:bg-green-900/40 border-green-300 dark:border-green-700",
+        orange: "bg-orange-100 dark:bg-orange-900/40 border-orange-300 dark:border-orange-700",
+        red: "bg-red-100 dark:bg-red-900/40 border-red-300 dark:border-red-700",
+        yellow: "bg-yellow-100 dark:bg-yellow-900/40 border-yellow-300 dark:border-yellow-700",
+        purple: "bg-purple-100 dark:bg-purple-900/40 border-purple-300 dark:border-purple-700",
+        gray: "bg-gray-100 dark:bg-gray-800/40 border-gray-300 dark:border-gray-600",
+      };
+      return colorMap[serviceType.color] || "bg-gray-100 dark:bg-gray-800/40 border-gray-300 dark:border-gray-600";
+    }
+    return "bg-gray-100 dark:bg-gray-800/40 border-gray-300 dark:border-gray-600";
+  }, [serviceTypes]);
 
   const scheduledWorkOrders = useMemo(() => {
     return workOrders.filter((wo) => wo.scheduledAt);
@@ -308,7 +327,7 @@ export function WorkOrderCalendar({
         }}
         className={cn(
           "rounded-md border p-1.5 cursor-pointer hover-elevate text-xs",
-          getStatusBackgroundColor(workOrder.status || "Open"),
+          getServiceTypeBackgroundColor(workOrder.serviceType || ""),
           isDraggable && "cursor-grab active:cursor-grabbing",
           dragState.workOrder?.id === workOrder.id && "opacity-50"
         )}

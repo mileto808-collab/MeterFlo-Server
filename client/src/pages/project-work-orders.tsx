@@ -3334,6 +3334,7 @@ export default function ProjectWorkOrders() {
             <WorkOrderCalendar
               workOrders={workOrders}
               statuses={workOrderStatuses}
+              serviceTypes={serviceTypes}
               onWorkOrderClick={handleEdit}
               onReschedule={handleReschedule}
               projectId={projectId!}
