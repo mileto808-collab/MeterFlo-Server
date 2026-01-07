@@ -24,6 +24,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -60,7 +61,7 @@ import {
   CalendarRange,
   LayoutGrid,
   User,
-  Users,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ProjectWorkOrder } from "../../../server/projectDb";
@@ -84,7 +85,7 @@ interface WorkOrderCalendarProps {
   statuses: WorkOrderStatus[];
   serviceTypes: ServiceTypeRecord[];
   onWorkOrderClick: (workOrder: ProjectWorkOrder) => void;
-  onReschedule: (workOrderId: number, newScheduledAt: string, assignedUserId?: string | null, assignedGroupId?: string | null) => Promise<void>;
+  onReschedule: (workOrderId: number, newScheduledAt: string, assignedUserId?: string | null, notes?: string | null) => Promise<void>;
   projectId: number;
   assigneesData?: AssigneesData;
   initialWorkOrderForScheduling?: ProjectWorkOrder | null;
@@ -116,8 +117,8 @@ export function WorkOrderCalendar({
     targetDate: Date | null;
     time: string;
     assignedUserId: string | null;
-    assignedGroupId: string | null;
-  }>({ open: false, workOrder: null, targetDate: null, time: "09:00", assignedUserId: null, assignedGroupId: null });
+    notes: string;
+  }>({ open: false, workOrder: null, targetDate: null, time: "09:00", assignedUserId: null, notes: "" });
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedForScheduling, setSelectedForScheduling] = useState<ProjectWorkOrder | null>(null);
@@ -300,7 +301,7 @@ export function WorkOrderCalendar({
         targetDate,
         time,
         assignedUserId: workOrder.assignedUserId || null,
-        assignedGroupId: workOrder.assignedGroupId || null,
+        notes: "",
       });
     }
     setDragState({ workOrder: null, isDragging: false });
@@ -318,7 +319,7 @@ export function WorkOrderCalendar({
         targetDate: date,
         time,
         assignedUserId: selectedForScheduling.assignedUserId || null,
-        assignedGroupId: selectedForScheduling.assignedGroupId || null,
+        notes: "",
       });
     }
   };
@@ -339,7 +340,7 @@ export function WorkOrderCalendar({
         rescheduleDialog.workOrder.id, 
         scheduledAt, 
         rescheduleDialog.assignedUserId, 
-        rescheduleDialog.assignedGroupId
+        rescheduleDialog.notes || null
       );
       
       closeSchedulingDialog();
@@ -364,7 +365,7 @@ export function WorkOrderCalendar({
 
   // Shared function to reset scheduling dialog state and ref
   const closeSchedulingDialog = useCallback(() => {
-    setRescheduleDialog({ open: false, workOrder: null, targetDate: null, time: "09:00", assignedUserId: null, assignedGroupId: null });
+    setRescheduleDialog({ open: false, workOrder: null, targetDate: null, time: "09:00", assignedUserId: null, notes: "" });
     // Reset the ref so the same work order can be scheduled again later
     lastHandledWorkOrderIdRef.current = null;
   }, []);
@@ -761,53 +762,44 @@ export function WorkOrderCalendar({
             </div>
             
             {assigneesData && (
-              <>
-                <div>
-                  <Label className="text-sm font-medium flex items-center gap-2">
-                    <User className="h-4 w-4" />
-                    Assigned User
-                  </Label>
-                  <Select
-                    value={rescheduleDialog.assignedUserId || "__none__"}
-                    onValueChange={(v) => setRescheduleDialog((prev) => ({ ...prev, assignedUserId: v === "__none__" ? null : v }))}
-                  >
-                    <SelectTrigger className="mt-1" data-testid="schedule-assigned-user">
-                      <SelectValue placeholder="Select user..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">None</SelectItem>
-                      {assigneesData.users.map((user) => (
-                        <SelectItem key={user.id} value={user.id}>
-                          {user.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label className="text-sm font-medium flex items-center gap-2">
-                    <Users className="h-4 w-4" />
-                    Assigned Group
-                  </Label>
-                  <Select
-                    value={rescheduleDialog.assignedGroupId || "__none__"}
-                    onValueChange={(v) => setRescheduleDialog((prev) => ({ ...prev, assignedGroupId: v === "__none__" ? null : v }))}
-                  >
-                    <SelectTrigger className="mt-1" data-testid="schedule-assigned-group">
-                      <SelectValue placeholder="Select group..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">None</SelectItem>
-                      {assigneesData.groups.map((group) => (
-                        <SelectItem key={group.id} value={group.key || group.label}>
-                          {group.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </>
+              <div>
+                <Label className="text-sm font-medium flex items-center gap-2">
+                  <User className="h-4 w-4" />
+                  Assigned User
+                </Label>
+                <Select
+                  value={rescheduleDialog.assignedUserId || "__none__"}
+                  onValueChange={(v) => setRescheduleDialog((prev) => ({ ...prev, assignedUserId: v === "__none__" ? null : v }))}
+                >
+                  <SelectTrigger className="mt-1" data-testid="schedule-assigned-user">
+                    <SelectValue placeholder="Select user..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">None</SelectItem>
+                    {assigneesData.users.map((user) => (
+                      <SelectItem key={user.id} value={user.id}>
+                        {user.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             )}
+            
+            <div>
+              <Label className="text-sm font-medium flex items-center gap-2">
+                <FileText className="h-4 w-4" />
+                Add to Notes
+              </Label>
+              <Textarea
+                placeholder="Add a note to this work order..."
+                value={rescheduleDialog.notes}
+                onChange={(e) => setRescheduleDialog((prev) => ({ ...prev, notes: e.target.value }))}
+                className="mt-1 resize-none"
+                rows={3}
+                data-testid="schedule-notes"
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button
