@@ -38,6 +38,7 @@ import {
   MapPin,
   Gauge,
   Calendar,
+  CalendarDays,
   FileText,
   Paperclip,
   Clock,
@@ -87,6 +88,8 @@ interface WorkOrderDetailProps {
   onSystemChangeoutComplete?: () => void | Promise<void>;
   autoLaunchSystemChangeout?: boolean;
   operationalHours?: OperationalHoursConfig;
+  onScheduleInCalendar?: () => void;
+  canScheduleInCalendar?: boolean;
 }
 
 export function WorkOrderDetail({
@@ -115,6 +118,8 @@ export function WorkOrderDetail({
   onSystemChangeoutComplete,
   autoLaunchSystemChangeout = false,
   operationalHours,
+  onScheduleInCalendar,
+  canScheduleInCalendar = false,
 }: WorkOrderDetailProps) {
   const [openSections, setOpenSections] = useState<string[]>([]);
   const [showSystemChangeoutWizard, setShowSystemChangeoutWizard] = useState(false);
@@ -832,7 +837,21 @@ export function WorkOrderDetail({
                     name="scheduledAt"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Scheduled At</FormLabel>
+                        <div className="flex items-center justify-between gap-2">
+                          <FormLabel>Scheduled At</FormLabel>
+                          {canScheduleInCalendar && onScheduleInCalendar && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={onScheduleInCalendar}
+                              data-testid="button-schedule-in-calendar"
+                            >
+                              <CalendarDays className="h-4 w-4 mr-1" />
+                              Schedule in Calendar
+                            </Button>
+                          )}
+                        </div>
                         <FormControl>
                           <DateTimePicker
                             value={field.value}

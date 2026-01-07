@@ -215,6 +215,7 @@ export default function ProjectWorkOrders() {
     canClose: boolean;
   } | null>(null);
   const [viewMode, setViewMode] = useState<"table" | "calendar">("table");
+  const [workOrderForCalendarScheduling, setWorkOrderForCalendarScheduling] = useState<ProjectWorkOrder | null>(null);
 
   const signaturePadRef = useRef<SignaturePadRef>(null);
   const editSignaturePadRef = useRef<SignaturePadRef>(null);
@@ -1050,21 +1051,26 @@ export default function ProjectWorkOrders() {
     setEditingWorkOrder(workOrder);
   };
 
-  const handleReschedule = async (workOrderId: number, scheduledAt: string) => {
+  const handleReschedule = async (workOrderId: number, scheduledAt: string, assignedUserId?: string | null, assignedGroupId?: string | null) => {
     if (!hasPermission('workOrders.calendar')) {
       toast({ title: "Permission denied", description: "You do not have permission to reschedule work orders.", variant: "destructive" });
       return;
     }
     try {
-      await apiRequest("PATCH", `/api/projects/${projectId}/work-orders/${workOrderId}`, {
-        scheduledAt,
-      });
+      const payload: Record<string, any> = { scheduledAt };
+      if (assignedUserId !== undefined) {
+        payload.assignedUserId = assignedUserId;
+      }
+      if (assignedGroupId !== undefined) {
+        payload.assignedGroupId = assignedGroupId;
+      }
+      await apiRequest("PATCH", `/api/projects/${projectId}/work-orders/${workOrderId}`, payload);
       await queryClient.refetchQueries({ queryKey: [`/api/projects/${projectId}/work-orders`] });
       await queryClient.refetchQueries({ queryKey: [`/api/projects/${projectId}/work-orders/stats`] });
-      toast({ title: "Work order rescheduled" });
+      toast({ title: "Work order scheduled" });
     } catch (error: any) {
       const errorMsg = error?.message || "";
-      toast({ title: "Failed to reschedule work order", description: errorMsg, variant: "destructive" });
+      toast({ title: "Failed to schedule work order", description: errorMsg, variant: "destructive" });
     }
   };
 
@@ -1999,6 +2005,15 @@ export default function ProjectWorkOrders() {
             enabled: project?.operationalHoursEnabled ?? false,
             start: project?.operationalHoursStart ?? null,
             end: project?.operationalHoursEnd ?? null,
+          }}
+          canScheduleInCalendar={hasPermission('workOrders.calendar')}
+          onScheduleInCalendar={() => {
+            // Store the work order to schedule, close detail view, and switch to calendar
+            if (editingWorkOrder) {
+              setWorkOrderForCalendarScheduling(editingWorkOrder);
+              closeDetailView();
+              setViewMode("calendar");
+            }
           }}
           onSystemChangeoutComplete={async () => {
             // Use refetchQueries instead of invalidateQueries to ensure data is loaded before closing
@@ -3340,6 +3355,9 @@ export default function ProjectWorkOrders() {
               onWorkOrderClick={handleEdit}
               onReschedule={handleReschedule}
               projectId={projectId!}
+              assigneesData={assigneesData}
+              initialWorkOrderForScheduling={workOrderForCalendarScheduling}
+              onInitialSchedulingHandled={() => setWorkOrderForCalendarScheduling(null)}
             />
           </CardContent>
         </Card>
