@@ -2223,7 +2223,16 @@ export async function registerRoutes(
       // Use username for updated_by since it has a foreign key constraint to users table
       const updatedByUsername = currentUser?.username || currentUser?.id;
       
-      const workOrder = await workOrderStorage.updateWorkOrder(workOrderId, req.body, updatedByUsername);
+      // Handle appendNotes: add new note text to existing notes
+      const updateData = { ...req.body };
+      if (updateData.appendNotes) {
+        const currentNotes = existingWorkOrder.notes || "";
+        const separator = currentNotes.trim() ? "\n" : "";
+        updateData.notes = currentNotes + separator + updateData.appendNotes;
+        delete updateData.appendNotes;
+      }
+      
+      const workOrder = await workOrderStorage.updateWorkOrder(workOrderId, updateData, updatedByUsername);
       
       if (!workOrder) {
         return res.status(404).json({ message: "Work order not found" });

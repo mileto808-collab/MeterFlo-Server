@@ -1051,7 +1051,7 @@ export default function ProjectWorkOrders() {
     setEditingWorkOrder(workOrder);
   };
 
-  const handleReschedule = async (workOrderId: number, scheduledAt: string, assignedUserId?: string | null, assignedGroupId?: string | null) => {
+  const handleReschedule = async (workOrderId: number, scheduledAt: string, assignedUserId?: string | null, notes?: string | null) => {
     if (!hasPermission('workOrders.calendar')) {
       toast({ title: "Permission denied", description: "You do not have permission to reschedule work orders.", variant: "destructive" });
       return;
@@ -1061,8 +1061,8 @@ export default function ProjectWorkOrders() {
       if (assignedUserId !== undefined) {
         payload.assignedUserId = assignedUserId;
       }
-      if (assignedGroupId !== undefined) {
-        payload.assignedGroupId = assignedGroupId;
+      if (notes) {
+        payload.appendNotes = notes;
       }
       await apiRequest("PATCH", `/api/projects/${projectId}/work-orders/${workOrderId}`, payload);
       await queryClient.refetchQueries({ queryKey: [`/api/projects/${projectId}/work-orders`] });
