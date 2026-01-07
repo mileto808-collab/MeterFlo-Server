@@ -953,6 +953,36 @@ export function WorkOrderDetail({
                       </FormItem>
                     )}
                   />
+
+                  {/* Customer Signature Display */}
+                  {((workOrder as any)?.signatureData || (workOrder as any)?.signatureName) && (
+                    <div className="md:col-span-2 border-t pt-4 mt-2">
+                      <h4 className="text-sm font-medium mb-3">Customer Signature</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {(workOrder as any)?.signatureData && (
+                          <div>
+                            <p className="text-xs text-muted-foreground mb-2">Signature</p>
+                            <div className="border rounded-md p-2 bg-white dark:bg-gray-900 inline-block">
+                              <img 
+                                src={(workOrder as any).signatureData} 
+                                alt="Customer signature" 
+                                className="max-h-24 object-contain"
+                                data-testid="img-customer-signature"
+                              />
+                            </div>
+                          </div>
+                        )}
+                        {(workOrder as any)?.signatureName && (
+                          <div>
+                            <p className="text-xs text-muted-foreground mb-2">Printed Name</p>
+                            <p className="text-sm font-medium" data-testid="text-signature-name">
+                              {(workOrder as any).signatureName}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </AccordionContent>
             </AccordionItem>
