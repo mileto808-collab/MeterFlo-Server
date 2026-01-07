@@ -20,48 +20,83 @@ declare module "http" {
   }
 }
 
-// CORS middleware for mobile app connections
+// CORS middleware for mobile app connections (including native Android/iOS apps)
 app.use((req, res, next) => {
   const origin = req.headers.origin;
+  const refererHeader = req.headers.referer || req.headers.referrer;
+  const referer = Array.isArray(refererHeader) ? refererHeader[0] : refererHeader;
   
-  // Helper to check if origin is allowed
-  const isAllowedOrigin = (originHeader: string): boolean => {
+  // Helper to extract hostname from a URL string
+  const getHostname = (urlString: string): string | null => {
     try {
-      const url = new URL(originHeader);
-      const hostname = url.hostname.toLowerCase();
-      
-      // Allow Replit dev/app domains
-      if (hostname.endsWith('.replit.dev') || hostname.endsWith('.replit.app')) {
-        return true;
-      }
-      
-      // Allow localhost for development
-      if (hostname === 'localhost' || hostname === '127.0.0.1') {
-        return true;
-      }
-      
-      // Allow production domain meterflo.com and any subdomains
-      if (hostname === 'meterflo.com' || hostname.endsWith('.meterflo.com')) {
-        return true;
-      }
-      
-      return false;
+      const url = new URL(urlString);
+      return url.hostname.toLowerCase();
     } catch {
-      // If URL parsing fails, fall back to simple string checks
-      const lowerOrigin = originHeader.toLowerCase();
-      return lowerOrigin.includes('replit.dev') || 
-             lowerOrigin.includes('replit.app') || 
-             lowerOrigin.includes('localhost') ||
-             lowerOrigin.includes('meterflo.com');
+      return null;
     }
   };
   
-  // Allow requests from allowed origins (Replit domains, localhost, production domains)
+  // Helper to check if a hostname is allowed
+  const isAllowedHostname = (hostname: string): boolean => {
+    // Allow Replit dev/app domains
+    if (hostname.endsWith('.replit.dev') || hostname.endsWith('.replit.app')) {
+      return true;
+    }
+    
+    // Allow localhost for development
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return true;
+    }
+    
+    // Allow production domain meterflo.com and any subdomains
+    if (hostname === 'meterflo.com' || hostname.endsWith('.meterflo.com')) {
+      return true;
+    }
+    
+    return false;
+  };
+  
+  // Helper to check if origin/referer is allowed
+  const isAllowedOrigin = (urlString: string): boolean => {
+    const hostname = getHostname(urlString);
+    if (hostname) {
+      return isAllowedHostname(hostname);
+    }
+    // Fallback to simple string checks if URL parsing fails
+    const lower = urlString.toLowerCase();
+    return lower.includes('replit.dev') || 
+           lower.includes('replit.app') || 
+           lower.includes('localhost') ||
+           lower.includes('meterflo.com');
+  };
+  
+  // Determine if this request should get CORS headers
+  let allowedOriginForHeader: string | null = null;
+  
   if (origin && isAllowedOrigin(origin)) {
-    res.header('Access-Control-Allow-Origin', origin);
+    // Browser request with valid Origin header
+    allowedOriginForHeader = origin;
+  } else if (!origin && referer && isAllowedOrigin(referer)) {
+    // Native mobile app: no Origin but valid Referer - extract origin from referer
+    const hostname = getHostname(referer);
+    if (hostname) {
+      const refererUrl = new URL(referer);
+      allowedOriginForHeader = `${refererUrl.protocol}//${refererUrl.host}`;
+    }
+  } else if (!origin && !referer) {
+    // Native mobile app with no Origin or Referer headers
+    // Allow these requests but set a wildcard or specific origin for CORS
+    // For credentials to work, we need a specific origin - use the production domain
+    allowedOriginForHeader = 'https://meterflo.com';
+  }
+  
+  // Set CORS headers if we have an allowed origin
+  if (allowedOriginForHeader) {
+    res.header('Access-Control-Allow-Origin', allowedOriginForHeader);
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, X-Mobile-App');
     res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Vary', 'Origin');
   }
   
   // Handle preflight requests
