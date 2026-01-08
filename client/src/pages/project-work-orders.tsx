@@ -109,6 +109,25 @@ export default function ProjectWorkOrders() {
   // Track editing work order ID in a ref for SSE callback (avoids stale closure)
   const editingWorkOrderIdRef = useRef<number | null>(null);
   
+  // Helper function to recursively convert snake_case keys to camelCase
+  const snakeToCamelCase = (data: any): any => {
+    if (data === null || data === undefined) {
+      return data;
+    }
+    if (Array.isArray(data)) {
+      return data.map(snakeToCamelCase);
+    }
+    if (typeof data === "object" && !(data instanceof Date)) {
+      const result: Record<string, any> = {};
+      for (const key of Object.keys(data)) {
+        const camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+        result[camelKey] = snakeToCamelCase(data[key]);
+      }
+      return result;
+    }
+    return data;
+  };
+  
   // SSE callback to refresh work order detail when updated by another user
   const handleWorkOrderUpdated = useCallback(async (workOrderId: number) => {
     if (editingWorkOrderIdRef.current === workOrderId && projectId) {
@@ -117,7 +136,9 @@ export default function ProjectWorkOrders() {
           credentials: "include",
         });
         if (response.ok) {
-          const updatedWorkOrder = await response.json();
+          const rawWorkOrder = await response.json();
+          // Transform snake_case API response to camelCase for component compatibility
+          const updatedWorkOrder = snakeToCamelCase(rawWorkOrder) as ProjectWorkOrder;
           setEditingWorkOrder(updatedWorkOrder);
         }
       } catch (error) {
