@@ -1,3 +1,7 @@
+// Force UTC timezone for consistent behavior across Windows and Linux servers
+// This must be set BEFORE any Date operations or imports that use Date
+process.env.TZ = 'UTC';
+
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
