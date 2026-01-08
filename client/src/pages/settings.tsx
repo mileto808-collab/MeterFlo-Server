@@ -1883,10 +1883,21 @@ export default function Settings() {
                       </div>
                     )}
 
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       <Label>Update Command</Label>
+                      <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md">
+                        <p className="text-xs text-amber-800 dark:text-amber-200 font-medium mb-1">
+                          Important: First navigate to your application directory
+                        </p>
+                        <code className="text-xs font-mono text-amber-700 dark:text-amber-300">
+                          cd /path/to/your/meterflo
+                        </code>
+                        <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                          Example: cd c:/xampp/htdocs/meterflo
+                        </p>
+                      </div>
                       <p className="text-xs text-muted-foreground">
-                        Copy this command and run it in your server terminal to update:
+                        Then copy and run this command to update:
                       </p>
                       <div className="flex items-center gap-2">
                         <code className="flex-1 p-3 bg-muted rounded-md text-xs font-mono break-all">
