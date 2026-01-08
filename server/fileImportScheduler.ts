@@ -5,6 +5,7 @@ import { insertProjectWorkOrderSchema } from "@shared/schema";
 import { getProjectFtpFiles, getProjectFtpFilePath } from "./fileStorage";
 import * as fs from "fs";
 import * as XLSX from "xlsx";
+import { minimatch } from "minimatch";
 
 class FileImportScheduler {
   private scheduledTasks: Map<number, cron.ScheduledTask> = new Map();
@@ -127,7 +128,23 @@ class FileImportScheduler {
         return { success: true, imported: 0, failed: 0, error: "No files in FTP directory" };
       }
 
-      const sortedFiles = ftpFiles.sort((a, b) => 
+      // Filter files by pattern if specified
+      const filePattern = importConfig.processedFilePattern?.trim();
+      let matchingFiles = ftpFiles;
+      
+      if (filePattern && filePattern !== "*") {
+        matchingFiles = ftpFiles.filter(file => 
+          minimatch(file.name, filePattern, { nocase: true })
+        );
+        console.log(`[FileImportScheduler] Pattern "${filePattern}" matched ${matchingFiles.length} of ${ftpFiles.length} files`);
+        
+        if (matchingFiles.length === 0) {
+          await storage.updateFileImportConfigLastRun(configId, "skipped", `No files match pattern: ${filePattern}`, 0, null);
+          return { success: true, imported: 0, failed: 0, error: `No files match pattern: ${filePattern}` };
+        }
+      }
+
+      const sortedFiles = matchingFiles.sort((a, b) => 
         new Date(b.modifiedAt).getTime() - new Date(a.modifiedAt).getTime()
       );
       const latestFile = sortedFiles[0];
