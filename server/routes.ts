@@ -3,6 +3,10 @@ import { createServer, type Server } from "http";
 import path from "path";
 import { promises as fs, existsSync, unlinkSync } from "fs";
 import { randomUUID } from "crypto";
+import { exec } from "child_process";
+import { promisify } from "util";
+
+const execAsync = promisify(exec);
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { insertProjectWorkOrderSchema, insertProjectSchema, createUserSchema, updateUserSchema, resetPasswordSchema, updateProfileSchema, permissionKeys, insertExternalDatabaseConfigSchema, updateExternalDatabaseConfigSchema, insertImportConfigSchema, updateImportConfigSchema, databaseTypeEnum, importScheduleFrequencyEnum, ADMINISTRATOR_SUBROLE_KEY } from "@shared/schema";
@@ -4225,6 +4229,282 @@ export async function registerRoutes(
       res.status(500).json({ message: "Failed to update mobile configuration" });
     }
   });
+
+  // Web Application Update endpoints
+  app.get("/api/system/version", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // Read version from package.json
+      const packageJsonPath = path.join(process.cwd(), "package.json");
+      const packageJson = JSON.parse(await fs.readFile(packageJsonPath, "utf-8"));
+      const version = packageJson.version || "1.0.0";
+      
+      res.json({ version });
+    } catch (error) {
+      console.error("Error fetching version:", error);
+      res.status(500).json({ message: "Failed to fetch version" });
+    }
+  });
+
+  app.get("/api/settings/web-update-config", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const hasWebUpdatePermission = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_WEB_UPDATE);
+      if (!hasWebUpdatePermission) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to view web update configuration" });
+      }
+      
+      const webUpdateUrl = await storage.getSetting("webUpdateUrl");
+      const webUpdateLastCheck = await storage.getSetting("webUpdateLastCheck");
+      const webUpdateCachedRelease = await storage.getSetting("webUpdateCachedRelease");
+      
+      res.json({ 
+        webUpdateUrl: webUpdateUrl || null,
+        lastCheck: webUpdateLastCheck || null,
+        cachedRelease: webUpdateCachedRelease ? JSON.parse(webUpdateCachedRelease) : null
+      });
+    } catch (error) {
+      console.error("Error fetching web update config:", error);
+      res.status(500).json({ message: "Failed to fetch web update configuration" });
+    }
+  });
+
+  app.put("/api/settings/web-update-config", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const hasWebUpdatePermission = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_WEB_UPDATE);
+      if (!hasWebUpdatePermission) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to update web update configuration" });
+      }
+      
+      const { webUpdateUrl } = req.body;
+      
+      // Validate GitHub API URL format if provided
+      if (webUpdateUrl && webUpdateUrl.trim() !== "") {
+        const pattern = /^https:\/\/api\.github\.com\/repos\/[\w.-]+\/[\w.-]+\/releases\/(latest|\d+)$/;
+        if (!pattern.test(webUpdateUrl.trim())) {
+          return res.status(400).json({ 
+            message: "Invalid GitHub releases API URL format. Must be: https://api.github.com/repos/ORG/REPO/releases/latest" 
+          });
+        }
+        await storage.setSetting("webUpdateUrl", webUpdateUrl.trim(), "GitHub releases API URL for web app updates");
+      } else {
+        await storage.setSetting("webUpdateUrl", "", "GitHub releases API URL for web app updates");
+      }
+      
+      res.json({ message: "Web update configuration saved" });
+    } catch (error) {
+      console.error("Error updating web update config:", error);
+      res.status(500).json({ message: "Failed to update web update configuration" });
+    }
+  });
+
+  // Check for updates from GitHub
+  app.post("/api/system/update-check", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const hasWebUpdatePermission = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_WEB_UPDATE);
+      if (!hasWebUpdatePermission) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to check for updates" });
+      }
+      
+      const webUpdateUrl = await storage.getSetting("webUpdateUrl");
+      if (!webUpdateUrl) {
+        return res.status(400).json({ message: "Web update URL not configured" });
+      }
+      
+      // Validate domain for security (only allow api.github.com)
+      const url = new URL(webUpdateUrl);
+      if (url.hostname !== "api.github.com") {
+        return res.status(400).json({ message: "Invalid update URL: must be from api.github.com" });
+      }
+      
+      // Fetch release info from GitHub
+      const response = await fetch(webUpdateUrl, {
+        headers: {
+          "Accept": "application/vnd.github.v3+json",
+          "User-Agent": "MeterFlo-WebApp"
+        }
+      });
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          return res.status(404).json({ message: "Repository or release not found" });
+        }
+        if (response.status === 403) {
+          return res.status(403).json({ message: "GitHub API rate limit exceeded. Try again later." });
+        }
+        throw new Error(`GitHub API error: ${response.status}`);
+      }
+      
+      const release = await response.json() as {
+        tag_name: string;
+        name: string;
+        body: string;
+        html_url: string;
+        published_at: string;
+      };
+      
+      // Get current version
+      const packageJsonPath = path.join(process.cwd(), "package.json");
+      const packageJson = JSON.parse(await fs.readFile(packageJsonPath, "utf-8"));
+      const currentVersion = packageJson.version || "1.0.0";
+      
+      // Parse versions (remove 'v' prefix if present)
+      const latestVersion = release.tag_name.replace(/^v/, "");
+      const compareResult = compareVersions(currentVersion, latestVersion);
+      
+      const releaseInfo = {
+        latestVersion,
+        currentVersion,
+        updateAvailable: compareResult < 0,
+        releaseName: release.name,
+        releaseNotes: release.body,
+        releaseUrl: release.html_url,
+        publishedAt: release.published_at
+      };
+      
+      // Cache the result
+      await storage.setSetting("webUpdateLastCheck", new Date().toISOString(), "Last web update check timestamp");
+      await storage.setSetting("webUpdateCachedRelease", JSON.stringify(releaseInfo), "Cached release info");
+      
+      res.json(releaseInfo);
+    } catch (error) {
+      console.error("Error checking for updates:", error);
+      res.status(500).json({ message: "Failed to check for updates" });
+    }
+  });
+
+  // Preview changes (git fetch + diff)
+  app.post("/api/system/update-preview", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const hasWebUpdatePermission = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_WEB_UPDATE);
+      if (!hasWebUpdatePermission) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to preview updates" });
+      }
+      
+      const workDir = process.cwd();
+      
+      // Check if this is a git repository
+      const gitDir = path.join(workDir, ".git");
+      if (!existsSync(gitDir)) {
+        return res.status(400).json({ 
+          message: "Not a git repository. Manual update required.",
+          isGitRepo: false
+        });
+      }
+      
+      // Run git fetch origin
+      try {
+        await execAsync("git fetch origin", { cwd: workDir, timeout: 30000 });
+      } catch (fetchError: any) {
+        return res.status(500).json({ 
+          message: `Git fetch failed: ${fetchError.message}`,
+          isGitRepo: true
+        });
+      }
+      
+      // Get the current branch
+      let currentBranch = "main";
+      try {
+        const { stdout } = await execAsync("git rev-parse --abbrev-ref HEAD", { cwd: workDir });
+        currentBranch = stdout.trim() || "main";
+      } catch {
+        // Default to main if we can't determine the branch
+      }
+      
+      // Get the diff between current and origin
+      let diff = "";
+      let filesChanged: string[] = [];
+      let commitsBehind = 0;
+      
+      try {
+        // Get number of commits behind
+        const { stdout: countOutput } = await execAsync(
+          `git rev-list --count HEAD..origin/${currentBranch}`,
+          { cwd: workDir }
+        );
+        commitsBehind = parseInt(countOutput.trim()) || 0;
+        
+        // Get changed files summary
+        const { stdout: filesOutput } = await execAsync(
+          `git diff --name-status HEAD..origin/${currentBranch}`,
+          { cwd: workDir }
+        );
+        filesChanged = filesOutput.trim().split("\n").filter(Boolean);
+        
+        // Get actual diff (limited to prevent huge responses)
+        const { stdout: diffOutput } = await execAsync(
+          `git diff --stat HEAD..origin/${currentBranch}`,
+          { cwd: workDir, maxBuffer: 1024 * 1024 }
+        );
+        diff = diffOutput;
+        
+      } catch (diffError: any) {
+        // If remote branch doesn't exist, it's okay
+        if (diffError.message.includes("unknown revision")) {
+          return res.json({
+            isGitRepo: true,
+            currentBranch,
+            commitsBehind: 0,
+            filesChanged: [],
+            diff: "",
+            updateCommand: `pm2 stop meterflo && git pull origin ${currentBranch} && npm install && npx tsx script/build.ts && pm2 restart meterflo`,
+            message: "No remote branch found or already up to date"
+          });
+        }
+        throw diffError;
+      }
+      
+      res.json({
+        isGitRepo: true,
+        currentBranch,
+        commitsBehind,
+        filesChanged,
+        diff,
+        updateCommand: `pm2 stop meterflo && git pull origin ${currentBranch} && npm install && npx tsx script/build.ts && pm2 restart meterflo`
+      });
+      
+    } catch (error: any) {
+      console.error("Error previewing update:", error);
+      res.status(500).json({ message: `Failed to preview update: ${error.message}` });
+    }
+  });
+
+  // Helper function to compare semantic versions
+  function compareVersions(v1: string, v2: string): number {
+    const parts1 = v1.split(".").map(Number);
+    const parts2 = v2.split(".").map(Number);
+    
+    for (let i = 0; i < Math.max(parts1.length, parts2.length); i++) {
+      const p1 = parts1[i] || 0;
+      const p2 = parts2[i] || 0;
+      if (p1 < p2) return -1;
+      if (p1 > p2) return 1;
+    }
+    return 0;
+  }
 
   // Customer API Logs endpoint
   app.get("/api/customer-api-logs", isAuthenticated, async (req: any, res) => {
