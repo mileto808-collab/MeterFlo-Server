@@ -14,6 +14,7 @@ This comprehensive guide walks you through deploying MeterFlo (or any Replit Nod
 6. [Build the Application](#6-build-the-application)
 7. [PM2 Process Manager Setup](#7-pm2-process-manager-setup)
 8. [Apache Reverse Proxy Configuration](#8-apache-reverse-proxy-configuration)
+   - [8a. Subdirectory Deployment](#8a-subdirectory-deployment-multiple-sites-on-same-server) (e.g., `/htdocs/meterflo/`)
 9. [HTTPS/SSL Configuration](#9-httpsssl-configuration)
 10. [Updating the Application](#10-updating-the-application)
 11. [Useful Commands Reference](#11-useful-commands-reference)
@@ -410,6 +411,287 @@ C:\xampp\apache\bin\httpd.exe -k restart
 Open a browser and go to: `http://localhost`
 
 You should see the application login page.
+
+---
+
+## 8a. Subdirectory Deployment (Multiple Sites on Same Server)
+
+If you need to run MeterFlo in a subdirectory (e.g., `/meterflo/`) alongside other websites in `/htdocs/`, follow this configuration.
+
+### Scenario
+
+```
+C:\xampp\htdocs\
+├── meterflo\           ← MeterFlo application
+│   ├── dist\
+│   ├── deploy\
+│   ├── package.json
+│   └── ...
+├── other-website\      ← Another website
+└── index.html          ← Main htdocs landing page
+```
+
+Users access MeterFlo at: `http://yourserver.com/meterflo/`
+
+### 8a.1 Clone/Install to Subdirectory
+
+```cmd
+cd C:\xampp\htdocs
+mkdir meterflo
+git clone https://replit.com/@YourUsername/YourProject.git meterflo
+cd meterflo
+npm install
+```
+
+### 8a.2 Configure Vite Base Path
+
+Edit `vite.config.ts` in your MeterFlo directory and add the `base` option:
+
+```typescript
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import path from "path";
+
+export default defineConfig({
+  plugins: [react()],
+  base: "/meterflo/",  // Add this line for subdirectory deployment
+  resolve: {
+    alias: {
+      "@": path.resolve(import.meta.dirname, "client", "src"),
+      "@shared": path.resolve(import.meta.dirname, "shared"),
+      "@assets": path.resolve(import.meta.dirname, "attached_assets"),
+    },
+  },
+  // ... rest of config
+});
+```
+
+> **Important:** The `base` path must match your subdirectory name with leading and trailing slashes.
+
+### 8a.3 Update PM2 Ecosystem Configuration
+
+Edit `deploy/ecosystem.config.cjs` to update the working directory:
+
+```javascript
+module.exports = {
+  apps: [
+    {
+      name: 'meterflo',
+      script: 'dist/index.cjs',
+      cwd: 'C:\\xampp\\htdocs\\meterflo',  // Updated path to subdirectory
+      env: {
+        NODE_ENV: 'production',
+        PORT: 3000,
+        HOST: '127.0.0.1',
+        // Note: No BASE_PATH needed - Apache strips the /meterflo prefix
+      },
+      // ... rest of config
+    }
+  ]
+};
+```
+
+> **Note:** The `cwd` (current working directory) must point to your MeterFlo subdirectory where `dist/index.cjs` is located.
+
+### 8a.4 Configure Apache httpd.conf for Subdirectory
+
+Edit `C:\xampp\apache\conf\httpd.conf` and add the proxy configuration:
+
+```apache
+# Enable required modules (uncomment these lines)
+LoadModule proxy_module modules/mod_proxy.so
+LoadModule proxy_http_module modules/mod_proxy_http.so
+LoadModule rewrite_module modules/mod_rewrite.so
+
+# Virtual Host configuration for multiple sites
+<VirtualHost *:80>
+    ServerName localhost
+    DocumentRoot "C:/xampp/htdocs"
+    
+    # Serve static files from htdocs root for other websites
+    <Directory "C:/xampp/htdocs">
+        Options Indexes FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+    
+    # Proxy MeterFlo subdirectory to Node.js application
+    ProxyPreserveHost On
+    
+    # CRITICAL: Trailing slash configuration
+    # ProxyPass /meterflo http://127.0.0.1:3000/
+    #   - Request: GET /meterflo/api/users
+    #   - Forwarded to Node.js as: GET /api/users
+    #   - This STRIPS the /meterflo prefix before forwarding
+    #
+    # The Node.js/Express server receives requests at root (/)
+    # and does NOT need any code changes.
+    
+    ProxyPass /meterflo http://127.0.0.1:3000/
+    ProxyPassReverse /meterflo http://127.0.0.1:3000/
+    
+    # SSE (Server-Sent Events) support
+    ProxyTimeout 600
+    SetEnv proxy-sendchunked 1
+    
+    # Logging
+    ErrorLog "logs/meterflo-error.log"
+    CustomLog "logs/meterflo-access.log" common
+</VirtualHost>
+```
+
+#### How This Works
+
+| Browser Request | Apache Receives | Apache Forwards to Node.js |
+|-----------------|-----------------|---------------------------|
+| `GET /meterflo/` | `/meterflo/` | `GET /` |
+| `GET /meterflo/api/users` | `/meterflo/api/users` | `GET /api/users` |
+| `GET /meterflo/assets/index.js` | `/meterflo/assets/index.js` | `GET /assets/index.js` |
+
+**Key Points:**
+- Apache **strips** the `/meterflo` prefix before forwarding to Node.js
+- The Node.js/Express server **does not need any code changes**
+- The server receives clean URLs like `/api/users` instead of `/meterflo/api/users`
+- Only Vite needs the `base` path (for generating correct asset URLs in HTML)
+
+### 8a.5 Why Vite's Base Path is Needed
+
+When Vite builds the frontend, it embeds asset URLs in the HTML:
+
+**Without `base: "/meterflo/"`:**
+```html
+<script src="/assets/index.js"></script>  <!-- Won't work! -->
+```
+
+**With `base: "/meterflo/"`:**
+```html
+<script src="/meterflo/assets/index.js"></script>  <!-- Correct! -->
+```
+
+The browser requests `/meterflo/assets/index.js`, Apache strips the prefix and forwards `/assets/index.js` to Node.js, which serves the file correctly.
+
+### 8a.6 Alternative: Keep Path Prefix in Node.js (Advanced)
+
+If your application needs to know it's running under `/meterflo/`, use this configuration instead:
+
+```apache
+# This keeps /meterflo in the path sent to Node.js
+ProxyPass /meterflo http://127.0.0.1:3000/meterflo
+ProxyPassReverse /meterflo http://127.0.0.1:3000/meterflo
+```
+
+With this approach, your Express routes must be prefixed:
+```javascript
+// In server code - requires mounting all routes under /meterflo
+const app = express();
+const router = express.Router();
+
+// All routes go on the router
+router.get('/api/health', (req, res) => { ... });
+router.use(express.static('dist/public'));
+
+// Mount router under /meterflo
+app.use('/meterflo', router);
+```
+
+> **Recommendation:** Use the path-stripping approach (Section 8a.4) as it requires no code changes.
+
+### 8a.6 HTTPS Configuration for Subdirectory
+
+For SSL/HTTPS with subdirectory deployment, update your VirtualHost:
+
+```apache
+<VirtualHost *:443>
+    ServerName yourserver.com
+    DocumentRoot "C:/xampp/htdocs"
+    
+    SSLEngine on
+    SSLCertificateFile "conf/ssl.crt/server.crt"
+    SSLCertificateKeyFile "conf/ssl.key/server.key"
+    
+    # Serve static files from htdocs root
+    <Directory "C:/xampp/htdocs">
+        Options Indexes FollowSymLinks
+        AllowOverride All
+        Require all granted
+    </Directory>
+    
+    # Proxy MeterFlo subdirectory to Node.js
+    ProxyPreserveHost On
+    ProxyPass /meterflo http://127.0.0.1:3000/
+    ProxyPassReverse /meterflo http://127.0.0.1:3000/
+    
+    # SSE support
+    ProxyTimeout 600
+    SetEnv proxy-sendchunked 1
+    
+    # WebSocket support (if needed)
+    RewriteEngine On
+    RewriteCond %{HTTP:Upgrade} websocket [NC]
+    RewriteRule /meterflo/(.*) ws://127.0.0.1:3000/$1 [P,L]
+</VirtualHost>
+
+# HTTP to HTTPS redirect
+<VirtualHost *:80>
+    ServerName yourserver.com
+    Redirect permanent / https://yourserver.com/
+</VirtualHost>
+```
+
+### 8a.7 Environment Variables for Subdirectory
+
+Your `.env` file or Windows System Environment Variables remain the same as a standard installation:
+
+```env
+NODE_ENV=production
+HOST=127.0.0.1
+PORT=3000
+DATABASE_URL=postgresql://meterflo_user:your_password@localhost:5432/meterflo
+SESSION_SECRET=your-secret-key
+```
+
+> **Note:** No special environment variables are needed for subdirectory deployment. Apache handles the path prefix stripping, so the Node.js server runs identically to a root installation.
+
+### 8a.8 Rebuild and Restart
+
+After making these changes:
+
+```cmd
+cd C:\xampp\htdocs\meterflo
+npx tsx script/build.ts
+pm2 restart meterflo
+```
+
+Restart Apache:
+```cmd
+C:\xampp\apache\bin\httpd.exe -k restart
+```
+
+### 8a.9 Verify Subdirectory Setup
+
+1. **Test MeterFlo**: Open `http://localhost/meterflo/` - should show login page
+2. **Test other sites**: Open `http://localhost/` - should show htdocs index
+3. **Test API**: Open `http://localhost/meterflo/api/health` - should return OK
+
+### 8a.10 Troubleshooting Subdirectory Issues
+
+| Issue | Solution |
+|-------|----------|
+| **404 on static assets** | Verify `base` in vite.config.ts matches your subdirectory |
+| **API calls fail** | Check ProxyPass has correct trailing slashes |
+| **Login redirect loops** | Ensure session cookie path is set correctly |
+| **CSS/JS not loading** | Rebuild after changing vite.config.ts base path |
+| **Apache shows "Forbidden"** | Check Directory permissions in httpd.conf |
+
+### 8a.11 Files Changed Summary
+
+| File | Change |
+|------|--------|
+| `vite.config.ts` | Add `base: "/meterflo/"` for correct asset URLs |
+| `deploy/ecosystem.config.cjs` | Update `cwd` path to subdirectory location |
+| `C:\xampp\apache\conf\httpd.conf` | Add ProxyPass for subdirectory with path stripping |
+
+> **Note:** No changes needed to `.env`, Express server code, or API routes. Apache handles all path prefix management.
 
 ---
 
