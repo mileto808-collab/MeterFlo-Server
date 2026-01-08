@@ -232,8 +232,10 @@ class FileImportScheduler {
         for (const row of rows) {
           try {
             const mappedData: Record<string, any> = {};
-            for (const [sourceCol, targetField] of Object.entries(columnMapping)) {
-              if (targetField && row[sourceCol] !== undefined) {
+            // columnMapping is stored as {targetField: sourceCol}
+            // e.g., {"customerWoId": "customer_wo_id", ...}
+            for (const [targetField, sourceCol] of Object.entries(columnMapping)) {
+              if (sourceCol && row[sourceCol] !== undefined) {
                 mappedData[targetField] = row[sourceCol];
               }
             }
