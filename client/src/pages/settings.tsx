@@ -359,10 +359,12 @@ export default function Settings() {
   interface UpdatePreview {
     isGitRepo: boolean;
     currentBranch: string;
+    remoteBranch?: string;
     commitsBehind: number;
     filesChanged: string[];
     diff: string;
     updateCommand: string;
+    fallbackCommand?: string;
     message?: string;
   }
 
@@ -1912,6 +1914,30 @@ export default function Settings() {
                           <Clipboard className="h-4 w-4" />
                         </Button>
                       </div>
+                      
+                      {updatePreviewData.fallbackCommand && (
+                        <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md">
+                          <p className="text-xs text-blue-800 dark:text-blue-200 font-medium mb-2">
+                            If the above command fails, try this alternative:
+                          </p>
+                          <p className="text-xs text-blue-600 dark:text-blue-400 mb-2">
+                            This command does a hard reset to match the remote exactly (local changes will be lost):
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <code className="flex-1 p-2 bg-blue-100 dark:bg-blue-900/50 rounded text-xs font-mono break-all text-blue-800 dark:text-blue-200">
+                              {updatePreviewData.fallbackCommand}
+                            </code>
+                            <Button 
+                              size="icon" 
+                              variant="outline"
+                              onClick={() => copyToClipboard(updatePreviewData.fallbackCommand!)}
+                              data-testid="button-copy-fallback-command"
+                            >
+                              <Clipboard className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </>
                 )}
