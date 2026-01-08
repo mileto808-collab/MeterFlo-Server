@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeSlug from "rehype-slug";
 import html2pdf from "html2pdf.js";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -169,7 +170,7 @@ export default function Documentation() {
             ) : (
               <div ref={contentRef}>
                 <article className="prose prose-sm dark:prose-invert max-w-none" data-testid="text-doc-content">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSlug]}>
                     {docContent || ""}
                   </ReactMarkdown>
                 </article>
