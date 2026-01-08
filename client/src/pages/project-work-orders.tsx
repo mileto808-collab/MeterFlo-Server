@@ -131,7 +131,7 @@ export default function ProjectWorkOrders() {
   const { user } = useAuth();
   const { hasPermission } = usePermissions();
   const { toast } = useToast();
-  const { formatDateTime, formatExport, formatCustom } = useTimezone();
+  const { formatDateTime, formatExport, formatCustom, timezone: globalTimezone } = useTimezone();
   const [, navigate] = useLocation();
   const [isCreatingWorkOrder, setIsCreatingWorkOrder] = useState(false);
   const [editingWorkOrder, setEditingWorkOrder] = useState<ProjectWorkOrder | null>(null);
@@ -3358,6 +3358,7 @@ export default function ProjectWorkOrders() {
               assigneesData={assigneesData}
               initialWorkOrderForScheduling={workOrderForCalendarScheduling}
               onInitialSchedulingHandled={() => setWorkOrderForCalendarScheduling(null)}
+              projectTimezone={project?.timezone || globalTimezone}
             />
           </CardContent>
         </Card>

@@ -21,6 +21,7 @@ import {
   getHours,
   getMinutes,
 } from "date-fns";
+import { toZonedTime, formatInTimeZone, fromZonedTime } from "date-fns-tz";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -90,6 +91,7 @@ interface WorkOrderCalendarProps {
   assigneesData?: AssigneesData;
   initialWorkOrderForScheduling?: ProjectWorkOrder | null;
   onInitialSchedulingHandled?: () => void;
+  projectTimezone?: string;
 }
 
 interface DragState {
@@ -107,6 +109,7 @@ export function WorkOrderCalendar({
   assigneesData,
   initialWorkOrderForScheduling,
   onInitialSchedulingHandled,
+  projectTimezone,
 }: WorkOrderCalendarProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [view, setView] = useState<CalendarView>("month");
@@ -327,18 +330,102 @@ export function WorkOrderCalendar({
     }
   };
 
+  // Convert wall-clock time to UTC using iterative refinement
+  // This is independent of browser timezone - uses only Intl API
+  // For DST gaps (times that don't exist), rounds forward to the first valid time
+  const wallClockToUtc = useCallback((wallClockStr: string, timezone: string): { utcDate: Date; adjustedWallClock: string | null } => {
+    // Format a UTC time in the target timezone
+    const getLocalStr = (utcDate: Date): string => {
+      return formatInTimeZone(utcDate, timezone, "yyyy-MM-dd'T'HH:mm:ss");
+    };
+    
+    // Start with wall-clock interpreted as UTC
+    const wallClockAsUtc = new Date(wallClockStr + 'Z');
+    
+    // Binary search for the correct UTC time
+    // The goal: find UTC time T such that getLocalStr(T) === wallClockStr
+    let lo = wallClockAsUtc.getTime() - 14 * 60 * 60 * 1000; // -14h (max offset)
+    let hi = wallClockAsUtc.getTime() + 14 * 60 * 60 * 1000; // +14h (max offset)
+    let exactMatch: Date | null = null;
+    
+    // Binary search (max 50 iterations)
+    for (let i = 0; i < 50 && lo <= hi; i++) {
+      const mid = Math.floor((lo + hi) / 2);
+      const midDate = new Date(mid);
+      const localStr = getLocalStr(midDate);
+      
+      if (localStr === wallClockStr) {
+        exactMatch = midDate;
+        break;
+      }
+      
+      if (localStr < wallClockStr) {
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    
+    // If exact match found, return it
+    if (exactMatch) {
+      return { utcDate: exactMatch, adjustedWallClock: null };
+    }
+    
+    // No exact match - this is a DST gap
+    // Find the first valid time after the requested time
+    // The gap typically starts at the end of 'hi' search range
+    // Scan forward to find the first valid post-gap time
+    const gapBoundary = new Date(hi);
+    const gapBoundaryLocal = getLocalStr(gapBoundary);
+    
+    // If the gap boundary local time is before our target, scan forward
+    if (gapBoundaryLocal < wallClockStr) {
+      // Scan forward in 1-minute increments to find post-gap time
+      for (let offset = 0; offset < 120; offset++) { // max 2 hour gap
+        const candidate = new Date(hi + offset * 60000);
+        const candidateLocal = getLocalStr(candidate);
+        if (candidateLocal >= wallClockStr) {
+          return { utcDate: candidate, adjustedWallClock: candidateLocal };
+        }
+      }
+    }
+    
+    // Fallback: use the closest point
+    return { utcDate: gapBoundary, adjustedWallClock: gapBoundaryLocal };
+  }, []);
+
   const confirmReschedule = async () => {
     if (!rescheduleDialog.workOrder || !rescheduleDialog.targetDate) return;
+    
+    // Require a valid timezone before proceeding
+    const timezone = projectTimezone;
+    if (!timezone) {
+      console.error("Cannot schedule: project timezone not loaded");
+      return;
+    }
     
     setIsRescheduling(true);
     try {
       const [hours, minutes] = rescheduleDialog.time.split(":").map(Number);
-      let scheduledDate = rescheduleDialog.targetDate;
-      scheduledDate = setHours(scheduledDate, hours);
-      scheduledDate = setMinutes(scheduledDate, minutes);
-      scheduledDate = setSeconds(scheduledDate, 0);
       
-      const scheduledAt = scheduledDate.toISOString();
+      // Get the date components from the target date
+      const year = rescheduleDialog.targetDate.getFullYear();
+      const month = rescheduleDialog.targetDate.getMonth() + 1;
+      const day = rescheduleDialog.targetDate.getDate();
+      
+      // Build an ISO-formatted wall-clock string (no timezone indicator)
+      const wallClockStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
+      
+      // Convert wall-clock in project timezone to UTC using iterative search
+      const { utcDate, adjustedWallClock } = wallClockToUtc(wallClockStr, timezone);
+      
+      // Log if time was adjusted due to DST gap
+      if (adjustedWallClock) {
+        console.info(`DST gap: requested ${wallClockStr}, scheduled ${adjustedWallClock} in ${timezone}`);
+      }
+      
+      const scheduledAt = utcDate.toISOString();
+      
       await onReschedule(
         rescheduleDialog.workOrder.id, 
         scheduledAt, 
