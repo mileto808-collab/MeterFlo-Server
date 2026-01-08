@@ -3985,6 +3985,9 @@ export async function registerRoutes(
       let filePath: string;
       
       switch (docType) {
+        case "system-admin":
+          filePath = path.join(process.cwd(), "SYSTEM_ADMIN_GUIDE.md");
+          break;
         case "windows-deployment":
           filePath = path.join(process.cwd(), "deploy", "WINDOWS_DEPLOYMENT.md");
           break;
