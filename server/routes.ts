@@ -4318,7 +4318,7 @@ export async function registerRoutes(
     }
   });
 
-  // Check for updates from GitHub
+  // Check for updates from GitHub (version + git commits)
   app.post("/api/system/update-check", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
@@ -4332,66 +4332,137 @@ export async function registerRoutes(
       }
       
       const webUpdateUrl = await storage.getSetting("webUpdateUrl");
-      if (!webUpdateUrl) {
-        return res.status(400).json({ message: "Web update URL not configured" });
-      }
+      const workDir = process.cwd();
       
-      // Validate domain for security (only allow api.github.com)
-      const url = new URL(webUpdateUrl);
-      if (url.hostname !== "api.github.com") {
-        return res.status(400).json({ message: "Invalid update URL: must be from api.github.com" });
-      }
-      
-      // Fetch release info from GitHub
-      const response = await fetch(webUpdateUrl, {
-        headers: {
-          "Accept": "application/vnd.github.v3+json",
-          "User-Agent": "MeterFlo-WebApp"
-        }
-      });
-      
-      if (!response.ok) {
-        if (response.status === 404) {
-          return res.status(404).json({ message: "Repository or release not found" });
-        }
-        if (response.status === 403) {
-          return res.status(403).json({ message: "GitHub API rate limit exceeded. Try again later." });
-        }
-        throw new Error(`GitHub API error: ${response.status}`);
-      }
-      
-      const release = await response.json() as {
-        tag_name: string;
-        name: string;
-        body: string;
-        html_url: string;
-        published_at: string;
+      // Check git status first (this is the reliable way to detect updates)
+      let gitStatus = {
+        isGitRepo: false,
+        commitsBehind: 0,
+        remoteBranch: "main",
+        localCommit: "",
+        remoteCommit: "",
+        hasGitUpdates: false
       };
       
-      // Get current version
-      const packageJsonPath = path.join(process.cwd(), "package.json");
-      const packageJson = JSON.parse(await fs.readFile(packageJsonPath, "utf-8"));
-      const currentVersion = packageJson.version || "1.0.0";
+      const gitDir = path.join(workDir, ".git");
+      if (existsSync(gitDir)) {
+        gitStatus.isGitRepo = true;
+        
+        try {
+          // Fetch from origin
+          await execAsync("git fetch origin", { cwd: workDir, timeout: 30000 });
+          
+          // Detect remote's default branch
+          let remoteBranch = "main";
+          try {
+            const { stdout: headRef } = await execAsync("git symbolic-ref refs/remotes/origin/HEAD", { cwd: workDir });
+            const match = headRef.trim().match(/refs\/remotes\/origin\/(.+)$/);
+            if (match) {
+              remoteBranch = match[1];
+            }
+          } catch {
+            // Fallback: parse git branch -r for exact matches
+            try {
+              const { stdout: remoteBranchesOutput } = await execAsync("git branch -r", { cwd: workDir });
+              const branchLines = remoteBranchesOutput.split("\n").map(line => line.trim());
+              const exactBranches = branchLines.map(line => {
+                const match = line.match(/^origin\/(.+)$/);
+                return match ? match[1] : null;
+              }).filter(Boolean);
+              
+              if (exactBranches.includes("main")) {
+                remoteBranch = "main";
+              } else if (exactBranches.includes("master")) {
+                remoteBranch = "master";
+              }
+            } catch {
+              // Keep default
+            }
+          }
+          gitStatus.remoteBranch = remoteBranch;
+          
+          // Get local and remote commit SHAs
+          try {
+            const { stdout: localSha } = await execAsync("git rev-parse HEAD", { cwd: workDir });
+            gitStatus.localCommit = localSha.trim().substring(0, 7);
+            
+            const { stdout: remoteSha } = await execAsync(`git rev-parse origin/${remoteBranch}`, { cwd: workDir });
+            gitStatus.remoteCommit = remoteSha.trim().substring(0, 7);
+            
+            // Count commits behind
+            const { stdout: countOutput } = await execAsync(
+              `git rev-list --count HEAD..origin/${remoteBranch}`,
+              { cwd: workDir }
+            );
+            gitStatus.commitsBehind = parseInt(countOutput.trim()) || 0;
+            gitStatus.hasGitUpdates = gitStatus.commitsBehind > 0;
+          } catch {
+            // Remote branch may not exist
+          }
+        } catch (fetchError: any) {
+          console.error("Git fetch error during update check:", fetchError.message);
+        }
+      }
       
-      // Parse versions (remove 'v' prefix if present)
-      const latestVersion = release.tag_name.replace(/^v/, "");
-      const compareResult = compareVersions(currentVersion, latestVersion);
+      // Also check GitHub releases API if configured
+      let releaseInfo: any = null;
+      if (webUpdateUrl) {
+        try {
+          const url = new URL(webUpdateUrl);
+          if (url.hostname === "api.github.com") {
+            const response = await fetch(webUpdateUrl, {
+              headers: {
+                "Accept": "application/vnd.github.v3+json",
+                "User-Agent": "MeterFlo-WebApp"
+              }
+            });
+            
+            if (response.ok) {
+              const release = await response.json() as {
+                tag_name: string;
+                name: string;
+                body: string;
+                html_url: string;
+                published_at: string;
+              };
+              
+              const packageJsonPath = path.join(workDir, "package.json");
+              const packageJson = JSON.parse(await fs.readFile(packageJsonPath, "utf-8"));
+              const currentVersion = packageJson.version || "1.0.0";
+              const latestVersion = release.tag_name.replace(/^v/, "");
+              const compareResult = compareVersions(currentVersion, latestVersion);
+              
+              releaseInfo = {
+                latestVersion,
+                currentVersion,
+                updateAvailable: compareResult < 0,
+                releaseName: release.name,
+                releaseNotes: release.body,
+                releaseUrl: release.html_url,
+                publishedAt: release.published_at
+              };
+            }
+          }
+        } catch (releaseError) {
+          console.error("Error fetching release info:", releaseError);
+        }
+      }
       
-      const releaseInfo = {
-        latestVersion,
-        currentVersion,
-        updateAvailable: compareResult < 0,
-        releaseName: release.name,
-        releaseNotes: release.body,
-        releaseUrl: release.html_url,
-        publishedAt: release.published_at
+      // Combine git status with release info
+      const result = {
+        // Git-based update detection (primary)
+        ...gitStatus,
+        // Release-based info (secondary/informational)
+        ...(releaseInfo || {}),
+        // Overall update available flag: either git commits behind OR version update
+        updateAvailable: gitStatus.hasGitUpdates || (releaseInfo?.updateAvailable ?? false)
       };
       
       // Cache the result
       await storage.setSetting("webUpdateLastCheck", new Date().toISOString(), "Last web update check timestamp");
-      await storage.setSetting("webUpdateCachedRelease", JSON.stringify(releaseInfo), "Cached release info");
+      await storage.setSetting("webUpdateCachedRelease", JSON.stringify(result), "Cached release info");
       
-      res.json(releaseInfo);
+      res.json(result);
     } catch (error) {
       console.error("Error checking for updates:", error);
       res.status(500).json({ message: "Failed to check for updates" });
@@ -4520,6 +4591,14 @@ export async function registerRoutes(
         throw diffError;
       }
       
+      // Add appropriate message based on status
+      let message = "";
+      if (commitsBehind === 0) {
+        message = "Already up to date with origin/" + remoteBranch;
+      } else {
+        message = `${commitsBehind} commit${commitsBehind === 1 ? '' : 's'} behind origin/${remoteBranch}`;
+      }
+      
       res.json({
         isGitRepo: true,
         currentBranch,
@@ -4528,7 +4607,8 @@ export async function registerRoutes(
         filesChanged,
         diff,
         updateCommand: `pm2 stop meterflo && git pull origin ${remoteBranch} && npm install && npx tsx script/build.ts && pm2 restart meterflo`,
-        fallbackCommand: `pm2 stop meterflo && git reset --hard origin/${remoteBranch} && npm install && npx tsx script/build.ts && pm2 restart meterflo`
+        fallbackCommand: `pm2 stop meterflo && git reset --hard origin/${remoteBranch} && npm install && npx tsx script/build.ts && pm2 restart meterflo`,
+        message
       });
       
     } catch (error: any) {
