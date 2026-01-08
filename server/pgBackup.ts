@@ -347,32 +347,46 @@ function addDirectoryToArchiveRecursive(
   }
 }
 
-export async function createPgBackupArchive(res: any): Promise<void> {
-  console.log("[Backup] Starting pg_dump backup...");
+export type BackupType = "database" | "full" | "files";
+
+export async function createPgBackupArchive(res: any, backupType: BackupType = "full"): Promise<void> {
+  console.log(`[Backup] Starting backup (type: ${backupType})...`);
   
-  let backupResult: PgBackupResult;
-  try {
-    backupResult = await createPgBackup();
-    
-    if (!backupResult.success) {
-      console.error("[Backup] pg_dump failed:", backupResult.error);
-      throw new Error(backupResult.error || "Failed to create database backup");
+  const includeDatabase = backupType === "database" || backupType === "full";
+  const includeFiles = backupType === "files" || backupType === "full";
+  
+  let backupResult: PgBackupResult | null = null;
+  
+  if (includeDatabase) {
+    try {
+      backupResult = await createPgBackup();
+      
+      if (!backupResult.success) {
+        console.error("[Backup] pg_dump failed:", backupResult.error);
+        throw new Error(backupResult.error || "Failed to create database backup");
+      }
+      console.log(`[Backup] Database dump complete. Schemas: ${backupResult.schemas.join(", ")}`);
+    } catch (error: any) {
+      console.error("[Backup] Database backup error:", error);
+      throw new Error(`Database backup failed: ${error.message}`);
     }
-    console.log(`[Backup] Database dump complete. Schemas: ${backupResult.schemas.join(", ")}`);
-  } catch (error: any) {
-    console.error("[Backup] Database backup error:", error);
-    throw new Error(`Database backup failed: ${error.message}`);
   }
   
   const filesPath = await getProjectFilesPath();
   const filesExist = fs.existsSync(filesPath);
   const skippedFiles: string[] = [];
   
+  // For files-only backup, require the directory to exist
+  // For full backup, continue without files if directory is missing (legacy behavior)
+  if (backupType === "files" && !filesExist) {
+    throw new Error("No project files directory found to backup");
+  }
+  
   const archive = archiver("zip", { zlib: { level: 6 } });
   
   archive.on("error", (err) => {
     console.error("[Backup] Archive error:", err);
-    if (fs.existsSync(backupResult.backupFile)) {
+    if (backupResult && fs.existsSync(backupResult.backupFile)) {
       try { fs.unlinkSync(backupResult.backupFile); } catch {}
     }
     if (!res.headersSent) {
@@ -390,27 +404,33 @@ export async function createPgBackupArchive(res: any): Promise<void> {
     }
   });
   
+  const filenamePrefix = backupType === "database" ? "db_backup" : 
+                         backupType === "files" ? "files_backup" : "full_backup";
+  
   res.setHeader("Content-Type", "application/zip");
   res.setHeader(
     "Content-Disposition",
-    `attachment; filename="full_backup_${new Date().toISOString().slice(0, 10)}.zip"`
+    `attachment; filename="${filenamePrefix}_${new Date().toISOString().slice(0, 10)}.zip"`
   );
   
   archive.pipe(res);
   
-  archive.file(backupResult.backupFile, { name: "database_backup.sql" });
-  console.log("[Backup] Added database_backup.sql to archive");
+  if (includeDatabase && backupResult) {
+    archive.file(backupResult.backupFile, { name: "database_backup.sql" });
+    console.log("[Backup] Added database_backup.sql to archive");
+    
+    const metadata = {
+      version: "2.0",
+      format: "pg_dump_sql",
+      backupType,
+      backupDate: backupResult.backupDate,
+      schemas: backupResult.schemas,
+      postgresVersion: await getPostgresVersion(),
+    };
+    archive.append(JSON.stringify(metadata, null, 2), { name: "backup_metadata.json" });
+  }
   
-  const metadata = {
-    version: "2.0",
-    format: "pg_dump_sql",
-    backupDate: backupResult.backupDate,
-    schemas: backupResult.schemas,
-    postgresVersion: await getPostgresVersion(),
-  };
-  archive.append(JSON.stringify(metadata, null, 2), { name: "backup_metadata.json" });
-  
-  if (filesPath && filesExist) {
+  if (includeFiles && filesPath && filesExist) {
     console.log(`[Backup] Adding project files from: ${filesPath}`);
     try {
       addDirectoryToArchiveRecursive(archive, filesPath, "project_files", skippedFiles);
@@ -432,15 +452,25 @@ export async function createPgBackupArchive(res: any): Promise<void> {
         { name: "file_backup_error.json" }
       );
     }
-  } else {
+  } else if (includeFiles) {
     console.log("[Backup] No project files directory to backup");
+  }
+  
+  if (!includeDatabase && backupType === "files") {
+    const metadata = {
+      version: "2.0",
+      format: "files_only",
+      backupType,
+      backupDate: new Date().toISOString(),
+    };
+    archive.append(JSON.stringify(metadata, null, 2), { name: "backup_metadata.json" });
   }
   
   console.log("[Backup] Finalizing archive...");
   await archive.finalize();
   console.log("[Backup] Archive complete");
   
-  if (fs.existsSync(backupResult.backupFile)) {
+  if (backupResult && fs.existsSync(backupResult.backupFile)) {
     try { fs.unlinkSync(backupResult.backupFile); } catch {}
   }
 }
