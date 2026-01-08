@@ -6505,7 +6505,17 @@ export async function registerRoutes(
       
       // Append user notes to existing notes (mobile pattern) - don't replace
       if (notes && notes.trim()) {
-        const timestamp = new Date().toLocaleString();
+        // Use project timezone if set, otherwise UTC
+        const projectTimezone = project.timezone || 'UTC';
+        const timestamp = new Date().toLocaleString('en-US', {
+          month: '2-digit',
+          day: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+          timeZone: projectTimezone
+        });
         const noteEntry = `[Trouble Report - ${timestamp} by ${currentUser.username || currentUser.id}]\n${notes.trim()}`;
         updateData.notes = workOrder.notes 
           ? `${workOrder.notes}\n\n${noteEntry}`
