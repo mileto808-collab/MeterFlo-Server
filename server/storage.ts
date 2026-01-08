@@ -167,6 +167,7 @@ export interface IStorage {
   createFileImportConfig(config: InsertFileImportConfig): Promise<FileImportConfig>;
   updateFileImportConfig(id: number, data: UpdateFileImportConfig): Promise<FileImportConfig | undefined>;
   updateFileImportConfigLastRun(id: number, status: string, message: string | null, recordCount: number | null, lastProcessedFile: string | null): Promise<FileImportConfig | undefined>;
+  clearLastProcessedFileByFilename(projectId: number, filename: string): Promise<number>;
   deleteFileImportConfig(id: number): Promise<boolean>;
 
   // File import history operations
@@ -1085,6 +1086,23 @@ export class DatabaseStorage implements IStorage {
       .where(eq(fileImportConfigs.id, id))
       .returning();
     return updated;
+  }
+
+  async clearLastProcessedFileByFilename(projectId: number, filename: string): Promise<number> {
+    const result = await db
+      .update(fileImportConfigs)
+      .set({ 
+        lastProcessedFile: null,
+        updatedAt: new Date()
+      })
+      .where(
+        and(
+          eq(fileImportConfigs.projectId, projectId),
+          eq(fileImportConfigs.lastProcessedFile, filename)
+        )
+      )
+      .returning();
+    return result.length;
   }
 
   async deleteFileImportConfig(id: number): Promise<boolean> {
