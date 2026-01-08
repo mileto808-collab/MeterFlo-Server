@@ -9,7 +9,7 @@ import { useTheme } from "@/hooks/use-theme";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useTimezone } from "@/hooks/use-timezone";
-import { clearTimezoneCache } from "@/lib/timezone";
+import { clearTimezoneCache, formatDateTimeInTimezone } from "@/lib/timezone";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -279,7 +279,7 @@ export default function Settings() {
   });
 
   // File Import History query
-  const { data: fileImportHistoryList, isLoading: loadingImportHistory } = useQuery<(FileImportHistory & { projectName?: string })[]>({
+  const { data: fileImportHistoryList, isLoading: loadingImportHistory } = useQuery<(FileImportHistory & { projectName?: string; projectTimezone?: string | null })[]>({
     queryKey: ["/api/file-import-history"],
     enabled: isAdmin || hasPermission("settings.importHistory"),
   });
@@ -1634,7 +1634,11 @@ export default function Settings() {
                         {fileImportHistoryList.slice(0, 50).map((entry) => (
                           <TableRow key={entry.id} data-testid={`row-import-history-${entry.id}`}>
                             <TableCell className="text-sm">
-                              {entry.startedAt ? formatDateTime(entry.startedAt) : "—"}
+                              {entry.startedAt ? (
+                                entry.projectTimezone 
+                                  ? formatDateTimeInTimezone(entry.startedAt, entry.projectTimezone)
+                                  : formatDateTime(entry.startedAt)
+                              ) : "—"}
                             </TableCell>
                             <TableCell>
                               <Badge variant="outline" className="capitalize">

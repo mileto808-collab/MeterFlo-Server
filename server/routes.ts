@@ -4270,14 +4270,16 @@ export async function registerRoutes(
       const limit = parseInt(req.query.limit as string) || 500;
       const history = await storage.getAllFileImportHistory(limit);
       
-      // Enrich with project names
+      // Enrich with project names and timezones
       const enrichedHistory = await Promise.all(history.map(async (entry) => {
         let projectName = null;
+        let projectTimezone = null;
         if (entry.projectId) {
           const project = await storage.getProject(entry.projectId);
           projectName = project?.name || null;
+          projectTimezone = project?.timezone || null;
         }
-        return { ...entry, projectName };
+        return { ...entry, projectName, projectTimezone };
       }));
       
       res.json(enrichedHistory);
