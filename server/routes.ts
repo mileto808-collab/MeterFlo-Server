@@ -4432,13 +4432,47 @@ export async function registerRoutes(
         });
       }
       
-      // Get the current branch
+      // Get the current local branch
       let currentBranch = "main";
       try {
         const { stdout } = await execAsync("git rev-parse --abbrev-ref HEAD", { cwd: workDir });
         currentBranch = stdout.trim() || "main";
       } catch {
         // Default to main if we can't determine the branch
+      }
+      
+      // Detect the remote's default branch (main vs master)
+      // This handles the case where local branch differs from remote
+      let remoteBranch = currentBranch;
+      try {
+        // Try to get remote HEAD reference first (most reliable)
+        try {
+          const { stdout: headRef } = await execAsync("git symbolic-ref refs/remotes/origin/HEAD", { cwd: workDir });
+          // Output is like "refs/remotes/origin/main"
+          const match = headRef.trim().match(/refs\/remotes\/origin\/(.+)$/);
+          if (match) {
+            remoteBranch = match[1];
+          }
+        } catch {
+          // If symbolic-ref fails, parse git branch -r for exact matches
+          const { stdout: remoteBranchesOutput } = await execAsync("git branch -r", { cwd: workDir });
+          // Parse line by line for exact branch names
+          const branchLines = remoteBranchesOutput.split("\n").map(line => line.trim());
+          const exactBranches = branchLines.map(line => {
+            // Remove "origin/" prefix and any trailing whitespace
+            const match = line.match(/^origin\/(.+)$/);
+            return match ? match[1] : null;
+          }).filter(Boolean);
+          
+          // Check for exact "main" or "master" branches
+          if (exactBranches.includes("main")) {
+            remoteBranch = "main";
+          } else if (exactBranches.includes("master")) {
+            remoteBranch = "master";
+          }
+        }
+      } catch {
+        // Fallback to current branch if we can't determine remote branches
       }
       
       // Get the diff between current and origin
@@ -4449,21 +4483,21 @@ export async function registerRoutes(
       try {
         // Get number of commits behind
         const { stdout: countOutput } = await execAsync(
-          `git rev-list --count HEAD..origin/${currentBranch}`,
+          `git rev-list --count HEAD..origin/${remoteBranch}`,
           { cwd: workDir }
         );
         commitsBehind = parseInt(countOutput.trim()) || 0;
         
         // Get changed files summary
         const { stdout: filesOutput } = await execAsync(
-          `git diff --name-status HEAD..origin/${currentBranch}`,
+          `git diff --name-status HEAD..origin/${remoteBranch}`,
           { cwd: workDir }
         );
         filesChanged = filesOutput.trim().split("\n").filter(Boolean);
         
         // Get actual diff (limited to prevent huge responses)
         const { stdout: diffOutput } = await execAsync(
-          `git diff --stat HEAD..origin/${currentBranch}`,
+          `git diff --stat HEAD..origin/${remoteBranch}`,
           { cwd: workDir, maxBuffer: 1024 * 1024 }
         );
         diff = diffOutput;
@@ -4474,10 +4508,12 @@ export async function registerRoutes(
           return res.json({
             isGitRepo: true,
             currentBranch,
+            remoteBranch,
             commitsBehind: 0,
             filesChanged: [],
             diff: "",
-            updateCommand: `pm2 stop meterflo && git pull origin ${currentBranch} && npm install && npx tsx script/build.ts && pm2 restart meterflo`,
+            updateCommand: `pm2 stop meterflo && git pull origin ${remoteBranch} && npm install && npx tsx script/build.ts && pm2 restart meterflo`,
+            fallbackCommand: `pm2 stop meterflo && git reset --hard origin/${remoteBranch} && npm install && npx tsx script/build.ts && pm2 restart meterflo`,
             message: "No remote branch found or already up to date"
           });
         }
@@ -4487,10 +4523,12 @@ export async function registerRoutes(
       res.json({
         isGitRepo: true,
         currentBranch,
+        remoteBranch,
         commitsBehind,
         filesChanged,
         diff,
-        updateCommand: `pm2 stop meterflo && git pull origin ${currentBranch} && npm install && npx tsx script/build.ts && pm2 restart meterflo`
+        updateCommand: `pm2 stop meterflo && git pull origin ${remoteBranch} && npm install && npx tsx script/build.ts && pm2 restart meterflo`,
+        fallbackCommand: `pm2 stop meterflo && git reset --hard origin/${remoteBranch} && npm install && npx tsx script/build.ts && pm2 restart meterflo`
       });
       
     } catch (error: any) {
