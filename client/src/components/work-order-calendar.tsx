@@ -124,6 +124,7 @@ export function WorkOrderCalendar({
   const [selectedForScheduling, setSelectedForScheduling] = useState<ProjectWorkOrder | null>(null);
   const [isRescheduling, setIsRescheduling] = useState(false);
   const lastHandledWorkOrderIdRef = useRef<number | null>(null);
+  const [clickedWorkOrder, setClickedWorkOrder] = useState<ProjectWorkOrder | null>(null);
 
   // Handle initial work order for scheduling from work order detail (via useEffect to avoid state update during render)
   useEffect(() => {
@@ -374,44 +375,100 @@ export function WorkOrderCalendar({
 
   const renderWorkOrderCard = (workOrder: ProjectWorkOrder, compact = false) => {
     const isDraggable = workOrder.status !== "Completed" && workOrder.status !== "Closed";
+    const isSchedulable = workOrder.status !== "Completed" && workOrder.status !== "Closed";
     
     return (
-      <div
-        key={workOrder.id}
-        draggable={isDraggable}
-        onDragStart={(e) => handleDragStart(e, workOrder)}
-        onDragEnd={handleDragEnd}
-        onClick={(e) => {
-          e.stopPropagation();
-          onWorkOrderClick(workOrder);
+      <Popover 
+        key={workOrder.id} 
+        open={clickedWorkOrder?.id === workOrder.id}
+        onOpenChange={(open) => {
+          if (!open) setClickedWorkOrder(null);
         }}
-        className={cn(
-          "rounded-md border p-1.5 cursor-pointer hover-elevate text-xs",
-          getServiceTypeBackgroundColor(workOrder.serviceType || ""),
-          isDraggable && "cursor-grab active:cursor-grabbing",
-          dragState.workOrder?.id === workOrder.id && "opacity-50"
-        )}
-        data-testid={`calendar-wo-${workOrder.id}`}
       >
-        <div className="flex items-start gap-1">
-          {isDraggable && <GripVertical className="h-3 w-3 text-muted-foreground flex-shrink-0 mt-0.5" />}
-          <div className="flex-1 min-w-0">
-            <div className="font-medium truncate">WO {workOrder.customerWoId || workOrder.id}</div>
-            {workOrder.address && (
-              <div className="text-muted-foreground truncate flex items-center gap-0.5">
-                <MapPin className="h-2.5 w-2.5" />
-                {workOrder.address}
-              </div>
+        <PopoverTrigger asChild>
+          <div
+            draggable={isDraggable}
+            onDragStart={(e) => handleDragStart(e, workOrder)}
+            onDragEnd={handleDragEnd}
+            onClick={(e) => {
+              e.stopPropagation();
+              setClickedWorkOrder(workOrder);
+            }}
+            className={cn(
+              "rounded-md border p-1.5 cursor-pointer hover-elevate text-xs",
+              getServiceTypeBackgroundColor(workOrder.serviceType || ""),
+              isDraggable && "cursor-grab active:cursor-grabbing",
+              dragState.workOrder?.id === workOrder.id && "opacity-50"
             )}
-            {workOrder.scheduledAt && (
-              <div className="text-muted-foreground flex items-center gap-0.5">
-                <Clock className="h-2.5 w-2.5" />
-                {format(parseScheduledAt(workOrder.scheduledAt), "h:mm a")}
+            data-testid={`calendar-wo-${workOrder.id}`}
+          >
+            <div className="flex items-start gap-1">
+              {isDraggable && <GripVertical className="h-3 w-3 text-muted-foreground flex-shrink-0 mt-0.5" />}
+              <div className="flex-1 min-w-0">
+                <div className="font-medium truncate">WO {workOrder.customerWoId || workOrder.id}</div>
+                {workOrder.address && (
+                  <div className="text-muted-foreground truncate flex items-center gap-0.5">
+                    <MapPin className="h-2.5 w-2.5" />
+                    {workOrder.address}
+                  </div>
+                )}
+                {workOrder.scheduledAt && (
+                  <div className="text-muted-foreground flex items-center gap-0.5">
+                    <Clock className="h-2.5 w-2.5" />
+                    {format(parseScheduledAt(workOrder.scheduledAt), "h:mm a")}
+                  </div>
+                )}
               </div>
-            )}
+            </div>
           </div>
-        </div>
-      </div>
+        </PopoverTrigger>
+        <PopoverContent className="w-48 p-1" align="start">
+          <div className="flex flex-col gap-0.5">
+            {isSchedulable && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="justify-start"
+                onClick={() => {
+                  setClickedWorkOrder(null);
+                  // Open scheduling dialog with this work order
+                  const existingTime = workOrder.scheduledAt 
+                    ? format(parseScheduledAt(workOrder.scheduledAt), "HH:mm")
+                    : "09:00";
+                  const existingDate = workOrder.scheduledAt 
+                    ? parseScheduledAt(workOrder.scheduledAt)
+                    : new Date();
+                  setRescheduleDialog({
+                    open: true,
+                    workOrder,
+                    targetDate: existingDate,
+                    time: existingTime,
+                    assignedUserId: workOrder.assignedUserId || null,
+                    notes: "",
+                  });
+                }}
+                data-testid={`wo-action-schedule-${workOrder.id}`}
+              >
+                <CalendarIcon className="h-4 w-4 mr-2" />
+                {workOrder.scheduledAt ? "Reschedule" : "Schedule"}
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="justify-start"
+              onClick={() => {
+                setClickedWorkOrder(null);
+                onWorkOrderClick(workOrder);
+              }}
+              data-testid={`wo-action-details-${workOrder.id}`}
+            >
+              <FileText className="h-4 w-4 mr-2" />
+              View Details
+            </Button>
+          </div>
+        </PopoverContent>
+      </Popover>
     );
   };
 
