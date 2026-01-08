@@ -5935,7 +5935,7 @@ export async function registerRoutes(
 
   // Full System Backup/Restore API Routes
   // Uses pg_dump for SQL-format backup that handles foreign key constraints properly
-  // Supports three backup types: database, full (database+files), files
+  // Supports four backup types: database, full (database+webapp+project files), files (webapp only), project (project files only)
   app.get("/api/system/backup", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
@@ -5949,8 +5949,8 @@ export async function registerRoutes(
       
       // Get backup type from query parameter, default to 'full' for backward compatibility
       const backupType = (req.query.type as BackupType) || "full";
-      if (!["database", "full", "files"].includes(backupType)) {
-        return res.status(400).json({ message: "Invalid backup type. Must be 'database', 'full', or 'files'" });
+      if (!["database", "full", "files", "project"].includes(backupType)) {
+        return res.status(400).json({ message: "Invalid backup type. Must be 'database', 'full', 'files', or 'project'" });
       }
       
       await createPgBackupArchive(res, backupType);

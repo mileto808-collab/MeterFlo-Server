@@ -72,7 +72,7 @@ export default function Maintenance() {
   const [isRestoring, setIsRestoring] = useState(false);
   const [isSystemBackup, setIsSystemBackup] = useState(false);
   const [isSystemRestoring, setIsSystemRestoring] = useState(false);
-  const [backupType, setBackupType] = useState<"database" | "full" | "files">("full");
+  const [backupType, setBackupType] = useState<"database" | "full" | "files" | "project">("full");
 
   const { data: projects = [], isLoading, refetch } = useQuery<ProjectWithStats[]>({
     queryKey: ["/api/maintenance/projects"],
@@ -193,7 +193,8 @@ export default function Maintenance() {
       const a = document.createElement("a");
       a.href = url;
       const filenamePrefix = backupType === "database" ? "db_backup" : 
-                             backupType === "files" ? "webapp_backup" : "full_backup";
+                             backupType === "files" ? "webapp_backup" : 
+                             backupType === "project" ? "project_backup" : "full_backup";
       a.download = `${filenamePrefix}_${new Date().toISOString().slice(0, 10)}.zip`;
       document.body.appendChild(a);
       a.click();
@@ -204,6 +205,8 @@ export default function Maintenance() {
         ? "Successfully backed up all databases" 
         : backupType === "files"
         ? "Successfully backed up web application source files"
+        : backupType === "project"
+        ? "Successfully backed up all project data files"
         : "Successfully backed up databases, web app files, and project files";
       
       toast({
@@ -331,7 +334,7 @@ export default function Maintenance() {
                 </div>
                 <Select 
                   value={backupType} 
-                  onValueChange={(value: "database" | "full" | "files") => setBackupType(value)}
+                  onValueChange={(value: "database" | "full" | "files" | "project") => setBackupType(value)}
                   disabled={isSystemBackup}
                 >
                   <SelectTrigger className="w-full" data-testid="select-backup-type">
@@ -354,6 +357,12 @@ export default function Maintenance() {
                       <div className="flex items-center gap-2">
                         <FileArchive className="h-4 w-4" />
                         <span>Web App Files Only</span>
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="project" data-testid="select-item-project">
+                      <div className="flex items-center gap-2">
+                        <FolderArchive className="h-4 w-4" />
+                        <span>Project Files Only</span>
                       </div>
                     </SelectItem>
                   </SelectContent>
@@ -381,6 +390,14 @@ export default function Maintenance() {
                       <li>Code, configuration, and scripts</li>
                       <li>Excludes: node_modules, .git, temp files</li>
                       <li>Excludes: project data files (use per-project backup)</li>
+                      <li>Does not include database</li>
+                    </ul>
+                  )}
+                  {backupType === "project" && (
+                    <ul className="space-y-1 ml-1">
+                      <li>Project data files only (uploads, attachments)</li>
+                      <li>Work order files and documents</li>
+                      <li>Does not include web app source files</li>
                       <li>Does not include database</li>
                     </ul>
                   )}
