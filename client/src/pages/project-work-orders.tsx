@@ -2902,7 +2902,8 @@ export default function ProjectWorkOrders() {
                   className="rounded-r-none"
                   data-testid="view-table"
                 >
-                  <List className="h-4 w-4" />
+                  <List className="h-4 w-4 mr-1" />
+                  WO's List
                 </Button>
                 <Button
                   variant={viewMode === "calendar" ? "secondary" : "ghost"}
@@ -2911,7 +2912,8 @@ export default function ProjectWorkOrders() {
                   className="rounded-l-none"
                   data-testid="view-calendar"
                 >
-                  <CalendarIcon className="h-4 w-4" />
+                  <CalendarIcon className="h-4 w-4 mr-1" />
+                  Calendar
                 </Button>
               </div>
             )}
