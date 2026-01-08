@@ -223,10 +223,46 @@ export function WorkOrderDetail({
     );
   };
 
+  // Helper to convert named colors to hex
+  const getColorHex = (color: string): string => {
+    // If it's already a hex color, return it
+    if (color.startsWith('#')) return color;
+    
+    const colorMap: Record<string, string> = {
+      blue: "#3b82f6",
+      green: "#22c55e",
+      orange: "#f97316",
+      red: "#ef4444",
+      yellow: "#eab308",
+      purple: "#a855f7",
+      gray: "#6b7280",
+    };
+    return colorMap[color] || "#6b7280";
+  };
+
   const getServiceTypeBadge = (serviceTypeCode: string | null | undefined) => {
     if (!serviceTypeCode) return null;
     const serviceType = serviceTypes.find(st => st.code === serviceTypeCode);
     if (!serviceType) return <Badge variant="outline">{serviceTypeCode}</Badge>;
+    
+    // Use the service type's color if available
+    if (serviceType.color) {
+      const hexColor = getColorHex(serviceType.color);
+      const isLightColor = ['yellow', 'orange'].includes(serviceType.color);
+      const textColor = isLightColor ? '#000' : '#fff';
+      return (
+        <Badge 
+          style={{ 
+            backgroundColor: hexColor,
+            color: textColor,
+            borderColor: hexColor
+          }}
+        >
+          {serviceType.label}
+        </Badge>
+      );
+    }
+    
     return (
       <Badge variant="secondary" className="bg-primary/10 text-primary">
         {serviceType.label}
