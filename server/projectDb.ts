@@ -360,6 +360,7 @@ export async function migrateProjectSchema(schemaName: string): Promise<void> {
 export class ProjectWorkOrderStorage {
   private schemaName: string;
   private migrationPromise: Promise<void>;
+  private cachedTimezone: string | null = null;
 
   constructor(schemaName: string) {
     this.schemaName = schemaName;
@@ -694,8 +695,36 @@ export class ProjectWorkOrderStorage {
     }
   }
 
+  // Get the project's timezone from the schemaName (cached for performance)
+  // SchemaName format: project_{sanitized_name}_{id}
+  private async getProjectTimezone(): Promise<string> {
+    // Return cached timezone if available
+    if (this.cachedTimezone !== null) {
+      return this.cachedTimezone;
+    }
+    
+    try {
+      // Extract project ID from schemaName (last part after final underscore)
+      const parts = this.schemaName.split('_');
+      const projectId = parseInt(parts[parts.length - 1], 10);
+      
+      if (!isNaN(projectId)) {
+        const project = await storage.getProject(projectId);
+        if (project?.timezone) {
+          this.cachedTimezone = project.timezone;
+          return this.cachedTimezone;
+        }
+      }
+    } catch (error) {
+      console.error('Failed to get project timezone:', error);
+    }
+    // Default to UTC if no project timezone is set
+    this.cachedTimezone = 'UTC';
+    return this.cachedTimezone;
+  }
+
   private async getTimezoneFormattedTimestamp(): Promise<string> {
-    const timezone = await storage.getSetting("default_timezone") || "America/Denver";
+    const timezone = await this.getProjectTimezone();
     return new Date().toLocaleString('en-US', {
       month: '2-digit',
       day: '2-digit',
@@ -708,7 +737,7 @@ export class ProjectWorkOrderStorage {
   }
 
   private async formatDateToTimezone(date: Date): Promise<string> {
-    const timezone = await storage.getSetting("default_timezone") || "America/Denver";
+    const timezone = await this.getProjectTimezone();
     return date.toLocaleString('en-US', {
       month: '2-digit',
       day: '2-digit',
@@ -724,7 +753,7 @@ export class ProjectWorkOrderStorage {
   // The frontend sends datetime-local values as "YYYY-MM-DDTHH:mm" (local time without timezone)
   // We should format this directly without re-interpreting through Date (which would assume UTC)
   private async formatScheduledAtForNote(scheduledAt: string | Date): Promise<string> {
-    const timezone = await storage.getSetting("default_timezone") || "America/Denver";
+    const timezone = await this.getProjectTimezone();
     
     if (typeof scheduledAt === 'string') {
       // Handle datetime-local format: "2026-01-01T11:40" (no timezone suffix)
