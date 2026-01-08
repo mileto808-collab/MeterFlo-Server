@@ -7,6 +7,26 @@ import * as fs from "fs";
 import * as XLSX from "xlsx";
 import { minimatch } from "minimatch";
 
+function normalizeColumnName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function createNormalizedRowLookup(row: Record<string, any>): (columnName: string) => any {
+  const normalizedMap = new Map<string, any>();
+  for (const [key, value] of Object.entries(row)) {
+    normalizedMap.set(normalizeColumnName(key), value);
+  }
+  return (columnName: string) => {
+    if (row[columnName] !== undefined) {
+      return row[columnName];
+    }
+    return normalizedMap.get(normalizeColumnName(columnName));
+  };
+}
+
 class FileImportScheduler {
   private scheduledTasks: Map<number, cron.ScheduledTask> = new Map();
 
@@ -251,9 +271,14 @@ class FileImportScheduler {
             const mappedData: Record<string, any> = {};
             // columnMapping is stored as {targetField: sourceCol}
             // e.g., {"customerWoId": "customer_wo_id", ...}
+            // Use normalized lookup to handle header variations like "Customer WO ID" vs "customer_wo_id"
+            const getValue = createNormalizedRowLookup(row);
             for (const [targetField, sourceCol] of Object.entries(columnMapping)) {
-              if (sourceCol && row[sourceCol] !== undefined) {
-                mappedData[targetField] = row[sourceCol];
+              if (sourceCol) {
+                const value = getValue(sourceCol);
+                if (value !== undefined) {
+                  mappedData[targetField] = value;
+                }
               }
             }
 
