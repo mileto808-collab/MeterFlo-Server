@@ -26,7 +26,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { FileUp, CheckCircle, AlertCircle, ShieldAlert, Upload, FileSpreadsheet, FileJson, Info, Clock, Play, Trash2, Edit, Plus, Calendar, FolderSync, Settings } from "lucide-react";
+import { FileUp, CheckCircle, AlertCircle, ShieldAlert, Upload, FileSpreadsheet, FileJson, Info, Clock, Play, Trash2, Edit, Plus, Calendar, FolderSync, Settings, RotateCcw } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -1087,14 +1087,40 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
                                   toast({ title: "Failed to run import", variant: "destructive" });
                                 }
                               }}
+                              title="Run import now"
                               data-testid={`button-run-${config.id}`}
                             >
                               <Play className="h-4 w-4" />
                             </Button>
+                            {config.lastProcessedFile && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={async () => {
+                                  try {
+                                    const response = await apiRequest("POST", `/api/file-import-configs/${config.id}/reset`);
+                                    const result = await response.json();
+                                    if (result.success) {
+                                      toast({ title: "Schedule reset", description: "The file can now be reprocessed." });
+                                    } else {
+                                      toast({ title: "Reset failed", description: result.message, variant: "destructive" });
+                                    }
+                                    refetchConfigs();
+                                  } catch (error: any) {
+                                    toast({ title: "Failed to reset schedule", variant: "destructive" });
+                                  }
+                                }}
+                                title="Reset to allow reprocessing"
+                                data-testid={`button-reset-${config.id}`}
+                              >
+                                <RotateCcw className="h-4 w-4" />
+                              </Button>
+                            )}
                             <Button
                               variant="ghost"
                               size="icon"
                               onClick={() => openEditConfig(config)}
+                              title="Edit schedule"
                               data-testid={`button-edit-${config.id}`}
                             >
                               <Edit className="h-4 w-4" />
@@ -1103,6 +1129,7 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
                               variant="ghost"
                               size="icon"
                               onClick={() => setDeleteConfigId(config.id)}
+                              title="Delete schedule"
                               data-testid={`button-delete-${config.id}`}
                             >
                               <Trash2 className="h-4 w-4" />
