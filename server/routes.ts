@@ -3814,6 +3814,38 @@ export async function registerRoutes(
     }
   });
 
+  // Reset file import config to allow reprocessing
+  app.post("/api/file-import-configs/:id/reset", isAuthenticated, async (req: any, res) => {
+    try {
+      const config = await storage.getFileImportConfig(parseInt(req.params.id));
+      if (!config) {
+        return res.status(404).json({ message: "Config not found" });
+      }
+      
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (currentUser?.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, config.projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      // Clear the lastProcessedFile to allow reprocessing
+      await storage.updateFileImportConfig(parseInt(req.params.id), {
+        lastProcessedFile: null,
+        lastRunStatus: null,
+        lastRunMessage: null,
+        lastRunRecordCount: null,
+        lastRunAt: null,
+      });
+      
+      res.json({ success: true, message: "Import schedule reset. The file can now be reprocessed." });
+    } catch (error) {
+      console.error("Error resetting file import config:", error);
+      res.status(500).json({ message: "Failed to reset file import config" });
+    }
+  });
+
   // Global Work Order Search (across all accessible projects)
   app.get("/api/search/work-orders", isAuthenticated, async (req: any, res) => {
     try {
