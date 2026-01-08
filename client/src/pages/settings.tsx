@@ -346,13 +346,20 @@ export default function Settings() {
     webUpdateUrl: string | null;
     lastCheck: string | null;
     cachedRelease: {
-      latestVersion: string;
-      currentVersion: string;
+      latestVersion?: string;
+      currentVersion?: string;
       updateAvailable: boolean;
-      releaseName: string;
-      releaseNotes: string;
-      releaseUrl: string;
-      publishedAt: string;
+      releaseName?: string;
+      releaseNotes?: string;
+      releaseUrl?: string;
+      publishedAt?: string;
+      // Git-based update info
+      isGitRepo?: boolean;
+      commitsBehind?: number;
+      remoteBranch?: string;
+      localCommit?: string;
+      remoteCommit?: string;
+      hasGitUpdates?: boolean;
     } | null;
   }
 
@@ -403,7 +410,9 @@ export default function Settings() {
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/settings/web-update-config"] });
-      if (data.updateAvailable) {
+      if (data.hasGitUpdates) {
+        toast({ title: `${data.commitsBehind} commit${data.commitsBehind === 1 ? '' : 's'} behind origin/${data.remoteBranch}` });
+      } else if (data.updateAvailable && data.latestVersion) {
         toast({ title: `Update available: v${data.latestVersion}` });
       } else {
         toast({ title: "You're running the latest version" });
@@ -1712,11 +1721,27 @@ export default function Settings() {
                   <div className="space-y-1">
                     <div className="text-sm text-muted-foreground">Current Version</div>
                     <div className="text-lg font-semibold">v{versionData?.version || "1.0.0"}</div>
+                    {webUpdateConfigData?.cachedRelease?.localCommit && (
+                      <div className="text-xs text-muted-foreground font-mono">
+                        Commit: {webUpdateConfigData.cachedRelease.localCommit}
+                      </div>
+                    )}
                   </div>
-                  {webUpdateConfigData?.cachedRelease?.updateAvailable && (
-                    <div className="space-y-1 text-right">
-                      <div className="text-sm text-muted-foreground">Latest Available</div>
+                  {webUpdateConfigData?.cachedRelease?.hasGitUpdates && (
+                    <div className="space-y-1 text-center">
+                      <div className="text-sm text-muted-foreground">Git Status</div>
                       <Badge variant="default" className="text-sm">
+                        {webUpdateConfigData.cachedRelease.commitsBehind} commit{webUpdateConfigData.cachedRelease.commitsBehind === 1 ? '' : 's'} behind
+                      </Badge>
+                      <div className="text-xs text-muted-foreground">
+                        origin/{webUpdateConfigData.cachedRelease.remoteBranch}
+                      </div>
+                    </div>
+                  )}
+                  {webUpdateConfigData?.cachedRelease?.latestVersion && webUpdateConfigData?.cachedRelease?.updateAvailable && (
+                    <div className="space-y-1 text-right">
+                      <div className="text-sm text-muted-foreground">Latest Release</div>
+                      <Badge variant="secondary" className="text-sm">
                         v{webUpdateConfigData.cachedRelease.latestVersion}
                       </Badge>
                     </div>
@@ -1769,7 +1794,7 @@ export default function Settings() {
                   <Button 
                     variant="outline"
                     onClick={() => checkForUpdatesMutation.mutate()}
-                    disabled={checkForUpdatesMutation.isPending || !webUpdateConfigData?.webUpdateUrl}
+                    disabled={checkForUpdatesMutation.isPending}
                     data-testid="button-check-updates"
                   >
                     <RefreshCw className={`h-4 w-4 mr-2 ${checkForUpdatesMutation.isPending ? "animate-spin" : ""}`} />
