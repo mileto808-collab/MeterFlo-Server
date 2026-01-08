@@ -3358,7 +3358,7 @@ export default function ProjectWorkOrders() {
               assigneesData={assigneesData}
               initialWorkOrderForScheduling={workOrderForCalendarScheduling}
               onInitialSchedulingHandled={() => setWorkOrderForCalendarScheduling(null)}
-              projectTimezone={project?.timezone || globalTimezone}
+              projectTimezone={project?.timezone || undefined}
             />
           </CardContent>
         </Card>
