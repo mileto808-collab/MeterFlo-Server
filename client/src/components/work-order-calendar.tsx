@@ -233,8 +233,13 @@ export function WorkOrderCalendar({
 
   const parseScheduledAt = useCallback((scheduledAt: string | Date): Date => {
     if (scheduledAt instanceof Date) return scheduledAt;
-    return parseISO(scheduledAt);
-  }, []);
+    // Parse the UTC timestamp
+    const utcDate = parseISO(scheduledAt);
+    // If project has a timezone, convert UTC to that timezone for display
+    // If no timezone, use 'UTC' to avoid browser local timezone interpretation
+    const tz = projectTimezone || 'UTC';
+    return toZonedTime(utcDate, tz);
+  }, [projectTimezone]);
 
   const getWorkOrdersForDate = useCallback(
     (date: Date) => {
@@ -397,13 +402,6 @@ export function WorkOrderCalendar({
   const confirmReschedule = async () => {
     if (!rescheduleDialog.workOrder || !rescheduleDialog.targetDate) return;
     
-    // Require a valid timezone before proceeding
-    const timezone = projectTimezone;
-    if (!timezone) {
-      console.error("Cannot schedule: project timezone not loaded");
-      return;
-    }
-    
     setIsRescheduling(true);
     try {
       const [hours, minutes] = rescheduleDialog.time.split(":").map(Number);
@@ -416,15 +414,22 @@ export function WorkOrderCalendar({
       // Build an ISO-formatted wall-clock string (no timezone indicator)
       const wallClockStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`;
       
-      // Convert wall-clock in project timezone to UTC using iterative search
-      const { utcDate, adjustedWallClock } = wallClockToUtc(wallClockStr, timezone);
+      let scheduledAt: string;
       
-      // Log if time was adjusted due to DST gap
-      if (adjustedWallClock) {
-        console.info(`DST gap: requested ${wallClockStr}, scheduled ${adjustedWallClock} in ${timezone}`);
+      if (projectTimezone) {
+        // Project has a timezone configured - convert wall-clock to UTC
+        const { utcDate, adjustedWallClock } = wallClockToUtc(wallClockStr, projectTimezone);
+        
+        // Log if time was adjusted due to DST gap
+        if (adjustedWallClock) {
+          console.info(`DST gap: requested ${wallClockStr}, scheduled ${adjustedWallClock} in ${projectTimezone}`);
+        }
+        
+        scheduledAt = utcDate.toISOString();
+      } else {
+        // No project timezone - treat wall-clock as UTC directly (no conversion)
+        scheduledAt = wallClockStr + 'Z';
       }
-      
-      const scheduledAt = utcDate.toISOString();
       
       await onReschedule(
         rescheduleDialog.workOrder.id, 
