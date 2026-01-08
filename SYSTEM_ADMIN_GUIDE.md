@@ -18,6 +18,7 @@ This guide covers the operational requirements, business logic, and configuratio
 10. [Database Considerations](#database-considerations)
 11. [Customer API Integration](#customer-api-integration)
 12. [Backup and Restore](#backup-and-restore)
+13. [Web Application Updates](#web-application-updates)
 
 ---
 
@@ -490,6 +491,90 @@ Full system backups (all projects and global data) can be created by administrat
 3. **Test Restore Process** - Periodically verify backups can be restored
 4. **Document Backup Schedule** - Maintain a log of when backups were created
 5. **Version Control** - Keep multiple backup versions, not just the latest
+
+---
+
+## Web Application Updates
+
+MeterFlo includes a built-in update checking system that integrates with GitHub releases. This allows administrators to track new versions and apply updates to production server instances.
+
+### Configuration
+
+1. Navigate to **Settings** > **Web Application Updates**
+2. Enter the GitHub releases API URL for your MeterFlo repository:
+   ```
+   https://api.github.com/repos/YOUR-ORG/YOUR-REPO/releases/latest
+   ```
+3. Click **Save** to store the configuration
+
+### Release Process
+
+When developing on your main server (development):
+
+1. Make your code changes and test thoroughly
+2. Update the version number in `package.json` (e.g., `1.0.0` to `1.0.1`)
+3. Commit and push changes to GitHub
+
+On GitHub:
+
+1. Go to your repository and click **Releases** on the right side
+2. Click **Create a new release** or **Draft a new release**
+3. Click "Choose a tag" and type a new tag matching your version (e.g., `v1.0.1`)
+4. Add a release title and describe what changed in the release notes
+5. Click **Publish release**
+
+**Important:** The repository must have at least one published release for the update check to work. Without a release, the check will return "Repository or release not found."
+
+### Checking for Updates
+
+On production server instances:
+
+1. Open the app and navigate to **Settings** > **Web Application Updates**
+2. Click **Check for Updates** to query GitHub for the latest release
+3. If an update is available, you'll see the new version number and release notes
+4. Click **Preview Changes** to see which files will be modified
+
+### Applying Updates
+
+To apply an update to a server instance:
+
+1. SSH into the server or access the terminal
+2. Navigate to the MeterFlo application directory
+3. Run `git pull` to fetch and apply the latest changes
+4. Restart the application
+
+### Version Numbering
+
+The version is stored in `package.json` at the root of the project. Use semantic versioning:
+
+| Change Type | Example | When to Use |
+|-------------|---------|-------------|
+| **Patch** | 1.0.0 → 1.0.1 | Bug fixes, minor corrections |
+| **Minor** | 1.0.0 → 1.1.0 | New features, backwards compatible |
+| **Major** | 1.0.0 → 2.0.0 | Breaking changes, major redesigns |
+
+### Permissions
+
+The following permission is required to access web update features:
+
+- **settings.webUpdate** - View configuration, check for updates, preview changes
+
+Only users with the Administrator subrole have this permission by default.
+
+### Troubleshooting
+
+**"Repository or release not found"**
+- Verify the GitHub repository exists and is accessible
+- Ensure the repository has at least one published release
+- Check the URL format is correct
+
+**"GitHub API rate limit exceeded"**
+- GitHub limits unauthenticated API requests to 60 per hour
+- Wait an hour and try again, or reduce check frequency
+
+**Update check shows no new version available**
+- Verify the `package.json` version matches what you expect
+- Check the GitHub release tag matches the intended version
 
 ---
 
