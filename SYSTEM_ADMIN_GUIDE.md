@@ -539,9 +539,22 @@ On production server instances:
 To apply an update to a server instance:
 
 1. SSH into the server or access the terminal
-2. Navigate to the MeterFlo application directory
-3. Run `git pull` to fetch and apply the latest changes
-4. Restart the application
+2. Navigate to the MeterFlo application directory:
+   ```bash
+   cd /path/to/your/meterflo
+   ```
+   **Example paths:**
+   - Windows (XAMPP): `cd c:/xampp/htdocs/meterflo`
+   - Linux: `cd /var/www/meterflo`
+   - macOS: `cd /Applications/XAMPP/htdocs/meterflo`
+   
+   **Important:** You must be in the application directory before running git commands. If you run `git pull` from the wrong directory, it will either fail or update the wrong project.
+
+3. Run `git pull` to fetch and apply the latest changes:
+   ```bash
+   git pull origin main
+   ```
+4. Restart the application (e.g., restart the Node.js process or service)
 
 ### Version Numbering
 
