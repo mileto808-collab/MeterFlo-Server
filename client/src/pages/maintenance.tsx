@@ -193,7 +193,7 @@ export default function Maintenance() {
       const a = document.createElement("a");
       a.href = url;
       const filenamePrefix = backupType === "database" ? "db_backup" : 
-                             backupType === "files" ? "files_backup" : "full_backup";
+                             backupType === "files" ? "webapp_backup" : "full_backup";
       a.download = `${filenamePrefix}_${new Date().toISOString().slice(0, 10)}.zip`;
       document.body.appendChild(a);
       a.click();
@@ -203,8 +203,8 @@ export default function Maintenance() {
       const description = backupType === "database" 
         ? "Successfully backed up all databases" 
         : backupType === "files"
-        ? "Successfully backed up all project files"
-        : "Successfully backed up all databases and project files";
+        ? "Successfully backed up web application source files"
+        : "Successfully backed up databases, web app files, and project files";
       
       toast({
         title: "Backup Created",
@@ -347,13 +347,13 @@ export default function Maintenance() {
                     <SelectItem value="full" data-testid="select-item-full">
                       <div className="flex items-center gap-2">
                         <Server className="h-4 w-4" />
-                        <span>Database + Files (Full)</span>
+                        <span>Full System (Database + All Files)</span>
                       </div>
                     </SelectItem>
                     <SelectItem value="files" data-testid="select-item-files">
                       <div className="flex items-center gap-2">
                         <FileArchive className="h-4 w-4" />
-                        <span>Files Only</span>
+                        <span>Web App Files Only</span>
                       </div>
                     </SelectItem>
                   </SelectContent>
@@ -370,14 +370,17 @@ export default function Maintenance() {
                     <ul className="space-y-1 ml-1">
                       <li>Main database (users, projects, settings, groups, permissions)</li>
                       <li>All project databases ({projects.length} projects)</li>
-                      <li>All project files and documents</li>
-                      <li>SQL format compatible with pg_restore</li>
+                      <li>Web application source files (code, configs)</li>
+                      <li>All project files and documents (attachments, uploads)</li>
+                      <li>Complete system backup for full restore</li>
                     </ul>
                   )}
                   {backupType === "files" && (
                     <ul className="space-y-1 ml-1">
-                      <li>All project files and documents</li>
-                      <li>Work order attachments</li>
+                      <li>Web application source files only</li>
+                      <li>Code, configuration, and scripts</li>
+                      <li>Excludes: node_modules, .git, temp files</li>
+                      <li>Excludes: project data files (use per-project backup)</li>
                       <li>Does not include database</li>
                     </ul>
                   )}
