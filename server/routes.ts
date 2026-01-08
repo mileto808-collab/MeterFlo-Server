@@ -18,7 +18,7 @@ import { pool } from "./db";
 import { ensureProjectDirectory, renameProjectDirectory, saveWorkOrderFile, getWorkOrderFiles, deleteWorkOrderFile, deleteWorkOrderDirectory, getFilePath, getProjectFilesPath, setProjectFilesPath, deleteProjectDirectory, saveProjectFile, getProjectFiles, deleteProjectFile, getProjectFilePath, ensureProjectFtpDirectory, getProjectFtpFiles, deleteProjectFtpFile, getProjectFtpFilePath, saveProjectFtpFile, getProjectDirectoryName } from "./fileStorage";
 import { ExternalDatabaseService } from "./externalDbService";
 import { createBackupArchive, extractDatabaseBackupFromArchive, restoreFullSystem, restoreFilesFromArchive } from "./systemBackup";
-import { createPgBackupArchive, extractBackupFromArchive, restorePgBackup, restoreFilesFromPgArchive, BackupType } from "./pgBackup";
+import { createPgBackupArchive, extractBackupFromArchive, restorePgBackup, restoreFilesFromPgArchive, restoreWebAppFilesFromArchive, BackupType } from "./pgBackup";
 import { projectEventEmitter, emitWorkOrderCreated, emitWorkOrderUpdated, emitWorkOrderDeleted, emitFileAdded, emitFileDeleted, type ProjectEvent } from "./eventEmitter";
 import { sendWorkOrderToCustomerApi } from "./customerApiService";
 import { toZonedTime, format as formatTz } from "date-fns-tz";
@@ -5988,14 +5988,41 @@ export async function registerRoutes(
       // Extract and detect backup format (SQL or legacy JSON or files-only)
       const { sqlFile, metadata, legacyJson } = await extractBackupFromArchive(req.file.buffer);
       
-      // Handle files-only backup
-      if (metadata?.format === "files_only" || metadata?.backupType === "files") {
-        console.log(`Restoring files-only backup from ${metadata.backupDate}`);
+      // Handle webapp-files-only backup (source code only, no project data)
+      if (metadata?.format === "files_only" || metadata?.format === "webapp_files_only" || metadata?.backupType === "files") {
+        console.log(`Restoring webapp-files-only backup from ${metadata.backupDate}`);
         
         if (!restoreFiles) {
           return res.json({
-            message: "Files-only backup detected but file restoration is disabled",
-            format: "files_only",
+            message: "Webapp files-only backup detected but file restoration is disabled",
+            format: "webapp_files_only",
+            backupDate: metadata.backupDate,
+            filesRestored: 0,
+            errors: [],
+          });
+        }
+        
+        // Webapp files are restored to the app directory (cwd), not project files path
+        const appDir = process.cwd();
+        const filesResult = await restoreWebAppFilesFromArchive(req.file.buffer, appDir);
+        
+        return res.json({
+          message: "Webapp files-only restore completed",
+          format: "webapp_files_only",
+          backupDate: metadata.backupDate,
+          filesRestored: filesResult.filesRestored,
+          errors: filesResult.errors,
+        });
+      }
+      
+      // Handle project-files-only backup (project data only, no source code or database)
+      if (metadata?.format === "project_files_only" || metadata?.backupType === "project") {
+        console.log(`Restoring project-files-only backup from ${metadata.backupDate}`);
+        
+        if (!restoreFiles) {
+          return res.json({
+            message: "Project files-only backup detected but file restoration is disabled",
+            format: "project_files_only",
             backupDate: metadata.backupDate,
             filesRestored: 0,
             errors: [],
@@ -6006,8 +6033,8 @@ export async function registerRoutes(
         const filesResult = await restoreFilesFromPgArchive(req.file.buffer, filesPath);
         
         return res.json({
-          message: "Files-only restore completed",
-          format: "files_only",
+          message: "Project files-only restore completed",
+          format: "project_files_only",
           backupDate: metadata.backupDate,
           filesRestored: filesResult.filesRestored,
           errors: filesResult.errors,

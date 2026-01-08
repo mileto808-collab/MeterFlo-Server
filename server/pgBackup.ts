@@ -569,7 +569,8 @@ export async function createPgBackupArchive(res: any, backupType: BackupType = "
   const metadata = {
     version: "2.1",
     format: backupType === "database" ? "pg_dump_sql" : 
-            backupType === "files" ? "webapp_files_only" : "full_system",
+            backupType === "files" ? "webapp_files_only" : 
+            backupType === "project" ? "project_files_only" : "full_system",
     backupType,
     backupDate: backupResult?.backupDate || new Date().toISOString(),
     schemas: backupResult?.schemas,
@@ -606,7 +607,7 @@ async function getPostgresVersion(): Promise<string> {
 export interface BackupMetadata {
   version: string;
   format: string;
-  backupType?: "database" | "full" | "files";
+  backupType?: "database" | "full" | "files" | "project";
   backupDate: string;
   schemas?: string[];
   postgresVersion?: string;
@@ -757,6 +758,43 @@ export async function restoreFilesFromPgArchive(
     for (const file of directory.files) {
       if (file.path.startsWith("project_files/") && file.type === "File") {
         const relativePath = file.path.replace("project_files/", "");
+        const fullPath = path.join(targetPath, relativePath);
+        const dir = path.dirname(fullPath);
+        
+        try {
+          if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+          }
+          
+          const content = await file.buffer();
+          fs.writeFileSync(fullPath, content);
+          filesRestored++;
+        } catch (error: any) {
+          errors.push(`File ${relativePath}: ${error.message}`);
+        }
+      }
+    }
+    
+    return { filesRestored, errors };
+  } catch (error: any) {
+    errors.push(`Archive extraction failed: ${error.message}`);
+    return { filesRestored, errors };
+  }
+}
+
+export async function restoreWebAppFilesFromArchive(
+  zipBuffer: Buffer,
+  targetPath: string
+): Promise<{ filesRestored: number; errors: string[] }> {
+  let filesRestored = 0;
+  const errors: string[] = [];
+  
+  try {
+    const directory = await unzipper.Open.buffer(zipBuffer);
+    
+    for (const file of directory.files) {
+      if (file.path.startsWith("webapp_files/") && file.type === "File") {
+        const relativePath = file.path.replace("webapp_files/", "");
         const fullPath = path.join(targetPath, relativePath);
         const dir = path.dirname(fullPath);
         
