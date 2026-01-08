@@ -1044,9 +1044,13 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
                       <TableRow key={config.id} data-testid={`row-config-${config.id}`}>
                         <TableCell className="font-medium">{config.name}</TableCell>
                         <TableCell>
-                          <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
-                            {config.processedFilePattern || "*"}
-                          </code>
+                          {config.processedFilePattern ? (
+                            <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
+                              {config.processedFilePattern}
+                            </code>
+                          ) : (
+                            <span className="text-muted-foreground text-xs">All files</span>
+                          )}
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline">
