@@ -19,7 +19,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Moon, Sun, User as UserIcon, Shield, FolderOpen, Save, FileUp, Users, Plus, Pencil, Trash2, UsersRound, Clock, Copy, Gauge, Download, History, Send, ChevronDown, ChevronRight, Filter, CheckCircle2, XCircle, RefreshCw, Eye, Smartphone } from "lucide-react";
+import { Moon, Sun, User as UserIcon, Shield, FolderOpen, Save, FileUp, Users, Plus, Pencil, Trash2, UsersRound, Clock, Copy, Gauge, Download, History, Send, ChevronDown, ChevronRight, Filter, CheckCircle2, XCircle, RefreshCw, Eye, Smartphone, Globe, GitBranch, ArrowUpCircle, FileCode, Clipboard } from "lucide-react";
 import type { Subrole, Permission, WorkOrderStatus, UserGroup, UserGroupWithProjects, User, TroubleCode, ServiceTypeRecord, SystemType, Project, FileImportHistory, ImportHistory, CustomerApiLog } from "@shared/schema";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -337,6 +337,109 @@ export default function Settings() {
       toast({ title: "Failed to save mobile configuration", variant: "destructive" });
     },
   });
+
+  // Web Application Update state and queries
+  const [webUpdateUrl, setWebUpdateUrl] = useState("");
+  const [showUpdatePreview, setShowUpdatePreview] = useState(false);
+  
+  interface WebUpdateConfig {
+    webUpdateUrl: string | null;
+    lastCheck: string | null;
+    cachedRelease: {
+      latestVersion: string;
+      currentVersion: string;
+      updateAvailable: boolean;
+      releaseName: string;
+      releaseNotes: string;
+      releaseUrl: string;
+      publishedAt: string;
+    } | null;
+  }
+
+  interface UpdatePreview {
+    isGitRepo: boolean;
+    currentBranch: string;
+    commitsBehind: number;
+    filesChanged: string[];
+    diff: string;
+    updateCommand: string;
+    message?: string;
+  }
+
+  const { data: webUpdateConfigData } = useQuery<WebUpdateConfig>({
+    queryKey: ["/api/settings/web-update-config"],
+    enabled: isAdmin || hasPermission("settings.webUpdate"),
+  });
+
+  const { data: versionData } = useQuery<{ version: string }>({
+    queryKey: ["/api/system/version"],
+    enabled: isAdmin || hasPermission("settings.webUpdate"),
+  });
+
+  useEffect(() => {
+    if (webUpdateConfigData?.webUpdateUrl) {
+      setWebUpdateUrl(webUpdateConfigData.webUpdateUrl);
+    }
+  }, [webUpdateConfigData]);
+
+  const saveWebUpdateConfigMutation = useMutation({
+    mutationFn: async (url: string) => {
+      return apiRequest("PUT", "/api/settings/web-update-config", { webUpdateUrl: url });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/web-update-config"] });
+      toast({ title: "Web update configuration saved" });
+    },
+    onError: () => {
+      toast({ title: "Failed to save web update configuration", variant: "destructive" });
+    },
+  });
+
+  const checkForUpdatesMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("POST", "/api/system/update-check", {});
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/web-update-config"] });
+      if (data.updateAvailable) {
+        toast({ title: `Update available: v${data.latestVersion}` });
+      } else {
+        toast({ title: "You're running the latest version" });
+      }
+    },
+    onError: (error: any) => {
+      toast({ title: error.message || "Failed to check for updates", variant: "destructive" });
+    },
+  });
+
+  const [updatePreviewData, setUpdatePreviewData] = useState<UpdatePreview | null>(null);
+  
+  const previewUpdateMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch("/api/system/update-preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.message || "Failed to preview update");
+      }
+      return response.json();
+    },
+    onSuccess: (data: UpdatePreview) => {
+      setUpdatePreviewData(data);
+      setShowUpdatePreview(true);
+    },
+    onError: (error: any) => {
+      toast({ title: error.message || "Failed to preview update", variant: "destructive" });
+    },
+  });
+
+  const copyToClipboard = async (text: string) => {
+    await navigator.clipboard.writeText(text);
+    toast({ title: "Command copied to clipboard" });
+  };
 
   const validateGitHubApiUrl = (url: string): boolean => {
     if (!url || url.trim() === "") return true; // Empty is valid (disables update checks)
@@ -1590,6 +1693,227 @@ export default function Settings() {
               </CardContent>
             </Card>
         )}
+
+        {hasPermission("settings.webUpdate") && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <ArrowUpCircle className="h-5 w-5 text-muted-foreground" />
+                  <div>
+                    <CardTitle>Web Application Updates</CardTitle>
+                    <CardDescription className="mt-1">Check for updates and preview changes before updating</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="flex items-center justify-between gap-4 flex-wrap p-3 bg-muted/50 rounded-md">
+                  <div className="space-y-1">
+                    <div className="text-sm text-muted-foreground">Current Version</div>
+                    <div className="text-lg font-semibold">v{versionData?.version || "1.0.0"}</div>
+                  </div>
+                  {webUpdateConfigData?.cachedRelease?.updateAvailable && (
+                    <div className="space-y-1 text-right">
+                      <div className="text-sm text-muted-foreground">Latest Available</div>
+                      <Badge variant="default" className="text-sm">
+                        v{webUpdateConfigData.cachedRelease.latestVersion}
+                      </Badge>
+                    </div>
+                  )}
+                  {webUpdateConfigData?.lastCheck && (
+                    <div className="space-y-1 text-right">
+                      <div className="text-sm text-muted-foreground">Last Checked</div>
+                      <div className="text-sm">{formatDateTime(new Date(webUpdateConfigData.lastCheck))}</div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="webUpdateUrl">GitHub Releases API URL</Label>
+                  <Input
+                    id="webUpdateUrl"
+                    placeholder="https://api.github.com/repos/yourorg/meterflo/releases/latest"
+                    value={webUpdateUrl}
+                    onChange={(e) => setWebUpdateUrl(e.target.value)}
+                    data-testid="input-web-update-url"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Enter the GitHub releases API URL to enable web app update checks.
+                    <br />
+                    Format: https://api.github.com/repos/ORG/REPO/releases/latest
+                  </p>
+                  {webUpdateUrl && !validateGitHubApiUrl(webUpdateUrl) && (
+                    <p className="text-xs text-destructive">
+                      Invalid GitHub releases API URL format
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Button 
+                    onClick={() => {
+                      if (!validateGitHubApiUrl(webUpdateUrl)) {
+                        toast({ title: "Invalid GitHub URL format", variant: "destructive" });
+                        return;
+                      }
+                      saveWebUpdateConfigMutation.mutate(webUpdateUrl.trim());
+                    }}
+                    disabled={saveWebUpdateConfigMutation.isPending || (!validateGitHubApiUrl(webUpdateUrl))}
+                    data-testid="button-save-web-update-config"
+                  >
+                    <Save className="h-4 w-4 mr-2" />
+                    {saveWebUpdateConfigMutation.isPending ? "Saving..." : "Save Configuration"}
+                  </Button>
+                  
+                  <Button 
+                    variant="outline"
+                    onClick={() => checkForUpdatesMutation.mutate()}
+                    disabled={checkForUpdatesMutation.isPending || !webUpdateConfigData?.webUpdateUrl}
+                    data-testid="button-check-updates"
+                  >
+                    <RefreshCw className={`h-4 w-4 mr-2 ${checkForUpdatesMutation.isPending ? "animate-spin" : ""}`} />
+                    {checkForUpdatesMutation.isPending ? "Checking..." : "Check for Updates"}
+                  </Button>
+
+                  <Button 
+                    variant="outline"
+                    onClick={() => previewUpdateMutation.mutate()}
+                    disabled={previewUpdateMutation.isPending}
+                    data-testid="button-preview-update"
+                  >
+                    <GitBranch className={`h-4 w-4 mr-2 ${previewUpdateMutation.isPending ? "animate-spin" : ""}`} />
+                    {previewUpdateMutation.isPending ? "Fetching..." : "Preview Changes"}
+                  </Button>
+                </div>
+
+                {webUpdateConfigData?.cachedRelease?.updateAvailable && (
+                  <div className="border rounded-md p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <h4 className="font-medium">{webUpdateConfigData.cachedRelease.releaseName}</h4>
+                      <a 
+                        href={webUpdateConfigData.cachedRelease.releaseUrl} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-sm text-primary hover:underline"
+                      >
+                        View on GitHub
+                      </a>
+                    </div>
+                    {webUpdateConfigData.cachedRelease.releaseNotes && (
+                      <div className="text-sm text-muted-foreground max-h-40 overflow-y-auto">
+                        <pre className="whitespace-pre-wrap font-sans">
+                          {webUpdateConfigData.cachedRelease.releaseNotes}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+        )}
+
+        <Dialog open={showUpdatePreview} onOpenChange={setShowUpdatePreview}>
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <GitBranch className="h-5 w-5" />
+                Update Preview
+              </DialogTitle>
+              <DialogDescription>
+                Review the changes before updating. This shows what would change if you run the update command.
+              </DialogDescription>
+            </DialogHeader>
+            
+            {updatePreviewData && (
+              <div className="space-y-4">
+                {!updatePreviewData.isGitRepo ? (
+                  <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-md">
+                    <p className="text-destructive font-medium">Not a Git Repository</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      This installation is not a git repository. You'll need to update manually by downloading the latest release.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="p-3 bg-muted/50 rounded-md">
+                        <div className="text-sm text-muted-foreground">Current Branch</div>
+                        <div className="font-medium">{updatePreviewData.currentBranch}</div>
+                      </div>
+                      <div className="p-3 bg-muted/50 rounded-md">
+                        <div className="text-sm text-muted-foreground">Commits Behind</div>
+                        <div className="font-medium">{updatePreviewData.commitsBehind}</div>
+                      </div>
+                    </div>
+
+                    {updatePreviewData.message && (
+                      <div className="p-3 bg-muted rounded-md">
+                        <p className="text-sm">{updatePreviewData.message}</p>
+                      </div>
+                    )}
+
+                    {updatePreviewData.filesChanged.length > 0 && (
+                      <div className="space-y-2">
+                        <Label>Files Changed ({updatePreviewData.filesChanged.length})</Label>
+                        <ScrollArea className="h-40 border rounded-md">
+                          <div className="p-3 space-y-1">
+                            {updatePreviewData.filesChanged.map((file, i) => {
+                              const [status, ...pathParts] = file.split("\t");
+                              const filePath = pathParts.join("\t");
+                              const statusColor = status === "M" ? "text-yellow-600" : 
+                                                  status === "A" ? "text-green-600" : 
+                                                  status === "D" ? "text-red-600" : "text-muted-foreground";
+                              return (
+                                <div key={i} className="flex items-center gap-2 text-sm font-mono">
+                                  <span className={`w-4 ${statusColor}`}>{status}</span>
+                                  <span>{filePath}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </ScrollArea>
+                      </div>
+                    )}
+
+                    {updatePreviewData.diff && (
+                      <div className="space-y-2">
+                        <Label>Change Summary</Label>
+                        <pre className="p-3 bg-muted rounded-md text-xs font-mono overflow-x-auto max-h-40 overflow-y-auto">
+                          {updatePreviewData.diff}
+                        </pre>
+                      </div>
+                    )}
+
+                    <div className="space-y-2">
+                      <Label>Update Command</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Copy this command and run it in your server terminal to update:
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <code className="flex-1 p-3 bg-muted rounded-md text-xs font-mono break-all">
+                          {updatePreviewData.updateCommand}
+                        </code>
+                        <Button 
+                          size="icon" 
+                          variant="outline"
+                          onClick={() => copyToClipboard(updatePreviewData.updateCommand)}
+                          data-testid="button-copy-update-command"
+                        >
+                          <Clipboard className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowUpdatePreview(false)}>
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {hasPermission("settings.importHistory") && (
             <Card>
