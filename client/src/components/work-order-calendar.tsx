@@ -487,31 +487,44 @@ export function WorkOrderCalendar({
               setClickedWorkOrder(workOrder);
             }}
             className={cn(
-              "rounded-md border p-1.5 cursor-pointer hover-elevate text-xs",
+              "rounded-md border cursor-pointer hover-elevate text-xs",
+              compact ? "px-1 py-0.5" : "p-1.5",
               getServiceTypeBackgroundColor(workOrder.serviceType || ""),
               isDraggable && "cursor-grab active:cursor-grabbing",
               dragState.workOrder?.id === workOrder.id && "opacity-50"
             )}
             data-testid={`calendar-wo-${workOrder.id}`}
           >
-            <div className="flex items-start gap-1">
-              {isDraggable && <GripVertical className="h-3 w-3 text-muted-foreground flex-shrink-0 mt-0.5" />}
-              <div className="flex-1 min-w-0">
-                <div className="font-medium truncate">WO {workOrder.customerWoId || workOrder.id}</div>
-                {workOrder.address && (
-                  <div className="text-muted-foreground truncate flex items-center gap-0.5">
-                    <MapPin className="h-2.5 w-2.5" />
-                    {workOrder.address}
-                  </div>
-                )}
+            {compact ? (
+              <div className="flex items-center gap-1 truncate">
+                {isDraggable && <GripVertical className="h-2.5 w-2.5 text-muted-foreground flex-shrink-0" />}
+                <span className="font-medium truncate">{workOrder.customerWoId || workOrder.id}</span>
                 {workOrder.scheduledAt && (
-                  <div className="text-muted-foreground flex items-center gap-0.5">
-                    <Clock className="h-2.5 w-2.5" />
-                    {format(parseScheduledAt(workOrder.scheduledAt), "h:mm a")}
-                  </div>
+                  <span className="text-muted-foreground flex-shrink-0">
+                    {format(parseScheduledAt(workOrder.scheduledAt), "h:mma").toLowerCase()}
+                  </span>
                 )}
               </div>
-            </div>
+            ) : (
+              <div className="flex items-start gap-1">
+                {isDraggable && <GripVertical className="h-3 w-3 text-muted-foreground flex-shrink-0 mt-0.5" />}
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium truncate">WO {workOrder.customerWoId || workOrder.id}</div>
+                  {workOrder.address && (
+                    <div className="text-muted-foreground truncate flex items-center gap-0.5">
+                      <MapPin className="h-2.5 w-2.5" />
+                      {workOrder.address}
+                    </div>
+                  )}
+                  {workOrder.scheduledAt && (
+                    <div className="text-muted-foreground flex items-center gap-0.5">
+                      <Clock className="h-2.5 w-2.5" />
+                      {format(parseScheduledAt(workOrder.scheduledAt), "h:mm a")}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </PopoverTrigger>
         <PopoverContent className="w-48 p-1" align="start">
@@ -621,10 +634,10 @@ export function WorkOrderCalendar({
                     >
                       {format(date, "d")}
                     </div>
-                    <div className="space-y-0.5 overflow-hidden">
+                    <div className="space-y-0.5">
                       {dayWorkOrders.slice(0, 3).map((wo) => renderWorkOrderCard(wo, true))}
                       {dayWorkOrders.length > 3 && (
-                        <div className="text-xs text-muted-foreground pl-1">
+                        <div className="text-xs text-muted-foreground font-medium pl-1">
                           +{dayWorkOrders.length - 3} more
                         </div>
                       )}
