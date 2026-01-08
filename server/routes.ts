@@ -14,7 +14,7 @@ import { pool } from "./db";
 import { ensureProjectDirectory, renameProjectDirectory, saveWorkOrderFile, getWorkOrderFiles, deleteWorkOrderFile, deleteWorkOrderDirectory, getFilePath, getProjectFilesPath, setProjectFilesPath, deleteProjectDirectory, saveProjectFile, getProjectFiles, deleteProjectFile, getProjectFilePath, ensureProjectFtpDirectory, getProjectFtpFiles, deleteProjectFtpFile, getProjectFtpFilePath, saveProjectFtpFile, getProjectDirectoryName } from "./fileStorage";
 import { ExternalDatabaseService } from "./externalDbService";
 import { createBackupArchive, extractDatabaseBackupFromArchive, restoreFullSystem, restoreFilesFromArchive } from "./systemBackup";
-import { createPgBackupArchive, extractBackupFromArchive, restorePgBackup, restoreFilesFromPgArchive } from "./pgBackup";
+import { createPgBackupArchive, extractBackupFromArchive, restorePgBackup, restoreFilesFromPgArchive, BackupType } from "./pgBackup";
 import { projectEventEmitter, emitWorkOrderCreated, emitWorkOrderUpdated, emitWorkOrderDeleted, emitFileAdded, emitFileDeleted, type ProjectEvent } from "./eventEmitter";
 import { sendWorkOrderToCustomerApi } from "./customerApiService";
 import { toZonedTime, format as formatTz } from "date-fns-tz";
@@ -5618,6 +5618,7 @@ export async function registerRoutes(
 
   // Full System Backup/Restore API Routes
   // Uses pg_dump for SQL-format backup that handles foreign key constraints properly
+  // Supports three backup types: database, full (database+files), files
   app.get("/api/system/backup", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
@@ -5629,12 +5630,17 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Forbidden: You don't have permission to create system backups" });
       }
       
-      // Use pg_dump-based backup for proper SQL format with FK support
-      await createPgBackupArchive(res);
+      // Get backup type from query parameter, default to 'full' for backward compatibility
+      const backupType = (req.query.type as BackupType) || "full";
+      if (!["database", "full", "files"].includes(backupType)) {
+        return res.status(400).json({ message: "Invalid backup type. Must be 'database', 'full', or 'files'" });
+      }
+      
+      await createPgBackupArchive(res, backupType);
     } catch (error) {
-      console.error("Error creating full system backup:", error);
+      console.error("Error creating system backup:", error);
       if (!res.headersSent) {
-        res.status(500).json({ message: "Failed to create full system backup" });
+        res.status(500).json({ message: "Failed to create system backup" });
       }
     }
   });
