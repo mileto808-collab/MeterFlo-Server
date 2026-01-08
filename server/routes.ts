@@ -5845,6 +5845,141 @@ export async function registerRoutes(
     }
   });
 
+  // Module Types API Routes
+  app.get("/api/module-types", isAuthenticated, async (req: any, res) => {
+    try {
+      const projectId = req.query.projectId ? parseInt(req.query.projectId) : undefined;
+      const moduleTypes = await storage.getModuleTypes(projectId);
+      res.json(moduleTypes);
+    } catch (error) {
+      console.error("Error fetching module types:", error);
+      res.status(500).json({ message: "Failed to fetch module types" });
+    }
+  });
+
+  app.get("/api/module-types/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const moduleType = await storage.getModuleType(id);
+      
+      if (!moduleType) {
+        return res.status(404).json({ message: "Module type not found" });
+      }
+      
+      res.json(moduleType);
+    } catch (error) {
+      console.error("Error fetching module type:", error);
+      res.status(500).json({ message: "Failed to fetch module type" });
+    }
+  });
+
+  app.post("/api/module-types", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const moduleType = await storage.createModuleType(req.body);
+      res.status(201).json(moduleType);
+    } catch (error: any) {
+      console.error("Error creating module type:", error);
+      if (error.code === "23505") {
+        return res.status(400).json({ message: "Module type already exists" });
+      }
+      res.status(500).json({ message: "Failed to create module type" });
+    }
+  });
+
+  app.patch("/api/module-types/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const id = parseInt(req.params.id);
+      const moduleType = await storage.updateModuleType(id, req.body);
+      
+      if (!moduleType) {
+        return res.status(404).json({ message: "Module type not found" });
+      }
+      
+      res.json(moduleType);
+    } catch (error: any) {
+      console.error("Error updating module type:", error);
+      if (error.code === "23505") {
+        return res.status(400).json({ message: "Module type already exists" });
+      }
+      res.status(500).json({ message: "Failed to update module type" });
+    }
+  });
+
+  app.delete("/api/module-types/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const id = parseInt(req.params.id);
+      const moduleType = await storage.getModuleType(id);
+      
+      if (!moduleType) {
+        return res.status(404).json({ message: "Module type not found" });
+      }
+      
+      await storage.deleteModuleType(id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting module type:", error);
+      res.status(500).json({ message: "Failed to delete module type" });
+    }
+  });
+
+  app.post("/api/module-types/:id/copy", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser || currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+      
+      const id = parseInt(req.params.id);
+      const existing = await storage.getModuleType(id);
+      
+      if (!existing) {
+        return res.status(404).json({ message: "Module type not found" });
+      }
+      
+      const { targetProjectIds } = req.body;
+      const projectIds = targetProjectIds || existing.projectIds;
+      
+      // Generate a unique productId by appending " - Copy" or " - Copy N"
+      const allModuleTypes = await storage.getModuleTypes();
+      const baseProductId = existing.productId;
+      let newProductId = `${baseProductId} - Copy`;
+      let copyNumber = 1;
+      
+      // Check if the productId already exists
+      while (allModuleTypes.some(mt => mt.productId === newProductId)) {
+        copyNumber++;
+        newProductId = `${baseProductId} - Copy ${copyNumber}`;
+      }
+      
+      const newModuleType = await storage.createModuleType({
+        productId: newProductId,
+        productLabel: `Copy of ${existing.productLabel}`,
+        productDescription: existing.productDescription,
+        projectIds: projectIds,
+      });
+      
+      res.status(201).json(newModuleType);
+    } catch (error) {
+      console.error("Error copying module type:", error);
+      res.status(500).json({ message: "Failed to copy module type" });
+    }
+  });
+
   // User Groups API Routes
   app.get("/api/user-groups", isAuthenticated, async (req: any, res) => {
     try {

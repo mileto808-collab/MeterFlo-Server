@@ -353,6 +353,24 @@ export const systemTypeProjects = pgTable("system_type_projects", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Module types table - product types for modules (mirrors system types)
+export const moduleTypes = pgTable("module_types", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  productId: varchar("product_id", { length: 100 }).notNull().unique(),
+  productLabel: varchar("product_label", { length: 255 }).notNull(),
+  productDescription: text("product_description"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Junction table for module types to projects (many-to-many)
+export const moduleTypeProjects = pgTable("module_type_projects", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  moduleTypeId: integer("module_type_id").notNull().references(() => moduleTypes.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Default service type values (for backward compatibility and seeding)
 export const defaultServiceTypes = ["Water", "Electric", "Gas"] as const;
 export type DefaultServiceType = (typeof defaultServiceTypes)[number];
@@ -583,6 +601,12 @@ export const insertProjectWorkOrderSchema = z.object({
   attachments: z.array(z.string()).optional().nullable(),
   oldSystemType: z.string().max(255).optional().nullable(),
   newSystemType: z.string().max(255).optional().nullable(),
+  oldModuleId: z.string().max(100).optional().nullable(),
+  newModuleId: z.string().max(100).optional().nullable(),
+  oldModuleRead: z.number().int().optional().nullable(),
+  newModuleRead: z.number().int().optional().nullable(),
+  oldModuleType: z.string().max(255).optional().nullable(),
+  newModuleType: z.string().max(255).optional().nullable(),
   signatureData: z.string().optional().nullable(),
   signatureName: z.string().max(255).optional().nullable(),
 });
@@ -656,6 +680,27 @@ export const updateSystemTypeSchema = z.object({
 // Schema for system type project assignment
 export const insertSystemTypeProjectSchema = z.object({
   systemTypeId: z.number(),
+  projectId: z.number(),
+});
+
+// Schema for module type management
+export const insertModuleTypeSchema = z.object({
+  productId: z.string().min(1).max(100),
+  productLabel: z.string().min(1).max(255),
+  productDescription: z.string().optional().nullable(),
+  projectIds: z.array(z.number()).optional(),
+});
+
+export const updateModuleTypeSchema = z.object({
+  productId: z.string().min(1).max(100).optional(),
+  productLabel: z.string().min(1).max(255).optional(),
+  productDescription: z.string().optional().nullable(),
+  projectIds: z.array(z.number()).optional(),
+});
+
+// Schema for module type project assignment
+export const insertModuleTypeProjectSchema = z.object({
+  moduleTypeId: z.number(),
   projectId: z.number(),
 });
 
@@ -735,6 +780,16 @@ export type InsertSystemTypeProject = z.infer<typeof insertSystemTypeProjectSche
 
 // Extended system type with project associations
 export type SystemTypeWithProjects = SystemType & { projectIds: number[] };
+
+export type ModuleType = typeof moduleTypes.$inferSelect;
+export type InsertModuleType = z.infer<typeof insertModuleTypeSchema>;
+export type UpdateModuleType = z.infer<typeof updateModuleTypeSchema>;
+
+export type ModuleTypeProject = typeof moduleTypeProjects.$inferSelect;
+export type InsertModuleTypeProject = z.infer<typeof insertModuleTypeProjectSchema>;
+
+// Extended module type with project associations
+export type ModuleTypeWithProjects = ModuleType & { projectIds: number[] };
 
 // External database config schemas and types
 export const insertExternalDatabaseConfigSchema = z.object({
@@ -885,6 +940,7 @@ export const permissionKeys = {
   SETTINGS_USER_GROUPS: "settings.userGroups",
   SETTINGS_SERVICE_TYPES: "settings.serviceTypes",
   SETTINGS_SYSTEM_TYPES: "settings.systemTypes",
+  SETTINGS_MODULE_TYPES: "settings.moduleTypes",
   SETTINGS_CUSTOMER_API_LOGS: "settings.customerApiLogs",
   SETTINGS_MOBILE_CONFIG: "settings.mobileConfig",
   SETTINGS_WEB_UPDATE: "settings.webUpdate",
