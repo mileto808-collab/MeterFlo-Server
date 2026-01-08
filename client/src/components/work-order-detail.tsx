@@ -245,18 +245,13 @@ export function WorkOrderDetail({
     const serviceType = serviceTypes.find(st => st.code === serviceTypeCode);
     if (!serviceType) return <Badge variant="outline">{serviceTypeCode}</Badge>;
     
-    // Use the service type's color if available
+    // Use the service type's color for text only (outline style badge)
     if (serviceType.color) {
       const hexColor = getColorHex(serviceType.color);
-      const isLightColor = ['yellow', 'orange'].includes(serviceType.color);
-      const textColor = isLightColor ? '#000' : '#fff';
       return (
         <Badge 
-          style={{ 
-            backgroundColor: hexColor,
-            color: textColor,
-            borderColor: hexColor
-          }}
+          variant="outline"
+          style={{ color: hexColor }}
         >
           {serviceType.label}
         </Badge>
@@ -264,7 +259,7 @@ export function WorkOrderDetail({
     }
     
     return (
-      <Badge variant="secondary" className="bg-primary/10 text-primary">
+      <Badge variant="outline">
         {serviceType.label}
       </Badge>
     );
