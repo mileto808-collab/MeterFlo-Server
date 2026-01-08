@@ -183,6 +183,7 @@ export default function ProjectImport() {
     customCronExpression: "",
     isEnabled: true,
     columnMapping: { ...defaultColumnMapping } as Record<string, string>,
+    processedFilePattern: "",
   });
 
   const { data: project, isLoading, error: projectError } = useQuery<Project>({
@@ -304,6 +305,7 @@ export default function ProjectImport() {
       customCronExpression: "",
       isEnabled: true,
       columnMapping: { ...defaultColumnMapping } as Record<string, string>,
+      processedFilePattern: "",
     });
   };
 
@@ -317,6 +319,7 @@ export default function ProjectImport() {
       customCronExpression: config.customCronExpression || "",
       isEnabled: config.isEnabled !== false,
       columnMapping: { ...defaultColumnMapping, ...(config.columnMapping as Record<string, string>) },
+      processedFilePattern: config.processedFilePattern || "",
     });
     setScheduleDialogOpen(true);
   };
@@ -1028,6 +1031,7 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
                   <TableHeader>
                     <TableRow>
                       <TableHead>Name</TableHead>
+                      <TableHead>File Pattern</TableHead>
                       <TableHead>Schedule</TableHead>
                       <TableHead>Last Run</TableHead>
                       <TableHead>Status</TableHead>
@@ -1039,6 +1043,11 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
                     {fileImportConfigs.map((config) => (
                       <TableRow key={config.id} data-testid={`row-config-${config.id}`}>
                         <TableCell className="font-medium">{config.name}</TableCell>
+                        <TableCell>
+                          <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
+                            {config.processedFilePattern || "*"}
+                          </code>
+                        </TableCell>
                         <TableCell>
                           <Badge variant="outline">
                             {config.scheduleFrequency === "manual" ? "Manual" : config.scheduleFrequency?.replace(/_/g, " ")}
@@ -1148,11 +1157,47 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
             <CardHeader>
               <CardTitle>How Scheduled Imports Work</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3 text-sm text-muted-foreground">
-              <p>1. Upload CSV, Excel, or JSON files to the Project FTP Files directory.</p>
-              <p>2. The scheduler will automatically pick up the latest file in that directory when the scheduled time arrives.</p>
-              <p>3. Files are processed using the configured column mapping and import settings.</p>
-              <p>4. Only new files (not previously processed) will be imported on scheduled runs.</p>
+            <CardContent className="space-y-4 text-sm text-muted-foreground">
+              <div className="space-y-2">
+                <p><strong className="text-foreground">1. Upload Files</strong> - Upload CSV, Excel, or JSON files to the Project FTP Files directory.</p>
+                <p><strong className="text-foreground">2. File Matching</strong> - Each schedule can have its own file pattern to filter which files it processes.</p>
+                <p><strong className="text-foreground">3. Automatic Processing</strong> - When the scheduled time arrives, the system finds the newest file matching the pattern and imports it.</p>
+                <p><strong className="text-foreground">4. Skip Duplicates</strong> - Files that have already been processed by a schedule are skipped on subsequent runs.</p>
+              </div>
+
+              <div className="border-t pt-4">
+                <h4 className="font-medium text-foreground mb-2">File Pattern Matching</h4>
+                <p className="mb-2">Use file patterns to have multiple schedules for different file types:</p>
+                <div className="bg-muted rounded-md p-3 space-y-2">
+                  <div className="flex gap-2 items-start">
+                    <code className="bg-background px-1.5 py-0.5 rounded text-xs whitespace-nowrap">*</code>
+                    <span>(default) Matches all files</span>
+                  </div>
+                  <div className="flex gap-2 items-start">
+                    <code className="bg-background px-1.5 py-0.5 rounded text-xs whitespace-nowrap">meter_*.csv</code>
+                    <span>Matches meter_jan.csv, meter_2024.csv, etc.</span>
+                  </div>
+                  <div className="flex gap-2 items-start">
+                    <code className="bg-background px-1.5 py-0.5 rounded text-xs whitespace-nowrap">install_*.xlsx</code>
+                    <span>Matches install_batch1.xlsx, install_q1.xlsx, etc.</span>
+                  </div>
+                  <div className="flex gap-2 items-start">
+                    <code className="bg-background px-1.5 py-0.5 rounded text-xs whitespace-nowrap">WO_202?_*.csv</code>
+                    <span>Matches WO_2024_jan.csv, WO_2025_feb.csv (? matches one character)</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t pt-4">
+                <h4 className="font-medium text-foreground mb-2">Multiple Schedules Example</h4>
+                <p className="mb-2">If your customers upload different file formats for different work types:</p>
+                <ul className="list-disc list-inside space-y-1 ml-2">
+                  <li><strong>Schedule A:</strong> Pattern <code className="bg-muted px-1 rounded">replacement_*.csv</code> with column mapping for meter replacements</li>
+                  <li><strong>Schedule B:</strong> Pattern <code className="bg-muted px-1 rounded">newinstall_*.csv</code> with column mapping for new installations</li>
+                  <li><strong>Schedule C:</strong> Pattern <code className="bg-muted px-1 rounded">disconnect_*.xlsx</code> with column mapping for disconnections</li>
+                </ul>
+                <p className="mt-2">Each schedule will only process files matching its pattern, allowing different column mappings for each file type.</p>
+              </div>
             </CardContent>
           </Card>
 
@@ -1336,6 +1381,27 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
                 </p>
               </div>
             )}
+
+            <div className="space-y-2">
+              <Label htmlFor="file-pattern">File Pattern (Optional)</Label>
+              <Input
+                id="file-pattern"
+                value={scheduleForm.processedFilePattern}
+                onChange={(e) => setScheduleForm(prev => ({ ...prev, processedFilePattern: e.target.value }))}
+                placeholder="*.csv"
+                data-testid="input-file-pattern"
+              />
+              <div className="text-xs text-muted-foreground space-y-1">
+                <p>Only process files matching this pattern. Leave blank to process any file.</p>
+                <p><strong>Wildcards:</strong> <code className="bg-muted px-1 rounded">*</code> matches any characters, <code className="bg-muted px-1 rounded">?</code> matches single character</p>
+                <p><strong>Examples:</strong></p>
+                <ul className="list-disc list-inside ml-2 space-y-0.5">
+                  <li><code className="bg-muted px-1 rounded">meter_replace_*.csv</code> - matches meter_replace_jan.csv, meter_replace_2024.csv</li>
+                  <li><code className="bg-muted px-1 rounded">install_*.xlsx</code> - matches install_batch1.xlsx, install_q1.xlsx</li>
+                  <li><code className="bg-muted px-1 rounded">WO_202?_*.csv</code> - matches WO_2024_jan.csv, WO_2025_feb.csv</li>
+                </ul>
+              </div>
+            </div>
 
             <div className="flex items-center gap-2">
               <Switch
