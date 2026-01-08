@@ -20,7 +20,7 @@ import { Switch } from "@/components/ui/switch";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Moon, Sun, User as UserIcon, Shield, FolderOpen, Save, FileUp, Users, Plus, Pencil, Trash2, UsersRound, Clock, Copy, Gauge, Download, History, Send, ChevronDown, ChevronRight, Filter, CheckCircle2, XCircle, RefreshCw, Eye, Smartphone, Globe, GitBranch, ArrowUpCircle, FileCode, Clipboard } from "lucide-react";
-import type { Subrole, Permission, WorkOrderStatus, UserGroup, UserGroupWithProjects, User, TroubleCode, ServiceTypeRecord, SystemType, Project, FileImportHistory, ImportHistory, CustomerApiLog } from "@shared/schema";
+import type { Subrole, Permission, WorkOrderStatus, UserGroup, UserGroupWithProjects, User, TroubleCode, ServiceTypeRecord, SystemType, ModuleType, Project, FileImportHistory, ImportHistory, CustomerApiLog } from "@shared/schema";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Database } from "lucide-react";
@@ -172,6 +172,20 @@ export default function Settings() {
     projectIds: [] as number[],
   });
 
+  // Module Types state
+  const [moduleTypeDialogOpen, setModuleTypeDialogOpen] = useState(false);
+  const [deleteModuleTypeDialogOpen, setDeleteModuleTypeDialogOpen] = useState(false);
+  const [copyModuleTypeDialogOpen, setCopyModuleTypeDialogOpen] = useState(false);
+  const [copyModuleTypeProjectIds, setCopyModuleTypeProjectIds] = useState<number[]>([]);
+  const [selectedModuleType, setSelectedModuleType] = useState<ModuleType | null>(null);
+  const [moduleTypeProjectFilter, setModuleTypeProjectFilter] = useState<string>("all");
+  const [moduleTypeForm, setModuleTypeForm] = useState({
+    productId: "",
+    productLabel: "",
+    productDescription: "",
+    projectIds: [] as number[],
+  });
+
   // Profile Edit state
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const [profileForm, setProfileForm] = useState({
@@ -273,9 +287,22 @@ export default function Settings() {
     enabled: isAdmin || hasPermission("settings.systemTypes"),
   });
 
+  // Module Types queries
+  const { data: moduleTypesList, isLoading: loadingModuleTypes } = useQuery<ModuleType[]>({
+    queryKey: ["/api/module-types", moduleTypeProjectFilter],
+    queryFn: async () => {
+      const url = moduleTypeProjectFilter !== "all" 
+        ? `/api/module-types?projectId=${moduleTypeProjectFilter}` 
+        : "/api/module-types";
+      const res = await fetch(url, { credentials: "include" });
+      return res.json();
+    },
+    enabled: isAdmin || hasPermission("settings.moduleTypes"),
+  });
+
   const { data: projectsList } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
-    enabled: isAdmin || hasPermission("settings.systemTypes") || hasPermission("settings.userGroups") || hasPermission("settings.customerApiLogs"),
+    enabled: isAdmin || hasPermission("settings.systemTypes") || hasPermission("settings.moduleTypes") || hasPermission("settings.userGroups") || hasPermission("settings.customerApiLogs"),
   });
 
   // File Import History query
@@ -827,6 +854,69 @@ export default function Settings() {
     },
   });
 
+  // Module Types mutations
+  const createModuleTypeMutation = useMutation({
+    mutationFn: async (data: { productId: string; productLabel: string; productDescription?: string; projectIds: number[] }) => {
+      return apiRequest("POST", "/api/module-types", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/module-types"] });
+      toast({ title: "Module type created successfully" });
+      setModuleTypeDialogOpen(false);
+      resetModuleTypeForm();
+    },
+    onError: () => {
+      toast({ title: "Failed to create module type", variant: "destructive" });
+    },
+  });
+
+  const updateModuleTypeMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: { productId?: string; productLabel?: string; productDescription?: string; projectIds?: number[] } }) => {
+      return apiRequest("PATCH", `/api/module-types/${id}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/module-types"] });
+      toast({ title: "Module type updated successfully" });
+      setModuleTypeDialogOpen(false);
+      setSelectedModuleType(null);
+      resetModuleTypeForm();
+    },
+    onError: () => {
+      toast({ title: "Failed to update module type", variant: "destructive" });
+    },
+  });
+
+  const deleteModuleTypeMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return apiRequest("DELETE", `/api/module-types/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/module-types"] });
+      toast({ title: "Module type deleted successfully" });
+      setDeleteModuleTypeDialogOpen(false);
+      setSelectedModuleType(null);
+    },
+    onError: () => {
+      toast({ title: "Failed to delete module type", variant: "destructive" });
+    },
+  });
+
+  const copyModuleTypeMutation = useMutation({
+    mutationFn: async ({ id, projectIds }: { id: number; projectIds?: number[] }) => {
+      return apiRequest("POST", `/api/module-types/${id}/copy`, projectIds && projectIds.length > 0 ? { projectIds } : {});
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/module-types"] });
+      toast({ title: "Module type copied successfully" });
+      setCopyModuleTypeDialogOpen(false);
+      setCopyModuleTypeProjectIds([]);
+      setSelectedModuleType(null);
+    },
+    onError: () => {
+      toast({ title: "Failed to copy module type", variant: "destructive" });
+    },
+  });
+
   const resetStatusForm = () => {
     setStatusForm({
       code: "",
@@ -1149,6 +1239,71 @@ export default function Settings() {
 
   const toggleCopySystemTypeProject = (projectId: number) => {
     setCopySystemTypeProjectIds(prev => 
+      prev.includes(projectId)
+        ? prev.filter(id => id !== projectId)
+        : [...prev, projectId]
+    );
+  };
+
+  // Module Type helper functions
+  const resetModuleTypeForm = () => {
+    setModuleTypeForm({
+      productId: "",
+      productLabel: "",
+      productDescription: "",
+      projectIds: [],
+    });
+  };
+
+  const openCreateModuleTypeDialog = () => {
+    setSelectedModuleType(null);
+    resetModuleTypeForm();
+    setModuleTypeDialogOpen(true);
+  };
+
+  const openEditModuleTypeDialog = (moduleType: ModuleType & { projectIds?: number[] }) => {
+    setSelectedModuleType(moduleType);
+    setModuleTypeForm({
+      productId: moduleType.productId,
+      productLabel: moduleType.productLabel,
+      productDescription: moduleType.productDescription || "",
+      projectIds: moduleType.projectIds || [],
+    });
+    setModuleTypeDialogOpen(true);
+  };
+
+  const handleModuleTypeSubmit = () => {
+    if (selectedModuleType) {
+      updateModuleTypeMutation.mutate({
+        id: selectedModuleType.id,
+        data: {
+          productId: moduleTypeForm.productId,
+          productLabel: moduleTypeForm.productLabel,
+          productDescription: moduleTypeForm.productDescription || undefined,
+          projectIds: moduleTypeForm.projectIds,
+        },
+      });
+    } else {
+      createModuleTypeMutation.mutate({
+        productId: moduleTypeForm.productId,
+        productLabel: moduleTypeForm.productLabel,
+        productDescription: moduleTypeForm.productDescription || undefined,
+        projectIds: moduleTypeForm.projectIds,
+      });
+    }
+  };
+
+  const toggleModuleTypeProject = (projectId: number) => {
+    setModuleTypeForm(prev => ({
+      ...prev,
+      projectIds: prev.projectIds.includes(projectId)
+        ? prev.projectIds.filter(id => id !== projectId)
+        : [...prev.projectIds, projectId],
+    }));
+  };
+
+  const toggleCopyModuleTypeProject = (projectId: number) => {
+    setCopyModuleTypeProjectIds(prev => 
       prev.includes(projectId)
         ? prev.filter(id => id !== projectId)
         : [...prev, projectId]
@@ -2656,6 +2811,115 @@ export default function Settings() {
             </Card>
         )}
 
+        {hasPermission("settings.moduleTypes") && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <Gauge className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <CardTitle>Module Types</CardTitle>
+                      <CardDescription className="mt-1">Define module types for work orders by project</CardDescription>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Select value={moduleTypeProjectFilter} onValueChange={setModuleTypeProjectFilter}>
+                      <SelectTrigger className="w-48" data-testid="select-module-type-filter">
+                        <SelectValue placeholder="Filter by project" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Projects</SelectItem>
+                        {projectsList?.map((project) => (
+                          <SelectItem key={project.id} value={String(project.id)}>
+                            {project.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button onClick={openCreateModuleTypeDialog} data-testid="button-add-module-type">
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Module Type
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {loadingModuleTypes ? (
+                  <p className="text-muted-foreground">Loading...</p>
+                ) : moduleTypesList && moduleTypesList.length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Product ID</TableHead>
+                        <TableHead>Product Label</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead>Projects</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {moduleTypesList.map((moduleType: ModuleType & { projectIds?: number[] }) => (
+                        <TableRow key={moduleType.id} data-testid={`row-module-type-${moduleType.id}`}>
+                          <TableCell className="font-medium">{moduleType.productId}</TableCell>
+                          <TableCell>{moduleType.productLabel}</TableCell>
+                          <TableCell className="text-muted-foreground">{moduleType.productDescription || "—"}</TableCell>
+                          <TableCell>
+                            <div className="flex flex-wrap gap-1">
+                              {(moduleType.projectIds && moduleType.projectIds.length > 0) ? (
+                                moduleType.projectIds.map((pId: number) => (
+                                  <Badge key={pId} variant="outline">{getProjectName(pId)}</Badge>
+                                ))
+                              ) : (
+                                <span className="text-muted-foreground">No projects</span>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={() => openEditModuleTypeDialog(moduleType)}
+                                data-testid={`button-edit-module-type-${moduleType.id}`}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={() => {
+                                  setSelectedModuleType(moduleType);
+                                  setCopyModuleTypeProjectIds([]);
+                                  setCopyModuleTypeDialogOpen(true);
+                                }}
+                                data-testid={`button-copy-module-type-${moduleType.id}`}
+                              >
+                                <Copy className="h-4 w-4" />
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={() => {
+                                  setSelectedModuleType(moduleType);
+                                  setDeleteModuleTypeDialogOpen(true);
+                                }}
+                                data-testid={`button-delete-module-type-${moduleType.id}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <p className="text-muted-foreground text-center py-4">No module types defined yet.</p>
+                )}
+              </CardContent>
+            </Card>
+        )}
+
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2">
@@ -3514,6 +3778,167 @@ export default function Settings() {
               data-testid="button-confirm-copy-system-type"
             >
               {copySystemTypeMutation.isPending ? "Copying..." : "Copy"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={moduleTypeDialogOpen} onOpenChange={setModuleTypeDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{selectedModuleType ? "Edit Module Type" : "Create Module Type"}</DialogTitle>
+            <DialogDescription>
+              {selectedModuleType ? "Update the module type details." : "Add a new module type to your system."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div>
+              <Label htmlFor="module-type-product-id">Product ID</Label>
+              <Input
+                id="module-type-product-id"
+                value={moduleTypeForm.productId}
+                onChange={(e) => setModuleTypeForm({ ...moduleTypeForm, productId: e.target.value })}
+                placeholder="e.g., MOD-001"
+                className="mt-2"
+                data-testid="input-module-type-product-id"
+              />
+            </div>
+            <div>
+              <Label htmlFor="module-type-product-label">Product Label</Label>
+              <Input
+                id="module-type-product-label"
+                value={moduleTypeForm.productLabel}
+                onChange={(e) => setModuleTypeForm({ ...moduleTypeForm, productLabel: e.target.value })}
+                placeholder="e.g., Residential Module"
+                className="mt-2"
+                data-testid="input-module-type-product-label"
+              />
+            </div>
+            <div>
+              <Label htmlFor="module-type-description">Description (optional)</Label>
+              <Textarea
+                id="module-type-description"
+                value={moduleTypeForm.productDescription}
+                onChange={(e) => setModuleTypeForm({ ...moduleTypeForm, productDescription: e.target.value })}
+                placeholder="Optional description..."
+                className="mt-2"
+                data-testid="input-module-type-description"
+              />
+            </div>
+
+            <div>
+              <Label>Projects</Label>
+              <div className="mt-2 border rounded-md p-3 max-h-48 overflow-y-auto space-y-2">
+                {projectsList && projectsList.length > 0 ? (
+                  projectsList.map((project) => (
+                    <div key={project.id} className="flex items-center gap-2">
+                      <Checkbox
+                        id={`module-type-project-${project.id}`}
+                        checked={moduleTypeForm.projectIds.includes(project.id)}
+                        onCheckedChange={() => toggleModuleTypeProject(project.id)}
+                        data-testid={`checkbox-module-type-project-${project.id}`}
+                      />
+                      <Label htmlFor={`module-type-project-${project.id}`} className="text-sm font-normal cursor-pointer">
+                        {project.name}
+                      </Label>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-muted-foreground text-sm">No projects available</p>
+                )}
+              </div>
+              {moduleTypeForm.projectIds.length > 0 && (
+                <p className="text-sm text-muted-foreground mt-2">
+                  Selected: {moduleTypeForm.projectIds.length} project(s)
+                </p>
+              )}
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModuleTypeDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleModuleTypeSubmit}
+              disabled={!moduleTypeForm.productId || !moduleTypeForm.productLabel || createModuleTypeMutation.isPending || updateModuleTypeMutation.isPending}
+              data-testid="button-save-module-type"
+            >
+              {createModuleTypeMutation.isPending || updateModuleTypeMutation.isPending ? "Saving..." : selectedModuleType ? "Update" : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={deleteModuleTypeDialogOpen} onOpenChange={setDeleteModuleTypeDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Module Type</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{selectedModuleType?.productLabel}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => selectedModuleType && deleteModuleTypeMutation.mutate(selectedModuleType.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              data-testid="button-confirm-delete-module-type"
+            >
+              {deleteModuleTypeMutation.isPending ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={copyModuleTypeDialogOpen} onOpenChange={setCopyModuleTypeDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Copy Module Type</DialogTitle>
+            <DialogDescription>
+              Copy this module type to additional projects (optional).
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label>Target Projects (optional)</Label>
+            <div className="mt-2 border rounded-md p-3 max-h-48 overflow-y-auto space-y-2">
+              {projectsList && projectsList.length > 0 ? (
+                projectsList.map((project) => (
+                  <div key={project.id} className="flex items-center gap-2">
+                    <Checkbox
+                      id={`copy-module-type-project-${project.id}`}
+                      checked={copyModuleTypeProjectIds.includes(project.id)}
+                      onCheckedChange={() => toggleCopyModuleTypeProject(project.id)}
+                      data-testid={`checkbox-copy-module-type-project-${project.id}`}
+                    />
+                    <Label htmlFor={`copy-module-type-project-${project.id}`} className="text-sm font-normal cursor-pointer">
+                      {project.name}
+                    </Label>
+                  </div>
+                ))
+              ) : (
+                <p className="text-muted-foreground text-sm">No projects available</p>
+              )}
+            </div>
+            <p className="text-sm text-muted-foreground mt-2">
+              {copyModuleTypeProjectIds.length > 0 
+                ? `Selected: ${copyModuleTypeProjectIds.length} project(s)` 
+                : "Leave empty to copy with same project assignments."}
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCopyModuleTypeDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => selectedModuleType && copyModuleTypeMutation.mutate({ 
+                id: selectedModuleType.id, 
+                projectIds: copyModuleTypeProjectIds.length > 0 ? copyModuleTypeProjectIds : undefined 
+              })}
+              disabled={copyModuleTypeMutation.isPending}
+              data-testid="button-confirm-copy-module-type"
+            >
+              {copyModuleTypeMutation.isPending ? "Copying..." : "Copy"}
             </Button>
           </DialogFooter>
         </DialogContent>

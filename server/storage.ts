@@ -17,6 +17,8 @@ import {
   serviceTypes,
   systemTypes,
   systemTypeProjects,
+  moduleTypes,
+  moduleTypeProjects,
   defaultWorkOrderStatuses,
   permissionKeys,
   ADMINISTRATOR_SUBROLE_KEY,
@@ -63,6 +65,10 @@ import {
   type InsertSystemType,
   type UpdateSystemType,
   type SystemTypeWithProjects,
+  type ModuleType,
+  type InsertModuleType,
+  type UpdateModuleType,
+  type ModuleTypeWithProjects,
   type UserGroup,
   type InsertUserGroup,
   type UserGroupMember,
@@ -221,6 +227,15 @@ export interface IStorage {
   deleteSystemType(id: number): Promise<boolean>;
   getSystemTypeProjectIds(systemTypeId: number): Promise<number[]>;
   setSystemTypeProjects(systemTypeId: number, projectIds: number[]): Promise<void>;
+
+  // Module type operations
+  getModuleTypes(projectId?: number): Promise<ModuleTypeWithProjects[]>;
+  getModuleType(id: number): Promise<ModuleTypeWithProjects | undefined>;
+  createModuleType(data: InsertModuleType): Promise<ModuleTypeWithProjects>;
+  updateModuleType(id: number, data: UpdateModuleType): Promise<ModuleTypeWithProjects | undefined>;
+  deleteModuleType(id: number): Promise<boolean>;
+  getModuleTypeProjectIds(moduleTypeId: number): Promise<number[]>;
+  setModuleTypeProjects(moduleTypeId: number, projectIds: number[]): Promise<void>;
 
   // User column preferences operations
   getUserColumnPreferences(userId: string, pageKey: string): Promise<UserColumnPreferences | undefined>;
@@ -1525,6 +1540,123 @@ export class DatabaseStorage implements IStorage {
     if (projectIds.length > 0) {
       await db.insert(systemTypeProjects).values(
         projectIds.map(projectId => ({ systemTypeId, projectId }))
+      );
+    }
+  }
+
+  // Module type operations
+  async getModuleTypes(projectId?: number): Promise<ModuleTypeWithProjects[]> {
+    let allModuleTypes: ModuleType[];
+    
+    if (projectId) {
+      // Get module types that are assigned to this project
+      const moduleTypeIds = await db
+        .select({ moduleTypeId: moduleTypeProjects.moduleTypeId })
+        .from(moduleTypeProjects)
+        .where(eq(moduleTypeProjects.projectId, projectId));
+      
+      if (moduleTypeIds.length === 0) {
+        return [];
+      }
+      
+      const ids = moduleTypeIds.map(r => r.moduleTypeId);
+      allModuleTypes = await db
+        .select()
+        .from(moduleTypes)
+        .where(eq(moduleTypes.id, ids[0]))
+        .orderBy(moduleTypes.productLabel);
+      
+      // If there are more IDs, we need to filter properly
+      if (ids.length > 1) {
+        allModuleTypes = await db
+          .select()
+          .from(moduleTypes)
+          .orderBy(moduleTypes.productLabel);
+        allModuleTypes = allModuleTypes.filter(mt => ids.includes(mt.id));
+      }
+    } else {
+      allModuleTypes = await db
+        .select()
+        .from(moduleTypes)
+        .orderBy(moduleTypes.productLabel);
+    }
+    
+    // Get project IDs for each module type
+    const result: ModuleTypeWithProjects[] = [];
+    for (const mt of allModuleTypes) {
+      const projectIds = await this.getModuleTypeProjectIds(mt.id);
+      result.push({ ...mt, projectIds });
+    }
+    return result;
+  }
+
+  async getModuleType(id: number): Promise<ModuleTypeWithProjects | undefined> {
+    const [moduleType] = await db
+      .select()
+      .from(moduleTypes)
+      .where(eq(moduleTypes.id, id));
+    
+    if (!moduleType) return undefined;
+    
+    const projectIds = await this.getModuleTypeProjectIds(id);
+    return { ...moduleType, projectIds };
+  }
+
+  async createModuleType(data: InsertModuleType): Promise<ModuleTypeWithProjects> {
+    const { projectIds, ...moduleTypeData } = data;
+    const [moduleType] = await db
+      .insert(moduleTypes)
+      .values(moduleTypeData)
+      .returning();
+    
+    // Assign to projects if provided
+    if (projectIds && projectIds.length > 0) {
+      await this.setModuleTypeProjects(moduleType.id, projectIds);
+    }
+    
+    return { ...moduleType, projectIds: projectIds || [] };
+  }
+
+  async updateModuleType(id: number, data: UpdateModuleType): Promise<ModuleTypeWithProjects | undefined> {
+    const { projectIds, ...moduleTypeData } = data;
+    
+    // Only update module type fields if there are any
+    if (Object.keys(moduleTypeData).length > 0) {
+      await db
+        .update(moduleTypes)
+        .set({ ...moduleTypeData, updatedAt: new Date() })
+        .where(eq(moduleTypes.id, id));
+    }
+    
+    // Update project assignments if provided
+    if (projectIds !== undefined) {
+      await this.setModuleTypeProjects(id, projectIds);
+    }
+    
+    return await this.getModuleType(id);
+  }
+
+  async deleteModuleType(id: number): Promise<boolean> {
+    await db.delete(moduleTypes).where(eq(moduleTypes.id, id));
+    return true;
+  }
+
+  async getModuleTypeProjectIds(moduleTypeId: number): Promise<number[]> {
+    const rows = await db
+      .select({ projectId: moduleTypeProjects.projectId })
+      .from(moduleTypeProjects)
+      .where(eq(moduleTypeProjects.moduleTypeId, moduleTypeId));
+    return rows.map(r => r.projectId);
+  }
+
+  async setModuleTypeProjects(moduleTypeId: number, projectIds: number[]): Promise<void> {
+    // Delete existing assignments
+    await db.delete(moduleTypeProjects).where(eq(moduleTypeProjects.moduleTypeId, moduleTypeId));
+    
+    // Add new assignments
+    if (projectIds.length > 0) {
+      await db.insert(moduleTypeProjects).values(
+        projectIds.map(projectId => ({ moduleTypeId, projectId }))
       );
     }
   }

@@ -195,6 +195,20 @@ export const permissionRegistry: PermissionDefinition[] = [
     description: "Configure mobile app update URL and settings",
     defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
   },
+  {
+    key: "settings.systemTypes",
+    label: "System Types",
+    category: "Settings",
+    description: "Configure system type definitions for meters",
+    defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
+  },
+  {
+    key: "settings.moduleTypes",
+    label: "Module Types",
+    category: "Settings",
+    description: "Configure module type definitions for meters",
+    defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
+  },
 
   // Maintenance action permissions - what users can do in the maintenance area
   {
