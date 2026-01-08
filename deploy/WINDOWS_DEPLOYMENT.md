@@ -996,6 +996,37 @@ pm2 logs meterflo --lines 50
    C:\xampp\apache\bin\httpd.exe -k restart
    ```
 
+### Calendar/Work Order Times Off by Several Hours
+
+**Symptoms:** Work orders scheduled for a specific time (e.g., 9:00 AM) display at a different time (e.g., 2:00 AM or 4:00 PM) on the calendar. The offset is consistent (often 7 hours for Mountain Time).
+
+**Cause:** Windows servers use the local system timezone for Date operations, while Linux servers default to UTC. This causes inconsistent date parsing between development (Replit/Linux) and production (Windows).
+
+**Solution:** The application sets `process.env.TZ = 'UTC'` at the very start of `server/index.ts` to force consistent UTC behavior across all platforms. If you're experiencing this issue:
+
+1. **Pull the latest code:**
+   ```cmd
+   cd C:\xampp\htdocs
+   git pull origin main
+   ```
+
+2. **Rebuild and restart:**
+   ```cmd
+   npx tsx script/build.ts
+   pm2 restart meterflo
+   ```
+
+3. **Verify the fix:**
+   - Open the calendar and check that scheduled times display correctly
+   - Create a new work order and verify the time saves correctly
+
+**Technical Details:**
+- The fix is in `server/index.ts` at the very first line (before any imports)
+- It forces Node.js to interpret all dates in UTC regardless of Windows timezone settings
+- Existing work orders stored in UTC will now display correctly
+
+---
+
 ### Build Fails
 
 1. **TypeScript errors:**
