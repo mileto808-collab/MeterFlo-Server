@@ -2903,7 +2903,7 @@ export default function ProjectWorkOrders() {
                   data-testid="view-table"
                 >
                   <List className="h-4 w-4 mr-1" />
-                  WO's List
+                  WO List
                 </Button>
                 <Button
                   variant={viewMode === "calendar" ? "secondary" : "ghost"}
