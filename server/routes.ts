@@ -3597,6 +3597,13 @@ export async function registerRoutes(
         return res.status(404).json({ message: "File not found" });
       }
       
+      // Clear lastProcessedFile flag for any import configs that reference this deleted file
+      // This allows re-uploading a file with the same name to be processed again
+      const clearedCount = await storage.clearLastProcessedFileByFilename(projectId, req.params.filename);
+      if (clearedCount > 0) {
+        console.log(`[FTP Delete] Cleared lastProcessedFile for ${clearedCount} import config(s) referencing "${req.params.filename}"`);
+      }
+      
       res.json({ success: true });
     } catch (error) {
       console.error("Error deleting FTP file:", error);
