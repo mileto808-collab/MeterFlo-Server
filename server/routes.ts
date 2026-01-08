@@ -5668,12 +5668,38 @@ export async function registerRoutes(
       
       const restoreFiles = req.body.restoreFiles !== "false";
       
-      // Extract and detect backup format (SQL or legacy JSON)
+      // Extract and detect backup format (SQL or legacy JSON or files-only)
       const { sqlFile, metadata, legacyJson } = await extractBackupFromArchive(req.file.buffer);
+      
+      // Handle files-only backup
+      if (metadata?.format === "files_only" || metadata?.backupType === "files") {
+        console.log(`Restoring files-only backup from ${metadata.backupDate}`);
+        
+        if (!restoreFiles) {
+          return res.json({
+            message: "Files-only backup detected but file restoration is disabled",
+            format: "files_only",
+            backupDate: metadata.backupDate,
+            filesRestored: 0,
+            errors: [],
+          });
+        }
+        
+        const filesPath = await getProjectFilesPath();
+        const filesResult = await restoreFilesFromPgArchive(req.file.buffer, filesPath);
+        
+        return res.json({
+          message: "Files-only restore completed",
+          format: "files_only",
+          backupDate: metadata.backupDate,
+          filesRestored: filesResult.filesRestored,
+          errors: filesResult.errors,
+        });
+      }
       
       if (sqlFile && metadata?.format === "pg_dump_sql") {
         // New SQL format - use psql to restore with FK constraint handling
-        console.log(`Restoring SQL backup from ${metadata.backupDate}, schemas: ${metadata.schemas.join(", ")}`);
+        console.log(`Restoring SQL backup from ${metadata.backupDate}, schemas: ${metadata.schemas?.join(", ") || "none"}`);
         
         let filesResult = { filesRestored: 0, errors: [] as string[] };
         

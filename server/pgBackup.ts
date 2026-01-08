@@ -492,8 +492,9 @@ async function getPostgresVersion(): Promise<string> {
 export interface BackupMetadata {
   version: string;
   format: string;
+  backupType?: "database" | "full" | "files";
   backupDate: string;
-  schemas: string[];
+  schemas?: string[];
   postgresVersion?: string;
 }
 
