@@ -1,11 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
 import { useRoute, Link } from "wouter";
+import { useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { useAuth } from "@/hooks/useAuth";
+import { useProjectEvents } from "@/hooks/useProjectEvents";
+import { queryClient } from "@/lib/queryClient";
 import type { WorkOrder, Project, User, UserGroup } from "@shared/schema";
 import { ArrowLeft, Edit, Calendar, User as UserIcon, FolderOpen, Clock, Users, Eye, Download, FileIcon } from "lucide-react";
 import { useTimezone } from "@/hooks/use-timezone";
@@ -34,6 +37,19 @@ export default function WorkOrderDetail() {
   const { data: userGroups } = useQuery<UserGroup[]>({
     queryKey: ["/api/user-groups"],
     enabled: role === "admin",
+  });
+
+  // Handle SSE updates for this specific work order
+  const handleWorkOrderUpdated = useCallback((updatedWorkOrderId: number) => {
+    // Only refresh if the update is for the work order we're viewing
+    if (id && updatedWorkOrderId === parseInt(id)) {
+      queryClient.invalidateQueries({ queryKey: ["/api/work-orders", id] });
+    }
+  }, [id]);
+
+  // Subscribe to SSE events for real-time updates when the work order's project is known
+  useProjectEvents(workOrder?.projectId ?? null, {
+    onWorkOrderUpdated: handleWorkOrderUpdated,
   });
 
   const getProjectName = (projectId: number | null) => {
