@@ -6,13 +6,19 @@ import html2pdf from "html2pdf.js";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FileText, Server, Smartphone, ChevronLeft, Download, Globe } from "lucide-react";
+import { FileText, Server, Smartphone, ChevronLeft, Download, Globe, Shield } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 
-type DocType = "windows-deployment" | "mobile-api" | "customer-api" | null;
+type DocType = "windows-deployment" | "mobile-api" | "customer-api" | "system-admin" | null;
 
 const docOptions = [
+  {
+    id: "system-admin" as DocType,
+    title: "System Administration Guide",
+    description: "Operational requirements, business logic, core status codes, and configuration guidelines.",
+    icon: Shield,
+  },
   {
     id: "windows-deployment" as DocType,
     title: "Windows Deployment Guide",
