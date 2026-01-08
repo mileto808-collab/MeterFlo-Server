@@ -433,7 +433,7 @@ function addWebAppFilesToArchive(
   }
 }
 
-export type BackupType = "database" | "full" | "files";
+export type BackupType = "database" | "full" | "files" | "project";
 
 export async function createPgBackupArchive(res: any, backupType: BackupType = "full"): Promise<void> {
   console.log(`[Backup] Starting backup (type: ${backupType})...`);
@@ -442,10 +442,11 @@ export async function createPgBackupArchive(res: any, backupType: BackupType = "
   // - "database": Database only
   // - "full": Database + web app source files + project files (everything)
   // - "files": Web app source files only (excluding project files directory)
+  // - "project": Project files only (uploads, attachments, work order files)
   
   const includeDatabase = backupType === "database" || backupType === "full";
   const includeWebAppFiles = backupType === "files" || backupType === "full";
-  const includeProjectFiles = backupType === "full"; // Only full backup includes project files
+  const includeProjectFiles = backupType === "full" || backupType === "project";
   
   let backupResult: PgBackupResult | null = null;
   
@@ -468,6 +469,11 @@ export async function createPgBackupArchive(res: any, backupType: BackupType = "
   const projectFilesExist = fs.existsSync(projectFilesPath);
   const appDir = process.cwd();
   const skippedFiles: string[] = [];
+  
+  // For project-only backup, require the directory to exist
+  if (backupType === "project" && !projectFilesExist) {
+    throw new Error("No project files directory found to backup");
+  }
   
   const archive = archiver("zip", { zlib: { level: 6 } });
   
@@ -492,7 +498,8 @@ export async function createPgBackupArchive(res: any, backupType: BackupType = "
   });
   
   const filenamePrefix = backupType === "database" ? "db_backup" : 
-                         backupType === "files" ? "webapp_backup" : "full_backup";
+                         backupType === "files" ? "webapp_backup" : 
+                         backupType === "project" ? "project_backup" : "full_backup";
   
   res.setHeader("Content-Type", "application/zip");
   res.setHeader(
