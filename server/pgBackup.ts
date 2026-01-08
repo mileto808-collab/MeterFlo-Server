@@ -318,7 +318,8 @@ function addDirectoryToArchiveRecursive(
   archive: archiver.Archiver,
   dirPath: string,
   archivePrefix: string,
-  skippedFiles: string[]
+  skippedFiles: string[],
+  excludeDirs: string[] = []
 ): void {
   let entries: fs.Dirent[];
   try {
@@ -334,7 +335,92 @@ function addDirectoryToArchiveRecursive(
     const archivePath = archivePrefix ? `${archivePrefix}/${entry.name}` : entry.name;
     
     if (entry.isDirectory()) {
-      addDirectoryToArchiveRecursive(archive, fullPath, archivePath, skippedFiles);
+      // Check if this directory should be excluded
+      const normalizedFullPath = path.normalize(fullPath);
+      const shouldExclude = excludeDirs.some(excludeDir => {
+        const normalizedExclude = path.normalize(excludeDir);
+        return normalizedFullPath === normalizedExclude || normalizedFullPath.startsWith(normalizedExclude + path.sep);
+      });
+      
+      if (!shouldExclude) {
+        addDirectoryToArchiveRecursive(archive, fullPath, archivePath, skippedFiles, excludeDirs);
+      } else {
+        console.log(`[Backup] Excluding directory: ${fullPath}`);
+      }
+    } else if (entry.isFile()) {
+      try {
+        const fileStream = fs.createReadStream(fullPath);
+        archive.append(fileStream, { name: archivePath });
+      } catch (error: any) {
+        console.warn(`[Backup] Skipping file: ${fullPath} - ${error.message}`);
+        skippedFiles.push(fullPath);
+      }
+    }
+  }
+}
+
+// Directories and files to exclude from web app backup
+const WEB_APP_BACKUP_EXCLUDES = [
+  "node_modules",
+  ".git",
+  ".cache",
+  ".replit",
+  ".upm",
+  "dist",
+  ".npm",
+  "tmp",
+  "temp",
+  ".vscode",
+  ".idea",
+  "coverage",
+  ".nyc_output",
+  "logs",
+];
+
+function addWebAppFilesToArchive(
+  archive: archiver.Archiver,
+  appDir: string,
+  archivePrefix: string,
+  skippedFiles: string[],
+  projectFilesPath: string | null
+): void {
+  let entries: fs.Dirent[];
+  try {
+    entries = fs.readdirSync(appDir, { withFileTypes: true });
+  } catch (error: any) {
+    console.warn(`[Backup] Cannot read app directory: ${appDir} - ${error.message}`);
+    skippedFiles.push(appDir);
+    return;
+  }
+  
+  // Build list of directories to exclude
+  const excludeDirs: string[] = [];
+  for (const excludeName of WEB_APP_BACKUP_EXCLUDES) {
+    excludeDirs.push(path.join(appDir, excludeName));
+  }
+  // Also exclude the project files directory
+  if (projectFilesPath) {
+    excludeDirs.push(projectFilesPath);
+  }
+  
+  for (const entry of entries) {
+    const fullPath = path.join(appDir, entry.name);
+    const archivePath = archivePrefix ? `${archivePrefix}/${entry.name}` : entry.name;
+    
+    // Skip excluded directories
+    if (WEB_APP_BACKUP_EXCLUDES.includes(entry.name)) {
+      console.log(`[Backup] Excluding from web app backup: ${entry.name}`);
+      continue;
+    }
+    
+    // Skip the project files directory
+    if (projectFilesPath && path.normalize(fullPath) === path.normalize(projectFilesPath)) {
+      console.log(`[Backup] Excluding project files directory from web app backup: ${entry.name}`);
+      continue;
+    }
+    
+    if (entry.isDirectory()) {
+      addDirectoryToArchiveRecursive(archive, fullPath, archivePath, skippedFiles, excludeDirs);
     } else if (entry.isFile()) {
       try {
         const fileStream = fs.createReadStream(fullPath);
@@ -352,8 +438,14 @@ export type BackupType = "database" | "full" | "files";
 export async function createPgBackupArchive(res: any, backupType: BackupType = "full"): Promise<void> {
   console.log(`[Backup] Starting backup (type: ${backupType})...`);
   
+  // Backup types:
+  // - "database": Database only
+  // - "full": Database + web app source files + project files (everything)
+  // - "files": Web app source files only (excluding project files directory)
+  
   const includeDatabase = backupType === "database" || backupType === "full";
-  const includeFiles = backupType === "files" || backupType === "full";
+  const includeWebAppFiles = backupType === "files" || backupType === "full";
+  const includeProjectFiles = backupType === "full"; // Only full backup includes project files
   
   let backupResult: PgBackupResult | null = null;
   
@@ -372,15 +464,10 @@ export async function createPgBackupArchive(res: any, backupType: BackupType = "
     }
   }
   
-  const filesPath = await getProjectFilesPath();
-  const filesExist = fs.existsSync(filesPath);
+  const projectFilesPath = await getProjectFilesPath();
+  const projectFilesExist = fs.existsSync(projectFilesPath);
+  const appDir = process.cwd();
   const skippedFiles: string[] = [];
-  
-  // For files-only backup, require the directory to exist
-  // For full backup, continue without files if directory is missing (legacy behavior)
-  if (backupType === "files" && !filesExist) {
-    throw new Error("No project files directory found to backup");
-  }
   
   const archive = archiver("zip", { zlib: { level: 6 } });
   
@@ -405,7 +492,7 @@ export async function createPgBackupArchive(res: any, backupType: BackupType = "
   });
   
   const filenamePrefix = backupType === "database" ? "db_backup" : 
-                         backupType === "files" ? "files_backup" : "full_backup";
+                         backupType === "files" ? "webapp_backup" : "full_backup";
   
   res.setHeader("Content-Type", "application/zip");
   res.setHeader(
@@ -415,56 +502,76 @@ export async function createPgBackupArchive(res: any, backupType: BackupType = "
   
   archive.pipe(res);
   
+  // Add database backup
   if (includeDatabase && backupResult) {
     archive.file(backupResult.backupFile, { name: "database_backup.sql" });
     console.log("[Backup] Added database_backup.sql to archive");
-    
-    const metadata = {
-      version: "2.0",
-      format: "pg_dump_sql",
-      backupType,
-      backupDate: backupResult.backupDate,
-      schemas: backupResult.schemas,
-      postgresVersion: await getPostgresVersion(),
-    };
-    archive.append(JSON.stringify(metadata, null, 2), { name: "backup_metadata.json" });
   }
   
-  if (includeFiles && filesPath && filesExist) {
-    console.log(`[Backup] Adding project files from: ${filesPath}`);
+  // Add web app source files (excluding project files directory and common excludes)
+  if (includeWebAppFiles) {
+    console.log(`[Backup] Adding web app source files from: ${appDir}`);
     try {
-      addDirectoryToArchiveRecursive(archive, filesPath, "project_files", skippedFiles);
-      
-      if (skippedFiles.length > 0) {
-        console.warn(`[Backup] Skipped ${skippedFiles.length} locked/inaccessible files`);
-        archive.append(
-          JSON.stringify({ 
-            skippedFiles, 
-            reason: "Files were locked, inaccessible, or permission denied during backup" 
-          }, null, 2),
-          { name: "backup_warnings.json" }
-        );
-      }
+      addWebAppFilesToArchive(
+        archive, 
+        appDir, 
+        "webapp_files", 
+        skippedFiles, 
+        projectFilesPath
+      );
+      console.log("[Backup] Web app source files added to archive");
+    } catch (error: any) {
+      console.error(`[Backup] Error adding web app files: ${error.message}`);
+      archive.append(
+        JSON.stringify({ error: error.message, path: appDir }, null, 2),
+        { name: "webapp_backup_error.json" }
+      );
+    }
+  }
+  
+  // Add project files (only for full backup)
+  if (includeProjectFiles && projectFilesPath && projectFilesExist) {
+    console.log(`[Backup] Adding project files from: ${projectFilesPath}`);
+    try {
+      addDirectoryToArchiveRecursive(archive, projectFilesPath, "project_files", skippedFiles);
+      console.log("[Backup] Project files added to archive");
     } catch (error: any) {
       console.error(`[Backup] Error adding project files: ${error.message}`);
       archive.append(
-        JSON.stringify({ error: error.message, path: filesPath }, null, 2),
-        { name: "file_backup_error.json" }
+        JSON.stringify({ error: error.message, path: projectFilesPath }, null, 2),
+        { name: "project_files_error.json" }
       );
     }
-  } else if (includeFiles) {
+  } else if (includeProjectFiles) {
     console.log("[Backup] No project files directory to backup");
   }
   
-  if (!includeDatabase && backupType === "files") {
-    const metadata = {
-      version: "2.0",
-      format: "files_only",
-      backupType,
-      backupDate: new Date().toISOString(),
-    };
-    archive.append(JSON.stringify(metadata, null, 2), { name: "backup_metadata.json" });
+  // Add warnings about skipped files
+  if (skippedFiles.length > 0) {
+    console.warn(`[Backup] Skipped ${skippedFiles.length} locked/inaccessible files`);
+    archive.append(
+      JSON.stringify({ 
+        skippedFiles, 
+        reason: "Files were locked, inaccessible, or permission denied during backup" 
+      }, null, 2),
+      { name: "backup_warnings.json" }
+    );
   }
+  
+  // Add metadata
+  const metadata = {
+    version: "2.1",
+    format: backupType === "database" ? "pg_dump_sql" : 
+            backupType === "files" ? "webapp_files_only" : "full_system",
+    backupType,
+    backupDate: backupResult?.backupDate || new Date().toISOString(),
+    schemas: backupResult?.schemas,
+    postgresVersion: includeDatabase ? await getPostgresVersion() : undefined,
+    includesWebAppFiles: includeWebAppFiles,
+    includesProjectFiles: includeProjectFiles,
+    includesDatabase: includeDatabase,
+  };
+  archive.append(JSON.stringify(metadata, null, 2), { name: "backup_metadata.json" });
   
   console.log("[Backup] Finalizing archive...");
   await archive.finalize();
