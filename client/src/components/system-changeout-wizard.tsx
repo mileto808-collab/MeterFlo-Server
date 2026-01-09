@@ -183,10 +183,6 @@ export function SystemChangeoutWizard({
   const scannerRef = useRef<HTMLDivElement>(null);
   const [previewPhoto, setPreviewPhoto] = useState<{ photo: CapturedPhoto; type: "trouble" | "before" | "after"; index: number } | null>(null);
   
-  // Toggle states for optional reading capture
-  const [captureOldSystemReading, setCaptureOldSystemReading] = useState(!existingOldReading);
-  const [captureOldModuleReading, setCaptureOldModuleReading] = useState(!existingOldModuleReading);
-
   const [data, setData] = useState<SystemChangeoutData>({
     canChange: true,
     troubleCode: null,
@@ -301,8 +297,6 @@ export function SystemChangeoutWizard({
       signatureData: null,
       signatureName: "",
     });
-    setCaptureOldSystemReading(!existingOldReading);
-    setCaptureOldModuleReading(!existingOldModuleReading);
     data.troublePhotos.forEach((p) => URL.revokeObjectURL(p.preview));
     data.beforePhotos.forEach((p) => URL.revokeObjectURL(p.preview));
     data.afterPhotos.forEach((p) => URL.revokeObjectURL(p.preview));
@@ -363,17 +357,12 @@ export function SystemChangeoutWizard({
       case "troubleCapture":
         return !!data.troubleCode && data.troublePhotos.length >= 1;
       case "oldReading": {
-        // Validate based on scope and capture toggles
+        // Validate based on scope - always require readings
         const needsSystemReading = (displayMode === "system" || displayMode === "both");
         const needsModuleReading = (displayMode === "module" || displayMode === "both");
         
-        const systemReadingValid = !needsSystemReading || 
-          (!captureOldSystemReading && !!existingOldReading) || 
-          isValidSystemReading(data.oldSystemReading);
-        
-        const moduleReadingValid = !needsModuleReading || 
-          (!captureOldModuleReading && !!existingOldModuleReading) || 
-          isValidSystemReading(data.oldModuleReading);
+        const systemReadingValid = !needsSystemReading || isValidSystemReading(data.oldSystemReading);
+        const moduleReadingValid = !needsModuleReading || isValidSystemReading(data.oldModuleReading);
         
         return systemReadingValid && moduleReadingValid;
       }
@@ -416,16 +405,12 @@ export function SystemChangeoutWizard({
           const needsModuleData = (displayMode === "module" || displayMode === "both");
           
           // System validations
-          const oldSystemReadingValid = !needsSystemData || 
-            (!captureOldSystemReading && !!existingOldReading) || 
-            isValidSystemReading(data.oldSystemReading);
+          const oldSystemReadingValid = !needsSystemData || isValidSystemReading(data.oldSystemReading);
           const newSystemIdValid = !needsSystemData || !!data.newSystemId.trim();
           const newSystemReadingValid = !needsSystemData || isValidSystemReading(data.newSystemReading);
           
           // Module validations
-          const oldModuleReadingValid = !needsModuleData || 
-            (!captureOldModuleReading && !!existingOldModuleReading) || 
-            isValidSystemReading(data.oldModuleReading);
+          const oldModuleReadingValid = !needsModuleData || isValidSystemReading(data.oldModuleReading);
           const newModuleIdValid = !needsModuleData || !!data.newModuleId.trim();
           const newModuleReadingValid = !needsModuleData || isValidSystemReading(data.newModuleReading);
           
@@ -979,84 +964,40 @@ export function SystemChangeoutWizard({
             {/* Old System Reading Section */}
             {showSystemReading && (
               <div className="space-y-2">
-                {existingOldReading && (
-                  <div className="flex items-center justify-between">
-                    <Label className="text-sm">Capture new old system reading?</Label>
-                    <Switch
-                      checked={captureOldSystemReading}
-                      onCheckedChange={setCaptureOldSystemReading}
-                      data-testid="switch-capture-old-system-reading"
-                    />
-                  </div>
+                <Label>Old System Final Reading *</Label>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  value={data.oldSystemReading}
+                  onChange={(e) => setData((prev) => ({ ...prev, oldSystemReading: e.target.value }))}
+                  placeholder="Enter system reading (digits only)..."
+                  className={`text-lg text-center ${oldSystemReadingError && data.oldSystemReading ? "border-destructive" : ""}`}
+                  data-testid="input-old-system-reading"
+                />
+                {oldSystemReadingError && data.oldSystemReading && (
+                  <p className="text-sm text-destructive">{oldSystemReadingError}</p>
                 )}
-                {(captureOldSystemReading || !existingOldReading) && (
-                  <>
-                    <Label>Old System Final Reading *</Label>
-                    <Input
-                      type="text"
-                      inputMode="numeric"
-                      value={data.oldSystemReading}
-                      onChange={(e) => setData((prev) => ({ ...prev, oldSystemReading: e.target.value }))}
-                      placeholder="Enter system reading (digits only)..."
-                      className={`text-lg text-center ${oldSystemReadingError && data.oldSystemReading ? "border-destructive" : ""}`}
-                      data-testid="input-old-system-reading"
-                    />
-                    {oldSystemReadingError && data.oldSystemReading && (
-                      <p className="text-sm text-destructive">{oldSystemReadingError}</p>
-                    )}
-                    <p className="text-xs text-muted-foreground">Enter digits only. Leading zeros are preserved (e.g., 0001).</p>
-                  </>
-                )}
-                {!captureOldSystemReading && existingOldReading && (
-                  <Card className="bg-muted/50">
-                    <CardContent className="pt-4">
-                      <p className="text-sm text-muted-foreground">Current reading:</p>
-                      <p className="font-medium">{existingOldReading}</p>
-                    </CardContent>
-                  </Card>
-                )}
+                <p className="text-xs text-muted-foreground">Enter digits only. Leading zeros are preserved (e.g., 0001).</p>
               </div>
             )}
             
             {/* Old Module Reading Section */}
             {showModuleReading && (
               <div className="space-y-2">
-                {existingOldModuleReading && (
-                  <div className="flex items-center justify-between">
-                    <Label className="text-sm">Capture new old module reading?</Label>
-                    <Switch
-                      checked={captureOldModuleReading}
-                      onCheckedChange={setCaptureOldModuleReading}
-                      data-testid="switch-capture-old-module-reading"
-                    />
-                  </div>
+                <Label>Old Module Final Reading *</Label>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  value={data.oldModuleReading}
+                  onChange={(e) => setData((prev) => ({ ...prev, oldModuleReading: e.target.value }))}
+                  placeholder="Enter module reading (digits only)..."
+                  className={`text-lg text-center ${oldModuleReadingError && data.oldModuleReading ? "border-destructive" : ""}`}
+                  data-testid="input-old-module-reading"
+                />
+                {oldModuleReadingError && data.oldModuleReading && (
+                  <p className="text-sm text-destructive">{oldModuleReadingError}</p>
                 )}
-                {(captureOldModuleReading || !existingOldModuleReading) && (
-                  <>
-                    <Label>Old Module Final Reading *</Label>
-                    <Input
-                      type="text"
-                      inputMode="numeric"
-                      value={data.oldModuleReading}
-                      onChange={(e) => setData((prev) => ({ ...prev, oldModuleReading: e.target.value }))}
-                      placeholder="Enter module reading (digits only)..."
-                      className={`text-lg text-center ${oldModuleReadingError && data.oldModuleReading ? "border-destructive" : ""}`}
-                      data-testid="input-old-module-reading"
-                    />
-                    {oldModuleReadingError && data.oldModuleReading && (
-                      <p className="text-sm text-destructive">{oldModuleReadingError}</p>
-                    )}
-                    <p className="text-xs text-muted-foreground">Enter digits only. Leading zeros are preserved (e.g., 0001).</p>
-                  </>
-                )}
-                {!captureOldModuleReading && existingOldModuleReading && (
-                  <Card className="bg-muted/50">
-                    <CardContent className="pt-4">
-                      <p className="text-sm text-muted-foreground">Current reading:</p>
-                      <p className="font-medium">{existingOldModuleReading}</p>
-                    </CardContent>
-                  </Card>
-                )}
+                <p className="text-xs text-muted-foreground">Enter digits only. Leading zeros are preserved (e.g., 0001).</p>
               </div>
             )}
 
