@@ -1418,10 +1418,10 @@ export function WorkOrderDetail({
         notes={workOrder.notes}
         projectId={typeof projectId === 'string' ? parseInt(projectId) : projectId}
         troubleCodes={troubleCodes}
-        existingOldReading={workOrder.oldSystemReading}
-        existingNewReading={workOrder.newSystemReading}
-        existingOldModuleReading={workOrder.oldModuleReading}
-        existingNewModuleReading={workOrder.newModuleReading}
+        existingOldReading={workOrder.oldSystemReading != null ? String(workOrder.oldSystemReading) : null}
+        existingNewReading={workOrder.newSystemReading != null ? String(workOrder.newSystemReading) : null}
+        existingOldModuleReading={workOrder.oldModuleRead != null ? String(workOrder.oldModuleRead) : null}
+        existingNewModuleReading={workOrder.newModuleRead != null ? String(workOrder.newModuleRead) : null}
         existingGps={workOrder.gps}
         onComplete={async (data) => {
           const formData = new FormData();
