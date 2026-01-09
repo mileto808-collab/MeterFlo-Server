@@ -1576,17 +1576,45 @@ export function SystemChangeoutWizard({
                     <span className="text-muted-foreground">Address:</span>
                     <span className="font-medium">{address || "-"}</span>
                     
-                    <span className="text-muted-foreground">Old System ID:</span>
-                    <span className="font-medium">{oldSystemId || "-"}</span>
+                    {(displayMode === "system" || displayMode === "both") && (
+                      <>
+                        <span className="text-muted-foreground">Old System ID:</span>
+                        <span className="font-medium">{oldSystemId || "-"}</span>
+                        
+                        <span className="text-muted-foreground">Old System Reading:</span>
+                        <span className="font-medium">{data.oldSystemReading}</span>
+                      </>
+                    )}
                     
-                    <span className="text-muted-foreground">Old Reading:</span>
-                    <span className="font-medium">{data.oldSystemReading}</span>
+                    {(displayMode === "module" || displayMode === "both") && (
+                      <>
+                        <span className="text-muted-foreground">Old Module ID:</span>
+                        <span className="font-medium">{oldModuleId || "-"}</span>
+                        
+                        <span className="text-muted-foreground">Old Module Reading:</span>
+                        <span className="font-medium">{data.oldModuleReading}</span>
+                      </>
+                    )}
                     
-                    <span className="text-muted-foreground">New System ID:</span>
-                    <span className="font-medium">{data.newSystemId}</span>
+                    {(displayMode === "system" || displayMode === "both") && (
+                      <>
+                        <span className="text-muted-foreground">New System ID:</span>
+                        <span className="font-medium">{data.newSystemId}</span>
+                        
+                        <span className="text-muted-foreground">New System Reading:</span>
+                        <span className="font-medium">{data.newSystemReading}</span>
+                      </>
+                    )}
                     
-                    <span className="text-muted-foreground">New Reading:</span>
-                    <span className="font-medium">{data.newSystemReading}</span>
+                    {(displayMode === "module" || displayMode === "both") && (
+                      <>
+                        <span className="text-muted-foreground">New Module ID:</span>
+                        <span className="font-medium">{data.newModuleId}</span>
+                        
+                        <span className="text-muted-foreground">New Module Reading:</span>
+                        <span className="font-medium">{data.newModuleReading}</span>
+                      </>
+                    )}
                     
                     <span className="text-muted-foreground">GPS:</span>
                     <span className="font-medium">{data.gpsCoordinates}</span>
