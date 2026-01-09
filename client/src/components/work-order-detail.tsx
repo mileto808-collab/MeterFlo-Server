@@ -72,6 +72,7 @@ interface WorkOrderDetailProps {
   cameFromSearch?: boolean;
   serviceTypes: Array<{ id: number; code: string; label: string; color?: string | null }>;
   systemTypes: Array<{ id: number; productId: string; productLabel: string }>;
+  moduleTypes: Array<{ id: number; productId: string; productLabel: string }>;
   workOrderStatuses: Array<{ id: number; code: string; label: string }>;
   troubleCodes: Array<{ id: number; code: string; label: string }>;
   assigneesData: any;
@@ -102,6 +103,7 @@ export function WorkOrderDetail({
   cameFromSearch,
   serviceTypes = [],
   systemTypes = [],
+  moduleTypes = [],
   workOrderStatuses = [],
   troubleCodes = [],
   assigneesData,
@@ -552,12 +554,12 @@ export function WorkOrderDetail({
               </AccordionContent>
             </AccordionItem>
 
-            {/* System & Installation Details */}
+            {/* System/Module & Installation Details */}
             <AccordionItem value="system" className="border rounded-lg px-4">
               <AccordionTrigger className="hover:no-underline py-4" data-testid="accordion-system">
                 <div className="flex items-center gap-2">
                   <Gauge className="h-4 w-4 text-primary" />
-                  <span className="font-medium">System & Installation Details</span>
+                  <span className="font-medium">System/Module & Installation Details</span>
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pb-4">
@@ -694,6 +696,80 @@ export function WorkOrderDetail({
                     </div>
                   </div>
 
+                  {/* Old Module Section */}
+                  <div className="md:col-span-2 border-t pt-4 mt-2">
+                    <h4 className="text-sm font-medium mb-3 text-muted-foreground">Old Module</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="oldModuleId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Module ID</FormLabel>
+                            <FormControl>
+                              <ScannerInput 
+                                value={field.value || ""} 
+                                onChange={field.onChange} 
+                                placeholder="MOD-12345" 
+                                disabled={!canEdit}
+                                data-testid="input-old-module-id" 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="oldModuleRead"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Reading</FormLabel>
+                            <FormControl>
+                              <Input 
+                                type="number" 
+                                {...field} 
+                                value={field.value ?? ""} 
+                                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                                placeholder="12345" 
+                                disabled={!canEdit}
+                                data-testid="input-old-module-reading" 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="oldModuleType"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Type</FormLabel>
+                            <Select 
+                              value={field.value || "__none__"} 
+                              onValueChange={(val) => field.onChange(val === "__none__" ? null : val)}
+                              disabled={!canEdit}
+                            >
+                              <FormControl>
+                                <SelectTrigger data-testid="select-old-module-type" disabled={!canEdit}>
+                                  <SelectValue placeholder="Select type..." />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="__none__">None</SelectItem>
+                                {Array.isArray(moduleTypes) && moduleTypes.map((mt) => (
+                                  <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
+
                   {/* New System Section */}
                   <div className="md:col-span-2 border-t pt-4 mt-2">
                     <h4 className="text-sm font-medium mb-3 text-muted-foreground">New System</h4>
@@ -796,6 +872,80 @@ export function WorkOrderDetail({
                                 data-testid="input-new-gps" 
                               />
                             </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
+
+                  {/* New Module Section */}
+                  <div className="md:col-span-2 border-t pt-4 mt-2">
+                    <h4 className="text-sm font-medium mb-3 text-muted-foreground">New Module</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="newModuleId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Module ID</FormLabel>
+                            <FormControl>
+                              <ScannerInput 
+                                value={field.value || ""} 
+                                onChange={field.onChange} 
+                                placeholder="MOD-67890" 
+                                disabled={!canEdit}
+                                data-testid="input-new-module-id" 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="newModuleRead"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Reading</FormLabel>
+                            <FormControl>
+                              <Input 
+                                type="number" 
+                                {...field} 
+                                value={field.value ?? ""} 
+                                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                                placeholder="67890" 
+                                disabled={!canEdit}
+                                data-testid="input-new-module-reading" 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="newModuleType"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Type</FormLabel>
+                            <Select 
+                              value={field.value || "__none__"} 
+                              onValueChange={(val) => field.onChange(val === "__none__" ? null : val)}
+                              disabled={!canEdit}
+                            >
+                              <FormControl>
+                                <SelectTrigger data-testid="select-new-module-type" disabled={!canEdit}>
+                                  <SelectValue placeholder="Select type..." />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="__none__">None</SelectItem>
+                                {Array.isArray(moduleTypes) && moduleTypes.map((mt) => (
+                                  <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                             <FormMessage />
                           </FormItem>
                         )}

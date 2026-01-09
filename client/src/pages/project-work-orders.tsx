@@ -49,7 +49,7 @@ import { TablePagination } from "@/components/ui/table-pagination";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
 import { Label } from "@/components/ui/label";
-import type { Project, WorkOrderStatus, TroubleCode, ServiceTypeRecord, SystemType } from "@shared/schema";
+import type { Project, WorkOrderStatus, TroubleCode, ServiceTypeRecord, SystemType, ModuleType } from "@shared/schema";
 import { insertProjectWorkOrderSchema, permissionKeys } from "@shared/schema";
 import { usePermissions } from "@/hooks/usePermissions";
 import type { ProjectWorkOrder } from "../../../server/projectDb";
@@ -422,6 +422,15 @@ export default function ProjectWorkOrders() {
     queryKey: ["/api/system-types", projectId],
     queryFn: async () => {
       const res = await fetch(`/api/system-types?projectId=${projectId}`, { credentials: "include" });
+      return res.json();
+    },
+    enabled: !!projectId && !accessDenied,
+  });
+
+  const { data: moduleTypes = [] } = useQuery<ModuleType[]>({
+    queryKey: ["/api/module-types", projectId],
+    queryFn: async () => {
+      const res = await fetch(`/api/module-types?projectId=${projectId}`, { credentials: "include" });
       return res.json();
     },
     enabled: !!projectId && !accessDenied,
@@ -2009,6 +2018,7 @@ export default function ProjectWorkOrders() {
           cameFromSearch={cameFromSearch}
           serviceTypes={serviceTypes}
           systemTypes={systemTypes}
+          moduleTypes={moduleTypes}
           workOrderStatuses={workOrderStatuses}
           troubleCodes={troubleCodes}
           assigneesData={assigneesData}
