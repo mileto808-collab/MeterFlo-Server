@@ -215,12 +215,16 @@ export function SystemChangeoutWizard({
   
   const displayMode = getDisplayMode();
   
-  // Dynamic step label based on what data is present
+  // Dynamic step labels based on what data is present
   const getCanChangeLabel = (): string => {
+    return "Can The Changeout Proceed?";
+  };
+  
+  const getNewSystemIdLabel = (): string => {
     switch (displayMode) {
-      case "module": return "Can The Changeout Proceed?";
-      case "both": return "Can The Changeout Proceed?";
-      default: return "Can The Changeout Proceed?";
+      case "module": return "Capture New Module ID";
+      case "both": return "Capture New System ID and Module ID";
+      default: return "Capture New System ID";
     }
   };
 
@@ -1632,7 +1636,7 @@ export function SystemChangeoutWizard({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Wrench className="h-5 w-5" />
-            {currentStep === "canChange" ? getCanChangeLabel() : stepLabels[currentStep]}
+            {currentStep === "canChange" ? getCanChangeLabel() : currentStep === "newSystemId" ? getNewSystemIdLabel() : stepLabels[currentStep]}
           </DialogTitle>
         </DialogHeader>
 
