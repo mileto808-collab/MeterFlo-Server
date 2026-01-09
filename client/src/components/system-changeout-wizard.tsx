@@ -182,6 +182,7 @@ export function SystemChangeoutWizard({
   const [isScanning, setIsScanning] = useState(false);
   const scannerRef = useRef<HTMLDivElement>(null);
   const [previewPhoto, setPreviewPhoto] = useState<{ photo: CapturedPhoto; type: "trouble" | "before" | "after"; index: number } | null>(null);
+  const [showNotesDialog, setShowNotesDialog] = useState(false);
   
   const [data, setData] = useState<SystemChangeoutData>({
     canChange: true,
@@ -868,10 +869,15 @@ export function SystemChangeoutWizard({
                   <div className="flex items-start gap-3">
                     <StickyNote className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
                     <div className="min-w-0">
-                      <p className="text-sm text-muted-foreground">Notes</p>
-                      <p className="font-medium break-all" data-testid="text-wizard-notes">
-                        {notes}
-                      </p>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowNotesDialog(true)}
+                        data-testid="button-view-notes"
+                      >
+                        Notes
+                      </Button>
                     </div>
                   </div>
                 )}
@@ -1817,6 +1823,32 @@ export function SystemChangeoutWizard({
           >
             <Trash2 className="h-4 w-4 mr-2" />
             Delete Photo
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    {/* Notes Dialog */}
+    <Dialog open={showNotesDialog} onOpenChange={setShowNotesDialog}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <StickyNote className="h-5 w-5" />
+            Work Order Notes
+          </DialogTitle>
+        </DialogHeader>
+        <div className="py-2">
+          <p className="text-sm whitespace-pre-wrap" data-testid="text-notes-content">
+            {notes}
+          </p>
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => setShowNotesDialog(false)}
+            data-testid="button-notes-close"
+          >
+            Close
           </Button>
         </DialogFooter>
       </DialogContent>
