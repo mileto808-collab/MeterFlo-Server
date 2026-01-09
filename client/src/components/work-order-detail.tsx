@@ -775,12 +775,13 @@ export function WorkOrderDetail({
                   {/* GPS Coordinates Section */}
                   <div className="md:col-span-2 border-t pt-4 mt-2">
                     <h4 className="text-sm font-medium mb-3 text-muted-foreground">GPS Coordinates</h4>
-                    <div className="grid grid-cols-1 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <FormField
                         control={form.control}
                         name="oldGps"
                         render={({ field }) => (
                           <FormItem>
+                            <FormLabel>Old GPS</FormLabel>
                             <div className="flex items-center gap-2">
                               <FormControl>
                                 <GPSCapture 
@@ -797,7 +798,40 @@ export function WorkOrderDetail({
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   className="text-primary hover:underline flex items-center gap-1 text-sm whitespace-nowrap"
-                                  data-testid="link-view-map"
+                                  data-testid="link-view-old-gps-map"
+                                >
+                                  <MapPin className="h-4 w-4" />
+                                  View Map
+                                </a>
+                              )}
+                            </div>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="newGps"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>New GPS</FormLabel>
+                            <div className="flex items-center gap-2">
+                              <FormControl>
+                                <GPSCapture 
+                                  value={field.value || ""} 
+                                  onChange={field.onChange} 
+                                  placeholder="40.7128,-74.0060" 
+                                  disabled={!canEdit}
+                                  data-testid="input-new-gps" 
+                                />
+                              </FormControl>
+                              {field.value && (
+                                <a
+                                  href={`https://www.google.com/maps?q=${field.value}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-primary hover:underline flex items-center gap-1 text-sm whitespace-nowrap"
+                                  data-testid="link-view-new-gps-map"
                                 >
                                   <MapPin className="h-4 w-4" />
                                   View Map
@@ -894,25 +928,6 @@ export function WorkOrderDetail({
                                 </Button>
                               )}
                             </div>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="newGps"
-                        render={({ field }) => (
-                          <FormItem className="md:col-span-3">
-                            <FormLabel>GPS Coordinates</FormLabel>
-                            <FormControl>
-                              <GPSCapture 
-                                value={field.value || ""} 
-                                onChange={field.onChange} 
-                                placeholder="40.7128,-74.0060" 
-                                disabled={!canEdit}
-                                data-testid="input-new-gps" 
-                              />
-                            </FormControl>
                             <FormMessage />
                           </FormItem>
                         )}
