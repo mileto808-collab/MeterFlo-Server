@@ -172,6 +172,12 @@ export async function migrateProjectSchema(schemaName: string): Promise<void> {
       { name: 'signature_data', type: 'TEXT' },
       { name: 'signature_name', type: 'VARCHAR(100)' },
       { name: 'trouble', type: 'VARCHAR(50)' },
+      { name: 'old_module_id', type: 'VARCHAR(50)' },
+      { name: 'new_module_id', type: 'VARCHAR(50)' },
+      { name: 'old_module_read', type: 'INTEGER' },
+      { name: 'new_module_read', type: 'INTEGER' },
+      { name: 'old_module_type', type: 'VARCHAR(100)' },
+      { name: 'new_module_type', type: 'VARCHAR(100)' },
     ];
     
     for (const col of newColumns) {
@@ -321,6 +327,8 @@ export async function migrateProjectSchema(schemaName: string): Promise<void> {
       { column: 'trouble', ref_table: 'public.trouble_codes', ref_column: 'code', constraint_name: 'fk_trouble_code' },
       { column: 'old_system_type', ref_table: 'public.system_types', ref_column: 'product_id', constraint_name: 'fk_old_system_type' },
       { column: 'new_system_type', ref_table: 'public.system_types', ref_column: 'product_id', constraint_name: 'fk_new_system_type' },
+      { column: 'old_module_type', ref_table: 'public.module_types', ref_column: 'product_id', constraint_name: 'fk_old_module_type' },
+      { column: 'new_module_type', ref_table: 'public.module_types', ref_column: 'product_id', constraint_name: 'fk_new_module_type' },
       { column: 'assigned_user_id', ref_table: 'public.users', ref_column: 'id', constraint_name: 'fk_assigned_user' },
       { column: 'assigned_group_id', ref_table: 'public.user_groups', ref_column: 'name', constraint_name: 'fk_assigned_group' },
       { column: 'created_by', ref_table: 'public.users', ref_column: 'username', constraint_name: 'fk_created_by' },
