@@ -121,7 +121,7 @@ const stepLabels: Record<WizardStep, string> = {
   beforePhotos: "Before Photos",
   physicalChange: "Perform Changeout",
   newSystemId: "New System ID",
-  newReading: "New System Reading",
+  newReading: "Capture New Reading",
   afterPhotos: "After Photos",
   gps: "Capture GPS",
   notes: "Notes",
