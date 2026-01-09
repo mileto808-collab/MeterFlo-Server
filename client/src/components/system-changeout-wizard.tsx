@@ -339,6 +339,25 @@ export function SystemChangeoutWizard({
     if (!/^\d+$/.test(reading.trim())) return "Reading must contain only digits (0-9)";
     return null;
   };
+  
+  // Check if old reading matches the existing value (must be different)
+  const getOldSystemReadingError = (): string | null => {
+    const baseError = getSystemReadingError(data.oldSystemReading);
+    if (baseError) return baseError;
+    if (existingOldReading && data.oldSystemReading === existingOldReading) {
+      return "Please enter a different reading than the existing value";
+    }
+    return null;
+  };
+  
+  const getOldModuleReadingError = (): string | null => {
+    const baseError = getSystemReadingError(data.oldModuleReading);
+    if (baseError) return baseError;
+    if (existingOldModuleReading && data.oldModuleReading === existingOldModuleReading) {
+      return "Please enter a different reading than the existing value";
+    }
+    return null;
+  };
 
   const getGpsError = (gps: string | undefined | null): string | null => {
     if (!gps || typeof gps !== 'string' || !gps.trim()) return "GPS coordinates are required";
@@ -361,12 +380,12 @@ export function SystemChangeoutWizard({
       case "troubleCapture":
         return !!data.troubleCode && data.troublePhotos.length >= 1;
       case "oldReading": {
-        // Validate based on scope - always require readings
+        // Validate based on scope - require readings that are different from existing
         const needsSystemReading = (displayMode === "system" || displayMode === "both");
         const needsModuleReading = (displayMode === "module" || displayMode === "both");
         
-        const systemReadingValid = !needsSystemReading || isValidSystemReading(data.oldSystemReading);
-        const moduleReadingValid = !needsModuleReading || isValidSystemReading(data.oldModuleReading);
+        const systemReadingValid = !needsSystemReading || !getOldSystemReadingError();
+        const moduleReadingValid = !needsModuleReading || !getOldModuleReadingError();
         
         return systemReadingValid && moduleReadingValid;
       }
@@ -939,8 +958,8 @@ export function SystemChangeoutWizard({
         );
 
       case "oldReading": {
-        const oldSystemReadingError = getSystemReadingError(data.oldSystemReading);
-        const oldModuleReadingError = getSystemReadingError(data.oldModuleReading);
+        const oldSystemReadingError = getOldSystemReadingError();
+        const oldModuleReadingError = getOldModuleReadingError();
         
         // Determine description text based on scope
         const getReadingDescription = () => {
@@ -976,10 +995,10 @@ export function SystemChangeoutWizard({
                   onFocus={() => setData((prev) => ({ ...prev, oldSystemReading: "" }))}
                   onChange={(e) => setData((prev) => ({ ...prev, oldSystemReading: e.target.value }))}
                   placeholder="Enter system reading (digits only)..."
-                  className={`text-lg text-center ${oldSystemReadingError && data.oldSystemReading ? "border-destructive" : ""}`}
+                  className={`text-lg text-center ${oldSystemReadingError ? "border-destructive" : ""}`}
                   data-testid="input-old-system-reading"
                 />
-                {oldSystemReadingError && data.oldSystemReading && (
+                {oldSystemReadingError && (
                   <p className="text-sm text-destructive">{oldSystemReadingError}</p>
                 )}
                 <p className="text-xs text-muted-foreground">Enter digits only. Leading zeros are preserved (e.g., 0001).</p>
@@ -997,10 +1016,10 @@ export function SystemChangeoutWizard({
                   onFocus={() => setData((prev) => ({ ...prev, oldModuleReading: "" }))}
                   onChange={(e) => setData((prev) => ({ ...prev, oldModuleReading: e.target.value }))}
                   placeholder="Enter module reading (digits only)..."
-                  className={`text-lg text-center ${oldModuleReadingError && data.oldModuleReading ? "border-destructive" : ""}`}
+                  className={`text-lg text-center ${oldModuleReadingError ? "border-destructive" : ""}`}
                   data-testid="input-old-module-reading"
                 />
-                {oldModuleReadingError && data.oldModuleReading && (
+                {oldModuleReadingError && (
                   <p className="text-sm text-destructive">{oldModuleReadingError}</p>
                 )}
                 <p className="text-xs text-muted-foreground">Enter digits only. Leading zeros are preserved (e.g., 0001).</p>
