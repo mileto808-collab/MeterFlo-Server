@@ -138,9 +138,16 @@ export function WorkOrderDetail({
   const [openSections, setOpenSections] = useState<string[]>([]);
   const [showSystemChangeoutWizard, setShowSystemChangeoutWizard] = useState(false);
   const [isClaiming, setIsClaiming] = useState(false);
-  const [changeoutScope, setChangeoutScope] = useState<"system" | "module" | "both">("system");
-  const [showScopeDialog, setShowScopeDialog] = useState(false);
   const autoLaunchTriggered = useRef(false);
+  
+  // Auto-determine scope based on work order data
+  const changeoutScope: "system" | "module" | "both" = (() => {
+    const hasSystem = !!workOrder.oldSystemId;
+    const hasModule = !!workOrder.oldModuleId;
+    if (hasSystem && hasModule) return "both";
+    if (hasModule) return "module";
+    return "system";
+  })();
   
   // Watch form fields for header display - ensures UI updates immediately when form values change
   // Using useWatch hook for proper subscription to form updates
@@ -181,15 +188,8 @@ export function WorkOrderDetail({
 
   const scheduledAtWarning = getOperationalHoursWarning(watchedScheduledAt);
 
-  // Show scope selection dialog first
-  const handleStartSystemChangeout = useCallback(() => {
-    setShowScopeDialog(true);
-  }, []);
-  
-  // Handle scope selection and claim work order
-  const handleScopeSelected = useCallback(async (scope: "system" | "module" | "both") => {
-    setChangeoutScope(scope);
-    setShowScopeDialog(false);
+  // Start system changeout - claim and open wizard directly (scope is auto-determined)
+  const handleStartSystemChangeout = useCallback(async () => {
     setIsClaiming(true);
     try {
       // Call claim endpoint - this will assign the work order to the current user
@@ -220,21 +220,15 @@ export function WorkOrderDetail({
   }, []);
 
   // Auto-launch system changeout wizard if requested
-  // When coming from scan workflow, scope is already selected, so skip the dialog
+  // When coming from scan workflow, work order is already claimed
   useEffect(() => {
     if (autoLaunchSystemChangeout && canSystemChangeout && !autoLaunchTriggered.current) {
       autoLaunchTriggered.current = true;
-      // If scope is provided from scan workflow, use it directly (skip dialog)
-      if (autoLaunchChangeoutScope) {
-        setChangeoutScope(autoLaunchChangeoutScope);
-        // Since coming from scan, work order is already claimed, just open wizard
-        setShowSystemChangeoutWizard(true);
-      } else {
-        // Show scope selection dialog
-        handleStartSystemChangeout();
-      }
+      // Scope is now auto-determined based on work order data
+      // Since coming from scan, work order is already claimed, just open wizard
+      setShowSystemChangeoutWizard(true);
     }
-  }, [autoLaunchSystemChangeout, canSystemChangeout, autoLaunchChangeoutScope, handleStartSystemChangeout]);
+  }, [autoLaunchSystemChangeout, canSystemChangeout]);
 
   const getStatusBadge = (status: string) => {
     const statusConfig: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; className?: string }> = {
@@ -1410,7 +1404,6 @@ export function WorkOrderDetail({
       <SystemChangeoutWizard
         isOpen={showSystemChangeoutWizard}
         onClose={() => setShowSystemChangeoutWizard(false)}
-        scope={changeoutScope}
         workOrderId={workOrder.id}
         customerWoId={workOrder.customerWoId || `WO-${workOrder.id}`}
         address={workOrder.address}
@@ -1491,69 +1484,6 @@ export function WorkOrderDetail({
         }}
       />
 
-      {/* Scope Selection Dialog */}
-      <AlertDialog open={showScopeDialog} onOpenChange={setShowScopeDialog}>
-        <AlertDialogContent className="max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle data-testid="title-scope-select">What would you like to change?</AlertDialogTitle>
-            <AlertDialogDescription data-testid="text-scope-description">
-              Select what you're changing for this work order.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="space-y-3 py-4">
-            <Card 
-              className="cursor-pointer hover-elevate"
-              onClick={() => handleScopeSelected("system")}
-              data-testid="button-scope-system"
-            >
-              <CardContent className="flex items-center gap-4 p-4">
-                <div className="p-3 rounded-full bg-primary/10">
-                  <Gauge className="h-6 w-6 text-primary" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-medium">Change System</h3>
-                  <p className="text-sm text-muted-foreground">Replace the meter system only</p>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card 
-              className="cursor-pointer hover-elevate"
-              onClick={() => handleScopeSelected("module")}
-              data-testid="button-scope-module"
-            >
-              <CardContent className="flex items-center gap-4 p-4">
-                <div className="p-3 rounded-full bg-primary/10">
-                  <Wrench className="h-6 w-6 text-primary" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-medium">Change Module</h3>
-                  <p className="text-sm text-muted-foreground">Replace the module only</p>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card 
-              className="cursor-pointer hover-elevate"
-              onClick={() => handleScopeSelected("both")}
-              data-testid="button-scope-both"
-            >
-              <CardContent className="flex items-center gap-4 p-4">
-                <div className="p-3 rounded-full bg-primary/10">
-                  <ClipboardCheck className="h-6 w-6 text-primary" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-medium">Change Both</h3>
-                  <p className="text-sm text-muted-foreground">Replace both system and module</p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-          <AlertDialogFooter>
-            <AlertDialogCancel data-testid="button-cancel-scope">Cancel</AlertDialogCancel>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

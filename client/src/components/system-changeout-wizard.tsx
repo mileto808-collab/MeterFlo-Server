@@ -111,7 +111,6 @@ interface SystemChangeoutWizardProps {
   existingOldModuleReading?: string | null;
   existingNewModuleReading?: string | null;
   existingGps?: string | null;
-  scope: ChangeoutScope;
   onComplete: (data: SystemChangeoutData) => Promise<void>;
 }
 
@@ -168,7 +167,6 @@ export function SystemChangeoutWizard({
   existingOldModuleReading,
   existingNewModuleReading,
   existingGps,
-  scope,
   onComplete,
 }: SystemChangeoutWizardProps) {
   const { toast } = useToast();
