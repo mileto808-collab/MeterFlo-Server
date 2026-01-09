@@ -2977,7 +2977,7 @@ export default function ProjectWorkOrders() {
                 className="bg-green-600 text-white dark:bg-green-600"
               >
                 <Wrench className="h-4 w-4 mr-2" />
-                Start System Changeout
+                Start Changeout
               </Button>
             )}
             <Button onClick={() => setIsCreatingWorkOrder(true)} data-testid="button-create-work-order">

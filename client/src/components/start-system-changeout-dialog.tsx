@@ -479,7 +479,7 @@ export function StartSystemChangeoutDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Wrench className="h-5 w-5" />
-            Start System Changeout
+            Start Changeout
           </DialogTitle>
           <DialogDescription>
             Search by work order ID, system ID, module ID, address, or customer ID
