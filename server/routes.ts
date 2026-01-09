@@ -1850,7 +1850,7 @@ export async function registerRoutes(
       }
       
       // Query directly with JOINs to get snake_case format matching mobile sync endpoint
-      // Searches both old_meter_id and new_meter_id fields
+      // Searches old_meter_id, new_meter_id, old_module_id, and new_module_id fields
       const client = await pool.connect();
       try {
         const result = await client.query(`
@@ -1863,7 +1863,7 @@ export async function registerRoutes(
           LEFT JOIN public.users sb ON w.scheduled_by = sb.id
           LEFT JOIN public.users cb ON w.completed_by = cb.id
           LEFT JOIN public.users au ON w.assigned_user_id = au.id
-          WHERE w.old_meter_id = $1 OR w.new_meter_id = $1
+          WHERE w.old_meter_id = $1 OR w.new_meter_id = $1 OR w.old_module_id = $1 OR w.new_module_id = $1
         `, [meterId]);
         
         if (result.rows.length === 0) {
@@ -1984,7 +1984,7 @@ export async function registerRoutes(
       }
       
       // Query directly with JOINs to get snake_case format matching mobile sync endpoint
-      // Searches: system IDs (old/new), customer_id, work order IDs (customer_wo_id, system id), and address (partial/case-insensitive)
+      // Searches: system IDs (old/new), module IDs (old/new), customer_id, work order IDs (customer_wo_id, system id), and address (partial/case-insensitive)
       const client = await pool.connect();
       try {
         // Try to parse as numeric ID for system work order ID matching
@@ -2003,6 +2003,8 @@ export async function registerRoutes(
           LEFT JOIN public.users au ON w.assigned_user_id = au.id
           WHERE w.old_system_id = $1 
              OR w.new_system_id = $1
+             OR w.old_module_id = $1
+             OR w.new_module_id = $1
              OR w.customer_id = $1
              OR w.customer_wo_id = $1
              OR ($3 AND w.id = $4)
