@@ -168,6 +168,7 @@ export default function ProjectWorkOrders() {
   const [showRouteSheetDialog, setShowRouteSheetDialog] = useState(false);
   const [showStartSystemChangeout, setShowStartSystemChangeout] = useState(false);
   const [autoLaunchSystemChangeout, setAutoLaunchSystemChangeout] = useState(false);
+  const [autoLaunchChangeoutScope, setAutoLaunchChangeoutScope] = useState<"system" | "module" | "both">("system");
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [selectedServiceType, setSelectedServiceType] = useState<string>("all");
   const [selectedAssignedTo, setSelectedAssignedTo] = useState<string>("all");
@@ -2094,6 +2095,7 @@ export default function ProjectWorkOrders() {
           canEdit={hasPermission('workOrders.edit')}
           canSystemChangeout={hasPermission('workOrders.meterChangeout')}
           autoLaunchSystemChangeout={autoLaunchSystemChangeout}
+          autoLaunchChangeoutScope={autoLaunchChangeoutScope}
           operationalHours={{
             enabled: project?.operationalHoursEnabled ?? false,
             start: project?.operationalHoursStart ?? null,
@@ -3762,7 +3764,8 @@ export default function ProjectWorkOrders() {
           isOpen={showStartSystemChangeout}
           onClose={() => setShowStartSystemChangeout(false)}
           projectId={projectId}
-          onWorkOrderFound={(workOrder) => {
+          onWorkOrderFound={(workOrder, scope) => {
+            setAutoLaunchChangeoutScope(scope);
             setAutoLaunchSystemChangeout(true);
             setEditingWorkOrder(workOrder);
           }}

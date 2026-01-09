@@ -29,6 +29,7 @@ Preferred communication style: Simple, everyday language.
     - **Database Isolation**: Each project gets its own PostgreSQL schema (e.g., `projectName_projectID`).
     - **File Storage**: Configurable root directory with structure: `Project Files/ProjectName_ID/Work Orders/customerWoId/` for work order attachments, plus `Project Documents/` and `Project FTP Files/` subfolders. Legacy folders are automatically migrated.
 - **Work Order Management**: Create, edit, assign, track. Customizable statuses, audit fields (scheduledAt, scheduledBy, completedAt, completedBy), and completion validation. Calendar view with month/week/day views, drag-and-drop rescheduling, and unscheduled work order search panel.
+- **System Changeout Workflow**: Dynamic scope selection (Change System, Change Module, Change Both) determines which fields are shown throughout the wizard. Supports flexible old reading capture with toggle switches when existing readings are present. Module and system data are handled independently based on selected scope.
 - **Operational Hours**: Per-project scheduling restrictions with configurable start/end times, operational days (Mon-Sun), and holiday exclusions. Per-project timezone support with fallback to global timezone setting. Uses `date-fns-tz` for deterministic timezone conversion.
 - **User Management**: Role assignment via subroles, user lock/unlock, password reset.
 - **Project Management**: Project creation, editing, and per-project database backup/restore.

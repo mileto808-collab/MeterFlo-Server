@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { GPSCapture } from "./gps-capture";
 import SignaturePad, { SignaturePadRef } from "./signature-pad";
@@ -67,15 +68,20 @@ interface CapturedPhoto {
   type: "trouble" | "before" | "after";
 }
 
+export type ChangeoutScope = "system" | "module" | "both";
+
 interface SystemChangeoutData {
   canChange: boolean;
   troubleCode: string | null;
   troubleNote: string;
   troublePhotos: CapturedPhoto[];
   oldSystemReading: string;
+  oldModuleReading: string;
   beforePhotos: CapturedPhoto[];
   newSystemId: string;
   newSystemReading: string;
+  newModuleId: string;
+  newModuleReading: string;
   afterPhotos: CapturedPhoto[];
   gpsCoordinates: string;
   completionNotes: string;
@@ -92,6 +98,9 @@ interface SystemChangeoutWizardProps {
   oldSystemId?: string | null;
   oldSystemType?: string | null;
   newSystemType?: string | null;
+  oldModuleId?: string | null;
+  oldModuleType?: string | null;
+  newModuleType?: string | null;
   status?: string | null;
   trouble?: string | null;
   notes?: string | null;
@@ -99,7 +108,10 @@ interface SystemChangeoutWizardProps {
   troubleCodes: Array<{ id: number; code: string; label: string }>;
   existingOldReading?: string | null;
   existingNewReading?: string | null;
+  existingOldModuleReading?: string | null;
+  existingNewModuleReading?: string | null;
   existingGps?: string | null;
+  scope: ChangeoutScope;
   onComplete: (data: SystemChangeoutData) => Promise<void>;
 }
 
@@ -143,6 +155,9 @@ export function SystemChangeoutWizard({
   oldSystemId,
   oldSystemType,
   newSystemType,
+  oldModuleId,
+  oldModuleType,
+  newModuleType,
   status,
   trouble,
   notes,
@@ -150,7 +165,10 @@ export function SystemChangeoutWizard({
   troubleCodes,
   existingOldReading,
   existingNewReading,
+  existingOldModuleReading,
+  existingNewModuleReading,
   existingGps,
+  scope,
   onComplete,
 }: SystemChangeoutWizardProps) {
   const { toast } = useToast();
@@ -166,6 +184,10 @@ export function SystemChangeoutWizard({
   const [isScanning, setIsScanning] = useState(false);
   const scannerRef = useRef<HTMLDivElement>(null);
   const [previewPhoto, setPreviewPhoto] = useState<{ photo: CapturedPhoto; type: "trouble" | "before" | "after"; index: number } | null>(null);
+  
+  // Toggle states for optional reading capture
+  const [captureOldSystemReading, setCaptureOldSystemReading] = useState(!existingOldReading);
+  const [captureOldModuleReading, setCaptureOldModuleReading] = useState(!existingOldModuleReading);
 
   const [data, setData] = useState<SystemChangeoutData>({
     canChange: true,
@@ -173,15 +195,36 @@ export function SystemChangeoutWizard({
     troubleNote: "",
     troublePhotos: [],
     oldSystemReading: existingOldReading || "",
+    oldModuleReading: existingOldModuleReading || "",
     beforePhotos: [],
     newSystemId: "",
     newSystemReading: existingNewReading || "",
+    newModuleId: "",
+    newModuleReading: existingNewModuleReading || "",
     afterPhotos: [],
     gpsCoordinates: existingGps || "",
     completionNotes: "",
     signatureData: null,
     signatureName: "",
   });
+  
+  // Determine the effective display mode based on scope and available IDs
+  const getDisplayMode = (): "system" | "module" | "both" => {
+    if (scope === "both") return "both";
+    if (scope === "module") return "module";
+    return "system";
+  };
+  
+  const displayMode = getDisplayMode();
+  
+  // Dynamic step label based on scope
+  const getCanChangeLabel = (): string => {
+    switch (displayMode) {
+      case "module": return "Can Module Be Changed?";
+      case "both": return "Can System & Module Be Changed?";
+      default: return "Can System Be Changed?";
+    }
+  };
 
   const currentSteps = data.canChange ? successSteps : troubleSteps;
   const currentStepIndex = currentSteps.indexOf(currentStep);
@@ -244,19 +287,24 @@ export function SystemChangeoutWizard({
       troubleNote: "",
       troublePhotos: [],
       oldSystemReading: existingOldReading || "",
+      oldModuleReading: existingOldModuleReading || "",
       beforePhotos: [],
       newSystemId: "",
       newSystemReading: existingNewReading || "",
+      newModuleId: "",
+      newModuleReading: existingNewModuleReading || "",
       afterPhotos: [],
       gpsCoordinates: existingGps || "",
       completionNotes: "",
       signatureData: null,
       signatureName: "",
     });
+    setCaptureOldSystemReading(!existingOldReading);
+    setCaptureOldModuleReading(!existingOldModuleReading);
     data.troublePhotos.forEach((p) => URL.revokeObjectURL(p.preview));
     data.beforePhotos.forEach((p) => URL.revokeObjectURL(p.preview));
     data.afterPhotos.forEach((p) => URL.revokeObjectURL(p.preview));
-  }, [existingOldReading, existingNewReading, existingGps]);
+  }, [existingOldReading, existingNewReading, existingOldModuleReading, existingNewModuleReading, existingGps]);
 
   const handleClose = () => {
     resetWizard();
@@ -312,16 +360,45 @@ export function SystemChangeoutWizard({
         return true;
       case "troubleCapture":
         return !!data.troubleCode && data.troublePhotos.length >= 1;
-      case "oldReading":
-        return isValidSystemReading(data.oldSystemReading);
+      case "oldReading": {
+        // Validate based on scope and capture toggles
+        const needsSystemReading = (displayMode === "system" || displayMode === "both");
+        const needsModuleReading = (displayMode === "module" || displayMode === "both");
+        
+        const systemReadingValid = !needsSystemReading || 
+          (!captureOldSystemReading && !!existingOldReading) || 
+          isValidSystemReading(data.oldSystemReading);
+        
+        const moduleReadingValid = !needsModuleReading || 
+          (!captureOldModuleReading && !!existingOldModuleReading) || 
+          isValidSystemReading(data.oldModuleReading);
+        
+        return systemReadingValid && moduleReadingValid;
+      }
       case "beforePhotos":
         return data.beforePhotos.length >= 1;
       case "physicalChange":
         return true;
-      case "newSystemId":
-        return !!data.newSystemId.trim();
-      case "newReading":
-        return isValidSystemReading(data.newSystemReading);
+      case "newSystemId": {
+        // Validate based on scope
+        const needsNewSystemId = (displayMode === "system" || displayMode === "both");
+        const needsNewModuleId = (displayMode === "module" || displayMode === "both");
+        
+        const systemIdValid = !needsNewSystemId || !!data.newSystemId.trim();
+        const moduleIdValid = !needsNewModuleId || !!data.newModuleId.trim();
+        
+        return systemIdValid && moduleIdValid;
+      }
+      case "newReading": {
+        // Validate based on scope
+        const needsNewSystemReading = (displayMode === "system" || displayMode === "both");
+        const needsNewModuleReading = (displayMode === "module" || displayMode === "both");
+        
+        const systemReadingValid = !needsNewSystemReading || isValidSystemReading(data.newSystemReading);
+        const moduleReadingValid = !needsNewModuleReading || isValidSystemReading(data.newModuleReading);
+        
+        return systemReadingValid && moduleReadingValid;
+      }
       case "afterPhotos":
         return data.afterPhotos.length >= 1;
       case "gps":
@@ -330,14 +407,33 @@ export function SystemChangeoutWizard({
         return true; // Notes are optional
       case "signature":
         return !!data.signatureName.trim();
-      case "confirm":
-        // Final validation: check all required fields based on path
+      case "confirm": {
+        // Final validation: check all required fields based on path and scope
         if (data.canChange) {
-          // Success path requires: old reading, new system ID, new reading, before/after photos, GPS, signature
+          const needsSystemData = (displayMode === "system" || displayMode === "both");
+          const needsModuleData = (displayMode === "module" || displayMode === "both");
+          
+          // System validations
+          const oldSystemReadingValid = !needsSystemData || 
+            (!captureOldSystemReading && !!existingOldReading) || 
+            isValidSystemReading(data.oldSystemReading);
+          const newSystemIdValid = !needsSystemData || !!data.newSystemId.trim();
+          const newSystemReadingValid = !needsSystemData || isValidSystemReading(data.newSystemReading);
+          
+          // Module validations
+          const oldModuleReadingValid = !needsModuleData || 
+            (!captureOldModuleReading && !!existingOldModuleReading) || 
+            isValidSystemReading(data.oldModuleReading);
+          const newModuleIdValid = !needsModuleData || !!data.newModuleId.trim();
+          const newModuleReadingValid = !needsModuleData || isValidSystemReading(data.newModuleReading);
+          
           return (
-            isValidSystemReading(data.oldSystemReading) &&
-            !!data.newSystemId.trim() &&
-            isValidSystemReading(data.newSystemReading) &&
+            oldSystemReadingValid &&
+            newSystemIdValid &&
+            newSystemReadingValid &&
+            oldModuleReadingValid &&
+            newModuleIdValid &&
+            newModuleReadingValid &&
             data.beforePhotos.length >= 1 &&
             data.afterPhotos.length >= 1 &&
             isValidGps(data.gpsCoordinates) &&
@@ -347,6 +443,7 @@ export function SystemChangeoutWizard({
           // Trouble path requires: trouble code, trouble photos
           return !!data.troubleCode && data.troublePhotos.length >= 1;
         }
+      }
       default:
         return false;
     }
@@ -538,15 +635,33 @@ export function SystemChangeoutWizard({
         { facingMode: "environment" },
         config,
         (decodedText) => {
-          // Success - stop scanner and set the value
-          setData((prev) => ({ ...prev, newSystemId: decodedText }));
+          // Determine which field to set based on scope and current state
+          setData((prev) => {
+            const showNewSystemId = scope === "system" || scope === "both";
+            const showNewModuleId = scope === "module" || scope === "both";
+            const capturingSystem = showNewSystemId && !prev.newSystemId;
+            
+            if (capturingSystem) {
+              return { ...prev, newSystemId: decodedText };
+            } else if (showNewModuleId) {
+              return { ...prev, newModuleId: decodedText };
+            }
+            return prev;
+          });
+          
+          // Determine label for toast
+          const showNewSystemId = scope === "system" || scope === "both";
+          const showNewModuleId = scope === "module" || scope === "both";
+          const capturingSystemForToast = showNewSystemId && !data.newSystemId;
+          const fieldLabel = capturingSystemForToast ? "System" : "Module";
+          
           setIsScanning(false);
           setSystemIdInputMode(null);
           html5QrCode.stop().catch(() => {});
           scannerInstanceRef.current = null;
           toast({
             title: "Scanned Successfully",
-            description: `System ID: ${decodedText}`,
+            description: `${fieldLabel} ID: ${decodedText}`,
           });
         },
         () => {
@@ -563,7 +678,7 @@ export function SystemChangeoutWizard({
       });
       setSystemIdInputMode(null);
     }
-  }, [toast]);
+  }, [toast, scope, data.newSystemId]);
 
   // Clean up scanner when mode changes or component unmounts
   useEffect(() => {
@@ -655,6 +770,16 @@ export function SystemChangeoutWizard({
           const troubleCode = troubleCodes.find(tc => tc.code.toLowerCase() === code.toLowerCase());
           return troubleCode ? troubleCode.label : null;
         };
+        
+        // Dynamic question text based on scope
+        const getQuestionText = () => {
+          switch (displayMode) {
+            case "module": return "Can this module be changed today?";
+            case "both": return "Can the system and module be changed today?";
+            default: return "Can this system be changed today?";
+          }
+        };
+        
         return (
           <div className="space-y-4">
             <Card>
@@ -679,15 +804,31 @@ export function SystemChangeoutWizard({
                   </div>
                 </div>
 
-                <div className="flex items-start gap-3">
-                  <Gauge className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-sm text-muted-foreground">Old System ID</p>
-                    <p className="font-medium break-all" data-testid="text-wizard-system-id">
-                      {oldSystemId || "N/A"}
-                    </p>
+                {/* Show System ID for system or both modes */}
+                {(displayMode === "system" || displayMode === "both") && (
+                  <div className="flex items-start gap-3">
+                    <Gauge className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm text-muted-foreground">Old System ID</p>
+                      <p className="font-medium break-all" data-testid="text-wizard-system-id">
+                        {oldSystemId || "N/A"}
+                      </p>
+                    </div>
                   </div>
-                </div>
+                )}
+                
+                {/* Show Module ID for module or both modes */}
+                {(displayMode === "module" || displayMode === "both") && (
+                  <div className="flex items-start gap-3">
+                    <Wrench className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm text-muted-foreground">Old Module ID</p>
+                      <p className="font-medium break-all" data-testid="text-wizard-module-id">
+                        {oldModuleId || "N/A"}
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 <div className="flex items-start gap-3">
                   <ClipboardCheck className={`h-5 w-5 mt-0.5 shrink-0 ${isTrouble ? "text-amber-500" : "text-muted-foreground"}`} />
@@ -719,7 +860,7 @@ export function SystemChangeoutWizard({
             </Card>
 
             <p className="text-center text-muted-foreground">
-              Can this system be changed today?
+              {getQuestionText()}
             </p>
             <div className="grid grid-cols-2 gap-4">
               <Button
@@ -798,33 +939,118 @@ export function SystemChangeoutWizard({
         );
 
       case "oldReading": {
-        const oldReadingError = getSystemReadingError(data.oldSystemReading);
+        const oldSystemReadingError = getSystemReadingError(data.oldSystemReading);
+        const oldModuleReadingError = getSystemReadingError(data.oldModuleReading);
+        
+        // Determine description text based on scope
+        const getReadingDescription = () => {
+          switch (displayMode) {
+            case "module": return "Record the final reading from the old module before removal.";
+            case "both": return "Record the final readings from the old system and module before removal.";
+            default: return "Record the final reading from the old system before removal.";
+          }
+        };
+        
+        // Check if we should show system reading
+        const showSystemReading = displayMode === "system" || displayMode === "both";
+        // Check if we should show module reading
+        const showModuleReading = displayMode === "module" || displayMode === "both";
+        
         return (
           <div className="space-y-4">
             <div className="text-center mb-4">
               <Wrench className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
               <p className="text-muted-foreground">
-                Record the final reading from the old system before removal.
+                {getReadingDescription()}
               </p>
             </div>
-            <div className="space-y-2">
-              <Label>Old System Final Reading *</Label>
-              <Input
-                type="text"
-                inputMode="numeric"
-                value={data.oldSystemReading}
-                onChange={(e) => setData((prev) => ({ ...prev, oldSystemReading: e.target.value }))}
-                placeholder="Enter system reading (digits only)..."
-                className={`text-lg text-center ${oldReadingError && data.oldSystemReading ? "border-destructive" : ""}`}
-                data-testid="input-old-system-reading"
-              />
-              {oldReadingError && data.oldSystemReading && (
-                <p className="text-sm text-destructive">{oldReadingError}</p>
-              )}
-              <p className="text-xs text-muted-foreground">Enter digits only. Leading zeros are preserved (e.g., 0001).</p>
-            </div>
+            
+            {/* Old System Reading Section */}
+            {showSystemReading && (
+              <div className="space-y-2">
+                {existingOldReading && (
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm">Capture new old system reading?</Label>
+                    <Switch
+                      checked={captureOldSystemReading}
+                      onCheckedChange={setCaptureOldSystemReading}
+                      data-testid="switch-capture-old-system-reading"
+                    />
+                  </div>
+                )}
+                {(captureOldSystemReading || !existingOldReading) && (
+                  <>
+                    <Label>Old System Final Reading *</Label>
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      value={data.oldSystemReading}
+                      onChange={(e) => setData((prev) => ({ ...prev, oldSystemReading: e.target.value }))}
+                      placeholder="Enter system reading (digits only)..."
+                      className={`text-lg text-center ${oldSystemReadingError && data.oldSystemReading ? "border-destructive" : ""}`}
+                      data-testid="input-old-system-reading"
+                    />
+                    {oldSystemReadingError && data.oldSystemReading && (
+                      <p className="text-sm text-destructive">{oldSystemReadingError}</p>
+                    )}
+                    <p className="text-xs text-muted-foreground">Enter digits only. Leading zeros are preserved (e.g., 0001).</p>
+                  </>
+                )}
+                {!captureOldSystemReading && existingOldReading && (
+                  <Card className="bg-muted/50">
+                    <CardContent className="pt-4">
+                      <p className="text-sm text-muted-foreground">Current reading:</p>
+                      <p className="font-medium">{existingOldReading}</p>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            )}
+            
+            {/* Old Module Reading Section */}
+            {showModuleReading && (
+              <div className="space-y-2">
+                {existingOldModuleReading && (
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm">Capture new old module reading?</Label>
+                    <Switch
+                      checked={captureOldModuleReading}
+                      onCheckedChange={setCaptureOldModuleReading}
+                      data-testid="switch-capture-old-module-reading"
+                    />
+                  </div>
+                )}
+                {(captureOldModuleReading || !existingOldModuleReading) && (
+                  <>
+                    <Label>Old Module Final Reading *</Label>
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      value={data.oldModuleReading}
+                      onChange={(e) => setData((prev) => ({ ...prev, oldModuleReading: e.target.value }))}
+                      placeholder="Enter module reading (digits only)..."
+                      className={`text-lg text-center ${oldModuleReadingError && data.oldModuleReading ? "border-destructive" : ""}`}
+                      data-testid="input-old-module-reading"
+                    />
+                    {oldModuleReadingError && data.oldModuleReading && (
+                      <p className="text-sm text-destructive">{oldModuleReadingError}</p>
+                    )}
+                    <p className="text-xs text-muted-foreground">Enter digits only. Leading zeros are preserved (e.g., 0001).</p>
+                  </>
+                )}
+                {!captureOldModuleReading && existingOldModuleReading && (
+                  <Card className="bg-muted/50">
+                    <CardContent className="pt-4">
+                      <p className="text-sm text-muted-foreground">Current reading:</p>
+                      <p className="font-medium">{existingOldModuleReading}</p>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            )}
 
-            {oldSystemType && (
+            {/* Show type verification cards */}
+            {showSystemReading && oldSystemType && (
               <Card className="bg-muted/50">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -834,6 +1060,20 @@ export function SystemChangeoutWizard({
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm" data-testid="text-verify-old-system-type">{oldSystemType}</p>
+                </CardContent>
+              </Card>
+            )}
+            
+            {showModuleReading && oldModuleType && (
+              <Card className="bg-muted/50">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium flex items-center gap-2">
+                    <Wrench className="h-4 w-4" />
+                    Verify Old Module Type
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm" data-testid="text-verify-old-module-type">{oldModuleType}</p>
                 </CardContent>
               </Card>
             )}
@@ -867,22 +1107,46 @@ export function SystemChangeoutWizard({
           </div>
         );
 
-      case "physicalChange":
+      case "physicalChange": {
+        // Dynamic title and content based on scope
+        const getChangeoutTitle = () => {
+          switch (displayMode) {
+            case "module": return "Perform Physical Module Changeout";
+            case "both": return "Perform Physical Changeout";
+            default: return "Perform Physical Changeout";
+          }
+        };
+        
+        const getChangeoutDescription = () => {
+          switch (displayMode) {
+            case "module": return "Safely remove the old module and install the new module. When complete, click Next to continue.";
+            case "both": return "Safely remove the old system and module, then install the new ones. When complete, click Next to continue.";
+            default: return "Safely remove the old system and install the new system. When complete, click Next to continue.";
+          }
+        };
+        
         return (
           <div className="space-y-4 text-center">
             <Wrench className="h-16 w-16 mx-auto text-primary" />
-            <h3 className="text-lg font-semibold">Perform Physical System Changeout</h3>
+            <h3 className="text-lg font-semibold">{getChangeoutTitle()}</h3>
             <p className="text-muted-foreground">
-              Safely remove the old system and install the new system.
-              When complete, click Next to continue.
+              {getChangeoutDescription()}
             </p>
             <Card className="bg-muted/50">
               <CardContent className="pt-4">
                 <ul className="text-left text-sm space-y-2">
-                  <li className="flex items-center gap-2">
-                    <Check className="h-4 w-4 text-green-600" />
-                    Old system reading recorded: {data.oldSystemReading}
-                  </li>
+                  {(displayMode === "system" || displayMode === "both") && data.oldSystemReading && (
+                    <li className="flex items-center gap-2">
+                      <Check className="h-4 w-4 text-green-600" />
+                      Old system reading recorded: {data.oldSystemReading}
+                    </li>
+                  )}
+                  {(displayMode === "module" || displayMode === "both") && data.oldModuleReading && (
+                    <li className="flex items-center gap-2">
+                      <Check className="h-4 w-4 text-green-600" />
+                      Old module reading recorded: {data.oldModuleReading}
+                    </li>
+                  )}
                   <li className="flex items-center gap-2">
                     <Check className="h-4 w-4 text-green-600" />
                     Before photos captured: {data.beforePhotos.length}
@@ -892,206 +1156,318 @@ export function SystemChangeoutWizard({
             </Card>
           </div>
         );
+      }
 
-      case "newSystemId":
+      case "newSystemId": {
+        const showNewSystemId = displayMode === "system" || displayMode === "both";
+        const showNewModuleId = displayMode === "module" || displayMode === "both";
+        
+        // Determine dynamic description
+        const getNewIdDescription = () => {
+          switch (displayMode) {
+            case "module": return "Capture the new module ID by scanning or entering manually.";
+            case "both": return "Capture the new system and module IDs by scanning or entering manually.";
+            default: return "Capture the new system ID by scanning or entering manually.";
+          }
+        };
+        
+        // Check if both IDs are captured (for "both" mode)
+        const systemIdCaptured = !showNewSystemId || !!data.newSystemId;
+        const moduleIdCaptured = !showNewModuleId || !!data.newModuleId;
+        const allCaptured = systemIdCaptured && moduleIdCaptured;
+        
+        // Determine which field to focus on
+        const capturingSystem = showNewSystemId && !data.newSystemId;
+        const capturingModule = showNewModuleId && !data.newModuleId && (!showNewSystemId || data.newSystemId);
+        
         return (
           <div className="space-y-4">
             <div className="text-center mb-4">
               <ScanBarcode className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
               <p className="text-muted-foreground">
-                Capture the new system ID by scanning or entering manually.
+                {getNewIdDescription()}
               </p>
             </div>
             
-            {data.newSystemId ? (
-              <div className="space-y-3">
-                <Card className="bg-muted/50">
-                  <CardContent className="pt-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <Label className="text-xs text-muted-foreground">New System ID</Label>
-                        <p className="text-lg font-medium break-all" data-testid="text-new-system-id">{data.newSystemId}</p>
+            {/* Show captured IDs */}
+            {data.newSystemId && showNewSystemId && (
+              <Card className="bg-muted/50">
+                <CardContent className="pt-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <Label className="text-xs text-muted-foreground">New System ID</Label>
+                      <p className="text-lg font-medium break-all" data-testid="text-new-system-id">{data.newSystemId}</p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setData((prev) => ({ ...prev, newSystemId: "" }));
+                        setSystemIdInputMode(null);
+                      }}
+                      data-testid="button-clear-system-id"
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+            
+            {data.newModuleId && showNewModuleId && (
+              <Card className="bg-muted/50">
+                <CardContent className="pt-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <Label className="text-xs text-muted-foreground">New Module ID</Label>
+                      <p className="text-lg font-medium break-all" data-testid="text-new-module-id">{data.newModuleId}</p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setData((prev) => ({ ...prev, newModuleId: "" }));
+                        setSystemIdInputMode(null);
+                      }}
+                      data-testid="button-clear-module-id"
+                    >
+                      Clear
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+            
+            {/* Show input controls when not all IDs are captured */}
+            {!allCaptured && (
+              <>
+                {capturingSystem && (
+                  <div className="p-2 bg-primary/10 rounded-md text-center text-sm font-medium">
+                    Capturing: New System ID
+                  </div>
+                )}
+                {capturingModule && (
+                  <div className="p-2 bg-primary/10 rounded-md text-center text-sm font-medium">
+                    Capturing: New Module ID
+                  </div>
+                )}
+                
+                {systemIdInputMode === "barcode" || systemIdInputMode === "qr" ? (
+                  <div className="space-y-4">
+                    <div 
+                      ref={scannerRef} 
+                      id="qr-reader" 
+                      className="w-full rounded-md overflow-hidden"
+                      style={{ minHeight: "250px" }}
+                    />
+                    {isScanning && (
+                      <div className="flex items-center justify-center gap-2 text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Scanning for {systemIdInputMode === "qr" ? "QR code" : "barcode"}...</span>
                       </div>
+                    )}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full"
+                      onClick={() => {
+                        setSystemIdInputMode(null);
+                        setIsScanning(false);
+                      }}
+                      data-testid="button-cancel-scan"
+                    >
+                      <ArrowLeft className="h-4 w-4 mr-2" />
+                      Back to Options
+                    </Button>
+                  </div>
+                    ) : systemIdInputMode === "manual" ? (
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label>Enter New {capturingSystem ? "System" : "Module"} ID *</Label>
+                      <Input
+                        type="text"
+                        placeholder={`Type or paste ${capturingSystem ? "system" : "module"} ID...`}
+                        className="text-lg"
+                        autoFocus
+                        value={manualSystemIdInput}
+                        onChange={(e) => setManualSystemIdInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            const input = manualSystemIdInput.trim();
+                            if (input) {
+                              if (capturingSystem) {
+                                setData((prev) => ({ ...prev, newSystemId: input }));
+                              } else {
+                                setData((prev) => ({ ...prev, newModuleId: input }));
+                              }
+                              setManualSystemIdInput("");
+                              setSystemIdInputMode(null);
+                            }
+                          }
+                        }}
+                        data-testid={capturingSystem ? "input-new-system-id" : "input-new-module-id"}
+                      />
+                    </div>
+                    <div className="flex gap-2">
                       <Button
                         type="button"
                         variant="outline"
-                        size="sm"
+                        className="flex-1"
                         onClick={() => {
-                          setData((prev) => ({ ...prev, newSystemId: "" }));
                           setSystemIdInputMode(null);
+                          setManualSystemIdInput("");
                         }}
-                        data-testid="button-clear-system-id"
+                        data-testid="button-cancel-manual"
                       >
-                        Clear
+                        Cancel
+                      </Button>
+                      <Button
+                        type="button"
+                        className="flex-1"
+                        onClick={() => {
+                          const input = manualSystemIdInput.trim();
+                          if (input) {
+                            if (capturingSystem) {
+                              setData((prev) => ({ ...prev, newSystemId: input }));
+                            } else {
+                              setData((prev) => ({ ...prev, newModuleId: input }));
+                            }
+                            setManualSystemIdInput("");
+                            setSystemIdInputMode(null);
+                          } else {
+                            toast({
+                              title: "Required",
+                              description: `Please enter a ${capturingSystem ? "system" : "module"} ID`,
+                              variant: "destructive",
+                            });
+                          }
+                        }}
+                        data-testid={capturingSystem ? "button-confirm-system-id" : "button-confirm-module-id"}
+                      >
+                        <Check className="h-4 w-4 mr-2" />
+                        Confirm
                       </Button>
                     </div>
-                  </CardContent>
-                </Card>
-              </div>
-            ) : systemIdInputMode === "barcode" || systemIdInputMode === "qr" ? (
-              <div className="space-y-4">
-                <div 
-                  ref={scannerRef} 
-                  id="qr-reader" 
-                  className="w-full rounded-md overflow-hidden"
-                  style={{ minHeight: "250px" }}
-                />
-                {isScanning && (
-                  <div className="flex items-center justify-center gap-2 text-muted-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Scanning for {systemIdInputMode === "qr" ? "QR code" : "barcode"}...</span>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-16 flex items-center justify-center gap-3"
+                      onClick={() => {
+                        setSystemIdInputMode("barcode");
+                        setIsScanning(true);
+                        setTimeout(() => {
+                          startScanner("barcode");
+                        }, 100);
+                      }}
+                      data-testid="button-scan-barcode"
+                    >
+                      <ScanBarcode className="h-6 w-6" />
+                      <span>Scan Barcode</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-16 flex items-center justify-center gap-3"
+                      onClick={() => {
+                        setSystemIdInputMode("qr");
+                        setIsScanning(true);
+                        setTimeout(() => {
+                          startScanner("qr");
+                        }, 100);
+                      }}
+                      data-testid="button-scan-qr"
+                    >
+                      <QrCode className="h-6 w-6" />
+                      <span>Scan QR Code</span>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-16 flex items-center justify-center gap-3"
+                      onClick={() => setSystemIdInputMode("manual")}
+                      data-testid="button-enter-manual"
+                    >
+                      <Keyboard className="h-6 w-6" />
+                      <span>Enter Manually</span>
+                    </Button>
                   </div>
                 )}
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => {
-                    setSystemIdInputMode(null);
-                    setIsScanning(false);
-                  }}
-                  data-testid="button-cancel-scan"
-                >
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  Back to Options
-                </Button>
-              </div>
-            ) : systemIdInputMode === "manual" ? (
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Enter New System ID *</Label>
-                  <Input
-                    type="text"
-                    placeholder="Type or paste system ID..."
-                    className="text-lg"
-                    autoFocus
-                    value={manualSystemIdInput}
-                    onChange={(e) => setManualSystemIdInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        const input = manualSystemIdInput.trim();
-                        if (input) {
-                          setData((prev) => ({ ...prev, newSystemId: input }));
-                          setManualSystemIdInput("");
-                        }
-                      }
-                    }}
-                    data-testid="input-new-system-id"
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="flex-1"
-                    onClick={() => {
-                      setSystemIdInputMode(null);
-                      setManualSystemIdInput("");
-                    }}
-                    data-testid="button-cancel-manual"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    type="button"
-                    className="flex-1"
-                    onClick={() => {
-                      const input = manualSystemIdInput.trim();
-                      if (input) {
-                        setData((prev) => ({ ...prev, newSystemId: input }));
-                        setManualSystemIdInput("");
-                      } else {
-                        toast({
-                          title: "Required",
-                          description: "Please enter a system ID",
-                          variant: "destructive",
-                        });
-                      }
-                    }}
-                    data-testid="button-confirm-system-id"
-                  >
-                    <Check className="h-4 w-4 mr-2" />
-                    Confirm
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-16 flex items-center justify-center gap-3"
-                  onClick={() => {
-                    setSystemIdInputMode("barcode");
-                    setIsScanning(true);
-                    setTimeout(() => {
-                      startScanner("barcode");
-                    }, 100);
-                  }}
-                  data-testid="button-scan-barcode"
-                >
-                  <ScanBarcode className="h-6 w-6" />
-                  <span>Scan Barcode</span>
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-16 flex items-center justify-center gap-3"
-                  onClick={() => {
-                    setSystemIdInputMode("qr");
-                    setIsScanning(true);
-                    setTimeout(() => {
-                      startScanner("qr");
-                    }, 100);
-                  }}
-                  data-testid="button-scan-qr"
-                >
-                  <QrCode className="h-6 w-6" />
-                  <span>Scan QR Code</span>
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-16 flex items-center justify-center gap-3"
-                  onClick={() => setSystemIdInputMode("manual")}
-                  data-testid="button-enter-manual"
-                >
-                  <Keyboard className="h-6 w-6" />
-                  <span>Enter Manually</span>
-                </Button>
-              </div>
+              </>
             )}
           </div>
         );
+      }
+
 
       case "newReading": {
-        const newReadingError = getSystemReadingError(data.newSystemReading);
+        const showNewSystemReading = displayMode === "system" || displayMode === "both";
+        const showNewModuleReading = displayMode === "module" || displayMode === "both";
+        const newSystemReadingError = getSystemReadingError(data.newSystemReading);
+        const newModuleReadingError = getSystemReadingError(data.newModuleReading || "");
+        
+        const getNewReadingDescription = () => {
+          switch (displayMode) {
+            case "module": return "Record the initial reading from the new module.";
+            case "both": return "Record the initial readings from the new system and module.";
+            default: return "Record the initial reading from the new system.";
+          }
+        };
+        
         return (
           <div className="space-y-4">
             <div className="text-center mb-4">
               <Wrench className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
               <p className="text-muted-foreground">
-                Record the initial reading from the new system.
+                {getNewReadingDescription()}
               </p>
             </div>
-            <div className="space-y-2">
-              <Label>New System Initial Reading *</Label>
-              <Input
-                type="text"
-                inputMode="numeric"
-                value={data.newSystemReading}
-                onChange={(e) => setData((prev) => ({ ...prev, newSystemReading: e.target.value }))}
-                placeholder="Enter system reading (digits only)..."
-                className={`text-lg text-center ${newReadingError && data.newSystemReading ? "border-destructive" : ""}`}
-                data-testid="input-new-system-reading"
-              />
-              {newReadingError && data.newSystemReading && (
-                <p className="text-sm text-destructive">{newReadingError}</p>
-              )}
-              <p className="text-xs text-muted-foreground">Enter digits only. Leading zeros are preserved (e.g., 0001).</p>
-            </div>
+            
+            {/* New System Reading */}
+            {showNewSystemReading && (
+              <div className="space-y-2">
+                <Label>New System Initial Reading *</Label>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  value={data.newSystemReading}
+                  onChange={(e) => setData((prev) => ({ ...prev, newSystemReading: e.target.value }))}
+                  placeholder="Enter system reading (digits only)..."
+                  className={`text-lg text-center ${newSystemReadingError && data.newSystemReading ? "border-destructive" : ""}`}
+                  data-testid="input-new-system-reading"
+                />
+                {newSystemReadingError && data.newSystemReading && (
+                  <p className="text-sm text-destructive">{newSystemReadingError}</p>
+                )}
+                <p className="text-xs text-muted-foreground">Enter digits only. Leading zeros are preserved (e.g., 0001).</p>
+              </div>
+            )}
+            
+            {/* New Module Reading */}
+            {showNewModuleReading && (
+              <div className="space-y-2">
+                <Label>New Module Initial Reading *</Label>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  value={data.newModuleReading || ""}
+                  onChange={(e) => setData((prev) => ({ ...prev, newModuleReading: e.target.value }))}
+                  placeholder="Enter module reading (digits only)..."
+                  className={`text-lg text-center ${newModuleReadingError && data.newModuleReading ? "border-destructive" : ""}`}
+                  data-testid="input-new-module-reading"
+                />
+                {newModuleReadingError && data.newModuleReading && (
+                  <p className="text-sm text-destructive">{newModuleReadingError}</p>
+                )}
+                <p className="text-xs text-muted-foreground">Enter digits only. Leading zeros are preserved (e.g., 0001).</p>
+              </div>
+            )}
 
-            {newSystemType && (
+            {newSystemType && showNewSystemReading && (
               <Card className="bg-muted/50">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -1299,7 +1675,7 @@ export function SystemChangeoutWizard({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Wrench className="h-5 w-5" />
-            {stepLabels[currentStep]}
+            {currentStep === "canChange" ? getCanChangeLabel() : stepLabels[currentStep]}
           </DialogTitle>
         </DialogHeader>
 

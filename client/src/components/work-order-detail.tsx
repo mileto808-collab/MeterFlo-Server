@@ -31,6 +31,16 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { ClipboardCheck } from "lucide-react";
+import {
   ArrowLeft,
   Save,
   Loader2,
@@ -88,6 +98,7 @@ interface WorkOrderDetailProps {
   canPrint?: boolean;
   onSystemChangeoutComplete?: () => void | Promise<void>;
   autoLaunchSystemChangeout?: boolean;
+  autoLaunchChangeoutScope?: "system" | "module" | "both";
   operationalHours?: OperationalHoursConfig;
   onScheduleInCalendar?: () => void;
   canScheduleInCalendar?: boolean;
@@ -119,6 +130,7 @@ export function WorkOrderDetail({
   canPrint = true,
   onSystemChangeoutComplete,
   autoLaunchSystemChangeout = false,
+  autoLaunchChangeoutScope,
   operationalHours,
   onScheduleInCalendar,
   canScheduleInCalendar = false,
@@ -126,6 +138,8 @@ export function WorkOrderDetail({
   const [openSections, setOpenSections] = useState<string[]>([]);
   const [showSystemChangeoutWizard, setShowSystemChangeoutWizard] = useState(false);
   const [isClaiming, setIsClaiming] = useState(false);
+  const [changeoutScope, setChangeoutScope] = useState<"system" | "module" | "both">("system");
+  const [showScopeDialog, setShowScopeDialog] = useState(false);
   const autoLaunchTriggered = useRef(false);
   
   // Watch form fields for header display - ensures UI updates immediately when form values change
@@ -167,8 +181,15 @@ export function WorkOrderDetail({
 
   const scheduledAtWarning = getOperationalHoursWarning(watchedScheduledAt);
 
-  // Claim work order and open system changeout wizard
-  const handleStartSystemChangeout = useCallback(async () => {
+  // Show scope selection dialog first
+  const handleStartSystemChangeout = useCallback(() => {
+    setShowScopeDialog(true);
+  }, []);
+  
+  // Handle scope selection and claim work order
+  const handleScopeSelected = useCallback(async (scope: "system" | "module" | "both") => {
+    setChangeoutScope(scope);
+    setShowScopeDialog(false);
     setIsClaiming(true);
     try {
       // Call claim endpoint - this will assign the work order to the current user
@@ -198,16 +219,22 @@ export function WorkOrderDetail({
     window.scrollTo({ top: 0, behavior: 'instant' });
   }, []);
 
-  // Auto-launch system changeout wizard if requested (with claim)
+  // Auto-launch system changeout wizard if requested
+  // When coming from scan workflow, scope is already selected, so skip the dialog
   useEffect(() => {
     if (autoLaunchSystemChangeout && canSystemChangeout && !autoLaunchTriggered.current) {
       autoLaunchTriggered.current = true;
-      // Wrap in async IIFE to ensure claim completes before wizard opens
-      void (async () => {
-        await handleStartSystemChangeout();
-      })();
+      // If scope is provided from scan workflow, use it directly (skip dialog)
+      if (autoLaunchChangeoutScope) {
+        setChangeoutScope(autoLaunchChangeoutScope);
+        // Since coming from scan, work order is already claimed, just open wizard
+        setShowSystemChangeoutWizard(true);
+      } else {
+        // Show scope selection dialog
+        handleStartSystemChangeout();
+      }
     }
-  }, [autoLaunchSystemChangeout, canSystemChangeout, handleStartSystemChangeout]);
+  }, [autoLaunchSystemChangeout, canSystemChangeout, autoLaunchChangeoutScope, handleStartSystemChangeout]);
 
   const getStatusBadge = (status: string) => {
     const statusConfig: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; className?: string }> = {
@@ -1383,12 +1410,16 @@ export function WorkOrderDetail({
       <SystemChangeoutWizard
         isOpen={showSystemChangeoutWizard}
         onClose={() => setShowSystemChangeoutWizard(false)}
+        scope={changeoutScope}
         workOrderId={workOrder.id}
         customerWoId={workOrder.customerWoId || `WO-${workOrder.id}`}
         address={workOrder.address}
         oldSystemId={workOrder.oldSystemId}
         oldSystemType={workOrder.oldSystemType}
         newSystemType={workOrder.newSystemType}
+        oldModuleId={workOrder.oldModuleId}
+        oldModuleType={workOrder.oldModuleType}
+        newModuleType={workOrder.newModuleType}
         status={workOrder.status}
         trouble={workOrder.trouble}
         notes={workOrder.notes}
@@ -1396,6 +1427,8 @@ export function WorkOrderDetail({
         troubleCodes={troubleCodes}
         existingOldReading={workOrder.oldSystemReading}
         existingNewReading={workOrder.newSystemReading}
+        existingOldModuleReading={workOrder.oldModuleReading}
+        existingNewModuleReading={workOrder.newModuleReading}
         existingGps={workOrder.gps}
         onComplete={async (data) => {
           const formData = new FormData();
@@ -1428,13 +1461,17 @@ export function WorkOrderDetail({
             troubleCode: data.troubleCode,
             troubleNote: data.troubleNote,
             oldSystemReading: data.oldSystemReading,
+            oldModuleReading: data.oldModuleReading,
             newSystemId: data.newSystemId,
             newSystemReading: data.newSystemReading,
+            newModuleId: data.newModuleId,
+            newModuleReading: data.newModuleReading,
             gpsCoordinates: data.gpsCoordinates,
             completionNotes: data.completionNotes,
             signatureData: data.signatureData,
             signatureName: data.signatureName,
             photoTypes,
+            changeoutScope,
           }));
           
           const response = await fetch(`/api/projects/${projectId}/work-orders/${workOrder.id}/system-changeout`, {
@@ -1453,6 +1490,70 @@ export function WorkOrderDetail({
           }
         }}
       />
+
+      {/* Scope Selection Dialog */}
+      <AlertDialog open={showScopeDialog} onOpenChange={setShowScopeDialog}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle data-testid="title-scope-select">What would you like to change?</AlertDialogTitle>
+            <AlertDialogDescription data-testid="text-scope-description">
+              Select what you're changing for this work order.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-3 py-4">
+            <Card 
+              className="cursor-pointer hover-elevate"
+              onClick={() => handleScopeSelected("system")}
+              data-testid="button-scope-system"
+            >
+              <CardContent className="flex items-center gap-4 p-4">
+                <div className="p-3 rounded-full bg-primary/10">
+                  <Gauge className="h-6 w-6 text-primary" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-medium">Change System</h3>
+                  <p className="text-sm text-muted-foreground">Replace the meter system only</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card 
+              className="cursor-pointer hover-elevate"
+              onClick={() => handleScopeSelected("module")}
+              data-testid="button-scope-module"
+            >
+              <CardContent className="flex items-center gap-4 p-4">
+                <div className="p-3 rounded-full bg-primary/10">
+                  <Wrench className="h-6 w-6 text-primary" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-medium">Change Module</h3>
+                  <p className="text-sm text-muted-foreground">Replace the module only</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card 
+              className="cursor-pointer hover-elevate"
+              onClick={() => handleScopeSelected("both")}
+              data-testid="button-scope-both"
+            >
+              <CardContent className="flex items-center gap-4 p-4">
+                <div className="p-3 rounded-full bg-primary/10">
+                  <ClipboardCheck className="h-6 w-6 text-primary" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-medium">Change Both</h3>
+                  <p className="text-sm text-muted-foreground">Replace both system and module</p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-scope">Cancel</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
