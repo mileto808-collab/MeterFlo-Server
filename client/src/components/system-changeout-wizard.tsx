@@ -341,23 +341,13 @@ export function SystemChangeoutWizard({
     return null;
   };
   
-  // Check if old reading matches the existing value (must be different)
+  // Validate old reading - user can enter same or different value
   const getOldSystemReadingError = (): string | null => {
-    const baseError = getSystemReadingError(data.oldSystemReading);
-    if (baseError) return baseError;
-    if (existingOldReading && data.oldSystemReading === existingOldReading) {
-      return "Please enter a different reading than the existing value";
-    }
-    return null;
+    return getSystemReadingError(data.oldSystemReading);
   };
   
   const getOldModuleReadingError = (): string | null => {
-    const baseError = getSystemReadingError(data.oldModuleReading);
-    if (baseError) return baseError;
-    if (existingOldModuleReading && data.oldModuleReading === existingOldModuleReading) {
-      return "Please enter a different reading than the existing value";
-    }
-    return null;
+    return getSystemReadingError(data.oldModuleReading);
   };
 
   const getGpsError = (gps: string | undefined | null): string | null => {
