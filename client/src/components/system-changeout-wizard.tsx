@@ -588,10 +588,21 @@ export function SystemChangeoutWizard({
   };
 
   const scannerInstanceRef = useRef<Html5Qrcode | null>(null);
+  const captureTargetRef = useRef<"system" | "module">("system");
+  const scannerBusyRef = useRef<boolean>(false);
 
-  const startScanner = useCallback(async (mode: "barcode" | "qr") => {
+  const startScanner = useCallback(async (mode: "barcode" | "qr", captureTarget: "system" | "module") => {
+    // Prevent concurrent scanner operations
+    if (scannerBusyRef.current) {
+      console.log("Scanner busy, ignoring start request");
+      return;
+    }
+    scannerBusyRef.current = true;
+    
+    // Track which field we're capturing for this scan session
+    captureTargetRef.current = captureTarget;
     try {
-      // Clean up any existing scanner
+      // Clean up any existing scanner - wait for it to fully stop
       if (scannerInstanceRef.current) {
         try {
           await scannerInstanceRef.current.stop();
@@ -635,29 +646,22 @@ export function SystemChangeoutWizard({
         { facingMode: "environment" },
         config,
         (decodedText) => {
-          // Determine which field to set based on scope and current state
-          setData((prev) => {
-            const showNewSystemId = scope === "system" || scope === "both";
-            const showNewModuleId = scope === "module" || scope === "both";
-            const capturingSystem = showNewSystemId && !prev.newSystemId;
-            
-            if (capturingSystem) {
-              return { ...prev, newSystemId: decodedText };
-            } else if (showNewModuleId) {
-              return { ...prev, newModuleId: decodedText };
-            }
-            return prev;
-          });
+          // Use the ref to determine which field to set - this is set when scanner starts
+          const target = captureTargetRef.current;
           
-          // Determine label for toast
-          const showNewSystemId = scope === "system" || scope === "both";
-          const showNewModuleId = scope === "module" || scope === "both";
-          const capturingSystemForToast = showNewSystemId && !data.newSystemId;
-          const fieldLabel = capturingSystemForToast ? "System" : "Module";
+          if (target === "system") {
+            setData((prev) => ({ ...prev, newSystemId: decodedText }));
+          } else {
+            setData((prev) => ({ ...prev, newModuleId: decodedText }));
+          }
+          
+          const fieldLabel = target === "system" ? "System" : "Module";
           
           setIsScanning(false);
           setSystemIdInputMode(null);
-          html5QrCode.stop().catch(() => {});
+          html5QrCode.stop().catch(() => {}).finally(() => {
+            scannerBusyRef.current = false;
+          });
           scannerInstanceRef.current = null;
           toast({
             title: "Scanned Successfully",
@@ -671,6 +675,7 @@ export function SystemChangeoutWizard({
     } catch (error: any) {
       console.error("Scanner error:", error);
       setIsScanning(false);
+      scannerBusyRef.current = false;
       toast({
         title: "Camera Error",
         description: error.message || "Could not access camera. Try manual entry instead.",
@@ -678,13 +683,15 @@ export function SystemChangeoutWizard({
       });
       setSystemIdInputMode(null);
     }
-  }, [toast, scope, data.newSystemId]);
+  }, [toast]);
 
   // Clean up scanner when mode changes or component unmounts
   useEffect(() => {
     return () => {
       if (scannerInstanceRef.current) {
-        scannerInstanceRef.current.stop().catch(() => {});
+        scannerInstanceRef.current.stop().catch(() => {}).finally(() => {
+          scannerBusyRef.current = false;
+        });
         scannerInstanceRef.current = null;
       }
     };
@@ -694,7 +701,9 @@ export function SystemChangeoutWizard({
   useEffect(() => {
     if (currentStep !== "newSystemId" || (!systemIdInputMode || systemIdInputMode === "manual" || systemIdInputMode === "choose")) {
       if (scannerInstanceRef.current) {
-        scannerInstanceRef.current.stop().catch(() => {});
+        scannerInstanceRef.current.stop().catch(() => {}).finally(() => {
+          scannerBusyRef.current = false;
+        });
         scannerInstanceRef.current = null;
         setIsScanning(false);
       }
@@ -1275,6 +1284,7 @@ export function SystemChangeoutWizard({
                       onClick={() => {
                         setSystemIdInputMode(null);
                         setIsScanning(false);
+                        scannerBusyRef.current = false;
                       }}
                       data-testid="button-cancel-scan"
                     >
@@ -1358,10 +1368,11 @@ export function SystemChangeoutWizard({
                       variant="outline"
                       className="h-16 flex items-center justify-center gap-3"
                       onClick={() => {
+                        const target = capturingSystem ? "system" : "module";
                         setSystemIdInputMode("barcode");
                         setIsScanning(true);
                         setTimeout(() => {
-                          startScanner("barcode");
+                          startScanner("barcode", target);
                         }, 100);
                       }}
                       data-testid="button-scan-barcode"
@@ -1374,10 +1385,11 @@ export function SystemChangeoutWizard({
                       variant="outline"
                       className="h-16 flex items-center justify-center gap-3"
                       onClick={() => {
+                        const target = capturingSystem ? "system" : "module";
                         setSystemIdInputMode("qr");
                         setIsScanning(true);
                         setTimeout(() => {
-                          startScanner("qr");
+                          startScanner("qr", target);
                         }, 100);
                       }}
                       data-testid="button-scan-qr"
