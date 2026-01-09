@@ -126,7 +126,7 @@ const stepLabels: Record<WizardStep, string> = {
   gps: "Capture GPS",
   notes: "Notes",
   signature: "Capture Signature",
-  confirm: "Confirm & Submit",
+  confirm: "Review & Submit",
 };
 
 const successSteps: WizardStep[] = [
@@ -1601,7 +1601,7 @@ export function SystemChangeoutWizard({
         return (
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-center">
-              {data.canChange ? "Confirm System Changeout" : "Confirm Trouble Report"}
+              {data.canChange ? "Review System Changeout" : "Review Trouble Report"}
             </h3>
             
             {data.canChange ? (
@@ -1619,6 +1619,13 @@ export function SystemChangeoutWizard({
                         <span className="text-muted-foreground">Old System ID:</span>
                         <span className="font-medium">{oldSystemId || "-"}</span>
                         
+                        {oldSystemType && (
+                          <>
+                            <span className="text-muted-foreground">Old System Type:</span>
+                            <span className="font-medium">{oldSystemType}</span>
+                          </>
+                        )}
+                        
                         <span className="text-muted-foreground">Old System Reading:</span>
                         <span className="font-medium">{data.oldSystemReading}</span>
                       </>
@@ -1628,6 +1635,13 @@ export function SystemChangeoutWizard({
                       <>
                         <span className="text-muted-foreground">Old Module ID:</span>
                         <span className="font-medium">{oldModuleId || "-"}</span>
+                        
+                        {oldModuleType && (
+                          <>
+                            <span className="text-muted-foreground">Old Module Type:</span>
+                            <span className="font-medium">{oldModuleType}</span>
+                          </>
+                        )}
                         
                         <span className="text-muted-foreground">Old Module Reading:</span>
                         <span className="font-medium">{data.oldModuleReading}</span>
@@ -1639,6 +1653,13 @@ export function SystemChangeoutWizard({
                         <span className="text-muted-foreground">New System ID:</span>
                         <span className="font-medium">{data.newSystemId}</span>
                         
+                        {newSystemType && (
+                          <>
+                            <span className="text-muted-foreground">New System Type:</span>
+                            <span className="font-medium">{newSystemType}</span>
+                          </>
+                        )}
+                        
                         <span className="text-muted-foreground">New System Reading:</span>
                         <span className="font-medium">{data.newSystemReading}</span>
                       </>
@@ -1648,6 +1669,13 @@ export function SystemChangeoutWizard({
                       <>
                         <span className="text-muted-foreground">New Module ID:</span>
                         <span className="font-medium">{data.newModuleId}</span>
+                        
+                        {newModuleType && (
+                          <>
+                            <span className="text-muted-foreground">New Module Type:</span>
+                            <span className="font-medium">{newModuleType}</span>
+                          </>
+                        )}
                         
                         <span className="text-muted-foreground">New Module Reading:</span>
                         <span className="font-medium">{data.newModuleReading}</span>
