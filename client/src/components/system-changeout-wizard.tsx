@@ -125,7 +125,7 @@ const stepLabels: Record<WizardStep, string> = {
   afterPhotos: "After Photos",
   gps: "Capture GPS",
   notes: "Notes",
-  signature: "Signature",
+  signature: "Capture Signature",
   confirm: "Confirm & Submit",
 };
 
@@ -418,7 +418,7 @@ export function SystemChangeoutWizard({
       case "notes":
         return true; // Notes are optional
       case "signature":
-        return !!data.signatureName.trim();
+        return !!data.signatureData && !!data.signatureName.trim();
       case "confirm": {
         // Final validation: check all required fields based on path and scope
         if (data.canChange) {
@@ -445,6 +445,7 @@ export function SystemChangeoutWizard({
             data.beforePhotos.length >= 1 &&
             data.afterPhotos.length >= 1 &&
             isValidGps(data.gpsCoordinates) &&
+            !!data.signatureData &&
             !!data.signatureName.trim()
           );
         } else {
