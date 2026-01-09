@@ -43,7 +43,7 @@ export function RouteSheetDialog({
   projectName,
 }: RouteSheetDialogProps) {
   const [codeType, setCodeType] = useState<"barcode" | "qrcode">("barcode");
-  const [systemIdField, setSystemIdField] = useState<"old" | "new">("old");
+  const [systemIdField, setSystemIdField] = useState<"old" | "new" | "oldModule" | "newModule">("old");
   const [isGenerating, setIsGenerating] = useState(false);
 
   const generateBarcode = async (text: string): Promise<string> => {
@@ -89,13 +89,20 @@ export function RouteSheetDialog({
       const codeImages: { wo: WorkOrderData; codeImage: string }[] = [];
 
       for (const wo of workOrders) {
-        const systemNumber = systemIdField === "old" 
-          ? (wo.oldSystemNumber || "N/A")
-          : (wo.newSystemNumber || "N/A");
+        let idValue: string;
+        if (systemIdField === "old") {
+          idValue = wo.oldSystemNumber || "N/A";
+        } else if (systemIdField === "new") {
+          idValue = wo.newSystemNumber || "N/A";
+        } else if (systemIdField === "oldModule") {
+          idValue = wo.oldModuleId || "N/A";
+        } else {
+          idValue = wo.newModuleId || "N/A";
+        }
         const codeImage =
           codeType === "barcode"
-            ? await generateBarcode(systemNumber !== "N/A" ? systemNumber : "")
-            : await generateQRCode(systemNumber !== "N/A" ? systemNumber : "");
+            ? await generateBarcode(idValue !== "N/A" ? idValue : "")
+            : await generateQRCode(idValue !== "N/A" ? idValue : "");
         codeImages.push({ wo, codeImage });
       }
 
@@ -110,28 +117,37 @@ export function RouteSheetDialog({
       }
 
       const rows: string[] = [];
-      const systemIdLabel = systemIdField === "old" ? "Old System ID" : "New System ID";
+      const systemIdLabel = systemIdField === "old" ? "Old System ID" 
+        : systemIdField === "new" ? "New System ID"
+        : systemIdField === "oldModule" ? "Old Module ID"
+        : "New Module ID";
       for (let i = 0; i < codeImages.length; i += columnsPerRow) {
         const rowItems = codeImages.slice(i, i + columnsPerRow);
         const cells = rowItems
           .map(({ wo, codeImage }) => {
-            const systemValue = systemIdField === "old" ? wo.oldSystemNumber : wo.newSystemNumber;
-            const systemDisplay = escapeHtml(systemValue || "N/A");
+            let idValue: string | null | undefined;
+            if (systemIdField === "old") {
+              idValue = wo.oldSystemNumber;
+            } else if (systemIdField === "new") {
+              idValue = wo.newSystemNumber;
+            } else if (systemIdField === "oldModule") {
+              idValue = wo.oldModuleId;
+            } else {
+              idValue = wo.newModuleId;
+            }
+            const idDisplay = escapeHtml(idValue || "N/A");
             const escapedWoId = escapeHtml(wo.customerWoId);
             const escapedAddress = escapeHtml(wo.address || "No address");
-            const moduleValue = systemIdField === "old" ? wo.oldModuleId : wo.newModuleId;
-            const moduleDisplay = moduleValue ? escapeHtml(moduleValue) : null;
             return `
             <td style="width: ${cellWidth}px; height: ${cellHeight}px; padding: ${cellPadding}px; border: 1px solid #ddd; vertical-align: top; text-align: center;">
               <div style="font-weight: bold; font-size: 12px; margin-bottom: 4px;">WO ID: ${escapedWoId}</div>
               <div style="font-size: 11px; color: #333; margin-bottom: 4px; min-height: 14px;">${escapedAddress}</div>
-              ${moduleDisplay ? `<div style="font-size: 9px; color: #555; margin-bottom: 4px;">Module: ${moduleDisplay}</div>` : ""}
               ${
                 codeImage
                   ? `<img src="${codeImage}" style="max-width: ${cellWidth - 20}px; max-height: ${codeType === "barcode" ? 50 : 70}px;" />`
-                  : `<div style="font-size: 10px; color: #999; padding: 10px;">No system number</div>`
+                  : `<div style="font-size: 10px; color: #999; padding: 10px;">No ${systemIdField.includes("Module") ? "module" : "system"} ID</div>`
               }
-              ${codeType === "barcode" && systemValue ? "" : codeType === "qrcode" && systemValue ? `<div style="font-size: 9px; color: #666; margin-top: 2px;">${systemDisplay}</div>` : ""}
+              ${codeType === "qrcode" && idValue ? `<div style="font-size: 9px; color: #666; margin-top: 2px;">${idDisplay}</div>` : ""}
             </td>
           `;
           })
@@ -242,8 +258,8 @@ export function RouteSheetDialog({
             <Label className="text-sm font-medium mb-2 block">System ID Field</Label>
             <RadioGroup
               value={systemIdField}
-              onValueChange={(value) => setSystemIdField(value as "old" | "new")}
-              className="grid grid-cols-2 gap-4"
+              onValueChange={(value) => setSystemIdField(value as "old" | "new" | "oldModule" | "newModule")}
+              className="grid grid-cols-2 gap-2"
             >
               <div>
                 <RadioGroupItem
@@ -256,7 +272,7 @@ export function RouteSheetDialog({
                   className="flex flex-col items-center justify-center rounded-md border-2 border-muted bg-popover p-3 hover-elevate peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer"
                   data-testid="radio-system-old"
                 >
-                  <span className="font-medium">Old System ID</span>
+                  <span className="font-medium text-sm">Old System ID</span>
                 </Label>
               </div>
               <div>
@@ -270,7 +286,35 @@ export function RouteSheetDialog({
                   className="flex flex-col items-center justify-center rounded-md border-2 border-muted bg-popover p-3 hover-elevate peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer"
                   data-testid="radio-system-new"
                 >
-                  <span className="font-medium">New System ID</span>
+                  <span className="font-medium text-sm">New System ID</span>
+                </Label>
+              </div>
+              <div>
+                <RadioGroupItem
+                  value="oldModule"
+                  id="system-old-module"
+                  className="peer sr-only"
+                />
+                <Label
+                  htmlFor="system-old-module"
+                  className="flex flex-col items-center justify-center rounded-md border-2 border-muted bg-popover p-3 hover-elevate peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer"
+                  data-testid="radio-module-old"
+                >
+                  <span className="font-medium text-sm">Old Module ID</span>
+                </Label>
+              </div>
+              <div>
+                <RadioGroupItem
+                  value="newModule"
+                  id="system-new-module"
+                  className="peer sr-only"
+                />
+                <Label
+                  htmlFor="system-new-module"
+                  className="flex flex-col items-center justify-center rounded-md border-2 border-muted bg-popover p-3 hover-elevate peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer"
+                  data-testid="radio-module-new"
+                >
+                  <span className="font-medium text-sm">New Module ID</span>
                 </Label>
               </div>
             </RadioGroup>
