@@ -183,6 +183,12 @@ export function SystemChangeoutWizard({
   const scannerRef = useRef<HTMLDivElement>(null);
   const [previewPhoto, setPreviewPhoto] = useState<{ photo: CapturedPhoto; type: "trouble" | "before" | "after"; index: number } | null>(null);
   
+  // Track original readings and edit state for "clear on focus, restore on cancel" behavior
+  const originalOldSystemReading = useRef(existingOldReading || "");
+  const originalOldModuleReading = useRef(existingOldModuleReading || "");
+  const [hasEditedOldSystemReading, setHasEditedOldSystemReading] = useState(false);
+  const [hasEditedOldModuleReading, setHasEditedOldModuleReading] = useState(false);
+  
   const [data, setData] = useState<SystemChangeoutData>({
     canChange: true,
     troubleCode: null,
