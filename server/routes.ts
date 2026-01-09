@@ -7258,6 +7258,7 @@ export async function registerRoutes(
         newSystemId,
         newSystemType,
         oldModuleReading,
+        oldModuleRead, // Alternative field name from mobile
         newModuleReading,
         newModuleRead, // Alternative field name from mobile
         newModuleId,
@@ -7272,7 +7273,8 @@ export async function registerRoutes(
         afterPhotos
       } = req.body;
       
-      // Normalize module reading field name (mobile may send newModuleRead instead of newModuleReading)
+      // Normalize module reading field names (mobile may send oldModuleRead/newModuleRead instead of oldModuleReading/newModuleReading)
+      const effectiveOldModuleReading = oldModuleReading ?? oldModuleRead;
       const effectiveNewModuleReading = newModuleReading ?? newModuleRead;
       
       if (!projectId) {
@@ -7415,7 +7417,7 @@ export async function registerRoutes(
       }
       
       if (needsModule) {
-        if (!isValidSystemReading(oldModuleReading)) {
+        if (!isValidSystemReading(effectiveOldModuleReading)) {
           return res.status(400).json({ message: "oldModuleReading is required and must be numeric" });
         }
         if (!newModuleId) {
@@ -7453,8 +7455,8 @@ export async function registerRoutes(
       }
       
       // Module fields
-      if (oldModuleReading !== undefined && oldModuleReading !== null) {
-        updateData.oldModuleRead = parseInt(String(oldModuleReading), 10);
+      if (effectiveOldModuleReading !== undefined && effectiveOldModuleReading !== null) {
+        updateData.oldModuleRead = parseInt(String(effectiveOldModuleReading), 10);
       }
       if (effectiveNewModuleReading !== undefined && effectiveNewModuleReading !== null) {
         updateData.newModuleRead = parseInt(String(effectiveNewModuleReading), 10);
