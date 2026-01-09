@@ -3106,13 +3106,17 @@ export async function registerRoutes(
         troubleCode,
         troubleNote,
         oldSystemReading,
+        oldModuleReading,
         newSystemId,
         newSystemReading,
+        newModuleId,
+        newModuleReading,
         gpsCoordinates,
         completionNotes,
         signatureData,
         signatureName,
         photoTypes, // Array of types matching the files array: ["before", "before", "after", "after", "trouble"]
+        changeoutScope, // "system", "module", or "both"
       } = changeoutData;
       
       const files = req.files as Express.Multer.File[];
@@ -3160,23 +3164,53 @@ export async function registerRoutes(
       
       if (canChange) {
         // Success path - system was changed
-        // Validate required fields for success path
-        if (!oldSystemReading || !newSystemId || !newSystemReading || !gpsCoordinates || !signatureName) {
+        // Determine what needs to be validated based on changeout scope
+        const needsSystem = changeoutScope === "system" || changeoutScope === "both";
+        const needsModule = changeoutScope === "module" || changeoutScope === "both";
+        
+        // Validate required fields based on scope
+        if (needsSystem && (!oldSystemReading || !newSystemId || !newSystemReading)) {
           return res.status(400).json({ 
-            message: "Missing required fields for system changeout: old reading, new system ID, new reading, GPS, and signature name are required" 
+            message: "Missing required system fields: old reading, new system ID, and new reading are required" 
+          });
+        }
+        if (needsModule && (!oldModuleReading || !newModuleId || !newModuleReading)) {
+          return res.status(400).json({ 
+            message: "Missing required module fields: old reading, new module ID, and new reading are required" 
+          });
+        }
+        if (!gpsCoordinates || !signatureName) {
+          return res.status(400).json({ 
+            message: "GPS coordinates and signature name are required" 
           });
         }
         
         // Validate system readings are digits only
-        if (!isValidSystemReading(oldSystemReading)) {
-          return res.status(400).json({ 
-            message: "Old system reading must contain only digits (0-9)" 
-          });
+        if (needsSystem) {
+          if (!isValidSystemReading(oldSystemReading)) {
+            return res.status(400).json({ 
+              message: "Old system reading must contain only digits (0-9)" 
+            });
+          }
+          if (!isValidSystemReading(newSystemReading)) {
+            return res.status(400).json({ 
+              message: "New system reading must contain only digits (0-9)" 
+            });
+          }
         }
-        if (!isValidSystemReading(newSystemReading)) {
-          return res.status(400).json({ 
-            message: "New system reading must contain only digits (0-9)" 
-          });
+        
+        // Validate module readings are digits only
+        if (needsModule) {
+          if (!isValidSystemReading(oldModuleReading)) {
+            return res.status(400).json({ 
+              message: "Old module reading must contain only digits (0-9)" 
+            });
+          }
+          if (!isValidSystemReading(newModuleReading)) {
+            return res.status(400).json({ 
+              message: "New module reading must contain only digits (0-9)" 
+            });
+          }
         }
         
         // Validate GPS format
@@ -3186,9 +3220,20 @@ export async function registerRoutes(
           });
         }
         
-        updateData.oldSystemReading = oldSystemReading;
-        updateData.newSystemId = newSystemId;
-        updateData.newSystemReading = newSystemReading;
+        // Set system fields if applicable
+        if (needsSystem) {
+          updateData.oldSystemReading = oldSystemReading;
+          updateData.newSystemId = newSystemId;
+          updateData.newSystemReading = newSystemReading;
+        }
+        
+        // Set module fields if applicable
+        if (needsModule) {
+          updateData.oldModuleRead = oldModuleReading;
+          updateData.newModuleId = newModuleId;
+          updateData.newModuleRead = newModuleReading;
+        }
+        
         updateData.newGps = gpsCoordinates;
         updateData.signatureData = signatureData || null;
         updateData.signatureName = signatureName || null;
