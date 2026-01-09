@@ -166,6 +166,12 @@ export default function SearchReports() {
     { key: "newSystemId", label: "New System ID" },
     { key: "newSystemReading", label: "New System Reading" },
     { key: "newSystemType", label: "New System Type" },
+    { key: "oldModuleId", label: "Old Module ID" },
+    { key: "oldModuleRead", label: "Old Module Reading" },
+    { key: "oldModuleType", label: "Old Module Type" },
+    { key: "newModuleId", label: "New Module ID" },
+    { key: "newModuleRead", label: "New Module Reading" },
+    { key: "newModuleType", label: "New Module Type" },
     { key: "oldGps", label: "Old GPS" },
     { key: "newGps", label: "New GPS" },
     { key: "status", label: "Status" },
@@ -207,6 +213,10 @@ export default function SearchReports() {
     { key: "oldSystemType", label: "Old System Type" },
     { key: "newSystemId", label: "New System ID" },
     { key: "newSystemType", label: "New System Type" },
+    { key: "oldModuleId", label: "Old Module ID" },
+    { key: "oldModuleType", label: "Old Module Type" },
+    { key: "newModuleId", label: "New Module ID" },
+    { key: "newModuleType", label: "New Module Type" },
     { key: "status", label: "Status" },
     { key: "scheduledAt", label: "Scheduled At" },
     { key: "scheduledBy", label: "Scheduled By" },
@@ -463,6 +473,12 @@ export default function SearchReports() {
     newSystemId: { label: "New System ID", sortKey: "newSystemId" },
     newSystemReading: { label: "New System Reading", sortKey: "newSystemReading" },
     newSystemType: { label: "New System Type", sortKey: "newSystemType" },
+    oldModuleId: { label: "Old Module ID", sortKey: "oldModuleId" },
+    oldModuleRead: { label: "Old Module Reading", sortKey: "oldModuleRead" },
+    oldModuleType: { label: "Old Module Type", sortKey: "oldModuleType" },
+    newModuleId: { label: "New Module ID", sortKey: "newModuleId" },
+    newModuleRead: { label: "New Module Reading", sortKey: "newModuleRead" },
+    newModuleType: { label: "New Module Type", sortKey: "newModuleType" },
     oldGps: { label: "Old GPS", sortKey: "oldGps" },
     newGps: { label: "New GPS", sortKey: "newGps" },
     status: { label: "Status", sortKey: "status" },
@@ -573,6 +589,18 @@ export default function SearchReports() {
         return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.newSystemReading ?? "-"}</TableCell>;
       case "newSystemType":
         return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.newSystemType || "-"}</TableCell>;
+      case "oldModuleId":
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{(wo as any).oldModuleId || "-"}</TableCell>;
+      case "oldModuleRead":
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{(wo as any).oldModuleRead ?? "-"}</TableCell>;
+      case "oldModuleType":
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{(wo as any).oldModuleType || "-"}</TableCell>;
+      case "newModuleId":
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{(wo as any).newModuleId || "-"}</TableCell>;
+      case "newModuleRead":
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{(wo as any).newModuleRead ?? "-"}</TableCell>;
+      case "newModuleType":
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{(wo as any).newModuleType || "-"}</TableCell>;
       case "oldGps":
         return <TableCell key={key} className={baseClass} style={cellStyle}>{wo.oldGps || "-"}</TableCell>;
       case "newGps":
@@ -967,6 +995,12 @@ export default function SearchReports() {
       case "newSystemId": return r.workOrder.newSystemId || "";
       case "newSystemReading": return r.workOrder.newSystemReading?.toString() ?? "";
       case "newSystemType": return r.workOrder.newSystemType || "";
+      case "oldModuleId": return (r.workOrder as any).oldModuleId || "";
+      case "oldModuleRead": return (r.workOrder as any).oldModuleRead?.toString() ?? "";
+      case "oldModuleType": return (r.workOrder as any).oldModuleType || "";
+      case "newModuleId": return (r.workOrder as any).newModuleId || "";
+      case "newModuleRead": return (r.workOrder as any).newModuleRead?.toString() ?? "";
+      case "newModuleType": return (r.workOrder as any).newModuleType || "";
       case "oldGps": return r.workOrder.oldGps || "";
       case "newGps": return r.workOrder.newGps || "";
       case "status": return getStatusLabel(r.workOrder.status);
@@ -1642,6 +1676,8 @@ export default function SearchReports() {
           address: r.workOrder.address || "",
           oldSystemNumber: r.workOrder.oldSystemId || null,
           newSystemNumber: r.workOrder.newSystemId || null,
+          oldModuleId: (r.workOrder as any).oldModuleId || null,
+          newModuleId: (r.workOrder as any).newModuleId || null,
         }))}
       />
 
