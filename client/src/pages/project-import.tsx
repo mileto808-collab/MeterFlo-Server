@@ -70,6 +70,12 @@ type ParsedWorkOrder = {
   oldGps?: string;
   oldSystemType?: string;
   newSystemType?: string;
+  oldModuleId?: string;
+  newModuleId?: string;
+  oldModuleRead?: number;
+  newModuleRead?: number;
+  oldModuleType?: string;
+  newModuleType?: string;
   status?: string;
   scheduledAt?: string;
   scheduledBy?: string;
@@ -100,6 +106,12 @@ type ColumnMapping = {
   oldGps: string;
   oldSystemType: string;
   newSystemType: string;
+  oldModuleId: string;
+  newModuleId: string;
+  oldModuleRead: string;
+  newModuleRead: string;
+  oldModuleType: string;
+  newModuleType: string;
   status: string;
   scheduledAt: string;
   scheduledBy: string;
@@ -130,6 +142,12 @@ const defaultColumnMapping: ColumnMapping = {
   oldGps: "",
   oldSystemType: "",
   newSystemType: "",
+  oldModuleId: "",
+  newModuleId: "",
+  oldModuleRead: "",
+  newModuleRead: "",
+  oldModuleType: "",
+  newModuleType: "",
   status: "",
   scheduledAt: "",
   scheduledBy: "",
@@ -471,6 +489,12 @@ export default function ProjectImport() {
       { field: "oldGps", variants: ["old gps", "old_gps", "oldgps", "current gps", "existing gps", "old coordinates"] },
       { field: "oldSystemType", variants: ["old system type", "old_meter_type", "oldmetertype", "current system type", "existing system type"] },
       { field: "newSystemType", variants: ["new meter type", "new_meter_type", "newmetertype", "replacement system type"] },
+      { field: "oldModuleId", variants: ["old module id", "old_module_id", "oldmoduleid", "old module", "current module", "existing module"] },
+      { field: "newModuleId", variants: ["new module id", "new_module_id", "newmoduleid", "new module", "replacement module"] },
+      { field: "oldModuleRead", variants: ["old module read", "old_module_read", "old module reading", "oldmoduleread", "oldmodulereading", "old_module_reading"] },
+      { field: "newModuleRead", variants: ["new module read", "new_module_read", "new module reading", "newmoduleread", "newmodulereading", "new_module_reading"] },
+      { field: "oldModuleType", variants: ["old module type", "old_module_type", "oldmoduletype", "current module type", "existing module type"] },
+      { field: "newModuleType", variants: ["new module type", "new_module_type", "newmoduletype", "replacement module type"] },
       { field: "status", variants: ["status", "state", "condition", "wo status"] },
       { field: "scheduledAt", variants: ["scheduled date", "scheduled_date", "scheduleddate", "schedule date", "schedule", "due date", "due_date", "scheduled datetime", "scheduled_datetime", "scheduled at", "scheduled_at", "scheduledat"] },
       { field: "scheduledBy", variants: ["scheduled by", "scheduled_by", "scheduledby", "scheduler"] },
@@ -528,6 +552,12 @@ export default function ProjectImport() {
         oldGps: getValueByHeader(columnMapping.oldGps) || undefined,
         oldSystemType: getValueByHeader(columnMapping.oldSystemType) || undefined,
         newSystemType: getValueByHeader(columnMapping.newSystemType) || undefined,
+        oldModuleId: getValueByHeader(columnMapping.oldModuleId) || undefined,
+        newModuleId: getValueByHeader(columnMapping.newModuleId) || undefined,
+        oldModuleRead: columnMapping.oldModuleRead ? parseIntOrUndefined(getValueByHeader(columnMapping.oldModuleRead)) : undefined,
+        newModuleRead: columnMapping.newModuleRead ? parseIntOrUndefined(getValueByHeader(columnMapping.newModuleRead)) : undefined,
+        oldModuleType: getValueByHeader(columnMapping.oldModuleType) || undefined,
+        newModuleType: getValueByHeader(columnMapping.newModuleType) || undefined,
         status: getValueByHeader(columnMapping.status) || undefined,
         scheduledAt: getValueByHeader(columnMapping.scheduledAt) || undefined,
         scheduledBy: getValueByHeader(columnMapping.scheduledBy) || undefined,
@@ -597,6 +627,12 @@ export default function ProjectImport() {
         oldGps: getValueByHeader(columnMapping.oldGps) || undefined,
         oldSystemType: getValueByHeader(columnMapping.oldSystemType) || undefined,
         newSystemType: getValueByHeader(columnMapping.newSystemType) || undefined,
+        oldModuleId: getValueByHeader(columnMapping.oldModuleId) || undefined,
+        newModuleId: getValueByHeader(columnMapping.newModuleId) || undefined,
+        oldModuleRead: columnMapping.oldModuleRead ? parseIntOrUndefined(getValueByHeader(columnMapping.oldModuleRead)) : undefined,
+        newModuleRead: columnMapping.newModuleRead ? parseIntOrUndefined(getValueByHeader(columnMapping.newModuleRead)) : undefined,
+        oldModuleType: getValueByHeader(columnMapping.oldModuleType) || undefined,
+        newModuleType: getValueByHeader(columnMapping.newModuleType) || undefined,
         status: status || undefined,
         scheduledAt: getValueByHeader(columnMapping.scheduledAt) || undefined,
         scheduledBy: getValueByHeader(columnMapping.scheduledBy) || undefined,
@@ -818,6 +854,9 @@ export default function ProjectImport() {
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">old_system_id, old_system_reading</span> - Old system info</div>
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">old_gps</span> - GPS coordinates</div>
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">old_system_type, new_system_type</span> - System types</div>
+                    <div><span className="font-mono bg-muted px-2 py-1 rounded">old_module_id, new_module_id</span> - Module identifiers</div>
+                    <div><span className="font-mono bg-muted px-2 py-1 rounded">old_module_read, new_module_read</span> - Module readings</div>
+                    <div><span className="font-mono bg-muted px-2 py-1 rounded">old_module_type, new_module_type</span> - Module types</div>
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">status, scheduled_at, scheduled_by, trouble, notes</span> - Work order details</div>
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">assigned_user_id, assigned_group_id, created_by, completed_at</span> - Assignment and tracking</div>
                   </div>
@@ -863,6 +902,12 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
                   <MappingSelect field="oldGps" label="Old GPS" />
                   <MappingSelect field="oldSystemType" label="Old System Type" />
                   <MappingSelect field="newSystemType" label="New System Type" />
+                  <MappingSelect field="oldModuleId" label="Old Module ID" />
+                  <MappingSelect field="newModuleId" label="New Module ID" />
+                  <MappingSelect field="oldModuleRead" label="Old Module Reading" />
+                  <MappingSelect field="newModuleRead" label="New Module Reading" />
+                  <MappingSelect field="oldModuleType" label="Old Module Type" />
+                  <MappingSelect field="newModuleType" label="New Module Type" />
                   <MappingSelect field="status" label="Status" />
                   <MappingSelect field="scheduledAt" label="Scheduled At" />
                   <MappingSelect field="scheduledBy" label="Scheduled By" />
