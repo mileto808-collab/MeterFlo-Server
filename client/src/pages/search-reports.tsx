@@ -118,6 +118,10 @@ export default function SearchReports() {
   const [filterOldSystemType, setFilterOldSystemType] = useState("all");
   const [filterNewSystemId, setFilterNewSystemId] = useState("");
   const [filterNewSystemType, setFilterNewSystemType] = useState("all");
+  const [filterOldModuleId, setFilterOldModuleId] = useState("");
+  const [filterOldModuleType, setFilterOldModuleType] = useState("all");
+  const [filterNewModuleId, setFilterNewModuleId] = useState("");
+  const [filterNewModuleType, setFilterNewModuleType] = useState("all");
   const [filterScheduledDateFrom, setFilterScheduledDateFrom] = useState("");
   const [filterScheduledDateTo, setFilterScheduledDateTo] = useState("");
   const [filterAssignedTo, setFilterAssignedTo] = useState("all");
@@ -274,6 +278,18 @@ export default function SearchReports() {
         : "/api/system-types";
       const response = await fetch(url, { credentials: "include" });
       if (!response.ok) throw new Error("Failed to fetch system types");
+      return response.json();
+    },
+  });
+
+  const { data: moduleTypes = [] } = useQuery<SystemType[]>({
+    queryKey: ["/api/module-types", { projectId: selectedProject !== "all" ? selectedProject : undefined }],
+    queryFn: async () => {
+      const url = selectedProject !== "all" 
+        ? `/api/module-types?projectId=${selectedProject}`
+        : "/api/module-types";
+      const response = await fetch(url, { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to fetch module types");
       return response.json();
     },
   });
@@ -689,6 +705,18 @@ export default function SearchReports() {
     if (filterNewSystemType !== "all") {
       results = results.filter(r => (r.workOrder.newSystemType || '') === filterNewSystemType);
     }
+    if (filterOldModuleId) {
+      results = results.filter(r => ((r.workOrder as any).oldModuleId || '').toLowerCase().includes(filterOldModuleId.toLowerCase()));
+    }
+    if (filterOldModuleType !== "all") {
+      results = results.filter(r => ((r.workOrder as any).oldModuleType || '') === filterOldModuleType);
+    }
+    if (filterNewModuleId) {
+      results = results.filter(r => ((r.workOrder as any).newModuleId || '').toLowerCase().includes(filterNewModuleId.toLowerCase()));
+    }
+    if (filterNewModuleType !== "all") {
+      results = results.filter(r => ((r.workOrder as any).newModuleType || '') === filterNewModuleType);
+    }
     if (filterAssignedTo !== "all") {
       // Look up user label from selected ID for fallback comparison
       const selectedUser = users.find(u => u.id === filterAssignedTo);
@@ -840,7 +868,7 @@ export default function SearchReports() {
       });
     }
     return results;
-  }, [searchResults?.results, sortCriteria, filterSystemWoId, filterCustomerWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterOldSystemType, filterNewSystemId, filterNewSystemType, filterAssignedTo, filterAssignedGroup, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterTroubleCode, filterNotes, filterScheduledDateFrom, filterScheduledDateTo, filterCompletedAtFrom, filterCompletedAtTo, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo, users, userGroups]);
+  }, [searchResults?.results, sortCriteria, filterSystemWoId, filterCustomerWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterOldSystemType, filterNewSystemId, filterNewSystemType, filterOldModuleId, filterOldModuleType, filterNewModuleId, filterNewModuleType, filterAssignedTo, filterAssignedGroup, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterTroubleCode, filterNotes, filterScheduledDateFrom, filterScheduledDateTo, filterCompletedAtFrom, filterCompletedAtTo, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo, users, userGroups]);
 
   const totalPages = Math.ceil(filteredAndSortedResults.length / pageSize);
   const paginatedResults = useMemo(() => {
@@ -850,7 +878,7 @@ export default function SearchReports() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchResults, sortCriteria, filterSystemWoId, filterCustomerWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterOldSystemType, filterNewSystemId, filterNewSystemType, filterAssignedTo, filterAssignedGroup, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterTroubleCode, filterNotes, filterScheduledDateFrom, filterScheduledDateTo, filterCompletedAtFrom, filterCompletedAtTo, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo, pageSize]);
+  }, [searchResults, sortCriteria, filterSystemWoId, filterCustomerWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterOldSystemType, filterNewSystemId, filterNewSystemType, filterOldModuleId, filterOldModuleType, filterNewModuleId, filterNewModuleType, filterAssignedTo, filterAssignedGroup, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterTroubleCode, filterNotes, filterScheduledDateFrom, filterScheduledDateTo, filterCompletedAtFrom, filterCompletedAtTo, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo, pageSize]);
 
   useEffect(() => {
     if (currentPage > totalPages && totalPages > 0) {
@@ -889,6 +917,10 @@ export default function SearchReports() {
     filterOldSystemType !== "all",
     filterNewSystemId !== "",
     filterNewSystemType !== "all",
+    filterOldModuleId !== "",
+    filterOldModuleType !== "all",
+    filterNewModuleId !== "",
+    filterNewModuleType !== "all",
     filterScheduledDateFrom !== "",
     filterScheduledDateTo !== "",
     filterAssignedTo !== "all",
@@ -1345,6 +1377,50 @@ export default function SearchReports() {
                   <SelectContent>
                     <SelectItem value="all">All System Types</SelectItem>
                     {systemTypes.map((mt) => (
+                      <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {isFilterVisible("oldModuleId") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-old-module-id">Old Module ID</Label>
+                <Input id="filter-old-module-id" placeholder="Filter..." value={filterOldModuleId} onChange={(e) => setFilterOldModuleId(e.target.value)} data-testid="input-filter-old-module-id" />
+              </div>
+            )}
+            {isFilterVisible("oldModuleType") && moduleTypes.length > 0 && (
+              <div className="min-w-[180px]">
+                <Label htmlFor="filter-old-module-type">Old Module Type</Label>
+                <Select value={filterOldModuleType} onValueChange={setFilterOldModuleType}>
+                  <SelectTrigger id="filter-old-module-type" data-testid="select-filter-old-module-type">
+                    <SelectValue placeholder="All Module Types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Module Types</SelectItem>
+                    {moduleTypes.map((mt) => (
+                      <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {isFilterVisible("newModuleId") && (
+              <div className="min-w-[150px]">
+                <Label htmlFor="filter-new-module-id">New Module ID</Label>
+                <Input id="filter-new-module-id" placeholder="Filter..." value={filterNewModuleId} onChange={(e) => setFilterNewModuleId(e.target.value)} data-testid="input-filter-new-module-id" />
+              </div>
+            )}
+            {isFilterVisible("newModuleType") && moduleTypes.length > 0 && (
+              <div className="min-w-[180px]">
+                <Label htmlFor="filter-new-module-type">New Module Type</Label>
+                <Select value={filterNewModuleType} onValueChange={setFilterNewModuleType}>
+                  <SelectTrigger id="filter-new-module-type" data-testid="select-filter-new-module-type">
+                    <SelectValue placeholder="All Module Types" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Module Types</SelectItem>
+                    {moduleTypes.map((mt) => (
                       <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
                     ))}
                   </SelectContent>
