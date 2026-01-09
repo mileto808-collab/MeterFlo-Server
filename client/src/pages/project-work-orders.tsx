@@ -392,6 +392,12 @@ export default function ProjectWorkOrders() {
       trouble: "",
       oldSystemType: "",
       newSystemType: "",
+      oldModuleId: "",
+      oldModuleRead: undefined,
+      oldModuleType: "",
+      newModuleId: "",
+      newModuleRead: undefined,
+      newModuleType: "",
     },
   });
 
@@ -624,6 +630,12 @@ export default function ProjectWorkOrders() {
         trouble: (editingWorkOrder as any).trouble || "",
         oldSystemType: (editingWorkOrder as any).oldSystemType || "",
         newSystemType: (editingWorkOrder as any).newSystemType || "",
+        oldModuleId: (editingWorkOrder as any).oldModuleId || "",
+        oldModuleRead: (editingWorkOrder as any).oldModuleRead ?? undefined,
+        oldModuleType: (editingWorkOrder as any).oldModuleType || "",
+        newModuleId: (editingWorkOrder as any).newModuleId || "",
+        newModuleRead: (editingWorkOrder as any).newModuleRead ?? undefined,
+        newModuleType: (editingWorkOrder as any).newModuleType || "",
       });
       // Set signature data after a brief delay to ensure the ref is ready
       setTimeout(() => {
@@ -667,6 +679,12 @@ export default function ProjectWorkOrders() {
     trouble: (data as any).trouble || null,
     oldSystemType: (data as any).oldSystemType || null,
     newSystemType: (data as any).newSystemType || null,
+    oldModuleId: (data as any).oldModuleId || null,
+    oldModuleRead: (data as any).oldModuleRead ?? null,
+    oldModuleType: (data as any).oldModuleType || null,
+    newModuleId: (data as any).newModuleId || null,
+    newModuleRead: (data as any).newModuleRead ?? null,
+    newModuleType: (data as any).newModuleType || null,
     assignedUserId: (data as any).assignedUserId ?? null,
     assignedGroupId: (data as any).assignedGroupId ?? null,
     scheduledAt: (data as any).scheduledAt || null,
