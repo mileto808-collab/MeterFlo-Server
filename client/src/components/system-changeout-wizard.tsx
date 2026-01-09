@@ -184,13 +184,17 @@ export function SystemChangeoutWizard({
   const [previewPhoto, setPreviewPhoto] = useState<{ photo: CapturedPhoto; type: "trouble" | "before" | "after"; index: number } | null>(null);
   const [showNotesDialog, setShowNotesDialog] = useState(false);
   
+  // Track if old readings have been confirmed (user tapped and re-entered)
+  const [oldSystemReadingConfirmed, setOldSystemReadingConfirmed] = useState(!existingOldReading);
+  const [oldModuleReadingConfirmed, setOldModuleReadingConfirmed] = useState(!existingOldModuleReading);
+  
   const [data, setData] = useState<SystemChangeoutData>({
     canChange: true,
     troubleCode: null,
     troubleNote: "",
     troublePhotos: [],
-    oldSystemReading: "",
-    oldModuleReading: "",
+    oldSystemReading: existingOldReading || "",
+    oldModuleReading: existingOldModuleReading || "",
     beforePhotos: [],
     newSystemId: "",
     newSystemReading: existingNewReading || "",
@@ -284,13 +288,16 @@ export function SystemChangeoutWizard({
 
   const resetWizard = useCallback(() => {
     setCurrentStep("canChange");
+    // Reset confirmation state based on whether existing values are present
+    setOldSystemReadingConfirmed(!existingOldReading);
+    setOldModuleReadingConfirmed(!existingOldModuleReading);
     setData({
       canChange: true,
       troubleCode: null,
       troubleNote: "",
       troublePhotos: [],
-      oldSystemReading: "",
-      oldModuleReading: "",
+      oldSystemReading: existingOldReading || "",
+      oldModuleReading: existingOldModuleReading || "",
       beforePhotos: [],
       newSystemId: "",
       newSystemReading: existingNewReading || "",
@@ -371,12 +378,12 @@ export function SystemChangeoutWizard({
       case "troubleCapture":
         return !!data.troubleCode && data.troublePhotos.length >= 1;
       case "oldReading": {
-        // Validate based on scope - require readings that are different from existing
+        // Validate based on scope - require readings to be confirmed (tapped and re-entered)
         const needsSystemReading = (displayMode === "system" || displayMode === "both");
         const needsModuleReading = (displayMode === "module" || displayMode === "both");
         
-        const systemReadingValid = !needsSystemReading || !getOldSystemReadingError();
-        const moduleReadingValid = !needsModuleReading || !getOldModuleReadingError();
+        const systemReadingValid = !needsSystemReading || (!getOldSystemReadingError() && oldSystemReadingConfirmed);
+        const moduleReadingValid = !needsModuleReading || (!getOldModuleReadingError() && oldModuleReadingConfirmed);
         
         return systemReadingValid && moduleReadingValid;
       }
@@ -988,13 +995,23 @@ export function SystemChangeoutWizard({
                   type="text"
                   inputMode="numeric"
                   value={data.oldSystemReading}
-                  onFocus={() => setData((prev) => ({ ...prev, oldSystemReading: "" }))}
-                  onChange={(e) => setData((prev) => ({ ...prev, oldSystemReading: e.target.value }))}
+                  onFocus={() => {
+                    if (!oldSystemReadingConfirmed) {
+                      setData((prev) => ({ ...prev, oldSystemReading: "" }));
+                    }
+                  }}
+                  onChange={(e) => {
+                    setOldSystemReadingConfirmed(true);
+                    setData((prev) => ({ ...prev, oldSystemReading: e.target.value }));
+                  }}
                   placeholder="Enter system reading (digits only)..."
-                  className={`text-lg text-center ${oldSystemReadingError ? "border-destructive" : ""}`}
+                  className={`text-lg text-center ${oldSystemReadingError || !oldSystemReadingConfirmed ? "border-amber-500" : ""}`}
                   data-testid="input-old-system-reading"
                 />
-                {oldSystemReadingError && (
+                {!oldSystemReadingConfirmed && existingOldReading && (
+                  <p className="text-sm text-amber-500">Tap to clear and re-enter the reading</p>
+                )}
+                {oldSystemReadingError && oldSystemReadingConfirmed && (
                   <p className="text-sm text-destructive">{oldSystemReadingError}</p>
                 )}
                 <p className="text-xs text-muted-foreground">Enter digits only. Leading zeros are preserved (e.g., 0001).</p>
@@ -1009,13 +1026,23 @@ export function SystemChangeoutWizard({
                   type="text"
                   inputMode="numeric"
                   value={data.oldModuleReading}
-                  onFocus={() => setData((prev) => ({ ...prev, oldModuleReading: "" }))}
-                  onChange={(e) => setData((prev) => ({ ...prev, oldModuleReading: e.target.value }))}
+                  onFocus={() => {
+                    if (!oldModuleReadingConfirmed) {
+                      setData((prev) => ({ ...prev, oldModuleReading: "" }));
+                    }
+                  }}
+                  onChange={(e) => {
+                    setOldModuleReadingConfirmed(true);
+                    setData((prev) => ({ ...prev, oldModuleReading: e.target.value }));
+                  }}
                   placeholder="Enter module reading (digits only)..."
-                  className={`text-lg text-center ${oldModuleReadingError ? "border-destructive" : ""}`}
+                  className={`text-lg text-center ${oldModuleReadingError || !oldModuleReadingConfirmed ? "border-amber-500" : ""}`}
                   data-testid="input-old-module-reading"
                 />
-                {oldModuleReadingError && (
+                {!oldModuleReadingConfirmed && existingOldModuleReading && (
+                  <p className="text-sm text-amber-500">Tap to clear and re-enter the reading</p>
+                )}
+                {oldModuleReadingError && oldModuleReadingConfirmed && (
                   <p className="text-sm text-destructive">{oldModuleReadingError}</p>
                 )}
                 <p className="text-xs text-muted-foreground">Enter digits only. Leading zeros are preserved (e.g., 0001).</p>
