@@ -7257,6 +7257,12 @@ export async function registerRoutes(
         newSystemReading,
         newSystemId,
         newSystemType,
+        oldModuleReading,
+        newModuleReading,
+        newModuleRead, // Alternative field name from mobile
+        newModuleId,
+        oldModuleType,
+        newModuleType,
         gpsCoordinates,
         signatureData,
         signatureName,
@@ -7265,6 +7271,9 @@ export async function registerRoutes(
         beforePhotos,
         afterPhotos
       } = req.body;
+      
+      // Normalize module reading field name (mobile may send newModuleRead instead of newModuleReading)
+      const effectiveNewModuleReading = newModuleReading ?? newModuleRead;
       
       if (!projectId) {
         return res.status(400).json({ message: "projectId is required" });
@@ -7386,13 +7395,37 @@ export async function registerRoutes(
         return !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
       };
       
-      // Validate required fields for completion
-      if (!newSystemId) {
-        return res.status(400).json({ message: "newSystemId is required for completion" });
+      // Determine changeout scope from authoritative work order data
+      // Use type assertion for snake_case fallbacks (legacy imports may use snake_case)
+      const woAny = workOrder as any;
+      const needsSystem = !!workOrder.oldSystemId || !!woAny.old_system_id;
+      const needsModule = !!workOrder.oldModuleId || !!woAny.old_module_id;
+      
+      // Validate required fields for completion based on scope
+      if (needsSystem) {
+        if (!isValidSystemReading(oldSystemReading)) {
+          return res.status(400).json({ message: "oldSystemReading is required and must be numeric" });
+        }
+        if (!newSystemId) {
+          return res.status(400).json({ message: "newSystemId is required for completion" });
+        }
+        if (!isValidSystemReading(newSystemReading)) {
+          return res.status(400).json({ message: "newSystemReading is required and must be numeric" });
+        }
       }
-      if (!isValidSystemReading(newSystemReading)) {
-        return res.status(400).json({ message: "newSystemReading is required and must be numeric" });
+      
+      if (needsModule) {
+        if (!isValidSystemReading(oldModuleReading)) {
+          return res.status(400).json({ message: "oldModuleReading is required and must be numeric" });
+        }
+        if (!newModuleId) {
+          return res.status(400).json({ message: "newModuleId is required for module changeout" });
+        }
+        if (!isValidSystemReading(effectiveNewModuleReading)) {
+          return res.status(400).json({ message: "newModuleReading is required and must be numeric" });
+        }
       }
+      
       if (gpsCoordinates && !isValidGps(gpsCoordinates)) {
         return res.status(400).json({ message: "Invalid GPS coordinates format. Use 'lat,lng' format" });
       }
@@ -7418,6 +7451,24 @@ export async function registerRoutes(
       if (newSystemType) {
         updateData.newSystemType = newSystemType;
       }
+      
+      // Module fields
+      if (oldModuleReading !== undefined && oldModuleReading !== null) {
+        updateData.oldModuleRead = parseInt(String(oldModuleReading), 10);
+      }
+      if (effectiveNewModuleReading !== undefined && effectiveNewModuleReading !== null) {
+        updateData.newModuleRead = parseInt(String(effectiveNewModuleReading), 10);
+      }
+      if (newModuleId) {
+        updateData.newModuleId = newModuleId;
+      }
+      if (oldModuleType) {
+        updateData.oldModuleType = oldModuleType;
+      }
+      if (newModuleType) {
+        updateData.newModuleType = newModuleType;
+      }
+      
       if (gpsCoordinates) {
         updateData.newGps = gpsCoordinates;
       }
