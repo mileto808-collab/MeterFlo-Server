@@ -175,13 +175,6 @@ export const permissionRegistry: PermissionDefinition[] = [
     defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
   },
   {
-    key: "settings.meterTypes",
-    label: "Meter Types",
-    category: "Settings",
-    description: "Configure meter type definitions",
-    defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
-  },
-  {
     key: "settings.customerApiLogs",
     label: "Customer API Logs",
     category: "Settings",
