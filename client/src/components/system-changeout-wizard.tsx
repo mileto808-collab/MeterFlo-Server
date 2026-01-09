@@ -115,7 +115,7 @@ interface SystemChangeoutWizardProps {
 }
 
 const stepLabels: Record<WizardStep, string> = {
-  canChange: "Can System Be Changed?",
+  canChange: "Can The Changeout Proceed?",
   troubleCapture: "Report Issue",
   oldReading: "Old System Reading",
   beforePhotos: "Before Photos",
@@ -222,9 +222,9 @@ export function SystemChangeoutWizard({
   // Dynamic step label based on what data is present
   const getCanChangeLabel = (): string => {
     switch (displayMode) {
-      case "module": return "Can Module Be Changed?";
-      case "both": return "Can System Be Changed?";
-      default: return "Can System Be Changed?";
+      case "module": return "Can The Changeout Proceed?";
+      case "both": return "Can The Changeout Proceed?";
+      default: return "Can The Changeout Proceed?";
     }
   };
 
