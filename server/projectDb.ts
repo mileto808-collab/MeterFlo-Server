@@ -1085,6 +1085,30 @@ export class ProjectWorkOrderStorage {
         setClauses.push(`new_system_type = $${paramCount++}`);
         values.push((updates as any).newSystemType ?? null);
       }
+      if ((updates as any).oldModuleId !== undefined) {
+        setClauses.push(`old_module_id = $${paramCount++}`);
+        values.push((updates as any).oldModuleId || null);
+      }
+      if ((updates as any).newModuleId !== undefined) {
+        setClauses.push(`new_module_id = $${paramCount++}`);
+        values.push((updates as any).newModuleId || null);
+      }
+      if ((updates as any).oldModuleRead !== undefined) {
+        setClauses.push(`old_module_read = $${paramCount++}`);
+        values.push((updates as any).oldModuleRead ?? null);
+      }
+      if ((updates as any).newModuleRead !== undefined) {
+        setClauses.push(`new_module_read = $${paramCount++}`);
+        values.push((updates as any).newModuleRead ?? null);
+      }
+      if ((updates as any).oldModuleType !== undefined) {
+        setClauses.push(`old_module_type = $${paramCount++}`);
+        values.push((updates as any).oldModuleType || null);
+      }
+      if ((updates as any).newModuleType !== undefined) {
+        setClauses.push(`new_module_type = $${paramCount++}`);
+        values.push((updates as any).newModuleType || null);
+      }
       if ((updates as any).signatureData !== undefined) {
         setClauses.push(`signature_data = $${paramCount++}`);
         values.push((updates as any).signatureData);
