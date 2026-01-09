@@ -561,8 +561,8 @@ export class ProjectWorkOrderStorage {
       
       const result = await client.query(
         `INSERT INTO "${this.schemaName}".work_orders 
-         (status, created_by, completed_at, notes, attachments, customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_system_id, new_system_id, old_gps, new_gps, old_system_reading, new_system_reading, scheduled_at, updated_by, trouble, old_system_type, new_system_type, signature_data, signature_name, assigned_user_id, assigned_group_id, completed_by, scheduled_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34)
+         (status, created_by, completed_at, notes, attachments, customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_system_id, new_system_id, old_gps, new_gps, old_system_reading, new_system_reading, scheduled_at, updated_by, trouble, old_system_type, new_system_type, old_module_id, new_module_id, old_module_read, new_module_read, old_module_type, new_module_type, signature_data, signature_name, assigned_user_id, assigned_group_id, completed_by, scheduled_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40)
          RETURNING id`,
         [
           status,
@@ -593,6 +593,12 @@ export class ProjectWorkOrderStorage {
           troubleCode || null,
           workOrder.oldSystemType ?? null,
           workOrder.newSystemType ?? null,
+          (workOrder as any).oldModuleId || null,
+          (workOrder as any).newModuleId || null,
+          (workOrder as any).oldModuleRead ?? null,
+          (workOrder as any).newModuleRead ?? null,
+          (workOrder as any).oldModuleType || null,
+          (workOrder as any).newModuleType || null,
           (workOrder as any).signatureData || null,
           (workOrder as any).signatureName || null,
           assignedUserId,
@@ -1278,6 +1284,12 @@ export class ProjectWorkOrderStorage {
       trouble: row.trouble,
       oldSystemType: row.old_system_type,
       newSystemType: row.new_system_type,
+      oldModuleId: row.old_module_id,
+      newModuleId: row.new_module_id,
+      oldModuleRead: row.old_module_read,
+      newModuleRead: row.new_module_read,
+      oldModuleType: row.old_module_type,
+      newModuleType: row.new_module_type,
       signatureData: row.signature_data,
       signatureName: row.signature_name,
       assignedUserId: row.assigned_user_id,
@@ -1352,6 +1364,12 @@ export async function backupProjectDatabase(schemaName: string): Promise<{
       trouble: row.trouble,
       oldSystemType: row.old_system_type,
       newSystemType: row.new_system_type,
+      oldModuleId: row.old_module_id,
+      newModuleId: row.new_module_id,
+      oldModuleRead: row.old_module_read,
+      newModuleRead: row.new_module_read,
+      oldModuleType: row.old_module_type,
+      newModuleType: row.new_module_type,
       signatureData: row.signature_data,
       signatureName: row.signature_name,
       assignedUserId: row.assigned_user_id,
@@ -1364,7 +1382,7 @@ export async function backupProjectDatabase(schemaName: string): Promise<{
       schemaName,
       backupDate: new Date().toISOString(),
       workOrders,
-      version: "2.2",
+      version: "2.3",
     };
   } finally {
     client.release();
@@ -1391,8 +1409,8 @@ export async function restoreProjectDatabase(
       try {
         await client.query(
           `INSERT INTO "${schemaName}".work_orders 
-           (status, created_by, completed_at, notes, attachments, customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_system_id, new_system_id, old_gps, new_gps, old_system_reading, new_system_reading, scheduled_at, updated_by, trouble, old_system_type, new_system_type, signature_data, signature_name, assigned_user_id, assigned_group_id, completed_by, scheduled_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34)`,
+           (status, created_by, completed_at, notes, attachments, customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_system_id, new_system_id, old_gps, new_gps, old_system_reading, new_system_reading, scheduled_at, updated_by, trouble, old_system_type, new_system_type, old_module_id, new_module_id, old_module_read, new_module_read, old_module_type, new_module_type, signature_data, signature_name, assigned_user_id, assigned_group_id, completed_by, scheduled_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40)`,
           [
             wo.status || "Open",
             wo.createdBy || null,
@@ -1422,6 +1440,12 @@ export async function restoreProjectDatabase(
             wo.trouble || null,
             wo.oldSystemType ?? null,
             wo.newSystemType ?? null,
+            wo.oldModuleId || null,
+            wo.newModuleId || null,
+            wo.oldModuleRead ?? null,
+            wo.newModuleRead ?? null,
+            wo.oldModuleType || null,
+            wo.newModuleType || null,
             wo.signatureData || null,
             wo.signatureName || null,
             wo.assignedUserId || null,
