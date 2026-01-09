@@ -384,7 +384,7 @@ export function WorkOrderDetail({
                   ) : (
                     <>
                       <Wrench className="h-4 w-4 mr-1" />
-                      Start System Changeout
+                      Start Changeout
                     </>
                   )}
                 </Button>
