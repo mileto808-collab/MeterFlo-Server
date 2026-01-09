@@ -41,6 +41,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useTimezone } from "@/hooks/use-timezone";
+import { formatDateTimeInTimezone, formatForExport, formatInTimezone } from "@/lib/timezone";
 import { useProjectEvents } from "@/hooks/useProjectEvents";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, ArrowLeft, Search, ArrowUpDown, ArrowUp, ArrowDown, Download, FileSpreadsheet, FileText, Filter, X, Route, ChevronRight, Paperclip, Eye, FileIcon, ChevronsUp, UserPlus, UserMinus, AlertTriangle, Loader2, Wrench } from "lucide-react";
@@ -152,7 +153,7 @@ export default function ProjectWorkOrders() {
   const { user } = useAuth();
   const { hasPermission } = usePermissions();
   const { toast } = useToast();
-  const { formatDateTime, formatExport, formatCustom, timezone: globalTimezone } = useTimezone();
+  const { timezone: globalTimezone } = useTimezone();
   const [, navigate] = useLocation();
   const [isCreatingWorkOrder, setIsCreatingWorkOrder] = useState(false);
   const [editingWorkOrder, setEditingWorkOrder] = useState<ProjectWorkOrder | null>(null);
@@ -407,6 +408,22 @@ export default function ProjectWorkOrders() {
     enabled: !!projectId,
     retry: false,
   });
+
+  // Use project-specific timezone with fallback to global timezone
+  const effectiveTimezone = project?.timezone || globalTimezone;
+  
+  // Project-aware date formatting functions
+  const formatDateTime = useCallback((date: string | Date | null | undefined): string => {
+    return formatDateTimeInTimezone(date, effectiveTimezone);
+  }, [effectiveTimezone]);
+  
+  const formatExport = useCallback((date: string | Date | null | undefined): string => {
+    return formatForExport(date, effectiveTimezone);
+  }, [effectiveTimezone]);
+  
+  const formatCustom = useCallback((date: string | Date | null | undefined, formatStr: string): string => {
+    return formatInTimezone(date, effectiveTimezone, formatStr);
+  }, [effectiveTimezone]);
 
   const { data: workOrders = [], isLoading: workOrdersLoading, error: workOrdersError } = useQuery<ProjectWorkOrder[]>({
     queryKey: [`/api/projects/${projectId}/work-orders`],
