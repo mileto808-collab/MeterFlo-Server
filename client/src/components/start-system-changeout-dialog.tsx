@@ -120,8 +120,6 @@ export function StartSystemChangeoutDialog({
     setShowClaimConfirm(false);
     setPendingClaimCheck(false);
     setIsClaiming(false);
-    setShowScopeSelect(false);
-    setClaimedWorkOrder(null);
   }, []);
 
   const handleScanResult = useCallback((decodedText: string) => {
@@ -326,8 +324,6 @@ export function StartSystemChangeoutDialog({
 
   const [isClaiming, setIsClaiming] = useState(false);
   const [showClaimConfirm, setShowClaimConfirm] = useState(false);
-  const [showScopeSelect, setShowScopeSelect] = useState(false);
-  const [claimedWorkOrder, setClaimedWorkOrder] = useState<ProjectWorkOrder | null>(null);
 
   // Check if claiming is needed for the found work order (client-side check)
   const isClaimingNeeded = useCallback((workOrder: ProjectWorkOrder): boolean => {
@@ -348,6 +344,16 @@ export function StartSystemChangeoutDialog({
     return true;
   }, [user?.id, userGroups]);
 
+  // Determine scope based on work order data (presence of system/module IDs)
+  const determineScope = useCallback((workOrder: ProjectWorkOrder): ChangeoutScope => {
+    const hasSystem = !!(workOrder as any).old_system_id || !!workOrder.oldSystemId;
+    const hasModule = !!(workOrder as any).old_module_id || !!workOrder.oldModuleId;
+    
+    if (hasSystem && hasModule) return "both";
+    if (hasModule) return "module";
+    return "system"; // Default to system even if neither exists
+  }, []);
+
   // Proceed with work order (let backend decide if claim is needed)
   const proceedWithWorkOrder = useCallback(async () => {
     if (!foundWorkOrder) return;
@@ -359,9 +365,11 @@ export function StartSystemChangeoutDialog({
       const result = await response.json();
       const updatedWorkOrder = result.workOrder || foundWorkOrder;
       setShowClaimConfirm(false);
-      // Store the claimed work order and show scope selection
-      setClaimedWorkOrder(updatedWorkOrder);
-      setShowScopeSelect(true);
+      
+      // Auto-determine scope and proceed directly (no scope selection dialog)
+      const autoScope = determineScope(updatedWorkOrder);
+      onWorkOrderFound(updatedWorkOrder, autoScope);
+      onClose();
     } catch (error: any) {
       console.error("Error proceeding with work order:", error);
       toast({
@@ -373,15 +381,7 @@ export function StartSystemChangeoutDialog({
     } finally {
       setIsClaiming(false);
     }
-  }, [foundWorkOrder, projectId, toast]);
-
-  // Handle scope selection and proceed to wizard
-  const handleScopeSelect = useCallback((scope: ChangeoutScope) => {
-    if (!claimedWorkOrder) return;
-    setShowScopeSelect(false);
-    onWorkOrderFound(claimedWorkOrder, scope);
-    onClose();
-  }, [claimedWorkOrder, onWorkOrderFound, onClose]);
+  }, [foundWorkOrder, projectId, toast, determineScope, onWorkOrderFound, onClose]);
 
   // State to track when we're waiting for groups to load
   const [pendingClaimCheck, setPendingClaimCheck] = useState(false);
@@ -871,71 +871,6 @@ export function StartSystemChangeoutDialog({
       </AlertDialogContent>
     </AlertDialog>
 
-    {/* Scope Selection Dialog */}
-    <AlertDialog open={showScopeSelect} onOpenChange={setShowScopeSelect}>
-      <AlertDialogContent className="max-w-md">
-        <AlertDialogHeader>
-          <AlertDialogTitle data-testid="title-scope-select">What would you like to change?</AlertDialogTitle>
-          <AlertDialogDescription data-testid="text-scope-description">
-            Select what you're changing for this work order.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <div className="space-y-3 py-4">
-          <Card 
-            className="cursor-pointer hover-elevate"
-            onClick={() => handleScopeSelect("system")}
-            data-testid="button-scope-system"
-          >
-            <CardContent className="flex items-center gap-4 p-4">
-              <div className="p-3 rounded-full bg-primary/10">
-                <Gauge className="h-6 w-6 text-primary" />
-              </div>
-              <div className="flex-1">
-                <h3 className="font-medium">Change System</h3>
-                <p className="text-sm text-muted-foreground">Replace the meter system only</p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card 
-            className="cursor-pointer hover-elevate"
-            onClick={() => handleScopeSelect("module")}
-            data-testid="button-scope-module"
-          >
-            <CardContent className="flex items-center gap-4 p-4">
-              <div className="p-3 rounded-full bg-primary/10">
-                <Wrench className="h-6 w-6 text-primary" />
-              </div>
-              <div className="flex-1">
-                <h3 className="font-medium">Change Module</h3>
-                <p className="text-sm text-muted-foreground">Replace the module only</p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card 
-            className="cursor-pointer hover-elevate"
-            onClick={() => handleScopeSelect("both")}
-            data-testid="button-scope-both"
-          >
-            <CardContent className="flex items-center gap-4 p-4">
-              <div className="p-3 rounded-full bg-primary/10">
-                <ClipboardCheck className="h-6 w-6 text-primary" />
-              </div>
-              <div className="flex-1">
-                <h3 className="font-medium">Change Both</h3>
-                <p className="text-sm text-muted-foreground">Replace both system and module</p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-        <AlertDialogFooter>
-          <AlertDialogCancel data-testid="button-scope-cancel">
-            Cancel
-          </AlertDialogCancel>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
     </>
   );
 }
