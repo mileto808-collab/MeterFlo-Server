@@ -2822,6 +2822,12 @@ export async function registerRoutes(
         attachments: wo.attachments || null,
         oldSystemType: wo.oldSystemType || wo.old_system_type || null,
         newSystemType: wo.newSystemType || wo.new_system_type || null,
+        oldModuleId: wo.oldModuleId || wo.old_module_id || null,
+        newModuleId: wo.newModuleId || wo.new_module_id || null,
+        oldModuleRead: wo.oldModuleRead != null ? (Number.isNaN(parseInt(String(wo.oldModuleRead))) ? null : parseInt(String(wo.oldModuleRead))) : null,
+        newModuleRead: wo.newModuleRead != null ? (Number.isNaN(parseInt(String(wo.newModuleRead))) ? null : parseInt(String(wo.newModuleRead))) : null,
+        oldModuleType: wo.oldModuleType || wo.old_module_type || null,
+        newModuleType: wo.newModuleType || wo.new_module_type || null,
       }));
       
       const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
