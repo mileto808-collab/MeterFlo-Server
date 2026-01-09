@@ -189,6 +189,8 @@ export default function ProjectWorkOrders() {
   const [filterZone, setFilterZone] = useState("");
   const [filterOldSystemId, setFilterOldSystemId] = useState("");
   const [filterNewSystemId, setFilterNewSystemId] = useState("");
+  const [filterOldModuleId, setFilterOldModuleId] = useState("");
+  const [filterNewModuleId, setFilterNewModuleId] = useState("");
   const [filterScheduledDateFrom, setFilterScheduledDateFrom] = useState("");
   const [filterScheduledDateTo, setFilterScheduledDateTo] = useState("");
   const [filterCreatedBy, setFilterCreatedBy] = useState("all");
@@ -265,6 +267,12 @@ export default function ProjectWorkOrders() {
     { key: "newSystemId", label: "New System ID" },
     { key: "newSystemReading", label: "New System Reading" },
     { key: "newSystemType", label: "New System Type" },
+    { key: "oldModuleId", label: "Old Module ID" },
+    { key: "oldModuleRead", label: "Old Module Reading" },
+    { key: "oldModuleType", label: "Old Module Type" },
+    { key: "newModuleId", label: "New Module ID" },
+    { key: "newModuleRead", label: "New Module Reading" },
+    { key: "newModuleType", label: "New Module Type" },
     { key: "oldGps", label: "Old GPS" },
     { key: "newGps", label: "New GPS" },
     { key: "status", label: "Status" },
@@ -303,6 +311,10 @@ export default function ProjectWorkOrders() {
     { key: "oldSystemType", label: "Old System Type" },
     { key: "newSystemId", label: "New System ID" },
     { key: "newSystemType", label: "New System Type" },
+    { key: "oldModuleId", label: "Old Module ID" },
+    { key: "oldModuleType", label: "Old Module Type" },
+    { key: "newModuleId", label: "New Module ID" },
+    { key: "newModuleType", label: "New Module Type" },
     { key: "status", label: "Status" },
     { key: "scheduledAt", label: "Scheduled At" },
     { key: "scheduledBy", label: "Scheduled By" },
@@ -1263,6 +1275,12 @@ export default function ProjectWorkOrders() {
     newSystemId: { label: "New System ID", sortKey: "newSystemId" },
     newSystemReading: { label: "New System Reading", sortKey: "newSystemReading" },
     newSystemType: { label: "New System Type", sortKey: "newSystemType" },
+    oldModuleId: { label: "Old Module ID", sortKey: "oldModuleId" },
+    oldModuleRead: { label: "Old Module Reading", sortKey: "oldModuleRead" },
+    oldModuleType: { label: "Old Module Type", sortKey: "oldModuleType" },
+    newModuleId: { label: "New Module ID", sortKey: "newModuleId" },
+    newModuleRead: { label: "New Module Reading", sortKey: "newModuleRead" },
+    newModuleType: { label: "New Module Type", sortKey: "newModuleType" },
     oldGps: { label: "Old GPS", sortKey: "oldGps" },
     newGps: { label: "New GPS", sortKey: "newGps" },
     status: { label: "Status", sortKey: "status" },
@@ -1370,6 +1388,18 @@ export default function ProjectWorkOrders() {
         return <TableCell key={key} className={baseClass} style={cellStyle}>{workOrder.newSystemReading ?? "-"}</TableCell>;
       case "newSystemType":
         return <TableCell key={key} className={baseClass} style={cellStyle}>{woAny.newSystemType || "-"}</TableCell>;
+      case "oldModuleId":
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{woAny.oldModuleId || "-"}</TableCell>;
+      case "oldModuleRead":
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{woAny.oldModuleRead ?? "-"}</TableCell>;
+      case "oldModuleType":
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{woAny.oldModuleType || "-"}</TableCell>;
+      case "newModuleId":
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{woAny.newModuleId || "-"}</TableCell>;
+      case "newModuleRead":
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{woAny.newModuleRead ?? "-"}</TableCell>;
+      case "newModuleType":
+        return <TableCell key={key} className={baseClass} style={cellStyle}>{woAny.newModuleType || "-"}</TableCell>;
       case "oldGps":
         return <TableCell key={key} className={baseClass} style={cellStyle}>{workOrder.oldGps || "-"}</TableCell>;
       case "newGps":
@@ -1559,6 +1589,12 @@ export default function ProjectWorkOrders() {
     if (filterNewSystemId.trim()) {
       result = result.filter(wo => wo.newSystemId?.toLowerCase().includes(filterNewSystemId.toLowerCase()));
     }
+    if (filterOldModuleId.trim()) {
+      result = result.filter(wo => (wo as any).oldModuleId?.toLowerCase().includes(filterOldModuleId.toLowerCase()));
+    }
+    if (filterNewModuleId.trim()) {
+      result = result.filter(wo => (wo as any).newModuleId?.toLowerCase().includes(filterNewModuleId.toLowerCase()));
+    }
     if (filterScheduledDateFrom || filterScheduledDateTo) {
       result = result.filter(wo => {
         const scheduledAt = (wo as any).scheduledAt;
@@ -1673,7 +1709,7 @@ export default function ProjectWorkOrders() {
     }
     
     return result;
-  }, [workOrders, searchQuery, sortCriteria, selectedStatus, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldSystemType, selectedNewSystemType, systemTypes, assigneesData, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterNewSystemId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
+  }, [workOrders, searchQuery, sortCriteria, selectedStatus, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldSystemType, selectedNewSystemType, systemTypes, assigneesData, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterNewSystemId, filterOldModuleId, filterNewModuleId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
 
   const totalPages = Math.ceil(filteredAndSortedWorkOrders.length / pageSize);
   const paginatedWorkOrders = useMemo(() => {
@@ -1691,7 +1727,7 @@ export default function ProjectWorkOrders() {
   useEffect(() => {
     setCurrentPage(1);
     setSelectedWorkOrderIds(new Set());
-  }, [workOrders, searchQuery, selectedStatus, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldSystemType, selectedNewSystemType, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterNewSystemId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo, pageSize]);
+  }, [workOrders, searchQuery, selectedStatus, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldSystemType, selectedNewSystemType, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterNewSystemId, filterOldModuleId, filterNewModuleId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo, pageSize]);
 
   useEffect(() => {
     if (currentPage > totalPages && totalPages > 0) {
@@ -1731,6 +1767,8 @@ export default function ProjectWorkOrders() {
     setFilterZone("");
     setFilterOldSystemId("");
     setFilterNewSystemId("");
+    setFilterOldModuleId("");
+    setFilterNewModuleId("");
     setFilterScheduledDateFrom("");
     setFilterScheduledDateTo("");
     setFilterCreatedBy("all");
@@ -1747,7 +1785,7 @@ export default function ProjectWorkOrders() {
     setCurrentPage(1);
   };
 
-  const hasActiveFilters = selectedStatus !== "all" || selectedServiceType !== "all" || selectedAssignedTo !== "all" || selectedAssignedGroup !== "all" || selectedTrouble !== "all" || selectedOldSystemType !== "all" || selectedNewSystemType !== "all" || filterSystemWoId !== "" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldSystemId !== "" || filterNewSystemId !== "" || filterScheduledDateFrom !== "" || filterScheduledDateTo !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterScheduledBy !== "all" || filterCompletedBy !== "all" || filterCompletedAtFrom !== "" || filterCompletedAtTo !== "" || filterNotes !== "" || filterCreatedAtFrom !== "" || filterCreatedAtTo !== "" || filterUpdatedAtFrom !== "" || filterUpdatedAtTo !== "";
+  const hasActiveFilters = selectedStatus !== "all" || selectedServiceType !== "all" || selectedAssignedTo !== "all" || selectedAssignedGroup !== "all" || selectedTrouble !== "all" || selectedOldSystemType !== "all" || selectedNewSystemType !== "all" || filterSystemWoId !== "" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldSystemId !== "" || filterNewSystemId !== "" || filterOldModuleId !== "" || filterNewModuleId !== "" || filterScheduledDateFrom !== "" || filterScheduledDateTo !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterScheduledBy !== "all" || filterCompletedBy !== "all" || filterCompletedAtFrom !== "" || filterCompletedAtTo !== "" || filterNotes !== "" || filterCreatedAtFrom !== "" || filterCreatedAtTo !== "" || filterUpdatedAtFrom !== "" || filterUpdatedAtTo !== "";
 
   const getStatusLabel = (status: string): string => {
     if (!status) return "";
@@ -1777,6 +1815,12 @@ export default function ProjectWorkOrders() {
       case "newSystemId": return wo.newSystemId || "";
       case "newSystemReading": return wo.newSystemReading?.toString() ?? "";
       case "newSystemType": return wo.newSystemType?.toString() || "";
+      case "oldModuleId": return (wo as any).oldModuleId || "";
+      case "oldModuleRead": return (wo as any).oldModuleRead?.toString() ?? "";
+      case "oldModuleType": return (wo as any).oldModuleType?.toString() || "";
+      case "newModuleId": return (wo as any).newModuleId || "";
+      case "newModuleRead": return (wo as any).newModuleRead?.toString() ?? "";
+      case "newModuleType": return (wo as any).newModuleType?.toString() || "";
       case "oldGps": return wo.oldGps || "";
       case "newGps": return wo.newGps || "";
       case "status": return getStatusLabel(wo.status);
@@ -3243,6 +3287,18 @@ export default function ProjectWorkOrders() {
                   <Input id="filter-new-system-id" placeholder="Filter..." value={filterNewSystemId} onChange={(e) => setFilterNewSystemId(e.target.value)} data-testid="input-filter-new-system-id" />
                 </div>
               )}
+              {isFilterVisible("oldModuleId") && (
+                <div className="min-w-[120px]">
+                  <Label htmlFor="filter-old-module-id">Old Module ID</Label>
+                  <Input id="filter-old-module-id" placeholder="Filter..." value={filterOldModuleId} onChange={(e) => setFilterOldModuleId(e.target.value)} data-testid="input-filter-old-module-id" />
+                </div>
+              )}
+              {isFilterVisible("newModuleId") && (
+                <div className="min-w-[120px]">
+                  <Label htmlFor="filter-new-module-id">New Module ID</Label>
+                  <Input id="filter-new-module-id" placeholder="Filter..." value={filterNewModuleId} onChange={(e) => setFilterNewModuleId(e.target.value)} data-testid="input-filter-new-module-id" />
+                </div>
+              )}
               {isFilterVisible("scheduledAt") && (
                 <div className="min-w-[280px]">
                   <Label>Scheduled At</Label>
@@ -3677,6 +3733,8 @@ export default function ProjectWorkOrders() {
           address: wo.address || "",
           oldSystemNumber: wo.oldSystemId || null,
           newSystemNumber: wo.newSystemId || null,
+          oldModuleId: (wo as any).oldModuleId || null,
+          newModuleId: (wo as any).newModuleId || null,
         }))}
         projectName={project?.name}
       />

@@ -19,6 +19,8 @@ export interface WorkOrderData {
   address: string;
   oldSystemNumber: string | null;
   newSystemNumber?: string | null;
+  oldModuleId?: string | null;
+  newModuleId?: string | null;
 }
 
 const escapeHtml = (text: string): string => {
@@ -117,10 +119,13 @@ export function RouteSheetDialog({
             const systemDisplay = escapeHtml(systemValue || "N/A");
             const escapedWoId = escapeHtml(wo.customerWoId);
             const escapedAddress = escapeHtml(wo.address || "No address");
+            const moduleValue = systemIdField === "old" ? wo.oldModuleId : wo.newModuleId;
+            const moduleDisplay = moduleValue ? escapeHtml(moduleValue) : null;
             return `
             <td style="width: ${cellWidth}px; height: ${cellHeight}px; padding: ${cellPadding}px; border: 1px solid #ddd; vertical-align: top; text-align: center;">
               <div style="font-weight: bold; font-size: 12px; margin-bottom: 4px;">WO ID: ${escapedWoId}</div>
-              <div style="font-size: 11px; color: #333; margin-bottom: 8px; min-height: 28px;">${escapedAddress}</div>
+              <div style="font-size: 11px; color: #333; margin-bottom: 4px; min-height: 14px;">${escapedAddress}</div>
+              ${moduleDisplay ? `<div style="font-size: 9px; color: #555; margin-bottom: 4px;">Module: ${moduleDisplay}</div>` : ""}
               ${
                 codeImage
                   ? `<img src="${codeImage}" style="max-width: ${cellWidth - 20}px; max-height: ${codeType === "barcode" ? 50 : 70}px;" />`
