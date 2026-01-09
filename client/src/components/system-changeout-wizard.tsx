@@ -117,7 +117,7 @@ interface SystemChangeoutWizardProps {
 const stepLabels: Record<WizardStep, string> = {
   canChange: "Can The Changeout Proceed?",
   troubleCapture: "Report Issue",
-  oldReading: "Old System Reading",
+  oldReading: "Capture Old Reading",
   beforePhotos: "Before Photos",
   physicalChange: "Perform Changeout",
   newSystemId: "New System ID",
