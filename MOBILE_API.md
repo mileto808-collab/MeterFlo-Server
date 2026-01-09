@@ -192,10 +192,18 @@ Downloads work orders with incremental sync support.
       "id": 123,
       "customer_wo_id": "WO-001",
       "status": "Open",
-      "old_meter_id": "MTR123",
-      "old_meter_reading": 12345,
-      "new_meter_id": null,
-      "new_meter_reading": null,
+      "old_system_id": "SYS123",
+      "old_system_type": "FLOWIQ2200",
+      "old_system_read": 12345,
+      "new_system_id": null,
+      "new_system_type": "FLOWIQ3100",
+      "new_system_read": null,
+      "old_module_id": "MOD456",
+      "old_module_type": "AMI-2000",
+      "old_module_read": 54321,
+      "new_module_id": null,
+      "new_module_type": "AMI-3000",
+      "new_module_read": null,
       "service_address": "123 Main St",
       "city": "Springfield",
       "state": "IL",
@@ -328,11 +336,19 @@ Fetch complete details for a single work order. Use this for refreshing individu
   "id": 1046,
   "customer_wo_id": "WO-1046",
   "status": "Open",
-  "old_meter_id": "MTR123456",
-  "old_meter_reading": 12345,
+  "old_system_id": "SYS123456",
+  "old_system_type": "FLOWIQ2200",
+  "old_system_read": 12345,
+  "new_system_id": null,
+  "new_system_type": "FLOWIQ3100",
+  "new_system_read": null,
+  "old_module_id": "MOD789012",
+  "old_module_type": "AMI-2000",
+  "old_module_read": 54321,
+  "new_module_id": null,
+  "new_module_type": "AMI-3000",
+  "new_module_read": null,
   "old_gps": "40.7128,-74.0060",
-  "new_meter_id": null,
-  "new_meter_reading": null,
   "new_gps": null,
   "service_address": "123 Main St",
   "city": "Springfield",
@@ -345,8 +361,6 @@ Fetch complete details for a single work order. Use this for refreshing individu
   "route": "R1",
   "zone": "North",
   "service_type": "Water",
-  "old_meter_type": "Residential",
-  "new_meter_type": null,
   "notes": "Gate code 1234",
   "trouble": null,
   "assigned_user_id": "user-uuid",
@@ -368,6 +382,14 @@ Fetch complete details for a single work order. Use this for refreshing individu
   "updated_by": "jsmith"
 }
 ```
+
+**Note on System vs Module fields:**
+- `old_system_id` / `new_system_id` - System (meter) serial numbers
+- `old_module_id` / `new_module_id` - Communication module serial numbers
+- `*_type` fields - Equipment type/model names
+- `*_read` fields - Meter readings (stored as integers)
+
+The presence of `old_system_id` and/or `old_module_id` determines what type of changeout is required.
 
 **Note:** This endpoint returns the same snake_case format as the bulk sync endpoint, so no additional field mapping is required.
 
@@ -416,7 +438,7 @@ If already assigned to this user:
 POST /api/projects/:projectId/work-orders/:workOrderId/meter-changeout
 ```
 
-Complete a meter changeout with photos, GPS, and signature.
+Complete a meter changeout with photos, GPS, and signature. Supports system-only, module-only, or combined system+module changeouts.
 
 **Content-Type:** `multipart/form-data`
 
@@ -424,15 +446,65 @@ Complete a meter changeout with photos, GPS, and signature.
 - `photos` - File array (up to 20 photos)
 - `data` - JSON string with changeout data
 
-**Successful Changeout Data:**
+#### Data-Driven Scope Detection
+
+The API automatically determines the changeout scope based on which IDs exist in the work order:
+- **System changeout**: Work order has `old_system_id` set
+- **Module changeout**: Work order has `old_module_id` set  
+- **Both**: Work order has both `old_system_id` and `old_module_id` set
+
+Required fields in the submission depend on which IDs are present:
+
+| Work Order Has | Required Fields |
+|----------------|-----------------|
+| `old_system_id` only | `oldSystemReading`, `newSystemId`, `newSystemReading` |
+| `old_module_id` only | `oldModuleReading`, `newModuleId`, `newModuleReading` |
+| Both IDs | All system AND module fields above |
+
+**Successful Changeout Data (System Only):**
 ```json
 {
   "canChange": true,
   "troubleCode": null,
   "troubleNote": null,
-  "oldMeterReading": "12345",
-  "newMeterId": "NEW123456",
-  "newMeterReading": "00000",
+  "oldSystemReading": "12345",
+  "newSystemId": "NEW123456",
+  "newSystemReading": "00000",
+  "gpsCoordinates": "40.7128,-74.0060",
+  "signatureData": "data:image/png;base64,iVBORw0KGgo...",
+  "signatureName": "John Doe",
+  "photoTypes": ["before", "before", "after", "after"]
+}
+```
+
+**Successful Changeout Data (Module Only):**
+```json
+{
+  "canChange": true,
+  "troubleCode": null,
+  "troubleNote": null,
+  "oldModuleReading": "54321",
+  "newModuleId": "MOD789012",
+  "newModuleReading": "00000",
+  "gpsCoordinates": "40.7128,-74.0060",
+  "signatureData": "data:image/png;base64,iVBORw0KGgo...",
+  "signatureName": "John Doe",
+  "photoTypes": ["before", "before", "after", "after"]
+}
+```
+
+**Successful Changeout Data (Both System and Module):**
+```json
+{
+  "canChange": true,
+  "troubleCode": null,
+  "troubleNote": null,
+  "oldSystemReading": "12345",
+  "newSystemId": "NEW123456",
+  "newSystemReading": "00000",
+  "oldModuleReading": "54321",
+  "newModuleId": "MOD789012",
+  "newModuleReading": "00000",
   "gpsCoordinates": "40.7128,-74.0060",
   "signatureData": "data:image/png;base64,iVBORw0KGgo...",
   "signatureName": "John Doe",
@@ -611,16 +683,18 @@ The `filename` field in the request is ignored - the server enforces standardize
 POST /api/mobile/workorders/:workOrderId/complete
 ```
 
-Complete a meter changeout with photos and signature.
+Complete a meter changeout with photos and signature. Supports system-only, module-only, or combined changeouts.
 
-**Request Body:**
+**Request Body (System + Module Changeout):**
 ```json
 {
   "projectId": 2,
-  "oldMeterReading": 12345,
-  "newMeterReading": 12400,
-  "newMeterId": "ABC123",
-  "newMeterType": "AC250",
+  "oldSystemReading": 12345,
+  "newSystemReading": 0,
+  "newSystemId": "SYS123456",
+  "oldModuleReading": 54321,
+  "newModuleReading": 0,
+  "newModuleId": "MOD789012",
   "gpsCoordinates": "39.7294,-104.8337",
   "signatureData": "data:image/png;base64,iVBORw0KGgo...",
   "signatureName": "John Smith",
@@ -644,11 +718,17 @@ Complete a meter changeout with photos and signature.
 **Required Fields:**
 - `projectId` - Project ID
 
+**System Fields (required when work order has `old_system_id`):**
+- `oldSystemReading` - Old system final reading
+- `newSystemReading` - New system initial reading
+- `newSystemId` - New system serial number
+
+**Module Fields (required when work order has `old_module_id`):**
+- `oldModuleReading` - Old module final reading
+- `newModuleReading` - New module initial reading
+- `newModuleId` - New module serial number
+
 **Optional Fields:**
-- `oldMeterReading` - Old meter final reading
-- `newMeterReading` - New meter initial reading
-- `newMeterId` - New meter serial number
-- `newMeterType` - New meter type code
 - `gpsCoordinates` - GPS coordinates (format: "lat,lng")
 - `signatureData` - Base64-encoded signature image
 - `signatureName` - Customer name for signature
@@ -831,4 +911,4 @@ Common HTTP status codes:
 
 ---
 
-*Last updated: December 28, 2025*
+*Last updated: January 9, 2026*
