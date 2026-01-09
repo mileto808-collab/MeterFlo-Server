@@ -316,6 +316,13 @@ class FileImportScheduler {
               delete mappedData.newMeterId;
             }
 
+            if (mappedData.oldModuleRead) {
+              mappedData.oldModuleRead = parseInt(String(mappedData.oldModuleRead)) || null;
+            }
+            if (mappedData.newModuleRead) {
+              mappedData.newModuleRead = parseInt(String(mappedData.newModuleRead)) || null;
+            }
+
             // Set default status and createdBy
             mappedData.createdBy = "file_import";
 

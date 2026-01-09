@@ -186,6 +186,13 @@ class ImportScheduler {
               delete mappedData.newMeterId;
             }
 
+            if (mappedData.oldModuleRead) {
+              mappedData.oldModuleRead = parseInt(String(mappedData.oldModuleRead)) || null;
+            }
+            if (mappedData.newModuleRead) {
+              mappedData.newModuleRead = parseInt(String(mappedData.newModuleRead)) || null;
+            }
+
             mappedData.status = mappedData.status || "Open";
             mappedData.createdBy = "system_import";
 
@@ -194,7 +201,7 @@ class ImportScheduler {
               await workOrderStorage.updateWorkOrder(existingWo.id, mappedData);
             } else {
               const validated = insertProjectWorkOrderSchema.parse(mappedData);
-              await workOrderStorage.createWorkOrder(validated);
+              await workOrderStorage.createWorkOrder(validated as any);
             }
             imported++;
           } catch (rowError: any) {
