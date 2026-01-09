@@ -208,20 +208,24 @@ export function SystemChangeoutWizard({
     signatureName: "",
   });
   
-  // Determine the effective display mode based on scope and available IDs
+  // Determine the effective display mode based on presence of system/module IDs
+  // This is now data-driven instead of scope-driven
   const getDisplayMode = (): "system" | "module" | "both" => {
-    if (scope === "both") return "both";
-    if (scope === "module") return "module";
-    return "system";
+    const hasSystem = !!oldSystemId;
+    const hasModule = !!oldModuleId;
+    
+    if (hasSystem && hasModule) return "both";
+    if (hasModule) return "module";
+    return "system"; // Default to system if neither or only system
   };
   
   const displayMode = getDisplayMode();
   
-  // Dynamic step label based on scope
+  // Dynamic step label based on what data is present
   const getCanChangeLabel = (): string => {
     switch (displayMode) {
       case "module": return "Can Module Be Changed?";
-      case "both": return "Can System & Module Be Changed?";
+      case "both": return "Can System Be Changed?";
       default: return "Can System Be Changed?";
     }
   };
