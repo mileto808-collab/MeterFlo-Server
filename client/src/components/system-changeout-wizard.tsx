@@ -1460,6 +1460,20 @@ export function SystemChangeoutWizard({
                 </CardContent>
               </Card>
             )}
+
+            {newModuleType && showNewModuleReading && (
+              <Card className="bg-muted/50">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium flex items-center gap-2">
+                    <Gauge className="h-4 w-4" />
+                    Verify New Module Type
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm" data-testid="text-verify-new-module-type">{newModuleType}</p>
+                </CardContent>
+              </Card>
+            )}
           </div>
         );
       }
