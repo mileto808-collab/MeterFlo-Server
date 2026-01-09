@@ -6521,10 +6521,11 @@ export async function registerRoutes(
         const serverTimestamp = new Date().toISOString();
         
         // Get reference data for offline use (including assignees)
-        const [workOrderStatuses, troubleCodes, systemTypes, serviceTypes, projectUsers, allGroupsWithProjects] = await Promise.all([
+        const [workOrderStatuses, troubleCodes, systemTypes, moduleTypes, serviceTypes, projectUsers, allGroupsWithProjects] = await Promise.all([
           storage.getWorkOrderStatuses(),
           storage.getTroubleCodes(),
           storage.getSystemTypes(),
+          storage.getModuleTypes(),
           storage.getServiceTypes(),
           storage.getProjectUsers(projectId),
           storage.getAllUserGroupsWithProjects()
@@ -6559,6 +6560,7 @@ export async function registerRoutes(
             workOrderStatuses,
             troubleCodes,
             systemTypes,
+            moduleTypes,
             serviceTypes,
             assignees: { users, groups }
           },
