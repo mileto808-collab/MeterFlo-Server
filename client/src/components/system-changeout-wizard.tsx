@@ -183,12 +183,6 @@ export function SystemChangeoutWizard({
   const scannerRef = useRef<HTMLDivElement>(null);
   const [previewPhoto, setPreviewPhoto] = useState<{ photo: CapturedPhoto; type: "trouble" | "before" | "after"; index: number } | null>(null);
   
-  // Track original readings and edit state for "clear on focus, restore on cancel" behavior
-  const originalOldSystemReading = useRef(existingOldReading || "");
-  const originalOldModuleReading = useRef(existingOldModuleReading || "");
-  const [hasEditedOldSystemReading, setHasEditedOldSystemReading] = useState(false);
-  const [hasEditedOldModuleReading, setHasEditedOldModuleReading] = useState(false);
-  
   const [data, setData] = useState<SystemChangeoutData>({
     canChange: true,
     troubleCode: null,
@@ -975,6 +969,7 @@ export function SystemChangeoutWizard({
                   type="text"
                   inputMode="numeric"
                   value={data.oldSystemReading}
+                  onFocus={() => setData((prev) => ({ ...prev, oldSystemReading: "" }))}
                   onChange={(e) => setData((prev) => ({ ...prev, oldSystemReading: e.target.value }))}
                   placeholder="Enter system reading (digits only)..."
                   className={`text-lg text-center ${oldSystemReadingError && data.oldSystemReading ? "border-destructive" : ""}`}
@@ -995,6 +990,7 @@ export function SystemChangeoutWizard({
                   type="text"
                   inputMode="numeric"
                   value={data.oldModuleReading}
+                  onFocus={() => setData((prev) => ({ ...prev, oldModuleReading: "" }))}
                   onChange={(e) => setData((prev) => ({ ...prev, oldModuleReading: e.target.value }))}
                   placeholder="Enter module reading (digits only)..."
                   className={`text-lg text-center ${oldModuleReadingError && data.oldModuleReading ? "border-destructive" : ""}`}
