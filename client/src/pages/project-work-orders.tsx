@@ -3057,7 +3057,7 @@ export default function ProjectWorkOrders() {
               data-testid="button-toggle-filters"
             >
               <Filter className="h-4 w-4 mr-2" />
-              Filters
+              {showFilters ? "Hide Filters" : "Show Filters"}
               {hasActiveFilters && <Badge variant="secondary" className="ml-2">{[selectedStatus !== "all", selectedServiceType !== "all"].filter(Boolean).length}</Badge>}
             </Button>
             {hasActiveFilters && (
