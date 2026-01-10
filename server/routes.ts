@@ -7530,6 +7530,280 @@ export async function registerRoutes(
     }
   });
 
+  // Project-scoped mobile complete endpoint - accepts both camelCase and snake_case field names
+  // This endpoint uses projectId in URL for per-project integrity
+  app.post("/api/mobile/projects/:projectId/work-orders/:workOrderId/complete", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      const workOrderId = parseInt(req.params.workOrderId);
+      
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // Normalize field names - accept both camelCase and snake_case
+      const body = req.body;
+      const oldSystemReading = body.oldSystemReading ?? body.old_system_reading;
+      const newSystemReading = body.newSystemReading ?? body.new_system_reading;
+      const newSystemId = body.newSystemId ?? body.new_system_id;
+      const newSystemType = body.newSystemType ?? body.new_system_type;
+      const oldModuleReading = body.oldModuleReading ?? body.oldModuleRead ?? body.old_module_reading ?? body.old_module_read;
+      const newModuleReading = body.newModuleReading ?? body.newModuleRead ?? body.new_module_reading ?? body.new_module_read;
+      const newModuleId = body.newModuleId ?? body.new_module_id;
+      const oldModuleType = body.oldModuleType ?? body.old_module_type;
+      const newModuleType = body.newModuleType ?? body.new_module_type;
+      const gpsCoordinates = body.gpsCoordinates ?? body.new_gps ?? body.old_gps;
+      const signatureData = body.signatureData ?? body.signature_data;
+      const signatureName = body.signatureName ?? body.signature_name;
+      const completedAt = body.completedAt ?? body.completed_at;
+      const notes = body.notes;
+      const beforePhotos = body.beforePhotos ?? body.before_photos ?? [];
+      const afterPhotos = body.afterPhotos ?? body.after_photos ?? [];
+      
+      // Check permission
+      const hasMeterChangeoutPermission = await storage.hasPermission(currentUser, "workOrders.meterChangeout");
+      if (!hasMeterChangeoutPermission) {
+        return res.status(403).json({ message: "You do not have permission to perform system changeouts" });
+      }
+      
+      // Must be assigned to project (unless admin)
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      const workOrder = await workOrderStorage.getWorkOrder(workOrderId);
+      
+      if (!workOrder) {
+        return res.status(404).json({ message: "Work order not found" });
+      }
+      
+      const folderName = workOrder.customerWoId || String(workOrder.id);
+      const updatedByUsername = currentUser.username || currentUser.id;
+      
+      // Helper to save base64 photos
+      const saveBase64Photos = async (photos: any[], photoType: string) => {
+        if (!photos || !Array.isArray(photos) || photos.length === 0) return;
+        
+        const projectFilesPath = await getProjectFilesPath();
+        const projectDirName = getProjectDirectoryName(project.name, project.id);
+        const workOrderFolder = path.join(
+          projectFilesPath,
+          projectDirName,
+          "Work Orders",
+          folderName
+        );
+        
+        await fs.mkdir(workOrderFolder, { recursive: true });
+        
+        const now = new Date();
+        const dateStr = now.getFullYear().toString() +
+          (now.getMonth() + 1).toString().padStart(2, '0') +
+          now.getDate().toString().padStart(2, '0');
+        
+        for (let i = 0; i < photos.length; i++) {
+          const photo = photos[i];
+          if (photo.base64) {
+            let base64Data = photo.base64;
+            if (base64Data.includes(",")) {
+              base64Data = base64Data.split(",")[1];
+            }
+            
+            const buffer = Buffer.from(base64Data, "base64");
+            const uniqueId = randomUUID();
+            const filename = `${folderName}-${photoType}-${dateStr}-${uniqueId}.jpg`;
+            const filePath = path.join(workOrderFolder, filename);
+            await fs.writeFile(filePath, buffer);
+          }
+        }
+      };
+      
+      // Save photos
+      await saveBase64Photos(beforePhotos, "before");
+      await saveBase64Photos(afterPhotos, "after");
+      
+      // Save signature if provided
+      if (signatureData) {
+        const projectFilesPath = await getProjectFilesPath();
+        const projectDirName = getProjectDirectoryName(project.name, project.id);
+        const workOrderFolder = path.join(
+          projectFilesPath,
+          projectDirName,
+          "Work Orders",
+          folderName
+        );
+        
+        await fs.mkdir(workOrderFolder, { recursive: true });
+        
+        let sigBase64 = signatureData;
+        if (sigBase64.includes(",")) {
+          sigBase64 = sigBase64.split(",")[1];
+        }
+        
+        const sigBuffer = Buffer.from(sigBase64, "base64");
+        const sigFilename = `${folderName}-signature.png`;
+        const sigFilePath = path.join(workOrderFolder, sigFilename);
+        await fs.writeFile(sigFilePath, sigBuffer);
+      }
+      
+      // Validation helpers
+      const isValidSystemReading = (reading: any): boolean => {
+        if (reading === undefined || reading === null) return false;
+        const str = String(reading).trim();
+        return str.length > 0 && /^\d+$/.test(str);
+      };
+      
+      const isValidGps = (gps: string): boolean => {
+        if (!gps || !gps.trim()) return false;
+        const match = gps.trim().match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
+        if (!match) return false;
+        const lat = parseFloat(match[1]);
+        const lng = parseFloat(match[2]);
+        return !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+      };
+      
+      // Determine changeout scope from work order data
+      const woAny = workOrder as any;
+      const needsSystem = !!workOrder.oldSystemId || !!woAny.old_system_id;
+      const needsModule = !!workOrder.oldModuleId || !!woAny.old_module_id;
+      
+      // Validate required fields based on scope
+      if (needsSystem) {
+        if (!isValidSystemReading(oldSystemReading)) {
+          return res.status(400).json({ message: "oldSystemReading is required and must be numeric" });
+        }
+        if (!newSystemId) {
+          return res.status(400).json({ message: "newSystemId is required for completion" });
+        }
+        if (!isValidSystemReading(newSystemReading)) {
+          return res.status(400).json({ message: "newSystemReading is required and must be numeric" });
+        }
+      }
+      
+      if (needsModule) {
+        if (!isValidSystemReading(oldModuleReading)) {
+          return res.status(400).json({ message: "oldModuleReading is required and must be numeric" });
+        }
+        if (!newModuleId) {
+          return res.status(400).json({ message: "newModuleId is required for module changeout" });
+        }
+        if (!isValidSystemReading(newModuleReading)) {
+          return res.status(400).json({ message: "newModuleReading is required and must be numeric" });
+        }
+      }
+      
+      if (gpsCoordinates && !isValidGps(gpsCoordinates)) {
+        return res.status(400).json({ message: "Invalid GPS coordinates format. Use 'lat,lng' format" });
+      }
+      
+      // Build update data
+      const updateData: any = {
+        status: "Completed",
+        trouble: null,
+        updatedAt: new Date().toISOString(),
+        completedAt: completedAt || new Date().toISOString(),
+        completedBy: currentUser.id,
+      };
+      
+      if (oldSystemReading !== undefined && oldSystemReading !== null) {
+        updateData.oldSystemReading = parseInt(String(oldSystemReading), 10);
+      }
+      if (newSystemReading !== undefined && newSystemReading !== null) {
+        updateData.newSystemReading = parseInt(String(newSystemReading), 10);
+      }
+      if (newSystemId) {
+        updateData.newSystemId = newSystemId;
+      }
+      if (newSystemType) {
+        updateData.newSystemType = newSystemType;
+      }
+      
+      // Module fields
+      if (oldModuleReading !== undefined && oldModuleReading !== null) {
+        updateData.oldModuleRead = parseInt(String(oldModuleReading), 10);
+      }
+      if (newModuleReading !== undefined && newModuleReading !== null) {
+        updateData.newModuleRead = parseInt(String(newModuleReading), 10);
+      }
+      if (newModuleId) {
+        updateData.newModuleId = newModuleId;
+      }
+      if (oldModuleType) {
+        updateData.oldModuleType = oldModuleType;
+      }
+      if (newModuleType) {
+        updateData.newModuleType = newModuleType;
+      }
+      
+      if (gpsCoordinates) {
+        updateData.newGps = gpsCoordinates;
+      }
+      if (signatureName) {
+        updateData.signatureName = signatureName;
+      }
+      if (signatureData) {
+        updateData.signatureData = signatureData;
+      }
+      
+      // Append notes
+      if (notes && notes.trim()) {
+        const timestamp = await getTimezoneFormattedTimestamp();
+        const noteEntry = `[System Changeout Notes - ${timestamp} by ${currentUser.username || currentUser.id}]\n${notes.trim()}`;
+        updateData.notes = workOrder.notes 
+          ? `${workOrder.notes}\n\n${noteEntry}`
+          : noteEntry;
+      }
+      
+      const updatedWorkOrder = await workOrderStorage.updateWorkOrder(
+        workOrderId,
+        updateData,
+        updatedByUsername
+      );
+      
+      // Trigger webhook if configured
+      await triggerProjectWebhook(project, "work_order.completed", updatedWorkOrder, currentUser);
+      
+      // Send to customer API if configured
+      if (updatedWorkOrder) {
+        const woFolderPath = path.join(
+          await getProjectFilesPath(),
+          getProjectDirectoryName(project.name, project.id),
+          "Work Orders",
+          folderName
+        );
+        const signatureFilePath = path.join(woFolderPath, `${folderName}-signature.png`);
+        
+        sendWorkOrderToCustomerApi(projectId, updatedWorkOrder, {
+          beforePhoto: null,
+          afterPhoto: null,
+          signature: existsSync(signatureFilePath) ? signatureFilePath : null,
+          workOrderFolderPath: woFolderPath,
+        }).catch(err => console.error("[CustomerAPI] Background send failed:", err));
+      }
+      
+      // Emit SSE event
+      emitWorkOrderUpdated(projectId, workOrderId, currentUser.id);
+      
+      res.json({
+        success: true,
+        workOrder: updatedWorkOrder,
+        message: "System changeout completed successfully"
+      });
+    } catch (error: any) {
+      console.error("Error in project-scoped mobile complete endpoint:", error);
+      res.status(500).json({ message: error.message || "Failed to complete system changeout" });
+    }
+  });
+
   // Bulk claim work orders - mobile batch operation
   app.post("/api/projects/:projectId/mobile/work-orders/bulk-claim", isAuthenticated, async (req: any, res) => {
     try {

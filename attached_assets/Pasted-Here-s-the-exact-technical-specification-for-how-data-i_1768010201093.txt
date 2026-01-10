@@ -1,0 +1,74 @@
+Here's the exact technical specification for how data is sent/received:
+
+Online Work Order Completion (WorkflowWizardScreen.tsx)
+Endpoint: POST ${serverUrl}/api/mobile/projects/${projectId}/work-orders/${workOrderId}/complete
+
+Headers:
+
+Content-Type: application/json
+X-Requested-With: XMLHttpRequest
+Origin: ${serverUrl}
+Referer: ${serverUrl}/
+credentials: include
+Payload (camelCase):
+
+{
+  "projectId": 8,
+  "oldSystemReading": 12345,
+  "oldModuleId": "12DCE7736137750",
+  "oldModuleReading": "55555",
+  "newSystemId": "ABC123",
+  "newSystemReading": 0,
+  "newModuleId": "NEW123",
+  "newModuleReading": "0",
+  "gpsCoordinates": "lat,lng",
+  "signatureData": "data:image/png;base64,...",
+  "signatureName": "John Doe",
+  "completedAt": "2026-01-10T01:45:00.000Z",
+  "notes": "Some notes",
+  "beforePhotos": [{"base64": "data:image/jpeg;base64,...", "filename": "WO123-before-1.jpg"}],
+  "afterPhotos": [{"base64": "data:image/jpeg;base64,...", "filename": "WO123-after-1.jpg"}]
+}
+Offline Sync Work Order Completion (OfflineContext.tsx)
+Endpoint: POST ${serverUrl}/api/mobile/projects/${projectId}/work-orders/${serverWorkOrderId}/complete
+
+Payload (snake_case - recently changed):
+
+{
+  "status": "Completed",
+  "old_system_reading": 12345,
+  "old_module_id": "12DCE7736137750",
+  "old_module_read": "55555",
+  "new_system_id": "ABC123",
+  "new_system_reading": 0,
+  "new_module_id": "NEW123",
+  "new_module_read": "0",
+  "old_gps": null,
+  "new_gps": "lat,lng",
+  "signature_data": "data:image/png;base64,...",
+  "signature_name": "John Doe",
+  "completed_at": "2026-01-10T01:45:00.000Z",
+  "notes": "Some notes",
+  "before_photos": [],
+  "after_photos": []
+}
+Key Differences:
+Field	Online (camelCase)	Offline (snake_case)
+GPS	gpsCoordinates	new_gps
+Module reading	oldModuleReading	old_module_read
+Photos	beforePhotos with objects	before_photos with objects
+Status	Not sent	status: "Completed"
+Question for server: Which format does the /api/mobile/projects/.../complete endpoint expect - camelCase or snake_case?
+
+Worked for 50 seconds
+Are you including the offline processing and online processing?
+
+Yes, I included both:
+
+Online processing (WorkflowWizardScreen.tsx) - when you complete a work order while connected, it sends camelCase payload directly to the server
+
+Offline sync processing (OfflineContext.tsx) - when you complete a work order offline and later sync, it sends snake_case payload (after my recent change)
+
+The problem is they're now using different field name formats for the same endpoint. The server needs to accept one format or the other, and both paths in the app need to match.
+
+Should I change the offline sync back to camelCase to match the online submission?
