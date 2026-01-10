@@ -141,7 +141,30 @@ export async function createProjectSchema(projectName: string, projectId: number
       )
     `);
     
-    console.log(`Created project schema: ${schemaName}`);
+    // Add unique partial indexes for system and module IDs (only for non-null values)
+    // These ensure no duplicate meters/modules are created within a project
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_old_system_id 
+      ON "${schemaName}".work_orders (old_system_id) 
+      WHERE old_system_id IS NOT NULL
+    `);
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_new_system_id 
+      ON "${schemaName}".work_orders (new_system_id) 
+      WHERE new_system_id IS NOT NULL
+    `);
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_old_module_id 
+      ON "${schemaName}".work_orders (old_module_id) 
+      WHERE old_module_id IS NOT NULL
+    `);
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_new_module_id 
+      ON "${schemaName}".work_orders (new_module_id) 
+      WHERE new_module_id IS NOT NULL
+    `);
+    
+    console.log(`Created project schema with unique ID indexes: ${schemaName}`);
     return schemaName;
   } finally {
     client.release();
@@ -369,6 +392,25 @@ export async function migrateProjectSchema(schemaName: string): Promise<void> {
       }
     }
     
+    // Step 8: Add unique partial indexes for new_system_id and new_module_id
+    // These columns should have no duplicates (can't install same new meter twice)
+    // Note: old_* indexes skipped for existing schemas - may have legacy duplicates
+    try {
+      await client.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_new_system_id 
+        ON "${schemaName}".work_orders (new_system_id) 
+        WHERE new_system_id IS NOT NULL
+      `);
+      await client.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_new_module_id 
+        ON "${schemaName}".work_orders (new_module_id) 
+        WHERE new_module_id IS NOT NULL
+      `);
+      console.log(`Added unique indexes for new_system_id and new_module_id to ${schemaName}`);
+    } catch (indexError) {
+      console.log(`Unique index creation for ${schemaName}: ${indexError}`);
+    }
+    
     console.log(`Migration completed for ${schemaName}.work_orders to canonical Aurora schema`);
   } catch (error) {
     // Log but don't fail - table might not exist yet
@@ -524,6 +566,12 @@ export class ProjectWorkOrderStorage {
     await this.ensureMigrated();
     const client = await pool.connect();
     try {
+      // Check for duplicate system/module IDs before inserting
+      const duplicateErrors = await this.checkDuplicateIds(client, workOrder);
+      if (duplicateErrors.length > 0) {
+        throw new Error(`Duplicate ID violation: ${duplicateErrors.join("; ")}`);
+      }
+      
       // If scheduledAt is set, auto-set status to "Scheduled"
       let status = workOrder.status || "Open";
       if (workOrder.scheduledAt) {
@@ -723,6 +771,69 @@ export class ProjectWorkOrderStorage {
     }
   }
 
+  // Check for duplicate system/module IDs before creating a work order
+  // Returns array of error messages for any duplicates found
+  private async checkDuplicateIds(client: any, workOrder: any, excludeWorkOrderId?: number): Promise<string[]> {
+    const errors: string[] = [];
+    const excludeClause = excludeWorkOrderId ? ` AND id != ${excludeWorkOrderId}` : '';
+    
+    // Check old_system_id
+    if (workOrder.oldSystemId) {
+      const result = await client.query(
+        `SELECT id, customer_wo_id FROM "${this.schemaName}".work_orders 
+         WHERE old_system_id = $1${excludeClause} LIMIT 1`,
+        [workOrder.oldSystemId]
+      );
+      if (result.rows.length > 0) {
+        const existing = result.rows[0];
+        errors.push(`Old System ID '${workOrder.oldSystemId}' already exists in work order ${existing.customer_wo_id || existing.id}`);
+      }
+    }
+    
+    // Check new_system_id
+    if (workOrder.newSystemId) {
+      const result = await client.query(
+        `SELECT id, customer_wo_id FROM "${this.schemaName}".work_orders 
+         WHERE new_system_id = $1${excludeClause} LIMIT 1`,
+        [workOrder.newSystemId]
+      );
+      if (result.rows.length > 0) {
+        const existing = result.rows[0];
+        errors.push(`New System ID '${workOrder.newSystemId}' already exists in work order ${existing.customer_wo_id || existing.id}`);
+      }
+    }
+    
+    // Check old_module_id
+    const oldModuleId = workOrder.oldModuleId || (workOrder as any).old_module_id;
+    if (oldModuleId) {
+      const result = await client.query(
+        `SELECT id, customer_wo_id FROM "${this.schemaName}".work_orders 
+         WHERE old_module_id = $1${excludeClause} LIMIT 1`,
+        [oldModuleId]
+      );
+      if (result.rows.length > 0) {
+        const existing = result.rows[0];
+        errors.push(`Old Module ID '${oldModuleId}' already exists in work order ${existing.customer_wo_id || existing.id}`);
+      }
+    }
+    
+    // Check new_module_id
+    const newModuleId = workOrder.newModuleId || (workOrder as any).new_module_id;
+    if (newModuleId) {
+      const result = await client.query(
+        `SELECT id, customer_wo_id FROM "${this.schemaName}".work_orders 
+         WHERE new_module_id = $1${excludeClause} LIMIT 1`,
+        [newModuleId]
+      );
+      if (result.rows.length > 0) {
+        const existing = result.rows[0];
+        errors.push(`New Module ID '${newModuleId}' already exists in work order ${existing.customer_wo_id || existing.id}`);
+      }
+    }
+    
+    return errors;
+  }
+
   // Get the project's timezone from the schemaName (cached for performance)
   // SchemaName format: project_{sanitized_name}_{id}
   private async getProjectTimezone(): Promise<string> {
@@ -817,6 +928,12 @@ export class ProjectWorkOrderStorage {
     await this.ensureMigrated();
     const client = await pool.connect();
     try {
+      // Check for duplicate system/module IDs before updating (exclude current work order)
+      const duplicateErrors = await this.checkDuplicateIds(client, updates, id);
+      if (duplicateErrors.length > 0) {
+        throw new Error(`Duplicate ID violation: ${duplicateErrors.join("; ")}`);
+      }
+      
       const setClauses: string[] = [];
       const values: any[] = [];
       let paramCount = 1;
