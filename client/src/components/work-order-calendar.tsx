@@ -900,9 +900,23 @@ export function WorkOrderCalendar({
             <DialogTitle>
               {rescheduleDialog.workOrder?.scheduledAt ? "Reschedule" : "Schedule"} Work Order
             </DialogTitle>
-            <DialogDescription>
-              WO {rescheduleDialog.workOrder?.customerWoId || rescheduleDialog.workOrder?.id}
-              {rescheduleDialog.workOrder?.address && ` - ${rescheduleDialog.workOrder.address}`}
+            <DialogDescription asChild>
+              <div className="space-y-1">
+                <div>
+                  WO {rescheduleDialog.workOrder?.customerWoId || rescheduleDialog.workOrder?.id}
+                  {rescheduleDialog.workOrder?.address && ` - ${rescheduleDialog.workOrder.address}`}
+                </div>
+                {rescheduleDialog.workOrder?.customerName && (
+                  <div className="text-sm">{rescheduleDialog.workOrder.customerName}</div>
+                )}
+                {(rescheduleDialog.workOrder?.email || rescheduleDialog.workOrder?.phone) && (
+                  <div className="text-sm text-muted-foreground">
+                    {rescheduleDialog.workOrder.email}
+                    {rescheduleDialog.workOrder.email && rescheduleDialog.workOrder.phone && " | "}
+                    {rescheduleDialog.workOrder.phone}
+                  </div>
+                )}
+              </div>
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
