@@ -1190,7 +1190,7 @@ export default function SearchReports() {
               data-testid="button-toggle-filters"
             >
               <Filter className="h-4 w-4 mr-2" />
-              Filters
+              {showFilters ? "Hide Filters" : "Show Filters"}
               {hasActiveFilters && <Badge variant="secondary" className="ml-2">{activeFilterCount}</Badge>}
             </Button>
             {hasActiveFilters && (
