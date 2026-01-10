@@ -2229,8 +2229,20 @@ export async function registerRoutes(
       // Use username for updated_by since it has a foreign key constraint to users table
       const updatedByUsername = currentUser?.username || currentUser?.id;
       
+      // Clear scheduledAt when status changes away from "Scheduled"
+      // This ensures scheduled work orders have their schedule cleared when marked as another status
+      const isStatusChangingAwayFromScheduled = 
+        existingWorkOrder.status === "Scheduled" && 
+        req.body.status && 
+        req.body.status !== "Scheduled";
+      
       // Handle appendNotes: add new note text to existing notes
       const updateData = { ...req.body };
+      
+      // If status is changing away from Scheduled, clear the scheduledAt field
+      if (isStatusChangingAwayFromScheduled) {
+        updateData.scheduledAt = null;
+      }
       if (updateData.appendNotes) {
         const currentNotes = existingWorkOrder.notes || "";
         const separator = currentNotes.trim() ? "\n" : "";
@@ -7432,13 +7444,14 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Invalid GPS coordinates format. Use 'lat,lng' format" });
       }
       
-      // Build update data
+      // Build update data - clear scheduledAt since status is changing to Completed
       const updateData: any = {
         status: "Completed",
         trouble: null,
         updatedAt: new Date().toISOString(),
         completedAt: completedAt || new Date().toISOString(),
         completedBy: currentUser.id,
+        scheduledAt: null,
       };
       
       if (oldSystemReading !== undefined && oldSystemReading !== null) {
@@ -7624,11 +7637,12 @@ export async function registerRoutes(
         }
       }
       
-      // Build update data
+      // Build update data - clear scheduledAt since status is changing to Trouble
       const updateData: any = {
         status: "Trouble",
         trouble: troubleCode,
         updatedAt: new Date().toISOString(),
+        scheduledAt: null,
       };
       
       // Append user notes to existing notes
@@ -7851,13 +7865,14 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Invalid GPS coordinates format. Use 'lat,lng' format" });
       }
       
-      // Build update data
+      // Build update data - clear scheduledAt since status is changing to Completed
       const updateData: any = {
         status: "Completed",
         trouble: null,
         updatedAt: new Date().toISOString(),
         completedAt: completedAt || new Date().toISOString(),
         completedBy: currentUser.id,
+        scheduledAt: null,
       };
       
       if (oldSystemReading !== undefined && oldSystemReading !== null) {
