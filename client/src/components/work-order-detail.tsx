@@ -575,12 +575,12 @@ export function WorkOrderDetail({
               </AccordionContent>
             </AccordionItem>
 
-            {/* System/Module & Installation Details */}
+            {/* System | Module Details */}
             <AccordionItem value="system" className="border rounded-lg px-4">
               <AccordionTrigger className="hover:no-underline py-4" data-testid="accordion-system">
                 <div className="flex items-center gap-2">
                   <Gauge className="h-4 w-4 text-primary" />
-                  <span className="font-medium">System/Module & Installation Details</span>
+                  <span className="font-medium">System | Module Details</span>
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pb-4">
