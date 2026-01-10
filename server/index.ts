@@ -9,6 +9,7 @@ import { createServer } from "http";
 import { importScheduler } from "./importScheduler";
 import { fileImportScheduler } from "./fileImportScheduler";
 import { storage } from "./storage";
+import { initializeLogger, logger } from "./logger";
 
 const app = express();
 
@@ -97,14 +98,23 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Initialize persistent file logging
+  initializeLogger();
+  
   await registerRoutes(httpServer, app);
 
-  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
+    
+    // Log detailed error to file, return minimal info to user
+    logger.error('Unhandled request error', err, {
+      method: req.method,
+      path: req.path,
+      status
+    });
 
     res.status(status).json({ message });
-    throw err;
   });
 
   // importantly only setup vite in development and after
