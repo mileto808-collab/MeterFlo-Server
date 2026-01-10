@@ -7530,6 +7530,152 @@ export async function registerRoutes(
     }
   });
 
+  // Project-scoped mobile trouble endpoint - accepts both camelCase and snake_case field names
+  // This endpoint uses projectId in URL for per-project integrity
+  app.post("/api/mobile/projects/:projectId/work-orders/:workOrderId/trouble", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      const workOrderId = parseInt(req.params.workOrderId);
+      
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // Normalize field names - accept both camelCase and snake_case
+      const body = req.body;
+      const troubleCode = body.troubleCode ?? body.trouble_code;
+      const notes = body.notes;
+      const oldSystemReading = body.oldSystemReading ?? body.old_system_reading;
+      const photos = body.photos ?? [];
+      
+      if (!troubleCode) {
+        return res.status(400).json({ message: "troubleCode is required" });
+      }
+      
+      // Validate trouble code exists
+      const troubleCodes = await storage.getTroubleCodes();
+      const validTroubleCode = troubleCodes.find(tc => tc.code === troubleCode);
+      if (!validTroubleCode) {
+        return res.status(400).json({ message: `Invalid trouble code: ${troubleCode}` });
+      }
+      
+      // Check permission
+      const hasMeterChangeoutPermission = await storage.hasPermission(currentUser, "workOrders.meterChangeout");
+      if (!hasMeterChangeoutPermission) {
+        return res.status(403).json({ message: "You do not have permission to perform system changeouts" });
+      }
+      
+      // Must be assigned to project (unless admin)
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      const workOrder = await workOrderStorage.getWorkOrder(workOrderId);
+      
+      if (!workOrder) {
+        return res.status(404).json({ message: "Work order not found" });
+      }
+      
+      const folderName = workOrder.customerWoId || String(workOrder.id);
+      const updatedByUsername = currentUser.username || currentUser.id;
+      
+      // Save photos if provided (base64 encoded)
+      if (photos && Array.isArray(photos) && photos.length > 0) {
+        const projectFilesPath = await getProjectFilesPath();
+        const projectDirName = getProjectDirectoryName(project.name, project.id);
+        const workOrderFolder = path.join(
+          projectFilesPath,
+          projectDirName,
+          "Work Orders",
+          folderName
+        );
+        
+        await fs.mkdir(workOrderFolder, { recursive: true });
+        
+        const now = new Date();
+        const dateStr = now.getFullYear().toString() +
+          (now.getMonth() + 1).toString().padStart(2, '0') +
+          now.getDate().toString().padStart(2, '0');
+        
+        for (let i = 0; i < photos.length; i++) {
+          const photo = photos[i];
+          if (photo.base64) {
+            let base64Data = photo.base64;
+            if (base64Data.includes(",")) {
+              base64Data = base64Data.split(",")[1];
+            }
+            
+            const buffer = Buffer.from(base64Data, "base64");
+            const uniqueId = randomUUID();
+            const filename = `${folderName}-trouble-${dateStr}-${uniqueId}.jpg`;
+            const filePath = path.join(workOrderFolder, filename);
+            await fs.writeFile(filePath, buffer);
+          }
+        }
+      }
+      
+      // Build update data
+      const updateData: any = {
+        status: "Trouble",
+        trouble: troubleCode,
+        updatedAt: new Date().toISOString(),
+      };
+      
+      // Append user notes to existing notes
+      if (notes && notes.trim()) {
+        const projectTimezone = project.timezone || 'UTC';
+        const timestamp = new Date().toLocaleString('en-US', {
+          month: '2-digit',
+          day: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true,
+          timeZone: projectTimezone
+        });
+        const noteEntry = `[Trouble Report - ${timestamp} by ${currentUser.username || currentUser.id}]\n${notes.trim()}`;
+        updateData.notes = workOrder.notes 
+          ? `${workOrder.notes}\n\n${noteEntry}`
+          : noteEntry;
+      }
+      
+      if (oldSystemReading !== undefined && oldSystemReading !== null) {
+        updateData.oldSystemReading = parseInt(String(oldSystemReading), 10);
+      }
+      
+      const updatedWorkOrder = await workOrderStorage.updateWorkOrder(
+        workOrderId,
+        updateData,
+        updatedByUsername
+      );
+      
+      // Trigger webhook if configured
+      await triggerProjectWebhook(project, "work_order.trouble", updatedWorkOrder, currentUser);
+      
+      // Emit SSE event to notify dashboard users
+      emitWorkOrderUpdated(projectId, workOrderId, currentUser.id);
+      
+      res.json({
+        success: true,
+        workOrder: updatedWorkOrder,
+        message: "Trouble reported successfully"
+      });
+    } catch (error: any) {
+      console.error("Error in project-scoped mobile trouble endpoint:", error);
+      res.status(500).json({ message: error.message || "Failed to report trouble" });
+    }
+  });
+
   // Project-scoped mobile complete endpoint - accepts both camelCase and snake_case field names
   // This endpoint uses projectId in URL for per-project integrity
   app.post("/api/mobile/projects/:projectId/work-orders/:workOrderId/complete", isAuthenticated, async (req: any, res) => {
