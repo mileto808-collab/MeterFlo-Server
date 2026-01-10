@@ -8089,9 +8089,18 @@ export async function registerRoutes(
       
       for (const workOrderId of workOrderIds) {
         try {
+          // Get existing work order to check if we need to clear scheduledAt
+          const existingWorkOrder = await workOrderStorage.getWorkOrder(workOrderId);
+          
+          // Build update data - clear scheduledAt if status is changing away from Scheduled
+          const updateData: any = { status };
+          if (existingWorkOrder?.status === "Scheduled" && status !== "Scheduled") {
+            updateData.scheduledAt = null;
+          }
+          
           await workOrderStorage.updateWorkOrder(
             workOrderId,
-            { status },
+            updateData,
             updatedByUsername
           );
           
