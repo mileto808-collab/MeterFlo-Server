@@ -38,6 +38,7 @@ Preferred communication style: Simple, everyday language.
 - **Route Sheets**: Generate printable PDF route sheets with barcodes or QR codes encoding old meter numbers. Available in both Work Orders and Search & Reports pages.
 - **Scheduled Imports**: FTP directory monitoring for automated file processing.
 - **System Settings**: Configurable max file size, allowed extensions, and work order statuses.
+- **Cloudflare Turnstile**: Optional CAPTCHA protection for the login page. Configured via Settings with site key and secret key. Widget appears on login when enabled; server-side verification required before authentication.
 - **Filter Preferences**: User-customizable filter visibility for work orders, search, and user pages.
 - **Data Integrity**: Foreign key constraints with `ON DELETE RESTRICT` for critical relationships. ID-based assignment for users and groups.
 - **Real-Time Updates**: SSE-based live updates eliminate manual browser refreshes. Server-side event emitter broadcasts work order changes to connected clients. Client hooks (`useProjectEvents`, `useGlobalEvents`) automatically invalidate TanStack Query cache on events. 30-second heartbeat with automatic reconnection.
