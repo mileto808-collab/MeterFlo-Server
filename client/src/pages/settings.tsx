@@ -451,6 +451,44 @@ export default function Settings() {
   });
 
   const [updatePreviewData, setUpdatePreviewData] = useState<UpdatePreview | null>(null);
+
+  // Cloudflare Turnstile state and queries
+  interface TurnstileSettings {
+    enabled: boolean;
+    siteKey: string;
+    secretKey: string;
+    hasSecretKey: boolean;
+  }
+
+  const [turnstileEnabled, setTurnstileEnabled] = useState(false);
+  const [turnstileSiteKey, setTurnstileSiteKey] = useState("");
+  const [turnstileSecretKey, setTurnstileSecretKey] = useState("");
+
+  const { data: turnstileData, isLoading: turnstileLoading } = useQuery<TurnstileSettings>({
+    queryKey: ["/api/settings/turnstile"],
+    enabled: isAdmin || hasPermission("settings.cloudflareTurnstile"),
+  });
+
+  useEffect(() => {
+    if (turnstileData) {
+      setTurnstileEnabled(turnstileData.enabled);
+      setTurnstileSiteKey(turnstileData.siteKey || "");
+      setTurnstileSecretKey(turnstileData.secretKey || "");
+    }
+  }, [turnstileData]);
+
+  const saveTurnstileMutation = useMutation({
+    mutationFn: async (data: { enabled: boolean; siteKey: string; secretKey: string }) => {
+      return apiRequest("PUT", "/api/settings/turnstile", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/turnstile"] });
+      toast({ title: "Turnstile settings saved" });
+    },
+    onError: () => {
+      toast({ title: "Failed to save Turnstile settings", variant: "destructive" });
+    },
+  });
   
   const previewUpdateMutation = useMutation({
     mutationFn: async () => {
@@ -2131,6 +2169,103 @@ export default function Settings() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {hasPermission("settings.cloudflareTurnstile") && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <Shield className="h-5 w-5 text-muted-foreground" />
+                  <div>
+                    <CardTitle>Cloudflare Turnstile</CardTitle>
+                    <CardDescription className="mt-1">Protect the login form with Cloudflare Turnstile captcha verification</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="turnstile-enabled">Enable Turnstile Protection</Label>
+                    <p className="text-xs text-muted-foreground">
+                      When enabled, users must complete a captcha verification before logging in
+                    </p>
+                  </div>
+                  <Switch
+                    id="turnstile-enabled"
+                    checked={turnstileEnabled}
+                    onCheckedChange={setTurnstileEnabled}
+                    data-testid="switch-turnstile-enabled"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="turnstileSiteKey">Site Key</Label>
+                  <Input
+                    id="turnstileSiteKey"
+                    placeholder="0x4AAAA..."
+                    value={turnstileSiteKey}
+                    onChange={(e) => setTurnstileSiteKey(e.target.value)}
+                    data-testid="input-turnstile-site-key"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Your Cloudflare Turnstile site key (public key visible in browser)
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="turnstileSecretKey">Secret Key</Label>
+                  <Input
+                    id="turnstileSecretKey"
+                    type="password"
+                    placeholder={turnstileData?.hasSecretKey ? "********" : "0x4AAAA..."}
+                    value={turnstileSecretKey}
+                    onChange={(e) => setTurnstileSecretKey(e.target.value)}
+                    data-testid="input-turnstile-secret-key"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Your Cloudflare Turnstile secret key (used for server-side verification)
+                  </p>
+                </div>
+
+                <div className="p-3 bg-muted/50 rounded-md">
+                  <p className="text-xs text-muted-foreground">
+                    Get your Turnstile keys from the{" "}
+                    <a 
+                      href="https://dash.cloudflare.com/?to=/:account/turnstile" 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      Cloudflare Dashboard
+                    </a>
+                    . Add a new Turnstile widget and copy both the Site Key and Secret Key.
+                  </p>
+                </div>
+
+                <Button 
+                  onClick={() => {
+                    if (turnstileEnabled && !turnstileSiteKey) {
+                      toast({ title: "Site Key is required when Turnstile is enabled", variant: "destructive" });
+                      return;
+                    }
+                    if (turnstileEnabled && !turnstileSecretKey && !turnstileData?.hasSecretKey) {
+                      toast({ title: "Secret Key is required when Turnstile is enabled", variant: "destructive" });
+                      return;
+                    }
+                    saveTurnstileMutation.mutate({
+                      enabled: turnstileEnabled,
+                      siteKey: turnstileSiteKey,
+                      secretKey: turnstileSecretKey
+                    });
+                  }}
+                  disabled={saveTurnstileMutation.isPending}
+                  data-testid="button-save-turnstile"
+                >
+                  <Save className="h-4 w-4 mr-2" />
+                  {saveTurnstileMutation.isPending ? "Saving..." : "Save Turnstile Settings"}
+                </Button>
+              </CardContent>
+            </Card>
+        )}
 
         {hasPermission("settings.importHistory") && (
             <Card>

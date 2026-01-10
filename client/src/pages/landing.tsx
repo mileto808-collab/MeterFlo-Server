@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -8,11 +9,85 @@ import { useToast } from "@/hooks/use-toast";
 import { ClipboardList, Users, Shield, Smartphone, FileUp, BarChart3, Loader2 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (container: string | HTMLElement, options: {
+        sitekey: string;
+        callback: (token: string) => void;
+        "error-callback"?: () => void;
+        "expired-callback"?: () => void;
+        theme?: "light" | "dark" | "auto";
+      }) => string;
+      reset: (widgetId: string) => void;
+      remove: (widgetId: string) => void;
+    };
+  }
+}
+
 export default function Landing() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const turnstileRef = useRef<HTMLDivElement>(null);
+  const widgetIdRef = useRef<string | null>(null);
   const { toast } = useToast();
+
+  const { data: turnstileStatus } = useQuery<{ enabled: boolean; siteKey: string | null }>({
+    queryKey: ["/api/auth/turnstile-status"],
+  });
+
+  const resetTurnstile = useCallback(() => {
+    if (window.turnstile && widgetIdRef.current) {
+      window.turnstile.reset(widgetIdRef.current);
+      setTurnstileToken(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!turnstileStatus?.enabled || !turnstileStatus.siteKey) return;
+
+    const scriptId = "turnstile-script";
+    if (!document.getElementById(scriptId)) {
+      const script = document.createElement("script");
+      script.id = scriptId;
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+
+    const initTurnstile = () => {
+      if (window.turnstile && turnstileRef.current && !widgetIdRef.current) {
+        widgetIdRef.current = window.turnstile.render(turnstileRef.current, {
+          sitekey: turnstileStatus.siteKey!,
+          callback: (token: string) => setTurnstileToken(token),
+          "error-callback": () => {
+            setTurnstileToken(null);
+            toast({ title: "Verification failed", description: "Please try again", variant: "destructive" });
+          },
+          "expired-callback": () => setTurnstileToken(null),
+          theme: "auto",
+        });
+      }
+    };
+
+    const checkInterval = setInterval(() => {
+      if (window.turnstile) {
+        clearInterval(checkInterval);
+        initTurnstile();
+      }
+    }, 100);
+
+    return () => {
+      clearInterval(checkInterval);
+      if (window.turnstile && widgetIdRef.current) {
+        window.turnstile.remove(widgetIdRef.current);
+        widgetIdRef.current = null;
+      }
+    };
+  }, [turnstileStatus?.enabled, turnstileStatus?.siteKey, toast]);
 
   const handleLocalLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,11 +99,26 @@ export default function Landing() {
       });
       return;
     }
+    
+    if (turnstileStatus?.enabled && !turnstileToken) {
+      toast({
+        title: "Verification Required",
+        description: "Please complete the security verification",
+        variant: "destructive",
+      });
+      return;
+    }
+    
     setIsLoading(true);
     try {
-      await apiRequest("POST", "/api/auth/local/login", { username, password });
+      await apiRequest("POST", "/api/auth/local/login", { 
+        username, 
+        password,
+        turnstileToken: turnstileStatus?.enabled ? turnstileToken : undefined
+      });
       window.location.href = "/";
     } catch (error: any) {
+      resetTurnstile();
       toast({
         title: "Login Failed",
         description: error.message || "Invalid username or password",
@@ -126,10 +216,17 @@ export default function Landing() {
                       data-testid="input-password"
                     />
                   </div>
+                  {turnstileStatus?.enabled && (
+                    <div 
+                      ref={turnstileRef} 
+                      className="flex justify-center" 
+                      data-testid="turnstile-widget"
+                    />
+                  )}
                   <Button 
                     type="submit" 
                     className="w-full" 
-                    disabled={isLoading}
+                    disabled={isLoading || (turnstileStatus?.enabled && !turnstileToken)}
                     data-testid="button-login-submit"
                   >
                     {isLoading ? (
