@@ -30,7 +30,7 @@ module.exports = {
     {
       name: 'meterflo',
       script: 'dist/index.cjs',
-      cwd: 'C:\\xampp\\htdocs\meterflo',  // Adjust this path to your installation directory
+      cwd: 'C:\\xampp\\htdocs\\meterflo',  // Adjust this path to your installation directory
       
       // Environment variables
       env: {
