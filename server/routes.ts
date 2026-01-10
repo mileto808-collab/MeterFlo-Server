@@ -6495,7 +6495,7 @@ export async function registerRoutes(
         });
       }
       
-      if (sqlFile && metadata?.format === "pg_dump_sql") {
+      if (sqlFile && (metadata?.format === "pg_dump_sql" || metadata?.format === "full_system")) {
         // New SQL format - use psql to restore with FK constraint handling
         console.log(`Restoring SQL backup from ${metadata.backupDate}, schemas: ${metadata.schemas?.join(", ") || "none"}`);
         
