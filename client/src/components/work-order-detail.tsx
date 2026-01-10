@@ -395,6 +395,20 @@ export function WorkOrderDetail({
                   Attachments ({workOrderFiles.length})
                 </Button>
               </Link>
+              {canPrint && (
+                <WorkOrderPdf
+                  workOrder={workOrder}
+                  projectId={projectId}
+                  workOrderFiles={workOrderFiles}
+                  formatDateTime={formatDateTime}
+                  getAssignedUserName={getAssignedUserName}
+                  serviceTypes={serviceTypes}
+                  troubleCodes={troubleCodes}
+                  variant="outline"
+                  size="sm"
+                  testId="button-print-pdf-header"
+                />
+              )}
             </div>
           </div>
         </CardContent>

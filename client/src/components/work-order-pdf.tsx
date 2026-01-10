@@ -21,6 +21,9 @@ interface WorkOrderPdfProps {
   getAssignedUserName: (userId: string | null | undefined) => string | null;
   serviceTypes: Array<{ id: number; code: string; label: string }>;
   troubleCodes: Array<{ id: number; code: string; label: string }>;
+  variant?: "default" | "outline" | "secondary" | "ghost" | "link" | "destructive";
+  size?: "default" | "sm" | "lg" | "icon";
+  testId?: string;
 }
 
 type PhotoOption = "thumbnails" | "list" | "none";
@@ -33,6 +36,9 @@ export function WorkOrderPdf({
   getAssignedUserName,
   serviceTypes,
   troubleCodes,
+  variant = "outline",
+  size,
+  testId = "button-print-pdf",
 }: WorkOrderPdfProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [showDialog, setShowDialog] = useState(false);
@@ -551,10 +557,11 @@ export function WorkOrderPdf({
     <>
       <Button
         type="button"
-        variant="outline"
+        variant={variant}
+        size={size}
         onClick={handleOpenDialog}
         disabled={isGenerating}
-        data-testid="button-print-pdf"
+        data-testid={testId}
       >
         {isGenerating ? (
           <>
