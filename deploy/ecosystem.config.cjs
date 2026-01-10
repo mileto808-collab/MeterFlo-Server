@@ -30,7 +30,7 @@ module.exports = {
     {
       name: 'meterflo',
       script: 'dist/index.cjs',
-      cwd: 'C:\\xampp\\htdocs',  // Adjust this path to your installation directory
+      cwd: 'C:\\xampp\\htdocs\meterflo',  // Adjust this path to your installation directory
       
       // Environment variables
       env: {
@@ -38,11 +38,11 @@ module.exports = {
         PORT: 3000,
         HOST: '127.0.0.1',
         // Database connection - UPDATE THIS with your PostgreSQL credentials
-        DATABASE_URL: 'postgresql://postgres:fa713777@localhost:5000/meterflo',
+        DATABASE_URL: 'postgresql://meterflo_user:fa713777@localhost:5000/meterflo',
         // Session secret - UPDATE THIS with a random 64-character string
-        SESSION_SECRET: 'change-this-to-a-random-64-character-secret-string-for-production',
+        SESSION_SECRET: 'cbb4cefd9a9fd04b5399a31a03b6f8d6464f1320a05f4f6fac55ee72c27faf35',
         // Cookie settings for HTTP (set to 'true' if using HTTPS)
-        COOKIE_SECURE: 'false',
+        COOKIE_SECURE: 'true',
       },
       
       // Process management
