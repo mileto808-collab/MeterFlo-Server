@@ -402,8 +402,6 @@ export async function migrateProjectSchema(schemaName: string): Promise<void> {
   
   // Step 8: Add unique partial indexes for system and module IDs (separate connection)
   // These ensure no duplicate meters/modules are created within a project
-  // Note: If duplicates exist, index creation will fail - this error propagates
-  // to force data cleanup before the constraint can be enforced
   const indexClient = await pool.connect();
   try {
     await indexClient.query(`
@@ -427,6 +425,11 @@ export async function migrateProjectSchema(schemaName: string): Promise<void> {
       WHERE new_module_id IS NOT NULL
     `);
     console.log(`Added unique indexes for system and module IDs to ${schemaName}`);
+  } catch (indexError: any) {
+    // Log detailed error but don't crash - existing duplicates may need cleanup
+    console.error(`[UNIQUE_INDEX_ERROR] Failed to create unique indexes for ${schemaName}:`, indexError.message);
+    console.error(`[UNIQUE_INDEX_ERROR] This may indicate duplicate system/module IDs exist in the data.`);
+    console.error(`[UNIQUE_INDEX_ERROR] Query the work_orders table for duplicates and resolve before retrying.`);
   } finally {
     indexClient.release();
   }

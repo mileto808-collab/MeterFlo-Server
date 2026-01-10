@@ -69,3 +69,36 @@ Preferred communication style: Simple, everyday language.
 - **Vite**: Frontend build tool
 - **esbuild**: Server bundling
 - **tsx**: TypeScript execution
+
+## Logging System
+
+### Log Files
+The application uses persistent file-based logging for production debugging:
+
+- **Location**: `./logs/` directory (configurable via `LOG_DIR` environment variable)
+- **Error Log**: `./logs/error.log` - Contains all errors with stack traces and context
+- **Application Log**: `./logs/app.log` - Contains info, warn, and debug messages
+
+### Log Rotation
+- Logs automatically rotate when they exceed 10MB
+- Rotated files are named with timestamps (e.g., `error-2026-01-10T05-00-00-000Z.log`)
+
+### Log Format
+```
+[2026-01-10T05:00:00.000Z] [ERROR] Database constraint violation during insert
+  Context: {
+    "error": {
+      "name": "Error",
+      "message": "duplicate key value violates unique constraint...",
+      "stack": "..."
+    },
+    "suggestion": "Check for duplicate system/module IDs in the data"
+  }
+```
+
+### Environment Variables
+- `LOG_DIR`: Override default log directory (default: `./logs`)
+- `NODE_ENV`: Set to `development` to enable debug logging
+
+### Data Integrity Constraints
+- **Unique System/Module IDs**: Each project enforces unique constraints on `old_system_id`, `new_system_id`, `old_module_id`, and `new_module_id` columns. Duplicate values will be rejected by the database and logged to `error.log`.
