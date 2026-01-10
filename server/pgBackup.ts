@@ -617,35 +617,62 @@ export async function extractBackupFromArchive(zipBuffer: Buffer): Promise<{
   sqlFile: string | null;
   metadata: BackupMetadata | null;
   legacyJson: any | null;
+  foundFiles: string[];
 }> {
   const tempDir = os.tmpdir();
   const timestamp = Date.now();
   let sqlFile: string | null = null;
   let metadata: BackupMetadata | null = null;
   let legacyJson: any | null = null;
+  const foundFiles: string[] = [];
   
   try {
     const directory = await unzipper.Open.buffer(zipBuffer);
     
+    // Log all files in the archive for debugging
+    console.log(`[Restore] Archive contains ${directory.files.length} files`);
+    
     for (const file of directory.files) {
-      if (file.path === "database_backup.sql") {
+      // Collect key files for error reporting - include all sql, json, and metadata files
+      const lowerPath = file.path.toLowerCase();
+      if (file.type === 'File' && (
+        lowerPath.endsWith('.sql') || 
+        lowerPath.endsWith('.json') ||
+        lowerPath.includes('backup') ||
+        lowerPath.includes('metadata')
+      )) {
+        foundFiles.push(file.path);
+      }
+      
+      // Normalize path - handle both "database_backup.sql" and "/database_backup.sql"
+      const normalizedPath = file.path.replace(/^\/+/, '');
+      const fileName = path.basename(normalizedPath);
+      
+      if (fileName === "database_backup.sql" && !sqlFile) {
+        console.log(`[Restore] Found SQL backup at: ${file.path}`);
         const sqlPath = path.join(tempDir, `restore_${timestamp}.sql`);
         const content = await file.buffer();
         fs.writeFileSync(sqlPath, content);
         sqlFile = sqlPath;
-      } else if (file.path === "backup_metadata.json") {
+      } else if (fileName === "backup_metadata.json" && !metadata) {
+        console.log(`[Restore] Found metadata at: ${file.path}`);
         const content = await file.buffer();
         metadata = JSON.parse(content.toString());
-      } else if (file.path === "database_backup.json") {
+      } else if (fileName === "database_backup.json" && !legacyJson) {
+        console.log(`[Restore] Found legacy JSON backup at: ${file.path}`);
         const content = await file.buffer();
         legacyJson = JSON.parse(content.toString());
       }
     }
     
-    return { sqlFile, metadata, legacyJson };
+    if (!sqlFile && !legacyJson) {
+      console.log(`[Restore] No database backup found. Top-level files: ${foundFiles.slice(0, 20).join(', ')}`);
+    }
+    
+    return { sqlFile, metadata, legacyJson, foundFiles };
   } catch (error) {
     console.error("Failed to extract backup:", error);
-    return { sqlFile: null, metadata: null, legacyJson: null };
+    return { sqlFile: null, metadata: null, legacyJson: null, foundFiles };
   }
 }
 

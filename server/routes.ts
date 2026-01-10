@@ -6440,7 +6440,7 @@ export async function registerRoutes(
       const restoreFiles = req.body.restoreFiles !== "false";
       
       // Extract and detect backup format (SQL or legacy JSON or files-only)
-      const { sqlFile, metadata, legacyJson } = await extractBackupFromArchive(req.file.buffer);
+      const { sqlFile, metadata, legacyJson, foundFiles } = await extractBackupFromArchive(req.file.buffer);
       
       // Handle webapp-files-only backup (source code only, no project data)
       if (metadata?.format === "files_only" || metadata?.format === "webapp_files_only" || metadata?.backupType === "files") {
@@ -6556,8 +6556,10 @@ export async function registerRoutes(
           warnings: dbResult.warnings,
         });
       } else {
+        const filesPreview = foundFiles.slice(0, 10).join(', ');
+        const moreFiles = foundFiles.length > 10 ? ` (and ${foundFiles.length - 10} more)` : '';
         return res.status(400).json({ 
-          message: "Invalid backup archive: could not find database_backup.sql or database_backup.json" 
+          message: `Invalid backup archive: could not find database_backup.sql or database_backup.json. Found files: ${filesPreview}${moreFiles}` 
         });
       }
     } catch (error) {
