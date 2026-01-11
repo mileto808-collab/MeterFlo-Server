@@ -1,5 +1,5 @@
 import { drizzle } from "drizzle-orm/node-postgres";
-import { pgTable, text, varchar, timestamp, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, numeric } from "drizzle-orm/pg-core";
 import { pool } from "./db";
 import { sql } from "drizzle-orm";
 import { storage } from "./storage";
@@ -35,8 +35,8 @@ export const projectWorkOrders = pgTable("work_orders", {
   newSystemId: varchar("new_system_id", { length: 100 }),
   oldGps: varchar("old_gps", { length: 100 }),
   newGps: varchar("new_gps", { length: 100 }),
-  oldSystemReading: integer("old_system_reading"),
-  newSystemReading: integer("new_system_reading"),
+  oldSystemReading: numeric("old_system_reading"),
+  newSystemReading: numeric("new_system_reading"),
   scheduledAt: timestamp("scheduled_at"),
   updatedBy: varchar("updated_by", { length: 100 }),
   trouble: varchar("trouble", { length: 50 }),
@@ -44,8 +44,8 @@ export const projectWorkOrders = pgTable("work_orders", {
   newSystemType: varchar("new_system_type", { length: 100 }),
   oldModuleId: varchar("old_module_id", { length: 100 }),
   newModuleId: varchar("new_module_id", { length: 100 }),
-  oldModuleRead: integer("old_module_read"),
-  newModuleRead: integer("new_module_read"),
+  oldModuleRead: numeric("old_module_read"),
+  newModuleRead: numeric("new_module_read"),
   oldModuleType: varchar("old_module_type", { length: 100 }),
   newModuleType: varchar("new_module_type", { length: 100 }),
   signatureData: text("signature_data"),
@@ -106,8 +106,8 @@ export async function createProjectSchema(projectName: string, projectId: number
         new_system_id VARCHAR(100),
         old_gps VARCHAR(100),
         new_gps VARCHAR(100),
-        old_system_reading INTEGER,
-        new_system_reading INTEGER,
+        old_system_reading NUMERIC,
+        new_system_reading NUMERIC,
         scheduled_at TIMESTAMP,
         updated_by VARCHAR(100),
         trouble VARCHAR(50),
@@ -115,8 +115,8 @@ export async function createProjectSchema(projectName: string, projectId: number
         new_system_type VARCHAR(100),
         old_module_id VARCHAR(100),
         new_module_id VARCHAR(100),
-        old_module_read INTEGER,
-        new_module_read INTEGER,
+        old_module_read NUMERIC,
+        new_module_read NUMERIC,
         old_module_type VARCHAR(100),
         new_module_type VARCHAR(100),
         signature_data TEXT,
@@ -197,8 +197,8 @@ export async function migrateProjectSchema(schemaName: string): Promise<void> {
       { name: 'trouble', type: 'VARCHAR(50)' },
       { name: 'old_module_id', type: 'VARCHAR(100)' },
       { name: 'new_module_id', type: 'VARCHAR(100)' },
-      { name: 'old_module_read', type: 'INTEGER' },
-      { name: 'new_module_read', type: 'INTEGER' },
+      { name: 'old_module_read', type: 'NUMERIC' },
+      { name: 'new_module_read', type: 'NUMERIC' },
       { name: 'old_module_type', type: 'VARCHAR(100)' },
       { name: 'new_module_type', type: 'VARCHAR(100)' },
     ];
@@ -312,6 +312,26 @@ export async function migrateProjectSchema(schemaName: string): Promise<void> {
           (SELECT name FROM public.user_groups WHERE id = assigned_group_id)
       `);
       console.log(`Converted assigned_group_id from INTEGER to group name for ${schemaName}`);
+    }
+    
+    // Step 4b: Migrate reading columns from INTEGER to NUMERIC (for decimal support)
+    const readingColumns = ['old_system_reading', 'new_system_reading', 'old_module_read', 'new_module_read'];
+    
+    for (const colName of readingColumns) {
+      const colCheck = await client.query(`
+        SELECT data_type FROM information_schema.columns 
+        WHERE table_schema = $1 AND table_name = 'work_orders' 
+        AND column_name = $2
+      `, [schemaName, colName]);
+      
+      if (colCheck.rows.length > 0 && colCheck.rows[0].data_type === 'integer') {
+        // Convert INTEGER to NUMERIC (lossless conversion - integers become exact decimals)
+        await client.query(`
+          ALTER TABLE "${schemaName}".work_orders 
+          ALTER COLUMN ${colName} TYPE NUMERIC USING ${colName}::NUMERIC
+        `);
+        console.log(`Converted ${colName} from INTEGER to NUMERIC for ${schemaName}`);
+      }
     }
     
     // Step 5: Drop deprecated _id suffix columns (consolidate to text-based references)
@@ -1340,6 +1360,12 @@ export class ProjectWorkOrderStorage {
     return { imported, updated, errors };
   }
   
+  private parseNumericReading(value: any): number | null {
+    if (value === null || value === undefined) return null;
+    const parsed = parseFloat(value);
+    return isNaN(parsed) ? null : parsed;
+  }
+  
   private mapRowToWorkOrder(row: any): ProjectWorkOrder {
     const result: any = {
       id: row.id,
@@ -1366,8 +1392,8 @@ export class ProjectWorkOrderStorage {
       newSystemId: row.new_system_id,
       oldGps: row.old_gps,
       newGps: row.new_gps,
-      oldSystemReading: row.old_system_reading,
-      newSystemReading: row.new_system_reading,
+      oldSystemReading: this.parseNumericReading(row.old_system_reading),
+      newSystemReading: this.parseNumericReading(row.new_system_reading),
       scheduledAt: row.scheduled_at,
       updatedBy: row.updated_by,
       trouble: row.trouble,
@@ -1375,8 +1401,8 @@ export class ProjectWorkOrderStorage {
       newSystemType: row.new_system_type,
       oldModuleId: row.old_module_id,
       newModuleId: row.new_module_id,
-      oldModuleRead: row.old_module_read,
-      newModuleRead: row.new_module_read,
+      oldModuleRead: this.parseNumericReading(row.old_module_read),
+      newModuleRead: this.parseNumericReading(row.new_module_read),
       oldModuleType: row.old_module_type,
       newModuleType: row.new_module_type,
       signatureData: row.signature_data,
@@ -1396,6 +1422,13 @@ export class ProjectWorkOrderStorage {
     };
     return result as ProjectWorkOrder;
   }
+}
+
+// Helper function to parse NUMERIC values (returned as strings by pg driver)
+function parseNumericReading(value: any): number | null {
+  if (value === null || value === undefined) return null;
+  const parsed = parseFloat(value);
+  return isNaN(parsed) ? null : parsed;
 }
 
 // Cache for project storage instances
@@ -1446,8 +1479,8 @@ export async function backupProjectDatabase(schemaName: string): Promise<{
       newSystemId: row.new_system_id,
       oldGps: row.old_gps,
       newGps: row.new_gps,
-      oldSystemReading: row.old_system_reading,
-      newSystemReading: row.new_system_reading,
+      oldSystemReading: parseNumericReading(row.old_system_reading),
+      newSystemReading: parseNumericReading(row.new_system_reading),
       scheduledAt: row.scheduled_at,
       updatedBy: row.updated_by,
       trouble: row.trouble,
@@ -1455,8 +1488,8 @@ export async function backupProjectDatabase(schemaName: string): Promise<{
       newSystemType: row.new_system_type,
       oldModuleId: row.old_module_id,
       newModuleId: row.new_module_id,
-      oldModuleRead: row.old_module_read,
-      newModuleRead: row.new_module_read,
+      oldModuleRead: parseNumericReading(row.old_module_read),
+      newModuleRead: parseNumericReading(row.new_module_read),
       oldModuleType: row.old_module_type,
       newModuleType: row.new_module_type,
       signatureData: row.signature_data,
@@ -1465,13 +1498,13 @@ export async function backupProjectDatabase(schemaName: string): Promise<{
       assignedGroupId: row.assigned_group_id,
       completedBy: row.completed_by,
       scheduledBy: row.scheduled_by,
-    }));
+    })) as unknown as ProjectWorkOrder[];
     
     return {
       schemaName,
       backupDate: new Date().toISOString(),
       workOrders,
-      version: "2.3",
+      version: "2.4",
     };
   } finally {
     client.release();
