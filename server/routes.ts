@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import path from "path";
+import os from "os";
 import { promises as fs, existsSync, unlinkSync } from "fs";
 import { randomUUID } from "crypto";
 import { exec } from "child_process";
@@ -6316,7 +6317,7 @@ export async function registerRoutes(
         const sqlPath = path.join(tempDir, `restore_${timestamp}.sql`);
         
         // Write the SQL content to a temp file
-        await fs.promises.writeFile(sqlPath, req.file.buffer);
+        await fs.writeFile(sqlPath, req.file.buffer);
         
         try {
           const dbResult = await restorePgBackup(sqlPath, { disableForeignKeys: true });
@@ -6330,12 +6331,18 @@ export async function registerRoutes(
             });
           }
           
+          // Build response - note that plain SQL files cannot contain project files
+          const responseWarnings = [...(dbResult.warnings || [])];
+          if (restoreFiles) {
+            responseWarnings.push("File restoration was requested but plain .sql files do not contain project files. Use a .zip backup for file restoration.");
+          }
+          
           return res.json({
             message: "SQL restore completed successfully",
             format: "plain_sql",
             backupDate: new Date().toISOString(),
             filesRestored: 0,
-            warnings: dbResult.warnings,
+            warnings: responseWarnings,
             errors: [],
           });
         } finally {
