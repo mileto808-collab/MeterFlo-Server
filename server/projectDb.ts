@@ -516,7 +516,7 @@ export class ProjectWorkOrderStorage {
       query += " ORDER BY w.created_at DESC";
 
       const result = await client.query(query, values);
-      return result.rows.map(this.mapRowToWorkOrder);
+      return result.rows.map((row) => this.mapRowToWorkOrder(row));
     } finally {
       client.release();
     }

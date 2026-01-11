@@ -6305,8 +6305,48 @@ export async function registerRoutes(
       }
       
       const restoreFiles = req.body.restoreFiles !== "false";
+      const fileName = req.file.originalname || "";
+      const isPlainSql = fileName.toLowerCase().endsWith(".sql");
       
-      // Extract and detect backup format (SQL or legacy JSON or files-only)
+      // Handle plain .sql file upload (like pgAdmin exports)
+      if (isPlainSql) {
+        console.log(`[Restore] Detected plain SQL file: ${fileName}`);
+        const tempDir = os.tmpdir();
+        const timestamp = Date.now();
+        const sqlPath = path.join(tempDir, `restore_${timestamp}.sql`);
+        
+        // Write the SQL content to a temp file
+        await fs.promises.writeFile(sqlPath, req.file.buffer);
+        
+        try {
+          const dbResult = await restorePgBackup(sqlPath, { disableForeignKeys: true });
+          
+          if (!dbResult.success) {
+            return res.status(500).json({
+              message: "Database restore failed",
+              error: dbResult.error,
+              warnings: dbResult.warnings,
+              filesRestored: 0,
+            });
+          }
+          
+          return res.json({
+            message: "SQL restore completed successfully",
+            format: "plain_sql",
+            backupDate: new Date().toISOString(),
+            filesRestored: 0,
+            warnings: dbResult.warnings,
+            errors: [],
+          });
+        } finally {
+          // Clean up temp file
+          if (existsSync(sqlPath)) {
+            unlinkSync(sqlPath);
+          }
+        }
+      }
+      
+      // Extract and detect backup format (SQL or legacy JSON or files-only) from archive
       const { sqlFile, metadata, legacyJson, foundFiles } = await extractBackupFromArchive(req.file.buffer);
       
       // Handle webapp-files-only backup (source code only, no project data)
