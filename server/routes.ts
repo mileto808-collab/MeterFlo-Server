@@ -157,43 +157,9 @@ export async function registerRoutes(
   // Local authentication
   app.post("/api/auth/local/login", async (req, res) => {
     try {
-      const { username, password, turnstileToken } = req.body;
+      const { username, password } = req.body;
       if (!username || !password) {
         return res.status(400).json({ message: "Username and password are required" });
-      }
-      
-      // Check if Turnstile protection is enabled
-      const turnstileEnabled = await storage.getSetting("turnstileEnabled");
-      const turnstileSecretKey = await storage.getSetting("turnstileSecretKey");
-      
-      if (turnstileEnabled === "true" && turnstileSecretKey) {
-        if (!turnstileToken) {
-          return res.status(400).json({ message: "Security verification required" });
-        }
-        
-        // Verify Turnstile token with Cloudflare
-        try {
-          const verifyResponse = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: new URLSearchParams({
-              secret: turnstileSecretKey,
-              response: turnstileToken,
-              remoteip: (req.headers["x-forwarded-for"] as string)?.split(",")[0] || req.socket.remoteAddress || ""
-            })
-          });
-          
-          const verifyResult = await verifyResponse.json() as { success: boolean; "error-codes"?: string[] };
-          
-          if (!verifyResult.success) {
-            console.warn("Turnstile verification failed:", verifyResult["error-codes"]);
-            return res.status(400).json({ message: "Security verification failed. Please try again." });
-          }
-        } catch (turnstileError) {
-          console.error("Turnstile API error:", turnstileError);
-          // Allow login if Turnstile API is unavailable (fail open for usability)
-          console.warn("Turnstile verification skipped due to API error");
-        }
       }
       
       const user = await storage.getUserByUsername(username);
@@ -843,9 +809,8 @@ export async function registerRoutes(
       if (!currentUser) {
         return res.status(401).json({ message: "Unauthorized" });
       }
-      const canManageAccessLevels = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_ACCESS_LEVELS);
-      if (!canManageAccessLevels) {
-        return res.status(403).json({ message: "Forbidden: You don't have permission to manage access levels" });
+      if (currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Only administrators can manage access levels" });
       }
       
       const { key, label, baseRole, description, permissions: permissionList } = req.body;
@@ -878,9 +843,8 @@ export async function registerRoutes(
       if (!currentUser) {
         return res.status(401).json({ message: "Unauthorized" });
       }
-      const canManageAccessLevels = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_ACCESS_LEVELS);
-      if (!canManageAccessLevels) {
-        return res.status(403).json({ message: "Forbidden: You don't have permission to manage access levels" });
+      if (currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Only administrators can manage access levels" });
       }
       
       const id = parseInt(req.params.id);
@@ -917,9 +881,8 @@ export async function registerRoutes(
       if (!currentUser) {
         return res.status(401).json({ message: "Unauthorized" });
       }
-      const canManageAccessLevels = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_ACCESS_LEVELS);
-      if (!canManageAccessLevels) {
-        return res.status(403).json({ message: "Forbidden: You don't have permission to manage access levels" });
+      if (currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Only administrators can manage access levels" });
       }
       
       const id = parseInt(req.params.id);
@@ -942,9 +905,8 @@ export async function registerRoutes(
       if (!currentUser) {
         return res.status(401).json({ message: "Unauthorized" });
       }
-      const canManageAccessLevels = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_ACCESS_LEVELS);
-      if (!canManageAccessLevels) {
-        return res.status(403).json({ message: "Forbidden: You don't have permission to manage access levels" });
+      if (currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Only administrators can manage access levels" });
       }
       
       const id = parseInt(req.params.id);
@@ -988,9 +950,8 @@ export async function registerRoutes(
       if (!currentUser) {
         return res.status(401).json({ message: "Unauthorized" });
       }
-      const canManageAccessLevels = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_ACCESS_LEVELS);
-      if (!canManageAccessLevels) {
-        return res.status(403).json({ message: "Forbidden: You don't have permission to manage access levels" });
+      if (currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Only administrators can manage access levels" });
       }
       
       const id = parseInt(req.params.id);
@@ -4415,100 +4376,6 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error updating web update config:", error);
       res.status(500).json({ message: "Failed to update web update configuration" });
-    }
-  });
-
-  // Get Cloudflare Turnstile settings
-  app.get("/api/settings/turnstile", isAuthenticated, async (req: any, res) => {
-    try {
-      const currentUser = await storage.getUser(req.user.claims.sub);
-      if (!currentUser) {
-        return res.status(401).json({ message: "Unauthorized" });
-      }
-      
-      const hasTurnstilePermission = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_CLOUDFLARE_TURNSTILE);
-      if (!hasTurnstilePermission) {
-        return res.status(403).json({ message: "Forbidden: You don't have permission to view Turnstile settings" });
-      }
-      
-      const enabled = await storage.getSetting("turnstileEnabled");
-      const siteKey = await storage.getSetting("turnstileSiteKey");
-      const secretKey = await storage.getSetting("turnstileSecretKey");
-      
-      res.json({
-        enabled: enabled === "true",
-        siteKey: siteKey || "",
-        secretKey: secretKey ? "********" : "",
-        hasSecretKey: !!secretKey
-      });
-    } catch (error) {
-      console.error("Error getting Turnstile settings:", error);
-      res.status(500).json({ message: "Failed to get Turnstile settings" });
-    }
-  });
-
-  // Update Cloudflare Turnstile settings
-  app.put("/api/settings/turnstile", isAuthenticated, async (req: any, res) => {
-    try {
-      const currentUser = await storage.getUser(req.user.claims.sub);
-      if (!currentUser) {
-        return res.status(401).json({ message: "Unauthorized" });
-      }
-      
-      const hasTurnstilePermission = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_CLOUDFLARE_TURNSTILE);
-      if (!hasTurnstilePermission) {
-        return res.status(403).json({ message: "Forbidden: You don't have permission to update Turnstile settings" });
-      }
-      
-      const { enabled, siteKey, secretKey } = req.body;
-      
-      // Get current secret key if not being updated
-      let effectiveSecretKey = await storage.getSetting("turnstileSecretKey");
-      if (secretKey !== undefined && secretKey !== "********") {
-        effectiveSecretKey = secretKey || "";
-      }
-      
-      // Validate: if enabling, both keys must be present
-      if (enabled && (!siteKey || !effectiveSecretKey)) {
-        return res.status(400).json({ 
-          message: "Both Site Key and Secret Key are required to enable Turnstile protection" 
-        });
-      }
-      
-      await storage.setSetting("turnstileEnabled", enabled ? "true" : "false", "Cloudflare Turnstile protection enabled");
-      
-      if (siteKey !== undefined) {
-        await storage.setSetting("turnstileSiteKey", siteKey || "", "Cloudflare Turnstile site key");
-      }
-      
-      if (secretKey !== undefined && secretKey !== "********") {
-        await storage.setSetting("turnstileSecretKey", secretKey || "", "Cloudflare Turnstile secret key");
-      }
-      
-      res.json({ message: "Turnstile settings saved" });
-    } catch (error) {
-      console.error("Error updating Turnstile settings:", error);
-      res.status(500).json({ message: "Failed to update Turnstile settings" });
-    }
-  });
-
-  // Public endpoint to check if Turnstile is enabled (for login page)
-  app.get("/api/auth/turnstile-status", async (req, res) => {
-    try {
-      const enabled = await storage.getSetting("turnstileEnabled");
-      const siteKey = await storage.getSetting("turnstileSiteKey");
-      const secretKey = await storage.getSetting("turnstileSecretKey");
-      
-      // Only report as enabled if all three conditions are met
-      const isFullyEnabled = enabled === "true" && !!siteKey && !!secretKey;
-      
-      res.json({
-        enabled: isFullyEnabled,
-        siteKey: isFullyEnabled ? siteKey : null
-      });
-    } catch (error) {
-      console.error("Error checking Turnstile status:", error);
-      res.json({ enabled: false, siteKey: null });
     }
   });
 

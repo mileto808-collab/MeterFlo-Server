@@ -140,13 +140,6 @@ export const permissionRegistry: PermissionDefinition[] = [
     defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
   },
   {
-    key: "settings.accessLevels",
-    label: "Access Levels",
-    category: "Settings",
-    description: "Manage access level permissions",
-    defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
-  },
-  {
     key: "settings.statuses",
     label: "Work Order Statuses",
     category: "Settings",
@@ -202,14 +195,6 @@ export const permissionRegistry: PermissionDefinition[] = [
     description: "Configure module type definitions for meters",
     defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
   },
-  {
-    key: "settings.cloudflareTurnstile",
-    label: "Cloudflare Turnstile",
-    category: "Settings",
-    description: "Configure Cloudflare Turnstile captcha protection for login",
-    defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
-  },
-
   // Maintenance action permissions - what users can do in the maintenance area
   {
     key: "maintenance.projectBackup",

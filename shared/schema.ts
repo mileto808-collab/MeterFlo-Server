@@ -934,7 +934,6 @@ export const permissionKeys = {
   SETTINGS_TIMEZONE: "settings.timezone",
   SETTINGS_IMPORT_HISTORY: "settings.importHistory",
   SETTINGS_DB_IMPORT_HISTORY: "settings.dbImportHistory",
-  SETTINGS_ACCESS_LEVELS: "settings.accessLevels",
   SETTINGS_STATUSES: "settings.statuses",
   SETTINGS_TROUBLE_CODES: "settings.troubleCodes",
   SETTINGS_USER_GROUPS: "settings.userGroups",
@@ -944,7 +943,6 @@ export const permissionKeys = {
   SETTINGS_CUSTOMER_API_LOGS: "settings.customerApiLogs",
   SETTINGS_MOBILE_CONFIG: "settings.mobileConfig",
   SETTINGS_WEB_UPDATE: "settings.webUpdate",
-  SETTINGS_CLOUDFLARE_TURNSTILE: "settings.cloudflareTurnstile",
   // Maintenance permissions
   MAINTENANCE_PROJECT_BACKUP: "maintenance.projectBackup",
   MAINTENANCE_PROJECT_RESTORE: "maintenance.projectRestore",
