@@ -38,9 +38,9 @@ module.exports = {
         PORT: 3000,
         HOST: '127.0.0.1',
         // Database connection - UPDATE THIS with your PostgreSQL credentials
-        DATABASE_URL: 'postgresql://meterflo_user:fa713777@localhost:5000/meterflo',
+        DATABASE_URL: 'postgresql://meterflo_user:YOURPASSWORD@localhost:5000/meterflo',
         // Session secret - UPDATE THIS with a random 64-character string
-        SESSION_SECRET: 'cbb4cefd9a9fd04b5399a31a03b6f8d6464f1320a05f4f6fac55ee72c27faf35',
+        SESSION_SECRET: 'YOUR SESSION SECRET',
         // Cookie settings for HTTP (set to 'true' if using HTTPS)
         COOKIE_SECURE: 'true',
       },
