@@ -2817,9 +2817,9 @@ export async function registerRoutes(
         zone: wo.zone || null,
         serviceType: wo.serviceType || "Water",
         oldSystemId: wo.oldSystemId || wo.old_system_id || null,
-        oldSystemReading: wo.oldSystemReading || wo.old_system_reading || null,
+        oldSystemReading: (wo.oldSystemReading ?? wo.old_system_reading) != null ? (Number.isNaN(parseFloat(String(wo.oldSystemReading ?? wo.old_system_reading))) ? null : parseFloat(String(wo.oldSystemReading ?? wo.old_system_reading))) : null,
         newSystemId: wo.newSystemId || wo.new_system_id || null,
-        newSystemReading: wo.newSystemReading || wo.new_system_reading || null,
+        newSystemReading: (wo.newSystemReading ?? wo.new_system_reading) != null ? (Number.isNaN(parseFloat(String(wo.newSystemReading ?? wo.new_system_reading))) ? null : parseFloat(String(wo.newSystemReading ?? wo.new_system_reading))) : null,
         oldGps: wo.oldGps || wo.old_gps || null,
         newGps: wo.newGps || wo.new_gps || null,
         status: wo.status || "Open",
@@ -2834,8 +2834,8 @@ export async function registerRoutes(
         newSystemType: wo.newSystemType || wo.new_system_type || null,
         oldModuleId: wo.oldModuleId || wo.old_module_id || null,
         newModuleId: wo.newModuleId || wo.new_module_id || null,
-        oldModuleRead: wo.oldModuleRead != null ? (Number.isNaN(parseInt(String(wo.oldModuleRead))) ? null : parseInt(String(wo.oldModuleRead))) : null,
-        newModuleRead: wo.newModuleRead != null ? (Number.isNaN(parseInt(String(wo.newModuleRead))) ? null : parseInt(String(wo.newModuleRead))) : null,
+        oldModuleRead: (wo.oldModuleRead ?? wo.old_module_read) != null ? (Number.isNaN(parseFloat(String(wo.oldModuleRead ?? wo.old_module_read))) ? null : parseFloat(String(wo.oldModuleRead ?? wo.old_module_read))) : null,
+        newModuleRead: (wo.newModuleRead ?? wo.new_module_read) != null ? (Number.isNaN(parseFloat(String(wo.newModuleRead ?? wo.new_module_read))) ? null : parseFloat(String(wo.newModuleRead ?? wo.new_module_read))) : null,
         oldModuleType: wo.oldModuleType || wo.old_module_type || null,
         newModuleType: wo.newModuleType || wo.new_module_type || null,
       }));
@@ -3150,10 +3150,10 @@ export async function registerRoutes(
         }
       }
       
-      // Validate system reading format (digits only)
+      // Validate system reading format (numeric - integers or decimals)
       const isValidSystemReading = (reading: string): boolean => {
         if (!reading || reading.trim().length === 0) return false;
-        return /^\d+$/.test(reading.trim());
+        return /^\d+(\.\d+)?$/.test(reading.trim());
       };
       
       // Validate GPS format (lat,lng with valid ranges)
@@ -3193,30 +3193,30 @@ export async function registerRoutes(
           });
         }
         
-        // Validate system readings are digits only
+        // Validate system readings are numeric (integers or decimals)
         if (needsSystem) {
           if (!isValidSystemReading(oldSystemReading)) {
             return res.status(400).json({ 
-              message: "Old system reading must contain only digits (0-9)" 
+              message: "Old system reading must be a valid number" 
             });
           }
           if (!isValidSystemReading(newSystemReading)) {
             return res.status(400).json({ 
-              message: "New system reading must contain only digits (0-9)" 
+              message: "New system reading must be a valid number" 
             });
           }
         }
         
-        // Validate module readings are digits only
+        // Validate module readings are numeric (integers or decimals)
         if (needsModule) {
           if (!isValidSystemReading(oldModuleReading)) {
             return res.status(400).json({ 
-              message: "Old module reading must contain only digits (0-9)" 
+              message: "Old module reading must be a valid number" 
             });
           }
           if (!isValidSystemReading(newModuleReading)) {
             return res.status(400).json({ 
-              message: "New module reading must contain only digits (0-9)" 
+              message: "New module reading must be a valid number" 
             });
           }
         }
@@ -6958,10 +6958,10 @@ export async function registerRoutes(
       const files = req.files as Express.Multer.File[];
       const folderName = workOrder.customerWoId || String(workOrder.id);
       
-      // Validation
+      // Validation (numeric - integers or decimals)
       const isValidSystemReading = (reading: string): boolean => {
         if (!reading || reading.trim().length === 0) return false;
-        return /^\d+$/.test(reading.trim());
+        return /^\d+(\.\d+)?$/.test(reading.trim());
       };
       
       const isValidGps = (gps: string): boolean => {
@@ -7014,19 +7014,19 @@ export async function registerRoutes(
         }
         
         if (!isValidSystemReading(oldSystemReading)) {
-          return res.status(400).json({ message: "Old system reading must contain only digits" });
+          return res.status(400).json({ message: "Old system reading must be a valid number" });
         }
         if (!isValidSystemReading(newSystemReading)) {
-          return res.status(400).json({ message: "New system reading must contain only digits" });
+          return res.status(400).json({ message: "New system reading must be a valid number" });
         }
         if (!isValidGps(gpsCoordinates)) {
           return res.status(400).json({ message: "Invalid GPS coordinates format" });
         }
         
         updateData.status = "Completed";
-        updateData.oldSystemReading = parseInt(oldSystemReading.trim(), 10);
+        updateData.oldSystemReading = parseFloat(oldSystemReading.trim());
         updateData.newSystemId = newSystemId;
-        updateData.newSystemReading = parseInt(newSystemReading.trim(), 10);
+        updateData.newSystemReading = parseFloat(newSystemReading.trim());
         updateData.newGps = gpsCoordinates;
         updateData.signatureName = signatureName;
         updateData.completedAt = clientCompletedAt || new Date().toISOString();
@@ -7391,11 +7391,11 @@ export async function registerRoutes(
         await fs.writeFile(sigFilePath, sigBuffer);
       }
       
-      // Validation for system changeout completion
+      // Validation for system changeout completion (numeric - integers or decimals)
       const isValidSystemReading = (reading: any): boolean => {
         if (reading === undefined || reading === null) return false;
         const str = String(reading).trim();
-        return str.length > 0 && /^\d+$/.test(str);
+        return str.length > 0 && /^\d+(\.\d+)?$/.test(str);
       };
       
       const isValidGps = (gps: string): boolean => {
@@ -7453,10 +7453,10 @@ export async function registerRoutes(
       };
       
       if (oldSystemReading !== undefined && oldSystemReading !== null) {
-        updateData.oldSystemReading = parseInt(String(oldSystemReading), 10);
+        updateData.oldSystemReading = parseFloat(String(oldSystemReading));
       }
       if (newSystemReading !== undefined && newSystemReading !== null) {
-        updateData.newSystemReading = parseInt(String(newSystemReading), 10);
+        updateData.newSystemReading = parseFloat(String(newSystemReading));
       }
       if (newSystemId) {
         updateData.newSystemId = newSystemId;
@@ -7467,10 +7467,10 @@ export async function registerRoutes(
       
       // Module fields
       if (effectiveOldModuleReading !== undefined && effectiveOldModuleReading !== null) {
-        updateData.oldModuleRead = parseInt(String(effectiveOldModuleReading), 10);
+        updateData.oldModuleRead = parseFloat(String(effectiveOldModuleReading));
       }
       if (effectiveNewModuleReading !== undefined && effectiveNewModuleReading !== null) {
-        updateData.newModuleRead = parseInt(String(effectiveNewModuleReading), 10);
+        updateData.newModuleRead = parseFloat(String(effectiveNewModuleReading));
       }
       if (newModuleId) {
         updateData.newModuleId = newModuleId;
@@ -7813,11 +7813,11 @@ export async function registerRoutes(
         await fs.writeFile(sigFilePath, sigBuffer);
       }
       
-      // Validation helpers
+      // Validation helpers (numeric - integers or decimals)
       const isValidSystemReading = (reading: any): boolean => {
         if (reading === undefined || reading === null) return false;
         const str = String(reading).trim();
-        return str.length > 0 && /^\d+$/.test(str);
+        return str.length > 0 && /^\d+(\.\d+)?$/.test(str);
       };
       
       const isValidGps = (gps: string): boolean => {
@@ -7874,10 +7874,10 @@ export async function registerRoutes(
       };
       
       if (oldSystemReading !== undefined && oldSystemReading !== null) {
-        updateData.oldSystemReading = parseInt(String(oldSystemReading), 10);
+        updateData.oldSystemReading = parseFloat(String(oldSystemReading));
       }
       if (newSystemReading !== undefined && newSystemReading !== null) {
-        updateData.newSystemReading = parseInt(String(newSystemReading), 10);
+        updateData.newSystemReading = parseFloat(String(newSystemReading));
       }
       if (newSystemId) {
         updateData.newSystemId = newSystemId;
@@ -7888,10 +7888,10 @@ export async function registerRoutes(
       
       // Module fields
       if (oldModuleReading !== undefined && oldModuleReading !== null) {
-        updateData.oldModuleRead = parseInt(String(oldModuleReading), 10);
+        updateData.oldModuleRead = parseFloat(String(oldModuleReading));
       }
       if (newModuleReading !== undefined && newModuleReading !== null) {
-        updateData.newModuleRead = parseInt(String(newModuleReading), 10);
+        updateData.newModuleRead = parseFloat(String(newModuleReading));
       }
       if (newModuleId) {
         updateData.newModuleId = newModuleId;
