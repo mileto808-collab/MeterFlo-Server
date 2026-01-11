@@ -19,6 +19,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Separator } from "@/components/ui/separator";
 import { Moon, Sun, User as UserIcon, Shield, FolderOpen, Save, FileUp, Users, Plus, Pencil, Trash2, UsersRound, Clock, Copy, Gauge, Download, History, Send, ChevronDown, ChevronRight, Filter, CheckCircle2, XCircle, RefreshCw, Eye, Smartphone, Globe, GitBranch, ArrowUpCircle, FileCode, Clipboard } from "lucide-react";
 import type { Subrole, Permission, WorkOrderStatus, UserGroup, UserGroupWithProjects, User, TroubleCode, ServiceTypeRecord, SystemType, ModuleType, Project, FileImportHistory, ImportHistory, CustomerApiLog } from "@shared/schema";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -487,6 +488,38 @@ export default function Settings() {
     },
     onError: () => {
       toast({ title: "Failed to save Turnstile settings", variant: "destructive" });
+    },
+  });
+
+  // Mobile API bypass state and queries
+  interface MobileBypassSettings {
+    enabled: boolean;
+    hasSecretKey: boolean;
+  }
+
+  const [mobileBypassEnabled, setMobileBypassEnabled] = useState(false);
+
+  const { data: mobileBypassData, isLoading: mobileBypassLoading } = useQuery<MobileBypassSettings>({
+    queryKey: ["/api/settings/mobile-bypass"],
+    enabled: isAdmin || hasPermission("settings.cloudflareTurnstile"),
+  });
+
+  useEffect(() => {
+    if (mobileBypassData) {
+      setMobileBypassEnabled(mobileBypassData.enabled);
+    }
+  }, [mobileBypassData]);
+
+  const saveMobileBypassMutation = useMutation({
+    mutationFn: async (data: { enabled: boolean }) => {
+      return apiRequest("PUT", "/api/settings/mobile-bypass", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/mobile-bypass"] });
+      toast({ title: "Mobile bypass settings saved" });
+    },
+    onError: (error: any) => {
+      toast({ title: error.message || "Failed to save mobile bypass settings", variant: "destructive" });
     },
   });
   
@@ -2263,6 +2296,65 @@ export default function Settings() {
                   <Save className="h-4 w-4 mr-2" />
                   {saveTurnstileMutation.isPending ? "Saving..." : "Save Turnstile Settings"}
                 </Button>
+
+                <Separator className="my-6" />
+
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2">
+                    <Smartphone className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <h3 className="font-medium">Mobile App Bypass</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Allow mobile apps to bypass Turnstile verification using a secret key
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="mobile-bypass-enabled">Enable Mobile Bypass</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Mobile apps with the correct secret key can skip CAPTCHA verification
+                      </p>
+                    </div>
+                    <Switch
+                      id="mobile-bypass-enabled"
+                      checked={mobileBypassEnabled}
+                      onCheckedChange={setMobileBypassEnabled}
+                      disabled={!mobileBypassData?.hasSecretKey}
+                      data-testid="switch-mobile-bypass-enabled"
+                    />
+                  </div>
+
+                  {!mobileBypassData?.hasSecretKey && (
+                    <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-md">
+                      <p className="text-xs text-destructive">
+                        MOBILE_API_SECRET_KEY environment variable is not set. 
+                        Set this on your server to enable mobile bypass.
+                      </p>
+                    </div>
+                  )}
+
+                  {mobileBypassData?.hasSecretKey && (
+                    <div className="p-3 bg-muted/50 rounded-md">
+                      <p className="text-xs text-muted-foreground">
+                        The mobile app must send the header <code className="bg-muted px-1 rounded">X-MeterFlo-Mobile-Key</code> with 
+                        the value of your MOBILE_API_SECRET_KEY environment variable.
+                      </p>
+                    </div>
+                  )}
+
+                  <Button 
+                    onClick={() => {
+                      saveMobileBypassMutation.mutate({ enabled: mobileBypassEnabled });
+                    }}
+                    disabled={saveMobileBypassMutation.isPending || !mobileBypassData?.hasSecretKey}
+                    data-testid="button-save-mobile-bypass"
+                  >
+                    <Save className="h-4 w-4 mr-2" />
+                    {saveMobileBypassMutation.isPending ? "Saving..." : "Save Mobile Bypass Settings"}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
         )}

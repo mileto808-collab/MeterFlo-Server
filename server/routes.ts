@@ -166,7 +166,18 @@ export async function registerRoutes(
       const turnstileEnabled = await storage.getSetting("turnstileEnabled");
       const turnstileSecretKey = await storage.getSetting("turnstileSecretKey");
       
-      if (turnstileEnabled === "true" && turnstileSecretKey) {
+      // Check for mobile API bypass
+      const mobileApiKey = req.headers["x-meterflo-mobile-key"] as string;
+      const mobileBypassEnabled = await storage.getSetting("mobileApiBypassEnabled");
+      const serverMobileKey = process.env.MOBILE_API_SECRET_KEY;
+      
+      // If mobile bypass is enabled and valid key provided, skip Turnstile
+      const isMobileBypass = mobileBypassEnabled === "true" && 
+                             serverMobileKey && 
+                             mobileApiKey && 
+                             mobileApiKey === serverMobileKey;
+      
+      if (turnstileEnabled === "true" && turnstileSecretKey && !isMobileBypass) {
         if (!turnstileToken) {
           return res.status(400).json({ message: "Security verification required" });
         }
@@ -4489,6 +4500,72 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error updating Turnstile settings:", error);
       res.status(500).json({ message: "Failed to update Turnstile settings" });
+    }
+  });
+
+  // Get mobile API bypass settings
+  app.get("/api/settings/mobile-bypass", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const hasTurnstilePermission = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_CLOUDFLARE_TURNSTILE);
+      if (!hasTurnstilePermission) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to view mobile bypass settings" });
+      }
+      
+      const enabled = await storage.getSetting("mobileApiBypassEnabled");
+      const hasSecretKey = !!process.env.MOBILE_API_SECRET_KEY;
+      
+      res.json({
+        enabled: enabled === "true",
+        hasSecretKey
+      });
+    } catch (error) {
+      console.error("Error getting mobile bypass settings:", error);
+      res.status(500).json({ message: "Failed to get mobile bypass settings" });
+    }
+  });
+
+  // Update mobile API bypass settings
+  app.put("/api/settings/mobile-bypass", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const hasTurnstilePermission = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_CLOUDFLARE_TURNSTILE);
+      if (!hasTurnstilePermission) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to update mobile bypass settings" });
+      }
+      
+      const mobileBypassSchema = z.object({
+        enabled: z.boolean()
+      });
+      
+      const parseResult = mobileBypassSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({ message: "Invalid request body" });
+      }
+      
+      const { enabled } = parseResult.data;
+      
+      // Validate: if enabling, MOBILE_API_SECRET_KEY must be set
+      if (enabled && !process.env.MOBILE_API_SECRET_KEY) {
+        return res.status(400).json({ 
+          message: "MOBILE_API_SECRET_KEY environment variable must be set to enable mobile bypass" 
+        });
+      }
+      
+      await storage.setSetting("mobileApiBypassEnabled", enabled ? "true" : "false", "Mobile API bypass for Turnstile");
+      
+      res.json({ message: "Mobile bypass settings saved" });
+    } catch (error) {
+      console.error("Error updating mobile bypass settings:", error);
+      res.status(500).json({ message: "Failed to update mobile bypass settings" });
     }
   });
 
