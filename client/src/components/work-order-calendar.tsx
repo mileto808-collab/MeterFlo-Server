@@ -906,6 +906,13 @@ export function WorkOrderCalendar({
                   WO {rescheduleDialog.workOrder?.customerWoId || rescheduleDialog.workOrder?.id}
                   {rescheduleDialog.workOrder?.address && ` - ${rescheduleDialog.workOrder.address}`}
                 </div>
+                {(rescheduleDialog.workOrder?.route || rescheduleDialog.workOrder?.zone) && (
+                  <div className="text-sm text-muted-foreground" data-testid="text-reschedule-route-zone">
+                    {rescheduleDialog.workOrder.route && <span data-testid="text-reschedule-route">Route: {rescheduleDialog.workOrder.route}</span>}
+                    {rescheduleDialog.workOrder.route && rescheduleDialog.workOrder.zone && " | "}
+                    {rescheduleDialog.workOrder.zone && <span data-testid="text-reschedule-zone">Zone: {rescheduleDialog.workOrder.zone}</span>}
+                  </div>
+                )}
                 {rescheduleDialog.workOrder?.customerName && (
                   <div className="text-sm">{rescheduleDialog.workOrder.customerName}</div>
                 )}
