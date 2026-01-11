@@ -44,4 +44,3 @@ integrations = ["javascript_log_in_with_replit:1.0.0", "javascript_database:1.0.
 [userenv]
 
 [userenv.shared]
-MOBILE_API_SECRET_KEY = "2e86b626f72fbae55752725d8955ef237b80eba229f2b3a7461b217692554cd5"
