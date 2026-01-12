@@ -381,8 +381,9 @@ export default function Settings() {
       queryClient.invalidateQueries({ queryKey: ["/api/settings/security"] });
       toast({ title: "Security settings saved" });
     },
-    onError: () => {
-      toast({ title: "Failed to save security settings", variant: "destructive" });
+    onError: (error: any) => {
+      const message = error?.message || "Failed to save security settings";
+      toast({ title: message, variant: "destructive" });
     },
   });
 
@@ -2265,7 +2266,9 @@ export default function Settings() {
                     saveSecuritySettingsMutation.mutate({
                       turnstileEnabled,
                       turnstileSiteKey: turnstileSiteKey.trim(),
-                      turnstileSecretKey: turnstileSecretKey === "***configured***" || turnstileSecretKey === "" 
+                      // Send actual value - backend will validate and only update if it's a new secret
+                      // Send "***configured***" only if secret was already configured and user didn't change it
+                      turnstileSecretKey: turnstileSecretKey.trim() === "" && securitySettingsData?.turnstileSecretKey === "***configured***"
                         ? "***configured***" 
                         : turnstileSecretKey.trim(),
                       turnstileChallengePoint,

@@ -4438,11 +4438,26 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Invalid challenge point. Must be 'turnstile' or 'login'" });
       }
       
+      // Validate keys are provided when enabling Turnstile
+      if (turnstileEnabled) {
+        if (!turnstileSiteKey || turnstileSiteKey.trim() === "") {
+          return res.status(400).json({ message: "Site key is required when enabling Turnstile" });
+        }
+        
+        // Check if secret key is provided or already configured
+        const existingSecretKey = await storage.getSetting("turnstile_secret_key");
+        const isNewSecretProvided = turnstileSecretKey && turnstileSecretKey !== "***configured***" && turnstileSecretKey.trim() !== "";
+        
+        if (!existingSecretKey && !isNewSecretProvided) {
+          return res.status(400).json({ message: "Secret key is required when enabling Turnstile" });
+        }
+      }
+      
       await storage.setSetting("turnstile_enabled", turnstileEnabled ? "true" : "false", "Enable Cloudflare Turnstile verification");
       await storage.setSetting("turnstile_site_key", turnstileSiteKey || "", "Cloudflare Turnstile site key");
       
       // Only update secret key if it's provided (not the masked value)
-      if (turnstileSecretKey && turnstileSecretKey !== "***configured***") {
+      if (turnstileSecretKey && turnstileSecretKey !== "***configured***" && turnstileSecretKey.trim() !== "") {
         await storage.setSetting("turnstile_secret_key", turnstileSecretKey, "Cloudflare Turnstile secret key");
       }
       
