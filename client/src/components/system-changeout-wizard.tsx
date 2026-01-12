@@ -321,10 +321,10 @@ export function SystemChangeoutWizard({
 
   // Validation helpers
   const isValidSystemReading = (reading: string | undefined | null): boolean => {
-    // Must be digits only (allows leading zeros like "0001")
+    // Must be numeric (allows decimals like "24001.011" and leading zeros like "0001")
     if (!reading || typeof reading !== 'string') return false;
     const trimmed = reading.trim();
-    return trimmed.length > 0 && /^\d+$/.test(trimmed);
+    return trimmed.length > 0 && /^\d+(\.\d+)?$/.test(trimmed);
   };
 
   const isValidGps = (gps: string | undefined | null): boolean => {
@@ -344,7 +344,7 @@ export function SystemChangeoutWizard({
 
   const getSystemReadingError = (reading: string | undefined | null): string | null => {
     if (!reading || typeof reading !== 'string' || !reading.trim()) return "Reading is required";
-    if (!/^\d+$/.test(reading.trim())) return "Reading must contain only digits (0-9)";
+    if (!/^\d+(\.\d+)?$/.test(reading.trim())) return "Reading must be a valid number (e.g., 12345 or 12345.67)";
     return null;
   };
   
@@ -1015,7 +1015,7 @@ export function SystemChangeoutWizard({
                 {oldSystemReadingError && oldSystemReadingConfirmed && (
                   <p className="text-sm text-destructive">{oldSystemReadingError}</p>
                 )}
-                <p className="text-xs text-muted-foreground">Enter digits only. Leading zeros are preserved (e.g., 0001).</p>
+                <p className="text-xs text-muted-foreground">Enter numbers. Decimals allowed (e.g., 0001 or 12345.67).</p>
               </div>
             )}
             
@@ -1046,7 +1046,7 @@ export function SystemChangeoutWizard({
                 {oldModuleReadingError && oldModuleReadingConfirmed && (
                   <p className="text-sm text-destructive">{oldModuleReadingError}</p>
                 )}
-                <p className="text-xs text-muted-foreground">Enter digits only. Leading zeros are preserved (e.g., 0001).</p>
+                <p className="text-xs text-muted-foreground">Enter numbers. Decimals allowed (e.g., 0001 or 12345.67).</p>
               </div>
             )}
 
@@ -1447,7 +1447,7 @@ export function SystemChangeoutWizard({
                 {newSystemReadingError && data.newSystemReading && (
                   <p className="text-sm text-destructive">{newSystemReadingError}</p>
                 )}
-                <p className="text-xs text-muted-foreground">Enter digits only. Leading zeros are preserved (e.g., 0001).</p>
+                <p className="text-xs text-muted-foreground">Enter numbers. Decimals allowed (e.g., 0001 or 12345.67).</p>
               </div>
             )}
             
@@ -1467,7 +1467,7 @@ export function SystemChangeoutWizard({
                 {newModuleReadingError && data.newModuleReading && (
                   <p className="text-sm text-destructive">{newModuleReadingError}</p>
                 )}
-                <p className="text-xs text-muted-foreground">Enter digits only. Leading zeros are preserved (e.g., 0001).</p>
+                <p className="text-xs text-muted-foreground">Enter numbers. Decimals allowed (e.g., 0001 or 12345.67).</p>
               </div>
             )}
 
