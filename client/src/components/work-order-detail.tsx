@@ -59,6 +59,11 @@ import {
   Plus,
   AlertTriangle,
   Wrench,
+  Hash,
+  Phone,
+  Mail,
+  Home,
+  Pencil,
 } from "lucide-react";
 import { FileIcon } from "lucide-react";
 import SignaturePad, { type SignaturePadRef } from "@/components/signature-pad";
@@ -139,6 +144,8 @@ export function WorkOrderDetail({
   const [showSystemChangeoutWizard, setShowSystemChangeoutWizard] = useState(false);
   const [isClaiming, setIsClaiming] = useState(false);
   const autoLaunchTriggered = useRef(false);
+  const [mobileCustomerEditMode, setMobileCustomerEditMode] = useState(false);
+  const [mobileSystemEditMode, setMobileSystemEditMode] = useState(false);
   
   // Auto-determine scope based on work order data
   const changeoutScope: "system" | "module" | "both" = (() => {
@@ -427,12 +434,279 @@ export function WorkOrderDetail({
             <AccordionItem value="customer" className="border rounded-lg px-4">
               <AccordionTrigger className="hover:no-underline py-4" data-testid="accordion-customer">
                 <div className="flex items-center gap-2">
-                  <User className="h-4 w-4 text-primary" />
-                  <span className="font-medium">Customer & Site Information</span>
+                  <Home className="h-4 w-4 text-primary" />
+                  <span className="font-medium">Customer & Site</span>
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pb-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Mobile read-only display with icons - shown on small screens when not editing */}
+                {!mobileCustomerEditMode && (
+                  <div className="md:hidden space-y-3">
+                    {/* Edit button for authorized users */}
+                    {canEdit && (
+                      <div className="flex justify-end mb-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setMobileCustomerEditMode(true)}
+                          data-testid="button-mobile-customer-edit"
+                        >
+                          <Pencil className="h-3 w-3 mr-1" />
+                          Edit
+                        </Button>
+                      </div>
+                    )}
+                    
+                    {/* Customer ID */}
+                    <div className="flex items-start gap-3">
+                      <Hash className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Customer ID</p>
+                        <p className="text-sm font-medium" data-testid="mobile-customer-id">{workOrder.customerId || "N/A"}</p>
+                      </div>
+                    </div>
+
+                    {/* Customer Name */}
+                    <div className="flex items-start gap-3">
+                      <User className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Customer Name</p>
+                        <p className="text-sm font-medium" data-testid="mobile-customer-name">{workOrder.customerName || "N/A"}</p>
+                      </div>
+                    </div>
+
+                    {/* Address */}
+                    <div className="flex items-start gap-3">
+                      <MapPin className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Address</p>
+                        {(() => {
+                          const fullAddress = [workOrder.address, workOrder.city, workOrder.state, workOrder.zip].filter(Boolean).join(", ");
+                          return fullAddress ? (
+                            <a
+                              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm font-medium text-primary hover:underline"
+                              data-testid="mobile-address-link"
+                            >
+                              {fullAddress}
+                            </a>
+                          ) : (
+                            <p className="text-sm font-medium text-muted-foreground">N/A</p>
+                          );
+                        })()}
+                      </div>
+                    </div>
+
+                    {/* Phone */}
+                    <div className="flex items-start gap-3">
+                      <Phone className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Phone</p>
+                        {workOrder.phone ? (
+                          <a
+                            href={`tel:${workOrder.phone}`}
+                            className="text-sm font-medium text-primary hover:underline"
+                            data-testid="mobile-phone-link"
+                          >
+                            {workOrder.phone}
+                          </a>
+                        ) : (
+                          <p className="text-sm font-medium text-muted-foreground">N/A</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Email */}
+                    <div className="flex items-start gap-3">
+                      <Mail className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Email</p>
+                        {workOrder.email ? (
+                          <a
+                            href={`mailto:${workOrder.email}`}
+                            className="text-sm font-medium"
+                            data-testid="mobile-email"
+                          >
+                            {workOrder.email}
+                          </a>
+                        ) : (
+                          <p className="text-sm font-medium text-muted-foreground">N/A</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Route and Zone side by side */}
+                    <div className="grid grid-cols-2 gap-4 pt-1">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Route</p>
+                        <p className="text-sm font-medium" data-testid="mobile-route">{workOrder.route || "N/A"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Zone</p>
+                        <p className="text-sm font-medium" data-testid="mobile-zone">{workOrder.zone || "N/A"}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Mobile edit form - shown on small screens when editing */}
+                {mobileCustomerEditMode && (
+                  <div className="md:hidden space-y-4">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-sm font-medium">Editing Customer & Site</span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setMobileCustomerEditMode(false)}
+                        data-testid="button-mobile-customer-done"
+                      >
+                        Done
+                      </Button>
+                    </div>
+                    
+                    <FormField
+                      control={form.control}
+                      name="customerId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Customer ID *</FormLabel>
+                          <FormControl>
+                            <Input {...field} value={field.value || ""} placeholder="CUST-001" data-testid="input-mobile-customer-id" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="customerName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Customer Name *</FormLabel>
+                          <FormControl>
+                            <Input {...field} value={field.value || ""} placeholder="John Doe" data-testid="input-mobile-customer-name" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="address"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Address *</FormLabel>
+                          <FormControl>
+                            <Input {...field} value={field.value || ""} placeholder="123 Main Street" data-testid="input-mobile-address" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <div className="grid grid-cols-2 gap-3">
+                      <FormField
+                        control={form.control}
+                        name="city"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>City</FormLabel>
+                            <FormControl>
+                              <Input {...field} value={field.value || ""} placeholder="City" data-testid="input-mobile-city" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="state"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>State</FormLabel>
+                            <FormControl>
+                              <Input {...field} value={field.value || ""} placeholder="State" data-testid="input-mobile-state" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                    <FormField
+                      control={form.control}
+                      name="zip"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>ZIP Code</FormLabel>
+                          <FormControl>
+                            <Input {...field} value={field.value || ""} placeholder="12345" data-testid="input-mobile-zip" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="phone"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Phone</FormLabel>
+                          <FormControl>
+                            <Input {...field} value={field.value || ""} placeholder="555-123-4567" data-testid="input-mobile-phone" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="email"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Email</FormLabel>
+                          <FormControl>
+                            <Input {...field} value={field.value || ""} placeholder="email@example.com" data-testid="input-mobile-email" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <div className="grid grid-cols-2 gap-3">
+                      <FormField
+                        control={form.control}
+                        name="route"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Route</FormLabel>
+                            <FormControl>
+                              <Input {...field} value={field.value || ""} placeholder="Route A" data-testid="input-mobile-route" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="zone"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Zone</FormLabel>
+                            <FormControl>
+                              <Input {...field} value={field.value || ""} placeholder="Zone 1" data-testid="input-mobile-zone" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Desktop form view */}
+                <div className="hidden md:grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="text-sm font-medium text-muted-foreground">System ID</label>
                     <Input 
@@ -598,145 +872,481 @@ export function WorkOrderDetail({
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pb-4">
-                {/* Mobile-optimized read-only display - shown on small screens */}
-                <div className="md:hidden space-y-4">
-                  {/* Old System - Green border */}
-                  <div className="border-l-4 border-l-green-500 pl-3 py-2">
-                    <h4 className="text-base font-semibold text-green-500 mb-2">Old System</h4>
-                    <div className="grid grid-cols-3 gap-2">
-                      <div>
-                        <p className="text-xs text-muted-foreground">System ID</p>
-                        <p className="text-sm font-medium break-all" data-testid="mobile-old-system-id">
-                          {workOrder.oldSystemId || "N/A"}
-                        </p>
+                {/* Mobile-optimized read-only display - shown on small screens when not editing */}
+                {!mobileSystemEditMode && (
+                  <div className="md:hidden space-y-4">
+                    {/* Edit button for authorized users */}
+                    {canEdit && (
+                      <div className="flex justify-end mb-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setMobileSystemEditMode(true)}
+                          data-testid="button-mobile-system-edit"
+                        >
+                          <Pencil className="h-3 w-3 mr-1" />
+                          Edit
+                        </Button>
                       </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Reading</p>
-                        <p className="text-sm font-medium" data-testid="mobile-old-system-reading">
-                          {workOrder.oldSystemReading ?? "N/A"}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Type</p>
-                        <p className="text-sm font-medium" data-testid="mobile-old-system-type">
-                          {workOrder.oldSystemType || "N/A"}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
+                    )}
 
-                  {/* Old Module - Green border */}
-                  <div className="border-l-4 border-l-green-500 pl-3 py-2">
-                    <h4 className="text-base font-semibold text-muted-foreground mb-2">Old Module</h4>
-                    <div className="grid grid-cols-3 gap-2">
-                      <div>
-                        <p className="text-xs text-muted-foreground">Module ID</p>
-                        <p className="text-sm font-medium break-all" data-testid="mobile-old-module-id">
-                          {workOrder.oldModuleId || "N/A"}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Reading</p>
-                        <p className="text-sm font-medium" data-testid="mobile-old-module-reading">
-                          {workOrder.oldModuleRead ?? "N/A"}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Type</p>
-                        <p className="text-sm font-medium" data-testid="mobile-old-module-type">
-                          {workOrder.oldModuleType || "N/A"}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* GPS Coordinates - Green border - only show if at least one GPS value exists */}
-                  {(workOrder.oldGps || workOrder.newGps) && (
+                    {/* Old System - Green border */}
                     <div className="border-l-4 border-l-green-500 pl-3 py-2">
-                      <h4 className="text-base font-semibold text-muted-foreground mb-2">GPS Coordinates</h4>
-                      <div className="space-y-2">
-                        {workOrder.oldGps && (
-                          <div>
-                            <p className="text-xs text-muted-foreground">Old GPS</p>
-                            <a
-                              href={`https://www.google.com/maps?q=${workOrder.oldGps}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-sm font-medium text-primary hover:underline"
-                              data-testid="mobile-old-gps-link"
-                            >
-                              {workOrder.oldGps}
-                            </a>
-                          </div>
-                        )}
-                        {workOrder.newGps && (
-                          <div>
-                            <p className="text-xs text-muted-foreground">New GPS</p>
-                            <a
-                              href={`https://www.google.com/maps?q=${workOrder.newGps}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-sm font-medium text-primary hover:underline"
-                              data-testid="mobile-new-gps-link"
-                            >
-                              {workOrder.newGps}
-                            </a>
-                          </div>
-                        )}
+                      <h4 className="text-base font-semibold text-green-500 mb-2">Old System</h4>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <p className="text-xs text-muted-foreground">System ID</p>
+                          <p className="text-sm font-medium break-all" data-testid="mobile-old-system-id">
+                            {workOrder.oldSystemId || "N/A"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Reading</p>
+                          <p className="text-sm font-medium" data-testid="mobile-old-system-reading">
+                            {workOrder.oldSystemReading ?? "N/A"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Type</p>
+                          <p className="text-sm font-medium" data-testid="mobile-old-system-type">
+                            {workOrder.oldSystemType || "N/A"}
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  )}
 
-                  {/* New System - Cyan border */}
-                  <div className="border-l-4 border-l-cyan-500 pl-3 py-2">
-                    <h4 className="text-base font-semibold text-cyan-500 mb-2">New System</h4>
-                    <div className="grid grid-cols-3 gap-2">
-                      <div>
-                        <p className="text-xs text-muted-foreground">System ID</p>
-                        <p className="text-sm font-medium break-all" data-testid="mobile-new-system-id">
-                          {workOrder.newSystemId || "N/A"}
-                        </p>
+                    {/* Old Module - Green border */}
+                    <div className="border-l-4 border-l-green-500 pl-3 py-2">
+                      <h4 className="text-base font-semibold text-muted-foreground mb-2">Old Module</h4>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <p className="text-xs text-muted-foreground">Module ID</p>
+                          <p className="text-sm font-medium break-all" data-testid="mobile-old-module-id">
+                            {workOrder.oldModuleId || "N/A"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Reading</p>
+                          <p className="text-sm font-medium" data-testid="mobile-old-module-reading">
+                            {workOrder.oldModuleRead ?? "N/A"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Type</p>
+                          <p className="text-sm font-medium" data-testid="mobile-old-module-type">
+                            {workOrder.oldModuleType || "N/A"}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Reading</p>
-                        <p className="text-sm font-medium" data-testid="mobile-new-system-reading">
-                          {workOrder.newSystemReading ?? "N/A"}
-                        </p>
+                    </div>
+
+                    {/* GPS Coordinates - Green border - only show if at least one GPS value exists */}
+                    {(workOrder.oldGps || workOrder.newGps) && (
+                      <div className="border-l-4 border-l-green-500 pl-3 py-2">
+                        <h4 className="text-base font-semibold text-muted-foreground mb-2">GPS Coordinates</h4>
+                        <div className="space-y-2">
+                          {workOrder.oldGps && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Old GPS</p>
+                              <a
+                                href={`https://www.google.com/maps?q=${workOrder.oldGps}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-sm font-medium text-primary hover:underline"
+                                data-testid="mobile-old-gps-link"
+                              >
+                                {workOrder.oldGps}
+                              </a>
+                            </div>
+                          )}
+                          {workOrder.newGps && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">New GPS</p>
+                              <a
+                                href={`https://www.google.com/maps?q=${workOrder.newGps}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-sm font-medium text-primary hover:underline"
+                                data-testid="mobile-new-gps-link"
+                              >
+                                {workOrder.newGps}
+                              </a>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Type</p>
-                        <p className="text-sm font-medium" data-testid="mobile-new-system-type">
-                          {workOrder.newSystemType || "N/A"}
-                        </p>
+                    )}
+
+                    {/* New System - Cyan border */}
+                    <div className="border-l-4 border-l-cyan-500 pl-3 py-2">
+                      <h4 className="text-base font-semibold text-cyan-500 mb-2">New System</h4>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <p className="text-xs text-muted-foreground">System ID</p>
+                          <p className="text-sm font-medium break-all" data-testid="mobile-new-system-id">
+                            {workOrder.newSystemId || "N/A"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Reading</p>
+                          <p className="text-sm font-medium" data-testid="mobile-new-system-reading">
+                            {workOrder.newSystemReading ?? "N/A"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Type</p>
+                          <p className="text-sm font-medium" data-testid="mobile-new-system-type">
+                            {workOrder.newSystemType || "N/A"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* New Module - Cyan border */}
+                    <div className="border-l-4 border-l-cyan-500 pl-3 py-2">
+                      <h4 className="text-base font-semibold text-cyan-500 mb-2">New Module</h4>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <p className="text-xs text-muted-foreground">Module ID</p>
+                          <p className="text-sm font-medium break-all" data-testid="mobile-new-module-id">
+                            {workOrder.newModuleId || "N/A"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Reading</p>
+                          <p className="text-sm font-medium" data-testid="mobile-new-module-reading">
+                            {workOrder.newModuleRead ?? "N/A"}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Type</p>
+                          <p className="text-sm font-medium" data-testid="mobile-new-module-type">
+                            {workOrder.newModuleType || "N/A"}
+                          </p>
+                        </div>
                       </div>
                     </div>
                   </div>
+                )}
 
-                  {/* New Module - Cyan border */}
-                  <div className="border-l-4 border-l-cyan-500 pl-3 py-2">
-                    <h4 className="text-base font-semibold text-cyan-500 mb-2">New Module</h4>
-                    <div className="grid grid-cols-3 gap-2">
-                      <div>
-                        <p className="text-xs text-muted-foreground">Module ID</p>
-                        <p className="text-sm font-medium break-all" data-testid="mobile-new-module-id">
-                          {workOrder.newModuleId || "N/A"}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Reading</p>
-                        <p className="text-sm font-medium" data-testid="mobile-new-module-reading">
-                          {workOrder.newModuleRead ?? "N/A"}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Type</p>
-                        <p className="text-sm font-medium" data-testid="mobile-new-module-type">
-                          {workOrder.newModuleType || "N/A"}
-                        </p>
-                      </div>
+                {/* Mobile edit form - shown on small screens when editing */}
+                {mobileSystemEditMode && (
+                  <div className="md:hidden space-y-4">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-sm font-medium">Editing System | Module Details</span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setMobileSystemEditMode(false)}
+                        data-testid="button-mobile-system-done"
+                      >
+                        Done
+                      </Button>
+                    </div>
+
+                    {/* Service Type */}
+                    <FormField
+                      control={form.control}
+                      name="serviceType"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Service Type *</FormLabel>
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-mobile-service-type">
+                                <SelectValue />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {serviceTypes.map((type) => (
+                                <SelectItem key={type.id} value={type.code}>{type.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    {/* Old System Section */}
+                    <div className="border-l-4 border-l-green-500 pl-3 py-2 space-y-3">
+                      <h4 className="text-sm font-medium text-green-500">Old System</h4>
+                      <FormField
+                        control={form.control}
+                        name="oldSystemId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>System ID</FormLabel>
+                            <FormControl>
+                              <ScannerInput 
+                                value={field.value || ""} 
+                                onChange={field.onChange} 
+                                placeholder="OLD-12345" 
+                                data-testid="input-mobile-old-system-id" 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="oldSystemReading"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Reading</FormLabel>
+                            <FormControl>
+                              <Input 
+                                type="number" 
+                                {...field} 
+                                value={field.value ?? ""} 
+                                onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
+                                placeholder="12345" 
+                                data-testid="input-mobile-old-system-reading" 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="oldSystemType"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Type</FormLabel>
+                            <Select 
+                              value={field.value || "__none__"} 
+                              onValueChange={(val) => field.onChange(val === "__none__" ? null : val)}
+                            >
+                              <FormControl>
+                                <SelectTrigger data-testid="select-mobile-old-system-type">
+                                  <SelectValue placeholder="Select type..." />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="__none__">None</SelectItem>
+                                {systemTypes.map((type) => (
+                                  <SelectItem key={type.id} value={type.productId}>{type.productLabel}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    {/* Old Module Section */}
+                    <div className="border-l-4 border-l-green-500 pl-3 py-2 space-y-3">
+                      <h4 className="text-sm font-medium text-muted-foreground">Old Module</h4>
+                      <FormField
+                        control={form.control}
+                        name="oldModuleId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Module ID</FormLabel>
+                            <FormControl>
+                              <ScannerInput 
+                                value={field.value || ""} 
+                                onChange={field.onChange} 
+                                placeholder="MOD-12345" 
+                                data-testid="input-mobile-old-module-id" 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="oldModuleRead"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Reading</FormLabel>
+                            <FormControl>
+                              <Input 
+                                type="number" 
+                                {...field} 
+                                value={field.value ?? ""} 
+                                onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
+                                placeholder="12345" 
+                                data-testid="input-mobile-old-module-reading" 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="oldModuleType"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Type</FormLabel>
+                            <Select 
+                              value={field.value || "__none__"} 
+                              onValueChange={(val) => field.onChange(val === "__none__" ? null : val)}
+                            >
+                              <FormControl>
+                                <SelectTrigger data-testid="select-mobile-old-module-type">
+                                  <SelectValue placeholder="Select type..." />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="__none__">None</SelectItem>
+                                {moduleTypes.map((type) => (
+                                  <SelectItem key={type.id} value={type.productId}>{type.productLabel}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    {/* New System Section */}
+                    <div className="border-l-4 border-l-cyan-500 pl-3 py-2 space-y-3">
+                      <h4 className="text-sm font-medium text-cyan-500">New System</h4>
+                      <FormField
+                        control={form.control}
+                        name="newSystemId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>System ID</FormLabel>
+                            <FormControl>
+                              <ScannerInput 
+                                value={field.value || ""} 
+                                onChange={field.onChange} 
+                                placeholder="NEW-12345" 
+                                data-testid="input-mobile-new-system-id" 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="newSystemReading"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Reading</FormLabel>
+                            <FormControl>
+                              <Input 
+                                type="number" 
+                                {...field} 
+                                value={field.value ?? ""} 
+                                onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
+                                placeholder="12345" 
+                                data-testid="input-mobile-new-system-reading" 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="newSystemType"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Type</FormLabel>
+                            <Select 
+                              value={field.value || "__none__"} 
+                              onValueChange={(val) => field.onChange(val === "__none__" ? null : val)}
+                            >
+                              <FormControl>
+                                <SelectTrigger data-testid="select-mobile-new-system-type">
+                                  <SelectValue placeholder="Select type..." />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="__none__">None</SelectItem>
+                                {systemTypes.map((type) => (
+                                  <SelectItem key={type.id} value={type.productId}>{type.productLabel}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    {/* New Module Section */}
+                    <div className="border-l-4 border-l-cyan-500 pl-3 py-2 space-y-3">
+                      <h4 className="text-sm font-medium text-cyan-500">New Module</h4>
+                      <FormField
+                        control={form.control}
+                        name="newModuleId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Module ID</FormLabel>
+                            <FormControl>
+                              <ScannerInput 
+                                value={field.value || ""} 
+                                onChange={field.onChange} 
+                                placeholder="MOD-NEW-12345" 
+                                data-testid="input-mobile-new-module-id" 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="newModuleRead"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Reading</FormLabel>
+                            <FormControl>
+                              <Input 
+                                type="number" 
+                                {...field} 
+                                value={field.value ?? ""} 
+                                onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
+                                placeholder="12345" 
+                                data-testid="input-mobile-new-module-reading" 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="newModuleType"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Type</FormLabel>
+                            <Select 
+                              value={field.value || "__none__"} 
+                              onValueChange={(val) => field.onChange(val === "__none__" ? null : val)}
+                            >
+                              <FormControl>
+                                <SelectTrigger data-testid="select-mobile-new-module-type">
+                                  <SelectValue placeholder="Select type..." />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="__none__">None</SelectItem>
+                                {moduleTypes.map((type) => (
+                                  <SelectItem key={type.id} value={type.productId}>{type.productLabel}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
                     </div>
                   </div>
-                </div>
+                )}
 
                 {/* Desktop form view - hidden on mobile */}
                 <div className="hidden md:grid grid-cols-1 md:grid-cols-2 gap-4">
