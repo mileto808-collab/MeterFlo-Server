@@ -68,7 +68,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Users, ChevronDown } from "lucide-react";
+import { Users, ChevronDown, ChevronUp, BarChart3, Settings2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -178,6 +178,8 @@ export default function ProjectWorkOrders() {
   const [selectedOldSystemType, setSelectedOldSystemType] = useState<string>("all");
   const [selectedNewSystemType, setSelectedNewSystemType] = useState<string>("all");
   const [showFilters, setShowFilters] = useState(false);
+  const [showMobileStats, setShowMobileStats] = useState(false);
+  const [showMobileTools, setShowMobileTools] = useState(false);
   const [filterSystemWoId, setFilterSystemWoId] = useState("");
   const [filterCustomerId, setFilterCustomerId] = useState("");
   const [filterCustomerName, setFilterCustomerName] = useState("");
@@ -3013,105 +3015,138 @@ export default function ProjectWorkOrders() {
       </div>
 
       {stats && viewMode !== "calendar" && (
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
-          {workOrderStatuses
-            .slice()
-            .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
-            .map((status) => (
-              <Card key={status.id} className="py-1">
-                <CardHeader className="py-1 px-3">
-                  <CardDescription className="text-xs">{status.label}</CardDescription>
-                  <CardTitle className="text-lg" data-testid={`stat-${status.label.toLowerCase().replace(/\s+/g, '-')}`}>
-                    {stats.statusCounts[status.label] || 0}
-                  </CardTitle>
-                </CardHeader>
-              </Card>
-            ))}
-          <Card className="py-1">
-            <CardHeader className="py-1 px-3">
-              <CardDescription className="text-xs">Total</CardDescription>
-              <CardTitle className="text-lg" data-testid="stat-total">{stats.total}</CardTitle>
-            </CardHeader>
-          </Card>
-        </div>
+        <>
+          {/* Mobile toggle for stats */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="md:hidden w-full justify-between"
+            onClick={() => setShowMobileStats(!showMobileStats)}
+            data-testid="button-toggle-mobile-stats"
+          >
+            <span className="flex items-center gap-2">
+              <BarChart3 className="h-4 w-4" />
+              {showMobileStats ? "Hide Stats" : "Show Stats"}
+            </span>
+            {showMobileStats ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </Button>
+          {/* Stats grid - always visible on desktop, toggleable on mobile */}
+          <div className={`grid grid-cols-2 md:grid-cols-6 gap-2 ${showMobileStats ? "" : "hidden md:grid"}`}>
+            {workOrderStatuses
+              .slice()
+              .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+              .map((status) => (
+                <Card key={status.id} className="py-1">
+                  <CardHeader className="py-1 px-3">
+                    <CardDescription className="text-xs">{status.label}</CardDescription>
+                    <CardTitle className="text-lg" data-testid={`stat-${status.label.toLowerCase().replace(/\s+/g, '-')}`}>
+                      {stats.statusCounts[status.label] || 0}
+                    </CardTitle>
+                  </CardHeader>
+                </Card>
+              ))}
+            <Card className="py-1">
+              <CardHeader className="py-1 px-3">
+                <CardDescription className="text-xs">Total</CardDescription>
+                <CardTitle className="text-lg" data-testid="stat-total">{stats.total}</CardTitle>
+              </CardHeader>
+            </Card>
+          </div>
+        </>
       )}
 
       {/* Search and Filters - hidden in calendar view */}
       {viewMode !== "calendar" && (
-        <Card>
-        <CardContent className="pt-4">
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="relative flex-1 min-w-[200px] max-w-md">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search work orders..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-                data-testid="input-search-work-orders"
-              />
-            </div>
-            <Button 
-              variant={showFilters ? "secondary" : "outline"} 
-              onClick={() => setShowFilters(!showFilters)}
-              data-testid="button-toggle-filters"
-            >
-              <Filter className="h-4 w-4 mr-2" />
-              {showFilters ? "Hide Filters" : "Show Filters"}
-              {hasActiveFilters && <Badge variant="secondary" className="ml-2">{[selectedStatus !== "all", selectedServiceType !== "all"].filter(Boolean).length}</Badge>}
-            </Button>
-            {hasActiveFilters && (
-              <Button variant="ghost" onClick={clearFilters} data-testid="button-clear-filters">
-                <X className="h-4 w-4 mr-1" />
-                Clear Filters
-              </Button>
-            )}
-            {sortCriteria.length > 0 && (
-              <Button variant="ghost" onClick={clearSort} data-testid="button-clear-sort">
-                <X className="h-4 w-4 mr-1" />
-                Clear Sort ({sortCriteria.length})
-              </Button>
-            )}
-            <div className="flex-1" />
+        <>
+          {/* Mobile toggle for search/tools */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="md:hidden w-full justify-between"
+            onClick={() => setShowMobileTools(!showMobileTools)}
+            data-testid="button-toggle-mobile-tools"
+          >
+            <span className="flex items-center gap-2">
+              <Settings2 className="h-4 w-4" />
+              {showMobileTools ? "Hide Search & Tools" : "Show Search & Tools"}
+            </span>
+            {showMobileTools ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </Button>
+          {/* Search/Tools card - always visible on desktop, toggleable on mobile */}
+          <Card className={showMobileTools ? "" : "hidden md:block"}>
+          <CardContent className="pt-4">
             <div className="flex items-center gap-2 flex-wrap">
-              <ColumnSelector
-                allColumns={workOrderColumns}
-                visibleColumns={visibleColumns}
-                onChange={setVisibleColumns}
-                disabled={columnPrefsLoading}
-                orderedColumns={orderedColumns}
-                stickyColumns={stickyColumns}
-                onStickyChange={setStickyColumns}
-              />
-              <FilterSelector
-                allFilters={workOrderFilters}
-                visibleFilters={visibleFilters}
-                onChange={setVisibleFilters}
-                disabled={filterPrefsLoading}
-              />
-              <SortDialog
-                sortCriteria={sortCriteria}
-                setSortCriteria={setSortCriteria}
-                columns={workOrderColumns}
-              />
-              <Button variant="outline" onClick={exportToCSV} data-testid="button-export-csv">
-                <Download className="h-4 w-4 mr-2" />
-                CSV
+              <div className="relative flex-1 min-w-[200px] max-w-md">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search work orders..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10"
+                  data-testid="input-search-work-orders"
+                />
+              </div>
+              <Button 
+                variant={showFilters ? "secondary" : "outline"} 
+                onClick={() => setShowFilters(!showFilters)}
+                data-testid="button-toggle-filters"
+              >
+                <Filter className="h-4 w-4 mr-2" />
+                {showFilters ? "Hide Filters" : "Show Filters"}
+                {hasActiveFilters && <Badge variant="secondary" className="ml-2">{[selectedStatus !== "all", selectedServiceType !== "all"].filter(Boolean).length}</Badge>}
               </Button>
-              <Button variant="outline" onClick={exportToExcel} data-testid="button-export-excel">
-                <FileSpreadsheet className="h-4 w-4 mr-2" />
-                Excel
-              </Button>
-              <Button variant="outline" onClick={exportToPDF} data-testid="button-export-pdf-workorders">
-                <FileText className="h-4 w-4 mr-2" />
-                PDF
-              </Button>
-              <Button variant="outline" onClick={() => setShowRouteSheetDialog(true)} data-testid="button-route-sheet-workorders">
-                <Route className="h-4 w-4 mr-2" />
-                Route Sheet
-              </Button>
+              {hasActiveFilters && (
+                <Button variant="ghost" onClick={clearFilters} data-testid="button-clear-filters">
+                  <X className="h-4 w-4 mr-1" />
+                  Clear Filters
+                </Button>
+              )}
+              {sortCriteria.length > 0 && (
+                <Button variant="ghost" onClick={clearSort} data-testid="button-clear-sort">
+                  <X className="h-4 w-4 mr-1" />
+                  Clear Sort ({sortCriteria.length})
+                </Button>
+              )}
+              <div className="flex-1" />
+              <div className="flex items-center gap-2 flex-wrap">
+                <ColumnSelector
+                  allColumns={workOrderColumns}
+                  visibleColumns={visibleColumns}
+                  onChange={setVisibleColumns}
+                  disabled={columnPrefsLoading}
+                  orderedColumns={orderedColumns}
+                  stickyColumns={stickyColumns}
+                  onStickyChange={setStickyColumns}
+                />
+                <FilterSelector
+                  allFilters={workOrderFilters}
+                  visibleFilters={visibleFilters}
+                  onChange={setVisibleFilters}
+                  disabled={filterPrefsLoading}
+                />
+                <SortDialog
+                  sortCriteria={sortCriteria}
+                  setSortCriteria={setSortCriteria}
+                  columns={workOrderColumns}
+                />
+                <Button variant="outline" onClick={exportToCSV} data-testid="button-export-csv">
+                  <Download className="h-4 w-4 mr-2" />
+                  CSV
+                </Button>
+                <Button variant="outline" onClick={exportToExcel} data-testid="button-export-excel">
+                  <FileSpreadsheet className="h-4 w-4 mr-2" />
+                  Excel
+                </Button>
+                <Button variant="outline" onClick={exportToPDF} data-testid="button-export-pdf-workorders">
+                  <FileText className="h-4 w-4 mr-2" />
+                  PDF
+                </Button>
+                <Button variant="outline" onClick={() => setShowRouteSheetDialog(true)} data-testid="button-route-sheet-workorders">
+                  <Route className="h-4 w-4 mr-2" />
+                  Route Sheet
+                </Button>
+              </div>
             </div>
-          </div>
           
           {showFilters && (
             <div className="flex flex-wrap gap-4 mt-4 pt-4 border-t">
@@ -3448,8 +3483,9 @@ export default function ProjectWorkOrders() {
               )}
             </div>
           )}
-        </CardContent>
-        </Card>
+          </CardContent>
+          </Card>
+        </>
       )}
 
       {/* Results count and top pagination - hidden in calendar view */}
