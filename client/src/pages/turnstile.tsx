@@ -35,10 +35,25 @@ export default function TurnstilePage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const scriptLoadedRef = useRef(false);
 
-  const redirectToLogin = useCallback(() => {
-    setTimeout(() => {
-      setLocation("/auth");
-    }, 1500);
+  const confirmSessionAndRedirect = useCallback(async (maxRetries = 5, delayMs = 500) => {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        
+        const statusRes = await fetch("/api/security/turnstile/status", { 
+          credentials: "include" 
+        });
+        const status = await statusRes.json();
+        
+        if (status.verified || !status.required) {
+          setLocation("/auth");
+          return true;
+        }
+      } catch (err) {
+        console.error(`Session verification attempt ${attempt} failed:`, err);
+      }
+    }
+    return false;
   }, [setLocation]);
 
   const handleVerification = useCallback(async (token: string) => {
@@ -57,7 +72,15 @@ export default function TurnstilePage() {
       
       if (result.success) {
         setSuccess(true);
-        redirectToLogin();
+        
+        const sessionConfirmed = await confirmSessionAndRedirect();
+        if (!sessionConfirmed) {
+          setSuccess(false);
+          setError("Session could not be saved. Please try again or contact support.");
+          if (widgetIdRef.current && window.turnstile) {
+            window.turnstile.reset(widgetIdRef.current);
+          }
+        }
       } else {
         setError(result.message || "Verification failed. Please try again.");
         if (widgetIdRef.current && window.turnstile) {
@@ -72,7 +95,7 @@ export default function TurnstilePage() {
     } finally {
       setVerifying(false);
     }
-  }, [redirectToLogin]);
+  }, [confirmSessionAndRedirect]);
 
   const renderWidget = useCallback(() => {
     if (!containerRef.current || !config?.siteKey || !window.turnstile) return;
