@@ -650,26 +650,42 @@ export function WorkOrderDetail({
                     </div>
                   </div>
 
-                  {/* GPS Coordinates - Green border */}
-                  <div className="border-l-4 border-l-green-500 pl-3 py-2">
-                    <h4 className="text-base font-semibold text-muted-foreground mb-2">GPS Coordinates</h4>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Old GPS</p>
-                      {workOrder.oldGps ? (
-                        <a
-                          href={`https://www.google.com/maps?q=${workOrder.oldGps}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm font-medium text-primary hover:underline"
-                          data-testid="mobile-old-gps-link"
-                        >
-                          {workOrder.oldGps}
-                        </a>
-                      ) : (
-                        <p className="text-sm font-medium text-muted-foreground">N/A</p>
-                      )}
+                  {/* GPS Coordinates - Green border - only show if at least one GPS value exists */}
+                  {(workOrder.oldGps || workOrder.newGps) && (
+                    <div className="border-l-4 border-l-green-500 pl-3 py-2">
+                      <h4 className="text-base font-semibold text-muted-foreground mb-2">GPS Coordinates</h4>
+                      <div className="space-y-2">
+                        {workOrder.oldGps && (
+                          <div>
+                            <p className="text-xs text-muted-foreground">Old GPS</p>
+                            <a
+                              href={`https://www.google.com/maps?q=${workOrder.oldGps}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm font-medium text-primary hover:underline"
+                              data-testid="mobile-old-gps-link"
+                            >
+                              {workOrder.oldGps}
+                            </a>
+                          </div>
+                        )}
+                        {workOrder.newGps && (
+                          <div>
+                            <p className="text-xs text-muted-foreground">New GPS</p>
+                            <a
+                              href={`https://www.google.com/maps?q=${workOrder.newGps}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sm font-medium text-primary hover:underline"
+                              data-testid="mobile-new-gps-link"
+                            >
+                              {workOrder.newGps}
+                            </a>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* New System - Cyan border */}
                   <div className="border-l-4 border-l-cyan-500 pl-3 py-2">
