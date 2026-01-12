@@ -2533,6 +2533,94 @@ export default function Settings() {
             </Card>
         )}
 
+        {(isAdmin || hasPermission("settings.accessLevels")) && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <Shield className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <CardTitle>Access Levels</CardTitle>
+                      <CardDescription className="mt-1">Define access levels (subroles) with specific permissions</CardDescription>
+                    </div>
+                  </div>
+                  <Button onClick={openCreateSubroleDialog} data-testid="button-add-access-level">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Access Level
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {loadingSubroles ? (
+                  <p className="text-muted-foreground">Loading...</p>
+                ) : subroles && subroles.length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Base Role</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {subroles.map((subrole) => (
+                        <TableRow key={subrole.id} data-testid={`row-access-level-${subrole.id}`}>
+                          <TableCell className="font-medium">{subrole.label}</TableCell>
+                          <TableCell>
+                            <Badge variant={subrole.baseRole === "admin" ? "destructive" : subrole.baseRole === "user" ? "default" : "secondary"}>
+                              {subrole.baseRole}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">{subrole.description || "—"}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={() => openEditSubroleDialog(subrole)}
+                                data-testid={`button-edit-access-level-${subrole.id}`}
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                onClick={() => {
+                                  setSelectedSubrole(subrole);
+                                  setCopySubroleDialogOpen(true);
+                                  setCopySubroleName(`${subrole.label} (Copy)`);
+                                }}
+                                data-testid={`button-copy-access-level-${subrole.id}`}
+                              >
+                                <Copy className="h-4 w-4" />
+                              </Button>
+                              {!["administrator", "project_manager", "field_technician", "viewer"].includes(subrole.key) && (
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  onClick={() => {
+                                    setSelectedSubrole(subrole);
+                                    setDeleteSubroleDialogOpen(true);
+                                  }}
+                                  data-testid={`button-delete-access-level-${subrole.id}`}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <p className="text-muted-foreground text-center py-4">No access levels defined yet.</p>
+                )}
+              </CardContent>
+            </Card>
+        )}
+
         {hasPermission("settings.serviceTypes") && (
             <Card>
               <CardHeader>
