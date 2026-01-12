@@ -4389,6 +4389,171 @@ export async function registerRoutes(
     }
   });
 
+  // Security Settings - Cloudflare Turnstile (Admin only)
+  app.get("/api/settings/security", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const hasSecurityPermission = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_SECURITY);
+      if (!hasSecurityPermission) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to view security settings" });
+      }
+      
+      const turnstileEnabled = await storage.getSetting("turnstile_enabled");
+      const turnstileSiteKey = await storage.getSetting("turnstile_site_key");
+      const turnstileSecretKey = await storage.getSetting("turnstile_secret_key");
+      const turnstileChallengePoint = await storage.getSetting("turnstile_challenge_point");
+      
+      res.json({
+        turnstileEnabled: turnstileEnabled === "true",
+        turnstileSiteKey: turnstileSiteKey || "",
+        turnstileSecretKey: turnstileSecretKey ? "***configured***" : "", // Don't expose secret
+        turnstileChallengePoint: turnstileChallengePoint || "turnstile", // "turnstile" or "login"
+      });
+    } catch (error) {
+      console.error("Error fetching security settings:", error);
+      res.status(500).json({ message: "Failed to fetch security settings" });
+    }
+  });
+
+  app.put("/api/settings/security", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const hasSecurityPermission = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_SECURITY);
+      if (!hasSecurityPermission) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to update security settings" });
+      }
+      
+      const { turnstileEnabled, turnstileSiteKey, turnstileSecretKey, turnstileChallengePoint } = req.body;
+      
+      // Validate challenge point
+      if (turnstileChallengePoint && !["turnstile", "login"].includes(turnstileChallengePoint)) {
+        return res.status(400).json({ message: "Invalid challenge point. Must be 'turnstile' or 'login'" });
+      }
+      
+      await storage.setSetting("turnstile_enabled", turnstileEnabled ? "true" : "false", "Enable Cloudflare Turnstile verification");
+      await storage.setSetting("turnstile_site_key", turnstileSiteKey || "", "Cloudflare Turnstile site key");
+      
+      // Only update secret key if it's provided (not the masked value)
+      if (turnstileSecretKey && turnstileSecretKey !== "***configured***") {
+        await storage.setSetting("turnstile_secret_key", turnstileSecretKey, "Cloudflare Turnstile secret key");
+      }
+      
+      await storage.setSetting("turnstile_challenge_point", turnstileChallengePoint || "turnstile", "Where to show the Turnstile challenge");
+      
+      res.json({ message: "Security settings saved" });
+    } catch (error) {
+      console.error("Error updating security settings:", error);
+      res.status(500).json({ message: "Failed to update security settings" });
+    }
+  });
+
+  // Public endpoint to get Turnstile config (for the challenge page)
+  app.get("/api/security/turnstile-config", async (req, res) => {
+    try {
+      const turnstileEnabled = await storage.getSetting("turnstile_enabled");
+      const turnstileSiteKey = await storage.getSetting("turnstile_site_key");
+      const turnstileChallengePoint = await storage.getSetting("turnstile_challenge_point");
+      
+      res.json({
+        enabled: turnstileEnabled === "true",
+        siteKey: turnstileSiteKey || "",
+        challengePoint: turnstileChallengePoint || "turnstile",
+      });
+    } catch (error) {
+      console.error("Error fetching turnstile config:", error);
+      res.status(500).json({ message: "Failed to fetch turnstile configuration" });
+    }
+  });
+
+  // Verify Turnstile token (called from the challenge page)
+  app.post("/api/security/turnstile/verify", async (req, res) => {
+    try {
+      const { token } = req.body;
+      
+      if (!token) {
+        return res.status(400).json({ success: false, message: "Missing Turnstile token" });
+      }
+      
+      const turnstileEnabled = await storage.getSetting("turnstile_enabled");
+      if (turnstileEnabled !== "true") {
+        // Turnstile not enabled, just pass through
+        return res.json({ success: true, message: "Turnstile not enabled" });
+      }
+      
+      const secretKey = await storage.getSetting("turnstile_secret_key");
+      if (!secretKey) {
+        return res.status(500).json({ success: false, message: "Turnstile not configured" });
+      }
+      
+      // Verify with Cloudflare
+      const verifyResponse = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          secret: secretKey,
+          response: token,
+          remoteip: req.ip || "",
+        }),
+      });
+      
+      const result = await verifyResponse.json() as { success: boolean; "error-codes"?: string[] };
+      
+      if (result.success) {
+        // Store verification in session
+        if (req.session) {
+          (req.session as any).turnstileVerified = true;
+          (req.session as any).turnstileVerifiedAt = new Date().toISOString();
+        }
+        return res.json({ success: true, message: "Verification successful" });
+      } else {
+        return res.status(400).json({ 
+          success: false, 
+          message: "Verification failed",
+          errors: result["error-codes"] || []
+        });
+      }
+    } catch (error) {
+      console.error("Error verifying Turnstile token:", error);
+      res.status(500).json({ success: false, message: "Verification failed" });
+    }
+  });
+
+  // Check if current session has passed Turnstile
+  app.get("/api/security/turnstile/status", async (req, res) => {
+    try {
+      const turnstileEnabled = await storage.getSetting("turnstile_enabled");
+      
+      if (turnstileEnabled !== "true") {
+        return res.json({ required: false, verified: true });
+      }
+      
+      const verified = (req.session as any)?.turnstileVerified === true;
+      const verifiedAt = (req.session as any)?.turnstileVerifiedAt;
+      
+      // Check if verification is still valid (24 hour expiry)
+      let isValid = false;
+      if (verified && verifiedAt) {
+        const verifiedTime = new Date(verifiedAt).getTime();
+        const now = Date.now();
+        const twentyFourHours = 24 * 60 * 60 * 1000;
+        isValid = (now - verifiedTime) < twentyFourHours;
+      }
+      
+      res.json({ required: true, verified: isValid });
+    } catch (error) {
+      console.error("Error checking turnstile status:", error);
+      res.status(500).json({ required: true, verified: false });
+    }
+  });
+
   // Check for updates from GitHub (version + git commits)
   app.post("/api/system/update-check", isAuthenticated, async (req: any, res) => {
     try {

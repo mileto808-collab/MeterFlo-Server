@@ -195,6 +195,13 @@ export const permissionRegistry: PermissionDefinition[] = [
     description: "Configure module type definitions for meters",
     defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
   },
+  {
+    key: "settings.security",
+    label: "Security Settings",
+    category: "Settings",
+    description: "Configure Cloudflare Turnstile and other security settings",
+    defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
+  },
   // Maintenance action permissions - what users can do in the maintenance area
   {
     key: "maintenance.projectBackup",
