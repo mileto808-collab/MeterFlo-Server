@@ -2217,19 +2217,33 @@ export function WorkOrderDetail({
                 {/* Mobile read-only display */}
                 {(!mobileSchedulingEditMode || !canEdit) && (
                   <div className="md:hidden space-y-3">
-                    {/* Edit button for authorized users */}
-                    {canEdit && (
-                      <div className="flex justify-end mb-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setMobileSchedulingEditMode(true)}
-                          data-testid="button-mobile-scheduling-edit"
-                        >
-                          <Pencil className="h-3 w-3 mr-1" />
-                          Edit
-                        </Button>
+                    {/* Action buttons for authorized users */}
+                    {(canEdit || (canScheduleInCalendar && onScheduleInCalendar && workOrder.status !== "Completed" && workOrder.status !== "Closed")) && (
+                      <div className="flex justify-end gap-2 mb-2 flex-wrap">
+                        {canScheduleInCalendar && onScheduleInCalendar && workOrder.status !== "Completed" && workOrder.status !== "Closed" && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={onScheduleInCalendar}
+                            data-testid="button-mobile-schedule-in-calendar-readonly"
+                            className="bg-blue-600 text-white dark:bg-blue-600"
+                          >
+                            <CalendarDays className="h-4 w-4 mr-1" />
+                            Schedule in Calendar
+                          </Button>
+                        )}
+                        {canEdit && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setMobileSchedulingEditMode(true)}
+                            data-testid="button-mobile-scheduling-edit"
+                          >
+                            <Pencil className="h-3 w-3 mr-1" />
+                            Edit
+                          </Button>
+                        )}
                       </div>
                     )}
 
@@ -2483,19 +2497,33 @@ export function WorkOrderDetail({
                 {/* Desktop read-only view - shown when not editing */}
                 {(!desktopSchedulingEditMode || !canEdit) && (
                   <div className="hidden md:block space-y-4">
-                    {/* Edit button for authorized users */}
-                    {canEdit && (
-                      <div className="flex justify-end mb-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setDesktopSchedulingEditMode(true)}
-                          data-testid="button-desktop-scheduling-edit"
-                        >
-                          <Pencil className="h-3 w-3 mr-1" />
-                          Edit
-                        </Button>
+                    {/* Action buttons for authorized users */}
+                    {(canEdit || (canScheduleInCalendar && onScheduleInCalendar && workOrder.status !== "Completed" && workOrder.status !== "Closed")) && (
+                      <div className="flex justify-end gap-2 mb-2 flex-wrap">
+                        {canScheduleInCalendar && onScheduleInCalendar && workOrder.status !== "Completed" && workOrder.status !== "Closed" && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={onScheduleInCalendar}
+                            data-testid="button-desktop-schedule-in-calendar-readonly"
+                            className="bg-blue-600 text-white dark:bg-blue-600"
+                          >
+                            <CalendarDays className="h-4 w-4 mr-1" />
+                            Schedule in Calendar
+                          </Button>
+                        )}
+                        {canEdit && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setDesktopSchedulingEditMode(true)}
+                            data-testid="button-desktop-scheduling-edit"
+                          >
+                            <Pencil className="h-3 w-3 mr-1" />
+                            Edit
+                          </Button>
+                        )}
                       </div>
                     )}
                     
