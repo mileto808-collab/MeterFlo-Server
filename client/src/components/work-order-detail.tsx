@@ -895,55 +895,71 @@ export function WorkOrderDetail({
                       </div>
                     )}
 
-                    {/* Old System - Green border */}
-                    <div className="border-l-4 border-l-green-500 pl-3 py-2">
-                      <h4 className="text-base font-semibold text-green-500 mb-2">Old System</h4>
-                      <div className="grid grid-cols-3 gap-2">
-                        <div>
-                          <p className="text-xs text-muted-foreground">System ID</p>
-                          <p className="text-sm font-medium break-all" data-testid="mobile-old-system-id">
-                            {workOrder.oldSystemId || "N/A"}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Reading</p>
-                          <p className="text-sm font-medium" data-testid="mobile-old-system-reading">
-                            {workOrder.oldSystemReading ?? "N/A"}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Type</p>
-                          <p className="text-sm font-medium" data-testid="mobile-old-system-type">
-                            {workOrder.oldSystemType || "N/A"}
-                          </p>
+                    {/* Old System - Green border - only show if has data */}
+                    {(workOrder.oldSystemId || workOrder.oldSystemReading != null || workOrder.oldSystemType) && (
+                      <div className="border-l-4 border-l-green-500 pl-3 py-2">
+                        <h4 className="text-base font-semibold text-green-500 mb-2">Old System</h4>
+                        <div className="grid grid-cols-3 gap-2">
+                          {workOrder.oldSystemId && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">System ID</p>
+                              <p className="text-sm font-medium break-all" data-testid="mobile-old-system-id">
+                                {workOrder.oldSystemId}
+                              </p>
+                            </div>
+                          )}
+                          {workOrder.oldSystemReading != null && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Reading</p>
+                              <p className="text-sm font-medium" data-testid="mobile-old-system-reading">
+                                {workOrder.oldSystemReading}
+                              </p>
+                            </div>
+                          )}
+                          {workOrder.oldSystemType && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Type</p>
+                              <p className="text-sm font-medium" data-testid="mobile-old-system-type">
+                                {workOrder.oldSystemType}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       </div>
-                    </div>
+                    )}
 
-                    {/* Old Module - Green border */}
-                    <div className="border-l-4 border-l-green-500 pl-3 py-2">
-                      <h4 className="text-base font-semibold text-muted-foreground mb-2">Old Module</h4>
-                      <div className="grid grid-cols-3 gap-2">
-                        <div>
-                          <p className="text-xs text-muted-foreground">Module ID</p>
-                          <p className="text-sm font-medium break-all" data-testid="mobile-old-module-id">
-                            {workOrder.oldModuleId || "N/A"}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Reading</p>
-                          <p className="text-sm font-medium" data-testid="mobile-old-module-reading">
-                            {workOrder.oldModuleRead ?? "N/A"}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Type</p>
-                          <p className="text-sm font-medium" data-testid="mobile-old-module-type">
-                            {workOrder.oldModuleType || "N/A"}
-                          </p>
+                    {/* Old Module - Green border - only show if has data */}
+                    {(workOrder.oldModuleId || workOrder.oldModuleRead != null || workOrder.oldModuleType) && (
+                      <div className="border-l-4 border-l-green-500 pl-3 py-2">
+                        <h4 className="text-base font-semibold text-muted-foreground mb-2">Old Module</h4>
+                        <div className="grid grid-cols-3 gap-2">
+                          {workOrder.oldModuleId && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Module ID</p>
+                              <p className="text-sm font-medium break-all" data-testid="mobile-old-module-id">
+                                {workOrder.oldModuleId}
+                              </p>
+                            </div>
+                          )}
+                          {workOrder.oldModuleRead != null && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Reading</p>
+                              <p className="text-sm font-medium" data-testid="mobile-old-module-reading">
+                                {workOrder.oldModuleRead}
+                              </p>
+                            </div>
+                          )}
+                          {workOrder.oldModuleType && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Type</p>
+                              <p className="text-sm font-medium" data-testid="mobile-old-module-type">
+                                {workOrder.oldModuleType}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       </div>
-                    </div>
+                    )}
 
                     {/* GPS Coordinates - Green border - only show if at least one GPS value exists */}
                     {(workOrder.oldGps || workOrder.newGps) && (
@@ -982,55 +998,71 @@ export function WorkOrderDetail({
                       </div>
                     )}
 
-                    {/* New System - Cyan border */}
-                    <div className="border-l-4 border-l-cyan-500 pl-3 py-2">
-                      <h4 className="text-base font-semibold text-cyan-500 mb-2">New System</h4>
-                      <div className="grid grid-cols-3 gap-2">
-                        <div>
-                          <p className="text-xs text-muted-foreground">System ID</p>
-                          <p className="text-sm font-medium break-all" data-testid="mobile-new-system-id">
-                            {workOrder.newSystemId || "N/A"}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Reading</p>
-                          <p className="text-sm font-medium" data-testid="mobile-new-system-reading">
-                            {workOrder.newSystemReading ?? "N/A"}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Type</p>
-                          <p className="text-sm font-medium" data-testid="mobile-new-system-type">
-                            {workOrder.newSystemType || "N/A"}
-                          </p>
+                    {/* New System - Cyan border - only show if has data */}
+                    {(workOrder.newSystemId || workOrder.newSystemReading != null || workOrder.newSystemType) && (
+                      <div className="border-l-4 border-l-cyan-500 pl-3 py-2">
+                        <h4 className="text-base font-semibold text-cyan-500 mb-2">New System</h4>
+                        <div className="grid grid-cols-3 gap-2">
+                          {workOrder.newSystemId && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">System ID</p>
+                              <p className="text-sm font-medium break-all" data-testid="mobile-new-system-id">
+                                {workOrder.newSystemId}
+                              </p>
+                            </div>
+                          )}
+                          {workOrder.newSystemReading != null && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Reading</p>
+                              <p className="text-sm font-medium" data-testid="mobile-new-system-reading">
+                                {workOrder.newSystemReading}
+                              </p>
+                            </div>
+                          )}
+                          {workOrder.newSystemType && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Type</p>
+                              <p className="text-sm font-medium" data-testid="mobile-new-system-type">
+                                {workOrder.newSystemType}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       </div>
-                    </div>
+                    )}
 
-                    {/* New Module - Cyan border */}
-                    <div className="border-l-4 border-l-cyan-500 pl-3 py-2">
-                      <h4 className="text-base font-semibold text-cyan-500 mb-2">New Module</h4>
-                      <div className="grid grid-cols-3 gap-2">
-                        <div>
-                          <p className="text-xs text-muted-foreground">Module ID</p>
-                          <p className="text-sm font-medium break-all" data-testid="mobile-new-module-id">
-                            {workOrder.newModuleId || "N/A"}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Reading</p>
-                          <p className="text-sm font-medium" data-testid="mobile-new-module-reading">
-                            {workOrder.newModuleRead ?? "N/A"}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">Type</p>
-                          <p className="text-sm font-medium" data-testid="mobile-new-module-type">
-                            {workOrder.newModuleType || "N/A"}
-                          </p>
+                    {/* New Module - Cyan border - only show if has data */}
+                    {(workOrder.newModuleId || workOrder.newModuleRead != null || workOrder.newModuleType) && (
+                      <div className="border-l-4 border-l-cyan-500 pl-3 py-2">
+                        <h4 className="text-base font-semibold text-cyan-500 mb-2">New Module</h4>
+                        <div className="grid grid-cols-3 gap-2">
+                          {workOrder.newModuleId && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Module ID</p>
+                              <p className="text-sm font-medium break-all" data-testid="mobile-new-module-id">
+                                {workOrder.newModuleId}
+                              </p>
+                            </div>
+                          )}
+                          {workOrder.newModuleRead != null && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Reading</p>
+                              <p className="text-sm font-medium" data-testid="mobile-new-module-reading">
+                                {workOrder.newModuleRead}
+                              </p>
+                            </div>
+                          )}
+                          {workOrder.newModuleType && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Type</p>
+                              <p className="text-sm font-medium" data-testid="mobile-new-module-type">
+                                {workOrder.newModuleType}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 )}
 
@@ -1819,60 +1851,70 @@ export function WorkOrderDetail({
                       </div>
                     )}
 
-                    {/* Status */}
-                    <div className="flex items-start gap-3">
-                      <Flag className="h-4 w-4 text-muted-foreground mt-0.5" />
-                      <div>
-                        <p className="text-xs text-muted-foreground">Status</p>
-                        <p className="text-sm font-medium" data-testid="mobile-status">
-                          {workOrder.status || "N/A"}
-                        </p>
+                    {/* Status - always show */}
+                    {workOrder.status && (
+                      <div className="flex items-start gap-3">
+                        <Flag className="h-4 w-4 text-muted-foreground mt-0.5" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">Status</p>
+                          <p className="text-sm font-medium" data-testid="mobile-status">
+                            {workOrder.status}
+                          </p>
+                        </div>
                       </div>
-                    </div>
+                    )}
 
-                    {/* Assigned User */}
-                    <div className="flex items-start gap-3">
-                      <Users className="h-4 w-4 text-muted-foreground mt-0.5" />
-                      <div>
-                        <p className="text-xs text-muted-foreground">Assigned User</p>
-                        <p className="text-sm font-medium" data-testid="mobile-assigned-user">
-                          {getAssignedUserName(workOrder.assignedUserId) || "N/A"}
-                        </p>
+                    {/* Assigned User - only show if has value */}
+                    {workOrder.assignedUserId && getAssignedUserName(workOrder.assignedUserId) && (
+                      <div className="flex items-start gap-3">
+                        <Users className="h-4 w-4 text-muted-foreground mt-0.5" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">Assigned User</p>
+                          <p className="text-sm font-medium" data-testid="mobile-assigned-user">
+                            {getAssignedUserName(workOrder.assignedUserId)}
+                          </p>
+                        </div>
                       </div>
-                    </div>
+                    )}
 
-                    {/* Assigned Group */}
-                    <div className="flex items-start gap-3">
-                      <Users className="h-4 w-4 text-muted-foreground mt-0.5" />
-                      <div>
-                        <p className="text-xs text-muted-foreground">Assigned Group</p>
-                        <p className="text-sm font-medium" data-testid="mobile-assigned-group">
-                          {workOrder.assignedGroupId || "N/A"}
-                        </p>
+                    {/* Assigned Group - only show if has value */}
+                    {workOrder.assignedGroupId && (
+                      <div className="flex items-start gap-3">
+                        <Users className="h-4 w-4 text-muted-foreground mt-0.5" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">Assigned Group</p>
+                          <p className="text-sm font-medium" data-testid="mobile-assigned-group">
+                            {workOrder.assignedGroupId}
+                          </p>
+                        </div>
                       </div>
-                    </div>
+                    )}
 
-                    {/* Scheduled At */}
-                    <div className="flex items-start gap-3">
-                      <CalendarDays className="h-4 w-4 text-muted-foreground mt-0.5" />
-                      <div>
-                        <p className="text-xs text-muted-foreground">Scheduled At</p>
-                        <p className="text-sm font-medium" data-testid="mobile-scheduled-at">
-                          {(workOrder as any).scheduledAt ? formatDateTime((workOrder as any).scheduledAt) : "N/A"}
-                        </p>
+                    {/* Scheduled At - only show if has value */}
+                    {(workOrder as any).scheduledAt && (
+                      <div className="flex items-start gap-3">
+                        <CalendarDays className="h-4 w-4 text-muted-foreground mt-0.5" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">Scheduled At</p>
+                          <p className="text-sm font-medium" data-testid="mobile-scheduled-at">
+                            {formatDateTime((workOrder as any).scheduledAt)}
+                          </p>
+                        </div>
                       </div>
-                    </div>
+                    )}
 
-                    {/* Trouble Code */}
-                    <div className="flex items-start gap-3">
-                      <AlertTriangle className="h-4 w-4 text-muted-foreground mt-0.5" />
-                      <div>
-                        <p className="text-xs text-muted-foreground">Trouble Code</p>
-                        <p className="text-sm font-medium" data-testid="mobile-trouble-code">
-                          {workOrder.trouble || "N/A"}
-                        </p>
+                    {/* Trouble Code - only show if has value */}
+                    {workOrder.trouble && (
+                      <div className="flex items-start gap-3">
+                        <AlertTriangle className="h-4 w-4 text-muted-foreground mt-0.5" />
+                        <div>
+                          <p className="text-xs text-muted-foreground">Trouble Code</p>
+                          <p className="text-sm font-medium" data-testid="mobile-trouble-code">
+                            {workOrder.trouble}
+                          </p>
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 )}
 
@@ -2407,69 +2449,93 @@ export function WorkOrderDetail({
               <AccordionContent className="pb-4">
                 {/* Mobile two-column layout */}
                 <div className="md:hidden space-y-3">
-                  {/* Created By / Created At */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-xs text-muted-foreground">Created By</p>
-                      <p className="text-sm font-medium" data-testid="mobile-created-by">
-                        {workOrder.createdBy || "-"}
-                      </p>
+                  {/* Created By / Created At - only show if has data */}
+                  {(workOrder.createdBy || workOrder.createdAt) && (
+                    <div className="grid grid-cols-2 gap-4">
+                      {workOrder.createdBy && (
+                        <div>
+                          <p className="text-xs text-muted-foreground">Created By</p>
+                          <p className="text-sm font-medium" data-testid="mobile-created-by">
+                            {workOrder.createdBy}
+                          </p>
+                        </div>
+                      )}
+                      {workOrder.createdAt && (
+                        <div>
+                          <p className="text-xs text-muted-foreground">Created At</p>
+                          <p className="text-sm font-medium" data-testid="mobile-created-at">
+                            {formatDateTime(workOrder.createdAt)}
+                          </p>
+                        </div>
+                      )}
                     </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Created At</p>
-                      <p className="text-sm font-medium" data-testid="mobile-created-at">
-                        {workOrder.createdAt ? formatDateTime(workOrder.createdAt) : "-"}
-                      </p>
-                    </div>
-                  </div>
+                  )}
 
-                  {/* Updated By / Updated At */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-xs text-muted-foreground">Updated By</p>
-                      <p className="text-sm font-medium" data-testid="mobile-updated-by">
-                        {workOrder.updatedBy || "-"}
-                      </p>
+                  {/* Updated By / Updated At - only show if has data */}
+                  {(workOrder.updatedBy || workOrder.updatedAt) && (
+                    <div className="grid grid-cols-2 gap-4">
+                      {workOrder.updatedBy && (
+                        <div>
+                          <p className="text-xs text-muted-foreground">Updated By</p>
+                          <p className="text-sm font-medium" data-testid="mobile-updated-by">
+                            {workOrder.updatedBy}
+                          </p>
+                        </div>
+                      )}
+                      {workOrder.updatedAt && (
+                        <div>
+                          <p className="text-xs text-muted-foreground">Updated At</p>
+                          <p className="text-sm font-medium" data-testid="mobile-updated-at">
+                            {formatDateTime(workOrder.updatedAt)}
+                          </p>
+                        </div>
+                      )}
                     </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Updated At</p>
-                      <p className="text-sm font-medium" data-testid="mobile-updated-at">
-                        {workOrder.updatedAt ? formatDateTime(workOrder.updatedAt) : "-"}
-                      </p>
-                    </div>
-                  </div>
+                  )}
 
-                  {/* Scheduled By / Scheduled At */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-xs text-muted-foreground">Scheduled By</p>
-                      <p className="text-sm font-medium" data-testid="mobile-scheduled-by">
-                        {(workOrder as any).scheduledByDisplay || getAssignedUserName((workOrder as any).scheduledBy) || "-"}
-                      </p>
+                  {/* Scheduled By / Scheduled At - only show if has data */}
+                  {((workOrder as any).scheduledBy || (workOrder as any).scheduledByDisplay || (workOrder as any).scheduledAt) && (
+                    <div className="grid grid-cols-2 gap-4">
+                      {((workOrder as any).scheduledBy || (workOrder as any).scheduledByDisplay) && (
+                        <div>
+                          <p className="text-xs text-muted-foreground">Scheduled By</p>
+                          <p className="text-sm font-medium" data-testid="mobile-scheduled-by">
+                            {(workOrder as any).scheduledByDisplay || getAssignedUserName((workOrder as any).scheduledBy)}
+                          </p>
+                        </div>
+                      )}
+                      {(workOrder as any).scheduledAt && (
+                        <div>
+                          <p className="text-xs text-muted-foreground">Scheduled At</p>
+                          <p className="text-sm font-medium" data-testid="mobile-audit-scheduled-at">
+                            {formatDateTime((workOrder as any).scheduledAt)}
+                          </p>
+                        </div>
+                      )}
                     </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Scheduled At</p>
-                      <p className="text-sm font-medium" data-testid="mobile-audit-scheduled-at">
-                        {(workOrder as any).scheduledAt ? formatDateTime((workOrder as any).scheduledAt) : "-"}
-                      </p>
-                    </div>
-                  </div>
+                  )}
 
-                  {/* Completed By / Completed At */}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-xs text-muted-foreground">Completed By</p>
-                      <p className="text-sm font-medium" data-testid="mobile-completed-by">
-                        {(workOrder as any).completedByDisplay || getAssignedUserName((workOrder as any).completedBy) || "-"}
-                      </p>
+                  {/* Completed By / Completed At - only show if has data */}
+                  {((workOrder as any).completedBy || (workOrder as any).completedByDisplay || (workOrder as any).completedAt) && (
+                    <div className="grid grid-cols-2 gap-4">
+                      {((workOrder as any).completedBy || (workOrder as any).completedByDisplay) && (
+                        <div>
+                          <p className="text-xs text-muted-foreground">Completed By</p>
+                          <p className="text-sm font-medium" data-testid="mobile-completed-by">
+                            {(workOrder as any).completedByDisplay || getAssignedUserName((workOrder as any).completedBy)}
+                          </p>
+                        </div>
+                      )}
+                      {(workOrder as any).completedAt && (
+                        <div>
+                          <p className="text-xs text-muted-foreground">Completed At</p>
+                          <p className="text-sm font-medium" data-testid="mobile-completed-at">
+                            {formatDateTime((workOrder as any).completedAt)}
+                          </p>
+                        </div>
+                      )}
                     </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Completed At</p>
-                      <p className="text-sm font-medium" data-testid="mobile-completed-at">
-                        {workOrder.completedAt ? formatDateTime(workOrder.completedAt) : "-"}
-                      </p>
-                    </div>
-                  </div>
+                  )}
                 </div>
 
                 {/* Desktop form view */}
