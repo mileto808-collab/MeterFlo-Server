@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Loader2, Shield, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import meterFloLogo from "@assets/MeterFlo_01022026_withMeterFlo_TransparentBackgroundOptimized_1768242757545.png";
 
 declare global {
   interface Window {
@@ -178,9 +179,11 @@ export default function TurnstilePage() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center space-y-4">
           <div className="flex justify-center">
-            <div className="rounded-full bg-primary/10 p-4">
-              <Shield className="h-12 w-12 text-primary" />
-            </div>
+            <img 
+              src={meterFloLogo} 
+              alt="MeterFlo" 
+              className="h-24 w-auto object-contain"
+            />
           </div>
           <div className="space-y-2">
             <CardTitle className="text-2xl font-bold">MeterFlo</CardTitle>
