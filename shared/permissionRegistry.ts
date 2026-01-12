@@ -293,9 +293,9 @@ export const permissionRegistry: PermissionDefinition[] = [
   },
   {
     key: "workOrders.meterChangeout",
-    label: "Meter Changeout",
+    label: "System | Module Changeout",
     category: "Work Order Actions",
-    description: "Perform meter changeout workflow on work orders",
+    description: "Perform system and module changeout workflow on work orders",
     defaultAccess: { administrator: true, projectManager: true, fieldTechnician: true, viewer: false, customer: false },
   },
   {
