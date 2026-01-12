@@ -2477,6 +2477,9 @@ export async function registerRoutes(
           await workOrderStorage.updateWorkOrder(woId, { assignedUserId: null, assignedGroupId: null }, updatedByUsername);
         }
         
+        // Emit SSE event to notify other connected clients
+        emitWorkOrderUpdated(projectId, woId, currentUser?.id);
+        
         assigned++;
       }
       
@@ -2743,15 +2746,12 @@ export async function registerRoutes(
         }
         
         await workOrderStorage.updateWorkOrder(woId, { status }, updatedByUsername || undefined);
+        
+        // Emit SSE event to notify other connected clients
+        emitWorkOrderUpdated(projectId, woId, currentUser?.id);
+        
         updatedCount++;
       }
-      
-      // Emit event for the project
-      projectEventEmitter.emit(`project:${projectId}`, { 
-        type: 'bulk-status-update',
-        updatedCount,
-        status 
-      });
       
       res.json({ 
         success: true, 
@@ -3374,6 +3374,9 @@ export async function registerRoutes(
         status: updatedWorkOrder.status, 
         trouble: updatedWorkOrder.trouble 
       });
+      
+      // Emit SSE event to notify other connected clients
+      emitWorkOrderUpdated(projectId, workOrderId, currentUser.id);
       
       res.json({ 
         success: true, 
@@ -6758,6 +6761,9 @@ export async function registerRoutes(
             updatedByUsername
           );
           
+          // Emit SSE event to notify other connected clients
+          emitWorkOrderUpdated(projectId, id, currentUser.id);
+          
           results.push({ id, status: "success" });
         } catch (error) {
           console.error(`Error updating work order ${woUpdate.id}:`, error);
@@ -7140,6 +7146,9 @@ export async function registerRoutes(
           workOrderFolderPath: woFolderPath,
         }).catch(err => console.error("[CustomerAPI] Background send failed:", err));
       }
+      
+      // Emit SSE event to notify other connected clients
+      emitWorkOrderUpdated(projectId, workOrderId, currentUser.id);
       
       res.json({
         success: true,
@@ -8154,6 +8163,9 @@ export async function registerRoutes(
             updateData,
             updatedByUsername
           );
+          
+          // Emit SSE event to notify other connected clients
+          emitWorkOrderUpdated(projectId, workOrderId, currentUser.id);
           
           results.push({ id: workOrderId, updated: true });
         } catch (error) {
