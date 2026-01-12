@@ -4527,10 +4527,19 @@ export async function registerRoutes(
       const result = await verifyResponse.json() as { success: boolean; "error-codes"?: string[] };
       
       if (result.success) {
-        // Store verification in session
+        // Store verification in session - must explicitly save to ensure it persists
         if (req.session) {
           (req.session as any).turnstileVerified = true;
           (req.session as any).turnstileVerifiedAt = new Date().toISOString();
+          
+          // Explicitly save session to ensure it persists before client redirects
+          return req.session.save((err) => {
+            if (err) {
+              console.error("Error saving Turnstile verification to session:", err);
+              return res.status(500).json({ success: false, message: "Failed to save verification" });
+            }
+            return res.json({ success: true, message: "Verification successful" });
+          });
         }
         return res.json({ success: true, message: "Verification successful" });
       } else {
