@@ -743,15 +743,29 @@ export function StartSystemChangeoutDialog({
                     </div>
                   </div>
 
-                  <div className="flex items-start gap-3">
-                    <Gauge className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-sm text-muted-foreground">Old System ID</p>
-                      <p className="font-medium break-all" data-testid="text-confirm-old-system-id">
-                        {(foundWorkOrder as any).old_system_id || foundWorkOrder.oldSystemId || "N/A"}
-                      </p>
+                  {((foundWorkOrder as any).old_system_id || foundWorkOrder.oldSystemId) && (
+                    <div className="flex items-start gap-3">
+                      <Gauge className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-sm text-muted-foreground">Old System ID</p>
+                        <p className="font-medium break-all" data-testid="text-confirm-old-system-id">
+                          {(foundWorkOrder as any).old_system_id || foundWorkOrder.oldSystemId}
+                        </p>
+                      </div>
                     </div>
-                  </div>
+                  )}
+
+                  {((foundWorkOrder as any).old_module_id || foundWorkOrder.oldModuleId) && (
+                    <div className="flex items-start gap-3">
+                      <Gauge className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-sm text-muted-foreground">Old Module ID</p>
+                        <p className="font-medium break-all" data-testid="text-confirm-old-module-id">
+                          {(foundWorkOrder as any).old_module_id || foundWorkOrder.oldModuleId}
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
                   {((foundWorkOrder as any).new_system_id || foundWorkOrder.newSystemId) && (
                     <div className="flex items-start gap-3">
@@ -760,6 +774,18 @@ export function StartSystemChangeoutDialog({
                         <p className="text-sm text-muted-foreground">New System ID</p>
                         <p className="font-medium break-all" data-testid="text-confirm-new-system-id">
                           {(foundWorkOrder as any).new_system_id || foundWorkOrder.newSystemId}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {((foundWorkOrder as any).new_module_id || foundWorkOrder.newModuleId) && (
+                    <div className="flex items-start gap-3">
+                      <Gauge className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-sm text-muted-foreground">New Module ID</p>
+                        <p className="font-medium break-all" data-testid="text-confirm-new-module-id">
+                          {(foundWorkOrder as any).new_module_id || foundWorkOrder.newModuleId}
                         </p>
                       </div>
                     </div>
