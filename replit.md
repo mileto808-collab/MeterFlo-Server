@@ -42,8 +42,10 @@ Preferred communication style: Simple, everyday language.
 - **Data Integrity**: Foreign key constraints with `ON DELETE RESTRICT` for critical relationships. ID-based assignment for users and groups.
 - **Real-Time Updates**: SSE-based live updates eliminate manual browser refreshes. Server-side event emitter broadcasts work order changes to connected clients. Client hooks (`useProjectEvents`, `useGlobalEvents`) automatically invalidate TanStack Query cache on events. 30-second heartbeat with automatic reconnection.
 - **Customer API Integration**: Outbound REST API to push completed work order data to customer backend systems. Per-project configuration with support for multiple auth types (API key, bearer token, basic auth). Credentials stored as environment variables for security. Optional base64 photo encoding for before/after images and signatures. All API calls logged in `customer_api_logs` table for debugging.
-- **Cloudflare Turnstile Security**: Optional pre-login bot protection requiring users to complete a security challenge before accessing the login page. Web-only enforcement ensures React Native mobile apps bypass the check and authenticate directly. Admin-configurable via Settings > Security Settings. Session-based verification with 24-hour expiry.
+- **Cloudflare Turnstile Security**: Optional pre-login bot protection requiring users to complete a security challenge before accessing the login page. Web-only enforcement ensures React Native mobile apps bypass the check and authenticate directly. Admin-configurable via Settings > Security Settings.
+  - **Verification Storage**: Uses a signed cookie (`turnstile_verified`) with 24-hour expiry. Falls back to session storage if cookie unavailable. Cookie-based approach is more reliable across reverse proxies.
   - **Emergency Bypass**: Set environment variable `TURNSTILE_EMERGENCY_BYPASS=true` to disable Turnstile verification without database access. Useful for recovery if locked out due to misconfiguration.
+  - **Windows Server Deployment**: Ensure `COOKIE_SECURE=true` if using HTTPS. The reverse proxy must forward cookies correctly. If verification loops occur, check that cookies are being sent with requests.
 
 ### System Design Choices
 - **Storage Interface**: `IStorage` interface abstracts database operations.

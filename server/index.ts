@@ -3,6 +3,7 @@
 process.env.TZ = 'UTC';
 
 import express, { type Request, Response, NextFunction } from "express";
+import cookieParser from "cookie-parser";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -59,6 +60,9 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false, limit: '100mb' }));
+
+// Cookie parser for reading cookies (needed for Turnstile verification)
+app.use(cookieParser());
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {

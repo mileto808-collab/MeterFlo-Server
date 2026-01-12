@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import path from "path";
 import os from "os";
 import { promises as fs, existsSync, unlinkSync } from "fs";
-import { randomUUID } from "crypto";
+import { randomUUID, createHmac } from "crypto";
 import { exec } from "child_process";
 import { promisify } from "util";
 
@@ -4527,15 +4527,15 @@ export async function registerRoutes(
       const result = await verifyResponse.json() as { success: boolean; "error-codes"?: string[] };
       
       if (result.success) {
-        // Store verification timestamp in a separate cookie
+        // Store verification timestamp in a separate signed cookie
         // This bypasses session store issues with reverse proxies
         const verifiedAt = new Date().toISOString();
         const twentyFourHours = 24 * 60 * 60 * 1000;
         
-        // Create a simple signature using SESSION_SECRET
-        const signature = Buffer.from(
-          `${verifiedAt}:${process.env.SESSION_SECRET}`
-        ).toString('base64');
+        // Create HMAC signature (does not expose SESSION_SECRET)
+        const signature = createHmac('sha256', process.env.SESSION_SECRET || '')
+          .update(verifiedAt)
+          .digest('hex');
         
         // Set a separate Turnstile verification cookie
         res.cookie('turnstile_verified', `${verifiedAt}|${signature}`, {
@@ -4545,8 +4545,6 @@ export async function registerRoutes(
           maxAge: twentyFourHours,
           path: '/',
         });
-        
-        console.log(`[Turnstile] VERIFY - Set turnstile_verified cookie with timestamp ${verifiedAt}`);
         
         // Also store in session as backup
         if (req.session) {
@@ -4590,7 +4588,7 @@ export async function registerRoutes(
         return res.json({ required: false, verified: true });
       }
       
-      // Check cookie first (more reliable across session store issues)
+      // Check cookie first (more reliable across session store issues with reverse proxies)
       const turnstileCookie = req.cookies?.turnstile_verified;
       let isValid = false;
       
@@ -4598,10 +4596,10 @@ export async function registerRoutes(
         try {
           const [cookieTimestamp, cookieSignature] = turnstileCookie.split('|');
           
-          // Verify signature
-          const expectedSignature = Buffer.from(
-            `${cookieTimestamp}:${process.env.SESSION_SECRET}`
-          ).toString('base64');
+          // Verify HMAC signature
+          const expectedSignature = createHmac('sha256', process.env.SESSION_SECRET || '')
+            .update(cookieTimestamp)
+            .digest('hex');
           
           if (cookieSignature === expectedSignature) {
             // Signature valid, check expiry
@@ -4609,13 +4607,9 @@ export async function registerRoutes(
             const now = Date.now();
             const twentyFourHours = 24 * 60 * 60 * 1000;
             isValid = (now - verifiedTime) < twentyFourHours;
-            
-            console.log(`[Turnstile] STATUS - Cookie valid, verified: ${isValid}, timestamp: ${cookieTimestamp}`);
-          } else {
-            console.log(`[Turnstile] STATUS - Cookie signature mismatch`);
           }
         } catch (e) {
-          console.log(`[Turnstile] STATUS - Cookie parse error:`, e);
+          // Cookie parse error, fall through to session check
         }
       }
       
@@ -4629,9 +4623,6 @@ export async function registerRoutes(
           const now = Date.now();
           const twentyFourHours = 24 * 60 * 60 * 1000;
           isValid = (now - verifiedTime) < twentyFourHours;
-          console.log(`[Turnstile] STATUS - Session fallback, verified: ${isValid}`);
-        } else {
-          console.log(`[Turnstile] STATUS - No valid cookie or session`);
         }
       }
       
