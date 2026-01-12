@@ -45,6 +45,7 @@ import {
   Save,
   Loader2,
   User,
+  Users,
   MapPin,
   Gauge,
   Calendar,
@@ -64,6 +65,7 @@ import {
   Mail,
   Home,
   Pencil,
+  Flag,
 } from "lucide-react";
 import { FileIcon } from "lucide-react";
 import SignaturePad, { type SignaturePadRef } from "@/components/signature-pad";
@@ -146,6 +148,8 @@ export function WorkOrderDetail({
   const autoLaunchTriggered = useRef(false);
   const [mobileCustomerEditMode, setMobileCustomerEditMode] = useState(false);
   const [mobileSystemEditMode, setMobileSystemEditMode] = useState(false);
+  const [mobileSchedulingEditMode, setMobileSchedulingEditMode] = useState(false);
+  const [mobileNotesEditMode, setMobileNotesEditMode] = useState(false);
   
   // Auto-determine scope based on work order data
   const changeoutScope: "system" | "module" | "both" = (() => {
@@ -440,7 +444,7 @@ export function WorkOrderDetail({
               </AccordionTrigger>
               <AccordionContent className="pb-4">
                 {/* Mobile read-only display with icons - shown on small screens when not editing */}
-                {!mobileCustomerEditMode && (
+                {(!mobileCustomerEditMode || !canEdit) && (
                   <div className="md:hidden space-y-3">
                     {/* Edit button for authorized users */}
                     {canEdit && (
@@ -553,7 +557,7 @@ export function WorkOrderDetail({
                 )}
 
                 {/* Mobile edit form - shown on small screens when editing */}
-                {mobileCustomerEditMode && (
+                {mobileCustomerEditMode && canEdit && (
                   <div className="md:hidden space-y-4">
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-sm font-medium">Editing Customer & Site</span>
@@ -873,7 +877,7 @@ export function WorkOrderDetail({
               </AccordionTrigger>
               <AccordionContent className="pb-4">
                 {/* Mobile-optimized read-only display - shown on small screens when not editing */}
-                {!mobileSystemEditMode && (
+                {(!mobileSystemEditMode || !canEdit) && (
                   <div className="md:hidden space-y-4">
                     {/* Edit button for authorized users */}
                     {canEdit && (
@@ -1031,7 +1035,7 @@ export function WorkOrderDetail({
                 )}
 
                 {/* Mobile edit form - shown on small screens when editing */}
-                {mobileSystemEditMode && (
+                {mobileSystemEditMode && canEdit && (
                   <div className="md:hidden space-y-4">
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-sm font-medium">Editing System | Module Details</span>
@@ -1792,11 +1796,268 @@ export function WorkOrderDetail({
               <AccordionTrigger className="hover:no-underline py-4" data-testid="accordion-scheduling">
                 <div className="flex items-center gap-2">
                   <Calendar className="h-4 w-4 text-primary" />
-                  <span className="font-medium">Scheduling & Assignments</span>
+                  <span className="font-medium">Scheduling & Assignment</span>
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pb-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Mobile read-only display */}
+                {(!mobileSchedulingEditMode || !canEdit) && (
+                  <div className="md:hidden space-y-3">
+                    {/* Edit button for authorized users */}
+                    {canEdit && (
+                      <div className="flex justify-end mb-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setMobileSchedulingEditMode(true)}
+                          data-testid="button-mobile-scheduling-edit"
+                        >
+                          <Pencil className="h-3 w-3 mr-1" />
+                          Edit
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* Status */}
+                    <div className="flex items-start gap-3">
+                      <Flag className="h-4 w-4 text-muted-foreground mt-0.5" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Status</p>
+                        <p className="text-sm font-medium" data-testid="mobile-status">
+                          {workOrder.status || "N/A"}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Assigned User */}
+                    <div className="flex items-start gap-3">
+                      <Users className="h-4 w-4 text-muted-foreground mt-0.5" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Assigned User</p>
+                        <p className="text-sm font-medium" data-testid="mobile-assigned-user">
+                          {getAssignedUserName(workOrder.assignedUserId) || "N/A"}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Assigned Group */}
+                    <div className="flex items-start gap-3">
+                      <Users className="h-4 w-4 text-muted-foreground mt-0.5" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Assigned Group</p>
+                        <p className="text-sm font-medium" data-testid="mobile-assigned-group">
+                          {workOrder.assignedGroupId || "N/A"}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Scheduled At */}
+                    <div className="flex items-start gap-3">
+                      <CalendarDays className="h-4 w-4 text-muted-foreground mt-0.5" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Scheduled At</p>
+                        <p className="text-sm font-medium" data-testid="mobile-scheduled-at">
+                          {(workOrder as any).scheduledAt ? formatDateTime((workOrder as any).scheduledAt) : "N/A"}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Trouble Code */}
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle className="h-4 w-4 text-muted-foreground mt-0.5" />
+                      <div>
+                        <p className="text-xs text-muted-foreground">Trouble Code</p>
+                        <p className="text-sm font-medium" data-testid="mobile-trouble-code">
+                          {workOrder.trouble || "N/A"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Mobile edit form */}
+                {mobileSchedulingEditMode && canEdit && (
+                  <div className="md:hidden space-y-4">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-sm font-medium">Editing Scheduling & Assignment</span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setMobileSchedulingEditMode(false)}
+                        data-testid="button-mobile-scheduling-done"
+                      >
+                        Done
+                      </Button>
+                    </div>
+
+                    <FormField
+                      control={form.control}
+                      name="status"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Status</FormLabel>
+                          <Select 
+                            value={field.value || workOrder.status} 
+                            onValueChange={(newStatus) => {
+                              field.onChange(newStatus);
+                              const currentScheduledAt = form.getValues("scheduledAt");
+                              if (currentScheduledAt && newStatus !== "Scheduled") {
+                                toast({
+                                  title: "Schedule will be cleared",
+                                  description: "Changing status from Scheduled will clear the scheduled date/time.",
+                                });
+                              }
+                            }}
+                          >
+                            <FormControl>
+                              <SelectTrigger data-testid="select-mobile-status">
+                                <SelectValue />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {workOrderStatuses.map((s) => (
+                                <SelectItem key={s.id} value={s.code}>
+                                  {s.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="scheduledAt"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Scheduled At</FormLabel>
+                          <FormControl>
+                            <DateTimePicker
+                              value={field.value}
+                              onChange={field.onChange}
+                              data-testid="input-mobile-scheduled-at"
+                              className={scheduledAtWarning ? "border-destructive" : ""}
+                              placeholder="Select schedule date/time"
+                            />
+                          </FormControl>
+                          <p className="text-xs text-muted-foreground mt-1">Setting a date/time will auto-set status to "Scheduled"</p>
+                          {scheduledAtWarning && (
+                            <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+                              <AlertTriangle className="h-3 w-3" />
+                              {scheduledAtWarning}
+                            </p>
+                          )}
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="assignedUserId"
+                      render={({ field }) => {
+                        const displayValue = watchedAssignedUserId || "__none__";
+                        return (
+                          <FormItem>
+                            <FormLabel>Assigned User</FormLabel>
+                            <Select 
+                              key={`mobile-assigned-user-${displayValue}`}
+                              value={displayValue} 
+                              onValueChange={(v) => {
+                                const newValue = v === "__none__" ? undefined : v;
+                                form.setValue('assignedUserId', newValue, { shouldDirty: true });
+                              }}
+                            >
+                              <FormControl>
+                                <SelectTrigger data-testid="select-mobile-assigned-user">
+                                  <SelectValue placeholder="Select user..." />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="__none__">None</SelectItem>
+                                {assigneesData?.users?.map((user: { id: string; label: string }) => (
+                                  <SelectItem key={user.id} value={user.id}>
+                                    {user.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        );
+                      }}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="assignedGroupId"
+                      render={({ field }) => {
+                        const displayValue = watchedAssignedGroupId || "__none__";
+                        return (
+                          <FormItem>
+                            <FormLabel>Assigned Group</FormLabel>
+                            <Select 
+                              key={`mobile-assigned-group-${displayValue}`}
+                              value={displayValue} 
+                              onValueChange={(v) => {
+                                const newValue = v === "__none__" ? undefined : v;
+                                form.setValue('assignedGroupId', newValue, { shouldDirty: true });
+                              }}
+                            >
+                              <FormControl>
+                                <SelectTrigger data-testid="select-mobile-assigned-group">
+                                  <SelectValue placeholder="Select group..." />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="__none__">None</SelectItem>
+                                {assigneesData?.groups?.map((group: { id: number; key?: string; label: string }) => (
+                                  <SelectItem key={group.id} value={group.key || group.label}>
+                                    {group.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        );
+                      }}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="trouble"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Trouble Code</FormLabel>
+                          <Select value={(field.value as string) || "__none__"} onValueChange={(val) => field.onChange(val === "__none__" ? "" : val)}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-mobile-trouble">
+                                <SelectValue placeholder="Select trouble code..." />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="__none__">None</SelectItem>
+                              {troubleCodes.map((tc) => (
+                                <SelectItem key={tc.id} value={tc.code}>
+                                  {tc.code} - {tc.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                )}
+
+                {/* Desktop form view */}
+                <div className="hidden md:grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
                     name="status"
@@ -1987,25 +2248,88 @@ export function WorkOrderDetail({
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pb-4">
-                <FormField
-                  control={form.control}
-                  name="notes"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormControl>
-                        <Textarea 
-                          {...field} 
-                          value={field.value || ""} 
-                          placeholder="Additional notes about this work order..." 
-                          className="min-h-[120px]"
-                          disabled={!canEdit}
-                          data-testid="input-notes" 
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                {/* Mobile read-only display */}
+                {(!mobileNotesEditMode || !canEdit) && (
+                  <div className="md:hidden">
+                    {/* Edit button for authorized users */}
+                    {canEdit && (
+                      <div className="flex justify-end mb-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setMobileNotesEditMode(true)}
+                          data-testid="button-mobile-notes-edit"
+                        >
+                          <Pencil className="h-3 w-3 mr-1" />
+                          Edit
+                        </Button>
+                      </div>
+                    )}
+                    <p className="text-sm" data-testid="mobile-notes-display">
+                      {workOrder.notes || "No notes"}
+                    </p>
+                  </div>
+                )}
+
+                {/* Mobile edit form */}
+                {mobileNotesEditMode && canEdit && (
+                  <div className="md:hidden">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-sm font-medium">Editing Notes</span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setMobileNotesEditMode(false)}
+                        data-testid="button-mobile-notes-done"
+                      >
+                        Done
+                      </Button>
+                    </div>
+                    <FormField
+                      control={form.control}
+                      name="notes"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormControl>
+                            <Textarea 
+                              {...field} 
+                              value={field.value || ""} 
+                              placeholder="Additional notes about this work order..." 
+                              className="min-h-[120px]"
+                              data-testid="input-mobile-notes" 
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                )}
+
+                {/* Desktop form */}
+                <div className="hidden md:block">
+                  <FormField
+                    control={form.control}
+                    name="notes"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormControl>
+                          <Textarea 
+                            {...field} 
+                            value={field.value || ""} 
+                            placeholder="Additional notes about this work order..." 
+                            className="min-h-[120px]"
+                            disabled={!canEdit}
+                            data-testid="input-notes" 
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
               </AccordionContent>
             </AccordionItem>
 
@@ -2077,11 +2401,79 @@ export function WorkOrderDetail({
               <AccordionTrigger className="hover:no-underline py-4" data-testid="accordion-audit">
                 <div className="flex items-center gap-2">
                   <Clock className="h-4 w-4 text-primary" />
-                  <span className="font-medium">Audit History</span>
+                  <span className="font-medium">Audit Information</span>
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pb-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Mobile two-column layout */}
+                <div className="md:hidden space-y-3">
+                  {/* Created By / Created At */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Created By</p>
+                      <p className="text-sm font-medium" data-testid="mobile-created-by">
+                        {workOrder.createdBy || "-"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Created At</p>
+                      <p className="text-sm font-medium" data-testid="mobile-created-at">
+                        {workOrder.createdAt ? formatDateTime(workOrder.createdAt) : "-"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Updated By / Updated At */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Updated By</p>
+                      <p className="text-sm font-medium" data-testid="mobile-updated-by">
+                        {workOrder.updatedBy || "-"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Updated At</p>
+                      <p className="text-sm font-medium" data-testid="mobile-updated-at">
+                        {workOrder.updatedAt ? formatDateTime(workOrder.updatedAt) : "-"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Scheduled By / Scheduled At */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Scheduled By</p>
+                      <p className="text-sm font-medium" data-testid="mobile-scheduled-by">
+                        {(workOrder as any).scheduledByDisplay || getAssignedUserName((workOrder as any).scheduledBy) || "-"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Scheduled At</p>
+                      <p className="text-sm font-medium" data-testid="mobile-audit-scheduled-at">
+                        {(workOrder as any).scheduledAt ? formatDateTime((workOrder as any).scheduledAt) : "-"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Completed By / Completed At */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Completed By</p>
+                      <p className="text-sm font-medium" data-testid="mobile-completed-by">
+                        {(workOrder as any).completedByDisplay || getAssignedUserName((workOrder as any).completedBy) || "-"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Completed At</p>
+                      <p className="text-sm font-medium" data-testid="mobile-completed-at">
+                        {workOrder.completedAt ? formatDateTime(workOrder.completedAt) : "-"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Desktop form view */}
+                <div className="hidden md:grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   <div>
                     <label className="text-sm font-medium text-muted-foreground">Created By</label>
                     <Input 
@@ -2133,7 +2525,7 @@ export function WorkOrderDetail({
                       value={(workOrder as any).scheduledAt ? formatDateTime((workOrder as any).scheduledAt) : "-"} 
                       disabled 
                       className="mt-1 bg-muted"
-                      data-testid="text-scheduled-at"
+                      data-testid="text-audit-scheduled-at"
                     />
                   </div>
                   <div>
