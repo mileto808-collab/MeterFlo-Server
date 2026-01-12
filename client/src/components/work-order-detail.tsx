@@ -3046,79 +3046,68 @@ export function WorkOrderDetail({
                   )}
                 </div>
 
-                {/* Desktop form view */}
-                <div className="hidden md:grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Created By</label>
-                    <Input 
-                      value={workOrder.createdBy || "-"} 
-                      disabled 
-                      className="mt-1 bg-muted"
-                      data-testid="text-created-by"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Created At</label>
-                    <Input 
-                      value={workOrder.createdAt ? formatDateTime(workOrder.createdAt) : "-"} 
-                      disabled 
-                      className="mt-1 bg-muted"
-                      data-testid="text-created-at"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Updated By</label>
-                    <Input 
-                      value={workOrder.updatedBy || "-"} 
-                      disabled 
-                      className="mt-1 bg-muted"
-                      data-testid="text-updated-by"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Updated At</label>
-                    <Input 
-                      value={workOrder.updatedAt ? formatDateTime(workOrder.updatedAt) : "-"} 
-                      disabled 
-                      className="mt-1 bg-muted"
-                      data-testid="text-updated-at"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Scheduled By</label>
-                    <Input 
-                      value={(workOrder as any).scheduledByDisplay || getAssignedUserName((workOrder as any).scheduledBy) || "-"} 
-                      disabled 
-                      className="mt-1 bg-muted"
-                      data-testid="text-scheduled-by"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Scheduled At</label>
-                    <Input 
-                      value={(workOrder as any).scheduledAt ? formatDateTime((workOrder as any).scheduledAt) : "-"} 
-                      disabled 
-                      className="mt-1 bg-muted"
-                      data-testid="text-audit-scheduled-at"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Completed By</label>
-                    <Input 
-                      value={(workOrder as any).completedByDisplay || getAssignedUserName((workOrder as any).completedBy) || "-"} 
-                      disabled 
-                      className="mt-1 bg-muted"
-                      data-testid="text-completed-by"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Completed At</label>
-                    <Input 
-                      value={workOrder.completedAt ? formatDateTime(workOrder.completedAt) : "-"} 
-                      disabled 
-                      className="mt-1 bg-muted"
-                      data-testid="text-completed-at"
-                    />
+                {/* Desktop read-only view - only show fields with values */}
+                <div className="hidden md:block space-y-4">
+                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                    {/* Created By / Created At - only show if has data */}
+                    {workOrder.createdBy && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Created By</p>
+                        <p className="text-sm font-medium" data-testid="desktop-created-by">{workOrder.createdBy}</p>
+                      </div>
+                    )}
+                    {workOrder.createdAt && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Created At</p>
+                        <p className="text-sm font-medium" data-testid="desktop-created-at">{formatDateTime(workOrder.createdAt)}</p>
+                      </div>
+                    )}
+                    
+                    {/* Updated By / Updated At - only show if has data */}
+                    {workOrder.updatedBy && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Updated By</p>
+                        <p className="text-sm font-medium" data-testid="desktop-updated-by">{workOrder.updatedBy}</p>
+                      </div>
+                    )}
+                    {workOrder.updatedAt && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Updated At</p>
+                        <p className="text-sm font-medium" data-testid="desktop-updated-at">{formatDateTime(workOrder.updatedAt)}</p>
+                      </div>
+                    )}
+                    
+                    {/* Scheduled By / Scheduled At - only show if has data */}
+                    {((workOrder as any).scheduledBy || (workOrder as any).scheduledByDisplay) && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Scheduled By</p>
+                        <p className="text-sm font-medium" data-testid="desktop-scheduled-by">
+                          {(workOrder as any).scheduledByDisplay || getAssignedUserName((workOrder as any).scheduledBy)}
+                        </p>
+                      </div>
+                    )}
+                    {(workOrder as any).scheduledAt && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Scheduled At</p>
+                        <p className="text-sm font-medium" data-testid="desktop-audit-scheduled-at">{formatDateTime((workOrder as any).scheduledAt)}</p>
+                      </div>
+                    )}
+                    
+                    {/* Completed By / Completed At - only show if has data */}
+                    {((workOrder as any).completedBy || (workOrder as any).completedByDisplay) && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Completed By</p>
+                        <p className="text-sm font-medium" data-testid="desktop-completed-by">
+                          {(workOrder as any).completedByDisplay || getAssignedUserName((workOrder as any).completedBy)}
+                        </p>
+                      </div>
+                    )}
+                    {workOrder.completedAt && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Completed At</p>
+                        <p className="text-sm font-medium" data-testid="desktop-completed-at">{formatDateTime(workOrder.completedAt)}</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               </AccordionContent>
