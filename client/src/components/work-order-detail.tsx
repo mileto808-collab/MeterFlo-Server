@@ -151,6 +151,12 @@ export function WorkOrderDetail({
   const [mobileSchedulingEditMode, setMobileSchedulingEditMode] = useState(false);
   const [mobileNotesEditMode, setMobileNotesEditMode] = useState(false);
   
+  // Desktop edit mode states - mirrors mobile pattern for consistent UX
+  const [desktopCustomerEditMode, setDesktopCustomerEditMode] = useState(false);
+  const [desktopSystemEditMode, setDesktopSystemEditMode] = useState(false);
+  const [desktopSchedulingEditMode, setDesktopSchedulingEditMode] = useState(false);
+  const [desktopNotesEditMode, setDesktopNotesEditMode] = useState(false);
+  
   // Auto-determine scope based on work order data
   const changeoutScope: "system" | "module" | "both" = (() => {
     const hasSystem = !!workOrder.oldSystemId;
@@ -709,161 +715,293 @@ export function WorkOrderDetail({
                   </div>
                 )}
 
-                {/* Desktop form view */}
-                <div className="hidden md:grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">System ID</label>
-                    <Input 
-                      value={workOrder.id} 
-                      disabled 
-                      className="mt-1 bg-muted"
-                      data-testid="text-system-wo-id"
-                    />
+                {/* Desktop read-only view - shown when not editing */}
+                {(!desktopCustomerEditMode || !canEdit) && (
+                  <div className="hidden md:block space-y-4">
+                    {/* Edit button for authorized users */}
+                    {canEdit && (
+                      <div className="flex justify-end mb-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setDesktopCustomerEditMode(true)}
+                          data-testid="button-desktop-customer-edit"
+                        >
+                          <Pencil className="h-3 w-3 mr-1" />
+                          Edit
+                        </Button>
+                      </div>
+                    )}
+                    
+                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                      {/* System ID - always show */}
+                      <div>
+                        <p className="text-xs text-muted-foreground">System ID</p>
+                        <p className="text-sm font-medium" data-testid="desktop-system-wo-id">{workOrder.id}</p>
+                      </div>
+                      
+                      {/* Work Order ID - always show */}
+                      <div>
+                        <p className="text-xs text-muted-foreground">Work Order ID</p>
+                        <p className="text-sm font-medium" data-testid="desktop-customer-wo-id">{workOrder.customerWoId || "-"}</p>
+                      </div>
+                      
+                      {/* Customer ID - show if has value */}
+                      {workOrder.customerId && (
+                        <div>
+                          <p className="text-xs text-muted-foreground">Customer ID</p>
+                          <p className="text-sm font-medium" data-testid="desktop-customer-id">{workOrder.customerId}</p>
+                        </div>
+                      )}
+                      
+                      {/* Customer Name - show if has value */}
+                      {workOrder.customerName && (
+                        <div>
+                          <p className="text-xs text-muted-foreground">Customer Name</p>
+                          <p className="text-sm font-medium" data-testid="desktop-customer-name">{workOrder.customerName}</p>
+                        </div>
+                      )}
+                      
+                      {/* Address - show if has value */}
+                      {(workOrder.address || workOrder.city || workOrder.state || workOrder.zip) && (
+                        <div className="lg:col-span-2">
+                          <p className="text-xs text-muted-foreground">Address</p>
+                          {(() => {
+                            const fullAddress = [workOrder.address, workOrder.city, workOrder.state, workOrder.zip].filter(Boolean).join(", ");
+                            return fullAddress ? (
+                              <a
+                                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-sm font-medium text-primary hover:underline"
+                                data-testid="desktop-address-link"
+                              >
+                                {fullAddress}
+                              </a>
+                            ) : null;
+                          })()}
+                        </div>
+                      )}
+                      
+                      {/* Phone - show if has value */}
+                      {workOrder.phone && (
+                        <div>
+                          <p className="text-xs text-muted-foreground">Phone</p>
+                          <a
+                            href={`tel:${workOrder.phone}`}
+                            className="text-sm font-medium text-primary hover:underline"
+                            data-testid="desktop-phone-link"
+                          >
+                            {workOrder.phone}
+                          </a>
+                        </div>
+                      )}
+                      
+                      {/* Email - show if has value */}
+                      {workOrder.email && (
+                        <div>
+                          <p className="text-xs text-muted-foreground">Email</p>
+                          <a
+                            href={`mailto:${workOrder.email}`}
+                            className="text-sm font-medium text-primary hover:underline"
+                            data-testid="desktop-email-link"
+                          >
+                            {workOrder.email}
+                          </a>
+                        </div>
+                      )}
+                      
+                      {/* Route - show if has value */}
+                      {workOrder.route && (
+                        <div>
+                          <p className="text-xs text-muted-foreground">Route</p>
+                          <p className="text-sm font-medium" data-testid="desktop-route">{workOrder.route}</p>
+                        </div>
+                      )}
+                      
+                      {/* Zone - show if has value */}
+                      {workOrder.zone && (
+                        <div>
+                          <p className="text-xs text-muted-foreground">Zone</p>
+                          <p className="text-sm font-medium" data-testid="desktop-zone">{workOrder.zone}</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <FormField
-                    control={form.control}
-                    name="customerWoId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Work Order ID *</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="WO-001" disabled={!canEdit} data-testid="input-customer-wo-id" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="customerId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Customer ID *</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="CUST-001" disabled={!canEdit} data-testid="input-customer-id" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="customerName"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Customer Name *</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="John Doe" disabled={!canEdit} data-testid="input-customer-name" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="address"
-                    render={({ field }) => (
-                      <FormItem className="md:col-span-2">
-                        <FormLabel>Address *</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="123 Main Street" disabled={!canEdit} data-testid="input-address" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="city"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>City</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="City" disabled={!canEdit} data-testid="input-city" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="state"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>State</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="State" disabled={!canEdit} data-testid="input-state" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="zip"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>ZIP Code</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="12345" disabled={!canEdit} data-testid="input-zip" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="phone"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Phone</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="555-123-4567" disabled={!canEdit} data-testid="input-phone" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="email"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Email</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="email@example.com" disabled={!canEdit} data-testid="input-email" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="route"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Route</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="Route A" disabled={!canEdit} data-testid="input-route" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="zone"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Zone</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="Zone 1" disabled={!canEdit} data-testid="input-zone" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
+                )}
+
+                {/* Desktop edit form - shown when editing */}
+                {desktopCustomerEditMode && canEdit && (
+                  <div className="hidden md:block space-y-4">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-sm font-medium">Editing Customer & Site</span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setDesktopCustomerEditMode(false)}
+                        data-testid="button-desktop-customer-done"
+                      >
+                        Done
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-sm font-medium text-muted-foreground">System ID</label>
+                        <Input 
+                          value={workOrder.id} 
+                          disabled 
+                          className="mt-1 bg-muted"
+                          data-testid="text-system-wo-id"
+                        />
+                      </div>
+                      <FormField
+                        control={form.control}
+                        name="customerWoId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Work Order ID *</FormLabel>
+                            <FormControl>
+                              <Input {...field} value={field.value || ""} placeholder="WO-001" data-testid="input-customer-wo-id" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="customerId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Customer ID *</FormLabel>
+                            <FormControl>
+                              <Input {...field} value={field.value || ""} placeholder="CUST-001" data-testid="input-customer-id" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="customerName"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Customer Name *</FormLabel>
+                            <FormControl>
+                              <Input {...field} value={field.value || ""} placeholder="John Doe" data-testid="input-customer-name" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="address"
+                        render={({ field }) => (
+                          <FormItem className="md:col-span-2">
+                            <FormLabel>Address *</FormLabel>
+                            <FormControl>
+                              <Input {...field} value={field.value || ""} placeholder="123 Main Street" data-testid="input-address" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="city"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>City</FormLabel>
+                            <FormControl>
+                              <Input {...field} value={field.value || ""} placeholder="City" data-testid="input-city" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="state"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>State</FormLabel>
+                            <FormControl>
+                              <Input {...field} value={field.value || ""} placeholder="State" data-testid="input-state" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="zip"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>ZIP Code</FormLabel>
+                            <FormControl>
+                              <Input {...field} value={field.value || ""} placeholder="12345" data-testid="input-zip" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="phone"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Phone</FormLabel>
+                            <FormControl>
+                              <Input {...field} value={field.value || ""} placeholder="555-123-4567" data-testid="input-phone" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="email"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Email</FormLabel>
+                            <FormControl>
+                              <Input {...field} value={field.value || ""} placeholder="email@example.com" data-testid="input-email" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="route"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Route</FormLabel>
+                            <FormControl>
+                              <Input {...field} value={field.value || ""} placeholder="Route A" data-testid="input-route" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="zone"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Zone</FormLabel>
+                            <FormControl>
+                              <Input {...field} value={field.value || ""} placeholder="Zone 1" data-testid="input-zone" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
+                )}
               </AccordionContent>
             </AccordionItem>
 
@@ -1384,8 +1522,250 @@ export function WorkOrderDetail({
                   </div>
                 )}
 
-                {/* Desktop form view - hidden on mobile */}
-                <div className="hidden md:grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Desktop read-only view - shown when not editing */}
+                {(!desktopSystemEditMode || !canEdit) && (
+                  <div className="hidden md:block space-y-4">
+                    {/* Edit button for authorized users */}
+                    {canEdit && (
+                      <div className="flex justify-end mb-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setDesktopSystemEditMode(true)}
+                          data-testid="button-desktop-system-edit"
+                        >
+                          <Pencil className="h-3 w-3 mr-1" />
+                          Edit
+                        </Button>
+                      </div>
+                    )}
+                    
+                    {/* Service Type - always show */}
+                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Service Type</p>
+                        <p className="text-sm font-medium" data-testid="desktop-service-type">
+                          {serviceTypes.find(st => st.code === workOrder.serviceType)?.label || workOrder.serviceType || "-"}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Old System - Green border - only show if has data */}
+                    {(workOrder.oldSystemId || workOrder.oldSystemReading != null || workOrder.oldSystemType) && (
+                      <div className="border-l-4 border-l-green-500 pl-3 py-2">
+                        <h4 className="text-base font-semibold text-green-500 mb-2">Old System</h4>
+                        <div className="grid grid-cols-3 gap-4">
+                          {workOrder.oldSystemId && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">System ID</p>
+                              <p className="text-sm font-medium break-all" data-testid="desktop-old-system-id">
+                                {workOrder.oldSystemId}
+                              </p>
+                            </div>
+                          )}
+                          {workOrder.oldSystemReading != null && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Reading</p>
+                              <p className="text-sm font-medium" data-testid="desktop-old-system-reading">
+                                {workOrder.oldSystemReading}
+                              </p>
+                            </div>
+                          )}
+                          {workOrder.oldSystemType && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Type</p>
+                              <p className="text-sm font-medium" data-testid="desktop-old-system-type">
+                                {workOrder.oldSystemType}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Old Module - Green border - only show if has data */}
+                    {(workOrder.oldModuleId || workOrder.oldModuleRead != null || workOrder.oldModuleType) && (
+                      <div className="border-l-4 border-l-green-500 pl-3 py-2">
+                        <h4 className="text-base font-semibold text-muted-foreground mb-2">Old Module</h4>
+                        <div className="grid grid-cols-3 gap-4">
+                          {workOrder.oldModuleId && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Module ID</p>
+                              <p className="text-sm font-medium break-all" data-testid="desktop-old-module-id">
+                                {workOrder.oldModuleId}
+                              </p>
+                            </div>
+                          )}
+                          {workOrder.oldModuleRead != null && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Reading</p>
+                              <p className="text-sm font-medium" data-testid="desktop-old-module-reading">
+                                {workOrder.oldModuleRead}
+                              </p>
+                            </div>
+                          )}
+                          {workOrder.oldModuleType && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Type</p>
+                              <p className="text-sm font-medium" data-testid="desktop-old-module-type">
+                                {workOrder.oldModuleType}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* GPS Coordinates - only show if at least one GPS value exists */}
+                    {(workOrder.oldGps || workOrder.newGps) && (
+                      <div className="border-t pt-4 mt-2">
+                        <h4 className="text-sm font-medium mb-3 text-muted-foreground">GPS Coordinates</h4>
+                        <div className="grid grid-cols-2 gap-4">
+                          {workOrder.oldGps && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Old GPS</p>
+                              <a
+                                href={`https://www.google.com/maps?q=${workOrder.oldGps}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-sm font-medium text-primary hover:underline"
+                                data-testid="desktop-old-gps-link"
+                              >
+                                {workOrder.oldGps}
+                              </a>
+                            </div>
+                          )}
+                          {workOrder.newGps && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">New GPS</p>
+                              <a
+                                href={`https://www.google.com/maps?q=${workOrder.newGps}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-sm font-medium text-primary hover:underline"
+                                data-testid="desktop-new-gps-link"
+                              >
+                                {workOrder.newGps}
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* New System - Cyan border - only show if has data */}
+                    {(workOrder.newSystemId || workOrder.newSystemReading != null || workOrder.newSystemType) && (
+                      <div className="border-l-4 border-l-cyan-500 pl-3 py-2">
+                        <h4 className="text-base font-semibold text-cyan-500 mb-2">New System</h4>
+                        <div className="grid grid-cols-3 gap-4">
+                          {workOrder.newSystemId && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">System ID</p>
+                              <p className="text-sm font-medium break-all" data-testid="desktop-new-system-id">
+                                {workOrder.newSystemId}
+                              </p>
+                            </div>
+                          )}
+                          {workOrder.newSystemReading != null && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Reading</p>
+                              <p className="text-sm font-medium" data-testid="desktop-new-system-reading">
+                                {workOrder.newSystemReading}
+                              </p>
+                            </div>
+                          )}
+                          {workOrder.newSystemType && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Type</p>
+                              <p className="text-sm font-medium" data-testid="desktop-new-system-type">
+                                {workOrder.newSystemType}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* New Module - Cyan border - only show if has data */}
+                    {(workOrder.newModuleId || workOrder.newModuleRead != null || workOrder.newModuleType) && (
+                      <div className="border-l-4 border-l-cyan-500 pl-3 py-2">
+                        <h4 className="text-base font-semibold text-cyan-500 mb-2">New Module</h4>
+                        <div className="grid grid-cols-3 gap-4">
+                          {workOrder.newModuleId && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Module ID</p>
+                              <p className="text-sm font-medium break-all" data-testid="desktop-new-module-id">
+                                {workOrder.newModuleId}
+                              </p>
+                            </div>
+                          )}
+                          {workOrder.newModuleRead != null && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Reading</p>
+                              <p className="text-sm font-medium" data-testid="desktop-new-module-reading">
+                                {workOrder.newModuleRead}
+                              </p>
+                            </div>
+                          )}
+                          {workOrder.newModuleType && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Type</p>
+                              <p className="text-sm font-medium" data-testid="desktop-new-module-type">
+                                {workOrder.newModuleType}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Signature - show if signature exists */}
+                    {((workOrder as any)?.signatureData || (workOrder as any)?.signatureName) && (
+                      <div className="border-t pt-4 mt-2">
+                        <h4 className="text-sm font-medium mb-3 text-muted-foreground">Signature</h4>
+                        <div className="space-y-2">
+                          {(workOrder as any)?.signatureName && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Name</p>
+                              <p className="text-sm font-medium" data-testid="desktop-signature-name">
+                                {(workOrder as any).signatureName}
+                              </p>
+                            </div>
+                          )}
+                          {(workOrder as any)?.signatureData && (
+                            <div>
+                              <p className="text-xs text-muted-foreground mb-1">Signature</p>
+                              <img 
+                                src={(workOrder as any).signatureData} 
+                                alt="Signature" 
+                                className="max-h-24 border rounded bg-white"
+                                data-testid="desktop-signature-image"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Desktop edit form - shown when editing */}
+                {desktopSystemEditMode && canEdit && (
+                  <div className="hidden md:block space-y-4">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-sm font-medium">Editing System | Module Details</span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setDesktopSystemEditMode(false)}
+                        data-testid="button-desktop-system-done"
+                      >
+                        Done
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
                     name="serviceType"
@@ -1819,7 +2199,9 @@ export function WorkOrderDetail({
                       disabled={!canEdit}
                     />
                   </div>
-                </div>
+                    </div>
+                  </div>
+                )}
               </AccordionContent>
             </AccordionItem>
 
@@ -2098,8 +2480,95 @@ export function WorkOrderDetail({
                   </div>
                 )}
 
-                {/* Desktop form view */}
-                <div className="hidden md:grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Desktop read-only view - shown when not editing */}
+                {(!desktopSchedulingEditMode || !canEdit) && (
+                  <div className="hidden md:block space-y-4">
+                    {/* Edit button for authorized users */}
+                    {canEdit && (
+                      <div className="flex justify-end mb-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setDesktopSchedulingEditMode(true)}
+                          data-testid="button-desktop-scheduling-edit"
+                        >
+                          <Pencil className="h-3 w-3 mr-1" />
+                          Edit
+                        </Button>
+                      </div>
+                    )}
+                    
+                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                      {/* Status - always show */}
+                      <div>
+                        <p className="text-xs text-muted-foreground">Status</p>
+                        <p className="text-sm font-medium" data-testid="desktop-status">{workOrder.status || "-"}</p>
+                      </div>
+                      
+                      {/* Assigned User - show if has value */}
+                      {workOrder.assignedUserId && getAssignedUserName(workOrder.assignedUserId) && (
+                        <div>
+                          <p className="text-xs text-muted-foreground">Assigned User</p>
+                          <p className="text-sm font-medium" data-testid="desktop-assigned-user">
+                            {(workOrder as any).assignedUserDisplay || getAssignedUserName(workOrder.assignedUserId)}
+                          </p>
+                        </div>
+                      )}
+                      
+                      {/* Assigned Group - show if has value */}
+                      {workOrder.assignedGroupId && (
+                        <div>
+                          <p className="text-xs text-muted-foreground">Assigned Group</p>
+                          <p className="text-sm font-medium" data-testid="desktop-assigned-group">
+                            {assigneesData?.groups?.find((g: { id: number; key?: string; label: string }) => 
+                              g.key === workOrder.assignedGroupId || g.label === workOrder.assignedGroupId
+                            )?.label || workOrder.assignedGroupId}
+                          </p>
+                        </div>
+                      )}
+                      
+                      {/* Scheduled At - show if has value */}
+                      {workOrder.scheduledAt && (
+                        <div>
+                          <p className="text-xs text-muted-foreground">Scheduled At</p>
+                          <p className="text-sm font-medium" data-testid="desktop-scheduled-at">
+                            {formatDateTime(workOrder.scheduledAt)}
+                          </p>
+                        </div>
+                      )}
+                      
+                      {/* Trouble Code - show if has value */}
+                      {workOrder.trouble && (
+                        <div>
+                          <p className="text-xs text-muted-foreground">Trouble Code</p>
+                          <p className="text-sm font-medium" data-testid="desktop-trouble-code">
+                            {troubleCodes.find(tc => tc.code === workOrder.trouble)?.label 
+                              ? `${workOrder.trouble} - ${troubleCodes.find(tc => tc.code === workOrder.trouble)?.label}`
+                              : workOrder.trouble}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Desktop edit form - shown when editing */}
+                {desktopSchedulingEditMode && canEdit && (
+                  <div className="hidden md:block space-y-4">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-sm font-medium">Editing Scheduling & Assignment</span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setDesktopSchedulingEditMode(false)}
+                        data-testid="button-desktop-scheduling-done"
+                      >
+                        Done
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
                     name="status"
@@ -2277,7 +2746,9 @@ export function WorkOrderDetail({
                       </FormItem>
                     )}
                   />
-                </div>
+                    </div>
+                  </div>
+                )}
               </AccordionContent>
             </AccordionItem>
 
@@ -2350,28 +2821,65 @@ export function WorkOrderDetail({
                   </div>
                 )}
 
-                {/* Desktop form */}
-                <div className="hidden md:block">
-                  <FormField
-                    control={form.control}
-                    name="notes"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormControl>
-                          <Textarea 
-                            {...field} 
-                            value={field.value || ""} 
-                            placeholder="Additional notes about this work order..." 
-                            className="min-h-[120px]"
-                            disabled={!canEdit}
-                            data-testid="input-notes" 
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
+                {/* Desktop read-only view - shown when not editing */}
+                {(!desktopNotesEditMode || !canEdit) && (
+                  <div className="hidden md:block">
+                    {/* Edit button for authorized users */}
+                    {canEdit && (
+                      <div className="flex justify-end mb-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setDesktopNotesEditMode(true)}
+                          data-testid="button-desktop-notes-edit"
+                        >
+                          <Pencil className="h-3 w-3 mr-1" />
+                          Edit
+                        </Button>
+                      </div>
                     )}
-                  />
-                </div>
+                    <p className="text-sm" data-testid="desktop-notes-display">
+                      {workOrder.notes || "No notes"}
+                    </p>
+                  </div>
+                )}
+
+                {/* Desktop edit form - shown when editing */}
+                {desktopNotesEditMode && canEdit && (
+                  <div className="hidden md:block">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-sm font-medium">Editing Notes</span>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setDesktopNotesEditMode(false)}
+                        data-testid="button-desktop-notes-done"
+                      >
+                        Done
+                      </Button>
+                    </div>
+                    <FormField
+                      control={form.control}
+                      name="notes"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormControl>
+                            <Textarea 
+                              {...field} 
+                              value={field.value || ""} 
+                              placeholder="Additional notes about this work order..." 
+                              className="min-h-[120px]"
+                              data-testid="input-notes" 
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                )}
               </AccordionContent>
             </AccordionItem>
 
