@@ -346,6 +346,46 @@ export default function Settings() {
     enabled: isAdmin || hasPermission("settings.mobileConfig"),
   });
 
+  // Security Settings state and query
+  const [turnstileEnabled, setTurnstileEnabled] = useState(false);
+  const [turnstileSiteKey, setTurnstileSiteKey] = useState("");
+  const [turnstileSecretKey, setTurnstileSecretKey] = useState("");
+  const [turnstileChallengePoint, setTurnstileChallengePoint] = useState<"turnstile" | "login">("turnstile");
+  
+  interface SecuritySettings {
+    turnstileEnabled: boolean;
+    turnstileSiteKey: string;
+    turnstileSecretKey: string;
+    turnstileChallengePoint: "turnstile" | "login";
+  }
+  
+  const { data: securitySettingsData } = useQuery<SecuritySettings>({
+    queryKey: ["/api/settings/security"],
+    enabled: isAdmin || hasPermission("settings.security"),
+  });
+
+  useEffect(() => {
+    if (securitySettingsData) {
+      setTurnstileEnabled(securitySettingsData.turnstileEnabled);
+      setTurnstileSiteKey(securitySettingsData.turnstileSiteKey || "");
+      setTurnstileSecretKey(securitySettingsData.turnstileSecretKey || "");
+      setTurnstileChallengePoint(securitySettingsData.turnstileChallengePoint || "turnstile");
+    }
+  }, [securitySettingsData]);
+
+  const saveSecuritySettingsMutation = useMutation({
+    mutationFn: async (data: Partial<SecuritySettings>) => {
+      return apiRequest("PUT", "/api/settings/security", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/security"] });
+      toast({ title: "Security settings saved" });
+    },
+    onError: () => {
+      toast({ title: "Failed to save security settings", variant: "destructive" });
+    },
+  });
+
   useEffect(() => {
     if (mobileConfigData?.mobileUpdateUrl) {
       setMobileUpdateUrl(mobileConfigData.mobileUpdateUrl);
@@ -2131,6 +2171,115 @@ export default function Settings() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {hasPermission("settings.security") && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <Shield className="h-5 w-5 text-muted-foreground" />
+                  <div>
+                    <CardTitle>Security Settings</CardTitle>
+                    <CardDescription className="mt-1">Configure Cloudflare Turnstile protection for login</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-1">
+                    <Label htmlFor="turnstile-enabled">Enable Cloudflare Turnstile</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Require users to complete a security challenge before accessing the login page
+                    </p>
+                  </div>
+                  <Switch
+                    id="turnstile-enabled"
+                    checked={turnstileEnabled}
+                    onCheckedChange={setTurnstileEnabled}
+                    data-testid="switch-turnstile-enabled"
+                  />
+                </div>
+
+                {turnstileEnabled && (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="turnstile-site-key">Site Key</Label>
+                      <Input
+                        id="turnstile-site-key"
+                        placeholder="0x4AAAAAAA..."
+                        value={turnstileSiteKey}
+                        onChange={(e) => setTurnstileSiteKey(e.target.value)}
+                        data-testid="input-turnstile-site-key"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Your Cloudflare Turnstile site key (public)
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="turnstile-secret-key">Secret Key</Label>
+                      <Input
+                        id="turnstile-secret-key"
+                        type="password"
+                        placeholder={turnstileSecretKey === "***configured***" ? "***configured***" : "0x4AAAAAAA..."}
+                        value={turnstileSecretKey === "***configured***" ? "" : turnstileSecretKey}
+                        onChange={(e) => setTurnstileSecretKey(e.target.value)}
+                        data-testid="input-turnstile-secret-key"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Your Cloudflare Turnstile secret key (private, never shared)
+                        {securitySettingsData?.turnstileSecretKey === "***configured***" && (
+                          <span className="text-green-600 ml-2">Currently configured</span>
+                        )}
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="turnstile-challenge-point">Challenge Point</Label>
+                      <Select
+                        value={turnstileChallengePoint}
+                        onValueChange={(val) => setTurnstileChallengePoint(val as "turnstile" | "login")}
+                      >
+                        <SelectTrigger data-testid="select-turnstile-challenge-point">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="turnstile">
+                            Turnstile Page (Recommended)
+                          </SelectItem>
+                          <SelectItem value="login">
+                            Login Page (May break mobile app)
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        <strong>Turnstile Page:</strong> Shows a branded security page before login. Compatible with mobile apps.
+                        <br />
+                        <strong>Login Page:</strong> Embeds challenge directly on login. May break React Native mobile apps.
+                      </p>
+                    </div>
+                  </>
+                )}
+
+                <Button 
+                  onClick={() => {
+                    saveSecuritySettingsMutation.mutate({
+                      turnstileEnabled,
+                      turnstileSiteKey: turnstileSiteKey.trim(),
+                      turnstileSecretKey: turnstileSecretKey === "***configured***" || turnstileSecretKey === "" 
+                        ? "***configured***" 
+                        : turnstileSecretKey.trim(),
+                      turnstileChallengePoint,
+                    });
+                  }}
+                  disabled={saveSecuritySettingsMutation.isPending}
+                  data-testid="button-save-security-settings"
+                >
+                  <Save className="h-4 w-4 mr-2" />
+                  {saveSecuritySettingsMutation.isPending ? "Saving..." : "Save Security Settings"}
+                </Button>
+              </CardContent>
+            </Card>
+        )}
 
         {hasPermission("settings.importHistory") && (
             <Card>

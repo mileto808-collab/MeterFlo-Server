@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowUpCircle } from "lucide-react";
 
 import Landing from "@/pages/landing";
+import TurnstilePage from "@/pages/turnstile";
 import Dashboard from "@/pages/dashboard";
 import WorkOrders from "@/pages/work-orders";
 import WorkOrderDetail from "@/pages/work-order-detail";
@@ -184,11 +185,14 @@ function Router() {
     return <LoadingScreen />;
   }
 
-  if (!isAuthenticated) {
-    return <Landing />;
-  }
-
-  return <AuthenticatedLayout />;
+  return (
+    <Switch>
+      <Route path="/turnstile" component={TurnstilePage} />
+      <Route>
+        {isAuthenticated ? <AuthenticatedLayout /> : <Landing />}
+      </Route>
+    </Switch>
+  );
 }
 
 function App() {

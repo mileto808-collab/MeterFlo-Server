@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,10 +10,37 @@ import { ClipboardList, Users, Shield, Smartphone, FileUp, BarChart3, Loader2 } 
 import { apiRequest } from "@/lib/queryClient";
 
 export default function Landing() {
+  const [, setLocation] = useLocation();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [checkingTurnstile, setCheckingTurnstile] = useState(true);
   const { toast } = useToast();
+
+  useEffect(() => {
+    const checkTurnstileStatus = async () => {
+      try {
+        const [statusRes, configRes] = await Promise.all([
+          fetch("/api/security/turnstile/status", { credentials: "include" }),
+          fetch("/api/security/turnstile-config", { credentials: "include" }),
+        ]);
+        
+        const status = await statusRes.json();
+        const config = await configRes.json();
+        
+        if (config.enabled && config.challengePoint === "turnstile" && status.required && !status.verified) {
+          setLocation("/turnstile");
+          return;
+        }
+      } catch (err) {
+        console.error("Failed to check turnstile status:", err);
+      } finally {
+        setCheckingTurnstile(false);
+      }
+    };
+    
+    checkTurnstileStatus();
+  }, [setLocation]);
 
   const handleLocalLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,6 +103,17 @@ export default function Landing() {
       description: "Comprehensive tools for user and system management. Configure scheduled imports per project. Backup and Restore tools. And, more...",
     },
   ];
+
+  if (checkingTurnstile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
