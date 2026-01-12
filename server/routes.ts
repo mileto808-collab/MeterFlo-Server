@@ -4473,6 +4473,11 @@ export async function registerRoutes(
   // Public endpoint to get Turnstile config (for the challenge page)
   app.get("/api/security/turnstile-config", async (req, res) => {
     try {
+      // Emergency bypass via environment variable
+      if (process.env.TURNSTILE_EMERGENCY_BYPASS === "true") {
+        return res.json({ enabled: false, siteKey: "", challengePoint: "turnstile", bypassed: true });
+      }
+      
       const turnstileEnabled = await storage.getSetting("turnstile_enabled");
       const turnstileSiteKey = await storage.getSetting("turnstile_site_key");
       const turnstileChallengePoint = await storage.getSetting("turnstile_challenge_point");
@@ -4544,6 +4549,11 @@ export async function registerRoutes(
   // Check if current session has passed Turnstile
   app.get("/api/security/turnstile/status", async (req, res) => {
     try {
+      // Emergency bypass via environment variable - allows admin access when locked out
+      if (process.env.TURNSTILE_EMERGENCY_BYPASS === "true") {
+        return res.json({ required: false, verified: true, bypassed: true });
+      }
+      
       const turnstileEnabled = await storage.getSetting("turnstile_enabled");
       
       if (turnstileEnabled !== "true") {
