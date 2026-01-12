@@ -4527,20 +4527,34 @@ export async function registerRoutes(
       const result = await verifyResponse.json() as { success: boolean; "error-codes"?: string[] };
       
       if (result.success) {
-        // Store verification in session - must explicitly save to ensure it persists
+        // Store verification timestamp in a separate cookie
+        // This bypasses session store issues with reverse proxies
+        const verifiedAt = new Date().toISOString();
+        const twentyFourHours = 24 * 60 * 60 * 1000;
+        
+        // Create a simple signature using SESSION_SECRET
+        const signature = Buffer.from(
+          `${verifiedAt}:${process.env.SESSION_SECRET}`
+        ).toString('base64');
+        
+        // Set a separate Turnstile verification cookie
+        res.cookie('turnstile_verified', `${verifiedAt}|${signature}`, {
+          httpOnly: true,
+          secure: process.env.COOKIE_SECURE === 'true',
+          sameSite: 'lax',
+          maxAge: twentyFourHours,
+          path: '/',
+        });
+        
+        console.log(`[Turnstile] VERIFY - Set turnstile_verified cookie with timestamp ${verifiedAt}`);
+        
+        // Also store in session as backup
         if (req.session) {
           (req.session as any).turnstileVerified = true;
-          (req.session as any).turnstileVerifiedAt = new Date().toISOString();
-          
-          // Explicitly save session to ensure it persists before client redirects
-          return req.session.save((err) => {
-            if (err) {
-              console.error("Error saving Turnstile verification to session:", err);
-              return res.status(500).json({ success: false, message: "Failed to save verification" });
-            }
-            return res.json({ success: true, message: "Verification successful" });
-          });
+          (req.session as any).turnstileVerifiedAt = verifiedAt;
+          req.session.save(() => {}); // Fire and forget
         }
+        
         return res.json({ success: true, message: "Verification successful" });
       } else {
         return res.status(400).json({ 
@@ -4557,6 +4571,13 @@ export async function registerRoutes(
 
   // Check if current session has passed Turnstile
   app.get("/api/security/turnstile/status", async (req, res) => {
+    // Prevent browser caching - this endpoint must always return fresh session state
+    res.set({
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+    });
+    
     try {
       // Emergency bypass via environment variable - allows admin access when locked out
       if (process.env.TURNSTILE_EMERGENCY_BYPASS === "true") {
@@ -4569,16 +4590,49 @@ export async function registerRoutes(
         return res.json({ required: false, verified: true });
       }
       
-      const verified = (req.session as any)?.turnstileVerified === true;
-      const verifiedAt = (req.session as any)?.turnstileVerifiedAt;
-      
-      // Check if verification is still valid (24 hour expiry)
+      // Check cookie first (more reliable across session store issues)
+      const turnstileCookie = req.cookies?.turnstile_verified;
       let isValid = false;
-      if (verified && verifiedAt) {
-        const verifiedTime = new Date(verifiedAt).getTime();
-        const now = Date.now();
-        const twentyFourHours = 24 * 60 * 60 * 1000;
-        isValid = (now - verifiedTime) < twentyFourHours;
+      
+      if (turnstileCookie) {
+        try {
+          const [cookieTimestamp, cookieSignature] = turnstileCookie.split('|');
+          
+          // Verify signature
+          const expectedSignature = Buffer.from(
+            `${cookieTimestamp}:${process.env.SESSION_SECRET}`
+          ).toString('base64');
+          
+          if (cookieSignature === expectedSignature) {
+            // Signature valid, check expiry
+            const verifiedTime = new Date(cookieTimestamp).getTime();
+            const now = Date.now();
+            const twentyFourHours = 24 * 60 * 60 * 1000;
+            isValid = (now - verifiedTime) < twentyFourHours;
+            
+            console.log(`[Turnstile] STATUS - Cookie valid, verified: ${isValid}, timestamp: ${cookieTimestamp}`);
+          } else {
+            console.log(`[Turnstile] STATUS - Cookie signature mismatch`);
+          }
+        } catch (e) {
+          console.log(`[Turnstile] STATUS - Cookie parse error:`, e);
+        }
+      }
+      
+      // Fall back to session check if cookie not valid
+      if (!isValid) {
+        const verified = (req.session as any)?.turnstileVerified === true;
+        const verifiedAt = (req.session as any)?.turnstileVerifiedAt;
+        
+        if (verified && verifiedAt) {
+          const verifiedTime = new Date(verifiedAt).getTime();
+          const now = Date.now();
+          const twentyFourHours = 24 * 60 * 60 * 1000;
+          isValid = (now - verifiedTime) < twentyFourHours;
+          console.log(`[Turnstile] STATUS - Session fallback, verified: ${isValid}`);
+        } else {
+          console.log(`[Turnstile] STATUS - No valid cookie or session`);
+        }
       }
       
       res.json({ required: true, verified: isValid });
