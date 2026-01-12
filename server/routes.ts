@@ -2099,12 +2099,18 @@ export async function registerRoutes(
       const currentUser = await storage.getUser(req.user.claims.sub);
       const projectId = parseInt(req.params.projectId);
       
-      if (currentUser?.role === "customer") {
-        return res.status(403).json({ message: "Customers cannot create work orders" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
       }
       
-      if (currentUser?.role !== "admin") {
-        const isAssigned = await storage.isUserAssignedToProject(currentUser!.id, projectId);
+      // Check workOrders.create permission
+      const canCreate = await storage.hasPermission(currentUser, permissionKeys.WORK_ORDERS_CREATE);
+      if (!canCreate) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to create work orders" });
+      }
+      
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
         if (!isAssigned) {
           return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
         }

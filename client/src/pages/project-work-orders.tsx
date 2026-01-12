@@ -2982,10 +2982,12 @@ export default function ProjectWorkOrders() {
                 Start Changeout
               </Button>
             )}
-            <Button onClick={() => setIsCreatingWorkOrder(true)} data-testid="button-create-work-order">
-              <Plus className="h-4 w-4 mr-2" />
-              New Work Order
-            </Button>
+            {hasPermission(permissionKeys.WORK_ORDERS_CREATE) && (
+              <Button onClick={() => setIsCreatingWorkOrder(true)} data-testid="button-create-work-order">
+                <Plus className="h-4 w-4 mr-2" />
+                New Work Order
+              </Button>
+            )}
             {hasPermission('workOrders.calendar') && (
               <div className="flex items-center border rounded-md">
                 <Button
@@ -3529,7 +3531,7 @@ export default function ProjectWorkOrders() {
           <CardContent className="flex flex-col items-center justify-center py-12">
             <ClipboardList className="h-12 w-12 text-muted-foreground mb-4" />
             <p className="text-muted-foreground">No work orders yet</p>
-            {user?.role !== "customer" && (
+            {hasPermission(permissionKeys.WORK_ORDERS_CREATE) && (
               <Button variant="outline" className="mt-4" onClick={() => setIsCreatingWorkOrder(true)}>
                 <Plus className="h-4 w-4 mr-2" />
                 Create First Work Order
