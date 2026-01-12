@@ -598,7 +598,132 @@ export function WorkOrderDetail({
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pb-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Mobile-optimized read-only display - shown on small screens */}
+                <div className="md:hidden space-y-4">
+                  {/* Old System - Green border */}
+                  <div className="border-l-4 border-l-green-500 pl-3 py-2">
+                    <h4 className="text-base font-semibold text-green-500 mb-2">Old System</h4>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <p className="text-xs text-muted-foreground">System ID</p>
+                        <p className="text-sm font-medium break-all" data-testid="mobile-old-system-id">
+                          {workOrder.oldSystemId || "N/A"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Reading</p>
+                        <p className="text-sm font-medium" data-testid="mobile-old-system-reading">
+                          {workOrder.oldSystemReading ?? "N/A"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Type</p>
+                        <p className="text-sm font-medium" data-testid="mobile-old-system-type">
+                          {workOrder.oldSystemType || "N/A"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Old Module - Green border */}
+                  <div className="border-l-4 border-l-green-500 pl-3 py-2">
+                    <h4 className="text-base font-semibold text-muted-foreground mb-2">Old Module</h4>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Module ID</p>
+                        <p className="text-sm font-medium break-all" data-testid="mobile-old-module-id">
+                          {workOrder.oldModuleId || "N/A"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Reading</p>
+                        <p className="text-sm font-medium" data-testid="mobile-old-module-reading">
+                          {workOrder.oldModuleRead ?? "N/A"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Type</p>
+                        <p className="text-sm font-medium" data-testid="mobile-old-module-type">
+                          {workOrder.oldModuleType || "N/A"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* GPS Coordinates - Green border */}
+                  <div className="border-l-4 border-l-green-500 pl-3 py-2">
+                    <h4 className="text-base font-semibold text-muted-foreground mb-2">GPS Coordinates</h4>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Old GPS</p>
+                      {workOrder.oldGps ? (
+                        <a
+                          href={`https://www.google.com/maps?q=${workOrder.oldGps}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-medium text-primary hover:underline"
+                          data-testid="mobile-old-gps-link"
+                        >
+                          {workOrder.oldGps}
+                        </a>
+                      ) : (
+                        <p className="text-sm font-medium text-muted-foreground">N/A</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* New System - Cyan border */}
+                  <div className="border-l-4 border-l-cyan-500 pl-3 py-2">
+                    <h4 className="text-base font-semibold text-cyan-500 mb-2">New System</h4>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <p className="text-xs text-muted-foreground">System ID</p>
+                        <p className="text-sm font-medium break-all" data-testid="mobile-new-system-id">
+                          {workOrder.newSystemId || "N/A"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Reading</p>
+                        <p className="text-sm font-medium" data-testid="mobile-new-system-reading">
+                          {workOrder.newSystemReading ?? "N/A"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Type</p>
+                        <p className="text-sm font-medium" data-testid="mobile-new-system-type">
+                          {workOrder.newSystemType || "N/A"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* New Module - Cyan border */}
+                  <div className="border-l-4 border-l-cyan-500 pl-3 py-2">
+                    <h4 className="text-base font-semibold text-cyan-500 mb-2">New Module</h4>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <p className="text-xs text-muted-foreground">Module ID</p>
+                        <p className="text-sm font-medium break-all" data-testid="mobile-new-module-id">
+                          {workOrder.newModuleId || "N/A"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Reading</p>
+                        <p className="text-sm font-medium" data-testid="mobile-new-module-reading">
+                          {workOrder.newModuleRead ?? "N/A"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Type</p>
+                        <p className="text-sm font-medium" data-testid="mobile-new-module-type">
+                          {workOrder.newModuleType || "N/A"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Desktop form view - hidden on mobile */}
+                <div className="hidden md:grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
                     name="serviceType"
