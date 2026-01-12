@@ -44,4 +44,9 @@ integrations = ["javascript_log_in_with_replit:1.0.0", "javascript_database:1.0.
 [userenv]
 
 [userenv.shared]
+
+[userenv.development]
+TURNSTILE_EMERGENCY_BYPASS = "true"
+
+[userenv.production]
 TURNSTILE_EMERGENCY_BYPASS = "false"
