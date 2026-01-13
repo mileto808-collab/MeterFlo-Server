@@ -398,9 +398,12 @@ The presence of `old_system_id` and/or `old_module_id` determines what type of c
 ### Get Work Order by System ID
 ```
 GET /api/projects/:projectId/work-orders/by-system/:systemId
+GET /api/projects/:projectId/work-orders/by-meter/:systemId  (legacy alias)
 ```
 
-Look up a work order by old system ID. Useful for barcode/QR scanning workflows.
+Look up a work order by old system ID (`old_system_id`). Useful for barcode/QR scanning workflows.
+
+Both endpoints are supported - the `/by-meter` route is maintained for backward compatibility with existing mobile app implementations.
 
 **Response:** Same snake_case format as above.
 

@@ -100,18 +100,10 @@ When a work order is completed, MeterFlo sends a JSON payload:
   "workOrderId": 123,
   "customerWoId": "WO-2024-001",
   "status": "Completed",
-  "oldSystemId": "SYS12345678",
-  "newSystemId": "SYS87654321",
-  "oldSystemType": "FLOWIQ2200",
-  "newSystemType": "FLOWIQ3100",
-  "oldSystemReading": "10523",
-  "newSystemReading": "0",
-  "oldModuleId": "MOD456789",
-  "newModuleId": "MOD987654",
-  "oldModuleType": "AMI-2000",
-  "newModuleType": "AMI-3000",
-  "oldModuleReading": "54321",
-  "newModuleReading": "0",
+  "oldMeterNumber": "SYS12345678",
+  "newMeterNumber": "SYS87654321",
+  "oldMeterReading": "10523",
+  "newMeterReading": "0",
   "latitude": "39.7392",
   "longitude": "-104.9903",
   "gpsAccuracy": null,
@@ -121,9 +113,10 @@ When a work order is completed, MeterFlo sends a JSON payload:
   "serviceZip": "80202",
   "completedAt": "2025-12-28T14:30:00.000Z",
   "completedBy": "user-uuid-here",
-  "notes": "System and module replaced successfully",
+  "notes": "System replaced successfully",
   "troubleCode": null,
   "serviceType": "Residential",
+  "meterType": null,
   "beforePhoto": "base64-encoded-image-data...",
   "afterPhoto": "base64-encoded-image-data...",
   "signature": "base64-encoded-signature-data..."
@@ -137,18 +130,10 @@ When a work order is completed, MeterFlo sends a JSON payload:
 | `workOrderId` | number | MeterFlo internal work order ID |
 | `customerWoId` | string | Customer's work order ID |
 | `status` | string | Work order status ("Completed", "Trouble") |
-| `oldSystemId` | string | Old system serial number |
-| `newSystemId` | string | New system serial number |
-| `oldSystemType` | string | Old system type/model |
-| `newSystemType` | string | New system type/model |
-| `oldSystemReading` | string | Final reading from old system |
-| `newSystemReading` | string | Initial reading on new system |
-| `oldModuleId` | string | Old module serial number |
-| `newModuleId` | string | New module serial number |
-| `oldModuleType` | string | Old module type/model |
-| `newModuleType` | string | New module type/model |
-| `oldModuleReading` | string | Final reading from old module |
-| `newModuleReading` | string | Initial reading on new module |
+| `oldMeterNumber` | string | Old system serial number (from `old_system_id` field) |
+| `newMeterNumber` | string | New system serial number (from `new_system_id` field) |
+| `oldMeterReading` | string | Final reading from old system |
+| `newMeterReading` | string | Initial reading on new system |
 | `latitude` | string | GPS latitude coordinate |
 | `longitude` | string | GPS longitude coordinate |
 | `gpsAccuracy` | string | GPS accuracy in meters |
@@ -161,11 +146,19 @@ When a work order is completed, MeterFlo sends a JSON payload:
 | `notes` | string | Field notes |
 | `troubleCode` | string | Trouble code if applicable |
 | `serviceType` | string | Type of service |
+| `meterType` | string \| null | Equipment type/model (optional - only present if `meter_type` or `new_meter_type` is set on work order) |
 | `beforePhoto` | string | Base64-encoded before photo (optional) |
 | `afterPhoto` | string | Base64-encoded after photo (optional) |
 | `signature` | string | Base64-encoded signature image (optional) |
 
-**Note:** Fields will be `null` if not applicable for the changeout type. For example, a system-only changeout will have `null` values for module fields.
+**Note on Field Names:** The payload uses legacy "meter" field names for backward compatibility with existing customer integrations. The data is sourced from the work order fields:
+- `oldMeterNumber` contains the `old_system_id` value
+- `newMeterNumber` contains the `new_system_id` value
+- `oldMeterReading` contains the `old_system_read` value
+- `newMeterReading` contains the `new_system_read` value
+- `meterType` contains the `meter_type` or `new_meter_type` value (may be `null` if not set on work order)
+
+**Note on Module Data:** The current Customer API payload does not include module-specific fields (`old_module_id`, `new_module_id`, etc.). Only system data is sent. If you require module data in the API payload, please contact the development team for a custom integration.
 
 ---
 
@@ -191,7 +184,12 @@ All API calls are logged in the `customer_api_logs` table:
 
 ### Viewing Logs
 
-Query the logs via SQL:
+Administrators can view Customer API logs in the web application:
+1. Go to **Settings** in the sidebar
+2. Click **Customer API Logs** tab
+3. Filter by project, date range, or success/failure status
+
+Or query the logs via SQL:
 ```sql
 SELECT * FROM customer_api_logs 
 WHERE project_id = 1 
@@ -279,8 +277,11 @@ app.post('/api/meterflo/work-orders', (req, res) => {
   
   console.log('Received work order:', workOrder.customerWoId);
   console.log('Status:', workOrder.status);
-  console.log('New System:', workOrder.newSystemId);
-  console.log('New Module:', workOrder.newModuleId);
+  console.log('Old System ID:', workOrder.oldMeterNumber);
+  console.log('New System ID:', workOrder.newMeterNumber);
+  console.log('Old Reading:', workOrder.oldMeterReading);
+  console.log('New Reading:', workOrder.newMeterReading);
+  console.log('System Type:', workOrder.meterType);
   console.log('Completed At:', workOrder.completedAt);
   
   // Process photos if included
