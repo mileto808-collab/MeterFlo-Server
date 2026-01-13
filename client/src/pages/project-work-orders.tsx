@@ -177,6 +177,8 @@ export default function ProjectWorkOrders() {
   const [selectedTrouble, setSelectedTrouble] = useState<string>("all");
   const [selectedOldSystemType, setSelectedOldSystemType] = useState<string>("all");
   const [selectedNewSystemType, setSelectedNewSystemType] = useState<string>("all");
+  const [selectedOldModuleType, setSelectedOldModuleType] = useState<string>("all");
+  const [selectedNewModuleType, setSelectedNewModuleType] = useState<string>("all");
   const [showFilters, setShowFilters] = useState(false);
   const [showMobileStats, setShowMobileStats] = useState(false);
   const [showMobileTools, setShowMobileTools] = useState(false);
@@ -1585,6 +1587,34 @@ export default function ProjectWorkOrders() {
       });
     }
     
+    // Filter by old module type (handle both productId and productLabel formats)
+    if (selectedOldModuleType !== "all") {
+      result = result.filter(wo => {
+        const oldModuleType = (wo as any).oldModuleType;
+        if (!oldModuleType) return false;
+        // Direct match with productId
+        if (oldModuleType === selectedOldModuleType) return true;
+        // Check if it matches the productLabel of the selected module type
+        const selectedModuleType = moduleTypes.find(mt => mt.productId === selectedOldModuleType);
+        if (selectedModuleType && oldModuleType === selectedModuleType.productLabel) return true;
+        return false;
+      });
+    }
+    
+    // Filter by new module type (handle both productId and productLabel formats)
+    if (selectedNewModuleType !== "all") {
+      result = result.filter(wo => {
+        const newModuleType = (wo as any).newModuleType;
+        if (!newModuleType) return false;
+        // Direct match with productId
+        if (newModuleType === selectedNewModuleType) return true;
+        // Check if it matches the productLabel of the selected module type
+        const selectedModuleType = moduleTypes.find(mt => mt.productId === selectedNewModuleType);
+        if (selectedModuleType && newModuleType === selectedModuleType.productLabel) return true;
+        return false;
+      });
+    }
+    
     // Filter by system work order ID
     if (filterSystemWoId.trim()) {
       result = result.filter(wo => String(wo.id).includes(filterSystemWoId.trim()));
@@ -1747,7 +1777,7 @@ export default function ProjectWorkOrders() {
     }
     
     return result;
-  }, [workOrders, searchQuery, sortCriteria, selectedStatus, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldSystemType, selectedNewSystemType, systemTypes, assigneesData, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterNewSystemId, filterOldModuleId, filterNewModuleId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
+  }, [workOrders, searchQuery, sortCriteria, selectedStatus, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldSystemType, selectedNewSystemType, selectedOldModuleType, selectedNewModuleType, systemTypes, moduleTypes, assigneesData, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterNewSystemId, filterOldModuleId, filterNewModuleId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
 
   const totalPages = Math.ceil(filteredAndSortedWorkOrders.length / pageSize);
   const paginatedWorkOrders = useMemo(() => {
@@ -1765,7 +1795,7 @@ export default function ProjectWorkOrders() {
   useEffect(() => {
     setCurrentPage(1);
     setSelectedWorkOrderIds(new Set());
-  }, [workOrders, searchQuery, selectedStatus, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldSystemType, selectedNewSystemType, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterNewSystemId, filterOldModuleId, filterNewModuleId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo, pageSize]);
+  }, [workOrders, searchQuery, selectedStatus, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldSystemType, selectedNewSystemType, selectedOldModuleType, selectedNewModuleType, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterNewSystemId, filterOldModuleId, filterNewModuleId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo, pageSize]);
 
   useEffect(() => {
     if (currentPage > totalPages && totalPages > 0) {
@@ -1792,6 +1822,8 @@ export default function ProjectWorkOrders() {
     setSelectedTrouble("all");
     setSelectedOldSystemType("all");
     setSelectedNewSystemType("all");
+    setSelectedOldModuleType("all");
+    setSelectedNewModuleType("all");
     setFilterSystemWoId("");
     setFilterCustomerId("");
     setFilterCustomerName("");
@@ -1823,7 +1855,7 @@ export default function ProjectWorkOrders() {
     setCurrentPage(1);
   };
 
-  const hasActiveFilters = selectedStatus !== "all" || selectedServiceType !== "all" || selectedAssignedTo !== "all" || selectedAssignedGroup !== "all" || selectedTrouble !== "all" || selectedOldSystemType !== "all" || selectedNewSystemType !== "all" || filterSystemWoId !== "" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldSystemId !== "" || filterNewSystemId !== "" || filterOldModuleId !== "" || filterNewModuleId !== "" || filterScheduledDateFrom !== "" || filterScheduledDateTo !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterScheduledBy !== "all" || filterCompletedBy !== "all" || filterCompletedAtFrom !== "" || filterCompletedAtTo !== "" || filterNotes !== "" || filterCreatedAtFrom !== "" || filterCreatedAtTo !== "" || filterUpdatedAtFrom !== "" || filterUpdatedAtTo !== "";
+  const hasActiveFilters = selectedStatus !== "all" || selectedServiceType !== "all" || selectedAssignedTo !== "all" || selectedAssignedGroup !== "all" || selectedTrouble !== "all" || selectedOldSystemType !== "all" || selectedNewSystemType !== "all" || selectedOldModuleType !== "all" || selectedNewModuleType !== "all" || filterSystemWoId !== "" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldSystemId !== "" || filterNewSystemId !== "" || filterOldModuleId !== "" || filterNewModuleId !== "" || filterScheduledDateFrom !== "" || filterScheduledDateTo !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterScheduledBy !== "all" || filterCompletedBy !== "all" || filterCompletedAtFrom !== "" || filterCompletedAtTo !== "" || filterNotes !== "" || filterCreatedAtFrom !== "" || filterCreatedAtTo !== "" || filterUpdatedAtFrom !== "" || filterUpdatedAtTo !== "";
 
   const getStatusLabel = (status: string): string => {
     if (!status) return "";
@@ -3371,6 +3403,38 @@ export default function ProjectWorkOrders() {
                 <div className="min-w-[120px]">
                   <Label htmlFor="filter-new-module-id">New Module ID</Label>
                   <Input id="filter-new-module-id" placeholder="Filter..." value={filterNewModuleId} onChange={(e) => setFilterNewModuleId(e.target.value)} data-testid="input-filter-new-module-id" />
+                </div>
+              )}
+              {isFilterVisible("oldModuleType") && Array.isArray(moduleTypes) && moduleTypes.length > 0 && (
+                <div className="min-w-[180px]">
+                  <Label htmlFor="filter-old-module-type">Old Module Type</Label>
+                  <Select value={selectedOldModuleType} onValueChange={setSelectedOldModuleType}>
+                    <SelectTrigger id="filter-old-module-type" data-testid="select-filter-old-module-type">
+                      <SelectValue placeholder="All Module Types" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Module Types</SelectItem>
+                      {moduleTypes.map((mt) => (
+                        <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {isFilterVisible("newModuleType") && Array.isArray(moduleTypes) && moduleTypes.length > 0 && (
+                <div className="min-w-[180px]">
+                  <Label htmlFor="filter-new-module-type">New Module Type</Label>
+                  <Select value={selectedNewModuleType} onValueChange={setSelectedNewModuleType}>
+                    <SelectTrigger id="filter-new-module-type" data-testid="select-filter-new-module-type">
+                      <SelectValue placeholder="All Module Types" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Module Types</SelectItem>
+                      {moduleTypes.map((mt) => (
+                        <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               )}
               {isFilterVisible("scheduledAt") && (
