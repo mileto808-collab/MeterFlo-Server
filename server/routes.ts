@@ -1340,13 +1340,14 @@ export async function registerRoutes(
         return res.json([]);
       }
       
-      // Users with nav.projects permission can see all projects
-      const hasNavProjects = await storage.hasPermission(currentUser, permissionKeys.NAV_PROJECTS);
-      if (hasNavProjects) {
+      // Admin users can see all projects
+      const isAdmin = await storage.isAdminUser(currentUser);
+      if (isAdmin) {
         const projects = await storage.getProjects();
         res.json(projects);
       } else {
-        // Other users only see projects they are assigned to
+        // Non-admin users only see projects they are assigned to
+        // The nav.projects permission controls navigation visibility, not data access
         const projects = await storage.getUserProjects(currentUser.id);
         res.json(projects);
       }
