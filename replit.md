@@ -25,6 +25,7 @@ Preferred communication style: Simple, everyday language.
 
 ### Feature Specifications
 - **Role-Based Access Control (RBAC)**: Subrole-driven design with granular permissions. Subroles (Administrator, Project Manager, Field Technician, Viewer) determine access levels, automatically mapping to main roles (admin, user, customer). Permissions are managed via a central registry and synced to the database.
+- **Project-Based Access Control**: Non-admin users can only view and manage users, user groups, and resources within their assigned projects. The system uses a three-way intersection check (`caller projects ∩ group projects ∩ target user projects`) to prevent cross-project privilege escalation. Admin users bypass all project-based restrictions. API responses are filtered to exclude cross-project data for non-admin users.
 - **Multi-Tenancy**:
     - **Database Isolation**: Each project gets its own PostgreSQL schema (e.g., `projectName_projectID`).
     - **File Storage**: Configurable root directory with structure: `Project Files/ProjectName_ID/Work Orders/customerWoId/` for work order attachments, plus `Project Documents/` and `Project FTP Files/` subfolders. Legacy folders are automatically migrated.
