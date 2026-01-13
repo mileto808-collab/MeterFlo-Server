@@ -9,8 +9,8 @@ interface ColumnPreferencesData {
   stickyColumns: string[];
 }
 
-// Default columns for field technicians on work orders page
-const FIELD_TECH_WORK_ORDER_COLUMNS = ["customerWoId", "address", "oldSystemId", "status"];
+// Default columns for field technicians on work orders page (same as standard defaults)
+const FIELD_TECH_WORK_ORDER_COLUMNS = ["customerWoId", "address", "status", "serviceType"];
 
 // Default columns for new users on work orders and search & reports pages
 const DEFAULT_WORK_ORDER_COLUMNS = ["customerWoId", "address", "status", "serviceType"];
