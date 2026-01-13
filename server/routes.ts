@@ -2,7 +2,10 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import path from "path";
 import os from "os";
-import { promises as fs, existsSync, unlinkSync } from "fs";
+import { promises as fs, existsSync, unlinkSync, readdirSync, statSync, mkdirSync, rmSync, createWriteStream } from "fs";
+import archiver from "archiver";
+import unzipper from "unzipper";
+import { Readable } from "stream";
 import { randomUUID, createHmac } from "crypto";
 import { exec } from "child_process";
 import { promisify } from "util";
@@ -5629,6 +5632,245 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error restoring backup:", error);
       res.status(500).json({ message: "Failed to restore database backup" });
+    }
+  });
+
+  // Create project files backup (ZIP archive)
+  app.get("/api/projects/:projectId/files/backup", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canBackup = await storage.hasPermission(currentUser, permissionKeys.MAINTENANCE_PROJECT_BACKUP);
+      if (!canBackup) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to backup projects" });
+      }
+      
+      const projectId = parseInt(req.params.projectId);
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const isAdmin = await storage.isAdminUser(currentUser);
+      if (!isAdmin) {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
+        }
+      }
+      
+      const projectFilesPath = await getProjectFilesPath();
+      const projectDirName = getProjectDirectoryName(project.name, project.id);
+      const projectDir = path.join(projectFilesPath, projectDirName);
+      
+      // Check if project directory exists
+      if (!existsSync(projectDir)) {
+        return res.status(404).json({ message: "No project files found to backup" });
+      }
+      
+      // Create ZIP archive
+      const archive = archiver("zip", { zlib: { level: 9 } });
+      
+      const filename = `files_backup_${project.name.replace(/[^a-z0-9]/gi, "_")}_${new Date().toISOString().slice(0, 10)}.zip`;
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.setHeader("Content-Type", "application/zip");
+      
+      archive.on("error", (err: Error) => {
+        console.error("Archive error:", err);
+        if (!res.headersSent) {
+          res.status(500).json({ message: "Failed to create files backup" });
+        }
+      });
+      
+      archive.pipe(res);
+      archive.directory(projectDir, false);
+      await archive.finalize();
+      
+    } catch (error) {
+      console.error("Error creating files backup:", error);
+      if (!res.headersSent) {
+        res.status(500).json({ message: "Failed to create files backup" });
+      }
+    }
+  });
+
+  // Get project files stats for backup info
+  app.get("/api/projects/:projectId/files/stats", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canBackup = await storage.hasPermission(currentUser, permissionKeys.MAINTENANCE_PROJECT_BACKUP);
+      if (!canBackup) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to view project files stats" });
+      }
+      
+      const projectId = parseInt(req.params.projectId);
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const isAdmin = await storage.isAdminUser(currentUser);
+      if (!isAdmin) {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
+        }
+      }
+      
+      const projectFilesPath = await getProjectFilesPath();
+      const projectDirName = getProjectDirectoryName(project.name, project.id);
+      const projectDir = path.join(projectFilesPath, projectDirName);
+      
+      // Calculate directory size and file count
+      let totalSize = 0;
+      let fileCount = 0;
+      let folderCount = 0;
+      
+      const calculateDirStats = (dirPath: string) => {
+        if (!existsSync(dirPath)) return;
+        
+        const entries = readdirSync(dirPath, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = path.join(dirPath, entry.name);
+          if (entry.isDirectory()) {
+            folderCount++;
+            calculateDirStats(fullPath);
+          } else {
+            fileCount++;
+            try {
+              const stats = statSync(fullPath);
+              totalSize += stats.size;
+            } catch (e) {
+              // Ignore files that can't be accessed
+            }
+          }
+        }
+      };
+      
+      calculateDirStats(projectDir);
+      
+      res.json({
+        exists: existsSync(projectDir),
+        totalSize,
+        fileCount,
+        folderCount,
+        sizeFormatted: totalSize > 1024 * 1024 
+          ? `${(totalSize / (1024 * 1024)).toFixed(2)} MB`
+          : totalSize > 1024 
+            ? `${(totalSize / 1024).toFixed(2)} KB`
+            : `${totalSize} bytes`,
+      });
+    } catch (error) {
+      console.error("Error getting files stats:", error);
+      res.status(500).json({ message: "Failed to get files statistics" });
+    }
+  });
+
+  // Restore project files from backup (ZIP archive)
+  app.post("/api/projects/:projectId/files/restore", isAuthenticated, upload.single("backup"), async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canRestore = await storage.hasPermission(currentUser, permissionKeys.MAINTENANCE_PROJECT_RESTORE);
+      if (!canRestore) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to restore projects" });
+      }
+      
+      const projectId = parseInt(req.params.projectId);
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      const isAdmin = await storage.isAdminUser(currentUser);
+      if (!isAdmin) {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
+        }
+      }
+      
+      if (!req.file) {
+        return res.status(400).json({ message: "No backup file provided" });
+      }
+      
+      const clearExisting = req.body.clearExisting === "true";
+      
+      const projectFilesPath = await getProjectFilesPath();
+      const projectDirName = getProjectDirectoryName(project.name, project.id);
+      const projectDir = path.join(projectFilesPath, projectDirName);
+      
+      // Clear existing files if requested
+      if (clearExisting && existsSync(projectDir)) {
+        rmSync(projectDir, { recursive: true, force: true });
+      }
+      
+      // Ensure project directory exists
+      if (!existsSync(projectDir)) {
+        mkdirSync(projectDir, { recursive: true });
+      }
+      
+      // Extract ZIP file
+      let filesRestored = 0;
+      const errors: string[] = [];
+      
+      await new Promise<void>((resolve, reject) => {
+        const bufferStream = Readable.from(req.file.buffer);
+        
+        bufferStream
+          .pipe(unzipper.Parse())
+          .on("entry", async (entry: any) => {
+            const fileName = entry.path;
+            const type = entry.type;
+            const targetPath = path.join(projectDir, fileName);
+            
+            // Security check - prevent path traversal
+            if (!targetPath.startsWith(projectDir)) {
+              errors.push(`Skipped unsafe path: ${fileName}`);
+              entry.autodrain();
+              return;
+            }
+            
+            if (type === "Directory") {
+              if (!existsSync(targetPath)) {
+                mkdirSync(targetPath, { recursive: true });
+              }
+              entry.autodrain();
+            } else {
+              // Ensure parent directory exists
+              const parentDir = path.dirname(targetPath);
+              if (!existsSync(parentDir)) {
+                mkdirSync(parentDir, { recursive: true });
+              }
+              
+              entry.pipe(createWriteStream(targetPath))
+                .on("finish", () => {
+                  filesRestored++;
+                })
+                .on("error", (err: Error) => {
+                  errors.push(`Failed to write ${fileName}: ${err.message}`);
+                });
+            }
+          })
+          .on("close", resolve)
+          .on("error", reject);
+      });
+      
+      res.json({
+        message: "Files restored successfully",
+        filesRestored,
+        errors,
+      });
+    } catch (error) {
+      console.error("Error restoring files backup:", error);
+      res.status(500).json({ message: "Failed to restore files backup" });
     }
   });
 
