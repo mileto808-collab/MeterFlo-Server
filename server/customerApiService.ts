@@ -91,6 +91,12 @@ interface WorkOrderPayload {
   newMeterNumber: string | null;
   oldMeterReading: string | null;
   newMeterReading: string | null;
+  oldModuleId: string | null;
+  newModuleId: string | null;
+  oldModuleReading: string | null;
+  newModuleReading: string | null;
+  oldModuleType: string | null;
+  newModuleType: string | null;
   latitude: string | null;
   longitude: string | null;
   gpsAccuracy: string | null;
@@ -255,6 +261,12 @@ export async function sendWorkOrderToCustomerApi(
       newMeterNumber: workOrder.newSystemId || workOrder.new_system_id || workOrder.newMeterNumber || workOrder.new_meter_number || workOrder.newMeterId || workOrder.new_meter_id || null,
       oldMeterReading: (workOrder.oldSystemReading ?? workOrder.old_system_reading ?? workOrder.oldMeterReading ?? workOrder.old_meter_reading)?.toString() || null,
       newMeterReading: (workOrder.newSystemReading ?? workOrder.new_system_reading ?? workOrder.newMeterReading ?? workOrder.new_meter_reading)?.toString() || null,
+      oldModuleId: workOrder.oldModuleId || workOrder.old_module_id || null,
+      newModuleId: workOrder.newModuleId || workOrder.new_module_id || null,
+      oldModuleReading: (workOrder.oldModuleReading ?? workOrder.old_module_read ?? workOrder.old_module_reading)?.toString() || null,
+      newModuleReading: (workOrder.newModuleReading ?? workOrder.new_module_read ?? workOrder.new_module_reading)?.toString() || null,
+      oldModuleType: workOrder.oldModuleType || workOrder.old_module_type || null,
+      newModuleType: workOrder.newModuleType || workOrder.new_module_type || null,
       latitude,
       longitude,
       gpsAccuracy: workOrder.gpsAccuracy || workOrder.gps_accuracy || null,

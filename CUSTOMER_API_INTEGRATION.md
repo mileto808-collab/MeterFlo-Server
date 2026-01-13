@@ -104,6 +104,12 @@ When a work order is completed, MeterFlo sends a JSON payload:
   "newMeterNumber": "SYS87654321",
   "oldMeterReading": "10523",
   "newMeterReading": "0",
+  "oldModuleId": "MOD-ABC123",
+  "newModuleId": "MOD-XYZ789",
+  "oldModuleReading": "5024",
+  "newModuleReading": "0",
+  "oldModuleType": "ITRON",
+  "newModuleType": "ITRON-2",
   "latitude": "39.7392",
   "longitude": "-104.9903",
   "gpsAccuracy": null,
@@ -134,6 +140,12 @@ When a work order is completed, MeterFlo sends a JSON payload:
 | `newMeterNumber` | string | New system serial number (from `new_system_id` field) |
 | `oldMeterReading` | string | Final reading from old system |
 | `newMeterReading` | string | Initial reading on new system |
+| `oldModuleId` | string \| null | Old module serial number (from `old_module_id` field) |
+| `newModuleId` | string \| null | New module serial number (from `new_module_id` field) |
+| `oldModuleReading` | string \| null | Final reading from old module |
+| `newModuleReading` | string \| null | Initial reading on new module |
+| `oldModuleType` | string \| null | Old module type/model |
+| `newModuleType` | string \| null | New module type/model |
 | `latitude` | string | GPS latitude coordinate |
 | `longitude` | string | GPS longitude coordinate |
 | `gpsAccuracy` | string | GPS accuracy in meters |
@@ -158,7 +170,15 @@ When a work order is completed, MeterFlo sends a JSON payload:
 - `newMeterReading` contains the `new_system_read` value
 - `meterType` contains the `meter_type` or `new_meter_type` value (may be `null` if not set on work order)
 
-**Note on Module Data:** The current Customer API payload does not include module-specific fields (`old_module_id`, `new_module_id`, etc.). Only system data is sent. If you require module data in the API payload, please contact the development team for a custom integration.
+**Module Data:** The payload includes module fields when available:
+- `oldModuleId` contains the `old_module_id` value
+- `newModuleId` contains the `new_module_id` value
+- `oldModuleReading` contains the `old_module_read` value
+- `newModuleReading` contains the `new_module_read` value
+- `oldModuleType` contains the `old_module_type` value
+- `newModuleType` contains the `new_module_type` value
+
+All module fields may be `null` if no module data is present on the work order.
 
 ---
 
