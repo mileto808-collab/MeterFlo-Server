@@ -10,7 +10,7 @@ import { promisify } from "util";
 const execAsync = promisify(exec);
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
-import { insertProjectWorkOrderSchema, insertProjectSchema, createUserSchema, updateUserSchema, resetPasswordSchema, updateProfileSchema, permissionKeys, insertExternalDatabaseConfigSchema, updateExternalDatabaseConfigSchema, insertImportConfigSchema, updateImportConfigSchema, databaseTypeEnum, importScheduleFrequencyEnum, ADMINISTRATOR_SUBROLE_KEY } from "@shared/schema";
+import { insertProjectWorkOrderSchema, insertProjectSchema, createUserSchema, updateUserSchema, resetPasswordSchema, updateProfileSchema, permissionKeys, insertExternalDatabaseConfigSchema, updateExternalDatabaseConfigSchema, insertImportConfigSchema, updateImportConfigSchema, databaseTypeEnum, importScheduleFrequencyEnum, ADMINISTRATOR_SUBROLE_KEY, getSubroleLevel } from "@shared/schema";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import multer from "multer";
@@ -339,10 +339,20 @@ export async function registerRoutes(
       }
       
       // Prevent non-admin users from assigning Administrator subrole to new users
+      // Also prevent privilege escalation - users cannot assign subroles with higher privilege than their own
       if (subroleId && currentUser.role !== "admin") {
         const targetSubrole = await storage.getSubrole(subroleId);
         if (targetSubrole?.key === ADMINISTRATOR_SUBROLE_KEY) {
           return res.status(403).json({ message: "Forbidden: Only administrators can assign the Administrator role" });
+        }
+        
+        // Get current user's subrole to compare privilege levels
+        const currentUserSubrole = currentUser.subroleId ? await storage.getSubrole(currentUser.subroleId) : null;
+        const currentUserLevel = getSubroleLevel(currentUserSubrole?.key);
+        const targetSubroleLevel = getSubroleLevel(targetSubrole?.key);
+        
+        if (targetSubroleLevel > currentUserLevel) {
+          return res.status(403).json({ message: "Forbidden: You cannot assign a role with higher privileges than your own" });
         }
       }
       
@@ -432,10 +442,34 @@ export async function registerRoutes(
       }
       
       // Prevent non-admin users from assigning Administrator subrole
-      if (parsed.data.subroleId && currentUser.role !== "admin") {
-        const targetSubrole = await storage.getSubrole(parsed.data.subroleId);
-        if (targetSubrole?.key === ADMINISTRATOR_SUBROLE_KEY) {
-          return res.status(403).json({ message: "Forbidden: Only administrators can assign the Administrator role" });
+      // Also prevent privilege escalation - users cannot assign subroles with higher privilege than their own
+      // Also prevent non-admin users from modifying users with higher privilege than themselves
+      if (currentUser.role !== "admin") {
+        // Get current user's subrole level
+        const currentUserSubrole = currentUser.subroleId ? await storage.getSubrole(currentUser.subroleId) : null;
+        const currentUserLevel = getSubroleLevel(currentUserSubrole?.key);
+        
+        // Check if the existing user has a higher privilege level
+        const existingUserSubrole = existingUser.subroleId ? await storage.getSubrole(existingUser.subroleId) : null;
+        const existingUserLevel = getSubroleLevel(existingUserSubrole?.key);
+        
+        if (existingUserLevel > currentUserLevel) {
+          return res.status(403).json({ message: "Forbidden: You cannot modify users with higher privileges than your own" });
+        }
+        
+        // Check the target subrole level if one is being assigned
+        if (parsed.data.subroleId !== undefined) {
+          if (parsed.data.subroleId) {
+            const targetSubrole = await storage.getSubrole(parsed.data.subroleId);
+            if (targetSubrole?.key === ADMINISTRATOR_SUBROLE_KEY) {
+              return res.status(403).json({ message: "Forbidden: Only administrators can assign the Administrator role" });
+            }
+            const targetSubroleLevel = getSubroleLevel(targetSubrole?.key);
+            if (targetSubroleLevel > currentUserLevel) {
+              return res.status(403).json({ message: "Forbidden: You cannot assign a role with higher privileges than your own" });
+            }
+          }
+          // Setting subroleId to null is allowed as long as existing user isn't higher privilege (already checked above)
         }
       }
       
@@ -6268,8 +6302,27 @@ export async function registerRoutes(
   // System Types API Routes
   app.get("/api/system-types", isAuthenticated, async (req: any, res) => {
     try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
       const projectId = req.query.projectId ? parseInt(req.query.projectId) : undefined;
-      const systemTypes = await storage.getSystemTypes(projectId);
+      let systemTypes = await storage.getSystemTypes(projectId);
+      
+      // Non-admin users can only see system types from their assigned projects
+      const isAdmin = await storage.isAdminUser(currentUser);
+      if (!isAdmin) {
+        const userProjects = await storage.getUserProjects(currentUser.id);
+        const userProjectIds = userProjects.map(p => p.id);
+        
+        // Filter system types to only include those with at least one project the user has access to
+        systemTypes = systemTypes.filter(st => {
+          if (!st.projectIds || st.projectIds.length === 0) return false;
+          return st.projectIds.some(pid => userProjectIds.includes(pid));
+        });
+      }
+      
       res.json(systemTypes);
     } catch (error) {
       console.error("Error fetching system types:", error);
@@ -6403,8 +6456,27 @@ export async function registerRoutes(
   // Module Types API Routes
   app.get("/api/module-types", isAuthenticated, async (req: any, res) => {
     try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
       const projectId = req.query.projectId ? parseInt(req.query.projectId) : undefined;
-      const moduleTypes = await storage.getModuleTypes(projectId);
+      let moduleTypes = await storage.getModuleTypes(projectId);
+      
+      // Non-admin users can only see module types from their assigned projects
+      const isAdmin = await storage.isAdminUser(currentUser);
+      if (!isAdmin) {
+        const userProjects = await storage.getUserProjects(currentUser.id);
+        const userProjectIds = userProjects.map(p => p.id);
+        
+        // Filter module types to only include those with at least one project the user has access to
+        moduleTypes = moduleTypes.filter(mt => {
+          if (!mt.projectIds || mt.projectIds.length === 0) return false;
+          return mt.projectIds.some(pid => userProjectIds.includes(pid));
+        });
+      }
+      
       res.json(moduleTypes);
     } catch (error) {
       console.error("Error fetching module types:", error);

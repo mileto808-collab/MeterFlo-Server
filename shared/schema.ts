@@ -952,5 +952,23 @@ export const permissionKeys = {
 } as const;
 
 export const ADMINISTRATOR_SUBROLE_KEY = "administrator";
+export const PROJECT_MANAGER_SUBROLE_KEY = "project_manager";
+export const FIELD_TECHNICIAN_SUBROLE_KEY = "field_technician";
+export const VIEWER_SUBROLE_KEY = "viewer";
+
+// Subrole hierarchy - higher number = more privileges
+// Used to prevent privilege escalation (users can only assign subroles with equal or lower level)
+export const SUBROLE_HIERARCHY: Record<string, number> = {
+  [ADMINISTRATOR_SUBROLE_KEY]: 100,
+  [PROJECT_MANAGER_SUBROLE_KEY]: 75,
+  [FIELD_TECHNICIAN_SUBROLE_KEY]: 50,
+  [VIEWER_SUBROLE_KEY]: 25,
+};
+
+// Helper function to get subrole level (returns 0 if unknown)
+export function getSubroleLevel(subroleKey: string | null | undefined): number {
+  if (!subroleKey) return 0;
+  return SUBROLE_HIERARCHY[subroleKey] ?? 0;
+}
 
 export type PermissionKey = typeof permissionKeys[keyof typeof permissionKeys];

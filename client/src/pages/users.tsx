@@ -27,6 +27,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import type { User, Project, Subrole, UserGroup } from "@shared/schema";
+import { getSubroleLevel } from "@shared/schema";
 import { Search, Users as UsersIcon, Plus, MoreHorizontal, Pencil, Lock, Unlock, Key, Trash2, FolderPlus, X, Folder, ArrowLeft, ArrowUpDown, ArrowUp, ArrowDown, Filter, Download, FileSpreadsheet, FileText, ChevronRight, UsersRound } from "lucide-react";
 import { format } from "date-fns";
 import * as XLSX from "xlsx";
@@ -152,6 +153,28 @@ export default function Users() {
   const { data: users, isLoading } = useQuery<User[]>({ queryKey: ["/api/users"] });
   const { data: projects } = useQuery<Project[]>({ queryKey: ["/api/projects"] });
   const { data: subroles } = useQuery<Subrole[]>({ queryKey: ["/api/subroles"] });
+  
+  // Get current user's subrole level for privilege escalation prevention
+  const currentUserSubrole = useMemo(() => {
+    if (!user?.subroleId || !subroles) return null;
+    return subroles.find(s => s.id === user.subroleId);
+  }, [user?.subroleId, subroles]);
+  
+  const currentUserLevel = useMemo(() => {
+    if (isAdmin) return Infinity; // Admins can assign any role
+    return getSubroleLevel(currentUserSubrole?.key);
+  }, [isAdmin, currentUserSubrole?.key]);
+  
+  // Filter subroles to only show roles at or below the current user's level
+  const assignableSubroles = useMemo(() => {
+    if (!subroles) return [];
+    if (isAdmin) return subroles; // Admins can assign any subrole
+    
+    return subroles.filter(s => {
+      const subroleLevel = getSubroleLevel(s.key);
+      return subroleLevel <= currentUserLevel;
+    });
+  }, [subroles, isAdmin, currentUserLevel]);
 
   // Column configuration for the users table
   const userColumns: ColumnConfig[] = useMemo(() => [
@@ -1180,9 +1203,8 @@ export default function Users() {
                           </FormControl>
                           <SelectContent>
                             <SelectItem value="none">No Access Level (View Only)</SelectItem>
-                            {subroles?.filter(s => 
-                              (s.baseRole === "user" || s.baseRole === "admin") &&
-                              (isAdmin || s.key !== "administrator")
+                            {assignableSubroles?.filter(s => 
+                              s.baseRole === "user" || s.baseRole === "admin"
                             ).map((subrole) => (
                               <SelectItem key={subrole.id} value={subrole.id.toString()}>
                                 {subrole.label}
@@ -1552,9 +1574,8 @@ export default function Users() {
                           </FormControl>
                           <SelectContent>
                             <SelectItem value="none">No Access Level (View Only)</SelectItem>
-                            {subroles?.filter(s => 
-                              (s.baseRole === "user" || s.baseRole === "admin") &&
-                              (isAdmin || s.key !== "administrator")
+                            {assignableSubroles?.filter(s => 
+                              s.baseRole === "user" || s.baseRole === "admin"
                             ).map((subrole) => (
                               <SelectItem key={subrole.id} value={subrole.id.toString()}>
                                 {subrole.label}
