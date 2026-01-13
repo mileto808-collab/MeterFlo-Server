@@ -3289,7 +3289,7 @@ export default function ProjectWorkOrders() {
                   </Select>
                 </div>
               )}
-              {isFilterVisible("oldSystemType") && Array.isArray(systemTypes) && systemTypes.length > 0 && (
+              {isFilterVisible("oldSystemType") && (
                 <div className="min-w-[180px]">
                   <Label htmlFor="filter-old-system-type">Old System Type</Label>
                   <Select value={selectedOldSystemType} onValueChange={setSelectedOldSystemType}>
@@ -3305,7 +3305,7 @@ export default function ProjectWorkOrders() {
                   </Select>
                 </div>
               )}
-              {isFilterVisible("newSystemType") && Array.isArray(systemTypes) && systemTypes.length > 0 && (
+              {isFilterVisible("newSystemType") && (
                 <div className="min-w-[180px]">
                   <Label htmlFor="filter-new-system-type">New System Type</Label>
                   <Select value={selectedNewSystemType} onValueChange={setSelectedNewSystemType}>
@@ -3405,7 +3405,7 @@ export default function ProjectWorkOrders() {
                   <Input id="filter-new-module-id" placeholder="Filter..." value={filterNewModuleId} onChange={(e) => setFilterNewModuleId(e.target.value)} data-testid="input-filter-new-module-id" />
                 </div>
               )}
-              {isFilterVisible("oldModuleType") && Array.isArray(moduleTypes) && moduleTypes.length > 0 && (
+              {isFilterVisible("oldModuleType") && (
                 <div className="min-w-[180px]">
                   <Label htmlFor="filter-old-module-type">Old Module Type</Label>
                   <Select value={selectedOldModuleType} onValueChange={setSelectedOldModuleType}>
@@ -3421,7 +3421,7 @@ export default function ProjectWorkOrders() {
                   </Select>
                 </div>
               )}
-              {isFilterVisible("newModuleType") && Array.isArray(moduleTypes) && moduleTypes.length > 0 && (
+              {isFilterVisible("newModuleType") && (
                 <div className="min-w-[180px]">
                   <Label htmlFor="filter-new-module-type">New Module Type</Label>
                   <Select value={selectedNewModuleType} onValueChange={setSelectedNewModuleType}>

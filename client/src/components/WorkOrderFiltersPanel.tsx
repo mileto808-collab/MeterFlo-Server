@@ -100,7 +100,7 @@ export function WorkOrderFiltersPanel({
             <SelectContent>
               <SelectItem value="all">All Statuses</SelectItem>
               {statuses.map((s) => (
-                <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>
+                <SelectItem key={s.id} value={s.code}>{s.label}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -117,7 +117,7 @@ export function WorkOrderFiltersPanel({
             <SelectContent>
               <SelectItem value="all">All Service Types</SelectItem>
               {serviceTypes.map((st) => (
-                <SelectItem key={st.id} value={st.name}>{st.name}</SelectItem>
+                <SelectItem key={st.id} value={st.code}>{st.label}</SelectItem>
               ))}
             </SelectContent>
           </Select>

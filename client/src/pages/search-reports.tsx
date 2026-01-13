@@ -1345,7 +1345,7 @@ export default function SearchReports() {
                 <Input id="filter-old-system-id" placeholder="Filter..." value={filterOldSystemId} onChange={(e) => setFilterOldSystemId(e.target.value)} data-testid="input-filter-old-system-id" />
               </div>
             )}
-            {isFilterVisible("oldSystemType") && systemTypes.length > 0 && (
+            {isFilterVisible("oldSystemType") && (
               <div className="min-w-[180px]">
                 <Label htmlFor="filter-old-system-type">Old System Type</Label>
                 <Select value={filterOldSystemType} onValueChange={setFilterOldSystemType}>
@@ -1367,7 +1367,7 @@ export default function SearchReports() {
                 <Input id="filter-new-system-id" placeholder="Filter..." value={filterNewSystemId} onChange={(e) => setFilterNewSystemId(e.target.value)} data-testid="input-filter-new-system-id" />
               </div>
             )}
-            {isFilterVisible("newSystemType") && systemTypes.length > 0 && (
+            {isFilterVisible("newSystemType") && (
               <div className="min-w-[180px]">
                 <Label htmlFor="filter-new-system-type">New System Type</Label>
                 <Select value={filterNewSystemType} onValueChange={setFilterNewSystemType}>
@@ -1389,7 +1389,7 @@ export default function SearchReports() {
                 <Input id="filter-old-module-id" placeholder="Filter..." value={filterOldModuleId} onChange={(e) => setFilterOldModuleId(e.target.value)} data-testid="input-filter-old-module-id" />
               </div>
             )}
-            {isFilterVisible("oldModuleType") && moduleTypes.length > 0 && (
+            {isFilterVisible("oldModuleType") && (
               <div className="min-w-[180px]">
                 <Label htmlFor="filter-old-module-type">Old Module Type</Label>
                 <Select value={filterOldModuleType} onValueChange={setFilterOldModuleType}>
@@ -1411,7 +1411,7 @@ export default function SearchReports() {
                 <Input id="filter-new-module-id" placeholder="Filter..." value={filterNewModuleId} onChange={(e) => setFilterNewModuleId(e.target.value)} data-testid="input-filter-new-module-id" />
               </div>
             )}
-            {isFilterVisible("newModuleType") && moduleTypes.length > 0 && (
+            {isFilterVisible("newModuleType") && (
               <div className="min-w-[180px]">
                 <Label htmlFor="filter-new-module-type">New Module Type</Label>
                 <Select value={filterNewModuleType} onValueChange={setFilterNewModuleType}>

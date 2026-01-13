@@ -82,7 +82,15 @@ export function useWorkOrderFilters(options: UseWorkOrderFiltersOptions = {}) {
   }, []);
 
   const setFilters = useCallback((newFilters: Partial<WorkOrderFilterState>) => {
-    setFiltersState(prev => ({ ...prev, ...newFilters }));
+    setFiltersState(prev => {
+      const result = { ...prev };
+      for (const [key, value] of Object.entries(newFilters)) {
+        if (value !== undefined) {
+          result[key] = value;
+        }
+      }
+      return result;
+    });
   }, []);
 
   const resetFilters = useCallback(() => {
