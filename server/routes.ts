@@ -244,7 +244,18 @@ export async function registerRoutes(
       if (!canViewUsers) {
         return res.status(403).json({ message: "Forbidden: You don't have permission to view users" });
       }
-      const users = await storage.getAllUsers();
+      
+      // Admin users can see all users; non-admin users only see users in their projects
+      const isAdmin = await storage.isAdminUser(currentUser);
+      let users: any[];
+      
+      if (isAdmin) {
+        users = await storage.getAllUsers();
+      } else {
+        // Non-admin users only see users who share at least one project with them
+        users = await storage.getUsersInSameProjects(currentUser.id);
+      }
+      
       res.json(users);
     } catch (error) {
       console.error("Error fetching users:", error);
@@ -266,6 +277,16 @@ export async function registerRoutes(
       const targetUser = await storage.getUser(req.params.id);
       if (!targetUser) {
         return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Non-admin users can only modify users in their projects
+      const isAdmin = await storage.isAdminUser(currentUser);
+      if (!isAdmin) {
+        const accessibleUsers = await storage.getUsersInSameProjects(currentUser.id);
+        const canAccessUser = accessibleUsers.some(u => u.id === targetUser.id);
+        if (!canAccessUser) {
+          return res.status(403).json({ message: "Forbidden: You don't have access to this user" });
+        }
       }
       
       if (targetUser.role === "admin" && currentUser.role !== "admin") {
@@ -384,6 +405,16 @@ export async function registerRoutes(
         return res.status(404).json({ message: "User not found" });
       }
       
+      // Non-admin users can only modify users in their projects
+      const isAdmin = await storage.isAdminUser(currentUser);
+      if (!isAdmin) {
+        const accessibleUsers = await storage.getUsersInSameProjects(currentUser.id);
+        const canAccessUser = accessibleUsers.some(u => u.id === existingUser.id);
+        if (!canAccessUser) {
+          return res.status(403).json({ message: "Forbidden: You don't have access to this user" });
+        }
+      }
+      
       if (existingUser.role === "admin" && currentUser.role !== "admin") {
         return res.status(403).json({ message: "Forbidden: Only administrators can modify admin accounts" });
       }
@@ -453,6 +484,16 @@ export async function registerRoutes(
         return res.status(404).json({ message: "User not found" });
       }
       
+      // Non-admin users can only reset passwords for users in their projects
+      const isAdmin = await storage.isAdminUser(currentUser);
+      if (!isAdmin) {
+        const accessibleUsers = await storage.getUsersInSameProjects(currentUser.id);
+        const canAccessUser = accessibleUsers.some(u => u.id === existingUser.id);
+        if (!canAccessUser) {
+          return res.status(403).json({ message: "Forbidden: You don't have access to this user" });
+        }
+      }
+      
       if (existingUser.role === "admin" && currentUser.role !== "admin") {
         return res.status(403).json({ message: "Forbidden: Only administrators can reset admin passwords" });
       }
@@ -520,6 +561,16 @@ export async function registerRoutes(
         return res.status(404).json({ message: "User not found" });
       }
       
+      // Non-admin users can only lock users in their projects
+      const isAdmin = await storage.isAdminUser(currentUser);
+      if (!isAdmin) {
+        const accessibleUsers = await storage.getUsersInSameProjects(currentUser.id);
+        const canAccessUser = accessibleUsers.some(u => u.id === existingUser.id);
+        if (!canAccessUser) {
+          return res.status(403).json({ message: "Forbidden: You don't have access to this user" });
+        }
+      }
+      
       if (existingUser.role === "admin" && currentUser.role !== "admin") {
         return res.status(403).json({ message: "Forbidden: Only administrators can lock admin accounts" });
       }
@@ -559,6 +610,16 @@ export async function registerRoutes(
         return res.status(404).json({ message: "User not found" });
       }
       
+      // Non-admin users can only unlock users in their projects
+      const isAdmin = await storage.isAdminUser(currentUser);
+      if (!isAdmin) {
+        const accessibleUsers = await storage.getUsersInSameProjects(currentUser.id);
+        const canAccessUser = accessibleUsers.some(u => u.id === existingUser.id);
+        if (!canAccessUser) {
+          return res.status(403).json({ message: "Forbidden: You don't have access to this user" });
+        }
+      }
+      
       if (existingUser.role === "admin" && currentUser.role !== "admin") {
         return res.status(403).json({ message: "Forbidden: Only administrators can unlock admin accounts" });
       }
@@ -594,6 +655,16 @@ export async function registerRoutes(
         return res.status(404).json({ message: "User not found" });
       }
       
+      // Non-admin users can only delete users in their projects
+      const isAdmin = await storage.isAdminUser(currentUser);
+      if (!isAdmin) {
+        const accessibleUsers = await storage.getUsersInSameProjects(currentUser.id);
+        const canAccessUser = accessibleUsers.some(u => u.id === existingUser.id);
+        if (!canAccessUser) {
+          return res.status(403).json({ message: "Forbidden: You don't have access to this user" });
+        }
+      }
+      
       if (existingUser.role === "admin" && currentUser.role !== "admin") {
         return res.status(403).json({ message: "Forbidden: Only administrators can delete admin accounts" });
       }
@@ -625,7 +696,28 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Forbidden" });
       }
       
-      const projects = await storage.getUserProjects(targetUserId);
+      // Non-admin users can only view projects for users in their accessible users
+      let callerProjectIds: Set<number> | null = null;
+      if (currentUser && currentUser.id !== targetUserId) {
+        const isAdmin = await storage.isAdminUser(currentUser);
+        if (!isAdmin) {
+          const accessibleUsers = await storage.getUsersInSameProjects(currentUser.id);
+          const canAccessUser = accessibleUsers.some(u => u.id === targetUserId);
+          if (!canAccessUser) {
+            return res.status(403).json({ message: "Forbidden: You don't have access to this user" });
+          }
+          // Track caller's projects for filtering response
+          const callerProjects = await storage.getUserProjects(currentUser.id);
+          callerProjectIds = new Set(callerProjects.map(p => p.id));
+        }
+      }
+      
+      let projects = await storage.getUserProjects(targetUserId);
+      
+      // Filter to only projects the caller has access to (prevents information disclosure)
+      if (callerProjectIds) {
+        projects = projects.filter(p => callerProjectIds!.has(p.id));
+      }
       
       // Get mobile app configuration
       const mobileUpdateUrl = await storage.getSetting("mobileUpdateUrl");
@@ -657,6 +749,16 @@ export async function registerRoutes(
         return res.status(404).json({ message: "User not found" });
       }
       
+      // Non-admin users can only modify users in their projects
+      const isAdmin = await storage.isAdminUser(currentUser);
+      if (!isAdmin) {
+        const accessibleUsers = await storage.getUsersInSameProjects(currentUser.id);
+        const canAccessUser = accessibleUsers.some(u => u.id === targetUser.id);
+        if (!canAccessUser) {
+          return res.status(403).json({ message: "Forbidden: You don't have access to this user" });
+        }
+      }
+      
       if (targetUser.role === "admin" && currentUser.role !== "admin") {
         return res.status(403).json({ message: "Forbidden: Only administrators can modify admin accounts" });
       }
@@ -664,6 +766,15 @@ export async function registerRoutes(
       const { projectId } = req.body;
       if (!projectId) {
         return res.status(400).json({ message: "projectId is required" });
+      }
+      
+      // Non-admin users can only assign projects they have access to
+      if (!isAdmin) {
+        const userProjects = await storage.getUserProjects(currentUser.id);
+        const hasProjectAccess = userProjects.some(p => p.id === projectId);
+        if (!hasProjectAccess) {
+          return res.status(403).json({ message: "Forbidden: You can only assign projects you have access to" });
+        }
       }
       
       const assignment = await storage.assignUserToProject(req.params.id, projectId);
@@ -690,6 +801,23 @@ export async function registerRoutes(
         return res.status(404).json({ message: "User not found" });
       }
       
+      // Non-admin users can only modify users in their projects
+      const isAdmin = await storage.isAdminUser(currentUser);
+      if (!isAdmin) {
+        const accessibleUsers = await storage.getUsersInSameProjects(currentUser.id);
+        const canAccessUser = accessibleUsers.some(u => u.id === targetUser.id);
+        if (!canAccessUser) {
+          return res.status(403).json({ message: "Forbidden: You don't have access to this user" });
+        }
+        // Also verify user has access to the project being removed
+        const userProjects = await storage.getUserProjects(currentUser.id);
+        const projectId = parseInt(req.params.projectId);
+        const hasProjectAccess = userProjects.some(p => p.id === projectId);
+        if (!hasProjectAccess) {
+          return res.status(403).json({ message: "Forbidden: You can only remove projects you have access to" });
+        }
+      }
+      
       if (targetUser.role === "admin" && currentUser.role !== "admin") {
         return res.status(403).json({ message: "Forbidden: Only administrators can modify admin accounts" });
       }
@@ -714,7 +842,37 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Forbidden" });
       }
       
-      const groups = await storage.getUserGroupMemberships(targetUserId);
+      // Non-admin users can only view groups for users in their accessible users
+      let callerProjectIds: Set<number> | null = null;
+      if (currentUser && currentUser.id !== targetUserId) {
+        const isAdmin = await storage.isAdminUser(currentUser);
+        if (!isAdmin) {
+          const accessibleUsers = await storage.getUsersInSameProjects(currentUser.id);
+          const canAccessUser = accessibleUsers.some(u => u.id === targetUserId);
+          if (!canAccessUser) {
+            return res.status(403).json({ message: "Forbidden: You don't have access to this user" });
+          }
+          // Track caller's projects for filtering response
+          const callerProjects = await storage.getUserProjects(currentUser.id);
+          callerProjectIds = new Set(callerProjects.map(p => p.id));
+        }
+      }
+      
+      let groups = await storage.getUserGroupMemberships(targetUserId);
+      
+      // Filter to only groups that overlap with caller's projects (prevents information disclosure)
+      if (callerProjectIds) {
+        // Need to fetch group project assignments to filter
+        const filteredGroups: typeof groups = [];
+        for (const group of groups) {
+          const groupWithProjects = await storage.getUserGroupWithProjects(group.id);
+          if (groupWithProjects?.projectIds?.some(pid => callerProjectIds!.has(pid))) {
+            filteredGroups.push(group);
+          }
+        }
+        groups = filteredGroups;
+      }
+      
       res.json(groups);
     } catch (error) {
       console.error("Error fetching user groups:", error);
@@ -738,13 +896,43 @@ export async function registerRoutes(
         return res.status(404).json({ message: "User not found" });
       }
       
-      if (targetUser.role === "admin" && currentUser.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Only administrators can modify admin accounts" });
-      }
-      
       const { groupId } = req.body;
       if (!groupId) {
         return res.status(400).json({ message: "groupId is required" });
+      }
+      
+      const isAdmin = await storage.isAdminUser(currentUser);
+      const groupWithProjects = await storage.getUserGroupWithProjects(parseInt(groupId));
+      if (!groupWithProjects) {
+        return res.status(404).json({ message: "Group not found" });
+      }
+      
+      const groupProjectIds = new Set(groupWithProjects.projectIds || []);
+      const targetUserProjects = await storage.getUserProjects(targetUser.id);
+      const targetUserProjectIds = new Set(targetUserProjects.map(p => p.id));
+      
+      // Non-admin users can only add users to groups in their projects
+      if (!isAdmin) {
+        const userProjects = await storage.getUserProjects(currentUser.id);
+        const userProjectIds = new Set(userProjects.map(p => p.id));
+        
+        // Non-admin requires: intersection of caller projects ∩ group projects ∩ target user projects must be non-empty
+        const commonProjectIds = [...userProjectIds].filter(pid => 
+          groupProjectIds.has(pid) && targetUserProjectIds.has(pid)
+        );
+        if (commonProjectIds.length === 0) {
+          return res.status(403).json({ message: "Forbidden: You must share a common project with both the group and the user" });
+        }
+      }
+      
+      // Validate: target user must belong to at least one of the group's projects
+      const userBelongsToGroupProjects = [...groupProjectIds].some(pid => targetUserProjectIds.has(pid));
+      if (!userBelongsToGroupProjects) {
+        return res.status(400).json({ message: "User must be assigned to at least one project that this group belongs to" });
+      }
+      
+      if (targetUser.role === "admin" && currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden: Only administrators can modify admin accounts" });
       }
       
       await storage.addUserToGroup(parseInt(groupId), req.params.id);
@@ -771,11 +959,35 @@ export async function registerRoutes(
         return res.status(404).json({ message: "User not found" });
       }
       
+      const groupId = parseInt(req.params.groupId);
+      
+      // Non-admin users can only remove users from groups in their projects
+      const isAdmin = await storage.isAdminUser(currentUser);
+      if (!isAdmin) {
+        const groupWithProjects = await storage.getUserGroupWithProjects(groupId);
+        if (!groupWithProjects) {
+          return res.status(404).json({ message: "Group not found" });
+        }
+        const groupProjectIds = new Set(groupWithProjects.projectIds || []);
+        const userProjects = await storage.getUserProjects(currentUser.id);
+        const userProjectIds = new Set(userProjects.map(p => p.id));
+        const targetUserProjects = await storage.getUserProjects(targetUser.id);
+        const targetUserProjectIds = new Set(targetUserProjects.map(p => p.id));
+        
+        // Non-admin requires: intersection of caller projects ∩ group projects ∩ target user projects must be non-empty
+        const commonProjectIds = [...userProjectIds].filter(pid => 
+          groupProjectIds.has(pid) && targetUserProjectIds.has(pid)
+        );
+        if (commonProjectIds.length === 0) {
+          return res.status(403).json({ message: "Forbidden: You must share a common project with both the group and the user" });
+        }
+      }
+      
       if (targetUser.role === "admin" && currentUser.role !== "admin") {
         return res.status(403).json({ message: "Forbidden: Only administrators can modify admin accounts" });
       }
       
-      await storage.removeUserFromGroup(parseInt(req.params.groupId), req.params.userId);
+      await storage.removeUserFromGroup(groupId, req.params.userId);
       res.status(204).send();
     } catch (error) {
       console.error("Error removing user from group:", error);
@@ -6307,7 +6519,19 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Forbidden: You don't have permission to manage user groups" });
       }
       
-      const groups = await storage.getAllUserGroupsWithProjects();
+      let groups = await storage.getAllUserGroupsWithProjects();
+      
+      // Non-admin users only see groups that are assigned to projects they have access to
+      const isAdmin = await storage.isAdminUser(currentUser);
+      if (!isAdmin) {
+        const userProjects = await storage.getUserProjects(currentUser.id);
+        const userProjectIds = new Set(userProjects.map(p => p.id));
+        // Filter groups to only those with at least one project the user can access
+        groups = groups.filter(group => 
+          group.projectIds?.some(pid => userProjectIds.has(pid))
+        );
+      }
+      
       res.json(groups);
     } catch (error) {
       console.error("Error fetching user groups:", error);
@@ -6331,6 +6555,17 @@ export async function registerRoutes(
       
       if (!group) {
         return res.status(404).json({ message: "Group not found" });
+      }
+      
+      // Non-admin users can only access groups in their projects
+      const isAdmin = await storage.isAdminUser(currentUser);
+      if (!isAdmin) {
+        const userProjects = await storage.getUserProjects(currentUser.id);
+        const userProjectIds = new Set(userProjects.map(p => p.id));
+        const hasAccess = group.projectIds?.some(pid => userProjectIds.has(pid));
+        if (!hasAccess) {
+          return res.status(403).json({ message: "Forbidden: You don't have access to this group" });
+        }
       }
       
       res.json(group);
@@ -6361,6 +6596,17 @@ export async function registerRoutes(
         return res.status(400).json({ message: "At least one project must be assigned" });
       }
       
+      // Non-admin users can only create groups for projects they have access to
+      const isAdmin = await storage.isAdminUser(currentUser);
+      if (!isAdmin) {
+        const userProjects = await storage.getUserProjects(currentUser.id);
+        const userProjectIds = new Set(userProjects.map(p => p.id));
+        const allProjectsAccessible = projectIds.every((pid: number) => userProjectIds.has(pid));
+        if (!allProjectsAccessible) {
+          return res.status(403).json({ message: "Forbidden: You can only create groups for projects you have access to" });
+        }
+      }
+      
       const group = await storage.createUserGroup({ name: name.trim(), description }, projectIds);
       res.status(201).json(group);
     } catch (error: any) {
@@ -6389,6 +6635,29 @@ export async function registerRoutes(
       // Validate projectIds if provided
       if (projectIds !== undefined && (!Array.isArray(projectIds) || projectIds.length === 0)) {
         return res.status(400).json({ message: "At least one project must be assigned" });
+      }
+      
+      // Non-admin users can only update groups in their projects
+      const isAdmin = await storage.isAdminUser(currentUser);
+      if (!isAdmin) {
+        const existingGroup = await storage.getUserGroupWithProjects(id);
+        if (!existingGroup) {
+          return res.status(404).json({ message: "Group not found" });
+        }
+        const userProjects = await storage.getUserProjects(currentUser.id);
+        const userProjectIds = new Set(userProjects.map(p => p.id));
+        // Check access to existing group
+        const hasAccess = existingGroup.projectIds?.some(pid => userProjectIds.has(pid));
+        if (!hasAccess) {
+          return res.status(403).json({ message: "Forbidden: You don't have access to this group" });
+        }
+        // Check access to new projectIds if provided
+        if (projectIds !== undefined) {
+          const allProjectsAccessible = projectIds.every((pid: number) => userProjectIds.has(pid));
+          if (!allProjectsAccessible) {
+            return res.status(403).json({ message: "Forbidden: You can only assign groups to projects you have access to" });
+          }
+        }
       }
       
       const group = await storage.updateUserGroup(id, { 
@@ -6422,8 +6691,23 @@ export async function registerRoutes(
       }
       
       const id = parseInt(req.params.id);
-      const group = await storage.getUserGroup(id);
       
+      // Non-admin users can only delete groups in their projects
+      const isAdmin = await storage.isAdminUser(currentUser);
+      if (!isAdmin) {
+        const groupWithProjects = await storage.getUserGroupWithProjects(id);
+        if (!groupWithProjects) {
+          return res.status(404).json({ message: "Group not found" });
+        }
+        const userProjects = await storage.getUserProjects(currentUser.id);
+        const userProjectIds = new Set(userProjects.map(p => p.id));
+        const hasAccess = groupWithProjects.projectIds?.some(pid => userProjectIds.has(pid));
+        if (!hasAccess) {
+          return res.status(403).json({ message: "Forbidden: You don't have access to this group" });
+        }
+      }
+      
+      const group = await storage.getUserGroup(id);
       if (!group) {
         return res.status(404).json({ message: "Group not found" });
       }
@@ -6449,7 +6733,45 @@ export async function registerRoutes(
       }
       
       const groupId = parseInt(req.params.id);
-      const members = await storage.getGroupMembers(groupId);
+      
+      // Non-admin users can only access members of groups in their projects
+      const isAdmin = await storage.isAdminUser(currentUser);
+      let callerProjectIds: Set<number> | null = null;
+      let groupProjectIds: Set<number> | null = null;
+      
+      if (!isAdmin) {
+        const groupWithProjects = await storage.getUserGroupWithProjects(groupId);
+        if (!groupWithProjects) {
+          return res.status(404).json({ message: "Group not found" });
+        }
+        groupProjectIds = new Set(groupWithProjects.projectIds || []);
+        const userProjects = await storage.getUserProjects(currentUser.id);
+        callerProjectIds = new Set(userProjects.map(p => p.id));
+        const hasAccess = [...groupProjectIds].some(pid => callerProjectIds!.has(pid));
+        if (!hasAccess) {
+          return res.status(403).json({ message: "Forbidden: You don't have access to this group" });
+        }
+      }
+      
+      let members = await storage.getGroupMembers(groupId);
+      
+      // Filter members to only those who share a common project with caller AND group (prevents cross-project enumeration)
+      if (callerProjectIds && groupProjectIds) {
+        const filteredMembers: typeof members = [];
+        for (const member of members) {
+          const memberProjects = await storage.getUserProjects(member.id);
+          const memberProjectIds = new Set(memberProjects.map(p => p.id));
+          // Three-way intersection: caller ∩ group ∩ member must be non-empty
+          const commonProjectIds = [...callerProjectIds].filter(pid => 
+            groupProjectIds!.has(pid) && memberProjectIds.has(pid)
+          );
+          if (commonProjectIds.length > 0) {
+            filteredMembers.push(member);
+          }
+        }
+        members = filteredMembers;
+      }
+      
       res.json(members);
     } catch (error) {
       console.error("Error fetching group members:", error);
@@ -6473,6 +6795,37 @@ export async function registerRoutes(
       
       if (!userId) {
         return res.status(400).json({ message: "User ID is required" });
+      }
+      
+      // Non-admin users can only add members to groups in their projects
+      const isAdmin = await storage.isAdminUser(currentUser);
+      const groupWithProjects = await storage.getUserGroupWithProjects(groupId);
+      if (!groupWithProjects) {
+        return res.status(404).json({ message: "Group not found" });
+      }
+      
+      const groupProjectIds = new Set(groupWithProjects.projectIds || []);
+      const targetUserProjects = await storage.getUserProjects(userId);
+      const targetUserProjectIds = new Set(targetUserProjects.map(p => p.id));
+      
+      if (!isAdmin) {
+        const userProjects = await storage.getUserProjects(currentUser.id);
+        const userProjectIds = new Set(userProjects.map(p => p.id));
+        
+        // Non-admin requires: intersection of caller projects ∩ group projects ∩ target user projects must be non-empty
+        // This prevents cross-project privilege escalation through multi-project groups
+        const commonProjectIds = [...userProjectIds].filter(pid => 
+          groupProjectIds.has(pid) && targetUserProjectIds.has(pid)
+        );
+        if (commonProjectIds.length === 0) {
+          return res.status(403).json({ message: "Forbidden: You must share a common project with both the group and the user" });
+        }
+      }
+      
+      // Validate: target user must belong to at least one of the group's projects
+      const userBelongsToGroupProjects = [...groupProjectIds].some(pid => targetUserProjectIds.has(pid));
+      if (!userBelongsToGroupProjects) {
+        return res.status(400).json({ message: "User must be assigned to at least one project that this group belongs to" });
       }
       
       const member = await storage.addUserToGroup(groupId, userId);
@@ -6499,6 +6852,28 @@ export async function registerRoutes(
       
       const groupId = parseInt(req.params.groupId);
       const userId = req.params.userId;
+      
+      // Non-admin users can only remove members from groups in their projects
+      const isAdmin = await storage.isAdminUser(currentUser);
+      if (!isAdmin) {
+        const groupWithProjects = await storage.getUserGroupWithProjects(groupId);
+        if (!groupWithProjects) {
+          return res.status(404).json({ message: "Group not found" });
+        }
+        const groupProjectIds = new Set(groupWithProjects.projectIds || []);
+        const userProjects = await storage.getUserProjects(currentUser.id);
+        const userProjectIds = new Set(userProjects.map(p => p.id));
+        const targetUserProjects = await storage.getUserProjects(userId);
+        const targetUserProjectIds = new Set(targetUserProjects.map(p => p.id));
+        
+        // Non-admin requires: intersection of caller projects ∩ group projects ∩ target user projects must be non-empty
+        const commonProjectIds = [...userProjectIds].filter(pid => 
+          groupProjectIds.has(pid) && targetUserProjectIds.has(pid)
+        );
+        if (commonProjectIds.length === 0) {
+          return res.status(403).json({ message: "Forbidden: You must share a common project with both the group and the user" });
+        }
+      }
       
       await storage.removeUserFromGroup(groupId, userId);
       res.status(204).send();

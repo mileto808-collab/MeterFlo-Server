@@ -113,6 +113,7 @@ export interface IStorage {
   // User-Project assignment operations
   getUserProjects(userId: string): Promise<Project[]>;
   getProjectUsers(projectId: number): Promise<User[]>;
+  getUsersInSameProjects(userId: string): Promise<User[]>;
   assignUserToProject(userId: string, projectId: number): Promise<UserProject>;
   removeUserFromProject(userId: string, projectId: number): Promise<boolean>;
   isUserAssignedToProject(userId: string, projectId: number): Promise<boolean>;
@@ -508,6 +509,40 @@ export class DatabaseStorage implements IStorage {
     
     for (const userId of userIds) {
       const [user] = await db.select().from(users).where(eq(users.id, userId));
+      if (user) userList.push(user);
+    }
+    
+    return userList;
+  }
+
+  async getUsersInSameProjects(userId: string): Promise<User[]> {
+    // Get all projects the user is assigned to
+    const userProjectAssignments = await db
+      .select()
+      .from(userProjects)
+      .where(eq(userProjects.userId, userId));
+    
+    if (userProjectAssignments.length === 0) return [];
+    
+    const projectIds = userProjectAssignments.map(a => a.projectId);
+    
+    // Get all user assignments for those projects
+    const userIdsSet = new Set<string>();
+    for (const projectId of projectIds) {
+      const projectUserAssignments = await db
+        .select()
+        .from(userProjects)
+        .where(eq(userProjects.projectId, projectId));
+      
+      for (const assignment of projectUserAssignments) {
+        userIdsSet.add(assignment.userId);
+      }
+    }
+    
+    // Fetch all unique users
+    const userList: User[] = [];
+    for (const uid of userIdsSet) {
+      const [user] = await db.select().from(users).where(eq(users.id, uid));
       if (user) userList.push(user);
     }
     
