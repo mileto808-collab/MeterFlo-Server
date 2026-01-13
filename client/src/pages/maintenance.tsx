@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -44,6 +44,8 @@ import {
   Server,
   Lock,
   FileArchive,
+  Files,
+  Folder,
 } from "lucide-react";
 import { useTimezone } from "@/hooks/use-timezone";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -57,22 +59,35 @@ interface ProjectWithStats extends Project {
   } | null;
 }
 
+interface FileStats {
+  exists: boolean;
+  totalSize: number;
+  fileCount: number;
+  folderCount: number;
+  sizeFormatted: string;
+}
+
 export default function Maintenance() {
   const { toast } = useToast();
   const { formatDateTime } = useTimezone();
   const { hasPermission, isLoading: isPermissionsLoading } = usePermissions();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const systemFileInputRef = useRef<HTMLInputElement>(null);
+  const projectFilesInputRef = useRef<HTMLInputElement>(null);
   const [restoreDialogOpen, setRestoreDialogOpen] = useState(false);
   const [systemRestoreDialogOpen, setSystemRestoreDialogOpen] = useState(false);
+  const [filesRestoreDialogOpen, setFilesRestoreDialogOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState<ProjectWithStats | null>(null);
   const [clearExisting, setClearExisting] = useState(false);
   const [systemClearExisting, setSystemClearExisting] = useState(false);
+  const [filesClearExisting, setFilesClearExisting] = useState(false);
   const [restoreFiles, setRestoreFiles] = useState(true);
   const [isRestoring, setIsRestoring] = useState(false);
   const [isSystemBackup, setIsSystemBackup] = useState(false);
   const [isSystemRestoring, setIsSystemRestoring] = useState(false);
+  const [isFilesRestoring, setIsFilesRestoring] = useState(false);
   const [backupType, setBackupType] = useState<"database" | "full" | "files" | "project">("full");
+  const [fileStats, setFileStats] = useState<Record<number, FileStats>>({});
 
   const { data: projects = [], isLoading, refetch } = useQuery<ProjectWithStats[]>({
     queryKey: ["/api/maintenance/projects"],
@@ -82,6 +97,27 @@ export default function Maintenance() {
   const canProjectRestore = !isPermissionsLoading && hasPermission("maintenance.projectRestore");
   const canSystemBackup = !isPermissionsLoading && hasPermission("maintenance.systemBackup");
   const canSystemRestore = !isPermissionsLoading && hasPermission("maintenance.systemRestore");
+
+  useEffect(() => {
+    const fetchFileStats = async () => {
+      const stats: Record<number, FileStats> = {};
+      for (const project of projects) {
+        try {
+          const response = await fetch(`/api/projects/${project.id}/files/stats`, {
+            credentials: "include",
+          });
+          if (response.ok) {
+            stats[project.id] = await response.json();
+          }
+        } catch (e) {
+        }
+      }
+      setFileStats(stats);
+    };
+    if (projects.length > 0) {
+      fetchFileStats();
+    }
+  }, [projects]);
 
   const handleBackup = async (project: ProjectWithStats) => {
     try {
@@ -292,6 +328,111 @@ export default function Maintenance() {
       setIsSystemRestoring(false);
       if (systemFileInputRef.current) {
         systemFileInputRef.current.value = "";
+      }
+    }
+  };
+
+  const handleFilesBackup = async (project: ProjectWithStats) => {
+    try {
+      const response = await fetch(`/api/projects/${project.id}/files/backup`, {
+        credentials: "include",
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to create files backup");
+      }
+      
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `files_${project.name.replace(/[^a-z0-9]/gi, "_")}_${new Date().toISOString().slice(0, 10)}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      const stats = fileStats[project.id];
+      toast({
+        title: "Files backup created",
+        description: `Successfully backed up ${stats?.fileCount || 0} files from ${project.name}`,
+      });
+    } catch (error) {
+      toast({
+        title: "Files backup failed",
+        description: error instanceof Error ? error.message : "Failed to create files backup",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const openFilesRestoreDialog = (project: ProjectWithStats) => {
+    setSelectedProject(project);
+    setFilesClearExisting(false);
+    setFilesRestoreDialogOpen(true);
+  };
+
+  const handleFilesRestoreFileSelect = () => {
+    projectFilesInputRef.current?.click();
+  };
+
+  const handleFilesChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedProject) return;
+
+    setIsFilesRestoring(true);
+    
+    try {
+      const formData = new FormData();
+      formData.append("backup", file);
+      formData.append("clearExisting", String(filesClearExisting));
+
+      const response = await fetch(`/api/projects/${selectedProject.id}/files/restore`, {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || "Failed to restore files");
+      }
+
+      toast({
+        title: "Files restore completed",
+        description: `Restored ${result.filesRestored} files${result.errors?.length > 0 ? ` with ${result.errors.length} errors` : ""}`,
+      });
+
+      if (result.errors?.length > 0) {
+        console.error("Files restore errors:", result.errors);
+      }
+
+      const fetchUpdatedStats = async () => {
+        try {
+          const response = await fetch(`/api/projects/${selectedProject.id}/files/stats`, {
+            credentials: "include",
+          });
+          if (response.ok) {
+            const stats = await response.json();
+            setFileStats(prev => ({ ...prev, [selectedProject.id]: stats }));
+          }
+        } catch (e) {
+        }
+      };
+      fetchUpdatedStats();
+      setFilesRestoreDialogOpen(false);
+    } catch (error) {
+      toast({
+        title: "Files restore failed",
+        description: error instanceof Error ? error.message : "Failed to restore files",
+        variant: "destructive",
+      });
+    } finally {
+      setIsFilesRestoring(false);
+      if (projectFilesInputRef.current) {
+        projectFilesInputRef.current.value = "";
       }
     }
   };
@@ -582,6 +723,138 @@ export default function Maintenance() {
         </CardContent>
       </Card>
 
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Files className="h-5 w-5" />
+            Project Files
+          </CardTitle>
+          <CardDescription>
+            View file storage statistics and perform file backup/restore operations
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="space-y-4">
+              {[1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-16 w-full" />
+              ))}
+            </div>
+          ) : projects.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Files className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>No projects found</p>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Project</TableHead>
+                  <TableHead>Files</TableHead>
+                  <TableHead>Folders</TableHead>
+                  <TableHead>Size</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {projects.map((project) => {
+                  const stats = fileStats[project.id];
+                  return (
+                    <TableRow key={project.id} data-testid={`row-files-${project.id}`}>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium" data-testid={`text-files-project-name-${project.id}`}>
+                            {project.name}
+                          </span>
+                          {project.isActive ? (
+                            <Badge variant="default" className="text-xs">Active</Badge>
+                          ) : (
+                            <Badge variant="secondary" className="text-xs">Inactive</Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {stats ? (
+                          <div className="flex items-center gap-1">
+                            <FileArchive className="h-4 w-4 text-muted-foreground" />
+                            <span data-testid={`text-file-count-${project.id}`}>
+                              {stats.fileCount.toLocaleString()}
+                            </span>
+                          </div>
+                        ) : (
+                          <Skeleton className="h-4 w-12" />
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {stats ? (
+                          <div className="flex items-center gap-1">
+                            <Folder className="h-4 w-4 text-muted-foreground" />
+                            <span data-testid={`text-folder-count-${project.id}`}>
+                              {stats.folderCount.toLocaleString()}
+                            </span>
+                          </div>
+                        ) : (
+                          <Skeleton className="h-4 w-12" />
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {stats ? (
+                          <span data-testid={`text-file-size-${project.id}`}>{stats.sizeFormatted}</span>
+                        ) : (
+                          <Skeleton className="h-4 w-16" />
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          {isPermissionsLoading ? (
+                            <>
+                              <Skeleton className="h-8 w-20" />
+                              <Skeleton className="h-8 w-20" />
+                            </>
+                          ) : (
+                            <>
+                              {canProjectBackup && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleFilesBackup(project)}
+                                  disabled={!stats?.exists}
+                                  data-testid={`button-files-backup-${project.id}`}
+                                >
+                                  <Download className="h-4 w-4 mr-1" />
+                                  Backup
+                                </Button>
+                              )}
+                              {canProjectRestore && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => openFilesRestoreDialog(project)}
+                                  data-testid={`button-files-restore-${project.id}`}
+                                >
+                                  <Upload className="h-4 w-4 mr-1" />
+                                  Restore
+                                </Button>
+                              )}
+                              {!canProjectBackup && !canProjectRestore && (
+                                <span className="text-muted-foreground text-sm flex items-center gap-1">
+                                  <Lock className="h-3 w-3" />
+                                  No access
+                                </span>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
       <Dialog open={restoreDialogOpen} onOpenChange={setRestoreDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -728,6 +1001,78 @@ export default function Maintenance() {
                 <>
                   <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
                   Restoring System...
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Select Backup Archive
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={filesRestoreDialogOpen} onOpenChange={setFilesRestoreDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Files className="h-5 w-5" />
+              Restore Project Files
+            </DialogTitle>
+            <DialogDescription>
+              Restore files from a backup archive to {selectedProject?.name}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="flex items-center gap-2 p-4 rounded-md bg-destructive/10 text-destructive">
+              <AlertTriangle className="h-5 w-5 flex-shrink-0" />
+              <p className="text-sm">
+                Restoring files will add files to the project folder. Use the option below to
+                clear existing files first if you want a complete replacement.
+              </p>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="files-clear-existing"
+                checked={filesClearExisting}
+                onCheckedChange={(checked) => setFilesClearExisting(checked === true)}
+                data-testid="checkbox-files-clear-existing"
+              />
+              <Label htmlFor="files-clear-existing" className="text-sm font-medium">
+                Clear existing files before restore
+              </Label>
+            </div>
+
+            <input
+              type="file"
+              ref={projectFilesInputRef}
+              className="hidden"
+              accept=".zip"
+              onChange={handleFilesChange}
+              data-testid="input-files-restore"
+            />
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setFilesRestoreDialogOpen(false)}
+              data-testid="button-cancel-files-restore"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleFilesRestoreFileSelect}
+              disabled={isFilesRestoring}
+              data-testid="button-select-files"
+            >
+              {isFilesRestoring ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Restoring...
                 </>
               ) : (
                 <>
