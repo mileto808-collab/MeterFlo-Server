@@ -5400,6 +5400,14 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Project not found or has no database" });
       }
       
+      const isAdmin = await storage.isAdminUser(currentUser);
+      if (!isAdmin) {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
+        }
+      }
+      
       const stats = await getProjectDatabaseStats(project.databaseName);
       res.json(stats);
     } catch (error) {
@@ -5424,6 +5432,14 @@ export async function registerRoutes(
       const project = await storage.getProject(projectId);
       if (!project || !project.databaseName) {
         return res.status(404).json({ message: "Project not found or has no database" });
+      }
+      
+      const isAdmin = await storage.isAdminUser(currentUser);
+      if (!isAdmin) {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
+        }
       }
       
       const backup = await backupProjectDatabase(project.databaseName);
@@ -5459,6 +5475,14 @@ export async function registerRoutes(
       const project = await storage.getProject(projectId);
       if (!project || !project.databaseName) {
         return res.status(404).json({ message: "Project not found or has no database" });
+      }
+      
+      const isAdmin = await storage.isAdminUser(currentUser);
+      if (!isAdmin) {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
+        }
       }
       
       const clearExisting = req.body.clearExisting === "true";
@@ -5505,7 +5529,10 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Forbidden: You don't have permission to access maintenance" });
       }
       
-      const projects = await storage.getProjects();
+      const isAdmin = await storage.isAdminUser(currentUser);
+      const projects = isAdmin 
+        ? await storage.getProjects() 
+        : await storage.getUserProjects(currentUser.id);
       const projectsWithStats = await Promise.all(
         projects.map(async (project) => {
           if (!project.databaseName) {

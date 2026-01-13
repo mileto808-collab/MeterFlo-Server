@@ -314,145 +314,141 @@ export default function Maintenance() {
         </Button>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Server className="h-5 w-5" />
-            Full System Backup
-          </CardTitle>
-          <CardDescription>
-            Create or restore a backup using PostgreSQL native format (pg_dump). Choose what to include in your backup.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col sm:flex-row gap-4">
-              <div className="flex-1 p-4 border rounded-md bg-muted/30">
-                <div className="flex items-center gap-2 mb-3">
-                  <FolderArchive className="h-5 w-5 text-primary" />
-                  <span className="font-medium">Backup Type</span>
+      {(canSystemBackup || canSystemRestore) && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Server className="h-5 w-5" />
+              Full System Backup
+            </CardTitle>
+            <CardDescription>
+              Create or restore a backup using PostgreSQL native format (pg_dump). Choose what to include in your backup.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col sm:flex-row gap-4">
+                <div className="flex-1 p-4 border rounded-md bg-muted/30">
+                  <div className="flex items-center gap-2 mb-3">
+                    <FolderArchive className="h-5 w-5 text-primary" />
+                    <span className="font-medium">Backup Type</span>
+                  </div>
+                  <Select 
+                    value={backupType} 
+                    onValueChange={(value: "database" | "full" | "files" | "project") => setBackupType(value)}
+                    disabled={isSystemBackup}
+                  >
+                    <SelectTrigger className="w-full" data-testid="select-backup-type">
+                      <SelectValue placeholder="Select backup type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="database" data-testid="select-item-database">
+                        <div className="flex items-center gap-2">
+                          <Database className="h-4 w-4" />
+                          <span>Database Only</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="full" data-testid="select-item-full">
+                        <div className="flex items-center gap-2">
+                          <Server className="h-4 w-4" />
+                          <span>Full System (Database + All Files)</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="files" data-testid="select-item-files">
+                        <div className="flex items-center gap-2">
+                          <FileArchive className="h-4 w-4" />
+                          <span>Web App Files Only</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="project" data-testid="select-item-project">
+                        <div className="flex items-center gap-2">
+                          <FolderArchive className="h-4 w-4" />
+                          <span>Project Files Only</span>
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <div className="mt-3 text-sm text-muted-foreground">
+                    {backupType === "database" && (
+                      <ul className="space-y-1 ml-1">
+                        <li>Main database (users, projects, settings, groups, permissions)</li>
+                        <li>All project databases ({projects.length} projects)</li>
+                        <li>SQL format compatible with pg_restore</li>
+                      </ul>
+                    )}
+                    {backupType === "full" && (
+                      <ul className="space-y-1 ml-1">
+                        <li>Main database (users, projects, settings, groups, permissions)</li>
+                        <li>All project databases ({projects.length} projects)</li>
+                        <li>Web application source files (code, configs)</li>
+                        <li>All project files and documents (attachments, uploads)</li>
+                        <li>Complete system backup for full restore</li>
+                      </ul>
+                    )}
+                    {backupType === "files" && (
+                      <ul className="space-y-1 ml-1">
+                        <li>Web application source files only</li>
+                        <li>Code, configuration, and scripts</li>
+                        <li>Excludes: node_modules, .git, temp files</li>
+                        <li>Excludes: project data files (use per-project backup)</li>
+                        <li>Does not include database</li>
+                      </ul>
+                    )}
+                    {backupType === "project" && (
+                      <ul className="space-y-1 ml-1">
+                        <li>Project data files only (uploads, attachments)</li>
+                        <li>Work order files and documents</li>
+                        <li>Does not include web app source files</li>
+                        <li>Does not include database</li>
+                      </ul>
+                    )}
+                  </div>
                 </div>
-                <Select 
-                  value={backupType} 
-                  onValueChange={(value: "database" | "full" | "files" | "project") => setBackupType(value)}
-                  disabled={isSystemBackup}
-                >
-                  <SelectTrigger className="w-full" data-testid="select-backup-type">
-                    <SelectValue placeholder="Select backup type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="database" data-testid="select-item-database">
-                      <div className="flex items-center gap-2">
-                        <Database className="h-4 w-4" />
-                        <span>Database Only</span>
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="full" data-testid="select-item-full">
-                      <div className="flex items-center gap-2">
-                        <Server className="h-4 w-4" />
-                        <span>Full System (Database + All Files)</span>
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="files" data-testid="select-item-files">
-                      <div className="flex items-center gap-2">
-                        <FileArchive className="h-4 w-4" />
-                        <span>Web App Files Only</span>
-                      </div>
-                    </SelectItem>
-                    <SelectItem value="project" data-testid="select-item-project">
-                      <div className="flex items-center gap-2">
-                        <FolderArchive className="h-4 w-4" />
-                        <span>Project Files Only</span>
-                      </div>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-                <div className="mt-3 text-sm text-muted-foreground">
-                  {backupType === "database" && (
-                    <ul className="space-y-1 ml-1">
-                      <li>Main database (users, projects, settings, groups, permissions)</li>
-                      <li>All project databases ({projects.length} projects)</li>
-                      <li>SQL format compatible with pg_restore</li>
-                    </ul>
-                  )}
-                  {backupType === "full" && (
-                    <ul className="space-y-1 ml-1">
-                      <li>Main database (users, projects, settings, groups, permissions)</li>
-                      <li>All project databases ({projects.length} projects)</li>
-                      <li>Web application source files (code, configs)</li>
-                      <li>All project files and documents (attachments, uploads)</li>
-                      <li>Complete system backup for full restore</li>
-                    </ul>
-                  )}
-                  {backupType === "files" && (
-                    <ul className="space-y-1 ml-1">
-                      <li>Web application source files only</li>
-                      <li>Code, configuration, and scripts</li>
-                      <li>Excludes: node_modules, .git, temp files</li>
-                      <li>Excludes: project data files (use per-project backup)</li>
-                      <li>Does not include database</li>
-                    </ul>
-                  )}
-                  {backupType === "project" && (
-                    <ul className="space-y-1 ml-1">
-                      <li>Project data files only (uploads, attachments)</li>
-                      <li>Work order files and documents</li>
-                      <li>Does not include web app source files</li>
-                      <li>Does not include database</li>
-                    </ul>
+                <div className="flex flex-col gap-2 justify-center">
+                  {isPermissionsLoading ? (
+                    <>
+                      <Skeleton className="h-9 w-40" />
+                      <Skeleton className="h-9 w-40" />
+                    </>
+                  ) : (
+                    <>
+                      {canSystemBackup && (
+                        <Button 
+                          onClick={handleFullSystemBackup}
+                          disabled={isSystemBackup}
+                          data-testid="button-full-system-backup"
+                        >
+                          {isSystemBackup ? (
+                            <>
+                              <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                              Creating Backup...
+                            </>
+                          ) : (
+                            <>
+                              <Download className="h-4 w-4 mr-2" />
+                              Download Backup
+                            </>
+                          )}
+                        </Button>
+                      )}
+                      {canSystemRestore && (
+                        <Button 
+                          variant="outline" 
+                          onClick={openSystemRestoreDialog}
+                          data-testid="button-full-system-restore"
+                        >
+                          <Upload className="h-4 w-4 mr-2" />
+                          Restore from Backup
+                        </Button>
+                      )}
+                    </>
                   )}
                 </div>
-              </div>
-              <div className="flex flex-col gap-2 justify-center">
-                {isPermissionsLoading ? (
-                  <>
-                    <Skeleton className="h-9 w-40" />
-                    <Skeleton className="h-9 w-40" />
-                  </>
-                ) : (
-                  <>
-                    {canSystemBackup && (
-                      <Button 
-                        onClick={handleFullSystemBackup}
-                        disabled={isSystemBackup}
-                        data-testid="button-full-system-backup"
-                      >
-                        {isSystemBackup ? (
-                          <>
-                            <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                            Creating Backup...
-                          </>
-                        ) : (
-                          <>
-                            <Download className="h-4 w-4 mr-2" />
-                            Download Backup
-                          </>
-                        )}
-                      </Button>
-                    )}
-                    {canSystemRestore && (
-                      <Button 
-                        variant="outline" 
-                        onClick={openSystemRestoreDialog}
-                        data-testid="button-full-system-restore"
-                      >
-                        <Upload className="h-4 w-4 mr-2" />
-                        Restore from Backup
-                      </Button>
-                    )}
-                    {!canSystemBackup && !canSystemRestore && (
-                      <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                        <Lock className="h-4 w-4" />
-                        <span>No permissions for system backup/restore</span>
-                      </div>
-                    )}
-                  </>
-                )}
               </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
