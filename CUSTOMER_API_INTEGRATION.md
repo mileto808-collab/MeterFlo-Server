@@ -7,7 +7,7 @@ This guide explains how to configure MeterFlo to send completed work order data 
 ## Overview
 
 MeterFlo can automatically push work order data to external customer systems when:
-- A meter changeout is completed from the mobile app
+- A system/module changeout is completed from the mobile app
 - Work order status changes to "Completed"
 
 Each project can have its own API configuration, allowing you to integrate with multiple customer backends.
@@ -100,10 +100,18 @@ When a work order is completed, MeterFlo sends a JSON payload:
   "workOrderId": 123,
   "customerWoId": "WO-2024-001",
   "status": "Completed",
-  "oldMeterNumber": "12345678",
-  "newMeterNumber": "87654321",
-  "oldMeterReading": "10523",
-  "newMeterReading": "0",
+  "oldSystemId": "SYS12345678",
+  "newSystemId": "SYS87654321",
+  "oldSystemType": "FLOWIQ2200",
+  "newSystemType": "FLOWIQ3100",
+  "oldSystemReading": "10523",
+  "newSystemReading": "0",
+  "oldModuleId": "MOD456789",
+  "newModuleId": "MOD987654",
+  "oldModuleType": "AMI-2000",
+  "newModuleType": "AMI-3000",
+  "oldModuleReading": "54321",
+  "newModuleReading": "0",
   "latitude": "39.7392",
   "longitude": "-104.9903",
   "gpsAccuracy": null,
@@ -113,10 +121,9 @@ When a work order is completed, MeterFlo sends a JSON payload:
   "serviceZip": "80202",
   "completedAt": "2025-12-28T14:30:00.000Z",
   "completedBy": "user-uuid-here",
-  "notes": "Meter replaced successfully",
+  "notes": "System and module replaced successfully",
   "troubleCode": null,
   "serviceType": "Residential",
-  "meterType": "AMI Smart Meter",
   "beforePhoto": "base64-encoded-image-data...",
   "afterPhoto": "base64-encoded-image-data...",
   "signature": "base64-encoded-signature-data..."
@@ -130,10 +137,18 @@ When a work order is completed, MeterFlo sends a JSON payload:
 | `workOrderId` | number | MeterFlo internal work order ID |
 | `customerWoId` | string | Customer's work order ID |
 | `status` | string | Work order status ("Completed", "Trouble") |
-| `oldMeterNumber` | string | Old meter serial number |
-| `newMeterNumber` | string | New meter serial number |
-| `oldMeterReading` | string | Final reading from old meter |
-| `newMeterReading` | string | Initial reading on new meter |
+| `oldSystemId` | string | Old system serial number |
+| `newSystemId` | string | New system serial number |
+| `oldSystemType` | string | Old system type/model |
+| `newSystemType` | string | New system type/model |
+| `oldSystemReading` | string | Final reading from old system |
+| `newSystemReading` | string | Initial reading on new system |
+| `oldModuleId` | string | Old module serial number |
+| `newModuleId` | string | New module serial number |
+| `oldModuleType` | string | Old module type/model |
+| `newModuleType` | string | New module type/model |
+| `oldModuleReading` | string | Final reading from old module |
+| `newModuleReading` | string | Initial reading on new module |
 | `latitude` | string | GPS latitude coordinate |
 | `longitude` | string | GPS longitude coordinate |
 | `gpsAccuracy` | string | GPS accuracy in meters |
@@ -146,10 +161,11 @@ When a work order is completed, MeterFlo sends a JSON payload:
 | `notes` | string | Field notes |
 | `troubleCode` | string | Trouble code if applicable |
 | `serviceType` | string | Type of service |
-| `meterType` | string | Type of meter installed |
 | `beforePhoto` | string | Base64-encoded before photo (optional) |
 | `afterPhoto` | string | Base64-encoded after photo (optional) |
 | `signature` | string | Base64-encoded signature image (optional) |
+
+**Note:** Fields will be `null` if not applicable for the changeout type. For example, a system-only changeout will have `null` values for module fields.
 
 ---
 
@@ -263,7 +279,8 @@ app.post('/api/meterflo/work-orders', (req, res) => {
   
   console.log('Received work order:', workOrder.customerWoId);
   console.log('Status:', workOrder.status);
-  console.log('New Meter:', workOrder.newMeterNumber);
+  console.log('New System:', workOrder.newSystemId);
+  console.log('New Module:', workOrder.newModuleId);
   console.log('Completed At:', workOrder.completedAt);
   
   // Process photos if included

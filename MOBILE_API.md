@@ -395,12 +395,12 @@ The presence of `old_system_id` and/or `old_module_id` determines what type of c
 
 ---
 
-### Get Work Order by Meter ID
+### Get Work Order by System ID
 ```
-GET /api/projects/:projectId/work-orders/by-meter/:meterId
+GET /api/projects/:projectId/work-orders/by-system/:systemId
 ```
 
-Look up a work order by old meter ID. Useful for barcode/QR scanning workflows.
+Look up a work order by old system ID. Useful for barcode/QR scanning workflows.
 
 **Response:** Same snake_case format as above.
 
@@ -818,8 +818,8 @@ Upload signature as base64 data or file.
 
 ## Important Notes
 
-### 1. Meter Readings
-Database stores meter readings as **INTEGER** - leading zeros are stripped. 
+### 1. System/Module Readings
+Database stores readings as **INTEGER** - leading zeros are stripped. 
 - Input: `"00012345"` → Stored: `12345`
 - Client should handle display formatting if leading zeros are needed
 
@@ -911,4 +911,4 @@ Common HTTP status codes:
 
 ---
 
-*Last updated: January 9, 2026*
+*Last updated: January 13, 2026*
