@@ -5206,11 +5206,28 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Forbidden: You don't have permission to view customer API logs" });
       }
       
-      const projectId = req.query.projectId ? parseInt(req.query.projectId as string) : undefined;
+      const isAdmin = await storage.isAdminUser(currentUser);
+      const userProjects = isAdmin ? null : await storage.getUserProjects(currentUser.id);
+      const userProjectIds = userProjects ? userProjects.map(p => p.id) : null;
+      
+      let projectId = req.query.projectId ? parseInt(req.query.projectId as string) : undefined;
+      
+      // Non-admin users can only see logs from their assigned projects
+      if (!isAdmin && projectId) {
+        if (!userProjectIds?.includes(projectId)) {
+          return res.status(403).json({ message: "Forbidden: You don't have access to this project's logs" });
+        }
+      }
+      
       const success = req.query.success === "true" ? true : req.query.success === "false" ? false : undefined;
       const limit = parseInt(req.query.limit as string) || 100;
       
-      const logs = await storage.getCustomerApiLogs({ projectId, success, limit });
+      let logs = await storage.getCustomerApiLogs({ projectId, success, limit });
+      
+      // Filter to user's projects if non-admin and no specific project requested
+      if (!isAdmin && !projectId && userProjectIds) {
+        logs = logs.filter(log => log.projectId && userProjectIds.includes(log.projectId));
+      }
       
       // Enrich with project names
       const enrichedLogs = await Promise.all(logs.map(async (log) => {
@@ -5229,16 +5246,31 @@ export async function registerRoutes(
     }
   });
 
-  // File Import History endpoints (Admin only)
+  // File Import History endpoints
   app.get("/api/file-import-history", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (currentUser?.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
       }
       
+      // Check for file import history permission
+      const hasPermission = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_IMPORT_HISTORY);
+      if (!hasPermission) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to view file import history" });
+      }
+      
+      const isAdmin = await storage.isAdminUser(currentUser);
+      const userProjects = isAdmin ? null : await storage.getUserProjects(currentUser.id);
+      const userProjectIds = userProjects ? userProjects.map(p => p.id) : null;
+      
       const limit = parseInt(req.query.limit as string) || 500;
-      const history = await storage.getAllFileImportHistory(limit);
+      let history = await storage.getAllFileImportHistory(limit);
+      
+      // Filter to user's projects if non-admin
+      if (!isAdmin && userProjectIds) {
+        history = history.filter(entry => entry.projectId && userProjectIds.includes(entry.projectId));
+      }
       
       // Enrich with project names and timezones
       const enrichedHistory = await Promise.all(history.map(async (entry) => {
@@ -5262,11 +5294,26 @@ export async function registerRoutes(
   app.get("/api/file-import-history/download", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (currentUser?.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
       }
       
-      const history = await storage.getAllFileImportHistory(10000);
+      // Check for file import history permission
+      const hasPermission = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_IMPORT_HISTORY);
+      if (!hasPermission) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to view file import history" });
+      }
+      
+      const isAdmin = await storage.isAdminUser(currentUser);
+      const userProjects = isAdmin ? null : await storage.getUserProjects(currentUser.id);
+      const userProjectIds = userProjects ? userProjects.map(p => p.id) : null;
+      
+      let history = await storage.getAllFileImportHistory(10000);
+      
+      // Filter to user's projects if non-admin
+      if (!isAdmin && userProjectIds) {
+        history = history.filter(entry => entry.projectId && userProjectIds.includes(entry.projectId));
+      }
       
       // Enrich with project names
       const enrichedHistory = await Promise.all(history.map(async (entry) => {
@@ -5308,22 +5355,33 @@ export async function registerRoutes(
     }
   });
 
-  // External Database Import History endpoints (Admin only)
+  // External Database Import History endpoints
   app.get("/api/import-history", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (currentUser?.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
       }
+      
+      // Check for external database import history permission
+      const hasPermission = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_DB_IMPORT_HISTORY);
+      if (!hasPermission) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to view external database import history" });
+      }
+      
+      const isAdmin = await storage.isAdminUser(currentUser);
+      const userProjects = isAdmin ? null : await storage.getUserProjects(currentUser.id);
+      const userProjectIds = userProjects ? userProjects.map(p => p.id) : null;
       
       const limit = parseInt(req.query.limit as string) || 500;
       const history = await storage.getAllImportHistory(limit);
       
-      // Enrich with config name, database name, and project name
+      // Enrich with config name, database name, and project name, and track projectId for filtering
       const enrichedHistory = await Promise.all(history.map(async (entry) => {
         let configName = null;
         let databaseName = null;
         let projectName = null;
+        let projectId = null;
         
         if (entry.importConfigId) {
           const importConfig = await storage.getImportConfig(entry.importConfigId);
@@ -5333,6 +5391,7 @@ export async function registerRoutes(
             const dbConfig = await storage.getExternalDatabaseConfig(importConfig.externalDbConfigId);
             if (dbConfig) {
               databaseName = dbConfig.name;
+              projectId = dbConfig.projectId;
               
               const project = await storage.getProject(dbConfig.projectId);
               projectName = project?.name || null;
@@ -5340,10 +5399,16 @@ export async function registerRoutes(
           }
         }
         
-        return { ...entry, configName, databaseName, projectName };
+        return { ...entry, configName, databaseName, projectName, projectId };
       }));
       
-      res.json(enrichedHistory);
+      // Filter to user's projects if non-admin
+      let filteredHistory = enrichedHistory;
+      if (!isAdmin && userProjectIds) {
+        filteredHistory = enrichedHistory.filter(entry => entry.projectId && userProjectIds.includes(entry.projectId));
+      }
+      
+      res.json(filteredHistory);
     } catch (error) {
       console.error("Error fetching import history:", error);
       res.status(500).json({ message: "Failed to fetch import history" });
@@ -5353,17 +5418,28 @@ export async function registerRoutes(
   app.get("/api/import-history/download", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
-      if (currentUser?.role !== "admin") {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
       }
+      
+      // Check for external database import history permission
+      const hasPermission = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_DB_IMPORT_HISTORY);
+      if (!hasPermission) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to view external database import history" });
+      }
+      
+      const isAdmin = await storage.isAdminUser(currentUser);
+      const userProjects = isAdmin ? null : await storage.getUserProjects(currentUser.id);
+      const userProjectIds = userProjects ? userProjects.map(p => p.id) : null;
       
       const history = await storage.getAllImportHistory(10000);
       
-      // Enrich with config name, database name, and project name
+      // Enrich with config name, database name, and project name, and track projectId for filtering
       const enrichedHistory = await Promise.all(history.map(async (entry) => {
         let configName = "";
         let databaseName = "";
         let projectName = "";
+        let projectId: number | null = null;
         
         if (entry.importConfigId) {
           const importConfig = await storage.getImportConfig(entry.importConfigId);
@@ -5373,6 +5449,7 @@ export async function registerRoutes(
             const dbConfig = await storage.getExternalDatabaseConfig(importConfig.externalDbConfigId);
             if (dbConfig) {
               databaseName = dbConfig.name;
+              projectId = dbConfig.projectId;
               
               const project = await storage.getProject(dbConfig.projectId);
               projectName = project?.name || "";
@@ -5380,12 +5457,18 @@ export async function registerRoutes(
           }
         }
         
-        return { ...entry, configName, databaseName, projectName };
+        return { ...entry, configName, databaseName, projectName, projectId };
       }));
+      
+      // Filter to user's projects if non-admin
+      let filteredHistory = enrichedHistory;
+      if (!isAdmin && userProjectIds) {
+        filteredHistory = enrichedHistory.filter(entry => entry.projectId && userProjectIds.includes(entry.projectId));
+      }
       
       // Create CSV content
       const csvHeaders = ["ID", "Date", "Project", "Database", "Import Config", "Status", "Records Imported", "Records Failed", "Completed At", "Error Details"];
-      const csvRows = enrichedHistory.map(entry => [
+      const csvRows = filteredHistory.map(entry => [
         entry.id,
         entry.startedAt ? new Date(entry.startedAt).toISOString() : "",
         entry.projectName || "",
