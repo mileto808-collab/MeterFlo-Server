@@ -12,6 +12,12 @@ interface ColumnPreferencesData {
 // Default columns for field technicians on work orders page
 const FIELD_TECH_WORK_ORDER_COLUMNS = ["customerWoId", "address", "oldSystemId", "status"];
 
+// Default columns for new users on work orders and search & reports pages
+const DEFAULT_WORK_ORDER_COLUMNS = ["customerWoId", "address", "status", "serviceType"];
+
+// Default columns for new users on users management page
+const DEFAULT_USERS_COLUMNS = ["username", "firstName", "lastName", "email", "role", "subrole", "projects"];
+
 export function useColumnPreferences(
   pageKey: string,
   allColumns: ColumnConfig[]
@@ -20,13 +26,24 @@ export function useColumnPreferences(
   const userId = user?.id;
   const subroleKey = user?.subroleKey;
 
-  // Determine default columns based on subrole
+  // Determine default columns based on subrole and page
   const defaultColumns = useMemo(() => {
     // Field technicians get a specific subset for work orders page
     if (subroleKey === "field_technician" && pageKey === "work_orders") {
       return FIELD_TECH_WORK_ORDER_COLUMNS;
     }
-    // All other users get all columns
+    
+    // Default columns for work orders and search & reports pages
+    if (pageKey === "work_orders" || pageKey === "search_reports") {
+      return DEFAULT_WORK_ORDER_COLUMNS;
+    }
+    
+    // Default columns for users management page
+    if (pageKey === "users") {
+      return DEFAULT_USERS_COLUMNS;
+    }
+    
+    // All other pages get all columns
     return allColumns.map(c => c.key);
   }, [subroleKey, pageKey, allColumns]);
 
