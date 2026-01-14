@@ -8601,34 +8601,39 @@ export async function registerRoutes(
         scheduledAt: null,
       };
       
-      if (oldSystemReading !== undefined && oldSystemReading !== null) {
-        updateData.oldSystemReading = parseFloat(String(oldSystemReading));
-      }
-      if (newSystemReading !== undefined && newSystemReading !== null) {
-        updateData.newSystemReading = parseFloat(String(newSystemReading));
-      }
-      if (newSystemId) {
-        updateData.newSystemId = newSystemId;
-      }
-      if (newSystemType) {
-        updateData.newSystemType = newSystemType;
+      // System fields - only set if this is a system or both changeout
+      if (needsSystem) {
+        if (oldSystemReading !== undefined && oldSystemReading !== null) {
+          updateData.oldSystemReading = parseFloat(String(oldSystemReading));
+        }
+        if (newSystemReading !== undefined && newSystemReading !== null) {
+          updateData.newSystemReading = parseFloat(String(newSystemReading));
+        }
+        if (newSystemId) {
+          updateData.newSystemId = newSystemId;
+        }
+        if (newSystemType) {
+          updateData.newSystemType = newSystemType;
+        }
       }
       
-      // Module fields
-      if (effectiveOldModuleReading !== undefined && effectiveOldModuleReading !== null) {
-        updateData.oldModuleRead = parseFloat(String(effectiveOldModuleReading));
-      }
-      if (effectiveNewModuleReading !== undefined && effectiveNewModuleReading !== null) {
-        updateData.newModuleRead = parseFloat(String(effectiveNewModuleReading));
-      }
-      if (newModuleId) {
-        updateData.newModuleId = newModuleId;
-      }
-      if (oldModuleType) {
-        updateData.oldModuleType = oldModuleType;
-      }
-      if (newModuleType) {
-        updateData.newModuleType = newModuleType;
+      // Module fields - only set if this is a module or both changeout
+      if (needsModule) {
+        if (effectiveOldModuleReading !== undefined && effectiveOldModuleReading !== null) {
+          updateData.oldModuleRead = parseFloat(String(effectiveOldModuleReading));
+        }
+        if (effectiveNewModuleReading !== undefined && effectiveNewModuleReading !== null) {
+          updateData.newModuleRead = parseFloat(String(effectiveNewModuleReading));
+        }
+        if (newModuleId) {
+          updateData.newModuleId = newModuleId;
+        }
+        if (oldModuleType) {
+          updateData.oldModuleType = oldModuleType;
+        }
+        if (newModuleType) {
+          updateData.newModuleType = newModuleType;
+        }
       }
       
       if (gpsCoordinates) {
@@ -8810,7 +8815,10 @@ export async function registerRoutes(
           : noteEntry;
       }
       
-      if (oldSystemReading !== undefined && oldSystemReading !== null) {
+      // Only set system reading if this work order has system data (not module-only)
+      const woAny = workOrder as any;
+      const needsSystem = !!workOrder.oldSystemId || !!woAny.old_system_id;
+      if (needsSystem && oldSystemReading !== undefined && oldSystemReading !== null) {
         updateData.oldSystemReading = parseInt(String(oldSystemReading), 10);
       }
       
@@ -9022,34 +9030,39 @@ export async function registerRoutes(
         scheduledAt: null,
       };
       
-      if (oldSystemReading !== undefined && oldSystemReading !== null) {
-        updateData.oldSystemReading = parseFloat(String(oldSystemReading));
-      }
-      if (newSystemReading !== undefined && newSystemReading !== null) {
-        updateData.newSystemReading = parseFloat(String(newSystemReading));
-      }
-      if (newSystemId) {
-        updateData.newSystemId = newSystemId;
-      }
-      if (newSystemType) {
-        updateData.newSystemType = newSystemType;
+      // System fields - only set if this is a system or both changeout
+      if (needsSystem) {
+        if (oldSystemReading !== undefined && oldSystemReading !== null) {
+          updateData.oldSystemReading = parseFloat(String(oldSystemReading));
+        }
+        if (newSystemReading !== undefined && newSystemReading !== null) {
+          updateData.newSystemReading = parseFloat(String(newSystemReading));
+        }
+        if (newSystemId) {
+          updateData.newSystemId = newSystemId;
+        }
+        if (newSystemType) {
+          updateData.newSystemType = newSystemType;
+        }
       }
       
-      // Module fields
-      if (oldModuleReading !== undefined && oldModuleReading !== null) {
-        updateData.oldModuleRead = parseFloat(String(oldModuleReading));
-      }
-      if (newModuleReading !== undefined && newModuleReading !== null) {
-        updateData.newModuleRead = parseFloat(String(newModuleReading));
-      }
-      if (newModuleId) {
-        updateData.newModuleId = newModuleId;
-      }
-      if (oldModuleType) {
-        updateData.oldModuleType = oldModuleType;
-      }
-      if (newModuleType) {
-        updateData.newModuleType = newModuleType;
+      // Module fields - only set if this is a module or both changeout
+      if (needsModule) {
+        if (oldModuleReading !== undefined && oldModuleReading !== null) {
+          updateData.oldModuleRead = parseFloat(String(oldModuleReading));
+        }
+        if (newModuleReading !== undefined && newModuleReading !== null) {
+          updateData.newModuleRead = parseFloat(String(newModuleReading));
+        }
+        if (newModuleId) {
+          updateData.newModuleId = newModuleId;
+        }
+        if (oldModuleType) {
+          updateData.oldModuleType = oldModuleType;
+        }
+        if (newModuleType) {
+          updateData.newModuleType = newModuleType;
+        }
       }
       
       if (gpsCoordinates) {
