@@ -3434,10 +3434,17 @@ export async function registerRoutes(
         }
       }
       
-      // Validate system reading format (numeric - integers or decimals)
-      const isValidSystemReading = (reading: string): boolean => {
-        if (!reading || reading.trim().length === 0) return false;
-        return /^\d+(\.\d+)?$/.test(reading.trim());
+      // Validate system reading format (numeric - integers or decimals, 0 is valid)
+      const isValidSystemReading = (reading: string | number | null | undefined): boolean => {
+        if (reading === null || reading === undefined) return false;
+        const str = String(reading).trim();
+        if (str.length === 0) return false;
+        return /^\d+(\.\d+)?$/.test(str);
+      };
+      
+      // Helper to check if a reading value is present (null/undefined/empty string = not present, 0 = present)
+      const hasReadingValue = (value: any): boolean => {
+        return value !== null && value !== undefined && value !== "";
       };
       
       // Validate GPS format (lat,lng with valid ranges)
@@ -3460,13 +3467,13 @@ export async function registerRoutes(
         const needsSystem = changeoutScope === "system" || changeoutScope === "both";
         const needsModule = changeoutScope === "module" || changeoutScope === "both";
         
-        // Validate required fields based on scope
-        if (needsSystem && (!oldSystemReading || !newSystemId || !newSystemReading)) {
+        // Validate required fields based on scope (use hasReadingValue for readings to allow 0)
+        if (needsSystem && (!hasReadingValue(oldSystemReading) || !newSystemId || !hasReadingValue(newSystemReading))) {
           return res.status(400).json({ 
             message: "Missing required system fields: old reading, new system ID, and new reading are required" 
           });
         }
-        if (needsModule && (!oldModuleReading || !newModuleId || !newModuleReading)) {
+        if (needsModule && (!hasReadingValue(oldModuleReading) || !newModuleId || !hasReadingValue(newModuleReading))) {
           return res.status(400).json({ 
             message: "Missing required module fields: old reading, new module ID, and new reading are required" 
           });
@@ -6340,11 +6347,13 @@ export async function registerRoutes(
               mappedData.serviceType = "Water";
             }
             
-            if (mappedData.oldSystemReading) {
-              mappedData.oldSystemReading = parseInt(String(mappedData.oldSystemReading)) || null;
+            if (mappedData.oldSystemReading !== undefined && mappedData.oldSystemReading !== null && mappedData.oldSystemReading !== "") {
+              const parsed = parseInt(String(mappedData.oldSystemReading));
+              mappedData.oldSystemReading = isNaN(parsed) ? null : parsed;
             }
-            if (mappedData.newSystemReading) {
-              mappedData.newSystemReading = parseInt(String(mappedData.newSystemReading)) || null;
+            if (mappedData.newSystemReading !== undefined && mappedData.newSystemReading !== null && mappedData.newSystemReading !== "") {
+              const parsed = parseInt(String(mappedData.newSystemReading));
+              mappedData.newSystemReading = isNaN(parsed) ? null : parsed;
             }
             
             mappedData.status = String(mappedData.status || "pending");
@@ -8088,10 +8097,17 @@ export async function registerRoutes(
       const files = req.files as Express.Multer.File[];
       const folderName = workOrder.customerWoId || String(workOrder.id);
       
-      // Validation (numeric - integers or decimals)
-      const isValidSystemReading = (reading: string): boolean => {
-        if (!reading || reading.trim().length === 0) return false;
-        return /^\d+(\.\d+)?$/.test(reading.trim());
+      // Validation (numeric - integers or decimals, 0 is valid)
+      const isValidSystemReading = (reading: string | number | null | undefined): boolean => {
+        if (reading === null || reading === undefined) return false;
+        const str = String(reading).trim();
+        if (str.length === 0) return false;
+        return /^\d+(\.\d+)?$/.test(str);
+      };
+      
+      // Helper to check if a reading value is present (null/undefined/empty string = not present, 0 = present)
+      const hasReadingValue = (value: any): boolean => {
+        return value !== null && value !== undefined && value !== "";
       };
       
       const isValidGps = (gps: string): boolean => {
@@ -8136,8 +8152,8 @@ export async function registerRoutes(
       }
       
       if (canChange) {
-        // Success path - system was changed
-        if (!oldSystemReading || !newSystemId || !newSystemReading || !gpsCoordinates || !signatureName) {
+        // Success path - system was changed (use hasReadingValue for readings to allow 0)
+        if (!hasReadingValue(oldSystemReading) || !newSystemId || !hasReadingValue(newSystemReading) || !gpsCoordinates || !signatureName) {
           return res.status(400).json({ 
             message: "Missing required fields for system changeout" 
           });
