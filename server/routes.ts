@@ -2442,10 +2442,37 @@ export async function registerRoutes(
         const mergedData = { ...existingWorkOrder, ...req.body };
         const missingFields: string[] = [];
         
-        if (!mergedData.oldSystemId) missingFields.push("Old System ID");
-        if (mergedData.oldSystemReading === null || mergedData.oldSystemReading === undefined) missingFields.push("Old System Reading");
-        if (!mergedData.newSystemId) missingFields.push("New System ID");
-        if (mergedData.newSystemReading === null || mergedData.newSystemReading === undefined) missingFields.push("New System Reading");
+        // Determine if this work order has system data or module data
+        const hasSystemData = mergedData.oldSystemId || mergedData.newSystemId;
+        const hasModuleData = mergedData.oldModuleId || mergedData.newModuleId;
+        
+        // Validate system data if present
+        const systemMissingFields: string[] = [];
+        if (hasSystemData) {
+          if (!mergedData.oldSystemId) systemMissingFields.push("Old System ID");
+          if (mergedData.oldSystemReading === null || mergedData.oldSystemReading === undefined) systemMissingFields.push("Old System Reading");
+          if (!mergedData.newSystemId) systemMissingFields.push("New System ID");
+          if (mergedData.newSystemReading === null || mergedData.newSystemReading === undefined) systemMissingFields.push("New System Reading");
+        }
+        
+        // Validate module data if present
+        const moduleMissingFields: string[] = [];
+        if (hasModuleData) {
+          if (!mergedData.oldModuleId) moduleMissingFields.push("Old Module ID");
+          if (mergedData.oldModuleReading === null || mergedData.oldModuleReading === undefined) moduleMissingFields.push("Old Module Reading");
+          if (!mergedData.newModuleId) moduleMissingFields.push("New Module ID");
+          if (mergedData.newModuleReading === null || mergedData.newModuleReading === undefined) moduleMissingFields.push("New Module Reading");
+        }
+        
+        // Must have at least one complete set (system or module)
+        if (!hasSystemData && !hasModuleData) {
+          missingFields.push("System or Module data (at least one required)");
+        } else {
+          // Add missing fields from whichever data type is present
+          missingFields.push(...systemMissingFields, ...moduleMissingFields);
+        }
+        
+        // Always required fields
         if (!mergedData.newGps) missingFields.push("New GPS");
         if (!mergedData.signatureData && !req.body.signatureData) missingFields.push("Signature");
         if (!mergedData.signatureName && !req.body.signatureName) missingFields.push("Signature Name");
