@@ -2807,7 +2807,7 @@ export function WorkOrderDetail({
                         </Button>
                       </div>
                     )}
-                    <p className="text-sm" data-testid="mobile-notes-display">
+                    <p className="text-sm whitespace-pre-wrap" data-testid="mobile-notes-display">
                       {workOrder.notes || "No notes"}
                     </p>
                   </div>
@@ -2867,7 +2867,7 @@ export function WorkOrderDetail({
                         </Button>
                       </div>
                     )}
-                    <p className="text-sm" data-testid="desktop-notes-display">
+                    <p className="text-sm whitespace-pre-wrap" data-testid="desktop-notes-display">
                       {workOrder.notes || "No notes"}
                     </p>
                   </div>
