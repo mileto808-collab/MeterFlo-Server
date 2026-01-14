@@ -44,7 +44,7 @@ import { useTimezone } from "@/hooks/use-timezone";
 import { formatDateTimeInTimezone, formatForExport, formatInTimezone } from "@/lib/timezone";
 import { useProjectEvents } from "@/hooks/useProjectEvents";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, ArrowLeft, Search, ArrowUpDown, ArrowUp, ArrowDown, Download, FileSpreadsheet, FileText, Filter, X, Route, ChevronRight, Paperclip, Eye, FileIcon, ChevronsUp, UserPlus, UserMinus, AlertTriangle, Loader2, Wrench } from "lucide-react";
+import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, ArrowLeft, Search, ArrowUpDown, ArrowUp, ArrowDown, Download, FileSpreadsheet, FileText, Filter, X, Route, ChevronRight, Paperclip, Eye, FileIcon, ChevronsUp, UserPlus, UserMinus, AlertTriangle, Loader2, Wrench, Home, Gauge, Cpu, Calendar } from "lucide-react";
 import { BackToTop } from "@/components/ui/back-to-top";
 import { TablePagination } from "@/components/ui/table-pagination";
 import * as XLSX from "xlsx";
@@ -68,6 +68,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { Users, ChevronDown, ChevronUp, BarChart3, Settings2 } from "lucide-react";
 import {
   DropdownMenu,
@@ -2250,498 +2256,702 @@ export default function ProjectWorkOrders() {
           <h1 className="text-2xl font-bold" data-testid="text-create-work-order-title">Create Work Order</h1>
           <p className="text-muted-foreground mt-1">Add a new utility system work order to {project?.name}</p>
         </div>
-        <Card>
-          <CardContent className="pt-6">
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField
-                    control={form.control}
-                    name="customerWoId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Work Order ID *</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="WO-001" data-testid="input-create-customer-wo-id" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="customerId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Customer ID *</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="CUST-001" data-testid="input-create-customer-id" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="customerName"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Customer Name *</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="John Doe" data-testid="input-create-customer-name" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="serviceType"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Service Type *</FormLabel>
-                        <Select value={field.value} onValueChange={field.onChange}>
-                          <FormControl>
-                            <SelectTrigger data-testid="select-create-service-type">
-                              <SelectValue />
-                            </SelectTrigger>
-                          </FormControl>
-                          <SelectContent>
-                            {serviceTypes.map((type) => (
-                              <SelectItem key={type.id} value={type.code}>{type.label}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="oldSystemType"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Old System Type</FormLabel>
-                        <div className="flex gap-1">
-                          <Select 
-                            value={field.value || "__none__"} 
-                            onValueChange={(val) => {
-                              field.onChange(val === "__none__" ? null : val);
-                            }}
-                          >
-                            <FormControl>
-                              <SelectTrigger data-testid="select-create-old-system-type" className="flex-1">
-                                <SelectValue placeholder="Select old system type..." />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="__none__">None</SelectItem>
-                              {Array.isArray(systemTypes) && systemTypes.map((mt) => (
-                                <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <Button
-                            type="button"
-                            size="icon"
-                            variant="outline"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              openCreateSystemTypeDialog("oldSystemType");
-                            }}
-                            data-testid="button-create-old-system-type"
-                          >
-                            <Plus className="h-4 w-4" />
-                          </Button>
-                        </div>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="newSystemType"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>New System Type</FormLabel>
-                        <div className="flex gap-1">
-                          <Select 
-                            value={field.value || "__none__"} 
-                            onValueChange={(val) => {
-                              field.onChange(val === "__none__" ? null : val);
-                            }}
-                          >
-                            <FormControl>
-                              <SelectTrigger data-testid="select-create-new-system-type" className="flex-1">
-                                <SelectValue placeholder="Select new system type..." />
-                              </SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                              <SelectItem value="__none__">None</SelectItem>
-                              {Array.isArray(systemTypes) && systemTypes.map((mt) => (
-                                <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <Button
-                            type="button"
-                            size="icon"
-                            variant="outline"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              openCreateSystemTypeDialog("newSystemType");
-                            }}
-                            data-testid="button-create-new-system-type"
-                          >
-                            <Plus className="h-4 w-4" />
-                          </Button>
-                        </div>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <div className="md:col-span-2">
-                    <SignaturePad ref={signaturePadRef} />
+        
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <Accordion type="multiple" defaultValue={["customer", "system", "module", "scheduling"]} className="space-y-3">
+              
+              {/* Customer & Site Information */}
+              <AccordionItem value="customer" className="border rounded-lg px-4">
+                <AccordionTrigger className="hover:no-underline py-4" data-testid="accordion-create-customer">
+                  <div className="flex items-center gap-2">
+                    <Home className="h-4 w-4 text-primary" />
+                    <span className="font-medium">Customer & Site</span>
                   </div>
-                  <FormField
-                    control={form.control}
-                    name="address"
-                    render={({ field }) => (
-                      <FormItem className="md:col-span-2">
-                        <FormLabel>Address *</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="123 Main Street" data-testid="input-create-address" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="city"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>City</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="City" data-testid="input-create-city" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="state"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>State</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="State" data-testid="input-create-state" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="zip"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>ZIP Code</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="12345" data-testid="input-create-zip" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="phone"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Phone</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="555-123-4567" data-testid="input-create-phone" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="email"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Email</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="email@example.com" data-testid="input-create-email" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="route"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Route</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="Route A" data-testid="input-create-route" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="zone"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Zone</FormLabel>
-                        <FormControl>
-                          <Input {...field} value={field.value || ""} placeholder="Zone 1" data-testid="input-create-zone" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="oldSystemId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Old System ID</FormLabel>
-                        <FormControl>
-                          <ScannerInput 
-                            value={field.value || ""} 
-                            onChange={field.onChange} 
-                            placeholder="OLD-12345" 
-                            data-testid="input-create-old-system-id" 
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="oldSystemReading"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Old System Reading</FormLabel>
-                        <FormControl>
-                          <Input 
-                            type="number" 
-                            {...field} 
-                            value={field.value ?? ""} 
-                            onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : "")}
-                            placeholder="12345" 
-                            data-testid="input-create-old-system-reading" 
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="newSystemId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>New System ID</FormLabel>
-                        <FormControl>
-                          <ScannerInput 
-                            value={field.value || ""} 
-                            onChange={field.onChange} 
-                            placeholder="NEW-67890" 
-                            data-testid="input-create-new-system-id" 
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="newSystemReading"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>New System Reading</FormLabel>
-                        <FormControl>
-                          <Input 
-                            type="number" 
-                            {...field} 
-                            value={field.value ?? ""} 
-                            onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : "")}
-                            placeholder="67890" 
-                            data-testid="input-create-new-system-reading" 
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="oldGps"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Old GPS Coordinates</FormLabel>
-                        <FormControl>
-                          <GPSCapture 
-                            value={field.value || ""} 
-                            onChange={field.onChange} 
-                            placeholder="40.7128,-74.0060" 
-                            data-testid="input-create-old-gps" 
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="newGps"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>New GPS Coordinates</FormLabel>
-                        <FormControl>
-                          <GPSCapture 
-                            value={field.value || ""} 
-                            onChange={field.onChange} 
-                            placeholder="40.7128,-74.0060" 
-                            data-testid="input-create-new-gps" 
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="assignedUserId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Assigned User</FormLabel>
-                        <Select value={field.value ?? "__none__"} onValueChange={(v) => field.onChange(v === "__none__" ? undefined : v)}>
+                </AccordionTrigger>
+                <AccordionContent className="pb-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="customerWoId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Work Order ID *</FormLabel>
                           <FormControl>
-                            <SelectTrigger data-testid="select-create-assigned-user">
-                              <SelectValue placeholder="Select user..." />
-                            </SelectTrigger>
+                            <Input {...field} value={field.value || ""} placeholder="WO-001" data-testid="input-create-customer-wo-id" />
                           </FormControl>
-                          <SelectContent>
-                            <SelectItem value="__none__">None</SelectItem>
-                            {assigneesData?.users?.map((user) => (
-                              <SelectItem key={user.id} value={user.id}>
-                                {user.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="assignedGroupId"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Assigned Group</FormLabel>
-                        <Select value={field.value ?? "__none__"} onValueChange={(v) => field.onChange(v === "__none__" ? undefined : v)}>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="customerId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Customer ID *</FormLabel>
                           <FormControl>
-                            <SelectTrigger data-testid="select-create-assigned-group">
-                              <SelectValue placeholder="Select group..." />
-                            </SelectTrigger>
+                            <Input {...field} value={field.value || ""} placeholder="CUST-001" data-testid="input-create-customer-id" />
                           </FormControl>
-                          <SelectContent>
-                            <SelectItem value="__none__">None</SelectItem>
-                            {assigneesData?.groups?.map((group) => (
-                              <SelectItem key={group.id} value={group.key || group.label}>
-                                {group.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="scheduledAt"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Scheduled At</FormLabel>
-                        <FormControl>
-                          <DateTimePicker
-                            value={field.value}
-                            onChange={field.onChange}
-                            data-testid="input-create-scheduled-at"
-                            placeholder="Select schedule date/time"
-                          />
-                        </FormControl>
-                        <p className="text-xs text-muted-foreground">Setting a date/time will auto-set status to "Scheduled"</p>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name="trouble"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Trouble Code</FormLabel>
-                        <Select value={(field.value as string) || "__none__"} onValueChange={(val) => field.onChange(val === "__none__" ? "" : val)}>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="customerName"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Customer Name *</FormLabel>
                           <FormControl>
-                            <SelectTrigger data-testid="select-create-trouble">
-                              <SelectValue placeholder="Select trouble code..." />
-                            </SelectTrigger>
+                            <Input {...field} value={field.value || ""} placeholder="John Doe" data-testid="input-create-customer-name" />
                           </FormControl>
-                          <SelectContent>
-                            <SelectItem value="__none__">None</SelectItem>
-                            {troubleCodes.map((tc) => (
-                              <SelectItem key={tc.id} value={tc.code}>
-                                {tc.code} - {tc.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="serviceType"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Service Type *</FormLabel>
+                          <Select value={field.value} onValueChange={field.onChange}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-create-service-type">
+                                <SelectValue />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {serviceTypes.map((type) => (
+                                <SelectItem key={type.id} value={type.code}>{type.label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="address"
+                      render={({ field }) => (
+                        <FormItem className="md:col-span-2">
+                          <FormLabel>Address *</FormLabel>
+                          <FormControl>
+                            <Input {...field} value={field.value || ""} placeholder="123 Main Street" data-testid="input-create-address" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="city"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>City</FormLabel>
+                          <FormControl>
+                            <Input {...field} value={field.value || ""} placeholder="City" data-testid="input-create-city" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="state"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>State</FormLabel>
+                          <FormControl>
+                            <Input {...field} value={field.value || ""} placeholder="State" data-testid="input-create-state" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="zip"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>ZIP Code</FormLabel>
+                          <FormControl>
+                            <Input {...field} value={field.value || ""} placeholder="12345" data-testid="input-create-zip" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="phone"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Phone</FormLabel>
+                          <FormControl>
+                            <Input {...field} value={field.value || ""} placeholder="555-123-4567" data-testid="input-create-phone" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="email"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Email</FormLabel>
+                          <FormControl>
+                            <Input {...field} value={field.value || ""} placeholder="email@example.com" data-testid="input-create-email" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="route"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Route</FormLabel>
+                          <FormControl>
+                            <Input {...field} value={field.value || ""} placeholder="Route A" data-testid="input-create-route" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="zone"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Zone</FormLabel>
+                          <FormControl>
+                            <Input {...field} value={field.value || ""} placeholder="Zone 1" data-testid="input-create-zone" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+
+              {/* System Details */}
+              <AccordionItem value="system" className="border rounded-lg px-4">
+                <AccordionTrigger className="hover:no-underline py-4" data-testid="accordion-create-system">
+                  <div className="flex items-center gap-2">
+                    <Gauge className="h-4 w-4 text-primary" />
+                    <span className="font-medium">System Details</span>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="pb-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Old System - Left Column */}
+                    <div className="space-y-4 border-l-4 border-l-green-500 pl-4">
+                      <h4 className="text-sm font-semibold text-green-600">Old System</h4>
+                      <FormField
+                        control={form.control}
+                        name="oldSystemId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>System ID</FormLabel>
+                            <FormControl>
+                              <ScannerInput 
+                                value={field.value || ""} 
+                                onChange={field.onChange} 
+                                placeholder="OLD-12345" 
+                                data-testid="input-create-old-system-id" 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="oldSystemType"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>System Type</FormLabel>
+                            <div className="flex gap-1">
+                              <Select 
+                                value={field.value || "__none__"} 
+                                onValueChange={(val) => field.onChange(val === "__none__" ? null : val)}
+                              >
+                                <FormControl>
+                                  <SelectTrigger data-testid="select-create-old-system-type" className="flex-1">
+                                    <SelectValue placeholder="Select type..." />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="__none__">None</SelectItem>
+                                  {Array.isArray(systemTypes) && systemTypes.map((mt) => (
+                                    <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="outline"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  openCreateSystemTypeDialog("oldSystemType");
+                                }}
+                                data-testid="button-create-old-system-type"
+                              >
+                                <Plus className="h-4 w-4" />
+                              </Button>
+                            </div>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="oldSystemReading"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Reading</FormLabel>
+                            <FormControl>
+                              <Input 
+                                type="number" 
+                                {...field} 
+                                value={field.value ?? ""} 
+                                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : "")}
+                                placeholder="12345" 
+                                data-testid="input-create-old-system-reading" 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="oldGps"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>GPS Coordinates</FormLabel>
+                            <FormControl>
+                              <GPSCapture 
+                                value={field.value || ""} 
+                                onChange={field.onChange} 
+                                placeholder="40.7128,-74.0060" 
+                                data-testid="input-create-old-gps" 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    {/* New System - Right Column */}
+                    <div className="space-y-4 border-l-4 border-l-cyan-500 pl-4">
+                      <h4 className="text-sm font-semibold text-cyan-600">New System</h4>
+                      <FormField
+                        control={form.control}
+                        name="newSystemId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>System ID</FormLabel>
+                            <FormControl>
+                              <ScannerInput 
+                                value={field.value || ""} 
+                                onChange={field.onChange} 
+                                placeholder="NEW-67890" 
+                                data-testid="input-create-new-system-id" 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="newSystemType"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>System Type</FormLabel>
+                            <div className="flex gap-1">
+                              <Select 
+                                value={field.value || "__none__"} 
+                                onValueChange={(val) => field.onChange(val === "__none__" ? null : val)}
+                              >
+                                <FormControl>
+                                  <SelectTrigger data-testid="select-create-new-system-type" className="flex-1">
+                                    <SelectValue placeholder="Select type..." />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="__none__">None</SelectItem>
+                                  {Array.isArray(systemTypes) && systemTypes.map((mt) => (
+                                    <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="outline"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  openCreateSystemTypeDialog("newSystemType");
+                                }}
+                                data-testid="button-create-new-system-type"
+                              >
+                                <Plus className="h-4 w-4" />
+                              </Button>
+                            </div>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="newSystemReading"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Reading</FormLabel>
+                            <FormControl>
+                              <Input 
+                                type="number" 
+                                {...field} 
+                                value={field.value ?? ""} 
+                                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : "")}
+                                placeholder="67890" 
+                                data-testid="input-create-new-system-reading" 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="newGps"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>GPS Coordinates</FormLabel>
+                            <FormControl>
+                              <GPSCapture 
+                                value={field.value || ""} 
+                                onChange={field.onChange} 
+                                placeholder="40.7128,-74.0060" 
+                                data-testid="input-create-new-gps" 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+
+              {/* Module Details */}
+              <AccordionItem value="module" className="border rounded-lg px-4">
+                <AccordionTrigger className="hover:no-underline py-4" data-testid="accordion-create-module">
+                  <div className="flex items-center gap-2">
+                    <Cpu className="h-4 w-4 text-primary" />
+                    <span className="font-medium">Module Details</span>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="pb-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Old Module - Left Column */}
+                    <div className="space-y-4 border-l-4 border-l-green-500 pl-4">
+                      <h4 className="text-sm font-semibold text-green-600">Old Module</h4>
+                      <FormField
+                        control={form.control}
+                        name="oldModuleId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Module ID</FormLabel>
+                            <FormControl>
+                              <ScannerInput 
+                                value={field.value || ""} 
+                                onChange={field.onChange} 
+                                placeholder="MOD-12345" 
+                                data-testid="input-create-old-module-id" 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="oldModuleType"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Module Type</FormLabel>
+                            <Select 
+                              value={field.value || "__none__"} 
+                              onValueChange={(val) => field.onChange(val === "__none__" ? null : val)}
+                            >
+                              <FormControl>
+                                <SelectTrigger data-testid="select-create-old-module-type">
+                                  <SelectValue placeholder="Select type..." />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="__none__">None</SelectItem>
+                                {Array.isArray(moduleTypes) && moduleTypes.map((mt) => (
+                                  <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="oldModuleRead"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Reading</FormLabel>
+                            <FormControl>
+                              <Input 
+                                type="number" 
+                                {...field} 
+                                value={field.value ?? ""} 
+                                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : "")}
+                                placeholder="12345" 
+                                data-testid="input-create-old-module-read" 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    {/* New Module - Right Column */}
+                    <div className="space-y-4 border-l-4 border-l-cyan-500 pl-4">
+                      <h4 className="text-sm font-semibold text-cyan-600">New Module</h4>
+                      <FormField
+                        control={form.control}
+                        name="newModuleId"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Module ID</FormLabel>
+                            <FormControl>
+                              <ScannerInput 
+                                value={field.value || ""} 
+                                onChange={field.onChange} 
+                                placeholder="MOD-67890" 
+                                data-testid="input-create-new-module-id" 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="newModuleType"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Module Type</FormLabel>
+                            <Select 
+                              value={field.value || "__none__"} 
+                              onValueChange={(val) => field.onChange(val === "__none__" ? null : val)}
+                            >
+                              <FormControl>
+                                <SelectTrigger data-testid="select-create-new-module-type">
+                                  <SelectValue placeholder="Select type..." />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="__none__">None</SelectItem>
+                                {Array.isArray(moduleTypes) && moduleTypes.map((mt) => (
+                                  <SelectItem key={mt.id} value={mt.productId}>{mt.productLabel}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="newModuleRead"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Reading</FormLabel>
+                            <FormControl>
+                              <Input 
+                                type="number" 
+                                {...field} 
+                                value={field.value ?? ""} 
+                                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : "")}
+                                placeholder="67890" 
+                                data-testid="input-create-new-module-read" 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+
+              {/* Assignment & Scheduling */}
+              <AccordionItem value="scheduling" className="border rounded-lg px-4">
+                <AccordionTrigger className="hover:no-underline py-4" data-testid="accordion-create-scheduling">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-primary" />
+                    <span className="font-medium">Assignment & Scheduling</span>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="pb-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="assignedUserId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Assigned User</FormLabel>
+                          <Select value={field.value ?? "__none__"} onValueChange={(v) => field.onChange(v === "__none__" ? undefined : v)}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-create-assigned-user">
+                                <SelectValue placeholder="Select user..." />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="__none__">None</SelectItem>
+                              {assigneesData?.users?.map((user) => (
+                                <SelectItem key={user.id} value={user.id}>
+                                  {user.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="assignedGroupId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Assigned Group</FormLabel>
+                          <Select value={field.value ?? "__none__"} onValueChange={(v) => field.onChange(v === "__none__" ? undefined : v)}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-create-assigned-group">
+                                <SelectValue placeholder="Select group..." />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="__none__">None</SelectItem>
+                              {assigneesData?.groups?.map((group) => (
+                                <SelectItem key={group.id} value={group.key || group.label}>
+                                  {group.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="scheduledAt"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Scheduled At</FormLabel>
+                          <FormControl>
+                            <DateTimePicker
+                              value={field.value}
+                              onChange={field.onChange}
+                              data-testid="input-create-scheduled-at"
+                              placeholder="Select schedule date/time"
+                            />
+                          </FormControl>
+                          <p className="text-xs text-muted-foreground">Setting a date/time will auto-set status to "Scheduled"</p>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name="trouble"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Trouble Code</FormLabel>
+                          <Select value={(field.value as string) || "__none__"} onValueChange={(val) => field.onChange(val === "__none__" ? "" : val)}>
+                            <FormControl>
+                              <SelectTrigger data-testid="select-create-trouble">
+                                <SelectValue placeholder="Select trouble code..." />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="__none__">None</SelectItem>
+                              {troubleCodes.map((tc) => (
+                                <SelectItem key={tc.id} value={tc.code}>
+                                  {tc.code} - {tc.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+
+              {/* Notes */}
+              <AccordionItem value="notes" className="border rounded-lg px-4">
+                <AccordionTrigger className="hover:no-underline py-4" data-testid="accordion-create-notes">
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-primary" />
+                    <span className="font-medium">Notes</span>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="pb-4">
                   <FormField
                     control={form.control}
                     name="notes"
                     render={({ field }) => (
-                      <FormItem className="md:col-span-2">
-                        <FormLabel>Notes</FormLabel>
+                      <FormItem>
                         <FormControl>
-                          <Textarea {...field} value={field.value || ""} placeholder="Additional notes..." data-testid="input-create-notes" />
+                          <Textarea {...field} value={field.value || ""} placeholder="Additional notes..." className="min-h-[100px]" data-testid="input-create-notes" />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
-                </div>
-                <div className="flex gap-4 pt-4">
-                  <Button type="button" variant="outline" onClick={() => {
-                    setIsCreatingWorkOrder(false);
-                    form.reset();
-                  }}>Cancel</Button>
-                  <Button type="submit" disabled={createMutation.isPending} data-testid="button-submit-create-work-order">
-                    {createMutation.isPending ? "Creating..." : "Create Work Order"}
-                  </Button>
-                </div>
-              </form>
-            </Form>
-          </CardContent>
-        </Card>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+
+            <div className="flex gap-4 pt-4">
+              <Button type="button" variant="outline" onClick={() => {
+                setIsCreatingWorkOrder(false);
+                form.reset();
+              }}>Cancel</Button>
+              <Button type="submit" disabled={createMutation.isPending} data-testid="button-submit-create-work-order">
+                {createMutation.isPending ? "Creating..." : "Create Work Order"}
+              </Button>
+            </div>
+          </form>
+        </Form>
       </div>
     );
   }
