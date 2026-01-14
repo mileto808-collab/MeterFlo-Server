@@ -711,11 +711,24 @@ export default function ProjectWorkOrders() {
   };
 
   const normalizeOptionalFields = (data: WorkOrderFormData, existingWo?: any) => {
-    // For reading fields, preserve existing values if form value is undefined
-    // This prevents overwriting database values when form fields aren't touched
+    // For reading fields:
+    // - undefined = form field not touched, preserve existing value
+    // - "" = user cleared the field, set to null
+    // - 0 or other number = valid reading value
     const getReadingValue = (formValue: any, existingValue: any) => {
-      if (formValue !== undefined) return formValue;
-      return existingValue ?? null;
+      if (formValue === undefined) return existingValue ?? null;
+      if (formValue === "") return null;
+      return formValue;
+    };
+    
+    // For string ID fields:
+    // - undefined = form field not touched, preserve existing value
+    // - "" = user cleared the field, set to null
+    // - any string = use the value
+    const getIdValue = (formValue: any, existingValue: any) => {
+      if (formValue === undefined) return existingValue || null;
+      if (formValue === "") return null;
+      return formValue || null;
     };
     
     return {
@@ -727,22 +740,22 @@ export default function ProjectWorkOrders() {
       email: data.email || null,
       route: data.route || null,
       zone: data.zone || null,
-      oldSystemId: data.oldSystemId || existingWo?.oldSystemId || null,
+      oldSystemId: getIdValue(data.oldSystemId, existingWo?.oldSystemId),
       oldSystemReading: getReadingValue(data.oldSystemReading, existingWo?.oldSystemReading),
-      newSystemId: data.newSystemId || existingWo?.newSystemId || null,
+      newSystemId: getIdValue(data.newSystemId, existingWo?.newSystemId),
       newSystemReading: getReadingValue(data.newSystemReading, existingWo?.newSystemReading),
       oldGps: data.oldGps || null,
       newGps: data.newGps || null,
       notes: data.notes || null,
       trouble: (data as any).trouble || null,
-      oldSystemType: (data as any).oldSystemType || existingWo?.oldSystemType || null,
-      newSystemType: (data as any).newSystemType || existingWo?.newSystemType || null,
-      oldModuleId: (data as any).oldModuleId || existingWo?.oldModuleId || null,
+      oldSystemType: getIdValue((data as any).oldSystemType, existingWo?.oldSystemType),
+      newSystemType: getIdValue((data as any).newSystemType, existingWo?.newSystemType),
+      oldModuleId: getIdValue((data as any).oldModuleId, existingWo?.oldModuleId),
       oldModuleRead: getReadingValue((data as any).oldModuleRead, existingWo?.oldModuleRead),
-      oldModuleType: (data as any).oldModuleType || existingWo?.oldModuleType || null,
-      newModuleId: (data as any).newModuleId || existingWo?.newModuleId || null,
+      oldModuleType: getIdValue((data as any).oldModuleType, existingWo?.oldModuleType),
+      newModuleId: getIdValue((data as any).newModuleId, existingWo?.newModuleId),
       newModuleRead: getReadingValue((data as any).newModuleRead, existingWo?.newModuleRead),
-      newModuleType: (data as any).newModuleType || existingWo?.newModuleType || null,
+      newModuleType: getIdValue((data as any).newModuleType, existingWo?.newModuleType),
       assignedUserId: (data as any).assignedUserId ?? null,
       assignedGroupId: (data as any).assignedGroupId ?? null,
       scheduledAt: (data as any).scheduledAt || null,
@@ -2525,7 +2538,7 @@ export default function ProjectWorkOrders() {
                             type="number" 
                             {...field} 
                             value={field.value ?? ""} 
-                            onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                            onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : "")}
                             placeholder="12345" 
                             data-testid="input-create-old-system-reading" 
                           />
@@ -2563,7 +2576,7 @@ export default function ProjectWorkOrders() {
                             type="number" 
                             {...field} 
                             value={field.value ?? ""} 
-                            onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                            onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : "")}
                             placeholder="67890" 
                             data-testid="input-create-new-system-reading" 
                           />
@@ -2924,7 +2937,7 @@ export default function ProjectWorkOrders() {
                 type="number" 
                 {...field} 
                 value={field.value ?? ""} 
-                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : "")}
                 placeholder="12345" 
                 data-testid="input-old-system-reading" 
               />
@@ -2957,7 +2970,7 @@ export default function ProjectWorkOrders() {
                 type="number" 
                 {...field} 
                 value={field.value ?? ""} 
-                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : "")}
                 placeholder="67890" 
                 data-testid="input-new-system-reading" 
               />

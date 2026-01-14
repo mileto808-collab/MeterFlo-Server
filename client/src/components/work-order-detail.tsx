@@ -1276,7 +1276,7 @@ export function WorkOrderDetail({
                                 type="number" 
                                 {...field} 
                                 value={field.value ?? ""} 
-                                onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
+                                onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : "")}
                                 placeholder="12345" 
                                 data-testid="input-mobile-old-system-reading" 
                               />
@@ -1345,7 +1345,7 @@ export function WorkOrderDetail({
                                 type="number" 
                                 {...field} 
                                 value={field.value ?? ""} 
-                                onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
+                                onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : "")}
                                 placeholder="12345" 
                                 data-testid="input-mobile-old-module-reading" 
                               />
@@ -1414,7 +1414,7 @@ export function WorkOrderDetail({
                                 type="number" 
                                 {...field} 
                                 value={field.value ?? ""} 
-                                onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
+                                onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : "")}
                                 placeholder="12345" 
                                 data-testid="input-mobile-new-system-reading" 
                               />
@@ -1483,7 +1483,7 @@ export function WorkOrderDetail({
                                 type="number" 
                                 {...field} 
                                 value={field.value ?? ""} 
-                                onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : undefined)}
+                                onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : "")}
                                 placeholder="12345" 
                                 data-testid="input-mobile-new-module-reading" 
                               />
@@ -1823,7 +1823,7 @@ export function WorkOrderDetail({
                                 type="number" 
                                 {...field} 
                                 value={field.value ?? ""} 
-                                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : "")}
                                 placeholder="12345" 
                                 disabled={!canEdit}
                                 data-testid="input-old-system-reading" 
@@ -1913,7 +1913,7 @@ export function WorkOrderDetail({
                                 type="number" 
                                 {...field} 
                                 value={field.value ?? ""} 
-                                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : "")}
                                 placeholder="12345" 
                                 disabled={!canEdit}
                                 data-testid="input-old-module-reading" 
@@ -2060,7 +2060,7 @@ export function WorkOrderDetail({
                                 type="number" 
                                 {...field} 
                                 value={field.value ?? ""} 
-                                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : "")}
                                 placeholder="67890" 
                                 disabled={!canEdit}
                                 data-testid="input-new-system-reading" 
@@ -2150,7 +2150,7 @@ export function WorkOrderDetail({
                                 type="number" 
                                 {...field} 
                                 value={field.value ?? ""} 
-                                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : undefined)}
+                                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : "")}
                                 placeholder="67890" 
                                 disabled={!canEdit}
                                 data-testid="input-new-module-reading" 
