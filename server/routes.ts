@@ -2536,6 +2536,22 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Work order not found" });
       }
       
+      // Save signature file if signatureData was provided and is a valid base64 image
+      if (req.body.signatureData && req.body.signatureData.startsWith("data:image")) {
+        const folderName = workOrder.customerWoId || String(workOrder.id);
+        const base64Data = req.body.signatureData.split(",")[1];
+        const signatureBuffer = Buffer.from(base64Data, "base64");
+        const signatureFilename = `${folderName}-signature.png`;
+        await saveWorkOrderFile(
+          project.name,
+          project.id,
+          folderName,
+          signatureFilename,
+          signatureBuffer,
+          workOrder.id
+        );
+      }
+      
       // Send to customer API if work order was just completed
       const wasCompleted = existingWorkOrder.status !== "Completed" && workOrder.status === "Completed";
       if (wasCompleted) {
