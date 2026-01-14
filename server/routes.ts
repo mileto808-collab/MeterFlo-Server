@@ -2459,9 +2459,9 @@ export async function registerRoutes(
         const moduleMissingFields: string[] = [];
         if (hasModuleData) {
           if (!mergedData.oldModuleId) moduleMissingFields.push("Old Module ID");
-          if (mergedData.oldModuleReading === null || mergedData.oldModuleReading === undefined) moduleMissingFields.push("Old Module Reading");
+          if (mergedData.oldModuleRead === null || mergedData.oldModuleRead === undefined) moduleMissingFields.push("Old Module Reading");
           if (!mergedData.newModuleId) moduleMissingFields.push("New Module ID");
-          if (mergedData.newModuleReading === null || mergedData.newModuleReading === undefined) moduleMissingFields.push("New Module Reading");
+          if (mergedData.newModuleRead === null || mergedData.newModuleRead === undefined) moduleMissingFields.push("New Module Reading");
         }
         
         // Must have at least one complete set (system or module)
