@@ -669,13 +669,41 @@ export default function ProjectWorkOrders() {
     }
   }, [editingWorkOrder, editForm]);
 
-  // Validation for Completed status - requires all work order fields to be filled
+  // Validation for Completed status - requires either system OR module data (or both), plus GPS and signature
   const validateCompletedStatus = (data: any, signatureData: string | null, signatureName: string): string[] => {
     const missingFields: string[] = [];
-    if (!data.oldSystemId) missingFields.push("Old System ID");
-    if (data.oldSystemReading === null || data.oldSystemReading === undefined || data.oldSystemReading === "") missingFields.push("Old System Reading");
-    if (!data.newSystemId) missingFields.push("New System ID");
-    if (data.newSystemReading === null || data.newSystemReading === undefined || data.newSystemReading === "") missingFields.push("New System Reading");
+    
+    // Determine if this work order has system data or module data
+    const hasSystemData = data.oldSystemId || data.newSystemId;
+    const hasModuleData = data.oldModuleId || data.newModuleId;
+    
+    // Validate system data if present
+    const systemMissingFields: string[] = [];
+    if (hasSystemData) {
+      if (!data.oldSystemId) systemMissingFields.push("Old System ID");
+      if (data.oldSystemReading === null || data.oldSystemReading === undefined || data.oldSystemReading === "") systemMissingFields.push("Old System Reading");
+      if (!data.newSystemId) systemMissingFields.push("New System ID");
+      if (data.newSystemReading === null || data.newSystemReading === undefined || data.newSystemReading === "") systemMissingFields.push("New System Reading");
+    }
+    
+    // Validate module data if present
+    const moduleMissingFields: string[] = [];
+    if (hasModuleData) {
+      if (!data.oldModuleId) moduleMissingFields.push("Old Module ID");
+      if (data.oldModuleRead === null || data.oldModuleRead === undefined || data.oldModuleRead === "") moduleMissingFields.push("Old Module Reading");
+      if (!data.newModuleId) moduleMissingFields.push("New Module ID");
+      if (data.newModuleRead === null || data.newModuleRead === undefined || data.newModuleRead === "") moduleMissingFields.push("New Module Reading");
+    }
+    
+    // Must have at least one complete set (system or module)
+    if (!hasSystemData && !hasModuleData) {
+      missingFields.push("System or Module data (at least one required)");
+    } else {
+      // Add missing fields from whichever data type is present
+      missingFields.push(...systemMissingFields, ...moduleMissingFields);
+    }
+    
+    // Always required fields
     if (!data.newGps) missingFields.push("New GPS");
     if (!signatureData) missingFields.push("Signature");
     if (!signatureName) missingFields.push("Signature Name");
