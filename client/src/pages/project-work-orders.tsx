@@ -710,35 +710,44 @@ export default function ProjectWorkOrders() {
     return missingFields;
   };
 
-  const normalizeOptionalFields = (data: WorkOrderFormData) => ({
-    ...data,
-    city: data.city || null,
-    state: data.state || null,
-    zip: data.zip || null,
-    phone: data.phone || null,
-    email: data.email || null,
-    route: data.route || null,
-    zone: data.zone || null,
-    oldSystemId: data.oldSystemId || null,
-    oldSystemReading: data.oldSystemReading ?? null,
-    newSystemId: data.newSystemId || null,
-    newSystemReading: data.newSystemReading ?? null,
-    oldGps: data.oldGps || null,
-    newGps: data.newGps || null,
-    notes: data.notes || null,
-    trouble: (data as any).trouble || null,
-    oldSystemType: (data as any).oldSystemType || null,
-    newSystemType: (data as any).newSystemType || null,
-    oldModuleId: (data as any).oldModuleId || null,
-    oldModuleRead: (data as any).oldModuleRead ?? null,
-    oldModuleType: (data as any).oldModuleType || null,
-    newModuleId: (data as any).newModuleId || null,
-    newModuleRead: (data as any).newModuleRead ?? null,
-    newModuleType: (data as any).newModuleType || null,
-    assignedUserId: (data as any).assignedUserId ?? null,
-    assignedGroupId: (data as any).assignedGroupId ?? null,
-    scheduledAt: (data as any).scheduledAt || null,
-  });
+  const normalizeOptionalFields = (data: WorkOrderFormData, existingWo?: any) => {
+    // For reading fields, preserve existing values if form value is undefined
+    // This prevents overwriting database values when form fields aren't touched
+    const getReadingValue = (formValue: any, existingValue: any) => {
+      if (formValue !== undefined) return formValue;
+      return existingValue ?? null;
+    };
+    
+    return {
+      ...data,
+      city: data.city || null,
+      state: data.state || null,
+      zip: data.zip || null,
+      phone: data.phone || null,
+      email: data.email || null,
+      route: data.route || null,
+      zone: data.zone || null,
+      oldSystemId: data.oldSystemId || existingWo?.oldSystemId || null,
+      oldSystemReading: getReadingValue(data.oldSystemReading, existingWo?.oldSystemReading),
+      newSystemId: data.newSystemId || existingWo?.newSystemId || null,
+      newSystemReading: getReadingValue(data.newSystemReading, existingWo?.newSystemReading),
+      oldGps: data.oldGps || null,
+      newGps: data.newGps || null,
+      notes: data.notes || null,
+      trouble: (data as any).trouble || null,
+      oldSystemType: (data as any).oldSystemType || existingWo?.oldSystemType || null,
+      newSystemType: (data as any).newSystemType || existingWo?.newSystemType || null,
+      oldModuleId: (data as any).oldModuleId || existingWo?.oldModuleId || null,
+      oldModuleRead: getReadingValue((data as any).oldModuleRead, existingWo?.oldModuleRead),
+      oldModuleType: (data as any).oldModuleType || existingWo?.oldModuleType || null,
+      newModuleId: (data as any).newModuleId || existingWo?.newModuleId || null,
+      newModuleRead: getReadingValue((data as any).newModuleRead, existingWo?.newModuleRead),
+      newModuleType: (data as any).newModuleType || existingWo?.newModuleType || null,
+      assignedUserId: (data as any).assignedUserId ?? null,
+      assignedGroupId: (data as any).assignedGroupId ?? null,
+      scheduledAt: (data as any).scheduledAt || null,
+    };
+  };
 
   const createMutation = useMutation({
     mutationFn: async (data: WorkOrderFormData) => {
@@ -777,14 +786,14 @@ export default function ProjectWorkOrders() {
   const updateMutation = useMutation({
     mutationFn: async ({ id, ...data }: { id: number } & Partial<WorkOrderFormData>) => {
       if (accessDenied) throw new Error("403: Access denied");
-      const normalizedData = normalizeOptionalFields(data as WorkOrderFormData);
+      const existingWo = editingWorkOrder as any;
+      const normalizedData = normalizeOptionalFields(data as WorkOrderFormData, existingWo);
       const troubleStatus = workOrderStatuses.find(s => s.label === "Trouble")?.label || "Trouble";
       if ((data as any).trouble) {
         (normalizedData as any).status = troubleStatus;
       }
       const signatureDataFromPad = editSignaturePadRef.current?.getSignatureData() || null;
       const signatureNameFromPad = editSignaturePadRef.current?.getSignatureName() || "";
-      const existingWo = editingWorkOrder as any;
       
       // Use new signature data if provided, otherwise fall back to existing
       const finalSignatureData = signatureDataFromPad || existingWo?.signatureData || null;
