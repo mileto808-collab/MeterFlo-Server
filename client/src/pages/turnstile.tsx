@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import meterFloLogo from "@assets/MeterFlo_01022026_withMeterFlo_TransparentBackgroundOptimized_1768242757545.png";
+import meterFloLogo from "../assets/meterflo-logo.png";
 
 declare global {
   interface Window {
