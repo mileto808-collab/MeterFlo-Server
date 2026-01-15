@@ -30,6 +30,7 @@ import {
   ArrowRight,
   Camera,
   Check,
+  CheckCircle,
   AlertTriangle,
   Wrench,
   MapPin,
@@ -49,6 +50,7 @@ import {
 } from "lucide-react";
 
 type WizardStep =
+  | "modeSelection"
   | "canChange"
   | "troubleCapture"
   | "oldReading"
@@ -70,6 +72,17 @@ interface CapturedPhoto {
 
 export type ChangeoutScope = "system" | "module" | "both";
 
+export type WizardWorkflowMode = "changeout" | "reading_only" | "user_choice";
+
+interface WizardConfig {
+  wizardMode: WizardWorkflowMode;
+  showNotesStep: boolean;
+  showGpsStep: boolean;
+  showBeforePhotosStep: boolean;
+  showAfterPhotosStep: boolean;
+  showSignatureStep: boolean;
+}
+
 interface SystemChangeoutData {
   canChange: boolean;
   troubleCode: string | null;
@@ -87,6 +100,7 @@ interface SystemChangeoutData {
   completionNotes: string;
   signatureData: string | null;
   signatureName: string;
+  isReadingOnly?: boolean;
 }
 
 interface SystemChangeoutWizardProps {
@@ -112,9 +126,11 @@ interface SystemChangeoutWizardProps {
   existingNewModuleReading?: string | null;
   existingGps?: string | null;
   onComplete: (data: SystemChangeoutData) => Promise<void>;
+  wizardConfig?: WizardConfig;
 }
 
 const stepLabels: Record<WizardStep, string> = {
+  modeSelection: "Select Workflow",
   canChange: "Can The Changeout Proceed?",
   troubleCapture: "Report Issue",
   oldReading: "Capture Old Reading",
@@ -129,21 +145,46 @@ const stepLabels: Record<WizardStep, string> = {
   confirm: "Review & Submit",
 };
 
-const successSteps: WizardStep[] = [
-  "canChange",
-  "oldReading",
-  "beforePhotos",
-  "physicalChange",
-  "newSystemId",
-  "newReading",
-  "afterPhotos",
-  "gps",
-  "notes",
-  "signature",
-  "confirm",
-];
-
 const troubleSteps: WizardStep[] = ["canChange", "troubleCapture", "confirm"];
+
+// Build dynamic steps based on workflow mode and config
+function buildSuccessSteps(
+  mode: "changeout" | "reading_only",
+  config: WizardConfig,
+  isUserChoice: boolean
+): WizardStep[] {
+  const steps: WizardStep[] = [];
+  
+  // Add mode selection step for user_choice
+  if (isUserChoice) {
+    steps.push("modeSelection");
+  }
+  
+  if (mode === "reading_only") {
+    // Reading Only mode: simplified flow
+    // Capture reading (saved to new reading fields), GPS, Notes, Signature, Confirm
+    steps.push("newReading");
+    if (config.showGpsStep) steps.push("gps");
+    if (config.showNotesStep) steps.push("notes");
+    if (config.showSignatureStep) steps.push("signature");
+    steps.push("confirm");
+  } else {
+    // Changeout mode: full flow
+    steps.push("canChange");
+    steps.push("oldReading");
+    if (config.showBeforePhotosStep) steps.push("beforePhotos");
+    steps.push("physicalChange");
+    steps.push("newSystemId");
+    steps.push("newReading");
+    if (config.showAfterPhotosStep) steps.push("afterPhotos");
+    if (config.showGpsStep) steps.push("gps");
+    if (config.showNotesStep) steps.push("notes");
+    if (config.showSignatureStep) steps.push("signature");
+    steps.push("confirm");
+  }
+  
+  return steps;
+}
 
 export function SystemChangeoutWizard({
   isOpen,
@@ -168,11 +209,46 @@ export function SystemChangeoutWizard({
   existingNewModuleReading,
   existingGps,
   onComplete,
+  wizardConfig,
 }: SystemChangeoutWizardProps) {
   const { toast } = useToast();
+  
+  // Default wizard config if not provided
+  const config: WizardConfig = wizardConfig ?? {
+    wizardMode: "changeout",
+    showNotesStep: true,
+    showGpsStep: true,
+    showBeforePhotosStep: true,
+    showAfterPhotosStep: true,
+    showSignatureStep: true,
+  };
+  
+  // For user_choice mode, track which workflow the user selected
+  const [selectedWorkflowMode, setSelectedWorkflowMode] = useState<"changeout" | "reading_only" | null>(null);
+  
+  // Determine the effective workflow mode
+  const getEffectiveWorkflowMode = (): "changeout" | "reading_only" => {
+    if (config.wizardMode === "user_choice") {
+      return selectedWorkflowMode ?? "changeout";
+    }
+    return config.wizardMode === "reading_only" ? "reading_only" : "changeout";
+  };
+  
+  const effectiveMode = getEffectiveWorkflowMode();
   const signaturePadRef = useRef<SignaturePadRef>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [currentStep, setCurrentStep] = useState<WizardStep>("canChange");
+  
+  // Determine initial step based on wizard mode
+  const getInitialStep = (): WizardStep => {
+    if (config.wizardMode === "user_choice") {
+      return "modeSelection";
+    } else if (config.wizardMode === "reading_only") {
+      return "newReading";
+    }
+    return "canChange";
+  };
+  
+  const [currentStep, setCurrentStep] = useState<WizardStep>(getInitialStep());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [photoType, setPhotoType] = useState<"trouble" | "before" | "after">("before");
   const [isCapturingPhoto, setIsCapturingPhoto] = useState(false);
@@ -233,10 +309,30 @@ export function SystemChangeoutWizard({
     }
   };
 
+  // Build steps dynamically based on config and mode
+  const successSteps = buildSuccessSteps(effectiveMode, config, config.wizardMode === "user_choice");
   const currentSteps = data.canChange ? successSteps : troubleSteps;
   const currentStepIndex = currentSteps.indexOf(currentStep);
   const isFirstStep = currentStepIndex === 0;
   const isLastStep = currentStepIndex === currentSteps.length - 1;
+  
+  // Check if we're in reading-only mode for this session
+  const isReadingOnlyMode = effectiveMode === "reading_only";
+
+  // Reset the step when the dialog opens to ensure it starts at the correct step for the mode
+  useEffect(() => {
+    if (isOpen) {
+      // Set initial step based on wizard mode when dialog opens
+      if (config.wizardMode === "user_choice") {
+        setCurrentStep("modeSelection");
+        setSelectedWorkflowMode(null);
+      } else if (config.wizardMode === "reading_only") {
+        setCurrentStep("newReading");
+      } else {
+        setCurrentStep("canChange");
+      }
+    }
+  }, [isOpen, config.wizardMode]);
 
   // Reset photo capture state when user returns to page (handles camera cancel on mobile)
   useEffect(() => {
@@ -287,7 +383,18 @@ export function SystemChangeoutWizard({
   }, [isCapturingPhoto]);
 
   const resetWizard = useCallback(() => {
-    setCurrentStep("canChange");
+    // Reset workflow mode selection for user_choice
+    setSelectedWorkflowMode(null);
+    
+    // Set initial step based on wizard mode
+    if (config.wizardMode === "user_choice") {
+      setCurrentStep("modeSelection");
+    } else if (config.wizardMode === "reading_only") {
+      setCurrentStep("newReading");
+    } else {
+      setCurrentStep("canChange");
+    }
+    
     // Reset confirmation state based on whether existing values are present
     setOldSystemReadingConfirmed(!existingOldReading);
     setOldModuleReadingConfirmed(!existingOldModuleReading);
@@ -312,7 +419,7 @@ export function SystemChangeoutWizard({
     data.troublePhotos.forEach((p) => URL.revokeObjectURL(p.preview));
     data.beforePhotos.forEach((p) => URL.revokeObjectURL(p.preview));
     data.afterPhotos.forEach((p) => URL.revokeObjectURL(p.preview));
-  }, [existingOldReading, existingNewReading, existingOldModuleReading, existingNewModuleReading, existingGps]);
+  }, [existingOldReading, existingNewReading, existingOldModuleReading, existingNewModuleReading, existingGps, config.wizardMode]);
 
   const handleClose = () => {
     resetWizard();
@@ -373,6 +480,9 @@ export function SystemChangeoutWizard({
 
   const canProceed = (): boolean => {
     switch (currentStep) {
+      case "modeSelection":
+        // For user_choice mode, require a selection
+        return selectedWorkflowMode !== null;
       case "canChange":
         return true;
       case "troubleCapture":
@@ -420,8 +530,20 @@ export function SystemChangeoutWizard({
       case "signature":
         return !!data.signatureData && !!data.signatureName.trim();
       case "confirm": {
-        // Final validation: check all required fields based on path and scope
-        if (data.canChange) {
+        // Final validation: check all required fields based on path, scope, and mode
+        if (isReadingOnlyMode) {
+          // Reading-only mode validation: just new readings (and optionally GPS, signature based on config)
+          const needsSystemData = (displayMode === "system" || displayMode === "both");
+          const needsModuleData = (displayMode === "module" || displayMode === "both");
+          
+          const newSystemReadingValid = !needsSystemData || isValidSystemReading(data.newSystemReading);
+          const newModuleReadingValid = !needsModuleData || isValidSystemReading(data.newModuleReading);
+          const gpsValid = !config.showGpsStep || isValidGps(data.gpsCoordinates);
+          const signatureValid = !config.showSignatureStep || (!!data.signatureData && !!data.signatureName.trim());
+          
+          return newSystemReadingValid && newModuleReadingValid && gpsValid && signatureValid;
+        } else if (data.canChange) {
+          // Changeout mode validation
           const needsSystemData = (displayMode === "system" || displayMode === "both");
           const needsModuleData = (displayMode === "module" || displayMode === "both");
           
@@ -435,6 +557,12 @@ export function SystemChangeoutWizard({
           const newModuleIdValid = !needsModuleData || !!data.newModuleId.trim();
           const newModuleReadingValid = !needsModuleData || isValidSystemReading(data.newModuleReading);
           
+          // Photo validations based on config
+          const beforePhotosValid = !config.showBeforePhotosStep || data.beforePhotos.length >= 1;
+          const afterPhotosValid = !config.showAfterPhotosStep || data.afterPhotos.length >= 1;
+          const gpsValid = !config.showGpsStep || isValidGps(data.gpsCoordinates);
+          const signatureValid = !config.showSignatureStep || (!!data.signatureData && !!data.signatureName.trim());
+          
           return (
             oldSystemReadingValid &&
             newSystemIdValid &&
@@ -442,11 +570,10 @@ export function SystemChangeoutWizard({
             oldModuleReadingValid &&
             newModuleIdValid &&
             newModuleReadingValid &&
-            data.beforePhotos.length >= 1 &&
-            data.afterPhotos.length >= 1 &&
-            isValidGps(data.gpsCoordinates) &&
-            !!data.signatureData &&
-            !!data.signatureName.trim()
+            beforePhotosValid &&
+            afterPhotosValid &&
+            gpsValid &&
+            signatureValid
           );
         } else {
           // Trouble path requires: trouble code, trouble photos
@@ -577,12 +704,26 @@ export function SystemChangeoutWizard({
 
     setIsSubmitting(true);
     try {
-      await onComplete(data);
+      // For reading-only mode, set new IDs equal to old IDs (no equipment change)
+      // Keep old readings as they are (don't overwrite existing data)
+      let submitData = { ...data, isReadingOnly: isReadingOnlyMode };
+      if (isReadingOnlyMode) {
+        submitData = {
+          ...submitData,
+          newSystemId: oldSystemId || "",
+          newModuleId: oldModuleId || "",
+          // Keep old readings intact - they may have existing values from the database
+        };
+      }
+      
+      await onComplete(submitData);
       toast({
         title: "Success",
-        description: data.canChange 
-          ? "System changeout completed successfully!" 
-          : "Trouble report submitted successfully!",
+        description: isReadingOnlyMode
+          ? "Reading captured successfully!"
+          : data.canChange 
+            ? "System changeout completed successfully!" 
+            : "Trouble report submitted successfully!",
       });
       handleClose();
     } catch (error: any) {
@@ -781,6 +922,71 @@ export function SystemChangeoutWizard({
 
   const renderStepContent = () => {
     switch (currentStep) {
+      case "modeSelection": {
+        return (
+          <div className="space-y-4">
+            <div className="text-center space-y-2 mb-6">
+              <h3 className="text-lg font-medium">Select Workflow Type</h3>
+              <p className="text-muted-foreground">
+                What type of work are you performing today?
+              </p>
+            </div>
+            
+            <div className="space-y-3">
+              <Card
+                className={`cursor-pointer transition-all hover-elevate ${
+                  selectedWorkflowMode === "changeout"
+                    ? "ring-2 ring-primary"
+                    : ""
+                }`}
+                onClick={() => setSelectedWorkflowMode("changeout")}
+                data-testid="button-mode-changeout"
+              >
+                <CardContent className="p-4 flex items-center gap-4">
+                  <div className="rounded-full bg-primary/10 p-3">
+                    <Wrench className="h-6 w-6 text-primary" />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-medium">Full Meter Changeout</h4>
+                    <p className="text-sm text-muted-foreground">
+                      Replace system/module with new equipment
+                    </p>
+                  </div>
+                  {selectedWorkflowMode === "changeout" && (
+                    <CheckCircle className="h-5 w-5 text-primary" />
+                  )}
+                </CardContent>
+              </Card>
+              
+              <Card
+                className={`cursor-pointer transition-all hover-elevate ${
+                  selectedWorkflowMode === "reading_only"
+                    ? "ring-2 ring-primary"
+                    : ""
+                }`}
+                onClick={() => setSelectedWorkflowMode("reading_only")}
+                data-testid="button-mode-reading-only"
+              >
+                <CardContent className="p-4 flex items-center gap-4">
+                  <div className="rounded-full bg-blue-500/10 p-3">
+                    <Gauge className="h-6 w-6 text-blue-500" />
+                  </div>
+                  <div className="flex-1">
+                    <h4 className="font-medium">Reading Capture Only</h4>
+                    <p className="text-sm text-muted-foreground">
+                      Record current reading without equipment change
+                    </p>
+                  </div>
+                  {selectedWorkflowMode === "reading_only" && (
+                    <CheckCircle className="h-5 w-5 text-primary" />
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        );
+      }
+      
       case "canChange": {
         const isTrouble = status?.toLowerCase() === "trouble";
         const getTroubleCodeLabel = (code: string | null | undefined): string | null => {
@@ -1601,10 +1807,67 @@ export function SystemChangeoutWizard({
         return (
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-center">
-              {data.canChange ? "Review System Changeout" : "Review Trouble Report"}
+              {isReadingOnlyMode 
+                ? "Review Reading Capture" 
+                : data.canChange 
+                  ? "Review System Changeout" 
+                  : "Review Trouble Report"}
             </h3>
             
-            {data.canChange ? (
+            {isReadingOnlyMode ? (
+              <Card>
+                <CardContent className="pt-4 space-y-3">
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <span className="text-muted-foreground">Work Order:</span>
+                    <span className="font-medium">{customerWoId}</span>
+                    
+                    <span className="text-muted-foreground">Address:</span>
+                    <span className="font-medium">{address || "-"}</span>
+                    
+                    {(displayMode === "system" || displayMode === "both") && (
+                      <>
+                        <span className="text-muted-foreground">System ID:</span>
+                        <span className="font-medium">{oldSystemId || "-"}</span>
+                        
+                        <span className="text-muted-foreground">Reading Captured:</span>
+                        <span className="font-medium">{data.newSystemReading}</span>
+                      </>
+                    )}
+                    
+                    {(displayMode === "module" || displayMode === "both") && (
+                      <>
+                        <span className="text-muted-foreground">Module ID:</span>
+                        <span className="font-medium">{oldModuleId || "-"}</span>
+                        
+                        <span className="text-muted-foreground">Module Reading:</span>
+                        <span className="font-medium">{data.newModuleReading}</span>
+                      </>
+                    )}
+                    
+                    {config.showGpsStep && data.gpsCoordinates && (
+                      <>
+                        <span className="text-muted-foreground">GPS:</span>
+                        <span className="font-medium">{data.gpsCoordinates}</span>
+                      </>
+                    )}
+                    
+                    {config.showNotesStep && data.completionNotes && (
+                      <>
+                        <span className="text-muted-foreground">Notes:</span>
+                        <span className="font-medium">{data.completionNotes}</span>
+                      </>
+                    )}
+                    
+                    {config.showSignatureStep && data.signatureName && (
+                      <>
+                        <span className="text-muted-foreground">Signed By:</span>
+                        <span className="font-medium">{data.signatureName}</span>
+                      </>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            ) : data.canChange ? (
               <Card>
                 <CardContent className="pt-4 space-y-3">
                   <div className="grid grid-cols-2 gap-2 text-sm">
@@ -1682,24 +1945,40 @@ export function SystemChangeoutWizard({
                       </>
                     )}
                     
-                    <span className="text-muted-foreground">GPS:</span>
-                    <span className="font-medium">{data.gpsCoordinates}</span>
+                    {config.showGpsStep && (
+                      <>
+                        <span className="text-muted-foreground">GPS:</span>
+                        <span className="font-medium">{data.gpsCoordinates}</span>
+                      </>
+                    )}
                     
-                    <span className="text-muted-foreground">Before Photos:</span>
-                    <span className="font-medium">{data.beforePhotos.length}</span>
+                    {config.showBeforePhotosStep && (
+                      <>
+                        <span className="text-muted-foreground">Before Photos:</span>
+                        <span className="font-medium">{data.beforePhotos.length}</span>
+                      </>
+                    )}
                     
-                    <span className="text-muted-foreground">After Photos:</span>
-                    <span className="font-medium">{data.afterPhotos.length}</span>
+                    {config.showAfterPhotosStep && (
+                      <>
+                        <span className="text-muted-foreground">After Photos:</span>
+                        <span className="font-medium">{data.afterPhotos.length}</span>
+                      </>
+                    )}
                     
-                    {data.completionNotes && (
+                    {config.showNotesStep && data.completionNotes && (
                       <>
                         <span className="text-muted-foreground">Notes:</span>
                         <span className="font-medium">{data.completionNotes}</span>
                       </>
                     )}
                     
-                    <span className="text-muted-foreground">Signed By:</span>
-                    <span className="font-medium">{data.signatureName}</span>
+                    {config.showSignatureStep && (
+                      <>
+                        <span className="text-muted-foreground">Signed By:</span>
+                        <span className="font-medium">{data.signatureName}</span>
+                      </>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -1748,8 +2027,14 @@ export function SystemChangeoutWizard({
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Wrench className="h-5 w-5" />
-            {currentStep === "canChange" ? getCanChangeLabel() : currentStep === "newSystemId" ? getNewSystemIdLabel() : stepLabels[currentStep]}
+            {isReadingOnlyMode ? <Gauge className="h-5 w-5" /> : <Wrench className="h-5 w-5" />}
+            {currentStep === "canChange" 
+              ? getCanChangeLabel() 
+              : currentStep === "newSystemId" 
+                ? getNewSystemIdLabel() 
+                : currentStep === "newReading" && isReadingOnlyMode
+                  ? "Capture Reading"
+                  : stepLabels[currentStep]}
           </DialogTitle>
         </DialogHeader>
 

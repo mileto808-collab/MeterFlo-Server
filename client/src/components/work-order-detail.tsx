@@ -79,6 +79,15 @@ interface OperationalHoursConfig {
   end: string | null;
 }
 
+interface WizardConfig {
+  wizardMode: "changeout" | "reading_only" | "user_choice";
+  showNotesStep: boolean;
+  showGpsStep: boolean;
+  showBeforePhotosStep: boolean;
+  showAfterPhotosStep: boolean;
+  showSignatureStep: boolean;
+}
+
 interface WorkOrderDetailProps {
   workOrder: any;
   form: UseFormReturn<any>;
@@ -109,6 +118,7 @@ interface WorkOrderDetailProps {
   operationalHours?: OperationalHoursConfig;
   onScheduleInCalendar?: () => void;
   canScheduleInCalendar?: boolean;
+  wizardConfig?: WizardConfig;
 }
 
 export function WorkOrderDetail({
@@ -141,6 +151,7 @@ export function WorkOrderDetail({
   operationalHours,
   onScheduleInCalendar,
   canScheduleInCalendar = false,
+  wizardConfig,
 }: WorkOrderDetailProps) {
   const [openSections, setOpenSections] = useState<string[]>([]);
   const [showSystemChangeoutWizard, setShowSystemChangeoutWizard] = useState(false);
@@ -3206,6 +3217,7 @@ export function WorkOrderDetail({
         existingOldModuleReading={workOrder.oldModuleRead != null ? String(workOrder.oldModuleRead) : null}
         existingNewModuleReading={workOrder.newModuleRead != null ? String(workOrder.newModuleRead) : null}
         existingGps={workOrder.gps}
+        wizardConfig={wizardConfig}
         onComplete={async (data) => {
           const formData = new FormData();
           

@@ -75,6 +75,10 @@ export const users = pgTable("users", {
 export const customerApiAuthTypes = ["none", "api_key", "bearer_token", "basic_auth"] as const;
 export type CustomerApiAuthType = (typeof customerApiAuthTypes)[number];
 
+// Wizard mode enum for projects
+export const wizardModeEnum = ["changeout", "reading_only", "user_choice"] as const;
+export type WizardMode = (typeof wizardModeEnum)[number];
+
 // Projects table - for customer organization with per-project database support
 export const projects = pgTable("projects", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -102,6 +106,12 @@ export const projects = pgTable("projects", {
   operationalHoursEnd: varchar("operational_hours_end", { length: 10 }),
   operationalHoursDays: text("operational_hours_days").array(),
   timezone: varchar("timezone", { length: 100 }),
+  wizardMode: varchar("wizard_mode", { length: 20 }).default("changeout"),
+  wizardShowNotesStep: boolean("wizard_show_notes_step").default(true),
+  wizardShowGpsStep: boolean("wizard_show_gps_step").default(true),
+  wizardShowBeforePhotosStep: boolean("wizard_show_before_photos_step").default(true),
+  wizardShowAfterPhotosStep: boolean("wizard_show_after_photos_step").default(true),
+  wizardShowSignatureStep: boolean("wizard_show_signature_step").default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -503,6 +513,12 @@ export const insertProjectSchema = z.object({
   operationalHoursEnd: z.string().max(10).optional().nullable(),
   operationalHoursDays: z.array(z.string()).optional().nullable(),
   timezone: z.string().max(100).optional().nullable(),
+  wizardMode: z.enum(wizardModeEnum).optional().default("changeout"),
+  wizardShowNotesStep: z.boolean().optional().default(true),
+  wizardShowGpsStep: z.boolean().optional().default(true),
+  wizardShowBeforePhotosStep: z.boolean().optional().default(true),
+  wizardShowAfterPhotosStep: z.boolean().optional().default(true),
+  wizardShowSignatureStep: z.boolean().optional().default(true),
 });
 
 export const insertProjectHolidaySchema = z.object({

@@ -2208,6 +2208,14 @@ export default function ProjectWorkOrders() {
             start: project?.operationalHoursStart ?? null,
             end: project?.operationalHoursEnd ?? null,
           }}
+          wizardConfig={{
+            wizardMode: (project?.wizardMode as "changeout" | "reading_only" | "user_choice") ?? "changeout",
+            showNotesStep: project?.wizardShowNotesStep ?? true,
+            showGpsStep: project?.wizardShowGpsStep ?? true,
+            showBeforePhotosStep: project?.wizardShowBeforePhotosStep ?? true,
+            showAfterPhotosStep: project?.wizardShowAfterPhotosStep ?? true,
+            showSignatureStep: project?.wizardShowSignatureStep ?? true,
+          }}
           canScheduleInCalendar={hasPermission('workOrders.calendar')}
           onScheduleInCalendar={() => {
             // Store the work order to schedule, close detail view, and switch to calendar

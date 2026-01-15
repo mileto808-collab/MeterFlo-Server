@@ -17,7 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import type { Project, User } from "@shared/schema";
-import { ArrowLeft, Save, Loader2, Globe, Clock, Users, X, CalendarDays, Plus } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Globe, Clock, Users, X, CalendarDays, Plus, Wand2 } from "lucide-react";
 import type { ProjectHoliday } from "@shared/schema";
 
 const DAYS_OF_WEEK = [
@@ -51,6 +51,12 @@ const projectFormSchema = z.object({
   operationalHoursEnd: z.string().max(10).optional().or(z.literal("")),
   operationalHoursDays: z.array(z.string()).optional().default([]),
   timezone: z.string().max(100).optional().or(z.literal("")),
+  wizardMode: z.enum(["changeout", "reading_only", "user_choice"]).optional().default("changeout"),
+  wizardShowNotesStep: z.boolean().optional().default(true),
+  wizardShowGpsStep: z.boolean().optional().default(true),
+  wizardShowBeforePhotosStep: z.boolean().optional().default(true),
+  wizardShowAfterPhotosStep: z.boolean().optional().default(true),
+  wizardShowSignatureStep: z.boolean().optional().default(true),
 }).refine((data) => {
   if (data.operationalHoursEnabled) {
     return data.operationalHoursStart && data.operationalHoursEnd;
@@ -99,6 +105,12 @@ export default function ProjectForm() {
       operationalHoursEnd: "",
       operationalHoursDays: [],
       timezone: "",
+      wizardMode: "changeout",
+      wizardShowNotesStep: true,
+      wizardShowGpsStep: true,
+      wizardShowBeforePhotosStep: true,
+      wizardShowAfterPhotosStep: true,
+      wizardShowSignatureStep: true,
     },
   });
 
@@ -125,6 +137,12 @@ export default function ProjectForm() {
         operationalHoursEnd: project.operationalHoursEnd || "",
         operationalHoursDays: project.operationalHoursDays || [],
         timezone: project.timezone || "",
+        wizardMode: (project.wizardMode as "changeout" | "reading_only" | "user_choice") || "changeout",
+        wizardShowNotesStep: project.wizardShowNotesStep !== false,
+        wizardShowGpsStep: project.wizardShowGpsStep !== false,
+        wizardShowBeforePhotosStep: project.wizardShowBeforePhotosStep !== false,
+        wizardShowAfterPhotosStep: project.wizardShowAfterPhotosStep !== false,
+        wizardShowSignatureStep: project.wizardShowSignatureStep !== false,
       });
     }
   }, [project, form]);
@@ -553,6 +571,160 @@ export default function ProjectForm() {
                     />
                   </div>
                 )}
+              </div>
+
+              <div className="border-t pt-6 mt-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <Wand2 className="h-5 w-5 text-muted-foreground" />
+                  <h3 className="text-lg font-medium">Wizard Configuration</h3>
+                </div>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Configure how the meter changeout wizard behaves for this project. You can set the workflow mode and customize which steps are shown.
+                </p>
+
+                <FormField
+                  control={form.control}
+                  name="wizardMode"
+                  render={({ field }) => (
+                    <FormItem className="mb-4">
+                      <FormLabel>Wizard Mode</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-wizard-mode">
+                            <SelectValue placeholder="Select wizard mode" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="changeout">Changeout Only</SelectItem>
+                          <SelectItem value="reading_only">Reading Capture Only</SelectItem>
+                          <SelectItem value="user_choice">User Choice (Select at Start)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>
+                        {field.value === "changeout" && "Full meter changeout workflow - replace equipment and capture all readings"}
+                        {field.value === "reading_only" && "Simplified workflow - capture readings only without equipment replacement"}
+                        {field.value === "user_choice" && "Users choose between Changeout or Reading Capture at the start of each wizard session"}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="space-y-3 pl-4 border-l-2 border-muted">
+                  <p className="text-sm font-medium text-muted-foreground mb-2">Step Visibility</p>
+                  
+                  <FormField
+                    control={form.control}
+                    name="wizardShowBeforePhotosStep"
+                    render={({ field }) => (
+                      <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                        <div className="space-y-0.5">
+                          <FormLabel className="text-sm">Before Photos Step</FormLabel>
+                          <FormDescription className="text-xs">
+                            Capture photos before the changeout
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                            data-testid="switch-wizard-before-photos"
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="wizardShowAfterPhotosStep"
+                    render={({ field }) => (
+                      <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                        <div className="space-y-0.5">
+                          <FormLabel className="text-sm">After Photos Step</FormLabel>
+                          <FormDescription className="text-xs">
+                            Capture photos after the changeout
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                            data-testid="switch-wizard-after-photos"
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="wizardShowGpsStep"
+                    render={({ field }) => (
+                      <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                        <div className="space-y-0.5">
+                          <FormLabel className="text-sm">GPS Capture Step</FormLabel>
+                          <FormDescription className="text-xs">
+                            {field.value 
+                              ? "User manually captures GPS coordinates" 
+                              : "GPS captured automatically in background"}
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                            data-testid="switch-wizard-gps"
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="wizardShowNotesStep"
+                    render={({ field }) => (
+                      <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                        <div className="space-y-0.5">
+                          <FormLabel className="text-sm">Notes Step</FormLabel>
+                          <FormDescription className="text-xs">
+                            Allow users to add completion notes
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                            data-testid="switch-wizard-notes"
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="wizardShowSignatureStep"
+                    render={({ field }) => (
+                      <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                        <div className="space-y-0.5">
+                          <FormLabel className="text-sm">Signature Step</FormLabel>
+                          <FormDescription className="text-xs">
+                            Require signature capture for completion
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                            data-testid="switch-wizard-signature"
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                </div>
               </div>
 
               <div className="border-t pt-6 mt-6">
