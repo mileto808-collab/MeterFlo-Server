@@ -52,6 +52,7 @@ const projectFormSchema = z.object({
   operationalHoursDays: z.array(z.string()).optional().default([]),
   timezone: z.string().max(100).optional().or(z.literal("")),
   wizardMode: z.enum(["changeout", "reading_only", "user_choice"]).optional().default("changeout"),
+  wizardGpsMode: z.enum(["automatic", "manual_step", "disabled"]).optional().default("automatic"),
   wizardShowNotesStep: z.boolean().optional().default(true),
   wizardShowGpsStep: z.boolean().optional().default(true),
   wizardShowBeforePhotosStep: z.boolean().optional().default(true),
@@ -106,6 +107,7 @@ export default function ProjectForm() {
       operationalHoursDays: [],
       timezone: "",
       wizardMode: "changeout",
+      wizardGpsMode: "automatic",
       wizardShowNotesStep: true,
       wizardShowGpsStep: true,
       wizardShowBeforePhotosStep: true,
@@ -138,6 +140,7 @@ export default function ProjectForm() {
         operationalHoursDays: project.operationalHoursDays || [],
         timezone: project.timezone || "",
         wizardMode: (project.wizardMode as "changeout" | "reading_only" | "user_choice") || "changeout",
+        wizardGpsMode: (project.wizardGpsMode as "automatic" | "manual_step" | "disabled") || "automatic",
         wizardShowNotesStep: project.wizardShowNotesStep !== false,
         wizardShowGpsStep: project.wizardShowGpsStep !== false,
         wizardShowBeforePhotosStep: project.wizardShowBeforePhotosStep !== false,
@@ -659,24 +662,30 @@ export default function ProjectForm() {
 
                   <FormField
                     control={form.control}
-                    name="wizardShowGpsStep"
+                    name="wizardGpsMode"
                     render={({ field }) => (
-                      <FormItem className="flex items-center justify-between rounded-lg border p-3">
-                        <div className="space-y-0.5">
-                          <FormLabel className="text-sm">GPS Capture Step</FormLabel>
-                          <FormDescription className="text-xs">
-                            {field.value 
-                              ? "User manually captures GPS coordinates" 
-                              : "GPS captured automatically in background"}
-                          </FormDescription>
+                      <FormItem className="rounded-lg border p-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <FormLabel className="text-sm">GPS Capture Mode</FormLabel>
                         </div>
-                        <FormControl>
-                          <Switch
-                            checked={field.value}
-                            onCheckedChange={field.onChange}
-                            data-testid="switch-wizard-gps"
-                          />
-                        </FormControl>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-wizard-gps-mode" className="h-8">
+                              <SelectValue placeholder="Select GPS mode" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="automatic">Automatic (Background)</SelectItem>
+                            <SelectItem value="manual_step">Manual Step</SelectItem>
+                            <SelectItem value="disabled">Disabled</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormDescription className="text-xs mt-2">
+                          {field.value === "automatic" && "GPS is captured automatically in the background using priority: External GPS → Device GPS → Address Geocoding"}
+                          {field.value === "manual_step" && "User manually captures or confirms GPS coordinates in a dedicated wizard step"}
+                          {field.value === "disabled" && "GPS coordinates are not captured during the wizard"}
+                        </FormDescription>
+                        <FormMessage />
                       </FormItem>
                     )}
                   />

@@ -73,11 +73,13 @@ interface CapturedPhoto {
 export type ChangeoutScope = "system" | "module" | "both";
 
 export type WizardWorkflowMode = "changeout" | "reading_only" | "user_choice";
+export type GpsCaptureMode = "automatic" | "manual_step" | "disabled";
 
 interface WizardConfig {
   wizardMode: WizardWorkflowMode;
+  gpsMode: GpsCaptureMode;
   showNotesStep: boolean;
-  showGpsStep: boolean;
+  showGpsStep: boolean; // Deprecated - use gpsMode instead
   showBeforePhotosStep: boolean;
   showAfterPhotosStep: boolean;
   showSignatureStep: boolean;
@@ -151,7 +153,8 @@ const troubleSteps: WizardStep[] = ["canChange", "troubleCapture", "confirm"];
 function buildSuccessSteps(
   mode: "changeout" | "reading_only",
   config: WizardConfig,
-  isUserChoice: boolean
+  isUserChoice: boolean,
+  effectiveGpsMode: GpsCaptureMode
 ): WizardStep[] {
   const steps: WizardStep[] = [];
   
@@ -160,11 +163,14 @@ function buildSuccessSteps(
     steps.push("modeSelection");
   }
   
+  // GPS step is only shown when gpsMode is "manual_step"
+  const showGpsStep = effectiveGpsMode === "manual_step";
+  
   if (mode === "reading_only") {
     // Reading Only mode: simplified flow
-    // Capture reading (saved to new reading fields), GPS, Notes, Signature, Confirm
+    // Capture reading (saved to new reading fields), GPS (if manual), Notes, Signature, Confirm
     steps.push("newReading");
-    if (config.showGpsStep) steps.push("gps");
+    if (showGpsStep) steps.push("gps");
     if (config.showNotesStep) steps.push("notes");
     if (config.showSignatureStep) steps.push("signature");
     steps.push("confirm");
@@ -177,7 +183,7 @@ function buildSuccessSteps(
     steps.push("newSystemId");
     steps.push("newReading");
     if (config.showAfterPhotosStep) steps.push("afterPhotos");
-    if (config.showGpsStep) steps.push("gps");
+    if (showGpsStep) steps.push("gps");
     if (config.showNotesStep) steps.push("notes");
     if (config.showSignatureStep) steps.push("signature");
     steps.push("confirm");
@@ -216,12 +222,16 @@ export function SystemChangeoutWizard({
   // Default wizard config if not provided
   const config: WizardConfig = wizardConfig ?? {
     wizardMode: "changeout",
+    gpsMode: "automatic",
     showNotesStep: true,
-    showGpsStep: true,
+    showGpsStep: true, // Deprecated - kept for backward compatibility
     showBeforePhotosStep: true,
     showAfterPhotosStep: true,
     showSignatureStep: true,
   };
+  
+  // Derive effective GPS mode - use gpsMode if available, fall back to showGpsStep for backward compatibility
+  const effectiveGpsMode: GpsCaptureMode = config.gpsMode ?? (config.showGpsStep ? "manual_step" : "disabled");
   
   // For user_choice mode, track which workflow the user selected
   const [selectedWorkflowMode, setSelectedWorkflowMode] = useState<"changeout" | "reading_only" | null>(null);
@@ -310,7 +320,7 @@ export function SystemChangeoutWizard({
   };
 
   // Build steps dynamically based on config and mode
-  const successSteps = buildSuccessSteps(effectiveMode, config, config.wizardMode === "user_choice");
+  const successSteps = buildSuccessSteps(effectiveMode, config, config.wizardMode === "user_choice", effectiveGpsMode);
   const currentSteps = data.canChange ? successSteps : troubleSteps;
   const currentStepIndex = currentSteps.indexOf(currentStep);
   const isFirstStep = currentStepIndex === 0;

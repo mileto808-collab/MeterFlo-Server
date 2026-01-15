@@ -79,6 +79,10 @@ export type CustomerApiAuthType = (typeof customerApiAuthTypes)[number];
 export const wizardModeEnum = ["changeout", "reading_only", "user_choice"] as const;
 export type WizardMode = (typeof wizardModeEnum)[number];
 
+// GPS capture mode enum for projects
+export const gpsModeEnum = ["automatic", "manual_step", "disabled"] as const;
+export type GpsMode = (typeof gpsModeEnum)[number];
+
 // Projects table - for customer organization with per-project database support
 export const projects = pgTable("projects", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -107,6 +111,7 @@ export const projects = pgTable("projects", {
   operationalHoursDays: text("operational_hours_days").array(),
   timezone: varchar("timezone", { length: 100 }),
   wizardMode: varchar("wizard_mode", { length: 20 }).default("changeout"),
+  wizardGpsMode: varchar("wizard_gps_mode", { length: 20 }).default("automatic"),
   wizardShowNotesStep: boolean("wizard_show_notes_step").default(true),
   wizardShowGpsStep: boolean("wizard_show_gps_step").default(true),
   wizardShowBeforePhotosStep: boolean("wizard_show_before_photos_step").default(true),
@@ -514,6 +519,7 @@ export const insertProjectSchema = z.object({
   operationalHoursDays: z.array(z.string()).optional().nullable(),
   timezone: z.string().max(100).optional().nullable(),
   wizardMode: z.enum(wizardModeEnum).optional().default("changeout"),
+  wizardGpsMode: z.enum(gpsModeEnum).optional().default("automatic"),
   wizardShowNotesStep: z.boolean().optional().default(true),
   wizardShowGpsStep: z.boolean().optional().default(true),
   wizardShowBeforePhotosStep: z.boolean().optional().default(true),
