@@ -11,6 +11,7 @@ interface GpsCaptureResult {
 
 interface UseGpsCaptureOptions {
   existingGps?: string | null;
+  oldGps?: string | null;
   address?: string | null;
   onSuccess?: (result: GpsCaptureResult) => void;
   onError?: (error: string) => void;
@@ -27,7 +28,7 @@ interface UseGpsCaptureReturn {
 }
 
 export function useGpsCapture(options: UseGpsCaptureOptions = {}): UseGpsCaptureReturn {
-  const { existingGps, address, onSuccess, onError } = options;
+  const { existingGps, oldGps, address, onSuccess, onError } = options;
   
   const [status, setStatus] = useState<GpsCaptureStatus>("idle");
   const [coordinates, setCoordinates] = useState<string>("");
@@ -158,13 +159,26 @@ export function useGpsCapture(options: UseGpsCaptureOptions = {}): UseGpsCapture
       return geocodeResult;
     }
 
+    // Priority 5: Fall back to old GPS (existing location from work order)
+    if (oldGps && oldGps.trim()) {
+      const result: GpsCaptureResult = {
+        coordinates: oldGps,
+        source: "existing",
+      };
+      setCoordinates(oldGps);
+      setSource("existing");
+      setStatus("success");
+      onSuccess?.(result);
+      return result;
+    }
+
     // All automatic methods failed
     setStatus("error");
     const errorMsg = "Unable to capture GPS automatically. Please enter coordinates manually.";
     setError(errorMsg);
     onError?.(errorMsg);
     return null;
-  }, [existingGps, address, onSuccess, onError]);
+  }, [existingGps, oldGps, address, onSuccess, onError]);
 
   return {
     status,

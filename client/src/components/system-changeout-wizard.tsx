@@ -25,7 +25,7 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useGpsCapture, type GpsCaptureSource } from "@/hooks/use-gps-capture";
 import { GPSCapture } from "./gps-capture";
-import SignaturePad, { SignaturePadRef } from "./signature-pad";
+import SignaturePad, { SignaturePadRef, SignatureType } from "./signature-pad";
 import {
   ArrowLeft,
   ArrowRight,
@@ -103,6 +103,7 @@ interface SystemChangeoutData {
   completionNotes: string;
   signatureData: string | null;
   signatureName: string;
+  signatureType: SignatureType;
   isReadingOnly?: boolean;
 }
 
@@ -128,6 +129,7 @@ interface SystemChangeoutWizardProps {
   existingOldModuleReading?: string | null;
   existingNewModuleReading?: string | null;
   existingGps?: string | null;
+  oldGps?: string | null;
   onComplete: (data: SystemChangeoutData) => Promise<void>;
   wizardConfig?: WizardConfig;
 }
@@ -215,6 +217,7 @@ export function SystemChangeoutWizard({
   existingOldModuleReading,
   existingNewModuleReading,
   existingGps,
+  oldGps,
   onComplete,
   wizardConfig,
 }: SystemChangeoutWizardProps) {
@@ -292,6 +295,7 @@ export function SystemChangeoutWizard({
     completionNotes: "",
     signatureData: null,
     signatureName: "",
+    signatureType: null,
   });
   
   // Determine the effective display mode based on presence of system/module IDs
@@ -333,6 +337,7 @@ export function SystemChangeoutWizard({
   // GPS capture hook for background capture
   const gpsCapture = useGpsCapture({
     existingGps: existingGps,
+    oldGps: oldGps,
     address: address || undefined,
     onSuccess: (result) => {
       setData((prev) => ({ ...prev, gpsCoordinates: result.coordinates }));
@@ -453,6 +458,7 @@ export function SystemChangeoutWizard({
       completionNotes: "",
       signatureData: null,
       signatureName: "",
+      signatureType: null,
     });
     data.troublePhotos.forEach((p) => URL.revokeObjectURL(p.preview));
     data.beforePhotos.forEach((p) => URL.revokeObjectURL(p.preview));
@@ -566,7 +572,9 @@ export function SystemChangeoutWizard({
       case "notes":
         return true; // Notes are optional
       case "signature":
-        return !!data.signatureData && !!data.signatureName.trim();
+        // Accept either: drawn signature with name, OR typed signature (name only)
+        // Just need a name - signature drawing is optional
+        return !!data.signatureName.trim();
       case "confirm": {
         // Final validation: check all required fields based on path, scope, and mode
         // GPS validation based on gpsMode:
@@ -583,7 +591,8 @@ export function SystemChangeoutWizard({
           
           const newSystemReadingValid = !needsSystemData || isValidSystemReading(data.newSystemReading);
           const newModuleReadingValid = !needsModuleData || isValidSystemReading(data.newModuleReading);
-          const signatureValid = !config.showSignatureStep || (!!data.signatureData && !!data.signatureName.trim());
+          // Signature is valid if: signature step is disabled, OR (name is present AND signature was confirmed via drawn/typed)
+          const signatureValid = !config.showSignatureStep || (!!data.signatureName.trim() && !!data.signatureType);
           
           return newSystemReadingValid && newModuleReadingValid && gpsValid && signatureValid;
         } else if (data.canChange) {
@@ -604,7 +613,8 @@ export function SystemChangeoutWizard({
           // Photo validations based on config
           const beforePhotosValid = !config.showBeforePhotosStep || data.beforePhotos.length >= 1;
           const afterPhotosValid = !config.showAfterPhotosStep || data.afterPhotos.length >= 1;
-          const signatureValid = !config.showSignatureStep || (!!data.signatureData && !!data.signatureName.trim());
+          // Signature is valid if: signature step is disabled, OR (name is present AND signature was confirmed via drawn/typed)
+          const signatureValid = !config.showSignatureStep || (!!data.signatureName.trim() && !!data.signatureType);
           
           return (
             oldSystemReadingValid &&
@@ -731,8 +741,8 @@ export function SystemChangeoutWizard({
     fileInputRef.current?.click();
   };
 
-  const handleSignatureChange = (signatureData: string | null, signatureName: string) => {
-    setData((prev) => ({ ...prev, signatureData, signatureName }));
+  const handleSignatureChange = (signatureData: string | null, signatureName: string, signatureType: SignatureType) => {
+    setData((prev) => ({ ...prev, signatureData, signatureName, signatureType }));
   };
 
   const handleSubmit = async () => {
@@ -1841,6 +1851,7 @@ export function SystemChangeoutWizard({
               ref={signaturePadRef}
               initialSignatureData={data.signatureData}
               initialSignatureName={data.signatureName}
+              initialSignatureType={data.signatureType}
               onSignatureChange={handleSignatureChange}
             />
           </div>

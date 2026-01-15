@@ -3217,7 +3217,8 @@ export function WorkOrderDetail({
         existingNewReading={workOrder.newSystemReading != null ? String(workOrder.newSystemReading) : null}
         existingOldModuleReading={workOrder.oldModuleRead != null ? String(workOrder.oldModuleRead) : null}
         existingNewModuleReading={workOrder.newModuleRead != null ? String(workOrder.newModuleRead) : null}
-        existingGps={workOrder.gps}
+        existingGps={workOrder.newGps}
+        oldGps={workOrder.oldGps}
         wizardConfig={wizardConfig}
         onComplete={async (data) => {
           const formData = new FormData();

@@ -5,6 +5,8 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
 import { Eraser, Pencil, Type, X, Check } from "lucide-react";
 
+export type SignatureType = "drawn" | "typed" | null;
+
 export interface SignaturePadRef {
   clear: () => void;
   getSignatureData: () => string | null;
@@ -12,25 +14,28 @@ export interface SignaturePadRef {
   setSignatureData: (data: string | null) => void;
   setSignatureName: (name: string) => void;
   isEmpty: () => boolean;
+  getSignatureType: () => SignatureType;
 }
 
 interface SignaturePadProps {
   initialSignatureData?: string | null;
   initialSignatureName?: string | null;
-  onSignatureChange?: (data: string | null, name: string) => void;
+  initialSignatureType?: SignatureType;
+  onSignatureChange?: (data: string | null, name: string, signatureType: SignatureType) => void;
   disabled?: boolean;
 }
 
 type SignatureMode = "view" | "draw" | "type";
 
 const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(
-  ({ initialSignatureData, initialSignatureName, onSignatureChange, disabled = false }, ref) => {
+  ({ initialSignatureData, initialSignatureName, initialSignatureType, onSignatureChange, disabled = false }, ref) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const [isDrawing, setIsDrawing] = useState(false);
     const [hasDrawnAnything, setHasDrawnAnything] = useState(false);
     const [signatureName, setSignatureName] = useState(initialSignatureName || "");
     const [signatureData, setSignatureData] = useState<string | null>(initialSignatureData || null);
+    const [signatureType, setSignatureType] = useState<SignatureType>(initialSignatureType ?? null);
     const [pendingSignatureData, setPendingSignatureData] = useState<string | null>(null);
     const [previousSignatureData, setPreviousSignatureData] = useState<string | null>(() => {
       if (!initialSignatureData && initialSignatureName) {
@@ -110,25 +115,34 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(
       }
     }, [initialSignatureName]);
 
+    useEffect(() => {
+      if (initialSignatureType !== undefined) {
+        setSignatureType(initialSignatureType);
+      }
+    }, [initialSignatureType]);
+
     useImperativeHandle(ref, () => ({
       clear: () => {
         setSignatureData(null);
+        setSignatureType(null);
         setPendingSignatureData(null);
         setHasDrawnAnything(false);
         if (mode === "draw") {
           setupCanvas();
         }
-        notifyChange(null, signatureName);
+        notifyChange(null, signatureName, null);
       },
       getSignatureData: () => {
         if (mode === "type") return null;
         return signatureData;
       },
       getSignatureName: () => signatureName,
+      getSignatureType: () => signatureType,
       setSignatureData: (data: string | null) => {
         setSignatureData(data);
         if (data) {
           setMode("view");
+          setSignatureType("drawn");
         }
       },
       setSignatureName: (name: string) => {
@@ -137,9 +151,9 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(
       isEmpty: () => !signatureData && !signatureName.trim(),
     }));
 
-    const notifyChange = (data: string | null, name: string) => {
+    const notifyChange = (data: string | null, name: string, type: SignatureType) => {
       if (onSignatureChange) {
-        onSignatureChange(data, name);
+        onSignatureChange(data, name, type);
       }
     };
 
@@ -222,7 +236,7 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(
       const newName = e.target.value;
       setSignatureName(newName);
       if (mode === "view" && signatureData) {
-        notifyChange(signatureData, newName);
+        notifyChange(signatureData, newName, signatureType);
       }
     };
 
@@ -252,7 +266,8 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(
 
     const confirmTypedSignature = () => {
       setSignatureData(null);
-      notifyChange(null, signatureName);
+      setSignatureType("typed");
+      notifyChange(null, signatureName, "typed");
       setMode("view");
       setPreviousSignatureData(null);
       setPreviousSignatureName("");
@@ -261,7 +276,8 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(
     const confirmDrawing = () => {
       if (pendingSignatureData) {
         setSignatureData(pendingSignatureData);
-        notifyChange(pendingSignatureData, signatureName);
+        setSignatureType("drawn");
+        notifyChange(pendingSignatureData, signatureName, "drawn");
       }
       setMode("view");
       setPendingSignatureData(null);
@@ -272,7 +288,8 @@ const SignaturePad = forwardRef<SignaturePadRef, SignaturePadProps>(
 
     const clearExistingSignature = () => {
       setSignatureData(null);
-      notifyChange(null, signatureName);
+      setSignatureType(null);
+      notifyChange(null, signatureName, null);
     };
 
     return (
