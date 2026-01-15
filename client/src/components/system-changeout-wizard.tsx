@@ -171,8 +171,10 @@ function buildSuccessSteps(
   
   if (mode === "reading_only") {
     // Reading Only mode: simplified flow
-    // Capture reading (saved to new reading fields), GPS (if manual), Notes, Signature, Confirm
+    // Before photos (if enabled), Capture reading, After photos (if enabled), GPS (if manual), Notes, Signature, Confirm
+    if (config.showBeforePhotosStep) steps.push("beforePhotos");
     steps.push("newReading");
+    if (config.showAfterPhotosStep) steps.push("afterPhotos");
     if (showGpsStep) steps.push("gps");
     if (config.showNotesStep) steps.push("notes");
     if (config.showSignatureStep) steps.push("signature");
@@ -252,14 +254,15 @@ export function SystemChangeoutWizard({
   const signaturePadRef = useRef<SignaturePadRef>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // Determine initial step based on wizard mode
+  // Determine initial step based on wizard mode using the generated steps array
   const getInitialStep = (): WizardStep => {
-    if (config.wizardMode === "user_choice") {
-      return "modeSelection";
-    } else if (config.wizardMode === "reading_only") {
-      return "newReading";
-    }
-    return "canChange";
+    const steps = buildSuccessSteps(
+      config.wizardMode === "reading_only" ? "reading_only" : "changeout",
+      config,
+      config.wizardMode === "user_choice",
+      effectiveGpsMode
+    );
+    return steps[0] || "canChange";
   };
   
   const [currentStep, setCurrentStep] = useState<WizardStep>(getInitialStep());
@@ -356,14 +359,11 @@ export function SystemChangeoutWizard({
   // Reset the step when the dialog opens to ensure it starts at the correct step for the mode
   useEffect(() => {
     if (isOpen) {
-      // Set initial step based on wizard mode when dialog opens
+      // Set initial step based on wizard mode when dialog opens using generated steps
+      const initialStep = getInitialStep();
+      setCurrentStep(initialStep);
       if (config.wizardMode === "user_choice") {
-        setCurrentStep("modeSelection");
         setSelectedWorkflowMode(null);
-      } else if (config.wizardMode === "reading_only") {
-        setCurrentStep("newReading");
-      } else {
-        setCurrentStep("canChange");
       }
       
       // Start background GPS capture if in automatic mode and GPS is not disabled
@@ -429,14 +429,9 @@ export function SystemChangeoutWizard({
     // Reset workflow mode selection for user_choice
     setSelectedWorkflowMode(null);
     
-    // Set initial step based on wizard mode
-    if (config.wizardMode === "user_choice") {
-      setCurrentStep("modeSelection");
-    } else if (config.wizardMode === "reading_only") {
-      setCurrentStep("newReading");
-    } else {
-      setCurrentStep("canChange");
-    }
+    // Set initial step based on wizard mode using generated steps
+    const initialStep = getInitialStep();
+    setCurrentStep(initialStep);
     
     // Reset confirmation state based on whether existing values are present
     setOldSystemReadingConfirmed(!existingOldReading);
