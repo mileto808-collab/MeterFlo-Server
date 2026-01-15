@@ -9305,6 +9305,49 @@ export async function registerRoutes(
     }
   });
 
+  // Geocode address to GPS coordinates (for desktop fallback)
+  app.get("/api/geocode", isAuthenticated, async (req: any, res) => {
+    try {
+      const { address } = req.query;
+      
+      if (!address || typeof address !== 'string') {
+        return res.status(400).json({ message: "Address is required" });
+      }
+      
+      // Use Nominatim (OpenStreetMap) for geocoding - free and doesn't require API key
+      const encodedAddress = encodeURIComponent(address);
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodedAddress}&limit=1`,
+        {
+          headers: {
+            'User-Agent': 'MeterFlo/1.0 (Utility Work Order System)'
+          }
+        }
+      );
+      
+      if (!response.ok) {
+        return res.status(500).json({ message: "Geocoding service unavailable" });
+      }
+      
+      const results = await response.json();
+      
+      if (results && results.length > 0) {
+        const { lat, lon, display_name } = results[0];
+        return res.json({
+          lat: parseFloat(lat).toFixed(6),
+          lng: parseFloat(lon).toFixed(6),
+          displayName: display_name,
+          source: "geocode"
+        });
+      }
+      
+      return res.status(404).json({ message: "Address not found" });
+    } catch (error) {
+      console.error("Geocoding error:", error);
+      res.status(500).json({ message: "Failed to geocode address" });
+    }
+  });
+
   return httpServer;
 }
 

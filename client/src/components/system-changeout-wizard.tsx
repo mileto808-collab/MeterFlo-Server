@@ -23,6 +23,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
+import { useGpsCapture, type GpsCaptureSource } from "@/hooks/use-gps-capture";
 import { GPSCapture } from "./gps-capture";
 import SignaturePad, { SignaturePadRef } from "./signature-pad";
 import {
@@ -328,6 +329,24 @@ export function SystemChangeoutWizard({
   
   // Check if we're in reading-only mode for this session
   const isReadingOnlyMode = effectiveMode === "reading_only";
+  
+  // GPS capture hook for background capture
+  const gpsCapture = useGpsCapture({
+    existingGps: existingGps,
+    address: address || undefined,
+    onSuccess: (result) => {
+      setData((prev) => ({ ...prev, gpsCoordinates: result.coordinates }));
+      if (effectiveGpsMode === "automatic") {
+        toast({
+          title: "GPS Captured",
+          description: `Location captured from ${result.source === "device" ? "device" : result.source === "geocode" ? "address" : result.source === "existing" ? "existing data" : "manual entry"}`,
+        });
+      }
+    },
+  });
+  
+  // Track GPS capture source for display purposes
+  const [gpsCaptureSource, setGpsCaptureSource] = useState<GpsCaptureSource>(null);
 
   // Reset the step when the dialog opens to ensure it starts at the correct step for the mode
   useEffect(() => {
@@ -341,8 +360,17 @@ export function SystemChangeoutWizard({
       } else {
         setCurrentStep("canChange");
       }
+      
+      // Start background GPS capture if in automatic mode and GPS is not disabled
+      if (effectiveGpsMode === "automatic") {
+        gpsCapture.startCapture().then((result) => {
+          if (result) {
+            setGpsCaptureSource(result.source);
+          }
+        });
+      }
     }
-  }, [isOpen, config.wizardMode]);
+  }, [isOpen, config.wizardMode, effectiveGpsMode]);
 
   // Reset photo capture state when user returns to page (handles camera cancel on mobile)
   useEffect(() => {
@@ -541,6 +569,13 @@ export function SystemChangeoutWizard({
         return !!data.signatureData && !!data.signatureName.trim();
       case "confirm": {
         // Final validation: check all required fields based on path, scope, and mode
+        // GPS validation based on gpsMode:
+        // - "disabled": GPS not required
+        // - "automatic": GPS optional (best effort, already captured in background)
+        // - "manual_step": GPS required (user went through the step)
+        const gpsRequired = effectiveGpsMode === "manual_step";
+        const gpsValid = !gpsRequired || isValidGps(data.gpsCoordinates);
+        
         if (isReadingOnlyMode) {
           // Reading-only mode validation: just new readings (and optionally GPS, signature based on config)
           const needsSystemData = (displayMode === "system" || displayMode === "both");
@@ -548,7 +583,6 @@ export function SystemChangeoutWizard({
           
           const newSystemReadingValid = !needsSystemData || isValidSystemReading(data.newSystemReading);
           const newModuleReadingValid = !needsModuleData || isValidSystemReading(data.newModuleReading);
-          const gpsValid = !config.showGpsStep || isValidGps(data.gpsCoordinates);
           const signatureValid = !config.showSignatureStep || (!!data.signatureData && !!data.signatureName.trim());
           
           return newSystemReadingValid && newModuleReadingValid && gpsValid && signatureValid;
@@ -570,7 +604,6 @@ export function SystemChangeoutWizard({
           // Photo validations based on config
           const beforePhotosValid = !config.showBeforePhotosStep || data.beforePhotos.length >= 1;
           const afterPhotosValid = !config.showAfterPhotosStep || data.afterPhotos.length >= 1;
-          const gpsValid = !config.showGpsStep || isValidGps(data.gpsCoordinates);
           const signatureValid = !config.showSignatureStep || (!!data.signatureData && !!data.signatureName.trim());
           
           return (
@@ -1854,7 +1887,7 @@ export function SystemChangeoutWizard({
                       </>
                     )}
                     
-                    {config.showGpsStep && data.gpsCoordinates && (
+                    {effectiveGpsMode !== "disabled" && data.gpsCoordinates && (
                       <>
                         <span className="text-muted-foreground">GPS:</span>
                         <span className="font-medium">{data.gpsCoordinates}</span>
@@ -1955,7 +1988,7 @@ export function SystemChangeoutWizard({
                       </>
                     )}
                     
-                    {config.showGpsStep && (
+                    {effectiveGpsMode !== "disabled" && data.gpsCoordinates && (
                       <>
                         <span className="text-muted-foreground">GPS:</span>
                         <span className="font-medium">{data.gpsCoordinates}</span>

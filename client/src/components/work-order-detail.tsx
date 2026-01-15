@@ -81,6 +81,7 @@ interface OperationalHoursConfig {
 
 interface WizardConfig {
   wizardMode: "changeout" | "reading_only" | "user_choice";
+  gpsMode?: "automatic" | "manual_step" | "disabled";
   showNotesStep: boolean;
   showGpsStep: boolean;
   showBeforePhotosStep: boolean;

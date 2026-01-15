@@ -2210,6 +2210,7 @@ export default function ProjectWorkOrders() {
           }}
           wizardConfig={{
             wizardMode: (project?.wizardMode as "changeout" | "reading_only" | "user_choice") ?? "changeout",
+            gpsMode: (project?.wizardGpsMode as "automatic" | "manual_step" | "disabled") ?? "automatic",
             showNotesStep: project?.wizardShowNotesStep ?? true,
             showGpsStep: project?.wizardShowGpsStep ?? true,
             showBeforePhotosStep: project?.wizardShowBeforePhotosStep ?? true,
