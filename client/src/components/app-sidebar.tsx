@@ -39,7 +39,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { useState } from "react";
 import type { Project } from "@shared/schema";
 
-export function AppSidebar({ resizable = false }: { resizable?: boolean }) {
+export function AppSidebar() {
   const [location] = useLocation();
   const { user, hasPermission } = usePermissions();
   const role = user?.role || "user";
@@ -83,7 +83,7 @@ export function AppSidebar({ resizable = false }: { resizable?: boolean }) {
   };
 
   return (
-    <Sidebar resizable={resizable}>
+    <Sidebar>
       <SidebarHeader className="p-4 border-b border-sidebar-border">
         <div className="flex items-center gap-2">
           <img 

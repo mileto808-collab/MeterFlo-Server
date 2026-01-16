@@ -3,7 +3,7 @@ import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { SidebarProvider, SidebarTrigger, useSidebar } from "@/components/ui/sidebar";
+import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useAuth } from "@/hooks/useAuth";
@@ -12,9 +12,6 @@ import { useGlobalEvents } from "@/hooks/useProjectEvents";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { ArrowUpCircle } from "lucide-react";
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
-import { useState, useRef, useCallback, useEffect } from "react";
-import type { ImperativePanelHandle } from "react-resizable-panels";
 
 import Landing from "@/pages/landing";
 import TurnstilePage from "@/pages/turnstile";
@@ -152,107 +149,21 @@ function UpdateNotification() {
   );
 }
 
-const SIDEBAR_STORAGE_KEY = "meterflo-sidebar-width";
-const DEFAULT_SIDEBAR_SIZE = 15;
-const MAX_SIDEBAR_SIZE = 30;
-const COLLAPSED_SIZE = 3;
-
-function ResizableLayoutContent() {
-  const { open, setOpen, toggleSidebar: providerToggle } = useSidebar();
-  const sidebarPanelRef = useRef<ImperativePanelHandle>(null);
+function AuthenticatedLayout() {
+  useGlobalEvents();
   
-  const [lastExpandedSize, setLastExpandedSize] = useState(() => {
-    if (typeof window !== "undefined") {
-      try {
-        const saved = localStorage.getItem(SIDEBAR_STORAGE_KEY);
-        return saved ? parseFloat(saved) : DEFAULT_SIDEBAR_SIZE;
-      } catch {
-        return DEFAULT_SIDEBAR_SIZE;
-      }
-    }
-    return DEFAULT_SIDEBAR_SIZE;
-  });
-  
-  useEffect(() => {
-    if (sidebarPanelRef.current) {
-      if (open) {
-        sidebarPanelRef.current.resize(lastExpandedSize);
-      } else {
-        sidebarPanelRef.current.resize(COLLAPSED_SIZE);
-      }
-    }
-  }, [open, lastExpandedSize]);
-  
-  const handleSidebarResize = useCallback((sizes: number[]) => {
-    const newSize = sizes[0];
-    const collapsed = newSize <= COLLAPSED_SIZE + 1;
-    
-    if (collapsed !== !open) {
-      setOpen(!collapsed);
-    }
-    
-    if (!collapsed && newSize > COLLAPSED_SIZE + 1) {
-      setLastExpandedSize(newSize);
-      if (typeof window !== "undefined") {
-        try {
-          localStorage.setItem(SIDEBAR_STORAGE_KEY, String(newSize));
-        } catch {
-          // Ignore storage errors
-        }
-      }
-    }
-  }, [open, setOpen]);
+  const style = {
+    "--sidebar-width": "16rem",
+    "--sidebar-width-icon": "3rem",
+  };
 
   return (
-    <ResizablePanelGroup
-      direction="horizontal"
-      className="h-screen w-full"
-      onLayout={handleSidebarResize}
-    >
-      <ResizablePanel
-        ref={sidebarPanelRef}
-        defaultSize={lastExpandedSize}
-        minSize={COLLAPSED_SIZE}
-        maxSize={MAX_SIDEBAR_SIZE}
-        className="bg-sidebar relative overflow-hidden"
-        collapsible
-        collapsedSize={COLLAPSED_SIZE}
-      >
-        <div className="absolute inset-0 flex flex-col overflow-hidden">
-          <AppSidebar resizable />
-        </div>
-      </ResizablePanel>
-      <ResizableHandle withHandle className="hover:bg-primary/20 transition-colors" />
-      <ResizablePanel defaultSize={100 - lastExpandedSize} minSize={50}>
-        <div className="flex flex-col h-full min-w-0">
+    <SidebarProvider style={style as React.CSSProperties}>
+      <div className="flex min-h-screen w-full">
+        <AppSidebar />
+        <div className="flex flex-col flex-1 min-w-0">
           <header className="flex items-center justify-between gap-4 p-3 border-b border-border sticky top-0 z-50 bg-background">
-            <div className="flex items-center">
-              <SidebarTrigger 
-                className="md:hidden" 
-                data-testid="button-sidebar-toggle" 
-              />
-              <button 
-                onClick={providerToggle}
-                className="hidden md:flex h-9 w-9 items-center justify-center rounded-md hover:bg-accent transition-colors"
-                data-testid="button-sidebar-toggle-desktop"
-                aria-label={open ? "Collapse sidebar" : "Expand sidebar"}
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <rect x="3" y="3" width="18" height="18" rx="2" />
-                  <path d="M9 3v18" />
-                </svg>
-              </button>
-            </div>
+            <SidebarTrigger data-testid="button-sidebar-toggle" />
             <div className="flex items-center gap-2">
               <UpdateNotification />
               <ThemeToggle />
@@ -262,17 +173,7 @@ function ResizableLayoutContent() {
             <AuthenticatedRouter />
           </main>
         </div>
-      </ResizablePanel>
-    </ResizablePanelGroup>
-  );
-}
-
-function AuthenticatedLayout() {
-  useGlobalEvents();
-
-  return (
-    <SidebarProvider defaultOpen={true}>
-      <ResizableLayoutContent />
+      </div>
     </SidebarProvider>
   );
 }

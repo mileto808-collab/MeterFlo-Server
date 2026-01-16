@@ -155,7 +155,6 @@ function Sidebar({
   side = "left",
   variant = "sidebar",
   collapsible = "offcanvas",
-  resizable = false,
   className,
   children,
   ...props
@@ -163,7 +162,6 @@ function Sidebar({
   side?: "left" | "right"
   variant?: "sidebar" | "floating" | "inset"
   collapsible?: "offcanvas" | "icon" | "none"
-  resizable?: boolean
 }) {
   const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
 
@@ -204,32 +202,6 @@ function Sidebar({
           <div className="flex h-full w-full flex-col">{children}</div>
         </SheetContent>
       </Sheet>
-    )
-  }
-
-  if (resizable) {
-    return (
-      <div
-        className="group peer text-sidebar-foreground hidden md:flex flex-1 flex-col h-full min-h-0 overflow-hidden"
-        data-state={state}
-        data-collapsible=""
-        data-variant={variant}
-        data-side={side}
-        data-slot="sidebar"
-        data-resizable="true"
-      >
-        <div
-          data-slot="sidebar-container"
-          data-sidebar="sidebar"
-          className={cn(
-            "bg-sidebar flex flex-1 flex-col min-h-0 border-r border-sidebar-border overflow-hidden",
-            className
-          )}
-          {...props}
-        >
-          {children}
-        </div>
-      </div>
     )
   }
 
@@ -366,7 +338,7 @@ function SidebarHeader({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="sidebar-header"
       data-sidebar="header"
-      className={cn("flex flex-col gap-2 p-2 flex-shrink-0", className)}
+      className={cn("flex flex-col gap-2 p-2", className)}
       {...props}
     />
   )
@@ -377,7 +349,7 @@ function SidebarFooter({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="sidebar-footer"
       data-sidebar="footer"
-      className={cn("flex flex-col gap-2 p-2 flex-shrink-0", className)}
+      className={cn("flex flex-col gap-2 p-2", className)}
       {...props}
     />
   )
@@ -403,7 +375,7 @@ function SidebarContent({ className, ...props }: React.ComponentProps<"div">) {
       data-slot="sidebar-content"
       data-sidebar="content"
       className={cn(
-        "flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto group-data-[collapsible=icon]:overflow-hidden",
+        "flex min-h-0 flex-1 flex-col gap-2 overflow-auto group-data-[collapsible=icon]:overflow-hidden",
         className
       )}
       {...props}
