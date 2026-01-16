@@ -43,6 +43,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useTimezone } from "@/hooks/use-timezone";
 import { formatDateTimeInTimezone, formatForExport, formatInTimezone } from "@/lib/timezone";
 import { useProjectEvents } from "@/hooks/useProjectEvents";
+import { usePageHeader } from "@/contexts/page-header-context";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, ArrowLeft, Search, ArrowUpDown, ArrowUp, ArrowDown, Download, FileSpreadsheet, FileText, Filter, X, Route, ChevronRight, Paperclip, Eye, FileIcon, ChevronsUp, UserPlus, UserMinus, AlertTriangle, Loader2, Wrench, Home, Gauge, Cpu, Calendar } from "lucide-react";
 import { BackToTop } from "@/components/ui/back-to-top";
@@ -158,6 +159,7 @@ export default function ProjectWorkOrders() {
   
   const { user } = useAuth();
   const { hasPermission } = usePermissions();
+  const { setHeaderContent } = usePageHeader();
   const { toast } = useToast();
   const { timezone: globalTimezone } = useTimezone();
   const [, navigate] = useLocation();
@@ -418,6 +420,7 @@ export default function ProjectWorkOrders() {
     enabled: !!projectId,
     retry: false,
   });
+
 
   // Use project-specific timezone with fallback to global timezone
   const effectiveTimezone = project?.timezone || globalTimezone;
@@ -3239,6 +3242,57 @@ export default function ProjectWorkOrders() {
       />
     </div>
   );
+
+  // Set page header content for the sticky nav bar - defined after all handlers are available
+  const headerContent = useMemo(() => {
+    if (!project || !user) return null;
+    
+    return (
+      <div className="flex items-center gap-4 flex-wrap">
+        <div className="flex flex-col">
+          <span className="font-semibold text-sm">{project.name}</span>
+          <span className="text-xs text-muted-foreground">Work Orders</span>
+        </div>
+        {user.role !== "customer" && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <Link href={`/projects/${projectId}/files`}>
+              <Button variant="outline" size="sm" data-testid="header-button-project-files">
+                <Folder className="h-3.5 w-3.5 mr-1" />
+                <span className="hidden lg:inline">Project Documents</span>
+              </Button>
+            </Link>
+            {hasPermission(permissionKeys.WORK_ORDERS_METER_CHANGEOUT) && (
+              <Button 
+                size="sm"
+                onClick={() => setShowStartSystemChangeout(true)} 
+                data-testid="header-button-start-system-changeout"
+                className="bg-green-600 text-white dark:bg-green-600"
+              >
+                {project.wizardMode === "reading_only" ? (
+                  <Gauge className="h-3.5 w-3.5 mr-1" />
+                ) : (
+                  <Wrench className="h-3.5 w-3.5 mr-1" />
+                )}
+                <span className="hidden lg:inline">{project.wizardMode === "reading_only" ? "Start Reading Capture" : "Start Changeout"}</span>
+              </Button>
+            )}
+            {hasPermission(permissionKeys.WORK_ORDERS_CREATE) && (
+              <Button size="sm" onClick={() => setIsCreatingWorkOrder(true)} data-testid="header-button-create-work-order">
+                <Plus className="h-3.5 w-3.5 mr-1" />
+                <span className="hidden lg:inline">New Work Order</span>
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }, [project, user, projectId, hasPermission]);
+
+  // Update the sticky header when header content changes
+  useEffect(() => {
+    setHeaderContent(headerContent);
+    return () => setHeaderContent(null);
+  }, [headerContent, setHeaderContent]);
 
   return (
     <div className="p-6 space-y-6">
