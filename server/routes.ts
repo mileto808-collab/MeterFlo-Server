@@ -3649,6 +3649,7 @@ export async function registerRoutes(
         changeoutScope, // "system", "module", or "both"
         newSystemType,
         newModuleType,
+        isReadingOnly, // true if reading-only mode, false/undefined for changeout mode
       } = changeoutData;
       
       const files = req.files as Express.Multer.File[];
@@ -3704,8 +3705,16 @@ export async function registerRoutes(
       if (canChange) {
         // Success path - system was changed
         // Determine what needs to be validated based on changeout scope
-        const needsSystem = changeoutScope === "system" || changeoutScope === "both";
-        const needsModule = changeoutScope === "module" || changeoutScope === "both";
+        // If changeoutScope is provided, use it; otherwise fall back to work order data
+        const woAny = workOrder as any;
+        const hasSystemData = !!workOrder.oldSystemId || !!woAny.old_system_id;
+        const hasModuleData = !!workOrder.oldModuleId || !!woAny.old_module_id;
+        const needsSystem = changeoutScope 
+          ? (changeoutScope === "system" || changeoutScope === "both")
+          : hasSystemData;
+        const needsModule = changeoutScope 
+          ? (changeoutScope === "module" || changeoutScope === "both")
+          : hasModuleData;
         
         // Validate required fields based on scope (use hasReadingValue for readings to allow 0)
         if (needsSystem && (!hasReadingValue(oldSystemReading) || !newSystemId || !hasReadingValue(newSystemReading))) {
@@ -3790,9 +3799,30 @@ export async function registerRoutes(
         // Add completion notes if provided
         if (completionNotes && completionNotes.trim()) {
           const timestamp = await getTimezoneFormattedTimestamp();
+          // Generate notes prefix based on workflow type and scope
+          let notesPrefix = "";
+          if (isReadingOnly) {
+            // Reading mode
+            if (changeoutScope === "system") {
+              notesPrefix = "System Reading Notes";
+            } else if (changeoutScope === "module") {
+              notesPrefix = "Module Reading Notes";
+            } else {
+              notesPrefix = "System and Module Reading Notes";
+            }
+          } else {
+            // Changeout mode
+            if (changeoutScope === "system") {
+              notesPrefix = "System Changeout Notes";
+            } else if (changeoutScope === "module") {
+              notesPrefix = "Module Changeout Notes";
+            } else {
+              notesPrefix = "System and Module Changeout Notes";
+            }
+          }
           updateData.notes = workOrder.notes 
-            ? `${workOrder.notes}\n\n[System Changeout Notes - ${timestamp}]\n${completionNotes.trim()}`
-            : `[System Changeout Notes - ${timestamp}]\n${completionNotes.trim()}`;
+            ? `${workOrder.notes}\n\n[${notesPrefix} - ${timestamp}]\n${completionNotes.trim()}`
+            : `[${notesPrefix} - ${timestamp}]\n${completionNotes.trim()}`;
         }
         
         // Get the "Completed" status from system
@@ -8339,8 +8369,17 @@ export async function registerRoutes(
         signatureData,
         signatureName,
         photoTypes,
-        completedAt: clientCompletedAt
+        completedAt: clientCompletedAt,
+        isReadingOnly,
+        changeoutScope
       } = changeoutData;
+      
+      // Determine scope from explicit changeoutScope or fall back to work order data
+      const woAny = workOrder as any;
+      const hasSystemData = !!workOrder.oldSystemId || !!woAny.old_system_id;
+      const hasModuleData = !!workOrder.oldModuleId || !!woAny.old_module_id;
+      const needsSystem = changeoutScope ? (changeoutScope === "system" || changeoutScope === "both") : hasSystemData;
+      const needsModule = changeoutScope ? (changeoutScope === "module" || changeoutScope === "both") : hasModuleData;
       
       const files = req.files as Express.Multer.File[];
       const folderName = workOrder.customerWoId || String(workOrder.id);
@@ -8429,7 +8468,26 @@ export async function registerRoutes(
         // Append completion notes to existing notes (mobile pattern)
         if (troubleNote && troubleNote.trim()) {
           const timestamp = await getTimezoneFormattedTimestamp();
-          const noteEntry = `[System Changeout Notes - ${timestamp} by ${currentUser.username || currentUser.id}]\n${troubleNote.trim()}`;
+          // Generate notes prefix based on workflow type and scope
+          let notesPrefix = "";
+          if (isReadingOnly) {
+            if (needsSystem && needsModule) {
+              notesPrefix = "System and Module Reading Notes";
+            } else if (needsModule) {
+              notesPrefix = "Module Reading Notes";
+            } else {
+              notesPrefix = "System Reading Notes";
+            }
+          } else {
+            if (needsSystem && needsModule) {
+              notesPrefix = "System and Module Changeout Notes";
+            } else if (needsModule) {
+              notesPrefix = "Module Changeout Notes";
+            } else {
+              notesPrefix = "System Changeout Notes";
+            }
+          }
+          const noteEntry = `[${notesPrefix} - ${timestamp} by ${currentUser.username || currentUser.id}]\n${troubleNote.trim()}`;
           updateData.notes = workOrder.notes 
             ? `${workOrder.notes}\n\n${noteEntry}`
             : noteEntry;
@@ -8677,7 +8735,9 @@ export async function registerRoutes(
         completedAt,
         notes,
         beforePhotos,
-        afterPhotos
+        afterPhotos,
+        isReadingOnly, // true if reading-only mode
+        changeoutScope, // "system", "module", or "both" - explicit scope from request
       } = req.body;
       
       // Normalize module reading field names (mobile may send oldModuleRead/newModuleRead instead of oldModuleReading/newModuleReading)
@@ -8804,11 +8864,14 @@ export async function registerRoutes(
         return !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
       };
       
-      // Determine changeout scope from authoritative work order data
+      // Determine changeout scope from explicit changeoutScope or fall back to work order data
       // Use type assertion for snake_case fallbacks (legacy imports may use snake_case)
       const woAny = workOrder as any;
-      const needsSystem = !!workOrder.oldSystemId || !!woAny.old_system_id;
-      const needsModule = !!workOrder.oldModuleId || !!woAny.old_module_id;
+      const hasSystemData = !!workOrder.oldSystemId || !!woAny.old_system_id;
+      const hasModuleData = !!workOrder.oldModuleId || !!woAny.old_module_id;
+      // For validation, use work order data; for notes prefix, honor explicit scope if provided
+      const needsSystem = changeoutScope ? (changeoutScope === "system" || changeoutScope === "both") : hasSystemData;
+      const needsModule = changeoutScope ? (changeoutScope === "module" || changeoutScope === "both") : hasModuleData;
       
       // Validate required fields for completion based on scope
       if (needsSystem) {
@@ -8896,7 +8959,28 @@ export async function registerRoutes(
       // Append user notes to existing notes (mobile pattern) - don't replace
       if (notes && notes.trim()) {
         const timestamp = await getTimezoneFormattedTimestamp();
-        const noteEntry = `[System Changeout Notes - ${timestamp} by ${currentUser.username || currentUser.id}]\n${notes.trim()}`;
+        // Generate notes prefix based on workflow type and scope
+        let notesPrefix = "";
+        if (isReadingOnly) {
+          // Reading mode
+          if (needsSystem && needsModule) {
+            notesPrefix = "System and Module Reading Notes";
+          } else if (needsModule) {
+            notesPrefix = "Module Reading Notes";
+          } else {
+            notesPrefix = "System Reading Notes";
+          }
+        } else {
+          // Changeout mode
+          if (needsSystem && needsModule) {
+            notesPrefix = "System and Module Changeout Notes";
+          } else if (needsModule) {
+            notesPrefix = "Module Changeout Notes";
+          } else {
+            notesPrefix = "System Changeout Notes";
+          }
+        }
+        const noteEntry = `[${notesPrefix} - ${timestamp} by ${currentUser.username || currentUser.id}]\n${notes.trim()}`;
         updateData.notes = workOrder.notes 
           ? `${workOrder.notes}\n\n${noteEntry}`
           : noteEntry;
@@ -9123,6 +9207,8 @@ export async function registerRoutes(
       const notes = body.notes;
       const beforePhotos = body.beforePhotos ?? body.before_photos ?? [];
       const afterPhotos = body.afterPhotos ?? body.after_photos ?? [];
+      const isReadingOnly = body.isReadingOnly ?? body.is_reading_only ?? false;
+      const changeoutScope = body.changeoutScope ?? body.changeout_scope;
       
       // Check permission
       const hasMeterChangeoutPermission = await storage.hasPermission(currentUser, "workOrders.meterChangeout");
@@ -9234,10 +9320,12 @@ export async function registerRoutes(
         return !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
       };
       
-      // Determine changeout scope from work order data
+      // Determine changeout scope from explicit changeoutScope or fall back to work order data
       const woAny = workOrder as any;
-      const needsSystem = !!workOrder.oldSystemId || !!woAny.old_system_id;
-      const needsModule = !!workOrder.oldModuleId || !!woAny.old_module_id;
+      const hasSystemData = !!workOrder.oldSystemId || !!woAny.old_system_id;
+      const hasModuleData = !!workOrder.oldModuleId || !!woAny.old_module_id;
+      const needsSystem = changeoutScope ? (changeoutScope === "system" || changeoutScope === "both") : hasSystemData;
+      const needsModule = changeoutScope ? (changeoutScope === "module" || changeoutScope === "both") : hasModuleData;
       
       // Validate required fields based on scope
       if (needsSystem) {
@@ -9323,10 +9411,30 @@ export async function registerRoutes(
         updateData.signatureData = signatureData;
       }
       
-      // Append notes
+      // Append notes with dynamic prefix based on workflow type and scope
       if (notes && notes.trim()) {
         const timestamp = await getTimezoneFormattedTimestamp();
-        const noteEntry = `[System Changeout Notes - ${timestamp} by ${currentUser.username || currentUser.id}]\n${notes.trim()}`;
+        let notesPrefix = "";
+        if (isReadingOnly) {
+          // Reading mode
+          if (needsSystem && needsModule) {
+            notesPrefix = "System and Module Reading Notes";
+          } else if (needsModule) {
+            notesPrefix = "Module Reading Notes";
+          } else {
+            notesPrefix = "System Reading Notes";
+          }
+        } else {
+          // Changeout mode
+          if (needsSystem && needsModule) {
+            notesPrefix = "System and Module Changeout Notes";
+          } else if (needsModule) {
+            notesPrefix = "Module Changeout Notes";
+          } else {
+            notesPrefix = "System Changeout Notes";
+          }
+        }
+        const noteEntry = `[${notesPrefix} - ${timestamp} by ${currentUser.username || currentUser.id}]\n${notes.trim()}`;
         updateData.notes = workOrder.notes 
           ? `${workOrder.notes}\n\n${noteEntry}`
           : noteEntry;
