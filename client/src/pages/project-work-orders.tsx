@@ -2049,9 +2049,17 @@ export default function ProjectWorkOrders() {
     filterUpdatedAtFrom !== "" || filterUpdatedAtTo !== "",
   ].filter(Boolean).length;
 
-  // Determine if project uses systems and/or modules based on configured types
-  const hasSystems = systemTypes.length > 0;
-  const hasModules = moduleTypes.length > 0;
+  // Determine if project uses systems and/or modules based on configured types OR work order data
+  // Check both type configurations AND actual work order data for flexibility
+  const workOrdersHaveSystemData = workOrders?.some(wo => 
+    wo.oldSystemId || wo.newSystemId || wo.oldSystemType || wo.newSystemType
+  ) ?? false;
+  const workOrdersHaveModuleData = workOrders?.some(wo => 
+    (wo as any).oldModuleId || (wo as any).newModuleId || (wo as any).oldModuleType || (wo as any).newModuleType
+  ) ?? false;
+  
+  const hasSystems = systemTypes.length > 0 || workOrdersHaveSystemData;
+  const hasModules = moduleTypes.length > 0 || workOrdersHaveModuleData;
 
   const getStatusLabel = (status: string): string => {
     if (!status) return "";

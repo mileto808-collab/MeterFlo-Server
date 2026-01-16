@@ -19,7 +19,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Filter, X } from "lucide-react";
 import type { WorkOrderStatus, TroubleCode, ServiceTypeRecord, SystemType, ModuleType } from "@shared/schema";
@@ -245,7 +244,7 @@ export function WorkOrderFiltersDialog({
           </DialogDescription>
         </DialogHeader>
         
-        <ScrollArea className="flex-1 h-[60vh] pr-4">
+        <div className="flex-1 overflow-y-auto max-h-[60vh] pr-4">
           <div className="space-y-4 pb-4">
             <SectionHeader title="Work Order Info" />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -598,7 +597,7 @@ export function WorkOrderFiltersDialog({
               </div>
             </div>
           </div>
-        </ScrollArea>
+        </div>
 
         <DialogFooter className="gap-2 sm:gap-0">
           {hasActiveFilters && (
