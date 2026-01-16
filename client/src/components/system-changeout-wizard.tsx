@@ -292,6 +292,7 @@ export function SystemChangeoutWizard({
   const [isCapturingPhoto, setIsCapturingPhoto] = useState(false);
   const captureSessionActive = useRef(false);
   const lastPhotoCaptureTime = useRef<number>(0);
+  const preventDialogClose = useRef(false);
   const [systemIdInputMode, setSystemIdInputMode] = useState<"choose" | "barcode" | "qr" | "manual" | "hid" | null>(null);
   const [manualSystemIdInput, setManualSystemIdInput] = useState("");
   const [hidSystemIdInput, setHidSystemIdInput] = useState("");
@@ -430,7 +431,8 @@ export function SystemChangeoutWizard({
         setTimeout(() => {
           setIsCapturingPhoto(false);
           captureSessionActive.current = false;
-        }, 1500);
+          preventDialogClose.current = false;
+        }, 2000);
       }
     };
 
@@ -439,7 +441,8 @@ export function SystemChangeoutWizard({
       setTimeout(() => {
         setIsCapturingPhoto(false);
         captureSessionActive.current = false;
-      }, 500);
+        preventDialogClose.current = false;
+      }, 2000);
     };
 
     // Handle window focus regain (desktop fallback for file picker cancel)
@@ -449,7 +452,8 @@ export function SystemChangeoutWizard({
         setTimeout(() => {
           setIsCapturingPhoto(false);
           captureSessionActive.current = false;
-        }, 1500);
+          preventDialogClose.current = false;
+        }, 2000);
       }
     };
 
@@ -470,7 +474,19 @@ export function SystemChangeoutWizard({
     };
   }, [isCapturingPhoto]);
 
+  // Centralized function to clear all capture-related flags
+  // This ensures the dialog can always be dismissed and prevents stale flags
+  const clearCaptureFlags = useCallback(() => {
+    setIsCapturingPhoto(false);
+    captureSessionActive.current = false;
+    preventDialogClose.current = false;
+    lastPhotoCaptureTime.current = 0;
+  }, []);
+
   const resetWizard = useCallback(() => {
+    // Always clear capture flags when resetting wizard to prevent stuck state
+    clearCaptureFlags();
+    
     // Reset workflow mode selection for user_choice
     setSelectedWorkflowMode(null);
     
@@ -503,7 +519,7 @@ export function SystemChangeoutWizard({
     data.troublePhotos.forEach((p) => URL.revokeObjectURL(p.preview));
     data.beforePhotos.forEach((p) => URL.revokeObjectURL(p.preview));
     data.afterPhotos.forEach((p) => URL.revokeObjectURL(p.preview));
-  }, [existingOldReading, existingNewReading, existingOldModuleReading, existingNewModuleReading, existingGps, config.wizardMode]);
+  }, [existingOldReading, existingNewReading, existingOldModuleReading, existingNewModuleReading, existingGps, config.wizardMode, clearCaptureFlags]);
 
   const handleClose = () => {
     resetWizard();
@@ -760,7 +776,8 @@ export function SystemChangeoutWizard({
     if (!files || files.length === 0) {
       setTimeout(() => {
         captureSessionActive.current = false;
-      }, 1500);
+        preventDialogClose.current = false;
+      }, 2000);
       return;
     }
 
@@ -787,7 +804,8 @@ export function SystemChangeoutWizard({
     // Extended timeout to prevent spurious dialog closes after photo capture
     setTimeout(() => {
       captureSessionActive.current = false;
-    }, 1500);
+      preventDialogClose.current = false;
+    }, 2000);
   };
 
   const removePhoto = (type: "trouble" | "before" | "after", index: number) => {
@@ -812,6 +830,7 @@ export function SystemChangeoutWizard({
     setPhotoType(type);
     setIsCapturingPhoto(true);
     captureSessionActive.current = true;
+    preventDialogClose.current = true;
     fileInputRef.current?.click();
   };
 
@@ -1019,12 +1038,17 @@ export function SystemChangeoutWizard({
   };
   
   // Reset input mode and auto-selection state when leaving the newSystemId step
+  // Only reset if not in the middle of a photo capture session to prevent dialog close issues
   useEffect(() => {
     if (currentStep !== "newSystemId") {
-      lastAutoSelectedTarget.current = null;
-      setSystemIdInputMode(null);
+      // Don't reset state if photo capture is in progress - this prevents
+      // state changes that could interfere with dialog close protection
+      if (!isCapturingPhoto && !captureSessionActive.current && !preventDialogClose.current) {
+        lastAutoSelectedTarget.current = null;
+        setSystemIdInputMode(null);
+      }
     }
-  }, [currentStep]);
+  }, [currentStep, isCapturingPhoto]);
   
   // Auto-select the only enabled search method when entering newSystemId step
   useEffect(() => {
@@ -2448,8 +2472,9 @@ export function SystemChangeoutWizard({
     <Dialog open={isOpen} onOpenChange={(open) => {
       // Prevent dialog close during or shortly after photo capture
       // This handles spurious close events that can occur on mobile when camera returns
+      // preventDialogClose is a dedicated flag that survives state resets from other useEffects
       const recentlyCapturing = Date.now() - lastPhotoCaptureTime.current < 2000;
-      if (!open && !isCapturingPhoto && !captureSessionActive.current && !recentlyCapturing) {
+      if (!open && !isCapturingPhoto && !captureSessionActive.current && !preventDialogClose.current && !recentlyCapturing) {
         handleClose();
       }
     }}>
