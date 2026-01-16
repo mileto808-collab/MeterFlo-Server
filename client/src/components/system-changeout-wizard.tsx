@@ -291,6 +291,7 @@ export function SystemChangeoutWizard({
   const [photoType, setPhotoType] = useState<"trouble" | "before" | "after">("before");
   const [isCapturingPhoto, setIsCapturingPhoto] = useState(false);
   const captureSessionActive = useRef(false);
+  const lastPhotoCaptureTime = useRef<number>(0);
   const [systemIdInputMode, setSystemIdInputMode] = useState<"choose" | "barcode" | "qr" | "manual" | "hid" | null>(null);
   const [manualSystemIdInput, setManualSystemIdInput] = useState("");
   const [hidSystemIdInput, setHidSystemIdInput] = useState("");
@@ -424,11 +425,12 @@ export function SystemChangeoutWizard({
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && isCapturingPhoto) {
-        // Give a brief delay to allow onChange to fire if a photo was taken
+        // Give a longer delay to allow onChange to fire if a photo was taken
+        // This prevents race conditions on slow devices
         setTimeout(() => {
           setIsCapturingPhoto(false);
           captureSessionActive.current = false;
-        }, 500);
+        }, 1500);
       }
     };
 
@@ -437,17 +439,17 @@ export function SystemChangeoutWizard({
       setTimeout(() => {
         setIsCapturingPhoto(false);
         captureSessionActive.current = false;
-      }, 100);
+      }, 500);
     };
 
     // Handle window focus regain (desktop fallback for file picker cancel)
     const handleWindowFocus = () => {
       if (isCapturingPhoto) {
-        // Give a brief delay to allow onChange to fire if a file was selected
+        // Give a longer delay to allow onChange to fire if a file was selected
         setTimeout(() => {
           setIsCapturingPhoto(false);
           captureSessionActive.current = false;
-        }, 500);
+        }, 1500);
       }
     };
 
@@ -751,12 +753,14 @@ export function SystemChangeoutWizard({
 
   const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     setIsCapturingPhoto(false);
+    // Record capture time to prevent dialog close for a protection period
+    lastPhotoCaptureTime.current = Date.now();
     const files = e.target.files;
     
     if (!files || files.length === 0) {
       setTimeout(() => {
         captureSessionActive.current = false;
-      }, 500);
+      }, 1500);
       return;
     }
 
@@ -780,9 +784,10 @@ export function SystemChangeoutWizard({
       fileInputRef.current.value = "";
     }
     
+    // Extended timeout to prevent spurious dialog closes after photo capture
     setTimeout(() => {
       captureSessionActive.current = false;
-    }, 500);
+    }, 1500);
   };
 
   const removePhoto = (type: "trouble" | "before" | "after", index: number) => {
@@ -2441,7 +2446,10 @@ export function SystemChangeoutWizard({
   return (
     <>
     <Dialog open={isOpen} onOpenChange={(open) => {
-      if (!open && !isCapturingPhoto && !captureSessionActive.current) {
+      // Prevent dialog close during or shortly after photo capture
+      // This handles spurious close events that can occur on mobile when camera returns
+      const recentlyCapturing = Date.now() - lastPhotoCaptureTime.current < 2000;
+      if (!open && !isCapturingPhoto && !captureSessionActive.current && !recentlyCapturing) {
         handleClose();
       }
     }}>
