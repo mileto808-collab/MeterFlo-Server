@@ -1911,79 +1911,103 @@ export function SystemChangeoutWizard({
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-center">
               {isReadingOnlyMode 
-                ? "Review Reading Capture" 
+                ? (data.canChange ? "Review Reading Capture" : "Review Trouble Report")
                 : data.canChange 
                   ? "Review System Changeout" 
                   : "Review Trouble Report"}
             </h3>
             
             {isReadingOnlyMode ? (
-              <Card>
-                <CardContent className="pt-4 space-y-3">
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <span className="text-muted-foreground">Work Order:</span>
-                    <span className="font-medium">{customerWoId}</span>
-                    
-                    <span className="text-muted-foreground">Address:</span>
-                    <span className="font-medium">{address || "-"}</span>
-                    
-                    {(displayMode === "system" || displayMode === "both") && (
-                      <>
-                        <span className="text-muted-foreground">System ID:</span>
-                        <span className="font-medium">{oldSystemId || "-"}</span>
-                        
-                        <span className="text-muted-foreground">Reading Captured:</span>
-                        <span className="font-medium">{data.newSystemReading}</span>
-                      </>
-                    )}
-                    
-                    {(displayMode === "module" || displayMode === "both") && (
-                      <>
-                        <span className="text-muted-foreground">Module ID:</span>
-                        <span className="font-medium">{oldModuleId || "-"}</span>
-                        
-                        <span className="text-muted-foreground">Module Reading:</span>
-                        <span className="font-medium">{data.newModuleReading}</span>
-                      </>
-                    )}
-                    
-                    {effectiveGpsMode !== "disabled" && data.gpsCoordinates && (
-                      <>
-                        <span className="text-muted-foreground">GPS:</span>
-                        <span className="font-medium">{data.gpsCoordinates}</span>
-                      </>
-                    )}
-                    
-                    {config.showBeforePhotosStep && (
-                      <>
-                        <span className="text-muted-foreground">Before Photos:</span>
-                        <span className="font-medium">{data.beforePhotos.length}</span>
-                      </>
-                    )}
-                    
-                    {config.showAfterPhotosStep && (
-                      <>
-                        <span className="text-muted-foreground">After Photos:</span>
-                        <span className="font-medium">{data.afterPhotos.length}</span>
-                      </>
-                    )}
-                    
-                    {config.showNotesStep && data.completionNotes && (
-                      <>
-                        <span className="text-muted-foreground">Notes:</span>
-                        <span className="font-medium">{data.completionNotes}</span>
-                      </>
-                    )}
-                    
-                    {config.showSignatureStep && data.signatureName && (
-                      <>
-                        <span className="text-muted-foreground">Signed By:</span>
-                        <span className="font-medium">{data.signatureName}</span>
-                      </>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
+              data.canChange ? (
+                <Card>
+                  <CardContent className="pt-4 space-y-3">
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <span className="text-muted-foreground">Work Order:</span>
+                      <span className="font-medium">{customerWoId}</span>
+                      
+                      <span className="text-muted-foreground">Address:</span>
+                      <span className="font-medium">{address || "-"}</span>
+                      
+                      {(displayMode === "system" || displayMode === "both") && (
+                        <>
+                          <span className="text-muted-foreground">System ID:</span>
+                          <span className="font-medium">{oldSystemId || "-"}</span>
+                          
+                          <span className="text-muted-foreground">Reading Captured:</span>
+                          <span className="font-medium">{data.newSystemReading}</span>
+                        </>
+                      )}
+                      
+                      {(displayMode === "module" || displayMode === "both") && (
+                        <>
+                          <span className="text-muted-foreground">Module ID:</span>
+                          <span className="font-medium">{oldModuleId || "-"}</span>
+                          
+                          <span className="text-muted-foreground">Module Reading:</span>
+                          <span className="font-medium">{data.newModuleReading}</span>
+                        </>
+                      )}
+                      
+                      {effectiveGpsMode !== "disabled" && data.gpsCoordinates && (
+                        <>
+                          <span className="text-muted-foreground">GPS:</span>
+                          <span className="font-medium">{data.gpsCoordinates}</span>
+                        </>
+                      )}
+                      
+                      {config.showBeforePhotosStep && (
+                        <>
+                          <span className="text-muted-foreground">Before Photos:</span>
+                          <span className="font-medium">{data.beforePhotos.length}</span>
+                        </>
+                      )}
+                      
+                      {config.showAfterPhotosStep && (
+                        <>
+                          <span className="text-muted-foreground">After Photos:</span>
+                          <span className="font-medium">{data.afterPhotos.length}</span>
+                        </>
+                      )}
+                      
+                      {config.showNotesStep && data.completionNotes && (
+                        <>
+                          <span className="text-muted-foreground">Notes:</span>
+                          <span className="font-medium">{data.completionNotes}</span>
+                        </>
+                      )}
+                      
+                      {config.showSignatureStep && data.signatureName && (
+                        <>
+                          <span className="text-muted-foreground">Signed By:</span>
+                          <span className="font-medium">{data.signatureName}</span>
+                        </>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card>
+                  <CardContent className="pt-4 space-y-3">
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <span className="text-muted-foreground">Work Order:</span>
+                      <span className="font-medium">{customerWoId}</span>
+                      
+                      <span className="text-muted-foreground">Trouble Code:</span>
+                      <span className="font-medium">{data.troubleCode}</span>
+                      
+                      <span className="text-muted-foreground">Photos:</span>
+                      <span className="font-medium">{data.troublePhotos.length}</span>
+                      
+                      {data.troubleNote && (
+                        <>
+                          <span className="text-muted-foreground">Note:</span>
+                          <span className="font-medium">{data.troubleNote}</span>
+                        </>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )
             ) : data.canChange ? (
               <Card>
                 <CardContent className="pt-4 space-y-3">
