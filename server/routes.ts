@@ -3473,6 +3473,8 @@ export async function registerRoutes(
         signatureName,
         photoTypes, // Array of types matching the files array: ["before", "before", "after", "after", "trouble"]
         changeoutScope, // "system", "module", or "both"
+        newSystemType,
+        newModuleType,
       } = changeoutData;
       
       const files = req.files as Express.Multer.File[];
@@ -3588,10 +3590,6 @@ export async function registerRoutes(
           updateData.oldSystemReading = oldSystemReading;
           updateData.newSystemId = newSystemId;
           updateData.newSystemReading = newSystemReading;
-          // Copy old system type to new system type if it exists
-          if (workOrder.oldSystemType) {
-            updateData.newSystemType = workOrder.oldSystemType;
-          }
         }
         
         // Set module fields if applicable
@@ -3599,10 +3597,14 @@ export async function registerRoutes(
           updateData.oldModuleRead = oldModuleReading;
           updateData.newModuleId = newModuleId;
           updateData.newModuleRead = newModuleReading;
-          // Copy old module type to new module type if it exists
-          if (workOrder.oldModuleType) {
-            updateData.newModuleType = workOrder.oldModuleType;
-          }
+        }
+        
+        // For reading-only mode, copy type data from the request
+        if (newSystemType) {
+          updateData.newSystemType = newSystemType;
+        }
+        if (newModuleType) {
+          updateData.newModuleType = newModuleType;
         }
         
         updateData.newGps = gpsCoordinates;

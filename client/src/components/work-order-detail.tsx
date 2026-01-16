@@ -3264,6 +3264,8 @@ export function WorkOrderDetail({
             newSystemReading: data.newSystemReading,
             newModuleId: data.newModuleId,
             newModuleReading: data.newModuleReading,
+            newSystemType: data.newSystemType,
+            newModuleType: data.newModuleType,
             gpsCoordinates: data.gpsCoordinates,
             completionNotes: data.completionNotes,
             signatureData: data.signatureData,

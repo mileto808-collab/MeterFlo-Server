@@ -781,14 +781,15 @@ export function SystemChangeoutWizard({
     setIsSubmitting(true);
     try {
       // For reading-only mode, set new IDs equal to old IDs (no equipment change)
-      // Keep old readings as they are (don't overwrite existing data)
+      // Also copy old types to new types since no equipment is being changed
       let submitData = { ...data, isReadingOnly: isReadingOnlyMode };
       if (isReadingOnlyMode) {
         submitData = {
           ...submitData,
           newSystemId: oldSystemId || "",
           newModuleId: oldModuleId || "",
-          // Keep old readings intact - they may have existing values from the database
+          newSystemType: oldSystemType || "",
+          newModuleType: oldModuleType || "",
         };
       }
       
