@@ -386,14 +386,8 @@ export function SystemChangeoutWizard({
         setSelectedWorkflowMode(null);
       }
       
-      // Start background GPS capture if in automatic mode and GPS is not disabled
-      if (effectiveGpsMode === "automatic") {
-        gpsCapture.startCapture().then((result) => {
-          if (result) {
-            setGpsCaptureSource(result.source);
-          }
-        });
-      }
+      // GPS capture is now started when user confirms they can proceed (in handleCanChangeChoice)
+      // This ensures we don't capture GPS for trouble events
     }
   }, [isOpen, config.wizardMode, effectiveGpsMode]);
 
@@ -695,6 +689,15 @@ export function SystemChangeoutWizard({
   const handleCanChangeChoice = (canChange: boolean) => {
     setData((prev) => ({ ...prev, canChange }));
     if (canChange) {
+      // Start GPS capture now that user has confirmed they can proceed
+      if (effectiveGpsMode === "automatic") {
+        gpsCapture.startCapture().then((result) => {
+          if (result) {
+            setGpsCaptureSource(result.source);
+          }
+        });
+      }
+      
       // Find the next step after "canChange" in the success steps
       const canChangeIndex = successSteps.indexOf("canChange");
       const nextStep = successSteps[canChangeIndex + 1];
@@ -705,6 +708,10 @@ export function SystemChangeoutWizard({
         setCurrentStep("confirm");
       }
     } else {
+      // User selected trouble path - stop GPS capture and clear any captured coordinates
+      gpsCapture.reset();
+      setData((prev) => ({ ...prev, gpsCoordinates: "" }));
+      setGpsCaptureSource(null);
       setCurrentStep("troubleCapture");
     }
   };
