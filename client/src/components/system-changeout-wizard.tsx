@@ -1448,6 +1448,13 @@ export function SystemChangeoutWizard({
                     const normalizedValue = e.target.value.replace(/,/g, '.');
                     setData((prev) => ({ ...prev, oldSystemReading: normalizedValue }));
                   }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      (e.target as HTMLInputElement).blur();
+                      goNext();
+                    }
+                  }}
                   placeholder="Enter system reading (digits only)..."
                   className={`text-lg text-center ${oldSystemReadingError || !oldSystemReadingConfirmed ? "border-amber-500" : ""}`}
                   data-testid="input-old-system-reading"
@@ -1479,6 +1486,13 @@ export function SystemChangeoutWizard({
                     setOldModuleReadingConfirmed(true);
                     const normalizedValue = e.target.value.replace(/,/g, '.');
                     setData((prev) => ({ ...prev, oldModuleReading: normalizedValue }));
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      (e.target as HTMLInputElement).blur();
+                      goNext();
+                    }
                   }}
                   placeholder="Enter module reading (digits only)..."
                   className={`text-lg text-center ${oldModuleReadingError || !oldModuleReadingConfirmed ? "border-amber-500" : ""}`}
@@ -2062,6 +2076,13 @@ export function SystemChangeoutWizard({
                     const normalizedValue = e.target.value.replace(/,/g, '.');
                     setData((prev) => ({ ...prev, newSystemReading: normalizedValue }));
                   }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      (e.target as HTMLInputElement).blur();
+                      goNext();
+                    }
+                  }}
                   placeholder="Enter system reading (digits only)..."
                   className={`text-lg text-center ${newSystemReadingError && data.newSystemReading ? "border-destructive" : ""}`}
                   data-testid="input-new-system-reading"
@@ -2084,6 +2105,13 @@ export function SystemChangeoutWizard({
                   onChange={(e) => {
                     const normalizedValue = e.target.value.replace(/,/g, '.');
                     setData((prev) => ({ ...prev, newModuleReading: normalizedValue }));
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      (e.target as HTMLInputElement).blur();
+                      goNext();
+                    }
                   }}
                   placeholder="Enter module reading (digits only)..."
                   className={`text-lg text-center ${newModuleReadingError && data.newModuleReading ? "border-destructive" : ""}`}
