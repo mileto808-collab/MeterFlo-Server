@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -284,25 +284,18 @@ export default function ProjectForm() {
   });
 
   const [selectedServiceTypeIds, setSelectedServiceTypeIds] = useState<number[]>([]);
-  const [serviceTypesInitialized, setServiceTypesInitialized] = useState(false);
-  const [lastProjectId, setLastProjectId] = useState<string | undefined>(undefined);
+  const lastProjectIdRef = useRef<string | undefined>(undefined);
 
-  // Reset initialization flag when project id changes
+  // Sync selectedServiceTypeIds when projectServiceTypes loads or project changes
   useEffect(() => {
-    if (id !== lastProjectId) {
-      setServiceTypesInitialized(false);
-      setSelectedServiceTypeIds([]);
-      setLastProjectId(id);
+    // If project id changed, reset and wait for data
+    if (id !== lastProjectIdRef.current) {
+      lastProjectIdRef.current = id;
+      if (!serviceTypesLoading) {
+        setSelectedServiceTypeIds(projectServiceTypes.map(st => st.id));
+      }
     }
-  }, [id, lastProjectId]);
-
-  // Sync selectedServiceTypeIds when projectServiceTypes loads (only on first load per project)
-  useEffect(() => {
-    if (!serviceTypesLoading && !serviceTypesInitialized && id === lastProjectId) {
-      setSelectedServiceTypeIds(projectServiceTypes.map(st => st.id));
-      setServiceTypesInitialized(true);
-    }
-  }, [projectServiceTypes, serviceTypesLoading, serviceTypesInitialized, id, lastProjectId]);
+  }, [id, projectServiceTypes, serviceTypesLoading]);
 
   const updateServiceTypesMutation = useMutation({
     mutationFn: async (serviceTypeIds: number[]) => {
