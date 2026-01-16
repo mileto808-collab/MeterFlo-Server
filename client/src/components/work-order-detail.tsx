@@ -412,8 +412,12 @@ export function WorkOrderDetail({
                     </>
                   ) : (
                     <>
-                      <Wrench className="h-4 w-4 mr-1" />
-                      Start Changeout
+                      {wizardConfig?.wizardMode === "reading_only" ? (
+                        <Gauge className="h-4 w-4 mr-1" />
+                      ) : (
+                        <Wrench className="h-4 w-4 mr-1" />
+                      )}
+                      {wizardConfig?.wizardMode === "reading_only" ? "Start Reading Capture" : "Start Changeout"}
                     </>
                   )}
                 </Button>
