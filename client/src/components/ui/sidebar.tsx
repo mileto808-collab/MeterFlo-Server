@@ -155,6 +155,7 @@ function Sidebar({
   side = "left",
   variant = "sidebar",
   collapsible = "offcanvas",
+  resizable = false,
   className,
   children,
   ...props
@@ -162,6 +163,7 @@ function Sidebar({
   side?: "left" | "right"
   variant?: "sidebar" | "floating" | "inset"
   collapsible?: "offcanvas" | "icon" | "none"
+  resizable?: boolean
 }) {
   const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
 
@@ -202,6 +204,37 @@ function Sidebar({
           <div className="flex h-full w-full flex-col">{children}</div>
         </SheetContent>
       </Sheet>
+    )
+  }
+
+  if (resizable) {
+    return (
+      <div
+        className="group peer text-sidebar-foreground hidden md:block h-full w-full"
+        data-state={state}
+        data-collapsible=""
+        data-variant={variant}
+        data-side={side}
+        data-slot="sidebar"
+        data-resizable="true"
+      >
+        <div
+          data-slot="sidebar-container"
+          className={cn(
+            "h-full w-full flex flex-col border-r border-sidebar-border",
+            className
+          )}
+          {...props}
+        >
+          <div
+            data-sidebar="sidebar"
+            data-slot="sidebar-inner"
+            className="bg-sidebar flex h-full w-full flex-col overflow-hidden"
+          >
+            {children}
+          </div>
+        </div>
+      </div>
     )
   }
 
