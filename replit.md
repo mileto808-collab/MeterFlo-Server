@@ -52,6 +52,7 @@ Preferred communication style: Simple, everyday language.
   - **Verification Storage**: Uses a signed cookie (`turnstile_verified`) with 24-hour expiry. Falls back to session storage if cookie unavailable. Cookie-based approach is more reliable across reverse proxies.
   - **Emergency Bypass**: Set environment variable `TURNSTILE_EMERGENCY_BYPASS=true` to disable Turnstile verification without database access. Useful for recovery if locked out due to misconfiguration.
   - **Windows Server Deployment**: Ensure `COOKIE_SECURE=true` if using HTTPS. The reverse proxy must forward cookies correctly. If verification loops occur, check that cookies are being sent with requests.
+- **Work Order Time Tracking**: Measures field technician work duration on each work order. Start time is captured when the user confirms they can proceed ("Yes - Proceed") or report an issue ("No - Report Issue") in the wizard. End time is captured when the work order is successfully submitted. Time tracking data is stored in the `work_order_time_tracking` table in the public schema. Displayed in the System | Module Details accordion with start time, end time, and calculated duration. Also included in the PDF report. If the wizard is reopened, a new time tracking session begins (most recent session is displayed).
 
 ### System Design Choices
 - **Storage Interface**: `IStorage` interface abstracts database operations.
