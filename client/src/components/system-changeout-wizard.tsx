@@ -600,6 +600,12 @@ export function SystemChangeoutWizard({
         const gpsValid = !gpsRequired || isValidGps(data.gpsCoordinates);
         
         if (isReadingOnlyMode) {
+          // Check if this is a trouble event (canChange = false) in reading-only mode
+          if (!data.canChange) {
+            // Trouble path requires: trouble code, trouble photos (same as changeout trouble path)
+            return !!data.troubleCode && data.troublePhotos.length >= 1;
+          }
+          
           // Reading-only mode validation: just new readings (and optionally GPS, signature based on config)
           const needsSystemData = (displayMode === "system" || displayMode === "both");
           const needsModuleData = (displayMode === "module" || displayMode === "both");
