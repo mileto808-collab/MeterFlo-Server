@@ -386,6 +386,14 @@ export const moduleTypeProjects = pgTable("module_type_projects", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Junction table for service types to projects (many-to-many)
+export const projectServiceTypes = pgTable("project_service_types", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  serviceTypeId: integer("service_type_id").notNull().references(() => serviceTypes.id, { onDelete: "cascade" }),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Default service type values (for backward compatibility and seeding)
 export const defaultServiceTypes = ["Water", "Electric", "Gas"] as const;
 export type DefaultServiceType = (typeof defaultServiceTypes)[number];
@@ -726,6 +734,12 @@ export const insertModuleTypeProjectSchema = z.object({
   projectId: z.number(),
 });
 
+// Schema for project service type assignment
+export const insertProjectServiceTypeSchema = z.object({
+  serviceTypeId: z.number(),
+  projectId: z.number(),
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -812,6 +826,12 @@ export type InsertModuleTypeProject = z.infer<typeof insertModuleTypeProjectSche
 
 // Extended module type with project associations
 export type ModuleTypeWithProjects = ModuleType & { projectIds: number[] };
+
+export type ProjectServiceType = typeof projectServiceTypes.$inferSelect;
+export type InsertProjectServiceType = z.infer<typeof insertProjectServiceTypeSchema>;
+
+// Extended service type with project associations
+export type ServiceTypeWithProjects = ServiceTypeRecord & { projectIds: number[] };
 
 // External database config schemas and types
 export const insertExternalDatabaseConfigSchema = z.object({
