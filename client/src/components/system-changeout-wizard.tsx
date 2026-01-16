@@ -1436,7 +1436,7 @@ export function SystemChangeoutWizard({
                 <Label>Old System Final Reading *</Label>
                 <Input
                   type="text"
-                  inputMode="numeric"
+                  inputMode="decimal"
                   value={data.oldSystemReading}
                   onFocus={() => {
                     if (!oldSystemReadingConfirmed) {
@@ -1467,7 +1467,7 @@ export function SystemChangeoutWizard({
                 <Label>Old Module Final Reading *</Label>
                 <Input
                   type="text"
-                  inputMode="numeric"
+                  inputMode="decimal"
                   value={data.oldModuleReading}
                   onFocus={() => {
                     if (!oldModuleReadingConfirmed) {
@@ -2054,7 +2054,7 @@ export function SystemChangeoutWizard({
                 <Label>{getSystemReadingLabel()}</Label>
                 <Input
                   type="text"
-                  inputMode="numeric"
+                  inputMode="decimal"
                   value={data.newSystemReading}
                   onChange={(e) => setData((prev) => ({ ...prev, newSystemReading: e.target.value }))}
                   placeholder="Enter system reading (digits only)..."
@@ -2074,7 +2074,7 @@ export function SystemChangeoutWizard({
                 <Label>{getModuleReadingLabel()}</Label>
                 <Input
                   type="text"
-                  inputMode="numeric"
+                  inputMode="decimal"
                   value={data.newModuleReading || ""}
                   onChange={(e) => setData((prev) => ({ ...prev, newModuleReading: e.target.value }))}
                   placeholder="Enter module reading (digits only)..."
