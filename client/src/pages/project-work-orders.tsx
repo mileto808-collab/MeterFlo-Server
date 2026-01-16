@@ -3279,8 +3279,12 @@ export default function ProjectWorkOrders() {
                 data-testid="button-start-system-changeout"
                 className="bg-green-600 text-white dark:bg-green-600"
               >
-                <Wrench className="h-4 w-4 mr-2" />
-                Start Changeout
+                {project?.wizardMode === "reading_only" ? (
+                  <Gauge className="h-4 w-4 mr-2" />
+                ) : (
+                  <Wrench className="h-4 w-4 mr-2" />
+                )}
+                {project?.wizardMode === "reading_only" ? "Start Reading Capture" : "Start Changeout"}
               </Button>
             )}
             {hasPermission(permissionKeys.WORK_ORDERS_CREATE) && (
@@ -4157,6 +4161,7 @@ export default function ProjectWorkOrders() {
             setAutoLaunchSystemChangeout(true);
             setEditingWorkOrder(workOrder);
           }}
+          wizardMode={(project?.wizardMode as "changeout" | "reading_only" | "user_choice") ?? "changeout"}
         />
       )}
 

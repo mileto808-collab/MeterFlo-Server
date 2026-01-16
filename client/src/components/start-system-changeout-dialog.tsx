@@ -30,11 +30,14 @@ import type { UserGroup, TroubleCode } from "@shared/schema";
 
 export type ChangeoutScope = "system" | "module" | "both";
 
+export type WizardMode = "changeout" | "reading_only" | "user_choice";
+
 interface StartSystemChangeoutDialogProps {
   isOpen: boolean;
   onClose: () => void;
   projectId: number;
   onWorkOrderFound: (workOrder: ProjectWorkOrder, scope: ChangeoutScope) => void;
+  wizardMode?: WizardMode;
 }
 
 type ScanMode = "select" | "barcode" | "qrcode" | "manual" | "confirm";
@@ -44,7 +47,10 @@ export function StartSystemChangeoutDialog({
   onClose,
   projectId,
   onWorkOrderFound,
+  wizardMode = "changeout",
 }: StartSystemChangeoutDialogProps) {
+  // Determine if we're in reading-only mode for UI text
+  const isReadingOnlyMode = wizardMode === "reading_only";
   const { toast } = useToast();
   const { user } = useAuth();
   
@@ -478,8 +484,8 @@ export function StartSystemChangeoutDialog({
       <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Wrench className="h-5 w-5" />
-            Start Changeout
+            {isReadingOnlyMode ? <Gauge className="h-5 w-5" /> : <Wrench className="h-5 w-5" />}
+            {isReadingOnlyMode ? "Start Reading Capture" : "Start Changeout"}
           </DialogTitle>
           <DialogDescription>
             Search by work order ID, system ID, module ID, address, or customer ID
