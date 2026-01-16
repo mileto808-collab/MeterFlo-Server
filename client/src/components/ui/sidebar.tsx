@@ -210,7 +210,7 @@ function Sidebar({
   if (resizable) {
     return (
       <div
-        className="group peer text-sidebar-foreground hidden md:flex h-full w-full min-h-0 flex-col overflow-hidden"
+        className="group peer text-sidebar-foreground hidden md:flex h-full flex-1 min-h-0 flex-col overflow-hidden"
         data-state={state}
         data-collapsible=""
         data-variant={variant}
@@ -220,19 +220,14 @@ function Sidebar({
       >
         <div
           data-slot="sidebar-container"
+          data-sidebar="sidebar"
           className={cn(
-            "h-full w-full min-h-0 flex flex-1 flex-col border-r border-sidebar-border overflow-hidden",
+            "bg-sidebar flex h-full flex-1 min-h-0 flex-col border-r border-sidebar-border overflow-hidden",
             className
           )}
           {...props}
         >
-          <div
-            data-sidebar="sidebar"
-            data-slot="sidebar-inner"
-            className="bg-sidebar flex h-full w-full min-h-0 flex-1 flex-col overflow-hidden"
-          >
-            {children}
-          </div>
+          {children}
         </div>
       </div>
     )

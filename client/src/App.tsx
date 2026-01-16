@@ -214,11 +214,11 @@ function ResizableLayoutContent() {
         defaultSize={lastExpandedSize}
         minSize={COLLAPSED_SIZE}
         maxSize={MAX_SIDEBAR_SIZE}
-        className="bg-sidebar overflow-hidden"
+        className="bg-sidebar flex flex-col h-full overflow-hidden"
         collapsible
         collapsedSize={COLLAPSED_SIZE}
       >
-        <div className="h-full w-full min-h-0 flex flex-col overflow-hidden">
+        <div className="h-full flex-1 min-h-0 flex flex-col overflow-hidden">
           <AppSidebar resizable />
         </div>
       </ResizablePanel>
