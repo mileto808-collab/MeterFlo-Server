@@ -451,6 +451,11 @@ export class DatabaseStorage implements IStorage {
     return newProject;
   }
 
+  async createProjectWithFullData(project: Partial<InsertProject> & { name: string }): Promise<Project> {
+    const [newProject] = await db.insert(projects).values(project as InsertProject).returning();
+    return newProject;
+  }
+
   async updateProject(id: number, project: Partial<InsertProject>): Promise<Project | undefined> {
     const [updated] = await db
       .update(projects)

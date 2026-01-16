@@ -17,7 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import type { Project, User, ServiceTypeRecord } from "@shared/schema";
-import { ArrowLeft, Save, Loader2, Globe, Clock, Users, X, CalendarDays, Plus, Wand2, Zap, Check } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Globe, Clock, Users, X, CalendarDays, Plus, Wand2, Zap, Check, Copy } from "lucide-react";
 import type { ProjectHoliday } from "@shared/schema";
 import { Checkbox } from "@/components/ui/checkbox";
 
@@ -189,6 +189,26 @@ export default function ProjectForm() {
         return;
       }
       toast({ title: "Error", description: "Failed to update project", variant: "destructive" });
+    },
+  });
+
+  const copyMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", `/api/projects/${id}/copy`);
+      return response.json();
+    },
+    onSuccess: (newProject: Project) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      toast({ title: "Success", description: "Project copied successfully" });
+      setLocation(`/projects/${newProject.id}/edit`);
+    },
+    onError: (error: Error) => {
+      if (isUnauthorizedError(error)) {
+        toast({ title: "Unauthorized", description: "You are logged out. Logging in again...", variant: "destructive" });
+        setTimeout(() => { window.location.href = "/api/login"; }, 500);
+        return;
+      }
+      toast({ title: "Error", description: "Failed to copy project", variant: "destructive" });
     },
   });
 
@@ -1166,6 +1186,21 @@ export default function ProjectForm() {
                 <Link href="/projects">
                   <Button variant="outline" type="button" data-testid="button-cancel">Cancel</Button>
                 </Link>
+                {isEditing && (
+                  <Button 
+                    type="button" 
+                    variant="secondary"
+                    disabled={copyMutation.isPending}
+                    onClick={() => copyMutation.mutate()}
+                    data-testid="button-copy-project"
+                  >
+                    {copyMutation.isPending ? (
+                      <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Copying...</>
+                    ) : (
+                      <><Copy className="h-4 w-4 mr-2" />Copy Project</>
+                    )}
+                  </Button>
+                )}
                 <Button type="submit" disabled={isPending} data-testid="button-submit">
                   {isPending ? (<><Loader2 className="h-4 w-4 mr-2 animate-spin" />{isEditing ? "Updating..." : "Creating..."}</>) : (<><Save className="h-4 w-4 mr-2" />{isEditing ? "Update" : "Create"} Project</>)}
                 </Button>

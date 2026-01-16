@@ -1590,6 +1590,85 @@ export async function registerRoutes(
     }
   });
 
+  // Copy project endpoint - creates a new project with same settings
+  app.post("/api/projects/:id/copy", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canCreateProjects = await storage.hasPermission(currentUser, permissionKeys.PROJECTS_CREATE);
+      if (!canCreateProjects) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to create projects" });
+      }
+      
+      const sourceProjectId = parseInt(req.params.id);
+      const sourceProject = await storage.getProject(sourceProjectId);
+      if (!sourceProject) {
+        return res.status(404).json({ message: "Source project not found" });
+      }
+      
+      // Create new project with copied settings (convert nulls to undefined for proper typing)
+      const newProjectData = {
+        name: `Copy of ${sourceProject.name}`,
+        description: sourceProject.description ?? undefined,
+        customerEmail: sourceProject.customerEmail ?? undefined,
+        phone: sourceProject.phone ?? undefined,
+        address: sourceProject.address ?? undefined,
+        city: sourceProject.city ?? undefined,
+        state: sourceProject.state ?? undefined,
+        zip: sourceProject.zip ?? undefined,
+        notes: sourceProject.notes ?? undefined,
+        isActive: sourceProject.isActive ?? true,
+        webhookUrl: sourceProject.webhookUrl ?? undefined,
+        webhookEnabled: sourceProject.webhookEnabled ?? false,
+        customerApiEnabled: sourceProject.customerApiEnabled ?? false,
+        customerApiUrl: sourceProject.customerApiUrl ?? undefined,
+        customerApiAuthType: sourceProject.customerApiAuthType ?? "none",
+        customerApiKeyHeader: sourceProject.customerApiKeyHeader ?? undefined,
+        customerApiSecretEnvVar: sourceProject.customerApiSecretEnvVar ?? undefined,
+        customerApiSendPhotos: sourceProject.customerApiSendPhotos ?? true,
+        operationalHoursEnabled: sourceProject.operationalHoursEnabled ?? false,
+        operationalHoursStart: sourceProject.operationalHoursStart ?? undefined,
+        operationalHoursEnd: sourceProject.operationalHoursEnd ?? undefined,
+        operationalHoursDays: sourceProject.operationalHoursDays ?? undefined,
+        timezone: sourceProject.timezone ?? undefined,
+        wizardMode: sourceProject.wizardMode ?? "changeout",
+        wizardGpsMode: sourceProject.wizardGpsMode ?? "automatic",
+        wizardShowNotesStep: sourceProject.wizardShowNotesStep ?? true,
+        wizardShowGpsStep: sourceProject.wizardShowGpsStep ?? true,
+        wizardShowBeforePhotosStep: sourceProject.wizardShowBeforePhotosStep ?? true,
+        wizardShowAfterPhotosStep: sourceProject.wizardShowAfterPhotosStep ?? true,
+        wizardShowSignatureStep: sourceProject.wizardShowSignatureStep ?? true,
+      };
+      
+      const newProject = await storage.createProjectWithFullData(newProjectData);
+      
+      // Create database schema for new project
+      const schemaName = await createProjectSchema(newProject.name, newProject.id);
+      await storage.updateProjectDatabaseName(newProject.id, schemaName);
+      
+      // Create project directory
+      await ensureProjectDirectory(newProject.name, newProject.id);
+      
+      // Copy project holidays
+      const holidays = await storage.getProjectHolidays(sourceProjectId);
+      for (const holiday of holidays) {
+        await storage.createProjectHoliday({
+          projectId: newProject.id,
+          date: holiday.date,
+          name: holiday.name,
+        });
+      }
+      
+      const updatedProject = await storage.getProject(newProject.id);
+      res.status(201).json(updatedProject);
+    } catch (error) {
+      console.error("Error copying project:", error);
+      res.status(500).json({ message: "Failed to copy project" });
+    }
+  });
+
   app.patch("/api/projects/:id", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
