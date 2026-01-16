@@ -1864,9 +1864,14 @@ export default function ProjectWorkOrders() {
   }, [currentPage, totalPages]);
 
   // Set sticky header content - now that filteredAndSortedWorkOrders is available
+  // Only set project-level header when NOT viewing a work order detail
   useEffect(() => {
-    if (!project || !user) {
-      setHeaderContent(null);
+    if (!project || !user || editingWorkOrder) {
+      // Don't set project header when viewing a work order detail
+      // The work-order-detail component will set its own header
+      if (!editingWorkOrder) {
+        setHeaderContent(null);
+      }
       return;
     }
     
@@ -1953,7 +1958,7 @@ export default function ProjectWorkOrders() {
     );
     
     setHeaderContent(content);
-  }, [project, user, projectId, hasPermission, selectedWorkOrderIds.size, viewMode, handleOpenBulkAssign, handleOpenBulkStatus, handleBulkDelete, setHeaderContent]);
+  }, [project, user, projectId, hasPermission, selectedWorkOrderIds.size, viewMode, handleOpenBulkAssign, handleOpenBulkStatus, handleBulkDelete, setHeaderContent, editingWorkOrder]);
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
