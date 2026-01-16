@@ -3473,7 +3473,6 @@ export async function registerRoutes(
         signatureName,
         photoTypes, // Array of types matching the files array: ["before", "before", "after", "after", "trouble"]
         changeoutScope, // "system", "module", or "both"
-        isReadingOnly, // True when in reading-only mode (no equipment change)
       } = changeoutData;
       
       const files = req.files as Express.Multer.File[];
@@ -3589,8 +3588,8 @@ export async function registerRoutes(
           updateData.oldSystemReading = oldSystemReading;
           updateData.newSystemId = newSystemId;
           updateData.newSystemReading = newSystemReading;
-          // For reading-only mode, copy old system type to new system type
-          if (isReadingOnly && workOrder.oldSystemType) {
+          // Copy old system type to new system type if it exists
+          if (workOrder.oldSystemType) {
             updateData.newSystemType = workOrder.oldSystemType;
           }
         }
@@ -3600,8 +3599,8 @@ export async function registerRoutes(
           updateData.oldModuleRead = oldModuleReading;
           updateData.newModuleId = newModuleId;
           updateData.newModuleRead = newModuleReading;
-          // For reading-only mode, copy old module type to new module type
-          if (isReadingOnly && workOrder.oldModuleType) {
+          // Copy old module type to new module type if it exists
+          if (workOrder.oldModuleType) {
             updateData.newModuleType = workOrder.oldModuleType;
           }
         }
