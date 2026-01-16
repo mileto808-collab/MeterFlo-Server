@@ -2434,6 +2434,12 @@ export default function ProjectWorkOrders() {
             showAfterPhotosStep: project?.wizardShowAfterPhotosStep ?? true,
             showSignatureStep: project?.wizardShowSignatureStep ?? true,
           }}
+          searchMethodSettings={{
+            searchShowBarcodeScan: (project as any)?.searchShowBarcodeScan !== false,
+            searchShowQrCodeScan: (project as any)?.searchShowQrCodeScan !== false,
+            searchShowManualEntry: (project as any)?.searchShowManualEntry !== false,
+            searchShowHidScanner: (project as any)?.searchShowHidScanner !== false,
+          }}
           canScheduleInCalendar={hasPermission('workOrders.calendar')}
           onScheduleInCalendar={() => {
             // Store the work order to schedule, close detail view, and switch to calendar

@@ -129,6 +129,12 @@ interface WorkOrderDetailProps {
   onScheduleInCalendar?: () => void;
   canScheduleInCalendar?: boolean;
   wizardConfig?: WizardConfig;
+  searchMethodSettings?: {
+    searchShowBarcodeScan: boolean;
+    searchShowQrCodeScan: boolean;
+    searchShowManualEntry: boolean;
+    searchShowHidScanner: boolean;
+  };
 }
 
 export function WorkOrderDetail({
@@ -163,6 +169,7 @@ export function WorkOrderDetail({
   onScheduleInCalendar,
   canScheduleInCalendar = false,
   wizardConfig,
+  searchMethodSettings,
 }: WorkOrderDetailProps) {
   const { setHeaderContent } = usePageHeader();
   const [openSections, setOpenSections] = useState<string[]>([]);
@@ -3324,6 +3331,7 @@ export function WorkOrderDetail({
         existingGps={workOrder.newGps}
         oldGps={workOrder.oldGps}
         wizardConfig={wizardConfig}
+        searchMethodSettings={searchMethodSettings}
         onComplete={async (data) => {
           const formData = new FormData();
           

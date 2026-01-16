@@ -49,6 +49,8 @@ import {
   Gauge,
   ClipboardCheck,
   StickyNote,
+  RotateCcw,
+  Bluetooth,
 } from "lucide-react";
 
 type WizardStep =
@@ -85,6 +87,13 @@ interface WizardConfig {
   showBeforePhotosStep: boolean;
   showAfterPhotosStep: boolean;
   showSignatureStep: boolean;
+}
+
+export interface SearchMethodSettings {
+  searchShowBarcodeScan: boolean;
+  searchShowQrCodeScan: boolean;
+  searchShowManualEntry: boolean;
+  searchShowHidScanner: boolean;
 }
 
 interface SystemChangeoutData {
@@ -133,6 +142,7 @@ interface SystemChangeoutWizardProps {
   oldGps?: string | null;
   onComplete: (data: SystemChangeoutData) => Promise<void>;
   wizardConfig?: WizardConfig;
+  searchMethodSettings?: SearchMethodSettings;
 }
 
 const stepLabels: Record<WizardStep, string> = {
@@ -224,8 +234,17 @@ export function SystemChangeoutWizard({
   oldGps,
   onComplete,
   wizardConfig,
+  searchMethodSettings,
 }: SystemChangeoutWizardProps) {
   const { toast } = useToast();
+  
+  // Default search method settings - all enabled by default
+  const searchSettings: SearchMethodSettings = searchMethodSettings ?? {
+    searchShowBarcodeScan: true,
+    searchShowQrCodeScan: true,
+    searchShowManualEntry: true,
+    searchShowHidScanner: true,
+  };
   
   // Default wizard config if not provided
   const config: WizardConfig = wizardConfig ?? {
@@ -272,10 +291,13 @@ export function SystemChangeoutWizard({
   const [photoType, setPhotoType] = useState<"trouble" | "before" | "after">("before");
   const [isCapturingPhoto, setIsCapturingPhoto] = useState(false);
   const captureSessionActive = useRef(false);
-  const [systemIdInputMode, setSystemIdInputMode] = useState<"choose" | "barcode" | "qr" | "manual" | null>(null);
+  const [systemIdInputMode, setSystemIdInputMode] = useState<"choose" | "barcode" | "qr" | "manual" | "hid" | null>(null);
   const [manualSystemIdInput, setManualSystemIdInput] = useState("");
+  const [hidSystemIdInput, setHidSystemIdInput] = useState("");
+  const hidSystemIdInputRef = useRef<HTMLInputElement>(null);
   const [isScanning, setIsScanning] = useState(false);
   const scannerRef = useRef<HTMLDivElement>(null);
+  const lastAutoSelectedTarget = useRef<"system" | "module" | null>(null);
   const [previewPhoto, setPreviewPhoto] = useState<{ photo: CapturedPhoto; type: "trouble" | "before" | "after"; index: number } | null>(null);
   const [showNotesDialog, setShowNotesDialog] = useState(false);
   
@@ -965,7 +987,7 @@ export function SystemChangeoutWizard({
 
   // Stop scanner when leaving the newSystemId step or changing mode
   useEffect(() => {
-    if (currentStep !== "newSystemId" || (!systemIdInputMode || systemIdInputMode === "manual" || systemIdInputMode === "choose")) {
+    if (currentStep !== "newSystemId" || (!systemIdInputMode || systemIdInputMode === "manual" || systemIdInputMode === "choose" || systemIdInputMode === "hid")) {
       if (scannerInstanceRef.current) {
         scannerInstanceRef.current.stop().catch(() => {}).finally(() => {
           scannerBusyRef.current = false;
@@ -975,6 +997,74 @@ export function SystemChangeoutWizard({
       }
     }
   }, [currentStep, systemIdInputMode]);
+  
+  // Compute pending capture target based on current state
+  const getPendingCaptureTarget = (): "system" | "module" | null => {
+    const displayMode = getDisplayMode();
+    const showNewSystemId = displayMode === "system" || displayMode === "both";
+    const showNewModuleId = displayMode === "module" || displayMode === "both";
+    
+    if (showNewSystemId && !data.newSystemId) {
+      return "system";
+    }
+    if (showNewModuleId && !data.newModuleId) {
+      return "module";
+    }
+    return null;
+  };
+  
+  // Reset input mode and auto-selection state when leaving the newSystemId step
+  useEffect(() => {
+    if (currentStep !== "newSystemId") {
+      lastAutoSelectedTarget.current = null;
+      setSystemIdInputMode(null);
+    }
+  }, [currentStep]);
+  
+  // Auto-select the only enabled search method when entering newSystemId step
+  useEffect(() => {
+    if (currentStep === "newSystemId" && systemIdInputMode === null) {
+      const pendingTarget = getPendingCaptureTarget();
+      
+      // Don't auto-select if nothing to capture
+      if (!pendingTarget) {
+        return;
+      }
+      
+      // Don't auto-select if we already auto-selected for this target
+      if (lastAutoSelectedTarget.current === pendingTarget) {
+        return;
+      }
+      
+      const enabledMethods = [
+        searchSettings.searchShowBarcodeScan ? "barcode" : null,
+        searchSettings.searchShowQrCodeScan ? "qr" : null,
+        searchSettings.searchShowManualEntry ? "manual" : null,
+        searchSettings.searchShowHidScanner ? "hid" : null,
+      ].filter(Boolean) as Array<"barcode" | "qr" | "manual" | "hid">;
+      
+      if (enabledMethods.length === 1) {
+        const method = enabledMethods[0];
+        lastAutoSelectedTarget.current = pendingTarget;
+        
+        if (method === "hid") {
+          setSystemIdInputMode("hid");
+          setHidSystemIdInput("");
+          setTimeout(() => {
+            hidSystemIdInputRef.current?.focus();
+          }, 100);
+        } else if (method === "manual") {
+          setSystemIdInputMode("manual");
+        } else if (method === "barcode" || method === "qr") {
+          setSystemIdInputMode(method);
+          setIsScanning(true);
+          setTimeout(() => {
+            startScanner(method, pendingTarget);
+          }, 100);
+        }
+      }
+    }
+  }, [currentStep, systemIdInputMode, searchSettings, data.newSystemId, data.newModuleId]);
 
   const renderStepIndicator = () => {
     return (
@@ -1529,6 +1619,7 @@ export function SystemChangeoutWizard({
                       onClick={() => {
                         setData((prev) => ({ ...prev, newSystemId: "" }));
                         setSystemIdInputMode(null);
+                        lastAutoSelectedTarget.current = null;
                       }}
                       data-testid="button-clear-system-id"
                     >
@@ -1554,6 +1645,7 @@ export function SystemChangeoutWizard({
                       onClick={() => {
                         setData((prev) => ({ ...prev, newModuleId: "" }));
                         setSystemIdInputMode(null);
+                        lastAutoSelectedTarget.current = null;
                       }}
                       data-testid="button-clear-module-id"
                     >
@@ -1592,20 +1684,30 @@ export function SystemChangeoutWizard({
                         <span>Scanning for {systemIdInputMode === "qr" ? "QR code" : "barcode"}...</span>
                       </div>
                     )}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => {
-                        setSystemIdInputMode(null);
-                        setIsScanning(false);
-                        scannerBusyRef.current = false;
-                      }}
-                      data-testid="button-cancel-scan"
-                    >
-                      <ArrowLeft className="h-4 w-4 mr-2" />
-                      Back to Options
-                    </Button>
+                    {(() => {
+                      const enabledMethods = [
+                        searchSettings.searchShowBarcodeScan,
+                        searchSettings.searchShowQrCodeScan,
+                        searchSettings.searchShowManualEntry,
+                        searchSettings.searchShowHidScanner,
+                      ].filter(Boolean).length;
+                      return enabledMethods > 1;
+                    })() && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => {
+                          setSystemIdInputMode(null);
+                          setIsScanning(false);
+                          scannerBusyRef.current = false;
+                        }}
+                        data-testid="button-cancel-scan"
+                      >
+                        <ArrowLeft className="h-4 w-4 mr-2" />
+                        Back to Options
+                      </Button>
+                    )}
                   </div>
                     ) : systemIdInputMode === "manual" ? (
                   <div className="space-y-4">
@@ -1636,18 +1738,28 @@ export function SystemChangeoutWizard({
                       />
                     </div>
                     <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="flex-1"
-                        onClick={() => {
-                          setSystemIdInputMode(null);
-                          setManualSystemIdInput("");
-                        }}
-                        data-testid="button-cancel-manual"
-                      >
-                        Cancel
-                      </Button>
+                      {(() => {
+                        const enabledMethods = [
+                          searchSettings.searchShowBarcodeScan,
+                          searchSettings.searchShowQrCodeScan,
+                          searchSettings.searchShowManualEntry,
+                          searchSettings.searchShowHidScanner,
+                        ].filter(Boolean).length;
+                        return enabledMethods > 1;
+                      })() && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="flex-1"
+                          onClick={() => {
+                            setSystemIdInputMode(null);
+                            setManualSystemIdInput("");
+                          }}
+                          data-testid="button-cancel-manual"
+                        >
+                          Cancel
+                        </Button>
+                      )}
                       <Button
                         type="button"
                         className="flex-1"
@@ -1676,53 +1788,188 @@ export function SystemChangeoutWizard({
                       </Button>
                     </div>
                   </div>
-                ) : (
-                  <div className="grid grid-cols-1 gap-3">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="h-16 flex items-center justify-center gap-3"
-                      onClick={() => {
-                        const target = capturingSystem ? "system" : "module";
-                        setSystemIdInputMode("barcode");
-                        setIsScanning(true);
-                        setTimeout(() => {
-                          startScanner("barcode", target);
-                        }, 100);
-                      }}
-                      data-testid="button-scan-barcode"
-                    >
-                      <ScanBarcode className="h-6 w-6" />
-                      <span>Scan Barcode</span>
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="h-16 flex items-center justify-center gap-3"
-                      onClick={() => {
-                        const target = capturingSystem ? "system" : "module";
-                        setSystemIdInputMode("qr");
-                        setIsScanning(true);
-                        setTimeout(() => {
-                          startScanner("qr", target);
-                        }, 100);
-                      }}
-                      data-testid="button-scan-qr"
-                    >
-                      <QrCode className="h-6 w-6" />
-                      <span>Scan QR Code</span>
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="h-16 flex items-center justify-center gap-3"
-                      onClick={() => setSystemIdInputMode("manual")}
-                      data-testid="button-enter-manual"
-                    >
-                      <Keyboard className="h-6 w-6" />
-                      <span>Enter Manually</span>
-                    </Button>
+                ) : systemIdInputMode === "hid" ? (
+                  <div className="space-y-4">
+                    <div className="text-center">
+                      <Bluetooth className="h-10 w-10 mx-auto text-primary mb-2" />
+                      <p className="text-sm text-muted-foreground">
+                        Position cursor in the field below and scan with your Bluetooth device
+                      </p>
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label>Scanned Value</Label>
+                      <Input
+                        ref={hidSystemIdInputRef}
+                        value={hidSystemIdInput}
+                        onKeyDown={(e) => {
+                          if (e.key === "Backspace" || e.key === "Delete") {
+                            e.preventDefault();
+                            return;
+                          }
+                          if (e.key === "Enter" && hidSystemIdInput.trim()) {
+                            e.preventDefault();
+                            const input = hidSystemIdInput.trim();
+                            if (capturingSystem) {
+                              setData((prev) => ({ ...prev, newSystemId: input }));
+                            } else {
+                              setData((prev) => ({ ...prev, newModuleId: input }));
+                            }
+                            setHidSystemIdInput("");
+                            setSystemIdInputMode(null);
+                            return;
+                          }
+                          if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                            e.preventDefault();
+                            setHidSystemIdInput(prev => prev + e.key);
+                          }
+                        }}
+                        onPaste={(e) => {
+                          e.preventDefault();
+                        }}
+                        onChange={() => {}}
+                        placeholder="Scan barcode or QR code..."
+                        readOnly
+                        autoComplete="off"
+                        autoCorrect="off"
+                        autoCapitalize="off"
+                        spellCheck={false}
+                        className="text-center font-mono text-lg bg-muted cursor-default"
+                        data-testid="input-hid-system-id"
+                      />
+                    </div>
+
+                    <div className="flex gap-2">
+                      {(() => {
+                        const enabledMethods = [
+                          searchSettings.searchShowBarcodeScan,
+                          searchSettings.searchShowQrCodeScan,
+                          searchSettings.searchShowManualEntry,
+                          searchSettings.searchShowHidScanner,
+                        ].filter(Boolean).length;
+                        return enabledMethods > 1;
+                      })() && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="flex-1"
+                          onClick={() => {
+                            setSystemIdInputMode(null);
+                            setHidSystemIdInput("");
+                          }}
+                          data-testid="button-back-hid-id"
+                        >
+                          Back
+                        </Button>
+                      )}
+                      {hidSystemIdInput && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => {
+                            setHidSystemIdInput("");
+                            hidSystemIdInputRef.current?.focus();
+                          }}
+                          data-testid="button-clear-hid-id"
+                        >
+                          <RotateCcw className="h-4 w-4 mr-2" />
+                          Clear
+                        </Button>
+                      )}
+                      <Button
+                        type="button"
+                        className="flex-1"
+                        onClick={() => {
+                          const input = hidSystemIdInput.trim();
+                          if (input) {
+                            if (capturingSystem) {
+                              setData((prev) => ({ ...prev, newSystemId: input }));
+                            } else {
+                              setData((prev) => ({ ...prev, newModuleId: input }));
+                            }
+                            setHidSystemIdInput("");
+                            setSystemIdInputMode(null);
+                          }
+                        }}
+                        disabled={!hidSystemIdInput.trim()}
+                        data-testid="button-confirm-hid-id"
+                      >
+                        <Check className="h-4 w-4 mr-2" />
+                        Confirm
+                      </Button>
+                    </div>
                   </div>
+                ) : (
+                  (() => {
+                    const enabledMethods: Array<{ key: string; enabled: boolean; icon: React.ReactNode; label: string; action: () => void }> = [
+                      {
+                        key: "barcode",
+                        enabled: searchSettings.searchShowBarcodeScan,
+                        icon: <ScanBarcode className="h-6 w-6" />,
+                        label: "Scan Barcode",
+                        action: () => {
+                          const target = capturingSystem ? "system" : "module";
+                          setSystemIdInputMode("barcode");
+                          setIsScanning(true);
+                          setTimeout(() => {
+                            startScanner("barcode", target);
+                          }, 100);
+                        },
+                      },
+                      {
+                        key: "qr",
+                        enabled: searchSettings.searchShowQrCodeScan,
+                        icon: <QrCode className="h-6 w-6" />,
+                        label: "Scan QR Code",
+                        action: () => {
+                          const target = capturingSystem ? "system" : "module";
+                          setSystemIdInputMode("qr");
+                          setIsScanning(true);
+                          setTimeout(() => {
+                            startScanner("qr", target);
+                          }, 100);
+                        },
+                      },
+                      {
+                        key: "manual",
+                        enabled: searchSettings.searchShowManualEntry,
+                        icon: <Keyboard className="h-6 w-6" />,
+                        label: "Enter Manually",
+                        action: () => setSystemIdInputMode("manual"),
+                      },
+                      {
+                        key: "hid",
+                        enabled: searchSettings.searchShowHidScanner,
+                        icon: <Bluetooth className="h-6 w-6" />,
+                        label: "Bluetooth HID Scanner",
+                        action: () => {
+                          setSystemIdInputMode("hid");
+                          setHidSystemIdInput("");
+                          setTimeout(() => {
+                            hidSystemIdInputRef.current?.focus();
+                          }, 100);
+                        },
+                      },
+                    ].filter(m => m.enabled);
+
+                    return (
+                      <div className="grid grid-cols-1 gap-3">
+                        {enabledMethods.map((method) => (
+                          <Button
+                            key={method.key}
+                            type="button"
+                            variant="outline"
+                            className="h-16 flex items-center justify-center gap-3"
+                            onClick={method.action}
+                            data-testid={`button-${method.key}-id`}
+                          >
+                            {method.icon}
+                            <span>{method.label}</span>
+                          </Button>
+                        ))}
+                      </div>
+                    );
+                  })()
                 )}
               </>
             )}
