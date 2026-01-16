@@ -670,7 +670,12 @@ export function SystemChangeoutWizard({
   const handleCanChangeChoice = (canChange: boolean) => {
     setData((prev) => ({ ...prev, canChange }));
     if (canChange) {
-      setCurrentStep("oldReading");
+      // Find the next step after "canChange" in the success steps
+      const canChangeIndex = successSteps.indexOf("canChange");
+      const nextStep = successSteps[canChangeIndex + 1];
+      if (nextStep) {
+        setCurrentStep(nextStep);
+      }
     } else {
       setCurrentStep("troubleCapture");
     }
