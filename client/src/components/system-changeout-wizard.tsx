@@ -171,7 +171,8 @@ function buildSuccessSteps(
   
   if (mode === "reading_only") {
     // Reading Only mode: simplified flow
-    // Before photos (if enabled), Capture reading, After photos (if enabled), GPS (if manual), Notes, Signature, Confirm
+    // Can proceed, Before photos (if enabled), Capture reading, After photos (if enabled), GPS (if manual), Notes, Signature, Confirm
+    steps.push("canChange"); // Always start with confirmation step
     if (config.showBeforePhotosStep) steps.push("beforePhotos");
     steps.push("newReading");
     if (config.showAfterPhotosStep) steps.push("afterPhotos");
@@ -314,9 +315,9 @@ export function SystemChangeoutWizard({
   
   const displayMode = getDisplayMode();
   
-  // Dynamic step labels based on what data is present
+  // Dynamic step labels based on what data is present and workflow mode
   const getCanChangeLabel = (): string => {
-    return "Can The Changeout Proceed?";
+    return isReadingOnlyMode ? "Can The Reading Proceed?" : "Can The Changeout Proceed?";
   };
   
   const getNewSystemIdLabel = (): string => {
@@ -1043,12 +1044,13 @@ export function SystemChangeoutWizard({
           return troubleCode ? troubleCode.label : null;
         };
         
-        // Dynamic question text based on scope
+        // Dynamic question text based on scope and workflow mode
         const getQuestionText = () => {
+          const action = isReadingOnlyMode ? "be read" : "be changed";
           switch (displayMode) {
-            case "module": return "Can this module be changed today?";
-            case "both": return "Can the system and module be changed today?";
-            default: return "Can this system be changed today?";
+            case "module": return `Can this module ${action} today?`;
+            case "both": return `Can the system and module ${action} today?`;
+            default: return `Can this system ${action} today?`;
           }
         };
         
