@@ -206,7 +206,7 @@ function ResizableLayoutContent() {
   return (
     <ResizablePanelGroup
       direction="horizontal"
-      className="min-h-screen w-full"
+      className="h-screen w-full"
       onLayout={handleSidebarResize}
     >
       <ResizablePanel
