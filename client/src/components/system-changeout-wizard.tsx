@@ -1947,6 +1947,20 @@ export function SystemChangeoutWizard({
                       </>
                     )}
                     
+                    {config.showBeforePhotosStep && (
+                      <>
+                        <span className="text-muted-foreground">Before Photos:</span>
+                        <span className="font-medium">{data.beforePhotos.length}</span>
+                      </>
+                    )}
+                    
+                    {config.showAfterPhotosStep && (
+                      <>
+                        <span className="text-muted-foreground">After Photos:</span>
+                        <span className="font-medium">{data.afterPhotos.length}</span>
+                      </>
+                    )}
+                    
                     {config.showNotesStep && data.completionNotes && (
                       <>
                         <span className="text-muted-foreground">Notes:</span>
