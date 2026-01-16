@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, useLocation } from "wouter";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -45,7 +45,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import type { Project, FileImportConfig } from "@shared/schema";
+import type { Project, FileImportConfig, ServiceTypeRecord } from "@shared/schema";
 import { Link } from "wouter";
 import { useTimezone } from "@/hooks/use-timezone";
 import { Switch } from "@/components/ui/switch";
@@ -209,6 +209,88 @@ export default function ProjectImport() {
     enabled: !!projectId,
     retry: false,
   });
+
+  // Fetch all service types and project-specific assignments
+  const { data: allServiceTypes = [] } = useQuery<ServiceTypeRecord[]>({
+    queryKey: ["/api/service-types"],
+    enabled: !!projectId,
+  });
+
+  const { data: projectServiceTypes = [] } = useQuery<ServiceTypeRecord[]>({
+    queryKey: ["/api/projects", projectId, "service-types"],
+    enabled: !!projectId && !accessDenied,
+  });
+
+  // Get the valid service types for this project (uses project-specific if assigned, otherwise all)
+  const validServiceTypes = useMemo(() => {
+    if (projectServiceTypes.length > 0) {
+      return projectServiceTypes;
+    }
+    return allServiceTypes;
+  }, [projectServiceTypes, allServiceTypes]);
+
+  // Helper function to validate/resolve service type from import
+  const resolveServiceType = useMemo(() => {
+    return (rawValue: string): { value: string; error: string | null } => {
+      const trimmed = rawValue.trim();
+      
+      // If project has exactly one service type, auto-assign it when input is empty/missing
+      if (projectServiceTypes.length === 1 && !trimmed) {
+        return { value: projectServiceTypes[0].code, error: null };
+      }
+      
+      // If project has assigned types but value is blank, that's an error
+      if (projectServiceTypes.length > 1 && !trimmed) {
+        const allowedList = projectServiceTypes.map(st => st.label || st.code).join(", ");
+        return { 
+          value: "", 
+          error: `Service type is required. Allowed types for this project: ${allowedList}`
+        };
+      }
+      
+      // If no service types are configured for the project, allow any value
+      if (projectServiceTypes.length === 0 && allServiceTypes.length === 0) {
+        return { value: trimmed || "Water", error: null };
+      }
+      
+      // Try to match against valid service types (by code or label)
+      const matchedType = validServiceTypes.find(
+        st => st.code.toLowerCase() === trimmed.toLowerCase() || 
+              st.label.toLowerCase() === trimmed.toLowerCase()
+      );
+      
+      if (matchedType) {
+        return { value: matchedType.code, error: null };
+      }
+      
+      // If project has service types assigned but no match found, this is an error
+      if (projectServiceTypes.length > 0) {
+        const allowedList = projectServiceTypes.map(st => st.label || st.code).join(", ");
+        return { 
+          value: trimmed, 
+          error: `Invalid service type "${trimmed}". Allowed types for this project: ${allowedList}`
+        };
+      }
+      
+      // No project-specific types, try matching against all types
+      const globalMatch = allServiceTypes.find(
+        st => st.code.toLowerCase() === trimmed.toLowerCase() || 
+              st.label.toLowerCase() === trimmed.toLowerCase()
+      );
+      
+      if (globalMatch) {
+        return { value: globalMatch.code, error: null };
+      }
+      
+      // No match against global types, but if allServiceTypes has exactly one, use it
+      if (allServiceTypes.length === 1 && !trimmed) {
+        return { value: allServiceTypes[0].code, error: null };
+      }
+      
+      // Fallback for no project types - accept the value if given, otherwise default
+      return { value: trimmed || "Water", error: null };
+    };
+  }, [projectServiceTypes, allServiceTypes, validServiceTypes]);
 
   const { data: fileImportConfigs = [], refetch: refetchConfigs } = useQuery<FileImportConfig[]>({
     queryKey: [`/api/projects/${projectId}/file-import-configs`],
@@ -534,6 +616,9 @@ export default function ProjectImport() {
         return index >= 0 ? String(row[index] || "") : "";
       };
 
+      const serviceTypeRaw = getValueByHeader(columnMapping.serviceType);
+      const serviceTypeResult = resolveServiceType(serviceTypeRaw);
+
       const workOrder: ParsedWorkOrder = {
         customerWoId: getValueByHeader(columnMapping.customerWoId) || "",
         customerId: getValueByHeader(columnMapping.customerId) || "",
@@ -546,7 +631,7 @@ export default function ProjectImport() {
         email: getValueByHeader(columnMapping.email) || undefined,
         route: getValueByHeader(columnMapping.route) || undefined,
         zone: getValueByHeader(columnMapping.zone) || undefined,
-        serviceType: getValueByHeader(columnMapping.serviceType) || "Water",
+        serviceType: serviceTypeResult.value,
         oldSystemId: getValueByHeader(columnMapping.oldSystemId) || undefined,
         oldSystemReading: columnMapping.oldSystemReading ? parseIntOrUndefined(getValueByHeader(columnMapping.oldSystemReading)) : undefined,
         oldGps: getValueByHeader(columnMapping.oldGps) || undefined,
@@ -574,7 +659,7 @@ export default function ProjectImport() {
     });
 
     setPreviewData(mapped);
-  }, [rawData, headers, columnMapping, hasHeader]);
+  }, [rawData, headers, columnMapping, hasHeader, resolveServiceType]);
 
   const handleJsonImport = () => {
     try {
@@ -590,13 +675,20 @@ export default function ProjectImport() {
   };
 
   const handleFileImport = () => {
-    if (!columnMapping.customerWoId || !columnMapping.customerId || !columnMapping.customerName || !columnMapping.address || !columnMapping.serviceType) {
-      toast({ title: "Please map required columns: Work Order ID, Customer ID, Customer Name, Address, and Service Type", variant: "destructive" });
+    // Service type column is required only if project doesn't have exactly one service type configured
+    const serviceTypeRequired = projectServiceTypes.length !== 1;
+    if (!columnMapping.customerWoId || !columnMapping.customerId || !columnMapping.customerName || !columnMapping.address || (serviceTypeRequired && !columnMapping.serviceType)) {
+      const requiredFields = serviceTypeRequired 
+        ? "Work Order ID, Customer ID, Customer Name, Address, and Service Type"
+        : "Work Order ID, Customer ID, Customer Name, and Address";
+      toast({ title: `Please map required columns: ${requiredFields}`, variant: "destructive" });
       return;
     }
 
     const dataRows = hasHeader ? rawData.slice(1) : rawData;
-    const workOrders = dataRows.map((row) => {
+    const serviceTypeErrors: string[] = [];
+    
+    const workOrders = dataRows.map((row, rowIndex) => {
       const getValueByHeader = (headerName: string): string => {
         if (!headerName) return "";
         const index = headers.indexOf(headerName);
@@ -605,9 +697,13 @@ export default function ProjectImport() {
 
       const status = getValueByHeader(columnMapping.status);
       const serviceTypeRaw = getValueByHeader(columnMapping.serviceType);
-      const serviceType = ["Water", "Electric", "Gas"].find(
-        t => t.toLowerCase() === serviceTypeRaw.toLowerCase()
-      ) || "Water";
+      const serviceTypeResult = resolveServiceType(serviceTypeRaw);
+      
+      // Collect service type validation errors with row context
+      if (serviceTypeResult.error) {
+        const rowNum = hasHeader ? rowIndex + 2 : rowIndex + 1; // +2 for header row, +1 for 1-based indexing
+        serviceTypeErrors.push(`Row ${rowNum}: ${serviceTypeResult.error}`);
+      }
 
       const workOrder: ParsedWorkOrder = {
         customerWoId: getValueByHeader(columnMapping.customerWoId),
@@ -621,7 +717,7 @@ export default function ProjectImport() {
         email: getValueByHeader(columnMapping.email) || undefined,
         route: getValueByHeader(columnMapping.route) || undefined,
         zone: getValueByHeader(columnMapping.zone) || undefined,
-        serviceType,
+        serviceType: serviceTypeResult.value,
         oldSystemId: getValueByHeader(columnMapping.oldSystemId) || undefined,
         oldSystemReading: columnMapping.oldSystemReading ? parseIntOrUndefined(getValueByHeader(columnMapping.oldSystemReading)) : undefined,
         oldGps: getValueByHeader(columnMapping.oldGps) || undefined,
@@ -647,6 +743,15 @@ export default function ProjectImport() {
 
       return workOrder;
     }).filter(wo => wo.customerWoId && wo.customerId && wo.customerName && wo.address);
+
+    // Show service type errors if any
+    if (serviceTypeErrors.length > 0) {
+      const errorSummary = serviceTypeErrors.length > 3 
+        ? `${serviceTypeErrors.slice(0, 3).join("; ")}... and ${serviceTypeErrors.length - 3} more errors`
+        : serviceTypeErrors.join("; ");
+      toast({ title: "Invalid service types in import", description: errorSummary, variant: "destructive" });
+      return;
+    }
 
     if (workOrders.length === 0) {
       toast({ title: "No valid work orders to import. Ensure required fields are mapped.", variant: "destructive" });

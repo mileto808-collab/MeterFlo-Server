@@ -467,9 +467,30 @@ export default function ProjectWorkOrders() {
     queryKey: ["/api/trouble-codes"],
   });
 
-  const { data: serviceTypes = [] } = useQuery<ServiceTypeRecord[]>({
+  const { data: allServiceTypes = [], isLoading: allServiceTypesLoading } = useQuery<ServiceTypeRecord[]>({
     queryKey: ["/api/service-types"],
   });
+
+  // Fetch project-specific service types (if any assigned)
+  const { data: projectServiceTypes = [], isLoading: projectServiceTypesLoading } = useQuery<ServiceTypeRecord[]>({
+    queryKey: ["/api/projects", projectId, "service-types"],
+    enabled: !!projectId && !accessDenied,
+  });
+
+  // Use project service types if any are assigned, otherwise use all service types
+  // Always fall back to all types when project-specific data is still loading or on error
+  const serviceTypes = useMemo(() => {
+    // If project service types are still loading, show all types as fallback
+    if (projectServiceTypesLoading && allServiceTypes.length > 0) {
+      return allServiceTypes;
+    }
+    // If project has assigned service types, use those
+    if (projectServiceTypes.length > 0) {
+      return projectServiceTypes;
+    }
+    // Otherwise use all service types
+    return allServiceTypes;
+  }, [projectServiceTypes, allServiceTypes, projectServiceTypesLoading]);
 
   const { data: systemTypes = [] } = useQuery<SystemType[]>({
     queryKey: ["/api/system-types", projectId],

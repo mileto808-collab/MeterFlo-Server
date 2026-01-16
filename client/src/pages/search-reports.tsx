@@ -259,9 +259,34 @@ export default function SearchReports() {
     queryKey: ["/api/projects"],
   });
 
-  const { data: serviceTypes = [] } = useQuery<ServiceTypeRecord[]>({
+  const { data: allServiceTypes = [] } = useQuery<ServiceTypeRecord[]>({
     queryKey: ["/api/service-types"],
   });
+
+  // Fetch project-specific service types when a project is selected
+  const { data: projectServiceTypes = [], isLoading: projectServiceTypesLoading } = useQuery<ServiceTypeRecord[]>({
+    queryKey: ["/api/projects", selectedProject, "service-types"],
+    enabled: selectedProject !== "all",
+  });
+
+  // Use project service types if project selected and has assignments, otherwise all
+  // Always fall back to all types when loading or no project-specific types
+  const serviceTypes = useMemo(() => {
+    // When no project is selected, use all types
+    if (selectedProject === "all") {
+      return allServiceTypes;
+    }
+    // If still loading project types, show all types as fallback
+    if (projectServiceTypesLoading && allServiceTypes.length > 0) {
+      return allServiceTypes;
+    }
+    // If project has assigned service types, use those
+    if (projectServiceTypes.length > 0) {
+      return projectServiceTypes;
+    }
+    // Otherwise use all service types
+    return allServiceTypes;
+  }, [selectedProject, projectServiceTypes, allServiceTypes, projectServiceTypesLoading]);
 
   const { data: workOrderStatuses = [] } = useQuery<WorkOrderStatus[]>({
     queryKey: ["/api/work-order-statuses"],

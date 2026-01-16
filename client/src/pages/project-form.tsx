@@ -284,13 +284,25 @@ export default function ProjectForm() {
   });
 
   const [selectedServiceTypeIds, setSelectedServiceTypeIds] = useState<number[]>([]);
+  const [serviceTypesInitialized, setServiceTypesInitialized] = useState(false);
+  const [lastProjectId, setLastProjectId] = useState<string | undefined>(undefined);
 
-  // Sync selectedServiceTypeIds when projectServiceTypes loads
+  // Reset initialization flag when project id changes
   useEffect(() => {
-    if (projectServiceTypes.length > 0) {
-      setSelectedServiceTypeIds(projectServiceTypes.map(st => st.id));
+    if (id !== lastProjectId) {
+      setServiceTypesInitialized(false);
+      setSelectedServiceTypeIds([]);
+      setLastProjectId(id);
     }
-  }, [projectServiceTypes]);
+  }, [id, lastProjectId]);
+
+  // Sync selectedServiceTypeIds when projectServiceTypes loads (only on first load per project)
+  useEffect(() => {
+    if (!serviceTypesLoading && !serviceTypesInitialized && id === lastProjectId) {
+      setSelectedServiceTypeIds(projectServiceTypes.map(st => st.id));
+      setServiceTypesInitialized(true);
+    }
+  }, [projectServiceTypes, serviceTypesLoading, serviceTypesInitialized, id, lastProjectId]);
 
   const updateServiceTypesMutation = useMutation({
     mutationFn: async (serviceTypeIds: number[]) => {
