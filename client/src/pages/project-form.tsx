@@ -16,9 +16,10 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
-import type { Project, User } from "@shared/schema";
-import { ArrowLeft, Save, Loader2, Globe, Clock, Users, X, CalendarDays, Plus, Wand2 } from "lucide-react";
+import type { Project, User, ServiceTypeRecord } from "@shared/schema";
+import { ArrowLeft, Save, Loader2, Globe, Clock, Users, X, CalendarDays, Plus, Wand2, Zap, Check } from "lucide-react";
 import type { ProjectHoliday } from "@shared/schema";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const DAYS_OF_WEEK = [
   { value: 'monday', label: 'Mon' },
@@ -270,6 +271,47 @@ export default function ProjectForm() {
       toast({ title: "Error", description: error.message || "Failed to remove holiday", variant: "destructive" });
     },
   });
+
+  // Service Types management - which service types are available for this project
+  const { data: allServiceTypes = [] } = useQuery<ServiceTypeRecord[]>({
+    queryKey: ["/api/service-types"],
+    enabled: isEditing,
+  });
+
+  const { data: projectServiceTypes = [], isLoading: serviceTypesLoading } = useQuery<ServiceTypeRecord[]>({
+    queryKey: ["/api/projects", id, "service-types"],
+    enabled: isEditing,
+  });
+
+  const [selectedServiceTypeIds, setSelectedServiceTypeIds] = useState<number[]>([]);
+
+  // Sync selectedServiceTypeIds when projectServiceTypes loads
+  useEffect(() => {
+    if (projectServiceTypes.length > 0) {
+      setSelectedServiceTypeIds(projectServiceTypes.map(st => st.id));
+    }
+  }, [projectServiceTypes]);
+
+  const updateServiceTypesMutation = useMutation({
+    mutationFn: async (serviceTypeIds: number[]) => {
+      await apiRequest("PUT", `/api/projects/${id}/service-types`, { serviceTypeIds });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "service-types"] });
+      toast({ title: "Success", description: "Service types updated" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message || "Failed to update service types", variant: "destructive" });
+    },
+  });
+
+  const handleServiceTypeToggle = (serviceTypeId: number) => {
+    const newSelection = selectedServiceTypeIds.includes(serviceTypeId)
+      ? selectedServiceTypeIds.filter(id => id !== serviceTypeId)
+      : [...selectedServiceTypeIds, serviceTypeId];
+    setSelectedServiceTypeIds(newSelection);
+    updateServiceTypesMutation.mutate(newSelection);
+  };
 
   const onSubmit = (data: ProjectFormValues) => {
     if (isEditing) {
@@ -575,6 +617,81 @@ export default function ProjectForm() {
                   </div>
                 )}
               </div>
+
+              {isEditing && (
+                <div className="border-t pt-6 mt-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Zap className="h-5 w-5 text-muted-foreground" />
+                    <h3 className="text-lg font-medium">Service Types</h3>
+                  </div>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Select which service types are available for work orders in this project. If none are selected, all service types will be available.
+                  </p>
+
+                  {serviceTypesLoading ? (
+                    <div className="space-y-2">
+                      <Skeleton className="h-10 w-full" />
+                      <Skeleton className="h-10 w-full" />
+                    </div>
+                  ) : allServiceTypes.length === 0 ? (
+                    <p className="text-sm text-muted-foreground italic">
+                      No service types configured. Add service types in Settings to enable filtering.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {allServiceTypes.map((serviceType) => {
+                        const isSelected = selectedServiceTypeIds.includes(serviceType.id);
+                        return (
+                          <div
+                            key={serviceType.id}
+                            className={`flex items-center justify-between rounded-lg border p-3 cursor-pointer transition-colors ${
+                              isSelected ? "border-primary bg-primary/5" : "hover:bg-muted/50"
+                            }`}
+                            onClick={() => handleServiceTypeToggle(serviceType.id)}
+                            data-testid={`service-type-toggle-${serviceType.id}`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <Checkbox
+                                checked={isSelected}
+                                onCheckedChange={() => handleServiceTypeToggle(serviceType.id)}
+                                data-testid={`checkbox-service-type-${serviceType.id}`}
+                              />
+                              <div>
+                                <span className="font-medium">{serviceType.label}</span>
+                                <span className="text-sm text-muted-foreground ml-2">({serviceType.code})</span>
+                              </div>
+                            </div>
+                            {serviceType.color && (
+                              <Badge 
+                                variant="outline"
+                                style={{ 
+                                  backgroundColor: serviceType.color === 'blue' ? '#3b82f6' :
+                                    serviceType.color === 'green' ? '#22c55e' :
+                                    serviceType.color === 'yellow' ? '#eab308' :
+                                    serviceType.color === 'orange' ? '#f97316' :
+                                    serviceType.color === 'red' ? '#ef4444' :
+                                    serviceType.color === 'purple' ? '#a855f7' :
+                                    serviceType.color === 'pink' ? '#ec4899' :
+                                    serviceType.color === 'gray' ? '#6b7280' : serviceType.color,
+                                  color: ['yellow', 'orange'].includes(serviceType.color) ? '#000' : '#fff'
+                                }}
+                              >
+                                {serviceType.label}
+                              </Badge>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {updateServiceTypesMutation.isPending && (
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Saving...
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="border-t pt-6 mt-6">
                 <div className="flex items-center gap-2 mb-4">
