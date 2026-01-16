@@ -1957,7 +1957,7 @@ export default function ProjectWorkOrders() {
                 ) : (
                   <Wrench className="h-3.5 w-3.5 mr-1" />
                 )}
-                <span className="hidden lg:inline">{project.wizardMode === "reading_only" ? "Start Reading Capture" : "Start Changeout"}</span>
+                <span>{project.wizardMode === "reading_only" ? "Start Reading Capture" : "Start Changeout"}</span>
               </Button>
             )}
             {hasPermission(permissionKeys.WORK_ORDERS_CREATE) && (
