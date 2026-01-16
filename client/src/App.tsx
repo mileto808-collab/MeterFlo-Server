@@ -13,6 +13,7 @@ import { PageHeaderProvider, usePageHeader } from "@/contexts/page-header-contex
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { ArrowUpCircle } from "lucide-react";
+import { useState, useCallback, useEffect, useRef } from "react";
 
 import Landing from "@/pages/landing";
 import TurnstilePage from "@/pages/turnstile";
@@ -158,8 +159,58 @@ function HeaderContent() {
 function AuthenticatedLayout() {
   useGlobalEvents();
   
+  // Sidebar resize functionality
+  const MIN_WIDTH = 180;
+  const MAX_WIDTH = 400;
+  const DEFAULT_WIDTH = 256; // 16rem = 256px
+  
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const saved = localStorage.getItem('sidebar-width');
+    return saved ? parseInt(saved, 10) : DEFAULT_WIDTH;
+  });
+  const [isResizing, setIsResizing] = useState(false);
+  const resizeRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+    resizeRef.current = { startX: e.clientX, startWidth: sidebarWidth };
+  }, [sidebarWidth]);
+  
+  const handleMouseMove = useCallback((e: MouseEvent) => {
+    if (!isResizing || !resizeRef.current) return;
+    
+    const delta = e.clientX - resizeRef.current.startX;
+    const newWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, resizeRef.current.startWidth + delta));
+    setSidebarWidth(newWidth);
+  }, [isResizing]);
+  
+  const handleMouseUp = useCallback(() => {
+    if (isResizing) {
+      setIsResizing(false);
+      resizeRef.current = null;
+      localStorage.setItem('sidebar-width', sidebarWidth.toString());
+    }
+  }, [isResizing, sidebarWidth]);
+  
+  useEffect(() => {
+    if (isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = 'ew-resize';
+      document.body.style.userSelect = 'none';
+    }
+    
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizing, handleMouseMove, handleMouseUp]);
+  
   const style = {
-    "--sidebar-width": "16rem",
+    "--sidebar-width": `${sidebarWidth}px`,
     "--sidebar-width-icon": "3rem",
   };
 
@@ -167,7 +218,15 @@ function AuthenticatedLayout() {
     <PageHeaderProvider>
       <SidebarProvider style={style as React.CSSProperties}>
         <div className="flex min-h-screen w-full">
-          <AppSidebar />
+          <div className="relative">
+            <AppSidebar />
+            {/* Resize handle */}
+            <div
+              className="absolute top-0 right-0 w-1 h-full cursor-ew-resize hover:bg-primary/20 active:bg-primary/30 z-50 transition-colors"
+              onMouseDown={handleMouseDown}
+              data-testid="sidebar-resize-handle"
+            />
+          </div>
           <div className="flex flex-col flex-1 min-w-0">
             <header className="flex flex-wrap items-center justify-between gap-2 p-3 border-b border-border sticky top-0 z-50 bg-background">
               <div className="flex items-center gap-3 flex-shrink-0">
