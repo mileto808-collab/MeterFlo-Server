@@ -662,7 +662,6 @@ export default function ProjectForm() {
                             <div className="flex items-center gap-3">
                               <Checkbox
                                 checked={isSelected}
-                                onCheckedChange={() => handleServiceTypeToggle(serviceType.id)}
                                 data-testid={`checkbox-service-type-${serviceType.id}`}
                               />
                               <div>
