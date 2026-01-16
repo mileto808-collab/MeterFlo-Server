@@ -169,12 +169,14 @@ function AuthenticatedLayout() {
         <div className="flex min-h-screen w-full">
           <AppSidebar />
           <div className="flex flex-col flex-1 min-w-0">
-            <header className="flex items-center justify-between gap-4 p-3 border-b border-border sticky top-0 z-50 bg-background">
-              <div className="flex items-center gap-3">
+            <header className="flex flex-wrap items-center justify-between gap-2 p-3 border-b border-border sticky top-0 z-50 bg-background">
+              <div className="flex items-center gap-3 flex-shrink-0">
                 <SidebarTrigger data-testid="button-sidebar-toggle" />
+              </div>
+              <div className="flex-1 min-w-0">
                 <HeaderContent />
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-shrink-0">
                 <UpdateNotification />
                 <ThemeToggle />
               </div>

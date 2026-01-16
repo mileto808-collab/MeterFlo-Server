@@ -1862,6 +1862,98 @@ export default function ProjectWorkOrders() {
     }
   }, [currentPage, totalPages]);
 
+  // Set sticky header content - now that filteredAndSortedWorkOrders is available
+  useEffect(() => {
+    if (!project || !user) {
+      setHeaderContent(null);
+      return;
+    }
+    
+    const content = (
+      <div className="flex items-center gap-2 flex-wrap w-full">
+        <div className="flex flex-col min-w-0 mr-2">
+          <span className="font-semibold text-sm truncate">{project.name}</span>
+          <span className="text-xs text-muted-foreground">Work Orders</span>
+        </div>
+        {user.role !== "customer" && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <Link href={`/projects/${projectId}/files`}>
+              <Button variant="outline" size="sm" data-testid="header-button-project-files">
+                <Folder className="h-3.5 w-3.5 mr-1" />
+                <span className="hidden lg:inline">Project Documents</span>
+              </Button>
+            </Link>
+            {hasPermission(permissionKeys.WORK_ORDERS_ASSIGN) && (
+              <Button variant="outline" size="sm" onClick={handleOpenBulkAssign} data-testid="header-button-assign-work-orders">
+                <UserPlus className="h-3.5 w-3.5 mr-1" />
+                <span className="hidden lg:inline">Assign Work Orders</span>
+              </Button>
+            )}
+            {hasPermission(permissionKeys.WORK_ORDERS_EDIT) && selectedWorkOrderIds.size > 0 && (
+              <Button variant="outline" size="sm" onClick={handleOpenBulkStatus} data-testid="header-button-set-status">
+                <ArrowUpDown className="h-3.5 w-3.5 mr-1" />
+                <span className="hidden lg:inline">Set Status</span> ({selectedWorkOrderIds.size})
+              </Button>
+            )}
+            {hasPermission(permissionKeys.WORK_ORDERS_DELETE) && selectedWorkOrderIds.size > 0 && (
+              <Button variant="destructive" size="sm" onClick={handleBulkDelete} data-testid="header-button-delete-selected">
+                <Trash2 className="h-3.5 w-3.5 mr-1" />
+                <span className="hidden lg:inline">Delete</span> ({selectedWorkOrderIds.size})
+              </Button>
+            )}
+            {hasPermission(permissionKeys.WORK_ORDERS_METER_CHANGEOUT) && (
+              <Button 
+                size="sm"
+                onClick={() => setShowStartSystemChangeout(true)} 
+                data-testid="header-button-start-system-changeout"
+                className="bg-green-600 text-white dark:bg-green-600"
+              >
+                {project.wizardMode === "reading_only" ? (
+                  <Gauge className="h-3.5 w-3.5 mr-1" />
+                ) : (
+                  <Wrench className="h-3.5 w-3.5 mr-1" />
+                )}
+                <span className="hidden lg:inline">{project.wizardMode === "reading_only" ? "Start Reading Capture" : "Start Changeout"}</span>
+              </Button>
+            )}
+            {hasPermission(permissionKeys.WORK_ORDERS_CREATE) && (
+              <Button size="sm" onClick={() => setIsCreatingWorkOrder(true)} data-testid="header-button-create-work-order">
+                <Plus className="h-3.5 w-3.5 mr-1" />
+                <span className="hidden lg:inline">New Work Order</span>
+              </Button>
+            )}
+            {hasPermission('workOrders.calendar') && (
+              <div className="flex items-center border rounded-md">
+                <Button
+                  variant={viewMode === "table" ? "secondary" : "ghost"}
+                  size="sm"
+                  onClick={() => setViewMode("table")}
+                  className="rounded-r-none"
+                  data-testid="header-view-table"
+                >
+                  <List className="h-3.5 w-3.5 mr-1" />
+                  <span className="hidden lg:inline">WO List</span>
+                </Button>
+                <Button
+                  variant={viewMode === "calendar" ? "secondary" : "ghost"}
+                  size="sm"
+                  onClick={() => setViewMode("calendar")}
+                  className="rounded-l-none"
+                  data-testid="header-view-calendar"
+                >
+                  <CalendarIcon className="h-3.5 w-3.5 mr-1" />
+                  <span className="hidden lg:inline">Calendar</span>
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+    
+    setHeaderContent(content);
+  }, [project, user, projectId, hasPermission, selectedWorkOrderIds.size, viewMode, handleOpenBulkAssign, handleOpenBulkStatus, handleBulkDelete, setHeaderContent]);
+
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
     tableScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
@@ -2089,57 +2181,15 @@ export default function ProjectWorkOrders() {
     toast({ title: "PDF print dialog opened" });
   };
 
-  // Set page header content for the sticky nav bar
-  // This must be called before any early returns to follow React hooks rules
-  const headerContent = useMemo(() => {
-    if (!project || !user) return null;
-    
-    return (
-      <div className="flex items-center gap-4 flex-wrap">
-        <div className="flex flex-col">
-          <span className="font-semibold text-sm">{project.name}</span>
-          <span className="text-xs text-muted-foreground">Work Orders</span>
-        </div>
-        {user.role !== "customer" && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <Link href={`/projects/${projectId}/files`}>
-              <Button variant="outline" size="sm" data-testid="header-button-project-files">
-                <Folder className="h-3.5 w-3.5 mr-1" />
-                <span className="hidden lg:inline">Project Documents</span>
-              </Button>
-            </Link>
-            {hasPermission(permissionKeys.WORK_ORDERS_METER_CHANGEOUT) && (
-              <Button 
-                size="sm"
-                onClick={() => setShowStartSystemChangeout(true)} 
-                data-testid="header-button-start-system-changeout"
-                className="bg-green-600 text-white dark:bg-green-600"
-              >
-                {project.wizardMode === "reading_only" ? (
-                  <Gauge className="h-3.5 w-3.5 mr-1" />
-                ) : (
-                  <Wrench className="h-3.5 w-3.5 mr-1" />
-                )}
-                <span className="hidden lg:inline">{project.wizardMode === "reading_only" ? "Start Reading Capture" : "Start Changeout"}</span>
-              </Button>
-            )}
-            {hasPermission(permissionKeys.WORK_ORDERS_CREATE) && (
-              <Button size="sm" onClick={() => setIsCreatingWorkOrder(true)} data-testid="header-button-create-work-order">
-                <Plus className="h-3.5 w-3.5 mr-1" />
-                <span className="hidden lg:inline">New Work Order</span>
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  }, [project, user, projectId, hasPermission]);
-
-  // Update the sticky header when header content changes
+  // Placeholder useEffect for header - actual content is set later after filteredAndSortedWorkOrders is available
+  // This hook must exist before early returns to follow React hooks rules
+  const headerSetRef = useRef(false);
   useEffect(() => {
-    setHeaderContent(headerContent);
-    return () => setHeaderContent(null);
-  }, [headerContent, setHeaderContent]);
+    // Cleanup on unmount
+    return () => {
+      setHeaderContent(null);
+    };
+  }, [setHeaderContent]);
 
   if (!projectId) {
     return (
@@ -3297,85 +3347,6 @@ export default function ProjectWorkOrders() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold" data-testid="text-project-title">{project?.name}</h1>
-          <p className="text-muted-foreground">Work Orders</p>
-        </div>
-        {user?.role !== "customer" && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <Link href={`/projects/${projectId}/files`}>
-              <Button variant="outline" data-testid="button-project-files">
-                <Folder className="h-4 w-4 mr-2" />
-                Project Documents
-              </Button>
-            </Link>
-            {hasPermission(permissionKeys.WORK_ORDERS_ASSIGN) && (
-              <Button variant="outline" onClick={handleOpenBulkAssign} data-testid="button-assign-work-orders">
-                <UserPlus className="h-4 w-4 mr-2" />
-                Assign Work Orders
-              </Button>
-            )}
-            {hasPermission(permissionKeys.WORK_ORDERS_EDIT) && selectedWorkOrderIds.size > 0 && (
-              <Button variant="outline" onClick={handleOpenBulkStatus} data-testid="button-set-status">
-                <ArrowUpDown className="h-4 w-4 mr-2" />
-                Set Status ({selectedWorkOrderIds.size})
-              </Button>
-            )}
-            {hasPermission(permissionKeys.WORK_ORDERS_DELETE) && selectedWorkOrderIds.size > 0 && (
-              <Button variant="destructive" onClick={handleBulkDelete} data-testid="button-delete-selected">
-                <Trash2 className="h-4 w-4 mr-2" />
-                Delete Selected ({selectedWorkOrderIds.size})
-              </Button>
-            )}
-            {hasPermission(permissionKeys.WORK_ORDERS_METER_CHANGEOUT) && (
-              <Button 
-                onClick={() => setShowStartSystemChangeout(true)} 
-                data-testid="button-start-system-changeout"
-                className="bg-green-600 text-white dark:bg-green-600"
-              >
-                {project?.wizardMode === "reading_only" ? (
-                  <Gauge className="h-4 w-4 mr-2" />
-                ) : (
-                  <Wrench className="h-4 w-4 mr-2" />
-                )}
-                {project?.wizardMode === "reading_only" ? "Start Reading Capture" : "Start Changeout"}
-              </Button>
-            )}
-            {hasPermission(permissionKeys.WORK_ORDERS_CREATE) && (
-              <Button onClick={() => setIsCreatingWorkOrder(true)} data-testid="button-create-work-order">
-                <Plus className="h-4 w-4 mr-2" />
-                New Work Order
-              </Button>
-            )}
-            {hasPermission('workOrders.calendar') && (
-              <div className="flex items-center border rounded-md">
-                <Button
-                  variant={viewMode === "table" ? "secondary" : "ghost"}
-                  size="sm"
-                  onClick={() => setViewMode("table")}
-                  className="rounded-r-none"
-                  data-testid="view-table"
-                >
-                  <List className="h-4 w-4 mr-1" />
-                  WO List
-                </Button>
-                <Button
-                  variant={viewMode === "calendar" ? "secondary" : "ghost"}
-                  size="sm"
-                  onClick={() => setViewMode("calendar")}
-                  className="rounded-l-none"
-                  data-testid="view-calendar"
-                >
-                  <CalendarIcon className="h-4 w-4 mr-1" />
-                  Calendar
-                </Button>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
       {stats && viewMode !== "calendar" && (
         <>
           {/* Mobile toggle for stats */}
