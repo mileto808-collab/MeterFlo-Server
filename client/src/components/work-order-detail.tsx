@@ -3270,6 +3270,7 @@ export function WorkOrderDetail({
             signatureName: data.signatureName,
             photoTypes,
             changeoutScope,
+            isReadingOnly: data.isReadingOnly,
           }));
           
           const response = await fetch(`/api/projects/${projectId}/work-orders/${workOrder.id}/system-changeout`, {
