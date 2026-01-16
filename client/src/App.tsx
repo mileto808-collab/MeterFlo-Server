@@ -214,7 +214,8 @@ function ResizableLayoutContent() {
         defaultSize={lastExpandedSize}
         minSize={COLLAPSED_SIZE}
         maxSize={MAX_SIDEBAR_SIZE}
-        className="bg-sidebar flex flex-col h-full overflow-hidden"
+        className="bg-sidebar flex flex-col overflow-hidden"
+        style={{ height: "100%" }}
         collapsible
         collapsedSize={COLLAPSED_SIZE}
       >
