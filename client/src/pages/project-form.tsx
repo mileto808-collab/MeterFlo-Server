@@ -284,32 +284,32 @@ export default function ProjectForm() {
   });
 
   const [selectedServiceTypeIds, setSelectedServiceTypeIds] = useState<number[]>([]);
-  const [serviceTypesReady, setServiceTypesReady] = useState(false);
   const lastProjectIdRef = useRef<string | undefined>(undefined);
+  const isInitializedRef = useRef(false);
+  const userInteractedRef = useRef(false);
 
   // Sync selectedServiceTypeIds when projectServiceTypes loads (only once per project)
   useEffect(() => {
     // If project id changed, reset
     if (id !== lastProjectIdRef.current) {
       lastProjectIdRef.current = id;
-      setServiceTypesReady(false);
+      isInitializedRef.current = false;
+      userInteractedRef.current = false;
       setSelectedServiceTypeIds([]);
       return;
     }
-    // Only initialize once per project, after data loads
-    if (!serviceTypesReady && !serviceTypesLoading && isEditing) {
+    // Only initialize once per project, after data loads, and only if user hasn't interacted
+    if (!isInitializedRef.current && !serviceTypesLoading && isEditing && !userInteractedRef.current) {
+      isInitializedRef.current = true;
       setSelectedServiceTypeIds(projectServiceTypes.map(st => st.id));
-      // Delay setting ready to prevent any race conditions
-      setTimeout(() => setServiceTypesReady(true), 100);
     }
-  }, [id, projectServiceTypes, serviceTypesLoading, isEditing, serviceTypesReady]);
+  }, [id, projectServiceTypes, serviceTypesLoading, isEditing]);
 
   const updateServiceTypesMutation = useMutation({
     mutationFn: async (serviceTypeIds: number[]) => {
       await apiRequest("PUT", `/api/projects/${id}/service-types`, { serviceTypeIds });
     },
     onSuccess: () => {
-      // Don't invalidate the query to prevent re-triggering the effect
       toast({ title: "Success", description: "Service types updated" });
     },
     onError: (error: Error) => {
@@ -319,7 +319,10 @@ export default function ProjectForm() {
 
   const handleServiceTypeToggle = (serviceTypeId: number) => {
     // Only allow mutations after initialization is complete
-    if (!serviceTypesReady) return;
+    if (!isInitializedRef.current) return;
+    
+    // Mark that user has interacted - prevents effect from overwriting state
+    userInteractedRef.current = true;
     
     const newSelection = selectedServiceTypeIds.includes(serviceTypeId)
       ? selectedServiceTypeIds.filter(id => id !== serviceTypeId)
@@ -668,6 +671,7 @@ export default function ProjectForm() {
                             <div className="flex items-center gap-3">
                               <Checkbox
                                 checked={isSelected}
+                                className="pointer-events-none"
                                 data-testid={`checkbox-service-type-${serviceType.id}`}
                               />
                               <div>
