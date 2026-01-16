@@ -3921,7 +3921,7 @@ export default function ProjectWorkOrders() {
       ) : (
         <Card>
           <CardContent className="p-0">
-            <div ref={tableScrollRef} className="overflow-x-auto w-full min-h-[500px] max-h-[calc(100vh-260px)] overflow-y-auto">
+            <div ref={tableScrollRef} className="overflow-x-auto w-full min-h-[400px] max-h-[calc(100vh-320px)] overflow-y-auto">
               <Table ref={tableRef} noWrapper>
                 <TableHeader>
                   <TableRow>
