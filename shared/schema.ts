@@ -117,6 +117,11 @@ export const projects = pgTable("projects", {
   wizardShowBeforePhotosStep: boolean("wizard_show_before_photos_step").default(true),
   wizardShowAfterPhotosStep: boolean("wizard_show_after_photos_step").default(true),
   wizardShowSignatureStep: boolean("wizard_show_signature_step").default(true),
+  // Search method visibility settings
+  searchShowBarcodeScan: boolean("search_show_barcode_scan").default(true),
+  searchShowQrCodeScan: boolean("search_show_qr_code_scan").default(true),
+  searchShowManualEntry: boolean("search_show_manual_entry").default(true),
+  searchShowHidScanner: boolean("search_show_hid_scanner").default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

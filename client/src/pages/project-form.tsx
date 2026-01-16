@@ -17,7 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import type { Project, User, ServiceTypeRecord } from "@shared/schema";
-import { ArrowLeft, Save, Loader2, Globe, Clock, Users, X, CalendarDays, Plus, Wand2, Zap, Check, Copy } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Globe, Clock, Users, X, CalendarDays, Plus, Wand2, Zap, Check, Copy, Scan } from "lucide-react";
 import type { ProjectHoliday } from "@shared/schema";
 import { Checkbox } from "@/components/ui/checkbox";
 
@@ -59,6 +59,11 @@ const projectFormSchema = z.object({
   wizardShowBeforePhotosStep: z.boolean().optional().default(true),
   wizardShowAfterPhotosStep: z.boolean().optional().default(true),
   wizardShowSignatureStep: z.boolean().optional().default(true),
+  // Search method visibility settings
+  searchShowBarcodeScan: z.boolean().optional().default(true),
+  searchShowQrCodeScan: z.boolean().optional().default(true),
+  searchShowManualEntry: z.boolean().optional().default(true),
+  searchShowHidScanner: z.boolean().optional().default(true),
 }).refine((data) => {
   if (data.operationalHoursEnabled) {
     return data.operationalHoursStart && data.operationalHoursEnd;
@@ -114,6 +119,10 @@ export default function ProjectForm() {
       wizardShowBeforePhotosStep: true,
       wizardShowAfterPhotosStep: true,
       wizardShowSignatureStep: true,
+      searchShowBarcodeScan: true,
+      searchShowQrCodeScan: true,
+      searchShowManualEntry: true,
+      searchShowHidScanner: true,
     },
   });
 
@@ -147,6 +156,10 @@ export default function ProjectForm() {
         wizardShowBeforePhotosStep: project.wizardShowBeforePhotosStep !== false,
         wizardShowAfterPhotosStep: project.wizardShowAfterPhotosStep !== false,
         wizardShowSignatureStep: project.wizardShowSignatureStep !== false,
+        searchShowBarcodeScan: (project as any).searchShowBarcodeScan !== false,
+        searchShowQrCodeScan: (project as any).searchShowQrCodeScan !== false,
+        searchShowManualEntry: (project as any).searchShowManualEntry !== false,
+        searchShowHidScanner: (project as any).searchShowHidScanner !== false,
       });
     }
   }, [project, form]);
@@ -873,6 +886,106 @@ export default function ProjectForm() {
                             checked={field.value}
                             onCheckedChange={field.onChange}
                             data-testid="switch-wizard-signature"
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </div>
+
+              <div className="border-t pt-6 mt-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <Scan className="h-5 w-5 text-muted-foreground" />
+                  <h3 className="text-lg font-medium">Search Method Configuration</h3>
+                </div>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Configure which search methods are available when starting a changeout or reading capture workflow.
+                </p>
+                
+                <div className="grid gap-2 md:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="searchShowBarcodeScan"
+                    render={({ field }) => (
+                      <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                        <div className="space-y-0.5">
+                          <FormLabel className="text-sm">Camera Barcode Scan</FormLabel>
+                          <FormDescription className="text-xs">
+                            Use camera to scan 1D barcodes
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                            data-testid="switch-search-barcode"
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="searchShowQrCodeScan"
+                    render={({ field }) => (
+                      <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                        <div className="space-y-0.5">
+                          <FormLabel className="text-sm">Camera QR Code Scan</FormLabel>
+                          <FormDescription className="text-xs">
+                            Use camera to scan QR codes
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                            data-testid="switch-search-qrcode"
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="searchShowManualEntry"
+                    render={({ field }) => (
+                      <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                        <div className="space-y-0.5">
+                          <FormLabel className="text-sm">Manual Entry</FormLabel>
+                          <FormDescription className="text-xs">
+                            Search by typing ID, address, or customer ID
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                            data-testid="switch-search-manual"
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="searchShowHidScanner"
+                    render={({ field }) => (
+                      <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                        <div className="space-y-0.5">
+                          <FormLabel className="text-sm">Bluetooth HID Scanner</FormLabel>
+                          <FormDescription className="text-xs">
+                            Use Bluetooth barcode/QR scanner device
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                            data-testid="switch-search-hid-scanner"
                           />
                         </FormControl>
                       </FormItem>

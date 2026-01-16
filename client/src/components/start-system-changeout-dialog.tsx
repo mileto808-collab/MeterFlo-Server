@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Scan, QrCode, Keyboard, Camera, X, Flashlight, FlashlightOff, Focus, Check, RotateCcw, Loader2, Wrench, AlertCircle, MapPin, FileText, Gauge, ClipboardCheck, Ban, StickyNote } from "lucide-react";
+import { Scan, QrCode, Keyboard, Camera, X, Flashlight, FlashlightOff, Focus, Check, RotateCcw, Loader2, Wrench, AlertCircle, MapPin, FileText, Gauge, ClipboardCheck, Ban, StickyNote, Bluetooth } from "lucide-react";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
@@ -32,15 +32,23 @@ export type ChangeoutScope = "system" | "module" | "both";
 
 export type WizardMode = "changeout" | "reading_only" | "user_choice";
 
+export interface SearchMethodSettings {
+  searchShowBarcodeScan?: boolean;
+  searchShowQrCodeScan?: boolean;
+  searchShowManualEntry?: boolean;
+  searchShowHidScanner?: boolean;
+}
+
 interface StartSystemChangeoutDialogProps {
   isOpen: boolean;
   onClose: () => void;
   projectId: number;
   onWorkOrderFound: (workOrder: ProjectWorkOrder, scope: ChangeoutScope) => void;
   wizardMode?: WizardMode;
+  searchMethodSettings?: SearchMethodSettings;
 }
 
-type ScanMode = "select" | "barcode" | "qrcode" | "manual" | "confirm";
+type ScanMode = "select" | "barcode" | "qrcode" | "manual" | "hidscanner" | "confirm";
 
 export function StartSystemChangeoutDialog({
   isOpen,
@@ -48,6 +56,7 @@ export function StartSystemChangeoutDialog({
   projectId,
   onWorkOrderFound,
   wizardMode = "changeout",
+  searchMethodSettings,
 }: StartSystemChangeoutDialogProps) {
   // Determine if we're in reading-only mode for UI text
   const isReadingOnlyMode = wizardMode === "reading_only";
@@ -84,12 +93,23 @@ export function StartSystemChangeoutDialog({
   const [capabilitiesChecked, setCapabilitiesChecked] = useState(false);
   const [pendingResult, setPendingResult] = useState<string | null>(null);
   const [manualInput, setManualInput] = useState("");
+  const [hidScannerInput, setHidScannerInput] = useState("");
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [lookupError, setLookupError] = useState<string | null>(null);
   const [foundWorkOrder, setFoundWorkOrder] = useState<ProjectWorkOrder | null>(null);
   
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const hidInputRef = useRef<HTMLInputElement>(null);
+  
+  // Determine which search methods are available (default to all enabled if settings not provided)
+  const showBarcodeScan = searchMethodSettings?.searchShowBarcodeScan !== false;
+  const showQrCodeScan = searchMethodSettings?.searchShowQrCodeScan !== false;
+  const showManualEntry = searchMethodSettings?.searchShowManualEntry !== false;
+  const showHidScanner = searchMethodSettings?.searchShowHidScanner !== false;
+  
+  // Count how many methods are enabled for layout decisions
+  const enabledMethodCount = [showBarcodeScan, showQrCodeScan, showManualEntry, showHidScanner].filter(Boolean).length;
 
   useEffect(() => {
     const checkMobile = () => {
@@ -120,6 +140,7 @@ export function StartSystemChangeoutDialog({
     stopScanning();
     setScanMode("select");
     setManualInput("");
+    setHidScannerInput("");
     setLookupError(null);
     setPendingResult(null);
     setFoundWorkOrder(null);
