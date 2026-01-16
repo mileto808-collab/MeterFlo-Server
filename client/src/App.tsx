@@ -9,6 +9,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { useAuth } from "@/hooks/useAuth";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useGlobalEvents } from "@/hooks/useProjectEvents";
+import { PageHeaderProvider, usePageHeader } from "@/contexts/page-header-context";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { ArrowUpCircle } from "lucide-react";
@@ -149,6 +150,11 @@ function UpdateNotification() {
   );
 }
 
+function HeaderContent() {
+  const { headerContent } = usePageHeader();
+  return <>{headerContent}</>;
+}
+
 function AuthenticatedLayout() {
   useGlobalEvents();
   
@@ -158,23 +164,28 @@ function AuthenticatedLayout() {
   };
 
   return (
-    <SidebarProvider style={style as React.CSSProperties}>
-      <div className="flex min-h-screen w-full">
-        <AppSidebar />
-        <div className="flex flex-col flex-1 min-w-0">
-          <header className="flex items-center justify-between gap-4 p-3 border-b border-border sticky top-0 z-50 bg-background">
-            <SidebarTrigger data-testid="button-sidebar-toggle" />
-            <div className="flex items-center gap-2">
-              <UpdateNotification />
-              <ThemeToggle />
-            </div>
-          </header>
-          <main className="flex-1 overflow-auto">
-            <AuthenticatedRouter />
-          </main>
+    <PageHeaderProvider>
+      <SidebarProvider style={style as React.CSSProperties}>
+        <div className="flex min-h-screen w-full">
+          <AppSidebar />
+          <div className="flex flex-col flex-1 min-w-0">
+            <header className="flex items-center justify-between gap-4 p-3 border-b border-border sticky top-0 z-50 bg-background">
+              <div className="flex items-center gap-3">
+                <SidebarTrigger data-testid="button-sidebar-toggle" />
+                <HeaderContent />
+              </div>
+              <div className="flex items-center gap-2">
+                <UpdateNotification />
+                <ThemeToggle />
+              </div>
+            </header>
+            <main className="flex-1 overflow-auto">
+              <AuthenticatedRouter />
+            </main>
+          </div>
         </div>
-      </div>
-    </SidebarProvider>
+      </SidebarProvider>
+    </PageHeaderProvider>
   );
 }
 

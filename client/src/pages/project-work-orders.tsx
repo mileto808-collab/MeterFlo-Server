@@ -3242,12 +3242,11 @@ export default function ProjectWorkOrders() {
 
   return (
     <div className="p-6 space-y-6">
-      <div className="sticky top-0 z-50 bg-background pb-4 -mt-6 pt-6 -mx-6 px-6">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div>
-            <h1 className="text-2xl font-bold" data-testid="text-project-title">{project?.name}</h1>
-            <p className="text-muted-foreground">Work Orders</p>
-          </div>
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold" data-testid="text-project-title">{project?.name}</h1>
+          <p className="text-muted-foreground">Work Orders</p>
+        </div>
         {user?.role !== "customer" && (
           <div className="flex items-center gap-2 flex-wrap">
             <Link href={`/projects/${projectId}/files`}>
@@ -3320,7 +3319,6 @@ export default function ProjectWorkOrders() {
             )}
           </div>
         )}
-        </div>
       </div>
 
       {stats && viewMode !== "calendar" && (
