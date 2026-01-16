@@ -188,7 +188,7 @@ export default function ProjectWorkOrders() {
   const [selectedOldModuleType, setSelectedOldModuleType] = useState<string>("all");
   const [selectedNewModuleType, setSelectedNewModuleType] = useState<string>("all");
   const [showFilters, setShowFilters] = useState(false);
-  const [showStats, setShowStats] = useState(true);
+  const [showStats, setShowStats] = useState(false);
   const [showMobileStats, setShowMobileStats] = useState(false);
   const [showMobileTools, setShowMobileTools] = useState(false);
   const [filterSystemWoId, setFilterSystemWoId] = useState("");
