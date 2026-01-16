@@ -103,6 +103,7 @@ interface WorkOrderDetailProps {
   onBack: () => void;
   isSubmitting: boolean;
   projectId: string | number;
+  projectName?: string;
   cameFromSearch?: boolean;
   serviceTypes: Array<{ id: number; code: string; label: string; color?: string | null }>;
   systemTypes: Array<{ id: number; productId: string; productLabel: string }>;
@@ -136,6 +137,7 @@ export function WorkOrderDetail({
   onBack,
   isSubmitting,
   projectId,
+  projectName,
   cameFromSearch,
   serviceTypes = [],
   systemTypes = [],
@@ -427,6 +429,7 @@ export function WorkOrderDetail({
             <WorkOrderPdf
               workOrder={workOrder}
               projectId={projectId}
+              projectName={projectName}
               workOrderFiles={workOrderFiles}
               formatDateTime={formatDateTime}
               getAssignedUserName={getAssignedUserName}
@@ -3170,6 +3173,7 @@ export function WorkOrderDetail({
                   <WorkOrderPdf
                     workOrder={workOrder}
                     projectId={projectId}
+                    projectName={projectName}
                     workOrderFiles={workOrderFiles}
                     formatDateTime={formatDateTime}
                     getAssignedUserName={getAssignedUserName}

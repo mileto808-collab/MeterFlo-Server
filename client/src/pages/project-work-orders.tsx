@@ -2401,6 +2401,7 @@ export default function ProjectWorkOrders() {
           onBack={closeDetailView}
           isSubmitting={updateMutation.isPending}
           projectId={projectId!}
+          projectName={project?.name}
           cameFromSearch={cameFromSearch}
           serviceTypes={serviceTypes}
           systemTypes={systemTypes}

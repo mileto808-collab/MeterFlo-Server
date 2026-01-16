@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 interface WorkOrderPdfProps {
   workOrder: any;
   projectId: string | number;
+  projectName?: string;
   workOrderFiles: string[];
   formatDateTime: (date: string | Date) => string;
   getAssignedUserName: (userId: string | null | undefined) => string | null;
@@ -31,6 +32,7 @@ type PhotoOption = "thumbnails" | "list" | "none";
 export function WorkOrderPdf({
   workOrder,
   projectId,
+  projectName,
   workOrderFiles,
   formatDateTime,
   getAssignedUserName,
@@ -161,7 +163,7 @@ export function WorkOrderPdf({
         <div style="margin-bottom: 12px; border-bottom: 2px solid #333; padding-bottom: 8px;">
           <h1 style="margin: 0; font-size: 20px; font-weight: bold;">Work Order Report</h1>
           <p style="margin: 5px 0 0 0; color: #666;">
-            ${woId} | Generated: ${new Date().toLocaleString()}
+            ${woId}${projectName ? ` | Project: ${projectName}` : ""} | Generated: ${new Date().toLocaleString()}
           </p>
         </div>
 
@@ -266,12 +268,18 @@ export function WorkOrderPdf({
 
         ${(() => {
           const wo = workOrder as any;
-          const hasOldSystem = workOrder.oldSystemId || workOrder.oldSystemReading != null || workOrder.oldSystemType || workOrder.oldGps;
-          const hasNewSystem = workOrder.newSystemId || workOrder.newSystemReading != null || workOrder.newSystemType || workOrder.newGps;
+          // Detect scope based on actual data presence (excluding GPS since GPS is shared)
+          const hasOldSystem = workOrder.oldSystemId || workOrder.oldSystemReading != null || workOrder.oldSystemType;
+          const hasNewSystem = workOrder.newSystemId || workOrder.newSystemReading != null || workOrder.newSystemType;
           const hasOldModule = wo.oldModuleId || wo.oldModuleRead != null || wo.oldModuleType;
           const hasNewModule = wo.newModuleId || wo.newModuleRead != null || wo.newModuleType;
           const hasSystem = hasOldSystem || hasNewSystem;
           const hasModule = hasOldModule || hasNewModule;
+          
+          // Determine if GPS should be shown in system or module section
+          // For module-only work orders, GPS goes in module section
+          const showGpsInSystem = hasSystem;
+          const showGpsInModule = hasModule && !hasSystem;
           
           let html = '';
           
@@ -297,10 +305,10 @@ export function WorkOrderPdf({
                         <td style="font-weight: bold; padding: 2px 0;">Type:</td>
                         <td style="padding: 2px 0;">${workOrder.oldSystemType || "-"}</td>
                       </tr>
-                      <tr>
+                      ${showGpsInSystem ? `<tr>
                         <td style="font-weight: bold; padding: 2px 0;">GPS:</td>
                         <td style="padding: 2px 0;">${workOrder.oldGps || "-"}</td>
-                      </tr>
+                      </tr>` : ""}
                     </tbody>
                   </table>
                 </div>
@@ -322,10 +330,10 @@ export function WorkOrderPdf({
                         <td style="font-weight: bold; padding: 2px 0;">Type:</td>
                         <td style="padding: 2px 0;">${workOrder.newSystemType || "-"}</td>
                       </tr>
-                      <tr>
+                      ${showGpsInSystem ? `<tr>
                         <td style="font-weight: bold; padding: 2px 0;">GPS:</td>
                         <td style="padding: 2px 0;">${workOrder.newGps || "-"}</td>
-                      </tr>
+                      </tr>` : ""}
                     </tbody>
                   </table>
                 </div>
@@ -357,6 +365,10 @@ export function WorkOrderPdf({
                         <td style="font-weight: bold; padding: 2px 0;">Type:</td>
                         <td style="padding: 2px 0;">${wo.oldModuleType || "-"}</td>
                       </tr>
+                      ${showGpsInModule ? `<tr>
+                        <td style="font-weight: bold; padding: 2px 0;">GPS:</td>
+                        <td style="padding: 2px 0;">${workOrder.oldGps || "-"}</td>
+                      </tr>` : ""}
                     </tbody>
                   </table>
                 </div>
@@ -378,6 +390,10 @@ export function WorkOrderPdf({
                         <td style="font-weight: bold; padding: 2px 0;">Type:</td>
                         <td style="padding: 2px 0;">${wo.newModuleType || "-"}</td>
                       </tr>
+                      ${showGpsInModule ? `<tr>
+                        <td style="font-weight: bold; padding: 2px 0;">GPS:</td>
+                        <td style="padding: 2px 0;">${workOrder.newGps || "-"}</td>
+                      </tr>` : ""}
                     </tbody>
                   </table>
                 </div>
