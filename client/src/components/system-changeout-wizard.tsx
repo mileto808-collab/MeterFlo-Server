@@ -1445,7 +1445,8 @@ export function SystemChangeoutWizard({
                   }}
                   onChange={(e) => {
                     setOldSystemReadingConfirmed(true);
-                    setData((prev) => ({ ...prev, oldSystemReading: e.target.value }));
+                    const normalizedValue = e.target.value.replace(/,/g, '.');
+                    setData((prev) => ({ ...prev, oldSystemReading: normalizedValue }));
                   }}
                   placeholder="Enter system reading (digits only)..."
                   className={`text-lg text-center ${oldSystemReadingError || !oldSystemReadingConfirmed ? "border-amber-500" : ""}`}
@@ -1476,7 +1477,8 @@ export function SystemChangeoutWizard({
                   }}
                   onChange={(e) => {
                     setOldModuleReadingConfirmed(true);
-                    setData((prev) => ({ ...prev, oldModuleReading: e.target.value }));
+                    const normalizedValue = e.target.value.replace(/,/g, '.');
+                    setData((prev) => ({ ...prev, oldModuleReading: normalizedValue }));
                   }}
                   placeholder="Enter module reading (digits only)..."
                   className={`text-lg text-center ${oldModuleReadingError || !oldModuleReadingConfirmed ? "border-amber-500" : ""}`}
@@ -2056,7 +2058,10 @@ export function SystemChangeoutWizard({
                   type="text"
                   inputMode="decimal"
                   value={data.newSystemReading}
-                  onChange={(e) => setData((prev) => ({ ...prev, newSystemReading: e.target.value }))}
+                  onChange={(e) => {
+                    const normalizedValue = e.target.value.replace(/,/g, '.');
+                    setData((prev) => ({ ...prev, newSystemReading: normalizedValue }));
+                  }}
                   placeholder="Enter system reading (digits only)..."
                   className={`text-lg text-center ${newSystemReadingError && data.newSystemReading ? "border-destructive" : ""}`}
                   data-testid="input-new-system-reading"
@@ -2076,7 +2081,10 @@ export function SystemChangeoutWizard({
                   type="text"
                   inputMode="decimal"
                   value={data.newModuleReading || ""}
-                  onChange={(e) => setData((prev) => ({ ...prev, newModuleReading: e.target.value }))}
+                  onChange={(e) => {
+                    const normalizedValue = e.target.value.replace(/,/g, '.');
+                    setData((prev) => ({ ...prev, newModuleReading: normalizedValue }));
+                  }}
                   placeholder="Enter module reading (digits only)..."
                   className={`text-lg text-center ${newModuleReadingError && data.newModuleReading ? "border-destructive" : ""}`}
                   data-testid="input-new-module-reading"
