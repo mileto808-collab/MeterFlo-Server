@@ -32,7 +32,7 @@ interface WorkOrderPdfProps {
   serviceTypes: Array<{ id: number; code: string; label: string }>;
   troubleCodes: Array<{ id: number; code: string; label: string }>;
   timeTracking?: TimeTrackingData | null;
-  variant?: "default" | "outline" | "secondary" | "ghost" | "link" | "destructive";
+  variant?: "default" | "outline" | "secondary" | "ghost" | "destructive";
   size?: "default" | "sm" | "lg" | "icon";
   testId?: string;
 }
