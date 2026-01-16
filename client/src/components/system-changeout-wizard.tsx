@@ -675,6 +675,9 @@ export function SystemChangeoutWizard({
       const nextStep = successSteps[canChangeIndex + 1];
       if (nextStep) {
         setCurrentStep(nextStep);
+      } else {
+        // Fallback: if no next step exists, go to confirm
+        setCurrentStep("confirm");
       }
     } else {
       setCurrentStep("troubleCapture");
