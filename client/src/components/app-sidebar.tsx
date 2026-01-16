@@ -53,8 +53,8 @@ export function AppSidebar() {
   const toggleProject = (projectId: number) => {
     setOpenProjects((prev) =>
       prev.includes(projectId)
-        ? prev.filter((id) => id !== projectId)
-        : [...prev, projectId]
+        ? []
+        : [projectId]
     );
   };
 
