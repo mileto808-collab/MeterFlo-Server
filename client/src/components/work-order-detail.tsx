@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { apiRequest } from "@/lib/queryClient";
 import { UseFormReturn, useWatch } from "react-hook-form";
 import { Link } from "wouter";
+import { usePageHeader } from "@/contexts/page-header-context";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -154,6 +155,7 @@ export function WorkOrderDetail({
   canScheduleInCalendar = false,
   wizardConfig,
 }: WorkOrderDetailProps) {
+  const { setHeaderContent } = usePageHeader();
   const [openSections, setOpenSections] = useState<string[]>([]);
   const [showSystemChangeoutWizard, setShowSystemChangeoutWizard] = useState(false);
   const [isClaiming, setIsClaiming] = useState(false);
@@ -317,6 +319,118 @@ export function WorkOrderDetail({
     );
   };
 
+  // Set sticky header content with work order info
+  useEffect(() => {
+    const content = (
+      <div className="flex items-center gap-2 flex-wrap w-full">
+        {/* Back button */}
+        {cameFromSearch ? (
+          <Link href="/search">
+            <Button variant="ghost" size="sm" data-testid="header-button-back-to-search">
+              <ArrowLeft className="h-3.5 w-3.5 mr-1" />
+              <span className="hidden sm:inline">Back to Search</span>
+            </Button>
+          </Link>
+        ) : (
+          <Button variant="ghost" size="sm" onClick={onBack} data-testid="header-button-back-to-work-orders">
+            <ArrowLeft className="h-3.5 w-3.5 mr-1" />
+            <span className="hidden sm:inline">Back</span>
+          </Button>
+        )}
+        
+        <div className="h-4 w-px bg-border mx-1" />
+        
+        {/* WO ID and badges */}
+        <span className="font-semibold text-sm" data-testid="header-work-order-title">
+          {workOrder.customerWoId || `WO #${workOrder.id}`}
+        </span>
+        {getStatusBadge(workOrder.status)}
+        {getServiceTypeBadge(workOrder.serviceType)}
+        
+        {/* Customer info - hidden on small screens */}
+        <div className="hidden md:flex items-center gap-3 text-xs text-muted-foreground ml-2">
+          {workOrder.customerName && (
+            <div className="flex items-center gap-1">
+              <User className="h-3 w-3" />
+              <span>{workOrder.customerName}</span>
+            </div>
+          )}
+          {workOrder.address && (
+            <div className="flex items-center gap-1">
+              <MapPin className="h-3 w-3" />
+              <span>{workOrder.address}{workOrder.city ? `, ${workOrder.city}` : ""}</span>
+            </div>
+          )}
+          {watchedAssignedUserId && (
+            <div className="flex items-center gap-1">
+              <User className="h-3 w-3" />
+              <span>Assigned: {(workOrder as any).assignedUserDisplay || getAssignedUserName(watchedAssignedUserId) || "-"}</span>
+            </div>
+          )}
+        </div>
+        
+        <div className="flex-1" />
+        
+        {/* Action buttons */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {canSystemChangeout && workOrder.status !== 'Completed' && (
+            <Button 
+              size="sm" 
+              onClick={handleStartSystemChangeout}
+              disabled={isClaiming}
+              data-testid="header-button-start-system-changeout"
+              className="bg-green-600 text-white dark:bg-green-600"
+            >
+              {isClaiming ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                  <span className="hidden sm:inline">Claiming...</span>
+                </>
+              ) : (
+                <>
+                  {wizardConfig?.wizardMode === "reading_only" ? (
+                    <Gauge className="h-3.5 w-3.5 mr-1" />
+                  ) : (
+                    <Wrench className="h-3.5 w-3.5 mr-1" />
+                  )}
+                  <span className="hidden sm:inline">{wizardConfig?.wizardMode === "reading_only" ? "Start Reading Capture" : "Start Changeout"}</span>
+                </>
+              )}
+            </Button>
+          )}
+          <Link href={`/projects/${projectId}/work-orders/${workOrder.id}/files?returnTo=detail`}>
+            <Button variant="outline" size="sm" data-testid="header-button-quick-attachments">
+              <Paperclip className="h-3.5 w-3.5 mr-1" />
+              <span className="hidden sm:inline">Attachments</span> ({workOrderFiles.length})
+            </Button>
+          </Link>
+          {canPrint && (
+            <WorkOrderPdf
+              workOrder={workOrder}
+              projectId={projectId}
+              workOrderFiles={workOrderFiles}
+              formatDateTime={formatDateTime}
+              getAssignedUserName={getAssignedUserName}
+              serviceTypes={serviceTypes}
+              troubleCodes={troubleCodes}
+              variant="outline"
+              size="sm"
+              testId="header-button-print-pdf"
+            />
+          )}
+        </div>
+      </div>
+    );
+    setHeaderContent(content);
+    
+    return () => setHeaderContent(null);
+  }, [
+    workOrder, cameFromSearch, onBack, canSystemChangeout, isClaiming, 
+    wizardConfig, projectId, workOrderFiles, canPrint, formatDateTime, 
+    getAssignedUserName, serviceTypes, troubleCodes, watchedAssignedUserId,
+    setHeaderContent, handleStartSystemChangeout
+  ]);
+
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-5xl mx-auto">
       {/* Read-Only Banner */}
@@ -326,126 +440,6 @@ export function WorkOrderDetail({
           <span className="text-sm text-muted-foreground">You are viewing this work order in read-only mode.</span>
         </div>
       )}
-
-      {/* Back Navigation */}
-      <div className="mb-2">
-        {cameFromSearch ? (
-          <Link href="/search">
-            <Button 
-              variant="ghost" 
-              size="sm"
-              data-testid="button-back-to-search"
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Search
-            </Button>
-          </Link>
-        ) : (
-          <Button 
-            variant="ghost" 
-            size="sm"
-            onClick={onBack}
-            data-testid="button-back-to-work-orders"
-          >
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Work Orders
-          </Button>
-        )}
-      </div>
-
-      {/* Summary Header Card */}
-      <Card className="border-l-4 border-l-primary">
-        <CardContent className="p-4 md:p-6">
-          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-            {/* Left: Key Info */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-3 flex-wrap">
-                <h1 className="text-xl md:text-2xl font-bold" data-testid="text-work-order-title">
-                  {workOrder.customerWoId || `WO #${workOrder.id}`}
-                </h1>
-                {getStatusBadge(workOrder.status)}
-                {getServiceTypeBadge(workOrder.serviceType)}
-              </div>
-              
-              <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground">
-                {workOrder.customerName && (
-                  <div className="flex items-center gap-1.5">
-                    <User className="h-4 w-4" />
-                    <span>{workOrder.customerName}</span>
-                  </div>
-                )}
-                {workOrder.address && (
-                  <div className="flex items-center gap-1.5">
-                    <MapPin className="h-4 w-4" />
-                    <span>{workOrder.address}{workOrder.city ? `, ${workOrder.city}` : ""}</span>
-                  </div>
-                )}
-                {watchedScheduledAt && (
-                  <div className="flex items-center gap-1.5">
-                    <Calendar className="h-4 w-4" />
-                    <span>Scheduled: {formatDateTime(watchedScheduledAt)}</span>
-                  </div>
-                )}
-                {watchedAssignedUserId && (
-                  <div className="flex items-center gap-1.5">
-                    <User className="h-4 w-4" />
-                    <span>Assigned: {(workOrder as any).assignedUserDisplay || getAssignedUserName(watchedAssignedUserId) || "-"}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Right: Quick Actions */}
-            <div className="flex gap-2 flex-wrap">
-              {canSystemChangeout && workOrder.status !== 'Completed' && (
-                <Button 
-                  size="sm" 
-                  onClick={handleStartSystemChangeout}
-                  disabled={isClaiming}
-                  data-testid="button-start-system-changeout"
-                  className="bg-green-600 text-white dark:bg-green-600"
-                >
-                  {isClaiming ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                      Claiming...
-                    </>
-                  ) : (
-                    <>
-                      {wizardConfig?.wizardMode === "reading_only" ? (
-                        <Gauge className="h-4 w-4 mr-1" />
-                      ) : (
-                        <Wrench className="h-4 w-4 mr-1" />
-                      )}
-                      {wizardConfig?.wizardMode === "reading_only" ? "Start Reading Capture" : "Start Changeout"}
-                    </>
-                  )}
-                </Button>
-              )}
-              <Link href={`/projects/${projectId}/work-orders/${workOrder.id}/files?returnTo=detail`}>
-                <Button variant="outline" size="sm" data-testid="button-quick-attachments">
-                  <Paperclip className="h-4 w-4 mr-1" />
-                  Attachments ({workOrderFiles.length})
-                </Button>
-              </Link>
-              {canPrint && (
-                <WorkOrderPdf
-                  workOrder={workOrder}
-                  projectId={projectId}
-                  workOrderFiles={workOrderFiles}
-                  formatDateTime={formatDateTime}
-                  getAssignedUserName={getAssignedUserName}
-                  serviceTypes={serviceTypes}
-                  troubleCodes={troubleCodes}
-                  variant="outline"
-                  size="sm"
-                  testId="button-print-pdf-header"
-                />
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Form with Collapsible Sections */}
       <Form {...form}>
