@@ -33,14 +33,14 @@ export function TablePagination({
   const endItem = Math.min(currentPage * pageSize, totalItems);
 
   return (
-    <div className={`flex flex-wrap items-center justify-between gap-4 ${className}`} data-testid="table-pagination">
+    <div className={`flex flex-wrap items-center justify-between gap-2 ${className}`} data-testid="table-pagination">
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <span>Rows per page:</span>
         <Select
           value={String(pageSize)}
           onValueChange={(value) => onPageSizeChange(Number(value))}
         >
-          <SelectTrigger className="h-8 w-[70px]" data-testid="select-page-size">
+          <SelectTrigger className="h-8 w-[65px]" data-testid="select-page-size">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -59,7 +59,7 @@ export function TablePagination({
         </span>
       </div>
 
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-0.5">
         <Button
           variant="outline"
           size="icon"

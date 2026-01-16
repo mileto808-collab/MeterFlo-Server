@@ -3346,7 +3346,7 @@ export default function ProjectWorkOrders() {
   );
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 space-y-2">
       {stats && viewMode !== "calendar" && (
         <>
           {/* Mobile toggle for stats */}
@@ -3364,12 +3364,12 @@ export default function ProjectWorkOrders() {
             {showMobileStats ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </Button>
           {/* Stats grid - always visible on desktop, toggleable on mobile */}
-          <div className={`grid grid-cols-2 md:grid-cols-6 gap-2 ${showMobileStats ? "" : "hidden md:grid"}`}>
+          <div className={`grid grid-cols-2 md:grid-cols-6 gap-1.5 ${showMobileStats ? "" : "hidden md:grid"}`}>
             {workOrderStatuses
               .slice()
               .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
               .map((status) => (
-                <Card key={status.id} className="py-1">
+                <Card key={status.id} className="py-1.5">
                   <CardHeader className="py-1 px-3">
                     <CardDescription className="text-xs">{status.label}</CardDescription>
                     <CardTitle className="text-lg" data-testid={`stat-${status.label.toLowerCase().replace(/\s+/g, '-')}`}>
@@ -3378,7 +3378,7 @@ export default function ProjectWorkOrders() {
                   </CardHeader>
                 </Card>
               ))}
-            <Card className="py-1">
+            <Card className="py-1.5">
               <CardHeader className="py-1 px-3">
                 <CardDescription className="text-xs">Total</CardDescription>
                 <CardTitle className="text-lg" data-testid="stat-total">{stats.total}</CardTitle>
@@ -3407,41 +3407,42 @@ export default function ProjectWorkOrders() {
           </Button>
           {/* Search/Tools card - always visible on desktop, toggleable on mobile */}
           <Card className={showMobileTools ? "" : "hidden md:block"}>
-          <CardContent className="pt-4">
+          <CardContent className="py-2 px-3">
             <div className="flex items-center gap-2 flex-wrap">
-              <div className="relative flex-1 min-w-[200px] max-w-md">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <div className="relative flex-1 min-w-[180px] max-w-sm">
+                <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
                   placeholder="Search work orders..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10"
+                  className="pl-8 h-8 text-sm"
                   data-testid="input-search-work-orders"
                 />
               </div>
               <Button 
                 variant={showFilters ? "secondary" : "outline"} 
+                size="sm"
                 onClick={() => setShowFilters(!showFilters)}
                 data-testid="button-toggle-filters"
               >
-                <Filter className="h-4 w-4 mr-2" />
+                <Filter className="h-3.5 w-3.5 mr-1" />
                 {showFilters ? "Hide Filters" : "Show Filters"}
-                {hasActiveFilters && <Badge variant="secondary" className="ml-2">{[selectedStatus !== "all", selectedServiceType !== "all"].filter(Boolean).length}</Badge>}
+                {hasActiveFilters && <Badge variant="secondary" className="ml-1 text-[10px]">{[selectedStatus !== "all", selectedServiceType !== "all"].filter(Boolean).length}</Badge>}
               </Button>
               {hasActiveFilters && (
-                <Button variant="ghost" onClick={clearFilters} data-testid="button-clear-filters">
-                  <X className="h-4 w-4 mr-1" />
+                <Button variant="ghost" size="sm" onClick={clearFilters} data-testid="button-clear-filters">
+                  <X className="h-3.5 w-3.5 mr-1" />
                   Clear Filters
                 </Button>
               )}
               {sortCriteria.length > 0 && (
-                <Button variant="ghost" onClick={clearSort} data-testid="button-clear-sort">
-                  <X className="h-4 w-4 mr-1" />
+                <Button variant="ghost" size="sm" onClick={clearSort} data-testid="button-clear-sort">
+                  <X className="h-3.5 w-3.5 mr-1" />
                   Clear Sort ({sortCriteria.length})
                 </Button>
               )}
               <div className="flex-1" />
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <ColumnSelector
                   allColumns={workOrderColumns}
                   visibleColumns={visibleColumns}
@@ -3462,20 +3463,20 @@ export default function ProjectWorkOrders() {
                   setSortCriteria={setSortCriteria}
                   columns={workOrderColumns}
                 />
-                <Button variant="outline" onClick={exportToCSV} data-testid="button-export-csv">
-                  <Download className="h-4 w-4 mr-2" />
+                <Button variant="outline" size="sm" onClick={exportToCSV} data-testid="button-export-csv">
+                  <Download className="h-3.5 w-3.5 mr-1" />
                   CSV
                 </Button>
-                <Button variant="outline" onClick={exportToExcel} data-testid="button-export-excel">
-                  <FileSpreadsheet className="h-4 w-4 mr-2" />
+                <Button variant="outline" size="sm" onClick={exportToExcel} data-testid="button-export-excel">
+                  <FileSpreadsheet className="h-3.5 w-3.5 mr-1" />
                   Excel
                 </Button>
-                <Button variant="outline" onClick={exportToPDF} data-testid="button-export-pdf-workorders">
-                  <FileText className="h-4 w-4 mr-2" />
+                <Button variant="outline" size="sm" onClick={exportToPDF} data-testid="button-export-pdf-workorders">
+                  <FileText className="h-3.5 w-3.5 mr-1" />
                   PDF
                 </Button>
-                <Button variant="outline" onClick={() => setShowRouteSheetDialog(true)} data-testid="button-route-sheet-workorders">
-                  <Route className="h-4 w-4 mr-2" />
+                <Button variant="outline" size="sm" onClick={() => setShowRouteSheetDialog(true)} data-testid="button-route-sheet-workorders">
+                  <Route className="h-3.5 w-3.5 mr-1" />
                   Route Sheet
                 </Button>
               </div>
@@ -3855,7 +3856,7 @@ export default function ProjectWorkOrders() {
 
       {/* Results count and top pagination - hidden in calendar view */}
       {viewMode !== "calendar" && workOrders.length > 0 && (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-1">
           {(searchQuery || hasActiveFilters) && (
             <div className="text-sm text-muted-foreground">
               Filtered: {filteredAndSortedWorkOrders.length} of {workOrders.length} work orders
