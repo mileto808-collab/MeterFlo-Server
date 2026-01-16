@@ -245,7 +245,7 @@ export function WorkOrderFiltersDialog({
           </DialogDescription>
         </DialogHeader>
         
-        <ScrollArea className="flex-1 max-h-[60vh] -mx-6 px-6">
+        <ScrollArea className="flex-1 h-[60vh] pr-4">
           <div className="space-y-4 pb-4">
             <SectionHeader title="Work Order Info" />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
