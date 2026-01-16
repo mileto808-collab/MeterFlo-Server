@@ -327,6 +327,25 @@ export function SystemChangeoutWizard({
       default: return "Capture New System ID";
     }
   };
+  
+  // Dynamic reading step label based on mode and asset type
+  const getNewReadingLabel = (): string => {
+    if (isReadingOnlyMode) {
+      // Reading-only mode: "Capture Reading" based on asset type
+      switch (displayMode) {
+        case "module": return "Capture Module Reading";
+        case "both": return "Capture System & Module Reading";
+        default: return "Capture System Reading";
+      }
+    } else {
+      // Changeout mode: "Capture New Reading"
+      switch (displayMode) {
+        case "module": return "Capture New Module Reading";
+        case "both": return "Capture New System & Module Reading";
+        default: return "Capture New System Reading";
+      }
+    }
+  };
 
   // Build steps dynamically based on config and mode
   const successSteps = buildSuccessSteps(effectiveMode, config, config.wizardMode === "user_choice", effectiveGpsMode);
@@ -1678,18 +1697,36 @@ export function SystemChangeoutWizard({
         const newSystemReadingError = getSystemReadingError(data.newSystemReading);
         const newModuleReadingError = getSystemReadingError(data.newModuleReading || "");
         
+        // Mode-aware description for reading step
         const getNewReadingDescription = () => {
-          switch (displayMode) {
-            case "module": return "Record the initial reading from the new module.";
-            case "both": return "Record the initial readings from the new system and module.";
-            default: return "Record the initial reading from the new system.";
+          if (isReadingOnlyMode) {
+            // Reading-only: "Record the current reading"
+            switch (displayMode) {
+              case "module": return "Record the current reading from the module.";
+              case "both": return "Record the current readings from the system and module.";
+              default: return "Record the current reading from the system.";
+            }
+          } else {
+            // Changeout mode: "Record the initial reading from the new"
+            switch (displayMode) {
+              case "module": return "Record the initial reading from the new module.";
+              case "both": return "Record the initial readings from the new system and module.";
+              default: return "Record the initial reading from the new system.";
+            }
           }
         };
+        
+        // Mode-aware field labels
+        const getSystemReadingLabel = () => isReadingOnlyMode ? "System Reading *" : "New System Initial Reading *";
+        const getModuleReadingLabel = () => isReadingOnlyMode ? "Module Reading *" : "New Module Initial Reading *";
         
         return (
           <div className="space-y-4">
             <div className="text-center mb-4">
-              <Wrench className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
+              {isReadingOnlyMode 
+                ? <Gauge className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
+                : <Wrench className="h-12 w-12 mx-auto text-muted-foreground mb-2" />
+              }
               <p className="text-muted-foreground">
                 {getNewReadingDescription()}
               </p>
@@ -1698,7 +1735,7 @@ export function SystemChangeoutWizard({
             {/* New System Reading */}
             {showNewSystemReading && (
               <div className="space-y-2">
-                <Label>New System Initial Reading *</Label>
+                <Label>{getSystemReadingLabel()}</Label>
                 <Input
                   type="text"
                   inputMode="numeric"
@@ -1718,7 +1755,7 @@ export function SystemChangeoutWizard({
             {/* New Module Reading */}
             {showNewModuleReading && (
               <div className="space-y-2">
-                <Label>New Module Initial Reading *</Label>
+                <Label>{getModuleReadingLabel()}</Label>
                 <Input
                   type="text"
                   inputMode="numeric"
@@ -2091,8 +2128,8 @@ export function SystemChangeoutWizard({
               ? getCanChangeLabel() 
               : currentStep === "newSystemId" 
                 ? getNewSystemIdLabel() 
-                : currentStep === "newReading" && isReadingOnlyMode
-                  ? "Capture Reading"
+                : currentStep === "newReading"
+                  ? getNewReadingLabel()
                   : stepLabels[currentStep]}
           </DialogTitle>
         </DialogHeader>
