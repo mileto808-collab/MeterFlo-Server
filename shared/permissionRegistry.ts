@@ -300,7 +300,7 @@ export const permissionRegistry: PermissionDefinition[] = [
   },
   {
     key: "workOrders.meterChangeout",
-    label: "System | Module Changeout",
+    label: "System | Module Changeout | Read Capture",
     category: "Work Order Actions",
     description: "Perform system and module changeout workflow on work orders",
     defaultAccess: { administrator: true, projectManager: true, fieldTechnician: true, viewer: false, customer: false },
@@ -314,7 +314,7 @@ export const permissionRegistry: PermissionDefinition[] = [
   },
   {
     key: "workOrders.calendar",
-    label: "Calendar View",
+    label: "Schedule Calendar",
     category: "Work Order Actions",
     description: "Access calendar view to visualize and reschedule work orders",
     defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
