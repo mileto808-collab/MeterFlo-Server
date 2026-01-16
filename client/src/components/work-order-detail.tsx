@@ -185,6 +185,19 @@ export function WorkOrderDetail({
   const watchedAssignedUserId = useWatch({ control: form.control, name: 'assignedUserId' });
   const watchedAssignedGroupId = useWatch({ control: form.control, name: 'assignedGroupId' });
   const watchedScheduledAt = useWatch({ control: form.control, name: 'scheduledAt' });
+  
+  // Watch customer/site fields for summary card - updates as user edits
+  const watchedCustomerWoId = useWatch({ control: form.control, name: 'customerWoId' });
+  const watchedCustomerId = useWatch({ control: form.control, name: 'customerId' });
+  const watchedCustomerName = useWatch({ control: form.control, name: 'customerName' });
+  const watchedAddress = useWatch({ control: form.control, name: 'address' });
+  const watchedCity = useWatch({ control: form.control, name: 'city' });
+  const watchedState = useWatch({ control: form.control, name: 'state' });
+  const watchedZip = useWatch({ control: form.control, name: 'zip' });
+  const watchedPhone = useWatch({ control: form.control, name: 'phone' });
+  const watchedEmail = useWatch({ control: form.control, name: 'email' });
+  const watchedRoute = useWatch({ control: form.control, name: 'route' });
+  const watchedZone = useWatch({ control: form.control, name: 'zone' });
 
   // Helper to validate scheduled time against operational hours
   const getOperationalHoursWarning = (scheduledAt: string | null | undefined): string | null => {
@@ -440,6 +453,130 @@ export function WorkOrderDetail({
           <span className="text-sm text-muted-foreground">You are viewing this work order in read-only mode.</span>
         </div>
       )}
+
+      {/* Customer & Site Summary Card - uses watched form values to sync with edits */}
+      <Card className="border-l-4 border-l-primary" data-testid="card-customer-site-summary">
+        <CardContent className="p-4 md:p-6">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            {/* Left: Key Info */}
+            <div className="space-y-4 flex-1">
+              {/* Header row with WO ID and badges */}
+              <div className="flex items-center gap-3 flex-wrap">
+                <h1 className="text-xl md:text-2xl font-bold" data-testid="text-work-order-title">
+                  {watchedCustomerWoId || `WO #${workOrder.id}`}
+                </h1>
+                {getStatusBadge(workOrder.status)}
+                {getServiceTypeBadge(workOrder.serviceType)}
+              </div>
+              
+              {/* Info grid */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-x-8 gap-y-3">
+                {/* Row 1: System ID, Work Order ID, Customer ID */}
+                <div>
+                  <p className="text-xs text-muted-foreground">System ID</p>
+                  <p className="text-sm font-medium" data-testid="summary-system-id">{workOrder.id}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Work Order ID</p>
+                  <p className="text-sm font-medium" data-testid="summary-wo-id">{watchedCustomerWoId || "N/A"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Customer ID</p>
+                  <p className="text-sm font-medium" data-testid="summary-customer-id">{watchedCustomerId || "N/A"}</p>
+                </div>
+                
+                {/* Row 2: Customer Name, Address */}
+                <div>
+                  <p className="text-xs text-muted-foreground">Customer Name</p>
+                  <p className="text-sm font-medium" data-testid="summary-customer-name">{watchedCustomerName || "N/A"}</p>
+                </div>
+                <div className="md:col-span-2">
+                  <p className="text-xs text-muted-foreground">Address</p>
+                  {(() => {
+                    const fullAddress = [watchedAddress, watchedCity, watchedState, watchedZip].filter(Boolean).join(", ");
+                    return fullAddress ? (
+                      <a
+                        href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-medium text-primary hover:underline"
+                        data-testid="summary-address-link"
+                      >
+                        {fullAddress}
+                      </a>
+                    ) : (
+                      <p className="text-sm font-medium text-muted-foreground">N/A</p>
+                    );
+                  })()}
+                </div>
+                
+                {/* Row 3: Phone, Email, Route */}
+                <div>
+                  <p className="text-xs text-muted-foreground">Phone</p>
+                  {watchedPhone ? (
+                    <a
+                      href={`tel:${watchedPhone}`}
+                      className="text-sm font-medium text-primary hover:underline"
+                      data-testid="summary-phone-link"
+                    >
+                      {watchedPhone}
+                    </a>
+                  ) : (
+                    <p className="text-sm font-medium text-muted-foreground">N/A</p>
+                  )}
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Email</p>
+                  {watchedEmail ? (
+                    <a
+                      href={`mailto:${watchedEmail}`}
+                      className="text-sm font-medium text-primary hover:underline"
+                      data-testid="summary-email-link"
+                    >
+                      {watchedEmail}
+                    </a>
+                  ) : (
+                    <p className="text-sm font-medium text-muted-foreground">N/A</p>
+                  )}
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Route</p>
+                  <p className="text-sm font-medium" data-testid="summary-route">{watchedRoute || "N/A"}</p>
+                </div>
+                
+                {/* Row 4: Zone */}
+                <div>
+                  <p className="text-xs text-muted-foreground">Zone</p>
+                  <p className="text-sm font-medium" data-testid="summary-zone">{watchedZone || "N/A"}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Right: Edit Button */}
+            {canEdit && (
+              <div className="flex-shrink-0">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    // Open the Customer & Site accordion and enable edit mode
+                    if (!openSections.includes("customer")) {
+                      setOpenSections([...openSections, "customer"]);
+                    }
+                    setDesktopCustomerEditMode(true);
+                    setMobileCustomerEditMode(true);
+                  }}
+                  data-testid="button-edit-customer-site"
+                >
+                  <Pencil className="h-3.5 w-3.5 mr-1" />
+                  Edit
+                </Button>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Form with Collapsible Sections */}
       <Form {...form}>
