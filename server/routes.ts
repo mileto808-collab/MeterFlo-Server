@@ -3416,6 +3416,101 @@ export async function registerRoutes(
     }
   });
 
+  // Work order time tracking endpoints
+  app.get("/api/projects/:projectId/work-orders/:workOrderId/time-tracking", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      const workOrderId = parseInt(req.params.workOrderId);
+      
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // Non-admin users must be assigned to the project
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      // Get the work order to find systemWorkOrderId
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      const workOrder = await workOrderStorage.getWorkOrder(workOrderId);
+      if (!workOrder) {
+        return res.status(404).json({ message: "Work order not found" });
+      }
+      
+      // Use the customerWoId from the work order as the identifier
+      const systemWorkOrderId = workOrder.customerWoId || String(workOrder.id);
+      const timeTracking = await storage.getWorkOrderTimeTracking(projectId, systemWorkOrderId);
+      
+      res.json(timeTracking || null);
+    } catch (error) {
+      console.error("Error fetching work order time tracking:", error);
+      res.status(500).json({ message: "Failed to fetch time tracking" });
+    }
+  });
+
+  app.post("/api/projects/:projectId/work-orders/:workOrderId/time-tracking", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = parseInt(req.params.projectId);
+      const workOrderId = parseInt(req.params.workOrderId);
+      
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // Non-admin users must be assigned to the project
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project || !project.databaseName) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      
+      // Get the work order to find systemWorkOrderId
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      const workOrder = await workOrderStorage.getWorkOrder(workOrderId);
+      if (!workOrder) {
+        return res.status(404).json({ message: "Work order not found" });
+      }
+      
+      const { startTime, endTime } = req.body;
+      
+      if (!startTime || !endTime) {
+        return res.status(400).json({ message: "Start time and end time are required" });
+      }
+      
+      // Use the customerWoId from the work order as the identifier
+      const systemWorkOrderId = workOrder.customerWoId || String(workOrder.id);
+      
+      const timeTracking = await storage.saveWorkOrderTimeTracking({
+        projectId,
+        systemWorkOrderId,
+        startTime,
+        endTime,
+      });
+      
+      res.json(timeTracking);
+    } catch (error) {
+      console.error("Error saving work order time tracking:", error);
+      res.status(500).json({ message: "Failed to save time tracking" });
+    }
+  });
+
   // System changeout workflow endpoint
   app.post("/api/projects/:projectId/work-orders/:workOrderId/system-changeout", isAuthenticated, upload.array("photos", 20), async (req: any, res) => {
     try {

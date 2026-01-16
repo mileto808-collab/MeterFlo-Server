@@ -394,6 +394,16 @@ export const projectServiceTypes = pgTable("project_service_types", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Work order time tracking - tracks start/end times for field tech work on work orders
+export const workOrderTimeTracking = pgTable("work_order_time_tracking", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  systemWorkOrderId: text("system_work_order_id").notNull(),
+  startTime: timestamp("start_time").notNull(),
+  endTime: timestamp("end_time").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Default service type values (for backward compatibility and seeding)
 export const defaultServiceTypes = ["Water", "Electric", "Gas"] as const;
 export type DefaultServiceType = (typeof defaultServiceTypes)[number];
@@ -935,6 +945,16 @@ export type UpdateTroubleCode = z.infer<typeof updateTroubleCodeSchema>;
 export type ServiceTypeRecord = typeof serviceTypes.$inferSelect;
 export type InsertServiceType = z.infer<typeof insertServiceTypeSchema>;
 export type UpdateServiceType = z.infer<typeof updateServiceTypeSchema>;
+
+// Work order time tracking schema and types
+export const insertWorkOrderTimeTrackingSchema = z.object({
+  projectId: z.number(),
+  systemWorkOrderId: z.string(),
+  startTime: z.string().or(z.date()),
+  endTime: z.string().or(z.date()),
+});
+export type WorkOrderTimeTracking = typeof workOrderTimeTracking.$inferSelect;
+export type InsertWorkOrderTimeTracking = z.infer<typeof insertWorkOrderTimeTrackingSchema>;
 
 // Permission keys - granular permissions from the registry
 export const permissionKeys = {

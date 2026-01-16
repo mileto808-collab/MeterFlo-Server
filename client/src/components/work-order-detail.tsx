@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { UseFormReturn, useWatch } from "react-hook-form";
 import { Link } from "wouter";
@@ -206,6 +207,41 @@ export function WorkOrderDetail({
   const watchedEmail = useWatch({ control: form.control, name: 'email' });
   const watchedRoute = useWatch({ control: form.control, name: 'route' });
   const watchedZone = useWatch({ control: form.control, name: 'zone' });
+
+  // Fetch time tracking data for this work order
+  const { data: timeTracking } = useQuery<{
+    id: number;
+    projectId: number;
+    systemWorkOrderId: string;
+    startTime: string;
+    endTime: string;
+    createdAt: string;
+  } | null>({
+    queryKey: ['/api/projects', projectId, 'work-orders', workOrder.id, 'time-tracking'],
+    enabled: !!projectId && !!workOrder.id,
+  });
+
+  // Helper to format elapsed time
+  const formatElapsedTime = (startTime: string, endTime: string): string => {
+    const start = new Date(startTime);
+    const end = new Date(endTime);
+    const diffMs = end.getTime() - start.getTime();
+    
+    if (diffMs < 0) return "Invalid";
+    
+    const totalSeconds = Math.floor(diffMs / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${seconds}s`;
+    } else {
+      return `${seconds}s`;
+    }
+  };
 
   // Helper to validate scheduled time against operational hours
   const getOperationalHoursWarning = (scheduledAt: string | null | undefined): string | null => {
@@ -435,6 +471,7 @@ export function WorkOrderDetail({
               getAssignedUserName={getAssignedUserName}
               serviceTypes={serviceTypes}
               troubleCodes={troubleCodes}
+              timeTracking={timeTracking}
               variant="outline"
               size="sm"
               testId="header-button-print-pdf"
@@ -1224,6 +1261,33 @@ export function WorkOrderDetail({
                         </div>
                       </div>
                     )}
+
+                    {/* Time Tracking - Purple border - only show if time tracking data exists */}
+                    {timeTracking && (
+                      <div className="border-l-4 border-l-purple-500 pl-3 py-2">
+                        <h4 className="text-base font-semibold text-purple-500 mb-2">Time Tracking</h4>
+                        <div className="grid grid-cols-3 gap-2">
+                          <div>
+                            <p className="text-xs text-muted-foreground">Start Time</p>
+                            <p className="text-sm font-medium" data-testid="mobile-start-time">
+                              {formatDateTime(timeTracking.startTime)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">End Time</p>
+                            <p className="text-sm font-medium" data-testid="mobile-end-time">
+                              {formatDateTime(timeTracking.endTime)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Duration</p>
+                            <p className="text-sm font-medium text-purple-600 dark:text-purple-400" data-testid="mobile-duration">
+                              {formatElapsedTime(timeTracking.startTime, timeTracking.endTime)}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -1739,6 +1803,33 @@ export function WorkOrderDetail({
                               </p>
                             </div>
                           )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Time Tracking - Purple border - only show if time tracking data exists */}
+                    {timeTracking && (
+                      <div className="border-l-4 border-l-purple-500 pl-3 py-2">
+                        <h4 className="text-base font-semibold text-purple-500 mb-2">Time Tracking</h4>
+                        <div className="grid grid-cols-3 gap-4">
+                          <div>
+                            <p className="text-xs text-muted-foreground">Start Time</p>
+                            <p className="text-sm font-medium" data-testid="desktop-start-time">
+                              {formatDateTime(timeTracking.startTime)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">End Time</p>
+                            <p className="text-sm font-medium" data-testid="desktop-end-time">
+                              {formatDateTime(timeTracking.endTime)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Duration</p>
+                            <p className="text-sm font-medium text-purple-600 dark:text-purple-400" data-testid="desktop-duration">
+                              {formatElapsedTime(timeTracking.startTime, timeTracking.endTime)}
+                            </p>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -3179,6 +3270,7 @@ export function WorkOrderDetail({
                     getAssignedUserName={getAssignedUserName}
                     serviceTypes={serviceTypes}
                     troubleCodes={troubleCodes}
+                    timeTracking={timeTracking}
                   />
                 )}
               </div>

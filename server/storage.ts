@@ -20,6 +20,7 @@ import {
   moduleTypes,
   moduleTypeProjects,
   projectServiceTypes,
+  workOrderTimeTracking,
   defaultWorkOrderStatuses,
   permissionKeys,
   ADMINISTRATOR_SUBROLE_KEY,
@@ -77,6 +78,8 @@ import {
   type UserColumnPreferences,
   type UserFilterPreferences,
   type CustomerApiLog,
+  type WorkOrderTimeTracking,
+  type InsertWorkOrderTimeTracking,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and } from "drizzle-orm";
@@ -254,6 +257,10 @@ export interface IStorage {
 
   // Customer API logs operations
   getCustomerApiLogs(options?: { projectId?: number; success?: boolean; limit?: number }): Promise<CustomerApiLog[]>;
+
+  // Work order time tracking operations
+  getWorkOrderTimeTracking(projectId: number, systemWorkOrderId: string): Promise<WorkOrderTimeTracking | undefined>;
+  saveWorkOrderTimeTracking(data: InsertWorkOrderTimeTracking): Promise<WorkOrderTimeTracking>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1818,6 +1825,33 @@ export class DatabaseStorage implements IStorage {
     }
     
     return await query;
+  }
+
+  // Work order time tracking operations
+  async getWorkOrderTimeTracking(projectId: number, systemWorkOrderId: string): Promise<WorkOrderTimeTracking | undefined> {
+    const [record] = await db
+      .select()
+      .from(workOrderTimeTracking)
+      .where(and(
+        eq(workOrderTimeTracking.projectId, projectId),
+        eq(workOrderTimeTracking.systemWorkOrderId, systemWorkOrderId)
+      ))
+      .orderBy(desc(workOrderTimeTracking.createdAt))
+      .limit(1);
+    return record;
+  }
+
+  async saveWorkOrderTimeTracking(data: InsertWorkOrderTimeTracking): Promise<WorkOrderTimeTracking> {
+    const [record] = await db
+      .insert(workOrderTimeTracking)
+      .values({
+        projectId: data.projectId,
+        systemWorkOrderId: data.systemWorkOrderId,
+        startTime: new Date(data.startTime),
+        endTime: new Date(data.endTime),
+      })
+      .returning();
+    return record;
   }
 }
 

@@ -13,6 +13,15 @@ import {
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 
+interface TimeTrackingData {
+  id: number;
+  projectId: number;
+  systemWorkOrderId: string;
+  startTime: string;
+  endTime: string;
+  createdAt: string;
+}
+
 interface WorkOrderPdfProps {
   workOrder: any;
   projectId: string | number;
@@ -22,6 +31,7 @@ interface WorkOrderPdfProps {
   getAssignedUserName: (userId: string | null | undefined) => string | null;
   serviceTypes: Array<{ id: number; code: string; label: string }>;
   troubleCodes: Array<{ id: number; code: string; label: string }>;
+  timeTracking?: TimeTrackingData | null;
   variant?: "default" | "outline" | "secondary" | "ghost" | "link" | "destructive";
   size?: "default" | "sm" | "lg" | "icon";
   testId?: string;
@@ -38,6 +48,7 @@ export function WorkOrderPdf({
   getAssignedUserName,
   serviceTypes,
   troubleCodes,
+  timeTracking,
   variant = "outline",
   size,
   testId = "button-print-pdf",
@@ -45,6 +56,27 @@ export function WorkOrderPdf({
   const [isGenerating, setIsGenerating] = useState(false);
   const [showDialog, setShowDialog] = useState(false);
   const [photoOption, setPhotoOption] = useState<PhotoOption>("thumbnails");
+
+  const formatElapsedTime = (startTime: string, endTime: string): string => {
+    const start = new Date(startTime);
+    const end = new Date(endTime);
+    const diffMs = end.getTime() - start.getTime();
+    
+    if (diffMs < 0) return "-";
+    
+    const totalSeconds = Math.floor(diffMs / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes}m ${seconds}s`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${seconds}s`;
+    } else {
+      return `${seconds}s`;
+    }
+  };
 
   const getServiceTypeLabel = (code: string | null | undefined) => {
     if (!code) return "-";
@@ -155,6 +187,24 @@ export function WorkOrderPdf({
       <div style="background-color: #fff9e6; padding: 8px; border-radius: 4px; margin-bottom: 10px; page-break-inside: avoid;">
         <h3 style="margin: 0 0 6px 0; font-size: 12px; font-weight: bold; color: #333;">Notes</h3>
         <p style="margin: 0; white-space: pre-wrap; font-size: 11px;">${workOrder.notes}</p>
+      </div>
+    ` : "";
+
+    const timeTrackingHtml = timeTracking ? `
+      <div style="background-color: #f3e8ff; padding: 8px; border-radius: 4px; margin-bottom: 10px; page-break-inside: avoid; border-left: 4px solid #a855f7;">
+        <h3 style="margin: 0 0 6px 0; font-size: 12px; font-weight: bold; color: #7c3aed;">Time Tracking</h3>
+        <table style="width: 100%; font-size: 11px;">
+          <tbody>
+            <tr>
+              <td style="font-weight: bold; width: 100px; padding: 2px 0;">Start Time:</td>
+              <td style="padding: 2px 0;">${formatDateTime(timeTracking.startTime)}</td>
+              <td style="font-weight: bold; width: 100px; padding: 2px 0;">End Time:</td>
+              <td style="padding: 2px 0;">${formatDateTime(timeTracking.endTime)}</td>
+              <td style="font-weight: bold; width: 80px; padding: 2px 0;">Duration:</td>
+              <td style="padding: 2px 0; color: #7c3aed; font-weight: bold;">${formatElapsedTime(timeTracking.startTime, timeTracking.endTime)}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     ` : "";
 
@@ -406,6 +456,7 @@ export function WorkOrderPdf({
           return html;
         })()}
 
+        ${timeTrackingHtml}
         ${notesHtml}
         ${signatureHtml}
         ${photosHtml}

@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
+import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -282,6 +283,9 @@ export function SystemChangeoutWizard({
   const [oldSystemReadingConfirmed, setOldSystemReadingConfirmed] = useState(!existingOldReading);
   const [oldModuleReadingConfirmed, setOldModuleReadingConfirmed] = useState(!existingOldModuleReading);
   
+  // Track session start time for time tracking (captured when user confirms Yes or No on canChange step)
+  const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
+  
   const [data, setData] = useState<SystemChangeoutData>({
     canChange: true,
     troubleCode: null,
@@ -385,6 +389,9 @@ export function SystemChangeoutWizard({
       if (config.wizardMode === "user_choice") {
         setSelectedWorkflowMode(null);
       }
+      
+      // Reset session start time when wizard opens - will be set when user makes canChange choice
+      setSessionStartTime(null);
       
       // GPS capture is now started when user confirms they can proceed (in handleCanChangeChoice)
       // This ensures we don't capture GPS for trouble events
@@ -688,6 +695,10 @@ export function SystemChangeoutWizard({
 
   const handleCanChangeChoice = (canChange: boolean) => {
     setData((prev) => ({ ...prev, canChange }));
+    
+    // Capture start time for time tracking when user makes their choice (Yes or No)
+    setSessionStartTime(new Date());
+    
     if (canChange) {
       // Start GPS capture now that user has confirmed they can proceed
       if (effectiveGpsMode === "automatic") {
@@ -807,6 +818,21 @@ export function SystemChangeoutWizard({
       }
       
       await onComplete(submitData);
+      
+      // Save time tracking data on successful submission
+      if (sessionStartTime && projectId && workOrderId) {
+        const endTime = new Date();
+        try {
+          await apiRequest("POST", `/api/projects/${projectId}/work-orders/${workOrderId}/time-tracking`, {
+            startTime: sessionStartTime.toISOString(),
+            endTime: endTime.toISOString(),
+          });
+        } catch (timeTrackingError) {
+          // Log but don't fail the overall submission if time tracking fails
+          console.error("Failed to save time tracking:", timeTrackingError);
+        }
+      }
+      
       toast({
         title: "Success",
         description: isReadingOnlyMode
