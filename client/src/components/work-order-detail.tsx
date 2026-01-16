@@ -40,6 +40,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { ClipboardCheck } from "lucide-react";
 import {
   ArrowLeft,
@@ -160,13 +166,14 @@ export function WorkOrderDetail({
   const [showSystemChangeoutWizard, setShowSystemChangeoutWizard] = useState(false);
   const [isClaiming, setIsClaiming] = useState(false);
   const autoLaunchTriggered = useRef(false);
-  const [mobileCustomerEditMode, setMobileCustomerEditMode] = useState(false);
   const [mobileSystemEditMode, setMobileSystemEditMode] = useState(false);
   const [mobileSchedulingEditMode, setMobileSchedulingEditMode] = useState(false);
   const [mobileNotesEditMode, setMobileNotesEditMode] = useState(false);
   
+  // Customer & Site edit dialog state
+  const [customerEditDialogOpen, setCustomerEditDialogOpen] = useState(false);
+  
   // Desktop edit mode states - mirrors mobile pattern for consistent UX
-  const [desktopCustomerEditMode, setDesktopCustomerEditMode] = useState(false);
   const [desktopSystemEditMode, setDesktopSystemEditMode] = useState(false);
   const [desktopSchedulingEditMode, setDesktopSchedulingEditMode] = useState(false);
   const [desktopNotesEditMode, setDesktopNotesEditMode] = useState(false);
@@ -510,7 +517,7 @@ export function WorkOrderDetail({
                   })()}
                 </div>
                 
-                {/* Row 3: Phone, Email, Route */}
+                {/* Row 3: Phone, Email (Email spans to end of row) */}
                 <div>
                   <p className="text-xs text-muted-foreground">Phone</p>
                   {watchedPhone ? (
@@ -525,7 +532,7 @@ export function WorkOrderDetail({
                     <p className="text-sm font-medium text-muted-foreground">N/A</p>
                   )}
                 </div>
-                <div>
+                <div className="md:col-span-2">
                   <p className="text-xs text-muted-foreground">Email</p>
                   {watchedEmail ? (
                     <a
@@ -539,12 +546,12 @@ export function WorkOrderDetail({
                     <p className="text-sm font-medium text-muted-foreground">N/A</p>
                   )}
                 </div>
+                
+                {/* Row 4: Route, Zone (on same row) */}
                 <div>
                   <p className="text-xs text-muted-foreground">Route</p>
                   <p className="text-sm font-medium" data-testid="summary-route">{watchedRoute || "N/A"}</p>
                 </div>
-                
-                {/* Row 4: Zone */}
                 <div>
                   <p className="text-xs text-muted-foreground">Zone</p>
                   <p className="text-sm font-medium" data-testid="summary-zone">{watchedZone || "N/A"}</p>
@@ -559,14 +566,7 @@ export function WorkOrderDetail({
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => {
-                    // Open the Customer & Site accordion and enable edit mode
-                    if (!openSections.includes("customer")) {
-                      setOpenSections([...openSections, "customer"]);
-                    }
-                    setDesktopCustomerEditMode(true);
-                    setMobileCustomerEditMode(true);
-                  }}
+                  onClick={() => setCustomerEditDialogOpen(true)}
                   data-testid="button-edit-customer-site"
                 >
                   <Pencil className="h-3.5 w-3.5 mr-1" />
@@ -578,6 +578,182 @@ export function WorkOrderDetail({
         </CardContent>
       </Card>
 
+      {/* Customer & Site Edit Dialog */}
+      <Dialog open={customerEditDialogOpen} onOpenChange={setCustomerEditDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Home className="h-5 w-5 text-primary" />
+              Edit Customer & Site
+            </DialogTitle>
+          </DialogHeader>
+          <Form {...form}>
+            <div className="space-y-4 pt-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="customerWoId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Work Order ID</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value || ""} placeholder="WO-001" data-testid="dialog-input-wo-id" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="customerId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Customer ID *</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value || ""} placeholder="CUST-001" data-testid="dialog-input-customer-id" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <FormField
+                control={form.control}
+                name="customerName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Customer Name *</FormLabel>
+                    <FormControl>
+                      <Input {...field} value={field.value || ""} placeholder="John Doe" data-testid="dialog-input-customer-name" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="address"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Address *</FormLabel>
+                    <FormControl>
+                      <Input {...field} value={field.value || ""} placeholder="123 Main Street" data-testid="dialog-input-address" />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <div className="grid grid-cols-3 gap-3">
+                <FormField
+                  control={form.control}
+                  name="city"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>City</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value || ""} placeholder="City" data-testid="dialog-input-city" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="state"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>State</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value || ""} placeholder="State" data-testid="dialog-input-state" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="zip"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>ZIP Code</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value || ""} placeholder="12345" data-testid="dialog-input-zip" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="phone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Phone</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value || ""} placeholder="555-123-4567" data-testid="dialog-input-phone" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value || ""} placeholder="email@example.com" data-testid="dialog-input-email" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <FormField
+                  control={form.control}
+                  name="route"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Route</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value || ""} placeholder="Route A" data-testid="dialog-input-route" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="zone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Zone</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value || ""} placeholder="Zone 1" data-testid="dialog-input-zone" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <div className="flex justify-end pt-4">
+                <Button
+                  type="button"
+                  onClick={() => setCustomerEditDialogOpen(false)}
+                  data-testid="button-dialog-done"
+                >
+                  Done
+                </Button>
+              </div>
+            </div>
+          </Form>
+        </DialogContent>
+      </Dialog>
+
       {/* Form with Collapsible Sections */}
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -587,571 +763,6 @@ export function WorkOrderDetail({
             onValueChange={setOpenSections}
             className="space-y-3"
           >
-            {/* Customer & Site Information */}
-            <AccordionItem value="customer" className="border rounded-lg px-4">
-              <AccordionTrigger className="hover:no-underline py-4" data-testid="accordion-customer">
-                <div className="flex items-center gap-2">
-                  <Home className="h-4 w-4 text-primary" />
-                  <span className="font-medium">Customer & Site</span>
-                </div>
-              </AccordionTrigger>
-              <AccordionContent className="pb-4">
-                {/* Mobile read-only display with icons - shown on small screens when not editing */}
-                {(!mobileCustomerEditMode || !canEdit) && (
-                  <div className="md:hidden space-y-3">
-                    {/* Edit button for authorized users */}
-                    {canEdit && (
-                      <div className="flex justify-end mb-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setMobileCustomerEditMode(true)}
-                          data-testid="button-mobile-customer-edit"
-                        >
-                          <Pencil className="h-3 w-3 mr-1" />
-                          Edit
-                        </Button>
-                      </div>
-                    )}
-                    
-                    {/* Customer ID */}
-                    <div className="flex items-start gap-3">
-                      <Hash className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
-                      <div>
-                        <p className="text-xs text-muted-foreground">Customer ID</p>
-                        <p className="text-sm font-medium" data-testid="mobile-customer-id">{workOrder.customerId || "N/A"}</p>
-                      </div>
-                    </div>
-
-                    {/* Customer Name */}
-                    <div className="flex items-start gap-3">
-                      <User className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
-                      <div>
-                        <p className="text-xs text-muted-foreground">Customer Name</p>
-                        <p className="text-sm font-medium" data-testid="mobile-customer-name">{workOrder.customerName || "N/A"}</p>
-                      </div>
-                    </div>
-
-                    {/* Address */}
-                    <div className="flex items-start gap-3">
-                      <MapPin className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
-                      <div>
-                        <p className="text-xs text-muted-foreground">Address</p>
-                        {(() => {
-                          const fullAddress = [workOrder.address, workOrder.city, workOrder.state, workOrder.zip].filter(Boolean).join(", ");
-                          return fullAddress ? (
-                            <a
-                              href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-sm font-medium text-primary hover:underline"
-                              data-testid="mobile-address-link"
-                            >
-                              {fullAddress}
-                            </a>
-                          ) : (
-                            <p className="text-sm font-medium text-muted-foreground">N/A</p>
-                          );
-                        })()}
-                      </div>
-                    </div>
-
-                    {/* Phone */}
-                    <div className="flex items-start gap-3">
-                      <Phone className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
-                      <div>
-                        <p className="text-xs text-muted-foreground">Phone</p>
-                        {workOrder.phone ? (
-                          <a
-                            href={`tel:${workOrder.phone}`}
-                            className="text-sm font-medium text-primary hover:underline"
-                            data-testid="mobile-phone-link"
-                          >
-                            {workOrder.phone}
-                          </a>
-                        ) : (
-                          <p className="text-sm font-medium text-muted-foreground">N/A</p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Email */}
-                    <div className="flex items-start gap-3">
-                      <Mail className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
-                      <div>
-                        <p className="text-xs text-muted-foreground">Email</p>
-                        {workOrder.email ? (
-                          <a
-                            href={`mailto:${workOrder.email}`}
-                            className="text-sm font-medium"
-                            data-testid="mobile-email"
-                          >
-                            {workOrder.email}
-                          </a>
-                        ) : (
-                          <p className="text-sm font-medium text-muted-foreground">N/A</p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Route and Zone side by side */}
-                    <div className="grid grid-cols-2 gap-4 pt-1">
-                      <div>
-                        <p className="text-xs text-muted-foreground">Route</p>
-                        <p className="text-sm font-medium" data-testid="mobile-route">{workOrder.route || "N/A"}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground">Zone</p>
-                        <p className="text-sm font-medium" data-testid="mobile-zone">{workOrder.zone || "N/A"}</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Mobile edit form - shown on small screens when editing */}
-                {mobileCustomerEditMode && canEdit && (
-                  <div className="md:hidden space-y-4">
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-sm font-medium">Editing Customer & Site</span>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setMobileCustomerEditMode(false)}
-                        data-testid="button-mobile-customer-done"
-                      >
-                        Done
-                      </Button>
-                    </div>
-                    
-                    <FormField
-                      control={form.control}
-                      name="customerId"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Customer ID *</FormLabel>
-                          <FormControl>
-                            <Input {...field} value={field.value || ""} placeholder="CUST-001" data-testid="input-mobile-customer-id" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="customerName"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Customer Name *</FormLabel>
-                          <FormControl>
-                            <Input {...field} value={field.value || ""} placeholder="John Doe" data-testid="input-mobile-customer-name" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="address"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Address *</FormLabel>
-                          <FormControl>
-                            <Input {...field} value={field.value || ""} placeholder="123 Main Street" data-testid="input-mobile-address" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <div className="grid grid-cols-2 gap-3">
-                      <FormField
-                        control={form.control}
-                        name="city"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>City</FormLabel>
-                            <FormControl>
-                              <Input {...field} value={field.value || ""} placeholder="City" data-testid="input-mobile-city" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="state"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>State</FormLabel>
-                            <FormControl>
-                              <Input {...field} value={field.value || ""} placeholder="State" data-testid="input-mobile-state" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                    <FormField
-                      control={form.control}
-                      name="zip"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>ZIP Code</FormLabel>
-                          <FormControl>
-                            <Input {...field} value={field.value || ""} placeholder="12345" data-testid="input-mobile-zip" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="phone"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Phone</FormLabel>
-                          <FormControl>
-                            <Input {...field} value={field.value || ""} placeholder="555-123-4567" data-testid="input-mobile-phone" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="email"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Email</FormLabel>
-                          <FormControl>
-                            <Input {...field} value={field.value || ""} placeholder="email@example.com" data-testid="input-mobile-email" />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <div className="grid grid-cols-2 gap-3">
-                      <FormField
-                        control={form.control}
-                        name="route"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Route</FormLabel>
-                            <FormControl>
-                              <Input {...field} value={field.value || ""} placeholder="Route A" data-testid="input-mobile-route" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="zone"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Zone</FormLabel>
-                            <FormControl>
-                              <Input {...field} value={field.value || ""} placeholder="Zone 1" data-testid="input-mobile-zone" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* Desktop read-only view - shown when not editing */}
-                {(!desktopCustomerEditMode || !canEdit) && (
-                  <div className="hidden md:block space-y-4">
-                    {/* Edit button for authorized users */}
-                    {canEdit && (
-                      <div className="flex justify-end mb-2">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setDesktopCustomerEditMode(true)}
-                          data-testid="button-desktop-customer-edit"
-                        >
-                          <Pencil className="h-3 w-3 mr-1" />
-                          Edit
-                        </Button>
-                      </div>
-                    )}
-                    
-                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-                      {/* System ID - always show */}
-                      <div>
-                        <p className="text-xs text-muted-foreground">System ID</p>
-                        <p className="text-sm font-medium" data-testid="desktop-system-wo-id">{workOrder.id}</p>
-                      </div>
-                      
-                      {/* Work Order ID - always show */}
-                      <div>
-                        <p className="text-xs text-muted-foreground">Work Order ID</p>
-                        <p className="text-sm font-medium" data-testid="desktop-customer-wo-id">{workOrder.customerWoId || "-"}</p>
-                      </div>
-                      
-                      {/* Customer ID - show if has value */}
-                      {workOrder.customerId && (
-                        <div>
-                          <p className="text-xs text-muted-foreground">Customer ID</p>
-                          <p className="text-sm font-medium" data-testid="desktop-customer-id">{workOrder.customerId}</p>
-                        </div>
-                      )}
-                      
-                      {/* Customer Name - show if has value */}
-                      {workOrder.customerName && (
-                        <div>
-                          <p className="text-xs text-muted-foreground">Customer Name</p>
-                          <p className="text-sm font-medium" data-testid="desktop-customer-name">{workOrder.customerName}</p>
-                        </div>
-                      )}
-                      
-                      {/* Address - show if has value */}
-                      {(workOrder.address || workOrder.city || workOrder.state || workOrder.zip) && (
-                        <div className="lg:col-span-2">
-                          <p className="text-xs text-muted-foreground">Address</p>
-                          {(() => {
-                            const fullAddress = [workOrder.address, workOrder.city, workOrder.state, workOrder.zip].filter(Boolean).join(", ");
-                            return fullAddress ? (
-                              <a
-                                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(fullAddress)}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-sm font-medium text-primary hover:underline"
-                                data-testid="desktop-address-link"
-                              >
-                                {fullAddress}
-                              </a>
-                            ) : null;
-                          })()}
-                        </div>
-                      )}
-                      
-                      {/* Phone - show if has value */}
-                      {workOrder.phone && (
-                        <div>
-                          <p className="text-xs text-muted-foreground">Phone</p>
-                          <a
-                            href={`tel:${workOrder.phone}`}
-                            className="text-sm font-medium text-primary hover:underline"
-                            data-testid="desktop-phone-link"
-                          >
-                            {workOrder.phone}
-                          </a>
-                        </div>
-                      )}
-                      
-                      {/* Email - show if has value */}
-                      {workOrder.email && (
-                        <div>
-                          <p className="text-xs text-muted-foreground">Email</p>
-                          <a
-                            href={`mailto:${workOrder.email}`}
-                            className="text-sm font-medium text-primary hover:underline"
-                            data-testid="desktop-email-link"
-                          >
-                            {workOrder.email}
-                          </a>
-                        </div>
-                      )}
-                      
-                      {/* Route - show if has value */}
-                      {workOrder.route && (
-                        <div>
-                          <p className="text-xs text-muted-foreground">Route</p>
-                          <p className="text-sm font-medium" data-testid="desktop-route">{workOrder.route}</p>
-                        </div>
-                      )}
-                      
-                      {/* Zone - show if has value */}
-                      {workOrder.zone && (
-                        <div>
-                          <p className="text-xs text-muted-foreground">Zone</p>
-                          <p className="text-sm font-medium" data-testid="desktop-zone">{workOrder.zone}</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Desktop edit form - shown when editing */}
-                {desktopCustomerEditMode && canEdit && (
-                  <div className="hidden md:block space-y-4">
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="text-sm font-medium">Editing Customer & Site</span>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setDesktopCustomerEditMode(false)}
-                        data-testid="button-desktop-customer-done"
-                      >
-                        Done
-                      </Button>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
-                        <label className="text-sm font-medium text-muted-foreground">System ID</label>
-                        <Input 
-                          value={workOrder.id} 
-                          disabled 
-                          className="mt-1 bg-muted"
-                          data-testid="text-system-wo-id"
-                        />
-                      </div>
-                      <FormField
-                        control={form.control}
-                        name="customerWoId"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Work Order ID *</FormLabel>
-                            <FormControl>
-                              <Input {...field} value={field.value || ""} placeholder="WO-001" data-testid="input-customer-wo-id" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="customerId"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Customer ID *</FormLabel>
-                            <FormControl>
-                              <Input {...field} value={field.value || ""} placeholder="CUST-001" data-testid="input-customer-id" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="customerName"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Customer Name *</FormLabel>
-                            <FormControl>
-                              <Input {...field} value={field.value || ""} placeholder="John Doe" data-testid="input-customer-name" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="address"
-                        render={({ field }) => (
-                          <FormItem className="md:col-span-2">
-                            <FormLabel>Address *</FormLabel>
-                            <FormControl>
-                              <Input {...field} value={field.value || ""} placeholder="123 Main Street" data-testid="input-address" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="city"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>City</FormLabel>
-                            <FormControl>
-                              <Input {...field} value={field.value || ""} placeholder="City" data-testid="input-city" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="state"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>State</FormLabel>
-                            <FormControl>
-                              <Input {...field} value={field.value || ""} placeholder="State" data-testid="input-state" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="zip"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>ZIP Code</FormLabel>
-                            <FormControl>
-                              <Input {...field} value={field.value || ""} placeholder="12345" data-testid="input-zip" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="phone"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Phone</FormLabel>
-                            <FormControl>
-                              <Input {...field} value={field.value || ""} placeholder="555-123-4567" data-testid="input-phone" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="email"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Email</FormLabel>
-                            <FormControl>
-                              <Input {...field} value={field.value || ""} placeholder="email@example.com" data-testid="input-email" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="route"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Route</FormLabel>
-                            <FormControl>
-                              <Input {...field} value={field.value || ""} placeholder="Route A" data-testid="input-route" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={form.control}
-                        name="zone"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Zone</FormLabel>
-                            <FormControl>
-                              <Input {...field} value={field.value || ""} placeholder="Zone 1" data-testid="input-zone" />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    </div>
-                  </div>
-                )}
-              </AccordionContent>
-            </AccordionItem>
-
             {/* System | Module Details */}
             <AccordionItem value="system" className="border rounded-lg px-4">
               <AccordionTrigger className="hover:no-underline py-4" data-testid="accordion-system">
