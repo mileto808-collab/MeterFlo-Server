@@ -1094,6 +1094,8 @@ export class ProjectWorkOrderStorage {
         const isCompleted = await this.isCompletedStatus(updates.status);
         if (isCompleted && !wasAlreadyCompleted) {
           setClauses.push(`completed_at = NOW()`);
+          // Clear trouble code when completing a work order
+          setClauses.push(`trouble = NULL`);
           // Add completed note
           const timestamp = await this.getTimezoneFormattedTimestamp();
           completedNoteToAdd = `Completed at ${timestamp} by ${updatedBy || 'System'}`;
