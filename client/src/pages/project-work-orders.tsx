@@ -188,6 +188,7 @@ export default function ProjectWorkOrders() {
   const [selectedOldModuleType, setSelectedOldModuleType] = useState<string>("all");
   const [selectedNewModuleType, setSelectedNewModuleType] = useState<string>("all");
   const [showFilters, setShowFilters] = useState(false);
+  const [showStats, setShowStats] = useState(true);
   const [showMobileStats, setShowMobileStats] = useState(false);
   const [showMobileTools, setShowMobileTools] = useState(false);
   const [filterSystemWoId, setFilterSystemWoId] = useState("");
@@ -3347,7 +3348,7 @@ export default function ProjectWorkOrders() {
 
   return (
     <div className="p-4 space-y-2">
-      {stats && viewMode !== "calendar" && (
+      {stats && viewMode !== "calendar" && showStats && (
         <>
           {/* Mobile toggle for stats */}
           <Button
@@ -3443,6 +3444,15 @@ export default function ProjectWorkOrders() {
               )}
               <div className="flex-1" />
               <div className="flex items-center gap-1.5 flex-wrap">
+                <Button
+                  variant={showStats ? "secondary" : "outline"}
+                  size="sm"
+                  onClick={() => setShowStats(!showStats)}
+                  data-testid="button-toggle-stats"
+                >
+                  <BarChart3 className="h-3.5 w-3.5 mr-1" />
+                  {showStats ? "Hide Stats" : "Show Stats"}
+                </Button>
                 <ColumnSelector
                   allColumns={workOrderColumns}
                   visibleColumns={visibleColumns}
