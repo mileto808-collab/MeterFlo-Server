@@ -237,7 +237,7 @@ export function WorkOrderFiltersDialog({
           )}
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
+      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>Filter Work Orders</DialogTitle>
           <DialogDescription>
@@ -245,7 +245,7 @@ export function WorkOrderFiltersDialog({
           </DialogDescription>
         </DialogHeader>
         
-        <ScrollArea className="flex-1 -mx-6 px-6">
+        <ScrollArea className="flex-1 max-h-[60vh] -mx-6 px-6">
           <div className="space-y-4 pb-4">
             <SectionHeader title="Work Order Info" />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
