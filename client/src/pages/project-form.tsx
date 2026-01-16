@@ -284,29 +284,32 @@ export default function ProjectForm() {
   });
 
   const [selectedServiceTypeIds, setSelectedServiceTypeIds] = useState<number[]>([]);
+  const [serviceTypesReady, setServiceTypesReady] = useState(false);
   const lastProjectIdRef = useRef<string | undefined>(undefined);
-  const hasInitializedRef = useRef(false);
 
   // Sync selectedServiceTypeIds when projectServiceTypes loads (only once per project)
   useEffect(() => {
-    // If project id changed, reset initialization flag
+    // If project id changed, reset
     if (id !== lastProjectIdRef.current) {
       lastProjectIdRef.current = id;
-      hasInitializedRef.current = false;
+      setServiceTypesReady(false);
+      setSelectedServiceTypeIds([]);
+      return;
     }
     // Only initialize once per project, after data loads
-    if (!hasInitializedRef.current && !serviceTypesLoading && isEditing) {
-      hasInitializedRef.current = true;
+    if (!serviceTypesReady && !serviceTypesLoading && isEditing) {
       setSelectedServiceTypeIds(projectServiceTypes.map(st => st.id));
+      // Delay setting ready to prevent any race conditions
+      setTimeout(() => setServiceTypesReady(true), 100);
     }
-  }, [id, projectServiceTypes, serviceTypesLoading, isEditing]);
+  }, [id, projectServiceTypes, serviceTypesLoading, isEditing, serviceTypesReady]);
 
   const updateServiceTypesMutation = useMutation({
     mutationFn: async (serviceTypeIds: number[]) => {
       await apiRequest("PUT", `/api/projects/${id}/service-types`, { serviceTypeIds });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", id, "service-types"] });
+      // Don't invalidate the query to prevent re-triggering the effect
       toast({ title: "Success", description: "Service types updated" });
     },
     onError: (error: Error) => {
@@ -315,6 +318,9 @@ export default function ProjectForm() {
   });
 
   const handleServiceTypeToggle = (serviceTypeId: number) => {
+    // Only allow mutations after initialization is complete
+    if (!serviceTypesReady) return;
+    
     const newSelection = selectedServiceTypeIds.includes(serviceTypeId)
       ? selectedServiceTypeIds.filter(id => id !== serviceTypeId)
       : [...selectedServiceTypeIds, serviceTypeId];
