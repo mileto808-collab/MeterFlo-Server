@@ -261,6 +261,10 @@ export default function ProjectWorkOrders() {
   const tableRef = useRef<HTMLTableElement>(null);
   const historyPushedRef = useRef(false);
 
+  // Define system and module column keys for filtering (used throughout component)
+  const systemColumnKeys = ["oldSystemId", "oldSystemReading", "oldSystemType", "newSystemId", "newSystemReading", "newSystemType"];
+  const moduleColumnKeys = ["oldModuleId", "oldModuleRead", "oldModuleType", "newModuleId", "newModuleRead", "newModuleType"];
+
   // Column configuration for the work orders table
   const workOrderColumns: ColumnConfig[] = useMemo(() => [
     { key: "id", label: "System WO ID" },
@@ -1401,13 +1405,15 @@ export default function ProjectWorkOrders() {
   const STICKY_COLUMN_WIDTH = 160; // px
 
   // Calculate sticky column offsets based on ordered visible columns
-  const getStickyStyle = (key: string, isHeader: boolean = false): { className: string; style?: React.CSSProperties } => {
-    if (!stickyColumns.includes(key)) {
+  // This function is used during rendering when filteredStickyColumns and filteredOrderedColumns are available
+  // We use a callback pattern to access filtered values at render time
+  const getStickyStyleImpl = (key: string, isHeader: boolean, activeStickyColumns: string[], orderedColsForSticky: {key: string}[]): { className: string; style?: React.CSSProperties } => {
+    if (!activeStickyColumns.includes(key)) {
       return { className: isHeader ? "sticky top-0 z-30 bg-muted" : "" };
     }
     
     // Find position of this column among all sticky columns in the visible order
-    const visibleStickyColumns = orderedColumns.filter(col => stickyColumns.includes(col.key)).map(col => col.key);
+    const visibleStickyColumns = orderedColsForSticky.filter(col => activeStickyColumns.includes(col.key)).map(col => col.key);
     const stickyIndex = visibleStickyColumns.indexOf(key);
     
     // Calculate left offset based on fixed sticky column width
@@ -1421,6 +1427,18 @@ export default function ProjectWorkOrders() {
       className: stickyClass,
       style: { left: `${leftOffset}px`, minWidth: `${STICKY_COLUMN_WIDTH}px`, maxWidth: `${STICKY_COLUMN_WIDTH}px` }
     };
+  };
+  
+  // Wrapper function that applies filtering to sticky columns based on hasSystems/hasModules
+  const getStickyStyle = (key: string, isHeader: boolean = false): { className: string; style?: React.CSSProperties } => {
+    // Filter sticky columns and ordered columns to exclude unavailable system/module columns
+    const activeStickyColumns = stickyColumns.filter(k => 
+      (!systemColumnKeys.includes(k) || hasSystems) && (!moduleColumnKeys.includes(k) || hasModules)
+    );
+    const filteredOrderedCols = orderedColumns.filter(col => 
+      (!systemColumnKeys.includes(col.key) || hasSystems) && (!moduleColumnKeys.includes(col.key) || hasModules)
+    );
+    return getStickyStyleImpl(key, isHeader, activeStickyColumns, filteredOrderedCols);
   };
 
   // Render a table header cell for a given column key
@@ -2060,6 +2078,25 @@ export default function ProjectWorkOrders() {
   
   const hasSystems = systemTypes.length > 0 || workOrdersHaveSystemData;
   const hasModules = moduleTypes.length > 0 || workOrdersHaveModuleData;
+  
+  // Filter workOrderColumns to only show system/module columns when applicable
+  const filteredWorkOrderColumns = useMemo(() => {
+    return workOrderColumns.filter(col => {
+      if (systemColumnKeys.includes(col.key) && !hasSystems) return false;
+      if (moduleColumnKeys.includes(col.key) && !hasModules) return false;
+      return true;
+    });
+  }, [workOrderColumns, hasSystems, hasModules]);
+  
+  // Filter visibleColumns to exclude columns that aren't in filteredWorkOrderColumns
+  const availableColumnKeys = useMemo(() => new Set(filteredWorkOrderColumns.map(c => c.key)), [filteredWorkOrderColumns]);
+  const filteredVisibleColumns = useMemo(() => visibleColumns.filter(key => availableColumnKeys.has(key)), [visibleColumns, availableColumnKeys]);
+  
+  // Filter orderedColumns to exclude unavailable columns (for column selector and exports)
+  const filteredOrderedColumns = useMemo(() => orderedColumns.filter(col => availableColumnKeys.has(col.key)), [orderedColumns, availableColumnKeys]);
+  
+  // Filter stickyColumns to exclude unavailable columns
+  const filteredStickyColumns = useMemo(() => stickyColumns.filter(key => availableColumnKeys.has(key)), [stickyColumns, availableColumnKeys]);
 
   const getStatusLabel = (status: string): string => {
     if (!status) return "";
@@ -2120,9 +2157,9 @@ export default function ProjectWorkOrders() {
       return;
     }
 
-    // Use visibleColumns in user's preferred order
-    const columnMap = new Map(workOrderColumns.map(c => [c.key, c]));
-    const exportColumns = visibleColumns
+    // Use filteredVisibleColumns in user's preferred order (excludes unavailable system/module columns)
+    const columnMap = new Map(filteredWorkOrderColumns.map(c => [c.key, c]));
+    const exportColumns = filteredVisibleColumns
       .filter(key => key !== "actions" && columnMap.has(key))
       .map(key => columnMap.get(key)!);
     const headers = exportColumns.map(col => col.label);
@@ -2151,9 +2188,9 @@ export default function ProjectWorkOrders() {
       return;
     }
 
-    // Use visibleColumns in user's preferred order
-    const columnMap = new Map(workOrderColumns.map(c => [c.key, c]));
-    const exportColumns = visibleColumns
+    // Use filteredVisibleColumns in user's preferred order (excludes unavailable system/module columns)
+    const columnMap = new Map(filteredWorkOrderColumns.map(c => [c.key, c]));
+    const exportColumns = filteredVisibleColumns
       .filter(key => key !== "actions" && columnMap.has(key))
       .map(key => columnMap.get(key)!);
     
@@ -2179,9 +2216,9 @@ export default function ProjectWorkOrders() {
       return;
     }
 
-    // Use visibleColumns in user's preferred order
-    const columnMap = new Map(workOrderColumns.map(c => [c.key, c]));
-    const exportColumns = visibleColumns
+    // Use filteredVisibleColumns in user's preferred order (excludes unavailable system/module columns)
+    const columnMap = new Map(filteredWorkOrderColumns.map(c => [c.key, c]));
+    const exportColumns = filteredVisibleColumns
       .filter(key => key !== "actions" && columnMap.has(key))
       .map(key => columnMap.get(key)!);
 
@@ -3585,18 +3622,18 @@ export default function ProjectWorkOrders() {
                   {showStats ? "Hide Stats" : "Show Stats"}
                 </Button>
                 <ColumnSelector
-                  allColumns={workOrderColumns}
-                  visibleColumns={visibleColumns}
+                  allColumns={filteredWorkOrderColumns}
+                  visibleColumns={filteredVisibleColumns}
                   onChange={setVisibleColumns}
                   disabled={columnPrefsLoading}
-                  orderedColumns={orderedColumns}
-                  stickyColumns={stickyColumns}
+                  orderedColumns={filteredOrderedColumns}
+                  stickyColumns={filteredStickyColumns}
                   onStickyChange={setStickyColumns}
                 />
                 <SortDialog
                   sortCriteria={sortCriteria}
                   setSortCriteria={setSortCriteria}
-                  columns={workOrderColumns}
+                  columns={filteredWorkOrderColumns}
                 />
                 <Button variant="outline" size="sm" onClick={exportToCSV} data-testid="button-export-csv">
                   <Download className="h-3.5 w-3.5 mr-1" />
@@ -3707,7 +3744,7 @@ export default function ProjectWorkOrders() {
                         </DropdownMenu>
                       </TableHead>
                     )}
-                    {visibleColumns.map((key, index) => renderHeaderCell(key, index === 0))}
+                    {filteredVisibleColumns.map((key, index) => renderHeaderCell(key, index === 0))}
                     {user?.role !== "customer" && <TableHead className="sticky top-0 z-30 bg-muted whitespace-nowrap">Actions</TableHead>}
                     <TableHead className="sticky top-0 z-30 bg-muted w-8"></TableHead>
                   </TableRow>
@@ -3715,7 +3752,7 @@ export default function ProjectWorkOrders() {
                 <TableBody>
                   {paginatedWorkOrders.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={visibleColumns.length + (user?.role !== "customer" ? 1 : 0) + 1 + (hasPermission(permissionKeys.WORK_ORDERS_DELETE) ? 1 : 0)} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={filteredVisibleColumns.length + (user?.role !== "customer" ? 1 : 0) + 1 + (hasPermission(permissionKeys.WORK_ORDERS_DELETE) ? 1 : 0)} className="text-center py-8 text-muted-foreground">
                         No work orders match your search
                       </TableCell>
                     </TableRow>
@@ -3740,7 +3777,7 @@ export default function ProjectWorkOrders() {
                           />
                         </TableCell>
                       )}
-                      {visibleColumns.map((key, index) => renderDataCell(key, workOrder, index === 0))}
+                      {filteredVisibleColumns.map((key, index) => renderDataCell(key, workOrder, index === 0))}
                       {user?.role !== "customer" && (
                         <TableCell>
                           <div className="flex gap-1">
