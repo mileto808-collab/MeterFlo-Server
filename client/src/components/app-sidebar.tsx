@@ -36,7 +36,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { Project } from "@shared/schema";
 
 export function AppSidebar() {
@@ -57,6 +57,15 @@ export function AppSidebar() {
         : [projectId]
     );
   };
+
+  // Auto-expand the active project based on URL, collapsing all others
+  useEffect(() => {
+    const projectMatch = location.match(/^\/projects\/(\d+)/);
+    if (projectMatch) {
+      const activeProjectId = parseInt(projectMatch[1], 10);
+      setOpenProjects([activeProjectId]);
+    }
+  }, [location]);
 
   const getInitials = () => {
     if (user?.firstName && user?.lastName) {
@@ -238,7 +247,7 @@ export function AppSidebar() {
                   return (
                     <Collapsible
                       key={project.id}
-                      open={isOpen || isProjectActive}
+                      open={isOpen}
                       onOpenChange={() => toggleProject(project.id)}
                     >
                       <SidebarMenuItem>
@@ -251,7 +260,7 @@ export function AppSidebar() {
                             <span className="flex-1 truncate">{project.name}</span>
                             <ChevronRight
                               className={`h-4 w-4 transition-transform ${
-                                isOpen || isProjectActive ? "rotate-90" : ""
+                                isOpen ? "rotate-90" : ""
                               }`}
                             />
                           </SidebarMenuButton>
