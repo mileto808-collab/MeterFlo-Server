@@ -54,6 +54,12 @@ Preferred communication style: Simple, everyday language.
   - **Windows Server Deployment**: Ensure `COOKIE_SECURE=true` if using HTTPS. The reverse proxy must forward cookies correctly. If verification loops occur, check that cookies are being sent with requests.
 - **Work Order Time Tracking**: Measures field technician work duration on each work order. Start time is captured when the user confirms they can proceed ("Yes - Proceed") or report an issue ("No - Report Issue") in the wizard. End time is captured when the work order is successfully submitted. Time tracking data is stored in the `work_order_time_tracking` table in the public schema. Displayed in the System | Module Details accordion with start time, end time, and calculated duration. Also included in the PDF report. If the wizard is reopened, a new time tracking session begins (most recent session is displayed).
 - **Copy Project**: Users with project creation permissions can duplicate an existing project with all its settings (operational hours, timezone, wizard configuration, customer API settings, holidays) via a "Copy Project" button on the project edit page. The copied project is named "Copy of [Original Name]" and the user is redirected to edit it. User assignments and work orders are NOT copied.
+- **Search Method Configuration**: Per-project settings to control which work order search methods are available in the Start Changeout/Reading Capture dialog. Four configurable options:
+  - **Camera Barcode Scan**: Use device camera to scan 1D barcodes
+  - **Camera QR Code Scan**: Use device camera to scan QR codes
+  - **Manual Entry**: Search by typing work order ID, system ID, module ID, address, or customer ID
+  - **Bluetooth HID Scanner**: Use an external Bluetooth barcode/QR scanner device with read-only input field
+  When only one search method is enabled, the dialog opens directly to that method without showing a selection screen. The HID scanner input is read-only to ensure scanned data accuracy and prevent manual editing.
 
 ### System Design Choices
 - **Storage Interface**: `IStorage` interface abstracts database operations.

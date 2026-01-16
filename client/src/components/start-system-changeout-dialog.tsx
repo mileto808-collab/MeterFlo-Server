@@ -124,8 +124,19 @@ export function StartSystemChangeoutDialog({
   useEffect(() => {
     if (!isOpen) {
       resetState();
+    } else if (isOpen && enabledMethodCount === 1 && scanMode === "select") {
+      // Auto-select the only enabled method when dialog opens
+      if (showBarcodeScan) {
+        handleModeSelect("barcode");
+      } else if (showQrCodeScan) {
+        handleModeSelect("qrcode");
+      } else if (showManualEntry) {
+        handleModeSelect("manual");
+      } else if (showHidScanner) {
+        handleModeSelect("hidscanner");
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, enabledMethodCount, scanMode, showBarcodeScan, showQrCodeScan, showManualEntry, showHidScanner]);
 
   useEffect(() => {
     return () => {
@@ -478,11 +489,15 @@ export function StartSystemChangeoutDialog({
     }
   }, []);
 
-  const handleModeSelect = (mode: "barcode" | "qrcode" | "manual") => {
+  const handleModeSelect = (mode: "barcode" | "qrcode" | "manual" | "hidscanner") => {
     setLookupError(null);
     if (mode === "manual") {
       setScanMode("manual");
       setTimeout(() => inputRef.current?.focus(), 100);
+    } else if (mode === "hidscanner") {
+      setScanMode("hidscanner");
+      setHidScannerInput("");
+      setTimeout(() => hidInputRef.current?.focus(), 100);
     } else {
       setScanMode(mode);
       startScanning(mode);
@@ -515,53 +530,77 @@ export function StartSystemChangeoutDialog({
 
         {scanMode === "select" && (
           <div className="space-y-3">
-            <Card 
-              className="cursor-pointer hover-elevate"
-              onClick={() => handleModeSelect("barcode")}
-              data-testid="button-scan-barcode"
-            >
-              <CardContent className="flex items-center gap-4 p-4">
-                <div className="p-3 rounded-full bg-primary/10">
-                  <Scan className="h-6 w-6 text-primary" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-medium">Scan Barcode</h3>
-                  <p className="text-sm text-muted-foreground">Use camera to scan 1D barcode</p>
-                </div>
-              </CardContent>
-            </Card>
+            {showBarcodeScan && (
+              <Card 
+                className="cursor-pointer hover-elevate"
+                onClick={() => handleModeSelect("barcode")}
+                data-testid="button-scan-barcode"
+              >
+                <CardContent className="flex items-center gap-4 p-4">
+                  <div className="p-3 rounded-full bg-primary/10">
+                    <Scan className="h-6 w-6 text-primary" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-medium">Scan Barcode</h3>
+                    <p className="text-sm text-muted-foreground">Use camera to scan 1D barcode</p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
-            <Card 
-              className="cursor-pointer hover-elevate"
-              onClick={() => handleModeSelect("qrcode")}
-              data-testid="button-scan-qrcode"
-            >
-              <CardContent className="flex items-center gap-4 p-4">
-                <div className="p-3 rounded-full bg-primary/10">
-                  <QrCode className="h-6 w-6 text-primary" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-medium">Scan QR Code</h3>
-                  <p className="text-sm text-muted-foreground">Use camera to scan QR code</p>
-                </div>
-              </CardContent>
-            </Card>
+            {showQrCodeScan && (
+              <Card 
+                className="cursor-pointer hover-elevate"
+                onClick={() => handleModeSelect("qrcode")}
+                data-testid="button-scan-qrcode"
+              >
+                <CardContent className="flex items-center gap-4 p-4">
+                  <div className="p-3 rounded-full bg-primary/10">
+                    <QrCode className="h-6 w-6 text-primary" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-medium">Scan QR Code</h3>
+                    <p className="text-sm text-muted-foreground">Use camera to scan QR code</p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
-            <Card 
-              className="cursor-pointer hover-elevate"
-              onClick={() => handleModeSelect("manual")}
-              data-testid="button-manual-entry"
-            >
-              <CardContent className="flex items-center gap-4 p-4">
-                <div className="p-3 rounded-full bg-primary/10">
-                  <Keyboard className="h-6 w-6 text-primary" />
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-medium">Manual Entry</h3>
-                  <p className="text-sm text-muted-foreground">Search by work order ID, system ID, module ID, address, or customer ID</p>
-                </div>
-              </CardContent>
-            </Card>
+            {showManualEntry && (
+              <Card 
+                className="cursor-pointer hover-elevate"
+                onClick={() => handleModeSelect("manual")}
+                data-testid="button-manual-entry"
+              >
+                <CardContent className="flex items-center gap-4 p-4">
+                  <div className="p-3 rounded-full bg-primary/10">
+                    <Keyboard className="h-6 w-6 text-primary" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-medium">Manual Entry</h3>
+                    <p className="text-sm text-muted-foreground">Search by work order ID, system ID, module ID, address, or customer ID</p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {showHidScanner && (
+              <Card 
+                className="cursor-pointer hover-elevate"
+                onClick={() => handleModeSelect("hidscanner")}
+                data-testid="button-hid-scanner"
+              >
+                <CardContent className="flex items-center gap-4 p-4">
+                  <div className="p-3 rounded-full bg-primary/10">
+                    <Bluetooth className="h-6 w-6 text-primary" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-medium">Bluetooth HID Scanner</h3>
+                    <p className="text-sm text-muted-foreground">Use Bluetooth barcode/QR scanner device</p>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </div>
         )}
 
@@ -659,21 +698,23 @@ export function StartSystemChangeoutDialog({
               )}
             </div>
 
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  stopScanning();
-                  setScanMode("select");
-                }}
-                className="flex-1"
-                data-testid="button-back-to-select"
-              >
-                <X className="h-4 w-4 mr-2" />
-                Cancel
-              </Button>
-            </div>
+            {enabledMethodCount > 1 && (
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    stopScanning();
+                    setScanMode("select");
+                  }}
+                  className="flex-1"
+                  data-testid="button-back-to-select"
+                >
+                  <X className="h-4 w-4 mr-2" />
+                  Cancel
+                </Button>
+              </div>
+            )}
           </div>
         )}
 
@@ -701,20 +742,22 @@ export function StartSystemChangeoutDialog({
             </div>
 
             <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setScanMode("select");
-                  setManualInput("");
-                  setLookupError(null);
-                }}
-                disabled={isLookingUp}
-                className="flex-1"
-                data-testid="button-back"
-              >
-                Back
-              </Button>
+              {enabledMethodCount > 1 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setScanMode("select");
+                    setManualInput("");
+                    setLookupError(null);
+                  }}
+                  disabled={isLookingUp}
+                  className="flex-1"
+                  data-testid="button-back"
+                >
+                  Back
+                </Button>
+              )}
               <Button
                 type="submit"
                 disabled={!manualInput.trim() || isLookingUp}
@@ -735,6 +778,132 @@ export function StartSystemChangeoutDialog({
               </Button>
             </div>
           </form>
+        )}
+
+        {scanMode === "hidscanner" && (
+          <div className="space-y-4">
+            <div className="text-center space-y-2 mb-4">
+              <div className="p-4 rounded-full bg-primary/10 inline-block">
+                <Bluetooth className="h-8 w-8 text-primary" />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Position cursor in the field below and scan with your Bluetooth device
+              </p>
+            </div>
+            
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Scanned Value</label>
+              <Input
+                ref={hidInputRef}
+                value={hidScannerInput}
+                onKeyDown={(e) => {
+                  // Prevent most manual editing
+                  if (e.key === "Backspace" || e.key === "Delete") {
+                    e.preventDefault();
+                    return;
+                  }
+                  // HID scanners typically send Enter after the scan
+                  if (e.key === "Enter" && hidScannerInput.trim()) {
+                    e.preventDefault();
+                    lookupWorkOrder(hidScannerInput.trim());
+                    return;
+                  }
+                  // Allow printable characters (from scanner) to be captured
+                  if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                    e.preventDefault();
+                    setHidScannerInput(prev => prev + e.key);
+                    setLookupError(null);
+                  }
+                }}
+                onPaste={(e) => {
+                  // Prevent paste to ensure only scanner input
+                  e.preventDefault();
+                }}
+                onChange={() => {
+                  // Handled by onKeyDown to prevent manual editing
+                }}
+                placeholder="Scan barcode or QR code..."
+                readOnly
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                disabled={isLookingUp}
+                className="text-center font-mono text-lg bg-muted cursor-default"
+                data-testid="input-hid-scanner"
+              />
+              {lookupError && (
+                <div className="flex items-center justify-center gap-2 text-destructive text-sm">
+                  <AlertCircle className="h-4 w-4" />
+                  {lookupError}
+                </div>
+              )}
+              {isLookingUp && (
+                <div className="flex items-center justify-center gap-2 text-muted-foreground text-sm">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Looking up work order...
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2">
+              {enabledMethodCount > 1 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setScanMode("select");
+                    setHidScannerInput("");
+                    setLookupError(null);
+                  }}
+                  disabled={isLookingUp}
+                  className="flex-1"
+                  data-testid="button-back-hid"
+                >
+                  Back
+                </Button>
+              )}
+              {hidScannerInput && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setHidScannerInput("");
+                    setLookupError(null);
+                    hidInputRef.current?.focus();
+                  }}
+                  disabled={isLookingUp}
+                  data-testid="button-clear-hid"
+                >
+                  <RotateCcw className="h-4 w-4 mr-2" />
+                  Clear
+                </Button>
+              )}
+              <Button
+                type="button"
+                onClick={() => {
+                  if (hidScannerInput.trim()) {
+                    lookupWorkOrder(hidScannerInput.trim());
+                  }
+                }}
+                disabled={!hidScannerInput.trim() || isLookingUp}
+                className="flex-1"
+                data-testid="button-lookup-hid"
+              >
+                {isLookingUp ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Looking up...
+                  </>
+                ) : (
+                  <>
+                    <Check className="h-4 w-4 mr-2" />
+                    Look Up
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
         )}
 
         {scanMode === "confirm" && foundWorkOrder && (() => {

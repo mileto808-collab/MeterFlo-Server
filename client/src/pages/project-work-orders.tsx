@@ -4015,6 +4015,12 @@ export default function ProjectWorkOrders() {
             setEditingWorkOrder(workOrder);
           }}
           wizardMode={(project?.wizardMode as "changeout" | "reading_only" | "user_choice") ?? "changeout"}
+          searchMethodSettings={{
+            searchShowBarcodeScan: (project as any)?.searchShowBarcodeScan !== false,
+            searchShowQrCodeScan: (project as any)?.searchShowQrCodeScan !== false,
+            searchShowManualEntry: (project as any)?.searchShowManualEntry !== false,
+            searchShowHidScanner: (project as any)?.searchShowHidScanner !== false,
+          }}
         />
       )}
 
