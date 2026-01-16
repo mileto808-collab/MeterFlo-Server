@@ -1720,6 +1720,54 @@ export async function registerRoutes(
     }
   });
 
+  // Project Service Types endpoints - manage which service types are assigned to a project
+  app.get("/api/projects/:projectId/service-types", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canViewProjects = await storage.hasPermission(currentUser, permissionKeys.PROJECTS_VIEW);
+      if (!canViewProjects && currentUser.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      
+      const projectId = parseInt(req.params.projectId);
+      const serviceTypes = await storage.getProjectServiceTypes(projectId);
+      res.json(serviceTypes);
+    } catch (error) {
+      console.error("Error fetching project service types:", error);
+      res.status(500).json({ message: "Failed to fetch service types" });
+    }
+  });
+
+  app.put("/api/projects/:projectId/service-types", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canEditProjects = await storage.hasPermission(currentUser, permissionKeys.PROJECTS_EDIT);
+      if (!canEditProjects) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      
+      const projectId = parseInt(req.params.projectId);
+      const { serviceTypeIds } = req.body;
+      
+      if (!Array.isArray(serviceTypeIds)) {
+        return res.status(400).json({ message: "serviceTypeIds must be an array" });
+      }
+      
+      await storage.setProjectServiceTypes(projectId, serviceTypeIds);
+      const serviceTypes = await storage.getProjectServiceTypes(projectId);
+      res.json(serviceTypes);
+    } catch (error) {
+      console.error("Error updating project service types:", error);
+      res.status(500).json({ message: "Failed to update service types" });
+    }
+  });
+
   // SSE endpoint for project-scoped real-time events
   app.get("/api/projects/:projectId/events", isAuthenticated, async (req: any, res) => {
     try {

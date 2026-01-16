@@ -19,6 +19,7 @@ import {
   systemTypeProjects,
   moduleTypes,
   moduleTypeProjects,
+  projectServiceTypes,
   defaultWorkOrderStatuses,
   permissionKeys,
   ADMINISTRATOR_SUBROLE_KEY,
@@ -237,6 +238,11 @@ export interface IStorage {
   deleteModuleType(id: number): Promise<boolean>;
   getModuleTypeProjectIds(moduleTypeId: number): Promise<number[]>;
   setModuleTypeProjects(moduleTypeId: number, projectIds: number[]): Promise<void>;
+
+  // Project service type operations
+  getProjectServiceTypes(projectId: number): Promise<ServiceTypeRecord[]>;
+  getProjectServiceTypeIds(projectId: number): Promise<number[]>;
+  setProjectServiceTypes(projectId: number, serviceTypeIds: number[]): Promise<void>;
 
   // User column preferences operations
   getUserColumnPreferences(userId: string, pageKey: string): Promise<UserColumnPreferences | undefined>;
@@ -1692,6 +1698,43 @@ export class DatabaseStorage implements IStorage {
     if (projectIds.length > 0) {
       await db.insert(moduleTypeProjects).values(
         projectIds.map(projectId => ({ moduleTypeId, projectId }))
+      );
+    }
+  }
+
+  // Project service type operations
+  async getProjectServiceTypes(projectId: number): Promise<ServiceTypeRecord[]> {
+    const serviceTypeIds = await this.getProjectServiceTypeIds(projectId);
+    
+    if (serviceTypeIds.length === 0) {
+      return [];
+    }
+    
+    // Get the service types that match these IDs
+    const allServiceTypes = await db
+      .select()
+      .from(serviceTypes)
+      .orderBy(serviceTypes.sortOrder);
+    
+    return allServiceTypes.filter(st => serviceTypeIds.includes(st.id));
+  }
+
+  async getProjectServiceTypeIds(projectId: number): Promise<number[]> {
+    const rows = await db
+      .select({ serviceTypeId: projectServiceTypes.serviceTypeId })
+      .from(projectServiceTypes)
+      .where(eq(projectServiceTypes.projectId, projectId));
+    return rows.map(r => r.serviceTypeId);
+  }
+
+  async setProjectServiceTypes(projectId: number, serviceTypeIds: number[]): Promise<void> {
+    // Delete existing assignments
+    await db.delete(projectServiceTypes).where(eq(projectServiceTypes.projectId, projectId));
+    
+    // Add new assignments
+    if (serviceTypeIds.length > 0) {
+      await db.insert(projectServiceTypes).values(
+        serviceTypeIds.map(serviceTypeId => ({ serviceTypeId, projectId }))
       );
     }
   }
