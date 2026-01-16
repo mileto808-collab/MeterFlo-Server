@@ -301,7 +301,10 @@ export default function ProjectForm() {
     },
   });
 
-  const handleServiceTypeToggle = (serviceTypeId: number) => {
+  const handleServiceTypeToggle = (serviceTypeId: number, event: React.MouseEvent) => {
+    // Only process actual user clicks (not synthetic events during render)
+    if (!event.isTrusted) return;
+    
     // Don't mutate while another mutation is in progress
     if (updateServiceTypesMutation.isPending) return;
     
@@ -309,6 +312,12 @@ export default function ProjectForm() {
     const newSelection = currentIds.includes(serviceTypeId)
       ? currentIds.filter(id => id !== serviceTypeId)
       : [...currentIds, serviceTypeId];
+    
+    // Don't mutate if selection hasn't changed
+    const currentSorted = [...currentIds].sort().join(',');
+    const newSorted = [...newSelection].sort().join(',');
+    if (currentSorted === newSorted) return;
+    
     updateServiceTypesMutation.mutate(newSelection);
   };
 
@@ -646,7 +655,7 @@ export default function ProjectForm() {
                             className={`flex items-center justify-between rounded-lg border p-3 cursor-pointer transition-colors ${
                               isSelected ? "border-primary bg-primary/5" : "hover:bg-muted/50"
                             }`}
-                            onClick={() => handleServiceTypeToggle(serviceType.id)}
+                            onClick={(e) => handleServiceTypeToggle(serviceType.id, e)}
                             data-testid={`service-type-toggle-${serviceType.id}`}
                           >
                             <div className="flex items-center gap-3">
