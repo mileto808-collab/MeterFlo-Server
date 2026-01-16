@@ -285,17 +285,21 @@ export default function ProjectForm() {
 
   const [selectedServiceTypeIds, setSelectedServiceTypeIds] = useState<number[]>([]);
   const lastProjectIdRef = useRef<string | undefined>(undefined);
+  const hasInitializedRef = useRef(false);
 
-  // Sync selectedServiceTypeIds when projectServiceTypes loads or project changes
+  // Sync selectedServiceTypeIds when projectServiceTypes loads (only once per project)
   useEffect(() => {
-    // If project id changed, reset and wait for data
+    // If project id changed, reset initialization flag
     if (id !== lastProjectIdRef.current) {
       lastProjectIdRef.current = id;
-      if (!serviceTypesLoading) {
-        setSelectedServiceTypeIds(projectServiceTypes.map(st => st.id));
-      }
+      hasInitializedRef.current = false;
     }
-  }, [id, projectServiceTypes, serviceTypesLoading]);
+    // Only initialize once per project, after data loads
+    if (!hasInitializedRef.current && !serviceTypesLoading && isEditing) {
+      hasInitializedRef.current = true;
+      setSelectedServiceTypeIds(projectServiceTypes.map(st => st.id));
+    }
+  }, [id, projectServiceTypes, serviceTypesLoading, isEditing]);
 
   const updateServiceTypesMutation = useMutation({
     mutationFn: async (serviceTypeIds: number[]) => {
