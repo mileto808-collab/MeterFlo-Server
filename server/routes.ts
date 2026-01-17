@@ -3728,15 +3728,32 @@ export async function registerRoutes(
           : hasModuleData;
         
         // Validate required fields based on scope (use hasReadingValue for readings to allow 0)
-        if (needsSystem && (!hasReadingValue(oldSystemReading) || !newSystemId || !hasReadingValue(newSystemReading))) {
-          return res.status(400).json({ 
-            message: "Missing required system fields: old reading, new system ID, and new reading are required" 
-          });
-        }
-        if (needsModule && (!hasReadingValue(oldModuleReading) || !newModuleId || !hasReadingValue(newModuleReading))) {
-          return res.status(400).json({ 
-            message: "Missing required module fields: old reading, new module ID, and new reading are required" 
-          });
+        // In Reading Only mode: old readings come from DB, new IDs are copied from old IDs
+        // Only new readings are required from the mobile request
+        if (isReadingOnly) {
+          // Reading Only mode: only new reading is required from mobile
+          if (needsSystem && !hasReadingValue(newSystemReading)) {
+            return res.status(400).json({ 
+              message: "Missing required system field: new reading is required" 
+            });
+          }
+          if (needsModule && !hasReadingValue(newModuleReading)) {
+            return res.status(400).json({ 
+              message: "Missing required module field: new reading is required" 
+            });
+          }
+        } else {
+          // Changeout mode: old reading, new ID, and new reading are all required from mobile
+          if (needsSystem && (!hasReadingValue(oldSystemReading) || !newSystemId || !hasReadingValue(newSystemReading))) {
+            return res.status(400).json({ 
+              message: "Missing required system fields: old reading, new system ID, and new reading are required" 
+            });
+          }
+          if (needsModule && (!hasReadingValue(oldModuleReading) || !newModuleId || !hasReadingValue(newModuleReading))) {
+            return res.status(400).json({ 
+              message: "Missing required module fields: old reading, new module ID, and new reading are required" 
+            });
+          }
         }
         if (!gpsCoordinates || !signatureName) {
           return res.status(400).json({ 
@@ -3781,24 +3798,50 @@ export async function registerRoutes(
         
         // Set system fields if applicable
         if (needsSystem) {
-          updateData.oldSystemReading = oldSystemReading;
-          updateData.newSystemId = newSystemId;
-          updateData.newSystemReading = newSystemReading;
+          if (isReadingOnly) {
+            // Reading Only mode: copy IDs and types from old, only update new reading
+            // Old reading stays in DB - don't overwrite
+            updateData.newSystemId = workOrder.oldSystemId || woAny.old_system_id;
+            updateData.newSystemReading = newSystemReading;
+            // Copy type from old to new
+            const existingOldType = workOrder.oldSystemType || woAny.old_system_type;
+            if (existingOldType) {
+              updateData.newSystemType = existingOldType;
+            }
+          } else {
+            // Changeout mode: use values from mobile request
+            updateData.oldSystemReading = oldSystemReading;
+            updateData.newSystemId = newSystemId;
+            updateData.newSystemReading = newSystemReading;
+            // For changeout, copy type from request if provided
+            if (newSystemType) {
+              updateData.newSystemType = newSystemType;
+            }
+          }
         }
         
         // Set module fields if applicable
         if (needsModule) {
-          updateData.oldModuleRead = oldModuleReading;
-          updateData.newModuleId = newModuleId;
-          updateData.newModuleRead = newModuleReading;
-        }
-        
-        // For reading-only mode, copy type data from the request
-        if (newSystemType) {
-          updateData.newSystemType = newSystemType;
-        }
-        if (newModuleType) {
-          updateData.newModuleType = newModuleType;
+          if (isReadingOnly) {
+            // Reading Only mode: copy IDs and types from old, only update new reading
+            // Old reading stays in DB - don't overwrite
+            updateData.newModuleId = workOrder.oldModuleId || woAny.old_module_id;
+            updateData.newModuleRead = newModuleReading;
+            // Copy type from old to new
+            const existingOldModuleType = workOrder.oldModuleType || woAny.old_module_type;
+            if (existingOldModuleType) {
+              updateData.newModuleType = existingOldModuleType;
+            }
+          } else {
+            // Changeout mode: use values from mobile request
+            updateData.oldModuleRead = oldModuleReading;
+            updateData.newModuleId = newModuleId;
+            updateData.newModuleRead = newModuleReading;
+            // For changeout, copy type from request if provided
+            if (newModuleType) {
+              updateData.newModuleType = newModuleType;
+            }
+          }
         }
         
         updateData.newGps = gpsCoordinates;
