@@ -142,6 +142,9 @@ class ImportScheduler {
         let imported = 0;
         let failed = 0;
         const errors: string[] = [];
+        
+        // Get the next available customerWoId for auto-generation
+        let nextAutoId = BigInt(await workOrderStorage.getNextCustomerWoId());
 
         for (const row of queryResult.data) {
           try {
@@ -152,9 +155,20 @@ class ImportScheduler {
               }
             }
 
-            if (!mappedData.customerWoId || !mappedData.customerId || !mappedData.customerName || !mappedData.address || !mappedData.serviceType) {
+            // Auto-generate customerWoId if not provided
+            if (!mappedData.customerWoId) {
+              mappedData.customerWoId = String(nextAutoId);
+              nextAutoId++;
+            }
+
+            // Auto-set serviceType to "Water" if not provided or invalid
+            if (!mappedData.serviceType) {
+              mappedData.serviceType = "Water";
+            }
+
+            if (!mappedData.customerId || !mappedData.customerName || !mappedData.address) {
               failed++;
-              errors.push(`Row missing required fields: ${JSON.stringify(row).slice(0, 100)}`);
+              errors.push(`Row missing required fields (customerId, customerName, or address): ${JSON.stringify(row).slice(0, 100)}`);
               continue;
             }
 

@@ -572,6 +572,37 @@ export class ProjectWorkOrderStorage {
     }
   }
 
+  async getNextCustomerWoId(): Promise<string> {
+    await this.ensureMigrated();
+    const client = await pool.connect();
+    try {
+      // Find the maximum numeric customer_wo_id
+      // Use NUMERIC for safe handling of large numbers and order by length then value
+      const result = await client.query(
+        `SELECT customer_wo_id as max_id
+         FROM "${this.schemaName}".work_orders
+         WHERE customer_wo_id ~ '^[0-9]+$'
+         ORDER BY LENGTH(customer_wo_id) DESC, customer_wo_id DESC
+         LIMIT 1`
+      );
+      
+      const maxId = result.rows[0]?.max_id;
+      
+      if (maxId !== null && maxId !== undefined) {
+        // Increment the max ID by 1 using BigInt for safety
+        const nextId = BigInt(maxId) + BigInt(1);
+        return String(nextId);
+      } else {
+        // No numeric IDs exist, generate a random 8-digit integer
+        // Range: 10000000 to 99999999
+        const randomId = Math.floor(10000000 + Math.random() * 90000000);
+        return String(randomId);
+      }
+    } finally {
+      client.release();
+    }
+  }
+
   async getWorkOrderByOldSystemId(oldSystemId: string): Promise<ProjectWorkOrder | undefined> {
     await this.ensureMigrated();
     const client = await pool.connect();
