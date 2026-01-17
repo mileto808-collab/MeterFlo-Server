@@ -9218,7 +9218,6 @@ export async function registerRoutes(
       const notes = body.notes;
       const beforePhotos = body.beforePhotos ?? body.before_photos ?? [];
       const afterPhotos = body.afterPhotos ?? body.after_photos ?? [];
-      const isReadingOnly = body.isReadingOnly ?? body.is_reading_only ?? false;
       const changeoutScope = body.changeoutScope ?? body.changeout_scope;
       
       // Check permission
@@ -9249,6 +9248,14 @@ export async function registerRoutes(
       
       const folderName = workOrder.customerWoId || String(workOrder.id);
       const updatedByUsername = currentUser.username || currentUser.id;
+      
+      // Determine isReadingOnly from request or infer from project configuration
+      // Project wizardMode: "changeout", "reading_only", or "user_choice"
+      const requestIsReadingOnly = body.isReadingOnly ?? body.is_reading_only;
+      const projectWizardMode = (project as any).wizardMode || (project as any).wizard_mode;
+      const isReadingOnly = requestIsReadingOnly !== undefined 
+        ? requestIsReadingOnly 
+        : (projectWizardMode === "reading_only");
       
       // Helper to save base64 photos
       const saveBase64Photos = async (photos: any[], photoType: string) => {
@@ -9339,14 +9346,17 @@ export async function registerRoutes(
       const needsModule = changeoutScope ? (changeoutScope === "module" || changeoutScope === "both") : hasModuleData;
       
       // Validate required fields based on scope
-      // For Reading Only mode (isReadingOnly: true), old reading fields are NOT required
-      // since no physical meter change occurs - mobile only sends new data
+      // For Reading Only mode (isReadingOnly: true):
+      // - Old reading fields are NOT required (they exist in DB)
+      // - New IDs are NOT required (will be copied from old IDs)
+      // - Only new readings are required
       if (needsSystem) {
         // Old reading only required for changeout mode, not reading-only mode
         if (!isReadingOnly && !isValidSystemReading(oldSystemReading)) {
           return res.status(400).json({ message: "oldSystemReading is required and must be numeric" });
         }
-        if (!newSystemId) {
+        // New ID only required for changeout mode, not reading-only mode (will copy from old)
+        if (!isReadingOnly && !newSystemId) {
           return res.status(400).json({ message: "newSystemId is required for completion" });
         }
         if (!isValidSystemReading(newSystemReading)) {
@@ -9359,7 +9369,8 @@ export async function registerRoutes(
         if (!isReadingOnly && !isValidSystemReading(oldModuleReading)) {
           return res.status(400).json({ message: "oldModuleReading is required and must be numeric" });
         }
-        if (!newModuleId) {
+        // New ID only required for changeout mode, not reading-only mode (will copy from old)
+        if (!isReadingOnly && !newModuleId) {
           return res.status(400).json({ message: "newModuleId is required for module changeout" });
         }
         if (!isValidSystemReading(newModuleReading)) {
@@ -9383,47 +9394,61 @@ export async function registerRoutes(
       
       // System fields - only set if this is a system or both changeout
       if (needsSystem) {
-        if (oldSystemReading !== undefined && oldSystemReading !== null) {
-          updateData.oldSystemReading = parseFloat(String(oldSystemReading));
-        }
-        if (newSystemReading !== undefined && newSystemReading !== null) {
+        if (isReadingOnly) {
+          // Reading Only mode: copy IDs and types from old, only update new reading
+          // Don't overwrite old reading - it's already in the DB
+          updateData.newSystemId = workOrder.oldSystemId || woAny.old_system_id;
           updateData.newSystemReading = parseFloat(String(newSystemReading));
-        }
-        if (newSystemId) {
-          updateData.newSystemId = newSystemId;
-        }
-        if (newSystemType) {
-          updateData.newSystemType = newSystemType;
-        } else if (isReadingOnly) {
-          // In Reading Only mode, copy old system type to new system type if mobile doesn't provide it
-          const existingOldType = (workOrder as any).oldSystemType || (workOrder as any).old_system_type;
+          // Copy type from old to new
+          const existingOldType = woAny.oldSystemType || woAny.old_system_type;
           if (existingOldType) {
             updateData.newSystemType = existingOldType;
+          }
+        } else {
+          // Changeout mode: use values from mobile request
+          if (oldSystemReading !== undefined && oldSystemReading !== null) {
+            updateData.oldSystemReading = parseFloat(String(oldSystemReading));
+          }
+          if (newSystemReading !== undefined && newSystemReading !== null) {
+            updateData.newSystemReading = parseFloat(String(newSystemReading));
+          }
+          if (newSystemId) {
+            updateData.newSystemId = newSystemId;
+          }
+          if (newSystemType) {
+            updateData.newSystemType = newSystemType;
           }
         }
       }
       
       // Module fields - only set if this is a module or both changeout
       if (needsModule) {
-        if (oldModuleReading !== undefined && oldModuleReading !== null) {
-          updateData.oldModuleRead = parseFloat(String(oldModuleReading));
-        }
-        if (newModuleReading !== undefined && newModuleReading !== null) {
+        if (isReadingOnly) {
+          // Reading Only mode: copy IDs and types from old, only update new reading
+          // Don't overwrite old reading - it's already in the DB
+          updateData.newModuleId = workOrder.oldModuleId || woAny.old_module_id;
           updateData.newModuleRead = parseFloat(String(newModuleReading));
-        }
-        if (newModuleId) {
-          updateData.newModuleId = newModuleId;
-        }
-        if (oldModuleType) {
-          updateData.oldModuleType = oldModuleType;
-        }
-        if (newModuleType) {
-          updateData.newModuleType = newModuleType;
-        } else if (isReadingOnly) {
-          // In Reading Only mode, copy old module type to new module type if mobile doesn't provide it
-          const existingOldModType = (workOrder as any).oldModuleType || (workOrder as any).old_module_type;
+          // Copy type from old to new
+          const existingOldModType = woAny.oldModuleType || woAny.old_module_type;
           if (existingOldModType) {
             updateData.newModuleType = existingOldModType;
+          }
+        } else {
+          // Changeout mode: use values from mobile request
+          if (oldModuleReading !== undefined && oldModuleReading !== null) {
+            updateData.oldModuleRead = parseFloat(String(oldModuleReading));
+          }
+          if (newModuleReading !== undefined && newModuleReading !== null) {
+            updateData.newModuleRead = parseFloat(String(newModuleReading));
+          }
+          if (newModuleId) {
+            updateData.newModuleId = newModuleId;
+          }
+          if (oldModuleType) {
+            updateData.oldModuleType = oldModuleType;
+          }
+          if (newModuleType) {
+            updateData.newModuleType = newModuleType;
           }
         }
       }
