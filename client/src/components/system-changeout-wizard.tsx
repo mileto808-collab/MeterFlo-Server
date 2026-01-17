@@ -2278,6 +2278,13 @@ export function SystemChangeoutWizard({
                           <span className="text-muted-foreground">System ID:</span>
                           <span className="font-medium">{oldSystemId || "-"}</span>
                           
+                          {oldSystemType && (
+                            <>
+                              <span className="text-muted-foreground">System Type:</span>
+                              <span className="font-medium">{oldSystemType}</span>
+                            </>
+                          )}
+                          
                           <span className="text-muted-foreground">Reading Captured:</span>
                           <span className="font-medium">{data.newSystemReading}</span>
                         </>
@@ -2288,15 +2295,15 @@ export function SystemChangeoutWizard({
                           <span className="text-muted-foreground">Module ID:</span>
                           <span className="font-medium">{oldModuleId || "-"}</span>
                           
+                          {oldModuleType && (
+                            <>
+                              <span className="text-muted-foreground">Module Type:</span>
+                              <span className="font-medium">{oldModuleType}</span>
+                            </>
+                          )}
+                          
                           <span className="text-muted-foreground">Module Reading:</span>
                           <span className="font-medium">{data.newModuleReading}</span>
-                        </>
-                      )}
-                      
-                      {effectiveGpsMode !== "disabled" && data.gpsCoordinates && (
-                        <>
-                          <span className="text-muted-foreground">GPS:</span>
-                          <span className="font-medium">{data.gpsCoordinates}</span>
                         </>
                       )}
                       
@@ -2304,6 +2311,13 @@ export function SystemChangeoutWizard({
                         <>
                           <span className="text-muted-foreground">Before Photos:</span>
                           <span className="font-medium">{data.beforePhotos.length}</span>
+                        </>
+                      )}
+                      
+                      {effectiveGpsMode !== "disabled" && data.gpsCoordinates && (
+                        <>
+                          <span className="text-muted-foreground">GPS:</span>
+                          <span className="font-medium">{data.gpsCoordinates}</span>
                         </>
                       )}
                       
@@ -2431,17 +2445,17 @@ export function SystemChangeoutWizard({
                       </>
                     )}
                     
-                    {effectiveGpsMode !== "disabled" && data.gpsCoordinates && (
-                      <>
-                        <span className="text-muted-foreground">GPS:</span>
-                        <span className="font-medium">{data.gpsCoordinates}</span>
-                      </>
-                    )}
-                    
                     {config.showBeforePhotosStep && (
                       <>
                         <span className="text-muted-foreground">Before Photos:</span>
                         <span className="font-medium">{data.beforePhotos.length}</span>
+                      </>
+                    )}
+                    
+                    {effectiveGpsMode !== "disabled" && data.gpsCoordinates && (
+                      <>
+                        <span className="text-muted-foreground">GPS:</span>
+                        <span className="font-medium">{data.gpsCoordinates}</span>
                       </>
                     )}
                     
