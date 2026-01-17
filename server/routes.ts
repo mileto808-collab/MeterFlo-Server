@@ -9338,22 +9338,14 @@ export async function registerRoutes(
       const needsModule = changeoutScope ? (changeoutScope === "module" || changeoutScope === "both") : hasModuleData;
       
       // Validate required fields based on scope
-      // For Reading Only mode (isReadingOnly: true):
-      // - Old reading fields are NOT required (no physical meter change)
-      // - New IDs default to old IDs if not provided (meter stays the same)
-      // - Only new readings are required
-      
-      // For Reading Only mode, default new IDs to old IDs if not provided
-      const effectiveNewSystemId = newSystemId || (isReadingOnly ? (workOrder.oldSystemId || woAny.old_system_id) : null);
-      const effectiveNewModuleId = newModuleId || (isReadingOnly ? (workOrder.oldModuleId || woAny.old_module_id) : null);
-      
+      // For Reading Only mode (isReadingOnly: true), old reading fields are NOT required
+      // since no physical meter change occurs - mobile only sends new data
       if (needsSystem) {
         // Old reading only required for changeout mode, not reading-only mode
         if (!isReadingOnly && !isValidSystemReading(oldSystemReading)) {
           return res.status(400).json({ message: "oldSystemReading is required and must be numeric" });
         }
-        // New ID required for changeout, but defaults to old ID for reading-only
-        if (!effectiveNewSystemId) {
+        if (!newSystemId) {
           return res.status(400).json({ message: "newSystemId is required for completion" });
         }
         if (!isValidSystemReading(newSystemReading)) {
@@ -9366,8 +9358,7 @@ export async function registerRoutes(
         if (!isReadingOnly && !isValidSystemReading(oldModuleReading)) {
           return res.status(400).json({ message: "oldModuleReading is required and must be numeric" });
         }
-        // New ID required for changeout, but defaults to old ID for reading-only
-        if (!effectiveNewModuleId) {
+        if (!newModuleId) {
           return res.status(400).json({ message: "newModuleId is required for module changeout" });
         }
         if (!isValidSystemReading(newModuleReading)) {
