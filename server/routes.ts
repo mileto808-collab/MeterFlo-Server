@@ -8899,6 +8899,12 @@ export async function registerRoutes(
         }
         if (newSystemType) {
           updateData.newSystemType = newSystemType;
+        } else if (isReadingOnly) {
+          // In Reading Only mode, copy old system type to new system type if mobile doesn't provide it
+          const existingOldType = (workOrder as any).oldSystemType || (workOrder as any).old_system_type;
+          if (existingOldType) {
+            updateData.newSystemType = existingOldType;
+          }
         }
       }
       
@@ -8918,6 +8924,12 @@ export async function registerRoutes(
         }
         if (newModuleType) {
           updateData.newModuleType = newModuleType;
+        } else if (isReadingOnly) {
+          // In Reading Only mode, copy old module type to new module type if mobile doesn't provide it
+          const existingOldModType = (workOrder as any).oldModuleType || (workOrder as any).old_module_type;
+          if (existingOldModType) {
+            updateData.newModuleType = existingOldModType;
+          }
         }
       }
       
@@ -9337,6 +9349,12 @@ export async function registerRoutes(
         }
         if (newSystemType) {
           updateData.newSystemType = newSystemType;
+        } else if (isReadingOnly) {
+          // In Reading Only mode, copy old system type to new system type if mobile doesn't provide it
+          const existingOldType = (workOrder as any).oldSystemType || (workOrder as any).old_system_type;
+          if (existingOldType) {
+            updateData.newSystemType = existingOldType;
+          }
         }
       }
       
@@ -9356,6 +9374,12 @@ export async function registerRoutes(
         }
         if (newModuleType) {
           updateData.newModuleType = newModuleType;
+        } else if (isReadingOnly) {
+          // In Reading Only mode, copy old module type to new module type if mobile doesn't provide it
+          const existingOldModType = (workOrder as any).oldModuleType || (workOrder as any).old_module_type;
+          if (existingOldModType) {
+            updateData.newModuleType = existingOldModType;
+          }
         }
       }
       
