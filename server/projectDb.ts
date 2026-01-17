@@ -1084,7 +1084,7 @@ export class ProjectWorkOrderStorage {
             // Get assigned user name from updates or existing work order
             const assignedUserId = updates.assignedUserId !== undefined ? updates.assignedUserId : existingAssignedUserId;
             const assignedUserName = await this.resolveUserName(assignedUserId);
-            scheduledNoteToAdd = `Scheduled by ${schedulerName} at ${actionTimestamp}\nAppointment set for ${appointmentTimestamp} for ${assignedUserName || 'unassigned'}`;
+            scheduledNoteToAdd = `[Scheduled by ${schedulerName} at ${actionTimestamp}]\nAppointment set for ${appointmentTimestamp} for ${assignedUserName || 'unassigned'}`;
           }
         } else {
           // scheduledAt is being CLEARED - use the status from the update if provided
@@ -1123,7 +1123,7 @@ export class ProjectWorkOrderStorage {
         if (updates.status === "Scheduled" && !existingScheduledAt) {
           const timestamp = await this.getTimezoneFormattedTimestamp();
           const userName = updatedBy || 'System';
-          scheduledNoteToAdd = `Scheduled by ${userName} at ${timestamp}`;
+          scheduledNoteToAdd = `[Scheduled by ${userName} at ${timestamp}]`;
           if (updatedBy) {
             const scheduledByUserId = await this.resolveUserId(updatedBy);
             setClauses.push(`scheduled_by = $${paramCount++}`);
@@ -1196,7 +1196,8 @@ export class ProjectWorkOrderStorage {
         // Always append auto-generated notes (trouble, scheduled, completed)
         if (hasAutoNotes) {
           const autoNotes = autoNotesToAppend.join('\n');
-          finalNotes = finalNotes ? `${finalNotes}\n${autoNotes}` : autoNotes;
+          // Add blank line separator if there are existing notes
+          finalNotes = finalNotes ? `${finalNotes}\n\n${autoNotes}` : autoNotes;
           notesChanged = true;
         }
         
