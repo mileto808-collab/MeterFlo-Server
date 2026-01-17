@@ -268,6 +268,12 @@ class FileImportScheduler {
         
         // Get the next available customerWoId for auto-generation
         let nextAutoId = BigInt(await workOrderStorage.getNextCustomerWoId());
+        
+        // Get project's configured service types for default assignment
+        const projectServiceTypes = await storage.getProjectServiceTypes(importConfig.projectId);
+        const allowedServiceTypeCodes = new Set(projectServiceTypes.map(st => st.code));
+        const defaultServiceType = projectServiceTypes.length === 1 ? projectServiceTypes[0].code : null;
+        const hasMultipleServiceTypes = projectServiceTypes.length > 1;
 
         for (const row of rows) {
           try {
@@ -291,20 +297,46 @@ class FileImportScheduler {
               nextAutoId++;
             }
 
-            // Auto-set serviceType to "Water" if not provided or invalid
-            if (!mappedData.serviceType) {
-              mappedData.serviceType = "Water";
+            // Handle serviceType: trim and normalize, validate against project's configured types
+            const rawServiceType = mappedData.serviceType ? String(mappedData.serviceType).trim() : "";
+            
+            if (!rawServiceType) {
+              // Service type not provided or empty
+              if (hasMultipleServiceTypes) {
+                failed++;
+                errors.push(`Row missing serviceType and project has multiple service types configured (${Array.from(allowedServiceTypeCodes).join(", ")}) - cannot determine which to use: ${JSON.stringify(row).slice(0, 100)}`);
+                continue;
+              }
+              if (defaultServiceType) {
+                mappedData.serviceType = defaultServiceType;
+              } else {
+                // No service types configured for project, default to Water
+                mappedData.serviceType = "Water";
+              }
+            } else {
+              // Normalize case: capitalize first letter
+              const normalizedType = rawServiceType.charAt(0).toUpperCase() + rawServiceType.slice(1).toLowerCase();
+              
+              // Validate against project's configured service types
+              if (allowedServiceTypeCodes.size > 0 && !allowedServiceTypeCodes.has(normalizedType)) {
+                failed++;
+                errors.push(`Row has invalid serviceType "${rawServiceType}" - project only allows: ${Array.from(allowedServiceTypeCodes).join(", ")}: ${JSON.stringify(row).slice(0, 100)}`);
+                continue;
+              }
+              
+              if (["Water", "Electric", "Gas"].includes(normalizedType)) {
+                mappedData.serviceType = normalizedType;
+              } else if (defaultServiceType) {
+                mappedData.serviceType = defaultServiceType;
+              } else {
+                mappedData.serviceType = "Water";
+              }
             }
 
             if (!mappedData.customerId || !mappedData.customerName || !mappedData.address) {
               failed++;
               errors.push(`Row missing required fields (customerId, customerName, or address): ${JSON.stringify(row).slice(0, 100)}`);
               continue;
-            }
-
-            const serviceType = String(mappedData.serviceType);
-            if (!["Water", "Electric", "Gas"].includes(serviceType)) {
-              mappedData.serviceType = "Water";
             }
 
             if (mappedData.oldSystemReading) {
