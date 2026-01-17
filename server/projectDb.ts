@@ -1181,23 +1181,42 @@ export class ProjectWorkOrderStorage {
         
         let finalNotes = existingNotes;
         let notesChanged = false;
+        let newUserText = "";
         
-        // Handle user-provided notes - REPLACE existing notes (for web UI edits)
-        // Mobile endpoints handle their own append logic before calling updateWorkOrder
+        // Handle user-provided notes - detect NEW text added beyond existing notes
+        // When auto-notes are present, we want: existing + blank line + auto notes + new user text
         if (hasUserNotes) {
           const userProvidedNotes = updates.notes || "";
-          // Only update if user has actually changed the notes content
           if (userProvidedNotes !== existingNotes) {
-            finalNotes = userProvidedNotes;
-            notesChanged = true;
+            if (hasAutoNotes && existingNotes && userProvidedNotes.startsWith(existingNotes)) {
+              // User added text to existing notes - extract only the new portion
+              // This new text will be appended AFTER auto-generated notes
+              newUserText = userProvidedNotes.substring(existingNotes.length).replace(/^\n+/, '').trim();
+            } else if (!hasAutoNotes) {
+              // No auto-notes, just use user-provided notes directly (standard edit)
+              finalNotes = userProvidedNotes;
+              notesChanged = true;
+            } else {
+              // Auto-notes present but user rewrote notes entirely - keep their full text as new user text
+              newUserText = userProvidedNotes.trim();
+              finalNotes = ""; // Start fresh, auto-notes will be first
+            }
           }
         }
         
         // Always append auto-generated notes (trouble, scheduled, completed)
         if (hasAutoNotes) {
           const autoNotes = autoNotesToAppend.join('\n');
-          // Add blank line separator if there are existing notes
-          finalNotes = finalNotes ? `${finalNotes}\n\n${autoNotes}` : autoNotes;
+          // Build: existing notes + blank line + auto notes + new user text
+          if (finalNotes) {
+            finalNotes = `${finalNotes.trimEnd()}\n\n${autoNotes}`;
+          } else {
+            finalNotes = autoNotes;
+          }
+          // Append new user text after auto-generated notes
+          if (newUserText) {
+            finalNotes = `${finalNotes}\n${newUserText}`;
+          }
           notesChanged = true;
         }
         
