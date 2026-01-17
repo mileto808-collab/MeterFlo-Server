@@ -28,7 +28,10 @@ import { useAuth } from "@/hooks/useAuth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import type { Project } from "@shared/schema";
-import { Plus, Search, FolderOpen, Eye, Edit, Trash2 } from "lucide-react";
+import { Plus, Search, FolderOpen, Eye, Edit, Trash2, EyeOff } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { useTimezone } from "@/hooks/use-timezone";
 
 export default function Projects() {
@@ -38,6 +41,7 @@ export default function Projects() {
   const isAdmin = user?.role === "admin";
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [showInactive, setShowInactive] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<number | null>(null);
 
@@ -64,6 +68,7 @@ export default function Projects() {
   const canCreateProject = hasPermission("projects.create");
   const canEditProject = hasPermission("projects.edit");
   const canDeleteProject = hasPermission("projects.delete");
+  const canViewInactive = hasPermission("projects.viewInactive");
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -89,10 +94,16 @@ export default function Projects() {
     },
   });
 
-  const filteredProjects = projects?.filter((p) =>
-    p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    p.description?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredProjects = projects?.filter((p) => {
+    // Filter by active status - hide inactive if user doesn't have permission or toggle is off
+    if (p.isActive === false) {
+      if (!canViewInactive) return false;
+      if (!showInactive) return false;
+    }
+    // Filter by search query
+    return p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      p.description?.toLowerCase().includes(searchQuery.toLowerCase());
+  });
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -113,15 +124,31 @@ export default function Projects() {
 
       <Card>
         <CardHeader className="pb-4">
-          <div className="relative max-w-md">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search projects..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
-              data-testid="input-search-projects"
-            />
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="relative max-w-md flex-1">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search projects..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9"
+                data-testid="input-search-projects"
+              />
+            </div>
+            {canViewInactive && (
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="show-inactive"
+                  checked={showInactive}
+                  onCheckedChange={setShowInactive}
+                  data-testid="switch-show-inactive"
+                />
+                <Label htmlFor="show-inactive" className="text-sm cursor-pointer flex items-center gap-1">
+                  <EyeOff className="h-4 w-4" />
+                  Show Inactive
+                </Label>
+              </div>
+            )}
           </div>
         </CardHeader>
         <CardContent>
@@ -154,7 +181,14 @@ export default function Projects() {
                   {filteredProjects.map((project) => (
                     <TableRow key={project.id} data-testid={`row-project-${project.id}`}>
                       <TableCell className="font-mono text-sm">#{project.id}</TableCell>
-                      <TableCell className="font-medium">{project.name}</TableCell>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          {project.name}
+                          {project.isActive === false && (
+                            <Badge variant="secondary" className="text-xs">Inactive</Badge>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell className="text-muted-foreground truncate max-w-[200px]">
                         {project.description || "—"}
                       </TableCell>

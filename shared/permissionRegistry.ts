@@ -241,6 +241,13 @@ export const permissionRegistry: PermissionDefinition[] = [
     defaultAccess: { administrator: true, projectManager: true, fieldTechnician: true, viewer: true, customer: true },
   },
   {
+    key: "projects.viewInactive",
+    label: "View Inactive Projects",
+    category: "Project Actions",
+    description: "View projects that have been marked as inactive",
+    defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
+  },
+  {
     key: "projects.create",
     label: "Create Projects",
     category: "Project Actions",

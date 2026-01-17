@@ -240,7 +240,15 @@ export function AppSidebar() {
             <SidebarGroupLabel>Projects</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {projects.map((project) => {
+                {projects
+                  .filter((project) => {
+                    // Hide inactive projects from users without viewInactive permission
+                    if (project.isActive === false && !hasPermission("projects.viewInactive")) {
+                      return false;
+                    }
+                    return true;
+                  })
+                  .map((project) => {
                   const isOpen = openProjects.includes(project.id);
                   const isProjectActive = location.startsWith(`/projects/${project.id}`);
                   
@@ -258,6 +266,11 @@ export function AppSidebar() {
                           >
                             <FolderOpen className="h-4 w-4" />
                             <span className="flex-1 truncate">{project.name}</span>
+                            {project.isActive === false && (
+                              <Badge variant="secondary" className="text-xs px-1 py-0 h-4">
+                                Inactive
+                              </Badge>
+                            )}
                             <ChevronRight
                               className={`h-4 w-4 transition-transform ${
                                 isOpen ? "rotate-90" : ""

@@ -124,6 +124,12 @@ class ImportScheduler {
         await storage.updateImportConfigLastRun(configId, "failed", "Project not found or has no database", 0, null);
         return { success: false, imported: 0, failed: 0, error: "Project not found or has no database" };
       }
+      
+      // Skip imports for inactive projects
+      if (project.isActive === false) {
+        await storage.updateImportConfigLastRun(configId, "skipped", "Project is inactive", 0, null);
+        return { success: false, imported: 0, failed: 0, error: "Project is inactive - import skipped" };
+      }
 
       const historyEntry = await storage.createImportHistoryEntry(configId, "running");
 

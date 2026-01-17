@@ -2498,6 +2498,11 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Project not found" });
       }
       
+      // Block work order creation on inactive projects
+      if (project.isActive === false) {
+        return res.status(403).json({ message: "Cannot create work orders on inactive projects" });
+      }
+      
       // Validate operational hours if scheduledAt is provided
       if (req.body.scheduledAt) {
         const hoursValidation = await validateOperationalHours(req.body.scheduledAt, project);
@@ -2545,6 +2550,11 @@ export async function registerRoutes(
       const project = await storage.getProject(projectId);
       if (!project || !project.databaseName) {
         return res.status(404).json({ message: "Project not found" });
+      }
+      
+      // Block work order editing on inactive projects
+      if (project.isActive === false) {
+        return res.status(403).json({ message: "Cannot edit work orders on inactive projects" });
       }
       
       // Validate operational hours if scheduledAt is being updated

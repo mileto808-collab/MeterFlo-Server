@@ -141,6 +141,12 @@ class FileImportScheduler {
         await storage.updateFileImportConfigLastRun(configId, "failed", "Project not found or has no database", 0, null);
         return { success: false, imported: 0, failed: 0, error: "Project not found or has no database" };
       }
+      
+      // Skip imports for inactive projects
+      if (project.isActive === false) {
+        await storage.updateFileImportConfigLastRun(configId, "skipped", "Project is inactive", 0, null);
+        return { success: false, imported: 0, failed: 0, error: "Project is inactive - import skipped" };
+      }
 
       const ftpFiles = await getProjectFtpFiles(project.name, project.id);
       if (ftpFiles.length === 0) {

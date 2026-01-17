@@ -978,6 +978,7 @@ export const permissionKeys = {
   PROJECT_DB_IMPORT: "project.dbImport",
   // Project actions
   PROJECTS_VIEW: "projects.view",
+  PROJECTS_VIEW_INACTIVE: "projects.viewInactive",
   PROJECTS_CREATE: "projects.create",
   PROJECTS_EDIT: "projects.edit",
   PROJECTS_DELETE: "projects.delete",

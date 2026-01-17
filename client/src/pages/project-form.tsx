@@ -34,6 +34,7 @@ const DAYS_OF_WEEK = [
 const projectFormSchema = z.object({
   name: z.string().min(1, "Name is required").max(255),
   description: z.string().optional(),
+  isActive: z.boolean().optional().default(true),
   customerEmail: z.string().email("Invalid email").optional().or(z.literal("")),
   phone: z.string().max(50).optional().or(z.literal("")),
   address: z.string().max(255).optional().or(z.literal("")),
@@ -94,6 +95,7 @@ export default function ProjectForm() {
     defaultValues: { 
       name: "", 
       description: "", 
+      isActive: true,
       customerEmail: "", 
       phone: "", 
       address: "", 
@@ -131,6 +133,7 @@ export default function ProjectForm() {
       form.reset({
         name: project.name,
         description: project.description || "",
+        isActive: project.isActive !== false,
         customerEmail: project.customerEmail || "",
         phone: project.phone || "",
         address: project.address || "",
@@ -431,6 +434,37 @@ export default function ProjectForm() {
                   </FormItem>
                 )}
               />
+              {isEditing && (
+                <FormField
+                  control={form.control}
+                  name="isActive"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base">Project Status</FormLabel>
+                        <FormDescription>
+                          {field.value 
+                            ? "This project is active and visible to all assigned users." 
+                            : "This project is inactive and hidden from users without permission."}
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={field.value ? "default" : "secondary"} data-testid="badge-project-status">
+                            {field.value ? "Active" : "Inactive"}
+                          </Badge>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                            data-testid="switch-project-active"
+                          />
+                        </div>
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+              )}
+              
               <FormField
                 control={form.control}
                 name="customerEmail"
