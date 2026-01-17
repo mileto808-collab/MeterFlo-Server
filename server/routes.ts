@@ -3806,34 +3806,15 @@ export async function registerRoutes(
         updateData.completedAt = new Date().toISOString();
         updateData.completedBy = currentUser.id;
         
-        // Add completion notes if provided
-        if (completionNotes && completionNotes.trim()) {
-          const timestamp = await getTimezoneFormattedTimestamp();
-          // Generate notes prefix based on workflow type and scope
-          let notesPrefix = "";
-          if (isReadingOnly) {
-            // Reading mode
-            if (changeoutScope === "system") {
-              notesPrefix = "System Reading Notes";
-            } else if (changeoutScope === "module") {
-              notesPrefix = "Module Reading Notes";
-            } else {
-              notesPrefix = "System and Module Reading Notes";
-            }
-          } else {
-            // Changeout mode
-            if (changeoutScope === "system") {
-              notesPrefix = "System Changeout Notes";
-            } else if (changeoutScope === "module") {
-              notesPrefix = "Module Changeout Notes";
-            } else {
-              notesPrefix = "System and Module Changeout Notes";
-            }
-          }
-          updateData.notes = workOrder.notes 
-            ? `${workOrder.notes}\n\n[${notesPrefix} - ${timestamp}]\n${completionNotes.trim()}`
-            : `[${notesPrefix} - ${timestamp}]\n${completionNotes.trim()}`;
-        }
+        // Always add completion report header (similar to Trouble Report format)
+        const timestamp = await getTimezoneFormattedTimestamp();
+        const reportType = isReadingOnly ? "Reading Report" : "Changeout Report";
+        const noteEntry = completionNotes && completionNotes.trim()
+          ? `[${reportType} - ${timestamp}]\n${completionNotes.trim()}`
+          : `[${reportType} - ${timestamp}]`;
+        updateData.notes = workOrder.notes 
+          ? `${workOrder.notes}\n\n${noteEntry}`
+          : noteEntry;
         
         // Get the "Completed" status from system
         const statuses = await storage.getWorkOrderStatuses();
@@ -8475,33 +8456,15 @@ export async function registerRoutes(
         updateData.completedAt = clientCompletedAt || new Date().toISOString();
         updateData.completedBy = currentUser.id;
         updateData.trouble = null;
-        // Append completion notes to existing notes (mobile pattern)
-        if (troubleNote && troubleNote.trim()) {
-          const timestamp = await getTimezoneFormattedTimestamp();
-          // Generate notes prefix based on workflow type and scope
-          let notesPrefix = "";
-          if (isReadingOnly) {
-            if (needsSystem && needsModule) {
-              notesPrefix = "System and Module Reading Notes";
-            } else if (needsModule) {
-              notesPrefix = "Module Reading Notes";
-            } else {
-              notesPrefix = "System Reading Notes";
-            }
-          } else {
-            if (needsSystem && needsModule) {
-              notesPrefix = "System and Module Changeout Notes";
-            } else if (needsModule) {
-              notesPrefix = "Module Changeout Notes";
-            } else {
-              notesPrefix = "System Changeout Notes";
-            }
-          }
-          const noteEntry = `[${notesPrefix} - ${timestamp} by ${currentUser.username || currentUser.id}]\n${troubleNote.trim()}`;
-          updateData.notes = workOrder.notes 
-            ? `${workOrder.notes}\n\n${noteEntry}`
-            : noteEntry;
-        }
+        // Always add completion report header (similar to Trouble Report format)
+        const timestamp = await getTimezoneFormattedTimestamp();
+        const reportType = isReadingOnly ? "Reading Report" : "Changeout Report";
+        const noteEntry = troubleNote && troubleNote.trim()
+          ? `[${reportType} - ${timestamp} by ${currentUser.username || currentUser.id}]\n${troubleNote.trim()}`
+          : `[${reportType} - ${timestamp} by ${currentUser.username || currentUser.id}]`;
+        updateData.notes = workOrder.notes 
+          ? `${workOrder.notes}\n\n${noteEntry}`
+          : noteEntry;
         
         if (signatureData) {
           updateData.signatureData = signatureData;
@@ -8966,35 +8929,15 @@ export async function registerRoutes(
       if (signatureData) {
         updateData.signatureData = signatureData;
       }
-      // Append user notes to existing notes (mobile pattern) - don't replace
-      if (notes && notes.trim()) {
-        const timestamp = await getTimezoneFormattedTimestamp();
-        // Generate notes prefix based on workflow type and scope
-        let notesPrefix = "";
-        if (isReadingOnly) {
-          // Reading mode
-          if (needsSystem && needsModule) {
-            notesPrefix = "System and Module Reading Notes";
-          } else if (needsModule) {
-            notesPrefix = "Module Reading Notes";
-          } else {
-            notesPrefix = "System Reading Notes";
-          }
-        } else {
-          // Changeout mode
-          if (needsSystem && needsModule) {
-            notesPrefix = "System and Module Changeout Notes";
-          } else if (needsModule) {
-            notesPrefix = "Module Changeout Notes";
-          } else {
-            notesPrefix = "System Changeout Notes";
-          }
-        }
-        const noteEntry = `[${notesPrefix} - ${timestamp} by ${currentUser.username || currentUser.id}]\n${notes.trim()}`;
-        updateData.notes = workOrder.notes 
-          ? `${workOrder.notes}\n\n${noteEntry}`
-          : noteEntry;
-      }
+      // Always add completion report header (similar to Trouble Report format)
+      const timestamp = await getTimezoneFormattedTimestamp();
+      const reportType = isReadingOnly ? "Reading Report" : "Changeout Report";
+      const noteEntry = notes && notes.trim()
+        ? `[${reportType} - ${timestamp} by ${currentUser.username || currentUser.id}]\n${notes.trim()}`
+        : `[${reportType} - ${timestamp} by ${currentUser.username || currentUser.id}]`;
+      updateData.notes = workOrder.notes 
+        ? `${workOrder.notes}\n\n${noteEntry}`
+        : noteEntry;
       
       const updatedWorkOrder = await workOrderStorage.updateWorkOrder(
         workOrderId,
@@ -9425,34 +9368,15 @@ export async function registerRoutes(
         updateData.signatureData = signatureData;
       }
       
-      // Append notes with dynamic prefix based on workflow type and scope
-      if (notes && notes.trim()) {
-        const timestamp = await getTimezoneFormattedTimestamp();
-        let notesPrefix = "";
-        if (isReadingOnly) {
-          // Reading mode
-          if (needsSystem && needsModule) {
-            notesPrefix = "System and Module Reading Notes";
-          } else if (needsModule) {
-            notesPrefix = "Module Reading Notes";
-          } else {
-            notesPrefix = "System Reading Notes";
-          }
-        } else {
-          // Changeout mode
-          if (needsSystem && needsModule) {
-            notesPrefix = "System and Module Changeout Notes";
-          } else if (needsModule) {
-            notesPrefix = "Module Changeout Notes";
-          } else {
-            notesPrefix = "System Changeout Notes";
-          }
-        }
-        const noteEntry = `[${notesPrefix} - ${timestamp} by ${currentUser.username || currentUser.id}]\n${notes.trim()}`;
-        updateData.notes = workOrder.notes 
-          ? `${workOrder.notes}\n\n${noteEntry}`
-          : noteEntry;
-      }
+      // Always add completion report header (similar to Trouble Report format)
+      const timestamp = await getTimezoneFormattedTimestamp();
+      const reportType = isReadingOnly ? "Reading Report" : "Changeout Report";
+      const noteEntry = notes && notes.trim()
+        ? `[${reportType} - ${timestamp} by ${currentUser.username || currentUser.id}]\n${notes.trim()}`
+        : `[${reportType} - ${timestamp} by ${currentUser.username || currentUser.id}]`;
+      updateData.notes = workOrder.notes 
+        ? `${workOrder.notes}\n\n${noteEntry}`
+        : noteEntry;
       
       const updatedWorkOrder = await workOrderStorage.updateWorkOrder(
         workOrderId,
