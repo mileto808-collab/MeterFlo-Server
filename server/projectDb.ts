@@ -801,6 +801,17 @@ export class ProjectWorkOrderStorage {
     }
   }
   
+  private async resolveUserName(userId: string | null | undefined): Promise<string | null> {
+    if (!userId) return null;
+    try {
+      const users = await storage.getAllUsers();
+      const found = users.find(u => u.id === userId);
+      return found?.username || null;
+    } catch {
+      return null;
+    }
+  }
+  
   private async resolveGroupId(groupName: string): Promise<number | null> {
     try {
       const groups = await storage.getAllUserGroups();
@@ -1020,12 +1031,13 @@ export class ProjectWorkOrderStorage {
       
       // Always fetch existing state to check for transitions
       const existingStateResult = await client.query(
-        `SELECT scheduled_at, status, trouble FROM "${this.schemaName}".work_orders WHERE id = $1`,
+        `SELECT scheduled_at, status, trouble, assigned_user_id FROM "${this.schemaName}".work_orders WHERE id = $1`,
         [id]
       );
       existingScheduledAt = existingStateResult.rows[0]?.scheduled_at || null;
       existingStatus = existingStateResult.rows[0]?.status || null;
       existingTroubleCode = existingStateResult.rows[0]?.trouble || null;
+      const existingAssignedUserId = existingStateResult.rows[0]?.assigned_user_id || null;
       
       // Check if the work order was already in a completed status
       if (existingStatus) {
@@ -1068,8 +1080,11 @@ export class ProjectWorkOrderStorage {
             // Use the raw scheduledAt value directly - it's stored as-is in the database
             // and the frontend displays it correctly, so format it the same way
             const appointmentTimestamp = await this.formatScheduledAtForNote(updates.scheduledAt);
-            const userName = updatedBy || 'System';
-            scheduledNoteToAdd = `Scheduled by ${userName} at ${actionTimestamp}\nAppointment set for ${appointmentTimestamp} by ${userName}`;
+            const schedulerName = updatedBy || 'System';
+            // Get assigned user name from updates or existing work order
+            const assignedUserId = updates.assignedUserId !== undefined ? updates.assignedUserId : existingAssignedUserId;
+            const assignedUserName = await this.resolveUserName(assignedUserId);
+            scheduledNoteToAdd = `Scheduled by ${schedulerName} at ${actionTimestamp}\nAppointment set for ${appointmentTimestamp} for ${assignedUserName || 'unassigned'}`;
           }
         } else {
           // scheduledAt is being CLEARED - use the status from the update if provided
