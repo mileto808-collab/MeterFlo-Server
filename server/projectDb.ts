@@ -593,9 +593,9 @@ export class ProjectWorkOrderStorage {
         const nextId = BigInt(maxId) + BigInt(1);
         return String(nextId);
       } else {
-        // No numeric IDs exist, generate a random 8-digit integer
-        // Range: 10000000 to 99999999
-        const randomId = Math.floor(10000000 + Math.random() * 90000000);
+        // No numeric IDs exist, generate a random 4-digit integer
+        // Range: 1000 to 9999
+        const randomId = Math.floor(1000 + Math.random() * 9000);
         return String(randomId);
       }
     } finally {
