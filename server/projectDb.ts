@@ -1162,13 +1162,13 @@ export class ProjectWorkOrderStorage {
         values.push((updates as any).trouble || null);
       }
       // Handle notes - only update when there are actual changes
+      // Separate auto notes: scheduled/trouble are appended normally, completed is handled specially
       const autoNotesToAppend: string[] = [];
       if (scheduledNoteToAdd) autoNotesToAppend.push(scheduledNoteToAdd);
-      if (completedNoteToAdd) autoNotesToAppend.push(completedNoteToAdd);
       if (troubleNoteToAdd) autoNotesToAppend.push(troubleNoteToAdd);
       
       // Check if we need to update notes (auto-generated notes OR user-provided notes that actually changed)
-      const hasAutoNotes = autoNotesToAppend.length > 0;
+      const hasAutoNotes = autoNotesToAppend.length > 0 || completedNoteToAdd !== null;
       const hasUserNotes = updates.notes !== undefined;
       
       if (hasAutoNotes || hasUserNotes) {
@@ -1188,10 +1188,38 @@ export class ProjectWorkOrderStorage {
         if (hasUserNotes) {
           const userProvidedNotes = updates.notes || "";
           if (userProvidedNotes !== existingNotes) {
-            if (hasAutoNotes && existingNotes && userProvidedNotes.startsWith(existingNotes)) {
-              // User added text to existing notes - extract only the new portion
-              // This new text will be appended AFTER auto-generated notes
-              newUserText = userProvidedNotes.substring(existingNotes.length).replace(/^\n+/, '').trim();
+            // First, check if user notes start with existing notes (appending scenario)
+            let appendedSegment = "";
+            if (existingNotes && userProvidedNotes.startsWith(existingNotes)) {
+              appendedSegment = userProvidedNotes.substring(existingNotes.length).replace(/^\n+/, '');
+            } else if (!existingNotes) {
+              appendedSegment = userProvidedNotes;
+            }
+            
+            // Check if appended segment contains a completion report header
+            const reportHeaderMatch = appendedSegment.match(/^(\[(Changeout|Reading) Report - [^\]]+\])\n?([\s\S]*)$/);
+            
+            if (reportHeaderMatch && completedNoteToAdd) {
+              // Appended segment starts with [Changeout/Reading Report - ...] header
+              // Insert completed line right after header, then remaining notes
+              const headerLine = reportHeaderMatch[1];
+              const remainingNotes = reportHeaderMatch[3].trim();
+              
+              // Build: existing + blank line + header + completed line + remaining notes
+              if (existingNotes) {
+                finalNotes = `${existingNotes.trimEnd()}\n\n${headerLine}\n${completedNoteToAdd}`;
+              } else {
+                finalNotes = `${headerLine}\n${completedNoteToAdd}`;
+              }
+              if (remainingNotes) {
+                finalNotes = `${finalNotes}\n${remainingNotes}`;
+              }
+              // Mark completedNoteToAdd as handled so it's not added again
+              completedNoteToAdd = null;
+              notesChanged = true;
+            } else if (hasAutoNotes && appendedSegment) {
+              // User added text to existing notes - this will be appended AFTER auto-generated notes
+              newUserText = appendedSegment.trim();
             } else if (!hasAutoNotes) {
               // No auto-notes, just use user-provided notes directly (standard edit)
               finalNotes = userProvidedNotes;
@@ -1204,8 +1232,13 @@ export class ProjectWorkOrderStorage {
           }
         }
         
-        // Always append auto-generated notes (trouble, scheduled, completed)
-        if (hasAutoNotes) {
+        // Handle completedNoteToAdd if it wasn't already handled by report header logic
+        if (completedNoteToAdd) {
+          autoNotesToAppend.push(completedNoteToAdd);
+        }
+        
+        // Append remaining auto-generated notes (trouble, scheduled, and completed if not already handled)
+        if (autoNotesToAppend.length > 0) {
           const autoNotes = autoNotesToAppend.join('\n');
           // Build: existing notes + blank line + auto notes + new user text
           if (finalNotes) {
