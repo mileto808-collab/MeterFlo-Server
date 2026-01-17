@@ -29,8 +29,9 @@ import { toZonedTime, format as formatTz } from "date-fns-tz";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
-async function getTimezoneFormattedTimestamp(): Promise<string> {
-  const timezone = await storage.getSetting("default_timezone") || "America/Denver";
+async function getTimezoneFormattedTimestamp(projectTimezone?: string | null): Promise<string> {
+  const globalTimezone = await storage.getSetting("default_timezone") || "America/Denver";
+  const timezone = projectTimezone || globalTimezone;
   return new Date().toLocaleString('en-US', {
     month: '2-digit',
     day: '2-digit',
@@ -3807,7 +3808,7 @@ export async function registerRoutes(
         updateData.completedBy = currentUser.id;
         
         // Always add completion report header (similar to Trouble Report format)
-        const timestamp = await getTimezoneFormattedTimestamp();
+        const timestamp = await getTimezoneFormattedTimestamp(project.timezone);
         const reportType = isReadingOnly ? "Reading Report" : "Changeout Report";
         const noteEntry = completionNotes && completionNotes.trim()
           ? `[${reportType} - ${timestamp}]\n${completionNotes.trim()}`
@@ -3831,7 +3832,7 @@ export async function registerRoutes(
         
         updateData.trouble = troubleCode;
         if (troubleNote) {
-          const timestamp = await getTimezoneFormattedTimestamp();
+          const timestamp = await getTimezoneFormattedTimestamp(project.timezone);
           updateData.notes = workOrder.notes 
             ? `${workOrder.notes}\n\n[Trouble Report - ${timestamp}]\n${troubleNote}`
             : `[Trouble Report - ${timestamp}]\n${troubleNote}`;
@@ -8457,11 +8458,11 @@ export async function registerRoutes(
         updateData.completedBy = currentUser.id;
         updateData.trouble = null;
         // Always add completion report header (similar to Trouble Report format)
-        const timestamp = await getTimezoneFormattedTimestamp();
+        const timestamp = await getTimezoneFormattedTimestamp(project.timezone);
         const reportType = isReadingOnly ? "Reading Report" : "Changeout Report";
         const noteEntry = troubleNote && troubleNote.trim()
-          ? `[${reportType} - ${timestamp} by ${currentUser.username || currentUser.id}]\n${troubleNote.trim()}`
-          : `[${reportType} - ${timestamp} by ${currentUser.username || currentUser.id}]`;
+          ? `[${reportType} - ${timestamp}]\n${troubleNote.trim()}`
+          : `[${reportType} - ${timestamp}]`;
         updateData.notes = workOrder.notes 
           ? `${workOrder.notes}\n\n${noteEntry}`
           : noteEntry;
@@ -8479,7 +8480,7 @@ export async function registerRoutes(
         updateData.trouble = troubleCode;
         // Append trouble notes to existing notes (mobile pattern)
         if (troubleNote && troubleNote.trim()) {
-          const timestamp = await getTimezoneFormattedTimestamp();
+          const timestamp = await getTimezoneFormattedTimestamp(project.timezone);
           const noteEntry = `[Trouble Report - ${timestamp} by ${currentUser.username || currentUser.id}]\n${troubleNote.trim()}`;
           updateData.notes = workOrder.notes 
             ? `${workOrder.notes}\n\n${noteEntry}`
@@ -8930,11 +8931,11 @@ export async function registerRoutes(
         updateData.signatureData = signatureData;
       }
       // Always add completion report header (similar to Trouble Report format)
-      const timestamp = await getTimezoneFormattedTimestamp();
+      const timestamp = await getTimezoneFormattedTimestamp(project.timezone);
       const reportType = isReadingOnly ? "Reading Report" : "Changeout Report";
       const noteEntry = notes && notes.trim()
-        ? `[${reportType} - ${timestamp} by ${currentUser.username || currentUser.id}]\n${notes.trim()}`
-        : `[${reportType} - ${timestamp} by ${currentUser.username || currentUser.id}]`;
+        ? `[${reportType} - ${timestamp}]\n${notes.trim()}`
+        : `[${reportType} - ${timestamp}]`;
       updateData.notes = workOrder.notes 
         ? `${workOrder.notes}\n\n${noteEntry}`
         : noteEntry;
@@ -9369,11 +9370,11 @@ export async function registerRoutes(
       }
       
       // Always add completion report header (similar to Trouble Report format)
-      const timestamp = await getTimezoneFormattedTimestamp();
+      const timestamp = await getTimezoneFormattedTimestamp(project.timezone);
       const reportType = isReadingOnly ? "Reading Report" : "Changeout Report";
       const noteEntry = notes && notes.trim()
-        ? `[${reportType} - ${timestamp} by ${currentUser.username || currentUser.id}]\n${notes.trim()}`
-        : `[${reportType} - ${timestamp} by ${currentUser.username || currentUser.id}]`;
+        ? `[${reportType} - ${timestamp}]\n${notes.trim()}`
+        : `[${reportType} - ${timestamp}]`;
       updateData.notes = workOrder.notes 
         ? `${workOrder.notes}\n\n${noteEntry}`
         : noteEntry;
