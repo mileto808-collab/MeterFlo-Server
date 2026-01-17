@@ -3762,8 +3762,9 @@ export async function registerRoutes(
         }
         
         // Validate system readings are numeric (integers or decimals)
+        // In Reading Only mode, old readings come from DB - only validate new readings
         if (needsSystem) {
-          if (!isValidSystemReading(oldSystemReading)) {
+          if (!isReadingOnly && !isValidSystemReading(oldSystemReading)) {
             return res.status(400).json({ 
               message: "Old system reading must be a valid number" 
             });
@@ -3776,8 +3777,9 @@ export async function registerRoutes(
         }
         
         // Validate module readings are numeric (integers or decimals)
+        // In Reading Only mode, old readings come from DB - only validate new readings
         if (needsModule) {
-          if (!isValidSystemReading(oldModuleReading)) {
+          if (!isReadingOnly && !isValidSystemReading(oldModuleReading)) {
             return res.status(400).json({ 
               message: "Old module reading must be a valid number" 
             });
