@@ -2016,9 +2016,18 @@ export default function ProjectWorkOrders() {
   }, []);
 
   // Auto page size calculation based on actual container height
+  // Use ref to track last calculated size and prevent redundant updates
+  const lastCalculatedPageSizeRef = useRef<number | null>(null);
+  
   useLayoutEffect(() => {
-    if (!isAutoPageSize) return;
+    if (!isAutoPageSize) {
+      // Reset the cache when auto mode is disabled so re-enabling recalculates properly
+      lastCalculatedPageSizeRef.current = null;
+      return;
+    }
 
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    
     const calculateOptimalPageSize = () => {
       const container = tableScrollRef.current;
       if (!container) return;
@@ -2033,29 +2042,44 @@ export default function ProjectWorkOrders() {
       const optimalRows = Math.floor(availableHeight / rowHeight);
       const clampedRows = Math.max(5, Math.min(100, optimalRows));
       
-      setPageSize((prevSize) => {
-        if (prevSize !== clampedRows) {
-          setCurrentPage(1);
-        }
-        return clampedRows;
-      });
+      // Only update if the calculated size is different from the last one
+      if (lastCalculatedPageSizeRef.current !== clampedRows) {
+        lastCalculatedPageSizeRef.current = clampedRows;
+        setPageSize((prevSize) => {
+          if (prevSize !== clampedRows) {
+            setCurrentPage(1);
+          }
+          return clampedRows;
+        });
+      }
     };
 
-    // Use requestAnimationFrame to ensure layout is complete
+    // Debounced version to prevent rapid firing from ResizeObserver
+    const debouncedCalculate = () => {
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+      debounceTimer = setTimeout(calculateOptimalPageSize, 100);
+    };
+
+    // Use requestAnimationFrame for initial calculation
     const rafId = requestAnimationFrame(calculateOptimalPageSize);
-    window.addEventListener("resize", calculateOptimalPageSize);
+    window.addEventListener("resize", debouncedCalculate);
     
-    // Use ResizeObserver for more robust container tracking
+    // Use ResizeObserver for more robust container tracking with debounce
     const container = tableScrollRef.current;
     let resizeObserver: ResizeObserver | null = null;
     if (container) {
-      resizeObserver = new ResizeObserver(calculateOptimalPageSize);
+      resizeObserver = new ResizeObserver(debouncedCalculate);
       resizeObserver.observe(container);
     }
     
     return () => {
       cancelAnimationFrame(rafId);
-      window.removeEventListener("resize", calculateOptimalPageSize);
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+      window.removeEventListener("resize", debouncedCalculate);
       resizeObserver?.disconnect();
     };
   }, [isAutoPageSize, workOrders.length, viewMode]);
