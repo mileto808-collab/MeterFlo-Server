@@ -2610,10 +2610,17 @@ export async function registerRoutes(
           missingFields.push(...systemMissingFields, ...moduleMissingFields);
         }
         
-        // Always required fields
-        if (!mergedData.newGps) missingFields.push("New GPS");
-        if (!mergedData.signatureData && !req.body.signatureData) missingFields.push("Signature");
-        if (!mergedData.signatureName && !req.body.signatureName) missingFields.push("Signature Name");
+        // Conditionally required fields based on project wizard configuration
+        // GPS is only required if wizardShowGpsStep is enabled (defaults to true)
+        const requireGps = project.wizardShowGpsStep !== false;
+        if (requireGps && !mergedData.newGps) missingFields.push("New GPS");
+        
+        // Signature is only required if wizardShowSignatureStep is enabled (defaults to true)
+        const requireSignature = project.wizardShowSignatureStep !== false;
+        if (requireSignature) {
+          if (!mergedData.signatureData && !req.body.signatureData) missingFields.push("Signature");
+          if (!mergedData.signatureName && !req.body.signatureName) missingFields.push("Signature Name");
+        }
         
         if (missingFields.length > 0) {
           return res.status(400).json({ 
