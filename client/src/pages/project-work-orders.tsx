@@ -1900,7 +1900,7 @@ export default function ProjectWorkOrders() {
   useEffect(() => {
     setCurrentPage(1);
     setSelectedWorkOrderIds(new Set());
-  }, [workOrders, searchQuery, selectedStatus, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldSystemType, selectedNewSystemType, selectedOldModuleType, selectedNewModuleType, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterNewSystemId, filterOldModuleId, filterNewModuleId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo, pageSize]);
+  }, [workOrders, searchQuery, selectedStatus, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldSystemType, selectedNewSystemType, selectedOldModuleType, selectedNewModuleType, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterNewSystemId, filterOldModuleId, filterNewModuleId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
 
   useEffect(() => {
     if (currentPage > totalPages && totalPages > 0) {
@@ -1971,12 +1971,7 @@ export default function ProjectWorkOrders() {
       // Only update if the value actually changed to prevent render loops
       if (clampedRows !== lastCalculatedSize) {
         lastCalculatedSize = clampedRows;
-        setPageSize((prevSize) => {
-          if (prevSize !== clampedRows) {
-            setCurrentPage(1);
-          }
-          return clampedRows;
-        });
+        setPageSize(clampedRows);
       }
     };
 
