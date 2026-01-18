@@ -1915,13 +1915,13 @@ export default function ProjectWorkOrders() {
     }
     
     const content = (
-      <div className="flex items-center gap-2 flex-wrap w-full">
-        <div className="flex flex-col min-w-0 mr-2">
+      <div className="flex items-center gap-2 w-full">
+        <div className="flex flex-col min-w-0 mr-2 flex-shrink-0">
           <span className="font-semibold text-sm truncate">{project.name}</span>
           <span className="text-xs text-muted-foreground">Work Orders</span>
         </div>
         {user.role !== "customer" && (
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-nowrap overflow-x-auto">
             <Link href={`/projects/${projectId}/files`}>
               <Button variant="outline" size="sm" data-testid="header-button-project-files">
                 <Folder className="h-3.5 w-3.5 mr-1" />
