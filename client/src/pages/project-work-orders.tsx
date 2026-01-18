@@ -1922,30 +1922,6 @@ export default function ProjectWorkOrders() {
         </div>
         {user.role !== "customer" && (
           <div className="flex items-center gap-2 flex-wrap">
-            <Link href={`/projects/${projectId}/files`}>
-              <Button variant="outline" size="sm" data-testid="header-button-project-files">
-                <Folder className="h-3.5 w-3.5 mr-1" />
-                <span className="hidden lg:inline">Project Documents</span>
-              </Button>
-            </Link>
-            {hasPermission(permissionKeys.WORK_ORDERS_ASSIGN) && (
-              <Button variant="outline" size="sm" onClick={handleOpenBulkAssign} data-testid="header-button-assign-work-orders">
-                <UserPlus className="h-3.5 w-3.5 mr-1" />
-                <span className="hidden lg:inline">Assign Work Orders</span>
-              </Button>
-            )}
-            {hasPermission(permissionKeys.WORK_ORDERS_EDIT) && selectedWorkOrderIds.size > 0 && (
-              <Button variant="outline" size="sm" onClick={handleOpenBulkStatus} data-testid="header-button-set-status">
-                <ArrowUpDown className="h-3.5 w-3.5 mr-1" />
-                <span className="hidden lg:inline">Set Status</span> ({selectedWorkOrderIds.size})
-              </Button>
-            )}
-            {hasPermission(permissionKeys.WORK_ORDERS_DELETE) && selectedWorkOrderIds.size > 0 && (
-              <Button variant="destructive" size="sm" onClick={handleBulkDelete} data-testid="header-button-delete-selected">
-                <Trash2 className="h-3.5 w-3.5 mr-1" />
-                <span className="hidden lg:inline">Delete</span> ({selectedWorkOrderIds.size})
-              </Button>
-            )}
             {hasPermission(permissionKeys.WORK_ORDERS_METER_CHANGEOUT) && (
               <Button 
                 size="sm"
@@ -1991,7 +1967,7 @@ export default function ProjectWorkOrders() {
     );
     
     setHeaderContent(content);
-  }, [project, user, projectId, hasPermission, selectedWorkOrderIds.size, viewMode, handleOpenBulkAssign, handleOpenBulkStatus, handleBulkDelete, setHeaderContent, editingWorkOrder]);
+  }, [project, user, projectId, hasPermission, viewMode, setHeaderContent, editingWorkOrder]);
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
@@ -3549,26 +3525,26 @@ export default function ProjectWorkOrders() {
         </>
       )}
 
-      {/* Search and Filters - hidden in calendar view */}
-      {viewMode !== "calendar" && (
-        <>
-          {/* Mobile toggle for search/tools */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="flex-shrink-0 md:hidden w-full justify-between"
-            onClick={() => setShowMobileTools(!showMobileTools)}
-            data-testid="button-toggle-mobile-tools"
-          >
-            <span className="flex items-center gap-2">
-              <Settings2 className="h-4 w-4" />
-              {showMobileTools ? "Hide Search & Tools" : "Show Search & Tools"}
-            </span>
-            {showMobileTools ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          </Button>
-          {/* Search/Tools card - always visible on desktop, toggleable on mobile */}
-          <Card className={`flex-shrink-0 ${showMobileTools ? "" : "hidden md:block"}`}>
-          <CardContent className="py-2 px-3">
+      {/* Search and Tools - collapsible on both desktop and mobile */}
+      <>
+        {/* Toggle for search/tools - visible on all screen sizes */}
+        <Button
+          variant="outline"
+          size="sm"
+          className="flex-shrink-0 w-full justify-between"
+          onClick={() => setShowMobileTools(!showMobileTools)}
+          data-testid="button-toggle-mobile-tools"
+        >
+          <span className="flex items-center gap-2">
+            <Settings2 className="h-4 w-4" />
+            {showMobileTools ? "Hide Search & Tools" : "Show Search & Tools"}
+          </span>
+          {showMobileTools ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        </Button>
+        {/* Search/Tools card - collapsible on all screen sizes */}
+        {showMobileTools && (
+        <Card className="flex-shrink-0">
+        <CardContent className="py-2 px-3">
             <div className="flex items-center gap-2 flex-wrap">
               <div className="relative flex-1 min-w-[180px] max-w-sm">
                 <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -3675,6 +3651,24 @@ export default function ProjectWorkOrders() {
                   New Work Order
                 </Button>
               )}
+              {hasPermission(permissionKeys.WORK_ORDERS_ASSIGN) && (
+                <Button variant="outline" size="sm" onClick={handleOpenBulkAssign} data-testid="button-assign-work-orders">
+                  <UserPlus className="h-3.5 w-3.5 mr-1" />
+                  Assign Work Orders
+                </Button>
+              )}
+              {hasPermission(permissionKeys.WORK_ORDERS_EDIT) && selectedWorkOrderIds.size > 0 && (
+                <Button variant="outline" size="sm" onClick={handleOpenBulkStatus} data-testid="button-set-status">
+                  <ArrowUpDown className="h-3.5 w-3.5 mr-1" />
+                  Set Status ({selectedWorkOrderIds.size})
+                </Button>
+              )}
+              {hasPermission(permissionKeys.WORK_ORDERS_DELETE) && selectedWorkOrderIds.size > 0 && (
+                <Button variant="destructive" size="sm" onClick={handleBulkDelete} data-testid="button-delete-selected">
+                  <Trash2 className="h-3.5 w-3.5 mr-1" />
+                  Delete ({selectedWorkOrderIds.size})
+                </Button>
+              )}
               {hasActiveFilters && (
                 <Button variant="ghost" size="sm" onClick={clearFilters} data-testid="button-clear-filters">
                   <X className="h-3.5 w-3.5 mr-1" />
@@ -3732,8 +3726,8 @@ export default function ProjectWorkOrders() {
             </div>
           </CardContent>
           </Card>
-        </>
-      )}
+        )}
+      </>
 
       {/* Results count - hidden in calendar view */}
       {viewMode !== "calendar" && workOrders.length > 0 && (searchQuery || hasActiveFilters) && (
