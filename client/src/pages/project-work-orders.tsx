@@ -1920,21 +1920,6 @@ export default function ProjectWorkOrders() {
           <span className="font-semibold text-sm truncate">{project.name}</span>
           <span className="text-xs text-muted-foreground">Work Orders</span>
         </div>
-        {user.role !== "customer" && hasPermission(permissionKeys.WORK_ORDERS_METER_CHANGEOUT) && (
-          <Button 
-            size="sm"
-            onClick={() => setShowStartSystemChangeout(true)} 
-            data-testid="header-button-start-system-changeout"
-            className="bg-green-600 text-white dark:bg-green-600"
-          >
-            {project.wizardMode === "reading_only" ? (
-              <Gauge className="h-3.5 w-3.5 mr-1" />
-            ) : (
-              <Wrench className="h-3.5 w-3.5 mr-1" />
-            )}
-            <span>{project.wizardMode === "reading_only" ? "Start Reading Capture" : "Start Changeout"}</span>
-          </Button>
-        )}
       </div>
     );
     
@@ -3495,6 +3480,23 @@ export default function ProjectWorkOrders() {
             </Card>
           </div>
         </>
+      )}
+
+      {/* Start Changeout/Reading Capture button */}
+      {user?.role !== "customer" && hasPermission(permissionKeys.WORK_ORDERS_METER_CHANGEOUT) && (
+        <Button 
+          size="sm"
+          onClick={() => setShowStartSystemChangeout(true)} 
+          data-testid="button-start-system-changeout"
+          className="flex-shrink-0 bg-green-600 text-white dark:bg-green-600 w-full sm:w-auto"
+        >
+          {project?.wizardMode === "reading_only" ? (
+            <Gauge className="h-3.5 w-3.5 mr-1" />
+          ) : (
+            <Wrench className="h-3.5 w-3.5 mr-1" />
+          )}
+          <span>{project?.wizardMode === "reading_only" ? "Start Reading Capture" : "Start Changeout"}</span>
+        </Button>
       )}
 
       {/* Search and Tools - collapsible on both desktop and mobile */}
