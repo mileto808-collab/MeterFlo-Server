@@ -32,7 +32,7 @@ import { useColumnPreferences } from "@/hooks/use-column-preferences";
 import { SearchFiltersDialog } from "@/components/search-filters-dialog";
 import { SortDialog } from "@/components/SortDialog";
 import { RouteSheetDialog } from "@/components/RouteSheetDialog";
-import { Search, Download, FileSpreadsheet, FileText, FileDown, X, ArrowUpDown, ArrowUp, ArrowDown, Route, ChevronRight } from "lucide-react";
+import { Search, Download, FileSpreadsheet, FileText, FileDown, X, ArrowUpDown, ArrowUp, ArrowDown, Route, ChevronRight, ChevronUp, ChevronDown, PanelTopClose, PanelTop } from "lucide-react";
 import type { Project, ServiceTypeRecord, WorkOrderStatus, SystemType, TroubleCode, User, UserGroup } from "@shared/schema";
 import * as XLSX from "xlsx";
 import { format } from "date-fns";
@@ -144,6 +144,7 @@ export default function SearchReports() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [isAutoPageSize, setIsAutoPageSize] = useState(true);
+  const [isHeaderCollapsed, setIsHeaderCollapsed] = useState(false);
 
   const tableScrollRef = useRef<HTMLDivElement>(null);
   const tableRef = useRef<HTMLTableElement>(null);
@@ -971,7 +972,7 @@ export default function SearchReports() {
       window.removeEventListener("resize", calculateOptimalPageSize);
       resizeObserver?.disconnect();
     };
-  }, [isAutoPageSize, searchResults?.results?.length]);
+  }, [isAutoPageSize, searchResults?.results?.length, isHeaderCollapsed]);
 
   // Calculate active filters
   const activeFiltersArray = [
@@ -1243,13 +1244,16 @@ export default function SearchReports() {
 
   return (
     <div className="p-6 flex flex-col gap-4 h-[calc(100vh-56px)] overflow-hidden">
-      <div className="flex-shrink-0">
-        <h1 className="text-2xl font-bold" data-testid="text-page-title">Search & Reports</h1>
-        <p className="text-muted-foreground">Search work orders across all your projects and generate reports</p>
-      </div>
+      {/* Collapsible header section */}
+      {!isHeaderCollapsed && (
+        <>
+          <div className="flex-shrink-0">
+            <h1 className="text-2xl font-bold" data-testid="text-page-title">Search & Reports</h1>
+            <p className="text-muted-foreground">Search work orders across all your projects and generate reports</p>
+          </div>
 
-      <Card className="flex-shrink-0">
-        <CardContent className="pt-4">
+          <Card className="flex-shrink-0">
+            <CardContent className="pt-4">
           <div className="flex items-center gap-2 flex-wrap">
             <div className="relative flex-1 min-w-[200px] max-w-md">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -1374,17 +1378,30 @@ export default function SearchReports() {
           </div>
         </CardContent>
       </Card>
+        </>
+      )}
 
       {searchResults && (
         <>
           <Card className="flex flex-col flex-1 min-h-0">
-            <CardHeader className="flex-shrink-0">
-              <div className="flex items-start justify-between gap-4 flex-wrap">
-                <div>
-                  <CardTitle>Search Results</CardTitle>
-                  <CardDescription>
-                    Found {searchResults.total} work order{searchResults.total !== 1 ? "s" : ""} across {searchResults.projectsSearched} project{searchResults.projectsSearched !== 1 ? "s" : ""}
-                  </CardDescription>
+            <CardHeader className="flex-shrink-0 py-3">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    onClick={() => setIsHeaderCollapsed(!isHeaderCollapsed)}
+                    data-testid="button-toggle-header"
+                    title={isHeaderCollapsed ? "Expand search panel" : "Collapse search panel"}
+                  >
+                    {isHeaderCollapsed ? <PanelTop className="h-4 w-4" /> : <PanelTopClose className="h-4 w-4" />}
+                  </Button>
+                  <div>
+                    <CardTitle className="text-base">Search Results</CardTitle>
+                    <CardDescription className="text-xs">
+                      Found {searchResults.total} work order{searchResults.total !== 1 ? "s" : ""} across {searchResults.projectsSearched} project{searchResults.projectsSearched !== 1 ? "s" : ""}
+                    </CardDescription>
+                  </div>
                 </div>
                 {searchResults.results.length > 0 && (
                   <div className="flex gap-2 flex-wrap">
@@ -1422,7 +1439,7 @@ export default function SearchReports() {
                 )}
               </div>
             </CardHeader>
-            <CardContent className="flex-1 min-h-0 flex flex-col">
+            <CardContent className="flex-1 min-h-0 flex flex-col p-0">
               {searchResults.results.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12">
                   <Search className="h-12 w-12 text-muted-foreground mb-4" />
@@ -1430,17 +1447,6 @@ export default function SearchReports() {
                 </div>
               ) : (
                 <>
-                  <TablePagination
-                    currentPage={currentPage}
-                    totalPages={totalPages}
-                    pageSize={pageSize}
-                    totalItems={filteredAndSortedResults.length}
-                    onPageChange={handlePageChange}
-                    onPageSizeChange={handlePageSizeChange}
-                    className="mb-4 flex-shrink-0"
-                    isAutoMode={isAutoPageSize}
-                    onAutoModeToggle={handleAutoModeToggle}
-                  />
                   <div ref={tableScrollRef} className="overflow-x-auto overflow-y-auto w-full flex-1 min-h-0">
                     <Table ref={tableRef} noWrapper>
                       <TableHeader>

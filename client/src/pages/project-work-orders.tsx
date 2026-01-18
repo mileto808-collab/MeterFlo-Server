@@ -3738,24 +3738,10 @@ export default function ProjectWorkOrders() {
         </>
       )}
 
-      {/* Results count and top pagination - hidden in calendar view */}
-      {viewMode !== "calendar" && workOrders.length > 0 && (
-        <div className="flex flex-col gap-1">
-          {(searchQuery || hasActiveFilters) && (
-            <div className="text-sm text-muted-foreground">
-              Filtered: {filteredAndSortedWorkOrders.length} of {workOrders.length} work orders
-            </div>
-          )}
-          <TablePagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            pageSize={pageSize}
-            totalItems={filteredAndSortedWorkOrders.length}
-            onPageChange={handlePageChange}
-            onPageSizeChange={handlePageSizeChange}
-            isAutoMode={isAutoPageSize}
-            onAutoModeToggle={handleAutoModeToggle}
-          />
+      {/* Results count - hidden in calendar view */}
+      {viewMode !== "calendar" && workOrders.length > 0 && (searchQuery || hasActiveFilters) && (
+        <div className="text-sm text-muted-foreground flex-shrink-0">
+          Filtered: {filteredAndSortedWorkOrders.length} of {workOrders.length} work orders
         </div>
       )}
 
