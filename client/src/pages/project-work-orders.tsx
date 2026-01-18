@@ -3881,18 +3881,17 @@ export default function ProjectWorkOrders() {
                 </TableBody>
               </Table>
             </div>
-            <div className="flex-shrink-0 p-4">
-              <TablePagination
-                currentPage={currentPage}
-                totalPages={totalPages}
-                pageSize={pageSize}
-                totalItems={filteredAndSortedWorkOrders.length}
-                onPageChange={handlePageChange}
-                onPageSizeChange={handlePageSizeChange}
-                isAutoMode={isAutoPageSize}
-                onAutoModeToggle={handleAutoModeToggle}
-              />
-            </div>
+            <TablePagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              pageSize={pageSize}
+              totalItems={filteredAndSortedWorkOrders.length}
+              onPageChange={handlePageChange}
+              onPageSizeChange={handlePageSizeChange}
+              className="mt-4"
+              isAutoMode={isAutoPageSize}
+              onAutoModeToggle={handleAutoModeToggle}
+            />
           </CardContent>
         </Card>
       )}
