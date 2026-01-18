@@ -158,6 +158,7 @@ export function StartSystemChangeoutDialog({
     setShowClaimConfirm(false);
     setPendingClaimCheck(false);
     setIsClaiming(false);
+    setShowNotesDialog(false);
   }, []);
 
   const handleScanResult = useCallback((decodedText: string) => {
@@ -423,6 +424,7 @@ export function StartSystemChangeoutDialog({
 
   // State to track when we're waiting for groups to load
   const [pendingClaimCheck, setPendingClaimCheck] = useState(false);
+  const [showNotesDialog, setShowNotesDialog] = useState(false);
   
   // Effect to handle claim check after groups have loaded
   useEffect(() => {
@@ -1006,10 +1008,15 @@ export function StartSystemChangeoutDialog({
                     <div className="flex items-start gap-3">
                       <StickyNote className="h-5 w-5 text-muted-foreground mt-0.5 shrink-0" />
                       <div className="min-w-0">
-                        <p className="text-sm text-muted-foreground">Notes</p>
-                        <p className="font-medium break-all" data-testid="text-confirm-notes">
-                          {foundWorkOrder.notes}
-                        </p>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setShowNotesDialog(true)}
+                          data-testid="button-view-notes"
+                        >
+                          Notes
+                        </Button>
                       </div>
                     </div>
                   )}
@@ -1092,6 +1099,27 @@ export function StartSystemChangeoutDialog({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+
+    {/* Notes Dialog */}
+    <Dialog open={showNotesDialog} onOpenChange={setShowNotesDialog}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Work Order Notes</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm whitespace-pre-wrap" data-testid="text-notes-content">
+          {foundWorkOrder?.notes}
+        </p>
+        <div className="flex justify-end">
+          <Button
+            variant="outline"
+            onClick={() => setShowNotesDialog(false)}
+            data-testid="button-notes-close"
+          >
+            Close
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
 
     </>
   );
