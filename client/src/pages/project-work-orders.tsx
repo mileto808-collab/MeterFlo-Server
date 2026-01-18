@@ -3518,33 +3518,9 @@ export default function ProjectWorkOrders() {
         {/* Search/Tools card - collapsible on all screen sizes */}
         {showMobileTools && (
         <Card className="flex-shrink-0">
-        <CardContent className="py-2 px-3">
-            {/* Row 1: View Toggle, Search, Filters, Actions */}
+        <CardContent className="py-2 px-3 space-y-2">
+            {/* Row 1: Search, Filters, Actions | Right: Assign, View Toggle */}
             <div className="flex items-center gap-2 flex-wrap">
-              {hasPermission('workOrders.calendar') && (
-                <div className="flex items-center border rounded-md flex-shrink-0">
-                  <Button
-                    variant={viewMode === "table" ? "secondary" : "ghost"}
-                    size="sm"
-                    onClick={() => setViewMode("table")}
-                    className="rounded-r-none"
-                    data-testid="button-view-table"
-                  >
-                    <List className="h-3.5 w-3.5 mr-1" />
-                    WO List
-                  </Button>
-                  <Button
-                    variant={viewMode === "calendar" ? "secondary" : "ghost"}
-                    size="sm"
-                    onClick={() => setViewMode("calendar")}
-                    className="rounded-l-none"
-                    data-testid="button-view-calendar"
-                  >
-                    <CalendarIcon className="h-3.5 w-3.5 mr-1" />
-                    Calendar
-                  </Button>
-                </div>
-              )}
               <div className="relative flex-1 min-w-[180px] max-w-sm">
                 <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
@@ -3650,12 +3626,6 @@ export default function ProjectWorkOrders() {
                   New Work Order
                 </Button>
               )}
-              {hasPermission(permissionKeys.WORK_ORDERS_ASSIGN) && (
-                <Button variant="outline" size="sm" onClick={handleOpenBulkAssign} data-testid="button-assign-work-orders">
-                  <UserPlus className="h-3.5 w-3.5 mr-1" />
-                  Assign Work Orders
-                </Button>
-              )}
               {hasPermission(permissionKeys.WORK_ORDERS_EDIT) && selectedWorkOrderIds.size > 0 && (
                 <Button variant="outline" size="sm" onClick={handleOpenBulkStatus} data-testid="button-set-status">
                   <ArrowUpDown className="h-3.5 w-3.5 mr-1" />
@@ -3680,31 +3650,69 @@ export default function ProjectWorkOrders() {
                   Clear Sort ({sortCriteria.length})
                 </Button>
               )}
+              {/* Right-aligned: Assign Work Orders, View Toggle */}
               <div className="flex-1" />
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <Button
-                  variant={showStats ? "secondary" : "outline"}
-                  size="sm"
-                  onClick={() => setShowStats(!showStats)}
-                  data-testid="button-toggle-stats"
-                >
-                  <BarChart3 className="h-3.5 w-3.5 mr-1" />
-                  {showStats ? "Hide Stats" : "Show Stats"}
-                </Button>
-                <ColumnSelector
-                  allColumns={filteredWorkOrderColumns}
-                  visibleColumns={filteredVisibleColumns}
-                  onChange={setVisibleColumns}
-                  disabled={columnPrefsLoading}
-                  orderedColumns={filteredOrderedColumns}
-                  stickyColumns={filteredStickyColumns}
-                  onStickyChange={setStickyColumns}
-                />
-                <SortDialog
-                  sortCriteria={sortCriteria}
-                  setSortCriteria={setSortCriteria}
-                  columns={filteredWorkOrderColumns}
-                />
+              <div className="flex items-center gap-2 flex-wrap">
+                {hasPermission(permissionKeys.WORK_ORDERS_ASSIGN) && (
+                  <Button variant="outline" size="sm" onClick={handleOpenBulkAssign} data-testid="button-assign-work-orders">
+                    <UserPlus className="h-3.5 w-3.5 mr-1" />
+                    Assign Work Orders
+                  </Button>
+                )}
+                {hasPermission('workOrders.calendar') && (
+                  <div className="flex items-center border rounded-md flex-shrink-0">
+                    <Button
+                      variant={viewMode === "table" ? "secondary" : "ghost"}
+                      size="sm"
+                      onClick={() => setViewMode("table")}
+                      className="rounded-r-none"
+                      data-testid="button-view-table"
+                    >
+                      <List className="h-3.5 w-3.5 mr-1" />
+                      WO List
+                    </Button>
+                    <Button
+                      variant={viewMode === "calendar" ? "secondary" : "ghost"}
+                      size="sm"
+                      onClick={() => setViewMode("calendar")}
+                      className="rounded-l-none"
+                      data-testid="button-view-calendar"
+                    >
+                      <CalendarIcon className="h-3.5 w-3.5 mr-1" />
+                      Calendar
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+            {/* Row 2: Stats, Columns, Sort | Right: CSV, Excel, PDF, Route Sheet */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                variant={showStats ? "secondary" : "outline"}
+                size="sm"
+                onClick={() => setShowStats(!showStats)}
+                data-testid="button-toggle-stats"
+              >
+                <BarChart3 className="h-3.5 w-3.5 mr-1" />
+                {showStats ? "Hide Stats" : "Show Stats"}
+              </Button>
+              <ColumnSelector
+                allColumns={filteredWorkOrderColumns}
+                visibleColumns={filteredVisibleColumns}
+                onChange={setVisibleColumns}
+                disabled={columnPrefsLoading}
+                orderedColumns={filteredOrderedColumns}
+                stickyColumns={filteredStickyColumns}
+                onStickyChange={setStickyColumns}
+              />
+              <SortDialog
+                sortCriteria={sortCriteria}
+                setSortCriteria={setSortCriteria}
+                columns={filteredWorkOrderColumns}
+              />
+              {/* Right-aligned: Export buttons */}
+              <div className="flex-1" />
+              <div className="flex items-center gap-2 flex-wrap">
                 <Button variant="outline" size="sm" onClick={exportToCSV} data-testid="button-export-csv">
                   <Download className="h-3.5 w-3.5 mr-1" />
                   CSV
