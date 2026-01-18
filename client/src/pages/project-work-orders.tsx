@@ -3774,7 +3774,7 @@ export default function ProjectWorkOrders() {
         </Card>
       ) : (
         <Card className="flex flex-col flex-1 min-h-0">
-          <CardContent className="flex-1 min-h-0 flex flex-col p-0">
+          <CardContent className="flex-1 min-h-0 flex flex-col pt-0 px-0 pb-4">
             <div ref={tableScrollRef} className="overflow-x-auto overflow-y-auto w-full flex-1 min-h-0">
               <Table ref={tableRef} noWrapper>
                 <TableHeader>
