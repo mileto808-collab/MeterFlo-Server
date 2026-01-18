@@ -3265,23 +3265,7 @@ export function WorkOrderDetail({
 
           {/* Sticky Footer */}
           <div className="sticky bottom-0 bg-background border-t py-4 -mx-4 px-4 md:-mx-6 md:px-6">
-            <div className="flex justify-between gap-3">
-              <div>
-                {canPrint && (
-                  <WorkOrderPdf
-                    workOrder={workOrder}
-                    projectId={projectId}
-                    projectName={projectName}
-                    workOrderFiles={workOrderFiles}
-                    formatDateTime={formatDateTime}
-                    getAssignedUserName={getAssignedUserName}
-                    serviceTypes={serviceTypes}
-                    troubleCodes={troubleCodes}
-                    timeTracking={timeTracking}
-                  />
-                )}
-              </div>
-              <div className="flex gap-3">
+            <div className="flex justify-end gap-3">
                 <Button type="button" variant="outline" onClick={onBack} data-testid="button-cancel">
                   {canEdit ? "Cancel" : "Back"}
                 </Button>
@@ -3300,7 +3284,6 @@ export function WorkOrderDetail({
                     )}
                   </Button>
                 )}
-              </div>
             </div>
           </div>
         </form>
