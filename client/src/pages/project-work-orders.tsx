@@ -3504,17 +3504,16 @@ export default function ProjectWorkOrders() {
       {/* Start Changeout/Reading Capture button - mobile only (hidden on desktop) */}
       {user?.role !== "customer" && hasPermission(permissionKeys.WORK_ORDERS_METER_CHANGEOUT) && (
         <Button 
-          size="sm"
           onClick={() => setShowStartSystemChangeout(true)} 
           data-testid="button-start-system-changeout-mobile"
           className="flex-shrink-0 bg-green-600 text-white dark:bg-green-600 w-full md:hidden"
         >
           {project?.wizardMode === "reading_only" ? (
-            <Gauge className="h-3.5 w-3.5 mr-1" />
+            <Gauge className="h-4 w-4 mr-1.5" />
           ) : (
-            <Wrench className="h-3.5 w-3.5 mr-1" />
+            <Wrench className="h-4 w-4 mr-1.5" />
           )}
-          <span>{project?.wizardMode === "reading_only" ? "Start Reading Capture" : "Start Changeout"}</span>
+          <span className="font-bold text-base">{project?.wizardMode === "reading_only" ? "Start Reading Capture" : "Start Changeout"}</span>
         </Button>
       )}
 
