@@ -3482,13 +3482,13 @@ export default function ProjectWorkOrders() {
         </>
       )}
 
-      {/* Start Changeout/Reading Capture button */}
+      {/* Start Changeout/Reading Capture button - mobile only (hidden on desktop) */}
       {user?.role !== "customer" && hasPermission(permissionKeys.WORK_ORDERS_METER_CHANGEOUT) && (
         <Button 
           size="sm"
           onClick={() => setShowStartSystemChangeout(true)} 
-          data-testid="button-start-system-changeout"
-          className="flex-shrink-0 bg-green-600 text-white dark:bg-green-600 w-full sm:w-auto"
+          data-testid="button-start-system-changeout-mobile"
+          className="flex-shrink-0 bg-green-600 text-white dark:bg-green-600 w-full md:hidden"
         >
           {project?.wizardMode === "reading_only" ? (
             <Gauge className="h-3.5 w-3.5 mr-1" />
@@ -3620,10 +3620,20 @@ export default function ProjectWorkOrders() {
                 activeFilterCount={activeFilterCount}
                 clearAllFilters={clearFilters}
               />
-              {hasPermission(permissionKeys.WORK_ORDERS_CREATE) && (
-                <Button variant="outline" size="sm" onClick={() => setIsCreatingWorkOrder(true)} data-testid="button-create-work-order">
-                  <Plus className="h-3.5 w-3.5 mr-1" />
-                  New Work Order
+              {/* Start Changeout - desktop only (hidden on mobile) */}
+              {user?.role !== "customer" && hasPermission(permissionKeys.WORK_ORDERS_METER_CHANGEOUT) && (
+                <Button 
+                  size="sm"
+                  onClick={() => setShowStartSystemChangeout(true)} 
+                  data-testid="button-start-system-changeout-desktop"
+                  className="hidden md:flex bg-green-600 text-white dark:bg-green-600"
+                >
+                  {project?.wizardMode === "reading_only" ? (
+                    <Gauge className="h-3.5 w-3.5 mr-1" />
+                  ) : (
+                    <Wrench className="h-3.5 w-3.5 mr-1" />
+                  )}
+                  <span>{project?.wizardMode === "reading_only" ? "Start Reading Capture" : "Start Changeout"}</span>
                 </Button>
               )}
               {hasPermission(permissionKeys.WORK_ORDERS_EDIT) && selectedWorkOrderIds.size > 0 && (
@@ -3710,6 +3720,12 @@ export default function ProjectWorkOrders() {
                 setSortCriteria={setSortCriteria}
                 columns={filteredWorkOrderColumns}
               />
+              {hasPermission(permissionKeys.WORK_ORDERS_CREATE) && (
+                <Button variant="outline" size="sm" onClick={() => setIsCreatingWorkOrder(true)} data-testid="button-create-work-order">
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  New Work Order
+                </Button>
+              )}
               {/* Right-aligned: Export buttons */}
               <div className="flex-1" />
               <div className="flex items-center gap-2 flex-wrap">
