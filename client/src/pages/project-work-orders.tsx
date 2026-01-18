@@ -190,7 +190,13 @@ export default function ProjectWorkOrders() {
   const [showFilters, setShowFilters] = useState(false);
   const [showStats, setShowStats] = useState(false);
   const [showMobileStats, setShowMobileStats] = useState(false);
-  const [showMobileTools, setShowMobileTools] = useState(false);
+  const [showMobileTools, setShowMobileTools] = useState(() => {
+    // Default to expanded on desktop (md breakpoint = 768px)
+    if (typeof window !== 'undefined') {
+      return window.innerWidth >= 768;
+    }
+    return false;
+  });
   const [filterSystemWoId, setFilterSystemWoId] = useState("");
   const [filterCustomerId, setFilterCustomerId] = useState("");
   const [filterCustomerName, setFilterCustomerName] = useState("");
