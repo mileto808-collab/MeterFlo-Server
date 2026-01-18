@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, Link, useLocation } from "wouter";
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback, useLayoutEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -239,7 +239,9 @@ export default function ProjectWorkOrders() {
     scheduledCount: number;
   } | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(50);
+  const [pageSize, setPageSize] = useState(10);
+  const [isAutoPageSize, setIsAutoPageSize] = useState(true);
+  const tableContainerRef = useRef<HTMLDivElement>(null);
   const [selectedWorkOrderIds, setSelectedWorkOrderIds] = useState<Set<number>>(new Set());
   const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
   const [showBulkStatusDialog, setShowBulkStatusDialog] = useState(false);
@@ -2004,9 +2006,42 @@ export default function ProjectWorkOrders() {
   };
 
   const handlePageSizeChange = (size: number) => {
+    setIsAutoPageSize(false);
     setPageSize(size);
     setCurrentPage(1);
   };
+
+  const handleAutoModeToggle = useCallback(() => {
+    setIsAutoPageSize(true);
+  }, []);
+
+  // Auto page size calculation based on viewport height
+  useLayoutEffect(() => {
+    if (!isAutoPageSize) return;
+
+    const calculateOptimalPageSize = () => {
+      const rowHeight = 52;
+      const headerHeight = 48;
+      const paginationHeight = 80;
+      const toolbarHeight = 180;
+      const viewportHeight = window.innerHeight;
+      
+      const availableHeight = viewportHeight - toolbarHeight - headerHeight - paginationHeight;
+      const optimalRows = Math.floor(availableHeight / rowHeight);
+      const clampedRows = Math.max(5, Math.min(100, optimalRows));
+      
+      setPageSize((prevSize) => {
+        if (prevSize !== clampedRows) {
+          setCurrentPage(1);
+        }
+        return clampedRows;
+      });
+    };
+
+    calculateOptimalPageSize();
+    window.addEventListener("resize", calculateOptimalPageSize);
+    return () => window.removeEventListener("resize", calculateOptimalPageSize);
+  }, [isAutoPageSize]);
 
   const clearFilters = () => {
     setSearchQuery("");
@@ -3701,6 +3736,8 @@ export default function ProjectWorkOrders() {
             totalItems={filteredAndSortedWorkOrders.length}
             onPageChange={handlePageChange}
             onPageSizeChange={handlePageSizeChange}
+            isAutoMode={isAutoPageSize}
+            onAutoModeToggle={handleAutoModeToggle}
           />
         </div>
       )}
@@ -3854,6 +3891,8 @@ export default function ProjectWorkOrders() {
               onPageChange={handlePageChange}
               onPageSizeChange={handlePageSizeChange}
               className="w-full"
+              isAutoMode={isAutoPageSize}
+              onAutoModeToggle={handleAutoModeToggle}
             />
           </CardFooter>
         </Card>

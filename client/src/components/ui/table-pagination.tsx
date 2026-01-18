@@ -6,7 +6,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Maximize2 } from "lucide-react";
 
 interface TablePaginationProps {
   currentPage: number;
@@ -17,6 +17,8 @@ interface TablePaginationProps {
   onPageSizeChange: (size: number) => void;
   pageSizeOptions?: number[];
   className?: string;
+  isAutoMode?: boolean;
+  onAutoModeToggle?: () => void;
 }
 
 export function TablePagination({
@@ -28,6 +30,8 @@ export function TablePagination({
   onPageSizeChange,
   pageSizeOptions = [10, 25, 50, 100, 250],
   className = "",
+  isAutoMode = false,
+  onAutoModeToggle,
 }: TablePaginationProps) {
   const startItem = totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1;
   const endItem = Math.min(currentPage * pageSize, totalItems);
@@ -37,13 +41,34 @@ export function TablePagination({
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <span>Rows per page:</span>
         <Select
-          value={String(pageSize)}
-          onValueChange={(value) => onPageSizeChange(Number(value))}
+          value={isAutoMode ? "auto" : String(pageSize)}
+          onValueChange={(value) => {
+            if (value === "auto") {
+              onAutoModeToggle?.();
+            } else {
+              onPageSizeChange(Number(value));
+            }
+          }}
         >
-          <SelectTrigger className="h-8 w-[65px]" data-testid="select-page-size">
-            <SelectValue />
+          <SelectTrigger className="h-8 w-[80px]" data-testid="select-page-size">
+            <SelectValue>
+              {isAutoMode ? (
+                <span className="flex items-center gap-1">
+                  <Maximize2 className="h-3 w-3" />
+                  {pageSize}
+                </span>
+              ) : undefined}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent>
+            {onAutoModeToggle && (
+              <SelectItem value="auto" data-testid="select-page-size-auto">
+                <span className="flex items-center gap-1">
+                  <Maximize2 className="h-3 w-3" />
+                  Auto
+                </span>
+              </SelectItem>
+            )}
             {pageSizeOptions.map((size) => (
               <SelectItem key={size} value={String(size)} data-testid={`select-page-size-${size}`}>
                 {size}

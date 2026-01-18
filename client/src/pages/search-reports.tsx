@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, useLayoutEffect, useCallback } from "react";
 import { Link, useLocation } from "wouter";
 import { BackToTop } from "@/components/ui/back-to-top";
 import { TablePagination } from "@/components/ui/table-pagination";
@@ -142,7 +142,8 @@ export default function SearchReports() {
   const [showRouteSheetDialog, setShowRouteSheetDialog] = useState(false);
   const [stateRestored, setStateRestored] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(50);
+  const [pageSize, setPageSize] = useState(10);
+  const [isAutoPageSize, setIsAutoPageSize] = useState(true);
 
   const tableScrollRef = useRef<HTMLDivElement>(null);
   const tableRef = useRef<HTMLTableElement>(null);
@@ -918,9 +919,42 @@ export default function SearchReports() {
   };
 
   const handlePageSizeChange = (size: number) => {
+    setIsAutoPageSize(false);
     setPageSize(size);
     setCurrentPage(1);
   };
+
+  const handleAutoModeToggle = useCallback(() => {
+    setIsAutoPageSize(true);
+  }, []);
+
+  // Auto page size calculation based on viewport height
+  useLayoutEffect(() => {
+    if (!isAutoPageSize) return;
+
+    const calculateOptimalPageSize = () => {
+      const rowHeight = 52;
+      const headerHeight = 48;
+      const paginationHeight = 80;
+      const toolbarHeight = 180;
+      const viewportHeight = window.innerHeight;
+      
+      const availableHeight = viewportHeight - toolbarHeight - headerHeight - paginationHeight;
+      const optimalRows = Math.floor(availableHeight / rowHeight);
+      const clampedRows = Math.max(5, Math.min(100, optimalRows));
+      
+      setPageSize((prevSize) => {
+        if (prevSize !== clampedRows) {
+          setCurrentPage(1);
+        }
+        return clampedRows;
+      });
+    };
+
+    calculateOptimalPageSize();
+    window.addEventListener("resize", calculateOptimalPageSize);
+    return () => window.removeEventListener("resize", calculateOptimalPageSize);
+  }, [isAutoPageSize]);
 
   // Calculate active filters
   const activeFiltersArray = [
@@ -1387,6 +1421,8 @@ export default function SearchReports() {
                     onPageChange={handlePageChange}
                     onPageSizeChange={handlePageSizeChange}
                     className="mb-4"
+                    isAutoMode={isAutoPageSize}
+                    onAutoModeToggle={handleAutoModeToggle}
                   />
                   <div ref={tableScrollRef} className="overflow-x-auto w-full min-h-[500px] max-h-[calc(100vh-350px)] overflow-y-auto">
                     <Table ref={tableRef} noWrapper>
@@ -1460,6 +1496,8 @@ export default function SearchReports() {
                     onPageChange={handlePageChange}
                     onPageSizeChange={handlePageSizeChange}
                     className="mt-4"
+                    isAutoMode={isAutoPageSize}
+                    onAutoModeToggle={handleAutoModeToggle}
                   />
                 </>
               )}
