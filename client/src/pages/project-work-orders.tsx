@@ -3774,7 +3774,7 @@ export default function ProjectWorkOrders() {
         </Card>
       ) : (
         <Card className="flex flex-col flex-1 min-h-0">
-          <CardContent className="flex-1 min-h-0 flex flex-col pt-0 px-0 pb-4">
+          <CardContent className="flex-1 min-h-0 flex flex-col p-0">
             <div ref={tableScrollRef} className="overflow-x-auto overflow-y-auto w-full flex-1 min-h-0">
               <Table ref={tableRef} noWrapper>
                 <TableHeader>
@@ -3881,17 +3881,18 @@ export default function ProjectWorkOrders() {
                 </TableBody>
               </Table>
             </div>
-            <TablePagination
-              currentPage={currentPage}
-              totalPages={totalPages}
-              pageSize={pageSize}
-              totalItems={filteredAndSortedWorkOrders.length}
-              onPageChange={handlePageChange}
-              onPageSizeChange={handlePageSizeChange}
-              className="mt-4"
-              isAutoMode={isAutoPageSize}
-              onAutoModeToggle={handleAutoModeToggle}
-            />
+            <div className="flex-shrink-0 p-4">
+              <TablePagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                pageSize={pageSize}
+                totalItems={filteredAndSortedWorkOrders.length}
+                onPageChange={handlePageChange}
+                onPageSizeChange={handlePageSizeChange}
+                isAutoMode={isAutoPageSize}
+                onAutoModeToggle={handleAutoModeToggle}
+              />
+            </div>
           </CardContent>
         </Card>
       )}
