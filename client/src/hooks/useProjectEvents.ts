@@ -29,8 +29,20 @@ export function useProjectEvents(projectId: number | null, options?: UseProjectE
         queryClient.invalidateQueries({ 
           predicate: (query) => {
             const key = query.queryKey;
-            if (Array.isArray(key) && typeof key[0] === 'string') {
-              return key[0].startsWith(`/api/projects/${event.projectId}/work-orders`);
+            if (Array.isArray(key)) {
+              if (typeof key[0] === 'string') {
+                if (key[0].startsWith(`/api/projects/${event.projectId}/work-orders`)) {
+                  return true;
+                }
+                if (key[0] === '/api/projects' && key[1] === event.projectId && key[2] === 'work-orders') {
+                  return true;
+                }
+              }
+              if (Array.isArray(key[0]) && typeof key[0][0] === 'string') {
+                if (key[0][0].startsWith(`/api/projects/${event.projectId}/work-orders`)) {
+                  return true;
+                }
+              }
             }
             return false;
           }

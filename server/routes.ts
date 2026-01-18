@@ -3594,6 +3594,8 @@ export async function registerRoutes(
         endTime,
       });
       
+      emitWorkOrderUpdated(projectId, workOrderId, currentUser.id);
+      
       res.json(timeTracking);
     } catch (error) {
       console.error("Error saving work order time tracking:", error);
