@@ -16,6 +16,7 @@ import { queryClient } from "@/lib/queryClient";
 import { Upload, File, Trash2, ArrowLeft, ShieldAlert, Download, Folder, List, Grid, Image as ImageIcon, Eye, MoreVertical } from "lucide-react";
 import type { Project } from "@shared/schema";
 import { useTimezone } from "@/hooks/use-timezone";
+import { useProjectEvents } from "@/hooks/useProjectEvents";
 
 type ViewMode = "list" | "thumbnail";
 
@@ -52,6 +53,9 @@ export default function ProjectFiles() {
   const [accessDeniedForProject, setAccessDeniedForProject] = useState<number | null>(null);
   const accessDenied = accessDeniedForProject === projectId;
   const [viewMode, setViewMode] = useState<ViewMode>("list");
+
+  // Subscribe to SSE events for real-time file updates
+  useProjectEvents(projectId);
 
   const { data: project, error: projectError } = useQuery<Project>({
     queryKey: ["/api/projects", projectId],

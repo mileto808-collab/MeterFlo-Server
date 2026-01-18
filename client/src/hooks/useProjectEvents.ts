@@ -59,6 +59,7 @@ export function useProjectEvents(projectId: number | null, options?: UseProjectE
             const key = query.queryKey;
             if (Array.isArray(key) && typeof key[0] === 'string') {
               return key[0].startsWith(`/api/projects/${event.projectId}/files`) ||
+                     key[0].startsWith(`/api/projects/${event.projectId}/ftp-files`) ||
                      key[0].includes(`/work-orders/${event.workOrderId}/files`);
             }
             return false;

@@ -10,6 +10,7 @@ import { queryClient } from "@/lib/queryClient";
 import { Upload, File, Trash2, ArrowLeft, ShieldAlert, Download, FolderSync, RefreshCw } from "lucide-react";
 import type { Project } from "@shared/schema";
 import { useTimezone } from "@/hooks/use-timezone";
+import { useProjectEvents } from "@/hooks/useProjectEvents";
 
 interface FtpFile {
   name: string;
@@ -36,6 +37,9 @@ export default function ProjectFtpFiles() {
   const [uploading, setUploading] = useState(false);
   const [accessDeniedForProject, setAccessDeniedForProject] = useState<number | null>(null);
   const accessDenied = accessDeniedForProject === projectId;
+
+  // Subscribe to SSE events for real-time file updates
+  useProjectEvents(projectId);
 
   const { data: project, error: projectError } = useQuery<Project>({
     queryKey: ["/api/projects", projectId],

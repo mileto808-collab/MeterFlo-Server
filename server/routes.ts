@@ -4090,6 +4090,9 @@ export async function registerRoutes(
         req.file.buffer
       );
       
+      // Emit SSE event for real-time updates
+      emitFileAdded(projectId, undefined, currentUser?.id);
+      
       res.status(201).json({ message: "File uploaded", path: filePath });
     } catch (error) {
       console.error("Error uploading project file:", error);
@@ -4112,6 +4115,9 @@ export async function registerRoutes(
       }
       
       await deleteProjectFile(project.name, project.id, req.params.filename);
+      
+      // Emit SSE event for real-time updates
+      emitFileDeleted(projectId, undefined, currentUser?.id);
       
       res.status(204).send();
     } catch (error) {
@@ -4256,6 +4262,9 @@ export async function registerRoutes(
         req.file.buffer
       );
       
+      // Emit SSE event for real-time updates
+      emitFileAdded(projectId, undefined, currentUser?.id);
+      
       res.json({ success: true, path: savedPath });
     } catch (error) {
       console.error("Error uploading FTP file:", error);
@@ -4289,6 +4298,9 @@ export async function registerRoutes(
       if (clearedCount > 0) {
         console.log(`[FTP Delete] Cleared lastProcessedFile for ${clearedCount} import config(s) referencing "${req.params.filename}"`);
       }
+      
+      // Emit SSE event for real-time updates
+      emitFileDeleted(projectId, undefined, currentUser?.id);
       
       res.json({ success: true });
     } catch (error) {
