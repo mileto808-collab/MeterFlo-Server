@@ -2055,7 +2055,7 @@ export default function ProjectWorkOrders() {
       window.removeEventListener("resize", calculateOptimalPageSize);
       resizeObserver?.disconnect();
     };
-  }, [isAutoPageSize, workOrders.length, showStats]);
+  }, [isAutoPageSize, workOrders.length]);
 
   const clearFilters = () => {
     setSearchQuery("");
@@ -3520,7 +3520,7 @@ export default function ProjectWorkOrders() {
           <Button
             variant="outline"
             size="sm"
-            className="md:hidden w-full justify-between"
+            className="flex-shrink-0 md:hidden w-full justify-between"
             onClick={() => setShowMobileStats(!showMobileStats)}
             data-testid="button-toggle-mobile-stats"
           >
@@ -3531,7 +3531,7 @@ export default function ProjectWorkOrders() {
             {showMobileStats ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </Button>
           {/* Stats grid - always visible on desktop, toggleable on mobile */}
-          <div className={`grid grid-cols-2 md:grid-cols-6 gap-1.5 ${showMobileStats ? "" : "hidden md:grid"}`}>
+          <div className={`flex-shrink-0 grid grid-cols-2 md:grid-cols-6 gap-1.5 ${showMobileStats ? "" : "hidden md:grid"}`}>
             {workOrderStatuses
               .slice()
               .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
@@ -3562,7 +3562,7 @@ export default function ProjectWorkOrders() {
           <Button
             variant="outline"
             size="sm"
-            className="md:hidden w-full justify-between"
+            className="flex-shrink-0 md:hidden w-full justify-between"
             onClick={() => setShowMobileTools(!showMobileTools)}
             data-testid="button-toggle-mobile-tools"
           >
@@ -3573,7 +3573,7 @@ export default function ProjectWorkOrders() {
             {showMobileTools ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </Button>
           {/* Search/Tools card - always visible on desktop, toggleable on mobile */}
-          <Card className={showMobileTools ? "" : "hidden md:block"}>
+          <Card className={`flex-shrink-0 ${showMobileTools ? "" : "hidden md:block"}`}>
           <CardContent className="py-2 px-3">
             <div className="flex items-center gap-2 flex-wrap">
               <div className="relative flex-1 min-w-[180px] max-w-sm">
