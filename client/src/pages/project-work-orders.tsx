@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ColumnSelector, type ColumnConfig } from "@/components/column-selector";
 import { useColumnPreferences } from "@/hooks/use-column-preferences";
 import { type FilterConfig } from "@/components/filter-selector";
@@ -241,7 +241,6 @@ export default function ProjectWorkOrders() {
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [isAutoPageSize, setIsAutoPageSize] = useState(true);
-  const tableContainerRef = useRef<HTMLDivElement>(null);
   const [selectedWorkOrderIds, setSelectedWorkOrderIds] = useState<Set<number>>(new Set());
   const [showBulkDeleteDialog, setShowBulkDeleteDialog] = useState(false);
   const [showBulkStatusDialog, setShowBulkStatusDialog] = useState(false);
@@ -2015,14 +2014,12 @@ export default function ProjectWorkOrders() {
     setIsAutoPageSize(true);
   }, []);
 
-  // Auto page size calculation based on actual container height
-  // Observe the stable wrapper (tableContainerRef) rather than the scrollable div to prevent jitter
+  // Auto page size calculation - matches Search & Reports exactly
   useLayoutEffect(() => {
     if (!isAutoPageSize || viewMode !== "table") return;
 
     const calculateOptimalPageSize = () => {
-      // Use the stable container wrapper for height calculation
-      const container = tableContainerRef.current;
+      const container = tableScrollRef.current;
       if (!container) return;
       
       const rowHeight = 52;
@@ -2030,7 +2027,7 @@ export default function ProjectWorkOrders() {
       
       const containerHeight = container.clientHeight;
       const availableHeight = containerHeight - tableHeaderHeight;
-      if (availableHeight <= 0) return; // Guard against invalid height
+      if (availableHeight <= 0) return;
       
       const optimalRows = Math.floor(availableHeight / rowHeight);
       const clampedRows = Math.max(5, Math.min(100, optimalRows));
@@ -2043,12 +2040,10 @@ export default function ProjectWorkOrders() {
       });
     };
 
-    // Use requestAnimationFrame for initial calculation
     const rafId = requestAnimationFrame(calculateOptimalPageSize);
     window.addEventListener("resize", calculateOptimalPageSize);
     
-    // Use ResizeObserver on the stable wrapper (not the scrollable div)
-    const container = tableContainerRef.current;
+    const container = tableScrollRef.current;
     let resizeObserver: ResizeObserver | null = null;
     if (container) {
       resizeObserver = new ResizeObserver(calculateOptimalPageSize);
@@ -2060,7 +2055,7 @@ export default function ProjectWorkOrders() {
       window.removeEventListener("resize", calculateOptimalPageSize);
       resizeObserver?.disconnect();
     };
-  }, [isAutoPageSize, workOrders.length, viewMode, showStats]);
+  }, [isAutoPageSize, workOrders.length, showStats]);
 
   const clearFilters = () => {
     setSearchQuery("");
@@ -3779,9 +3774,8 @@ export default function ProjectWorkOrders() {
         </Card>
       ) : (
         <Card className="flex flex-col flex-1 min-h-0">
-          <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
-            <div ref={tableContainerRef} className="flex-1 min-h-0 overflow-hidden">
-              <div ref={tableScrollRef} className="overflow-x-auto overflow-y-auto w-full h-full">
+          <CardContent className="flex-1 min-h-0 flex flex-col p-0">
+            <div ref={tableScrollRef} className="overflow-x-auto overflow-y-auto w-full flex-1 min-h-0">
               <Table ref={tableRef} noWrapper>
                 <TableHeader>
                   <TableRow>
@@ -3886,10 +3880,7 @@ export default function ProjectWorkOrders() {
                   ))}
                 </TableBody>
               </Table>
-              </div>
             </div>
-          </CardContent>
-          <CardFooter className="border-t p-4">
             <TablePagination
               currentPage={currentPage}
               totalPages={totalPages}
@@ -3897,11 +3888,11 @@ export default function ProjectWorkOrders() {
               totalItems={filteredAndSortedWorkOrders.length}
               onPageChange={handlePageChange}
               onPageSizeChange={handlePageSizeChange}
-              className="w-full"
+              className="mt-4"
               isAutoMode={isAutoPageSize}
               onAutoModeToggle={handleAutoModeToggle}
             />
-          </CardFooter>
+          </CardContent>
         </Card>
       )}
 
