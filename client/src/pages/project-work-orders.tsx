@@ -1921,7 +1921,7 @@ export default function ProjectWorkOrders() {
           <span className="text-xs text-muted-foreground">Work Orders</span>
         </div>
         {user.role !== "customer" && (
-          <div className="flex items-center gap-2 flex-nowrap overflow-x-auto">
+          <div className="flex items-center gap-2 flex-wrap">
             <Link href={`/projects/${projectId}/files`}>
               <Button variant="outline" size="sm" data-testid="header-button-project-files">
                 <Folder className="h-3.5 w-3.5 mr-1" />
@@ -1959,12 +1959,6 @@ export default function ProjectWorkOrders() {
                   <Wrench className="h-3.5 w-3.5 mr-1" />
                 )}
                 <span>{project.wizardMode === "reading_only" ? "Start Reading Capture" : "Start Changeout"}</span>
-              </Button>
-            )}
-            {hasPermission(permissionKeys.WORK_ORDERS_CREATE) && (
-              <Button size="sm" onClick={() => setIsCreatingWorkOrder(true)} data-testid="header-button-create-work-order">
-                <Plus className="h-3.5 w-3.5 mr-1" />
-                <span className="hidden lg:inline">New Work Order</span>
               </Button>
             )}
             {hasPermission('workOrders.calendar') && (
@@ -3675,6 +3669,12 @@ export default function ProjectWorkOrders() {
                 activeFilterCount={activeFilterCount}
                 clearAllFilters={clearFilters}
               />
+              {hasPermission(permissionKeys.WORK_ORDERS_CREATE) && (
+                <Button variant="outline" size="sm" onClick={() => setIsCreatingWorkOrder(true)} data-testid="button-create-work-order">
+                  <Plus className="h-3.5 w-3.5 mr-1" />
+                  New Work Order
+                </Button>
+              )}
               {hasActiveFilters && (
                 <Button variant="ghost" size="sm" onClick={clearFilters} data-testid="button-clear-filters">
                   <X className="h-3.5 w-3.5 mr-1" />
