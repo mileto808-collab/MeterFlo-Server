@@ -1920,48 +1920,20 @@ export default function ProjectWorkOrders() {
           <span className="font-semibold text-sm truncate">{project.name}</span>
           <span className="text-xs text-muted-foreground">Work Orders</span>
         </div>
-        {user.role !== "customer" && (
-          <div className="flex items-center gap-2 flex-wrap">
-            {hasPermission(permissionKeys.WORK_ORDERS_METER_CHANGEOUT) && (
-              <Button 
-                size="sm"
-                onClick={() => setShowStartSystemChangeout(true)} 
-                data-testid="header-button-start-system-changeout"
-                className="bg-green-600 text-white dark:bg-green-600"
-              >
-                {project.wizardMode === "reading_only" ? (
-                  <Gauge className="h-3.5 w-3.5 mr-1" />
-                ) : (
-                  <Wrench className="h-3.5 w-3.5 mr-1" />
-                )}
-                <span>{project.wizardMode === "reading_only" ? "Start Reading Capture" : "Start Changeout"}</span>
-              </Button>
+        {user.role !== "customer" && hasPermission(permissionKeys.WORK_ORDERS_METER_CHANGEOUT) && (
+          <Button 
+            size="sm"
+            onClick={() => setShowStartSystemChangeout(true)} 
+            data-testid="header-button-start-system-changeout"
+            className="bg-green-600 text-white dark:bg-green-600"
+          >
+            {project.wizardMode === "reading_only" ? (
+              <Gauge className="h-3.5 w-3.5 mr-1" />
+            ) : (
+              <Wrench className="h-3.5 w-3.5 mr-1" />
             )}
-            {hasPermission('workOrders.calendar') && (
-              <div className="flex items-center border rounded-md">
-                <Button
-                  variant={viewMode === "table" ? "secondary" : "ghost"}
-                  size="sm"
-                  onClick={() => setViewMode("table")}
-                  className="rounded-r-none"
-                  data-testid="header-view-table"
-                >
-                  <List className="h-3.5 w-3.5 mr-1" />
-                  <span className="hidden lg:inline">WO List</span>
-                </Button>
-                <Button
-                  variant={viewMode === "calendar" ? "secondary" : "ghost"}
-                  size="sm"
-                  onClick={() => setViewMode("calendar")}
-                  className="rounded-l-none"
-                  data-testid="header-view-calendar"
-                >
-                  <CalendarIcon className="h-3.5 w-3.5 mr-1" />
-                  <span className="hidden lg:inline">Calendar</span>
-                </Button>
-              </div>
-            )}
-          </div>
+            <span>{project.wizardMode === "reading_only" ? "Start Reading Capture" : "Start Changeout"}</span>
+          </Button>
         )}
       </div>
     );
@@ -3545,7 +3517,32 @@ export default function ProjectWorkOrders() {
         {showMobileTools && (
         <Card className="flex-shrink-0">
         <CardContent className="py-2 px-3">
+            {/* Row 1: View Toggle, Search, Filters, Actions */}
             <div className="flex items-center gap-2 flex-wrap">
+              {hasPermission('workOrders.calendar') && (
+                <div className="flex items-center border rounded-md flex-shrink-0">
+                  <Button
+                    variant={viewMode === "table" ? "secondary" : "ghost"}
+                    size="sm"
+                    onClick={() => setViewMode("table")}
+                    className="rounded-r-none"
+                    data-testid="button-view-table"
+                  >
+                    <List className="h-3.5 w-3.5 mr-1" />
+                    WO List
+                  </Button>
+                  <Button
+                    variant={viewMode === "calendar" ? "secondary" : "ghost"}
+                    size="sm"
+                    onClick={() => setViewMode("calendar")}
+                    className="rounded-l-none"
+                    data-testid="button-view-calendar"
+                  >
+                    <CalendarIcon className="h-3.5 w-3.5 mr-1" />
+                    Calendar
+                  </Button>
+                </div>
+              )}
               <div className="relative flex-1 min-w-[180px] max-w-sm">
                 <Search className="absolute left-2.5 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                 <Input
