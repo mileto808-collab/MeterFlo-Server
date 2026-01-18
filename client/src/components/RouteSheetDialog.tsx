@@ -53,11 +53,11 @@ export function RouteSheetDialog({
       bwipjs.toCanvas(canvas, {
         bcid: "code128",
         text: text,
-        scale: 2,
-        height: 8,
+        scale: 3,
+        height: 12,
         includetext: true,
         textxalign: "center",
-        textsize: 8,
+        textsize: 14,
       });
       return canvas.toDataURL("image/png");
     } catch (error) {
@@ -147,7 +147,7 @@ export function RouteSheetDialog({
                   ? `<img src="${codeImage}" style="max-width: ${cellWidth - 20}px; max-height: ${codeType === "barcode" ? 50 : 70}px;" />`
                   : `<div style="font-size: 10px; color: #999; padding: 10px;">No ${systemIdField.includes("Module") ? "module" : "system"} ID</div>`
               }
-              ${codeType === "qrcode" && idValue ? `<div style="font-size: 9px; color: #666; margin-top: 2px;">${idDisplay}</div>` : ""}
+              ${codeType === "qrcode" && idValue ? `<div style="font-size: 13px; font-weight: bold; color: #000; margin-top: 4px;">${idDisplay}</div>` : ""}
             </td>
           `;
           })
