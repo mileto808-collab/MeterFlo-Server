@@ -533,6 +533,17 @@ export function SystemChangeoutWizard({
     const trimmed = reading.trim();
     return trimmed.length > 0 && /^\d+(\.\d+)?$/.test(trimmed);
   };
+  
+  // Normalize reading input: replace commas with periods and limit decimals to 3 places
+  const normalizeReadingInput = (value: string): string => {
+    let normalized = value.replace(/,/g, '.');
+    // Limit decimal places to 3
+    const dotIndex = normalized.indexOf('.');
+    if (dotIndex !== -1 && normalized.length > dotIndex + 4) {
+      normalized = normalized.substring(0, dotIndex + 4);
+    }
+    return normalized;
+  };
 
   const isValidGps = (gps: string | undefined | null): boolean => {
     // Validate GPS format: lat,lng where lat is -90 to 90 and lng is -180 to 180
@@ -1445,7 +1456,7 @@ export function SystemChangeoutWizard({
                   }}
                   onChange={(e) => {
                     setOldSystemReadingConfirmed(true);
-                    const normalizedValue = e.target.value.replace(/,/g, '.');
+                    const normalizedValue = normalizeReadingInput(e.target.value);
                     setData((prev) => ({ ...prev, oldSystemReading: normalizedValue }));
                   }}
                   onKeyDown={(e) => {
@@ -1484,7 +1495,7 @@ export function SystemChangeoutWizard({
                   }}
                   onChange={(e) => {
                     setOldModuleReadingConfirmed(true);
-                    const normalizedValue = e.target.value.replace(/,/g, '.');
+                    const normalizedValue = normalizeReadingInput(e.target.value);
                     setData((prev) => ({ ...prev, oldModuleReading: normalizedValue }));
                   }}
                   onKeyDown={(e) => {
@@ -2073,7 +2084,7 @@ export function SystemChangeoutWizard({
                   inputMode="decimal"
                   value={data.newSystemReading}
                   onChange={(e) => {
-                    const normalizedValue = e.target.value.replace(/,/g, '.');
+                    const normalizedValue = normalizeReadingInput(e.target.value);
                     setData((prev) => ({ ...prev, newSystemReading: normalizedValue }));
                   }}
                   onKeyDown={(e) => {
@@ -2103,7 +2114,7 @@ export function SystemChangeoutWizard({
                   inputMode="decimal"
                   value={data.newModuleReading || ""}
                   onChange={(e) => {
-                    const normalizedValue = e.target.value.replace(/,/g, '.');
+                    const normalizedValue = normalizeReadingInput(e.target.value);
                     setData((prev) => ({ ...prev, newModuleReading: normalizedValue }));
                   }}
                   onKeyDown={(e) => {
