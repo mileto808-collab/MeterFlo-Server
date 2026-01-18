@@ -2016,20 +2016,13 @@ export default function ProjectWorkOrders() {
   }, []);
 
   // Auto page size calculation based on actual container height
-  // Use ref to track last calculated size and prevent redundant updates
-  const lastCalculatedPageSizeRef = useRef<number | null>(null);
-  
+  // Observe the stable wrapper (tableContainerRef) rather than the scrollable div to prevent jitter
   useLayoutEffect(() => {
-    if (!isAutoPageSize) {
-      // Reset the cache when auto mode is disabled so re-enabling recalculates properly
-      lastCalculatedPageSizeRef.current = null;
-      return;
-    }
+    if (!isAutoPageSize || viewMode !== "table") return;
 
-    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    
     const calculateOptimalPageSize = () => {
-      const container = tableScrollRef.current;
+      // Use the stable container wrapper for height calculation
+      const container = tableContainerRef.current;
       if (!container) return;
       
       const rowHeight = 52;
@@ -2042,47 +2035,32 @@ export default function ProjectWorkOrders() {
       const optimalRows = Math.floor(availableHeight / rowHeight);
       const clampedRows = Math.max(5, Math.min(100, optimalRows));
       
-      // Only update if the calculated size is different from the last one
-      if (lastCalculatedPageSizeRef.current !== clampedRows) {
-        lastCalculatedPageSizeRef.current = clampedRows;
-        setPageSize((prevSize) => {
-          if (prevSize !== clampedRows) {
-            setCurrentPage(1);
-          }
-          return clampedRows;
-        });
-      }
-    };
-
-    // Debounced version to prevent rapid firing from ResizeObserver
-    const debouncedCalculate = () => {
-      if (debounceTimer) {
-        clearTimeout(debounceTimer);
-      }
-      debounceTimer = setTimeout(calculateOptimalPageSize, 100);
+      setPageSize((prevSize) => {
+        if (prevSize !== clampedRows) {
+          setCurrentPage(1);
+        }
+        return clampedRows;
+      });
     };
 
     // Use requestAnimationFrame for initial calculation
     const rafId = requestAnimationFrame(calculateOptimalPageSize);
-    window.addEventListener("resize", debouncedCalculate);
+    window.addEventListener("resize", calculateOptimalPageSize);
     
-    // Use ResizeObserver for more robust container tracking with debounce
-    const container = tableScrollRef.current;
+    // Use ResizeObserver on the stable wrapper (not the scrollable div)
+    const container = tableContainerRef.current;
     let resizeObserver: ResizeObserver | null = null;
     if (container) {
-      resizeObserver = new ResizeObserver(debouncedCalculate);
+      resizeObserver = new ResizeObserver(calculateOptimalPageSize);
       resizeObserver.observe(container);
     }
     
     return () => {
       cancelAnimationFrame(rafId);
-      if (debounceTimer) {
-        clearTimeout(debounceTimer);
-      }
-      window.removeEventListener("resize", debouncedCalculate);
+      window.removeEventListener("resize", calculateOptimalPageSize);
       resizeObserver?.disconnect();
     };
-  }, [isAutoPageSize, workOrders.length, viewMode]);
+  }, [isAutoPageSize, workOrders.length, viewMode, showStats]);
 
   const clearFilters = () => {
     setSearchQuery("");
@@ -3802,7 +3780,8 @@ export default function ProjectWorkOrders() {
       ) : (
         <Card className="flex flex-col flex-1 min-h-0">
           <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
-            <div ref={tableScrollRef} className="overflow-x-auto overflow-y-auto w-full flex-1 min-h-0">
+            <div ref={tableContainerRef} className="flex-1 min-h-0 overflow-hidden">
+              <div ref={tableScrollRef} className="overflow-x-auto overflow-y-auto w-full h-full">
               <Table ref={tableRef} noWrapper>
                 <TableHeader>
                   <TableRow>
@@ -3907,6 +3886,7 @@ export default function ProjectWorkOrders() {
                   ))}
                 </TableBody>
               </Table>
+              </div>
             </div>
           </CardContent>
           <CardFooter className="border-t p-4">
