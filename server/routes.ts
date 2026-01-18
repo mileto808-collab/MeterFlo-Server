@@ -3877,13 +3877,20 @@ export async function registerRoutes(
           return res.status(400).json({ message: "Trouble code is required when system cannot be changed" });
         }
         
+        // Look up trouble code details for the note
+        const allTroubleCodes = await storage.getTroubleCodes();
+        const troubleCodeDetails = allTroubleCodes.find(tc => tc.code === troubleCode);
+        const troubleCodeLabel = troubleCodeDetails?.label || troubleCode;
+        
         updateData.trouble = troubleCode;
-        if (troubleNote) {
-          const timestamp = await getTimezoneFormattedTimestamp(project.timezone);
-          updateData.notes = workOrder.notes 
-            ? `${workOrder.notes}\n\n[Trouble Report - ${timestamp}]\n${troubleNote}`
-            : `[Trouble Report - ${timestamp}]\n${troubleNote}`;
-        }
+        const timestamp = await getTimezoneFormattedTimestamp(project.timezone);
+        const troubleCodeLine = `Trouble Code: ${troubleCode} - ${troubleCodeLabel} - ${timestamp} by ${updatedByUsername}`;
+        const noteEntry = troubleNote && troubleNote.trim()
+          ? `[Trouble Report - ${timestamp} by ${updatedByUsername}]\n${troubleCodeLine}\n${troubleNote.trim()}`
+          : `[Trouble Report - ${timestamp} by ${updatedByUsername}]\n${troubleCodeLine}`;
+        updateData.notes = workOrder.notes 
+          ? `${workOrder.notes}\n\n${noteEntry}`
+          : noteEntry;
         
         // Get the "Unable to Complete" or similar status
         const statuses = await storage.getWorkOrderStatuses();
@@ -8523,16 +8530,22 @@ export async function registerRoutes(
           return res.status(400).json({ message: "Trouble code is required" });
         }
         
+        // Look up trouble code details for the note
+        const allTroubleCodes = await storage.getTroubleCodes();
+        const troubleCodeDetails = allTroubleCodes.find(tc => tc.code === troubleCode);
+        const troubleCodeLabel = troubleCodeDetails?.label || troubleCode;
+        
         updateData.status = "Trouble";
         updateData.trouble = troubleCode;
         // Append trouble notes to existing notes (mobile pattern)
-        if (troubleNote && troubleNote.trim()) {
-          const timestamp = await getTimezoneFormattedTimestamp(project.timezone);
-          const noteEntry = `[Trouble Report - ${timestamp} by ${currentUser.username || currentUser.id}]\n${troubleNote.trim()}`;
-          updateData.notes = workOrder.notes 
-            ? `${workOrder.notes}\n\n${noteEntry}`
-            : noteEntry;
-        }
+        const timestamp = await getTimezoneFormattedTimestamp(project.timezone);
+        const troubleCodeLine = `Trouble Code: ${troubleCode} - ${troubleCodeLabel} - ${timestamp} by ${currentUser.username || currentUser.id}`;
+        const noteEntry = troubleNote && troubleNote.trim()
+          ? `[Trouble Report - ${timestamp} by ${currentUser.username || currentUser.id}]\n${troubleCodeLine}\n${troubleNote.trim()}`
+          : `[Trouble Report - ${timestamp} by ${currentUser.username || currentUser.id}]\n${troubleCodeLine}`;
+        updateData.notes = workOrder.notes 
+          ? `${workOrder.notes}\n\n${noteEntry}`
+          : noteEntry;
       }
       
       const updatedWorkOrder = await workOrderStorage.updateWorkOrder(
@@ -8681,23 +8694,26 @@ export async function registerRoutes(
       };
       
       // Append user notes to existing notes (mobile pattern) - don't replace
-      if (notes && notes.trim()) {
-        // Use project timezone if set, otherwise UTC
-        const projectTimezone = project.timezone || 'UTC';
-        const timestamp = new Date().toLocaleString('en-US', {
-          month: '2-digit',
-          day: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: true,
-          timeZone: projectTimezone
-        });
-        const noteEntry = `[Trouble Report - ${timestamp} by ${currentUser.username || currentUser.id}]\n${notes.trim()}`;
-        updateData.notes = workOrder.notes 
-          ? `${workOrder.notes}\n\n${noteEntry}`
-          : noteEntry;
-      }
+      // Use project timezone if set, otherwise UTC
+      const projectTimezone = project.timezone || 'UTC';
+      const timestamp = new Date().toLocaleString('en-US', {
+        month: '2-digit',
+        day: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+        timeZone: projectTimezone
+      });
+      
+      // Build trouble note entry with header, trouble code line, then user notes
+      const troubleCodeLine = `Trouble Code: ${validTroubleCode.code} - ${validTroubleCode.label} - ${timestamp} by ${currentUser.username || currentUser.id}`;
+      const noteEntry = notes && notes.trim()
+        ? `[Trouble Report - ${timestamp} by ${currentUser.username || currentUser.id}]\n${troubleCodeLine}\n${notes.trim()}`
+        : `[Trouble Report - ${timestamp} by ${currentUser.username || currentUser.id}]\n${troubleCodeLine}`;
+      updateData.notes = workOrder.notes 
+        ? `${workOrder.notes}\n\n${noteEntry}`
+        : noteEntry;
       
       if (oldSystemReading !== undefined && oldSystemReading !== null) {
         updateData.oldSystemReading = parseInt(String(oldSystemReading), 10);
@@ -9143,22 +9159,25 @@ export async function registerRoutes(
       };
       
       // Append user notes to existing notes
-      if (notes && notes.trim()) {
-        const projectTimezone = project.timezone || 'UTC';
-        const timestamp = new Date().toLocaleString('en-US', {
-          month: '2-digit',
-          day: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: true,
-          timeZone: projectTimezone
-        });
-        const noteEntry = `[Trouble Report - ${timestamp} by ${currentUser.username || currentUser.id}]\n${notes.trim()}`;
-        updateData.notes = workOrder.notes 
-          ? `${workOrder.notes}\n\n${noteEntry}`
-          : noteEntry;
-      }
+      const projectTimezone = project.timezone || 'UTC';
+      const timestamp = new Date().toLocaleString('en-US', {
+        month: '2-digit',
+        day: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+        timeZone: projectTimezone
+      });
+      
+      // Build trouble note entry with header, trouble code line, then user notes
+      const troubleCodeLine = `Trouble Code: ${validTroubleCode.code} - ${validTroubleCode.label} - ${timestamp} by ${currentUser.username || currentUser.id}`;
+      const noteEntry = notes && notes.trim()
+        ? `[Trouble Report - ${timestamp} by ${currentUser.username || currentUser.id}]\n${troubleCodeLine}\n${notes.trim()}`
+        : `[Trouble Report - ${timestamp} by ${currentUser.username || currentUser.id}]\n${troubleCodeLine}`;
+      updateData.notes = workOrder.notes 
+        ? `${workOrder.notes}\n\n${noteEntry}`
+        : noteEntry;
       
       // Only set system reading if this work order has system data (not module-only)
       const woAny = workOrder as any;

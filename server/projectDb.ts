@@ -1045,7 +1045,9 @@ export class ProjectWorkOrderStorage {
       }
       
       // Only add trouble note if the trouble code is actually changing (different from existing)
-      if (troubleCode && troubleCode !== existingTroubleCode) {
+      // AND if the notes don't already contain a [Trouble Report header (which includes the trouble code line)
+      const notesAlreadyHaveTroubleReport = updates.notes && updates.notes.includes('[Trouble Report');
+      if (troubleCode && troubleCode !== existingTroubleCode && !notesAlreadyHaveTroubleReport) {
         const troubleCodeDetails = await this.getTroubleCodeDetails(troubleCode);
         const timestamp = await this.getTimezoneFormattedTimestamp();
         const userName = updatedBy || 'System';
