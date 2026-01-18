@@ -3516,7 +3516,7 @@ export default function ProjectWorkOrders() {
   );
 
   return (
-    <div className="p-4 flex flex-col gap-2 h-[calc(100vh-56px)] overflow-hidden">
+    <div className="p-4 flex flex-col gap-2 h-[calc(100vh-64px)] overflow-hidden">
       {stats && viewMode !== "calendar" && showStats && (
         <>
           {/* Mobile toggle for stats */}
