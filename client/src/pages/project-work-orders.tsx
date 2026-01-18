@@ -1952,7 +1952,7 @@ export default function ProjectWorkOrders() {
     if (!isAutoPageSize || viewMode !== "table") return;
 
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    let lastCalculatedSize = 0;
+    let lastAcceptedHeight = 0;
 
     const calculateOptimalPageSize = () => {
       const container = tableScrollRef.current;
@@ -1962,17 +1962,22 @@ export default function ProjectWorkOrders() {
       const tableHeaderHeight = 48;
       
       const containerHeight = container.clientHeight;
+      
+      // Hysteresis: only recalculate if height changed by more than 1.5 row heights
+      // This prevents mobile browser chrome show/hide from triggering oscillations
+      const heightThreshold = rowHeight * 1.5;
+      if (lastAcceptedHeight > 0 && Math.abs(containerHeight - lastAcceptedHeight) < heightThreshold) {
+        return;
+      }
+      
+      lastAcceptedHeight = containerHeight;
       const availableHeight = containerHeight - tableHeaderHeight;
       if (availableHeight <= 0) return;
       
       const optimalRows = Math.floor(availableHeight / rowHeight);
       const clampedRows = Math.max(5, Math.min(100, optimalRows));
       
-      // Only update if the value actually changed to prevent render loops
-      if (clampedRows !== lastCalculatedSize) {
-        lastCalculatedSize = clampedRows;
-        setPageSize(clampedRows);
-      }
+      setPageSize(clampedRows);
     };
 
     const debouncedCalculate = () => {
