@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState, useMemo, useEffect, useRef, useLayoutEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useRef, useLayoutEffect, useCallback, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { BackToTop } from "@/components/ui/back-to-top";
 import { TablePagination } from "@/components/ui/table-pagination";
@@ -27,6 +27,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useTimezone } from "@/hooks/use-timezone";
 import { useGlobalEvents } from "@/hooks/useProjectEvents";
+import { usePageHeader } from "@/contexts/page-header-context";
 import { ColumnSelector, type ColumnConfig } from "@/components/column-selector";
 import { useColumnPreferences } from "@/hooks/use-column-preferences";
 import { SearchFiltersDialog } from "@/components/search-filters-dialog";
@@ -92,6 +93,18 @@ export default function SearchReports() {
   const { toast } = useToast();
   const { formatExport, formatCustom } = useTimezone();
   const [, navigate] = useLocation();
+  const { setHeaderContent } = usePageHeader();
+  
+  // Set page header content
+  useEffect(() => {
+    setHeaderContent(
+      <div>
+        <h1 className="text-lg font-semibold" data-testid="text-page-title">Search & Reports</h1>
+        <p className="text-sm text-muted-foreground">Search work orders across all your projects and generate reports</p>
+      </div>
+    );
+    return () => setHeaderContent(null);
+  }, [setHeaderContent]);
   
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProject, setSelectedProjectState] = useState<string>("all");
@@ -1244,14 +1257,9 @@ export default function SearchReports() {
 
   return (
     <div className="p-6 flex flex-col gap-4 h-[calc(100vh-64px)] overflow-hidden">
-      {/* Collapsible header section */}
+      {/* Collapsible search section */}
       {!isHeaderCollapsed && (
         <>
-          <div className="flex-shrink-0">
-            <h1 className="text-2xl font-bold" data-testid="text-page-title">Search & Reports</h1>
-            <p className="text-muted-foreground">Search work orders across all your projects and generate reports</p>
-          </div>
-
           <Card className="flex-shrink-0">
             <CardContent className="pt-4">
           <div className="flex items-center gap-2 flex-wrap">
