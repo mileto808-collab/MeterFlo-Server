@@ -2015,18 +2015,21 @@ export default function ProjectWorkOrders() {
     setIsAutoPageSize(true);
   }, []);
 
-  // Auto page size calculation based on viewport height
+  // Auto page size calculation based on actual container height
   useLayoutEffect(() => {
     if (!isAutoPageSize) return;
 
     const calculateOptimalPageSize = () => {
-      const rowHeight = 52;
-      const headerHeight = 48;
-      const paginationHeight = 80;
-      const toolbarHeight = 180;
-      const viewportHeight = window.innerHeight;
+      const container = tableScrollRef.current;
+      if (!container) return;
       
-      const availableHeight = viewportHeight - toolbarHeight - headerHeight - paginationHeight;
+      const rowHeight = 52;
+      const tableHeaderHeight = 48;
+      
+      const containerHeight = container.clientHeight;
+      const availableHeight = containerHeight - tableHeaderHeight;
+      if (availableHeight <= 0) return; // Guard against invalid height
+      
       const optimalRows = Math.floor(availableHeight / rowHeight);
       const clampedRows = Math.max(5, Math.min(100, optimalRows));
       
@@ -2038,10 +2041,24 @@ export default function ProjectWorkOrders() {
       });
     };
 
-    calculateOptimalPageSize();
+    // Use requestAnimationFrame to ensure layout is complete
+    const rafId = requestAnimationFrame(calculateOptimalPageSize);
     window.addEventListener("resize", calculateOptimalPageSize);
-    return () => window.removeEventListener("resize", calculateOptimalPageSize);
-  }, [isAutoPageSize]);
+    
+    // Use ResizeObserver for more robust container tracking
+    const container = tableScrollRef.current;
+    let resizeObserver: ResizeObserver | null = null;
+    if (container) {
+      resizeObserver = new ResizeObserver(calculateOptimalPageSize);
+      resizeObserver.observe(container);
+    }
+    
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.removeEventListener("resize", calculateOptimalPageSize);
+      resizeObserver?.disconnect();
+    };
+  }, [isAutoPageSize, workOrders.length, viewMode]);
 
   const clearFilters = () => {
     setSearchQuery("");
@@ -3499,7 +3516,7 @@ export default function ProjectWorkOrders() {
   );
 
   return (
-    <div className="p-4 space-y-2">
+    <div className="p-4 flex flex-col gap-2 h-[calc(100vh-56px)] overflow-hidden">
       {stats && viewMode !== "calendar" && showStats && (
         <>
           {/* Mobile toggle for stats */}
@@ -3773,9 +3790,9 @@ export default function ProjectWorkOrders() {
           </CardContent>
         </Card>
       ) : (
-        <Card>
-          <CardContent className="p-0">
-            <div ref={tableScrollRef} className="overflow-x-auto w-full min-h-[400px] max-h-[calc(100vh-320px)] overflow-y-auto">
+        <Card className="flex flex-col flex-1 min-h-0">
+          <CardContent className="p-0 flex-1 min-h-0 flex flex-col">
+            <div ref={tableScrollRef} className="overflow-x-auto overflow-y-auto w-full flex-1 min-h-0">
               <Table ref={tableRef} noWrapper>
                 <TableHeader>
                   <TableRow>

@@ -928,18 +928,21 @@ export default function SearchReports() {
     setIsAutoPageSize(true);
   }, []);
 
-  // Auto page size calculation based on viewport height
+  // Auto page size calculation based on actual container height
   useLayoutEffect(() => {
     if (!isAutoPageSize) return;
 
     const calculateOptimalPageSize = () => {
-      const rowHeight = 52;
-      const headerHeight = 48;
-      const paginationHeight = 80;
-      const toolbarHeight = 180;
-      const viewportHeight = window.innerHeight;
+      const container = tableScrollRef.current;
+      if (!container) return;
       
-      const availableHeight = viewportHeight - toolbarHeight - headerHeight - paginationHeight;
+      const rowHeight = 52;
+      const tableHeaderHeight = 48;
+      
+      const containerHeight = container.clientHeight;
+      const availableHeight = containerHeight - tableHeaderHeight;
+      if (availableHeight <= 0) return; // Guard against invalid height
+      
       const optimalRows = Math.floor(availableHeight / rowHeight);
       const clampedRows = Math.max(5, Math.min(100, optimalRows));
       
@@ -951,10 +954,24 @@ export default function SearchReports() {
       });
     };
 
-    calculateOptimalPageSize();
+    // Use requestAnimationFrame to ensure layout is complete
+    const rafId = requestAnimationFrame(calculateOptimalPageSize);
     window.addEventListener("resize", calculateOptimalPageSize);
-    return () => window.removeEventListener("resize", calculateOptimalPageSize);
-  }, [isAutoPageSize]);
+    
+    // Use ResizeObserver for more robust container tracking
+    const container = tableScrollRef.current;
+    let resizeObserver: ResizeObserver | null = null;
+    if (container) {
+      resizeObserver = new ResizeObserver(calculateOptimalPageSize);
+      resizeObserver.observe(container);
+    }
+    
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.removeEventListener("resize", calculateOptimalPageSize);
+      resizeObserver?.disconnect();
+    };
+  }, [isAutoPageSize, searchResults?.results?.length]);
 
   // Calculate active filters
   const activeFiltersArray = [
@@ -1225,13 +1242,13 @@ export default function SearchReports() {
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <div>
+    <div className="p-6 flex flex-col gap-4 h-[calc(100vh-56px)] overflow-hidden">
+      <div className="flex-shrink-0">
         <h1 className="text-2xl font-bold" data-testid="text-page-title">Search & Reports</h1>
         <p className="text-muted-foreground">Search work orders across all your projects and generate reports</p>
       </div>
 
-      <Card>
+      <Card className="flex-shrink-0">
         <CardContent className="pt-4">
           <div className="flex items-center gap-2 flex-wrap">
             <div className="relative flex-1 min-w-[200px] max-w-md">
@@ -1360,8 +1377,8 @@ export default function SearchReports() {
 
       {searchResults && (
         <>
-          <Card>
-            <CardHeader>
+          <Card className="flex flex-col flex-1 min-h-0">
+            <CardHeader className="flex-shrink-0">
               <div className="flex items-start justify-between gap-4 flex-wrap">
                 <div>
                   <CardTitle>Search Results</CardTitle>
@@ -1405,7 +1422,7 @@ export default function SearchReports() {
                 )}
               </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="flex-1 min-h-0 flex flex-col">
               {searchResults.results.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12">
                   <Search className="h-12 w-12 text-muted-foreground mb-4" />
@@ -1420,11 +1437,11 @@ export default function SearchReports() {
                     totalItems={filteredAndSortedResults.length}
                     onPageChange={handlePageChange}
                     onPageSizeChange={handlePageSizeChange}
-                    className="mb-4"
+                    className="mb-4 flex-shrink-0"
                     isAutoMode={isAutoPageSize}
                     onAutoModeToggle={handleAutoModeToggle}
                   />
-                  <div ref={tableScrollRef} className="overflow-x-auto w-full min-h-[500px] max-h-[calc(100vh-350px)] overflow-y-auto">
+                  <div ref={tableScrollRef} className="overflow-x-auto overflow-y-auto w-full flex-1 min-h-0">
                     <Table ref={tableRef} noWrapper>
                       <TableHeader>
                         <TableRow>
