@@ -1951,6 +1951,9 @@ export default function ProjectWorkOrders() {
   useLayoutEffect(() => {
     if (!isAutoPageSize || viewMode !== "table") return;
 
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let lastCalculatedSize = 0;
+
     const calculateOptimalPageSize = () => {
       const container = tableScrollRef.current;
       if (!container) return;
@@ -1965,30 +1968,40 @@ export default function ProjectWorkOrders() {
       const optimalRows = Math.floor(availableHeight / rowHeight);
       const clampedRows = Math.max(5, Math.min(100, optimalRows));
       
-      setPageSize((prevSize) => {
-        if (prevSize !== clampedRows) {
-          setCurrentPage(1);
-        }
-        return clampedRows;
-      });
+      // Only update if the value actually changed to prevent render loops
+      if (clampedRows !== lastCalculatedSize) {
+        lastCalculatedSize = clampedRows;
+        setPageSize((prevSize) => {
+          if (prevSize !== clampedRows) {
+            setCurrentPage(1);
+          }
+          return clampedRows;
+        });
+      }
+    };
+
+    const debouncedCalculate = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(calculateOptimalPageSize, 100);
     };
 
     const rafId = requestAnimationFrame(calculateOptimalPageSize);
-    window.addEventListener("resize", calculateOptimalPageSize);
+    window.addEventListener("resize", debouncedCalculate);
     
     const container = tableScrollRef.current;
     let resizeObserver: ResizeObserver | null = null;
     if (container) {
-      resizeObserver = new ResizeObserver(calculateOptimalPageSize);
+      resizeObserver = new ResizeObserver(debouncedCalculate);
       resizeObserver.observe(container);
     }
     
     return () => {
       cancelAnimationFrame(rafId);
-      window.removeEventListener("resize", calculateOptimalPageSize);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      window.removeEventListener("resize", debouncedCalculate);
       resizeObserver?.disconnect();
     };
-  }, [isAutoPageSize, workOrders.length]);
+  }, [isAutoPageSize, viewMode, workOrders.length]);
 
   const clearFilters = () => {
     setSearchQuery("");
