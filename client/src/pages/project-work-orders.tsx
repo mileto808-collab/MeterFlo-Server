@@ -149,8 +149,9 @@ export default function ProjectWorkOrders() {
           // Transform snake_case API response to camelCase for component compatibility
           const updatedWorkOrder = snakeToCamelCase(rawWorkOrder) as ProjectWorkOrder;
           setEditingWorkOrder(updatedWorkOrder);
-          // Increment version to force WorkOrderDetail re-mount with fresh form state
-          setEditingWorkOrderVersion(v => v + 1);
+          // Note: We don't increment version here - the existing useEffect will reset the form
+          // with the new editingWorkOrder data. Incrementing version causes a remount which
+          // breaks the form's internal field registrations and prevents submission.
         }
       } catch (error) {
         console.error("Failed to refresh work order from SSE event:", error);
