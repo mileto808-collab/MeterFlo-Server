@@ -158,20 +158,6 @@ export default function ProjectWorkOrders() {
   
   useProjectEvents(projectId, { onWorkOrderUpdated: handleWorkOrderUpdated });
   
-  // HID scanner detection - when a barcode/QR code is scanned from the work orders page,
-  // automatically open the Start Changeout dialog with the scanned value
-  const handleHidScan = useCallback((scannedValue: string) => {
-    if (!showStartSystemChangeout && !editingWorkOrder) {
-      setHidScannerValue(scannedValue);
-      setShowStartSystemChangeout(true);
-    }
-  }, [showStartSystemChangeout, editingWorkOrder]);
-  
-  useHidScanner({
-    enabled: !showStartSystemChangeout && !editingWorkOrder,
-    onScan: handleHidScan,
-  });
-  
   const { user } = useAuth();
   const { hasPermission } = usePermissions();
   const { setHeaderContent } = usePageHeader();
@@ -448,6 +434,22 @@ export default function ProjectWorkOrders() {
     retry: false,
   });
 
+  // HID scanner detection - when a barcode/QR code is scanned from the work orders page,
+  // automatically open the Start Changeout dialog with the scanned value
+  // Only enabled when the project is loaded AND has HID scanner mode explicitly enabled
+  const isHidScannerEnabled = !!project && (project as any)?.searchShowHidScanner === true;
+  
+  const handleHidScan = useCallback((scannedValue: string) => {
+    if (!showStartSystemChangeout && !editingWorkOrder) {
+      setHidScannerValue(scannedValue);
+      setShowStartSystemChangeout(true);
+    }
+  }, [showStartSystemChangeout, editingWorkOrder]);
+  
+  useHidScanner({
+    enabled: isHidScannerEnabled && !showStartSystemChangeout && !editingWorkOrder,
+    onScan: handleHidScan,
+  });
 
   // Use project-specific timezone with fallback to global timezone
   const effectiveTimezone = project?.timezone || globalTimezone;
