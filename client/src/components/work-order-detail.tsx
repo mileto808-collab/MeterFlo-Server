@@ -509,7 +509,7 @@ export function WorkOrderDetail({
 
       {/* Form with Collapsible Sections */}
       <Form {...form}>
-        <form onSubmit={(e) => e.preventDefault()} className="space-y-4">
+        <form className="space-y-4">
           <Accordion 
             type="multiple" 
             value={openSections}
@@ -3275,15 +3275,7 @@ export function WorkOrderDetail({
                     disabled={isSubmitting} 
                     data-testid="button-save"
                     onClick={() => {
-                      form.handleSubmit(
-                        (data) => {
-                          alert("handleSubmit success callback reached!");
-                          onSubmit(data);
-                        },
-                        (errors) => {
-                          alert("Form validation errors: " + JSON.stringify(errors, null, 2));
-                        }
-                      )();
+                      form.handleSubmit(onSubmit)();
                     }}
                   >
                     {isSubmitting ? (

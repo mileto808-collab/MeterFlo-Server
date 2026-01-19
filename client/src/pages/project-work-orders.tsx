@@ -720,10 +720,10 @@ export default function ProjectWorkOrders() {
         oldSystemType: (editingWorkOrder as any).oldSystemType || "",
         newSystemType: (editingWorkOrder as any).newSystemType || "",
         oldModuleId: (editingWorkOrder as any).oldModuleId || "",
-        oldModuleRead: (editingWorkOrder as any).oldModuleRead ?? undefined,
+        oldModuleRead: (editingWorkOrder as any).oldModuleRead != null ? Number((editingWorkOrder as any).oldModuleRead) : undefined,
         oldModuleType: (editingWorkOrder as any).oldModuleType || "",
         newModuleId: (editingWorkOrder as any).newModuleId || "",
-        newModuleRead: (editingWorkOrder as any).newModuleRead ?? undefined,
+        newModuleRead: (editingWorkOrder as any).newModuleRead != null ? Number((editingWorkOrder as any).newModuleRead) : undefined,
         newModuleType: (editingWorkOrder as any).newModuleType || "",
       });
       // Set signature data after a brief delay to ensure the ref is ready
