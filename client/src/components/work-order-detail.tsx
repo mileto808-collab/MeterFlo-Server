@@ -3286,9 +3286,7 @@ export function WorkOrderDetail({
                     disabled={isSubmitting} 
                     data-testid="button-save"
                     onClick={(e) => {
-                      console.log("Save button clicked!", e);
-                      console.log("Button type:", (e.target as HTMLButtonElement).type);
-                      console.log("Form parent:", (e.target as HTMLButtonElement).form);
+                      alert("Save button clicked! Check form binding.");
                     }}
                   >
                     {isSubmitting ? (
