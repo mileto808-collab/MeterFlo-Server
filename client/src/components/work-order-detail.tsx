@@ -509,7 +509,9 @@ export function WorkOrderDetail({
 
       {/* Form with Collapsible Sections */}
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        <form onSubmit={form.handleSubmit(onSubmit, (errors) => {
+          console.error("Form validation errors:", errors);
+        })} className="space-y-4">
           <Accordion 
             type="multiple" 
             value={openSections}
