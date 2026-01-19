@@ -3277,10 +3277,11 @@ export function WorkOrderDetail({
                     onClick={() => {
                       form.handleSubmit(
                         (data) => {
+                          alert("handleSubmit success callback reached!");
                           onSubmit(data);
                         },
                         (errors) => {
-                          console.error("Form validation errors:", errors);
+                          alert("Form validation errors: " + JSON.stringify(errors, null, 2));
                         }
                       )();
                     }}
