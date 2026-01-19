@@ -149,6 +149,8 @@ export default function ProjectWorkOrders() {
           // Transform snake_case API response to camelCase for component compatibility
           const updatedWorkOrder = snakeToCamelCase(rawWorkOrder) as ProjectWorkOrder;
           setEditingWorkOrder(updatedWorkOrder);
+          // Increment version to force WorkOrderDetail re-mount with fresh form state
+          setEditingWorkOrderVersion(v => v + 1);
         }
       } catch (error) {
         console.error("Failed to refresh work order from SSE event:", error);
@@ -166,6 +168,9 @@ export default function ProjectWorkOrders() {
   const [, navigate] = useLocation();
   const [isCreatingWorkOrder, setIsCreatingWorkOrder] = useState(false);
   const [editingWorkOrder, setEditingWorkOrder] = useState<ProjectWorkOrder | null>(null);
+  // Version counter to force WorkOrderDetail re-mount when SSE updates the same work order
+  // This ensures the form is properly re-initialized with fresh state
+  const [editingWorkOrderVersion, setEditingWorkOrderVersion] = useState(0);
   
   // Keep ref in sync with editingWorkOrder state for SSE callback
   useEffect(() => {
@@ -2407,7 +2412,7 @@ export default function ProjectWorkOrders() {
     return (
       <>
         <WorkOrderDetail
-          key={editingWorkOrder.id}
+          key={`${editingWorkOrder.id}-${editingWorkOrderVersion}`}
           workOrder={editingWorkOrder}
           form={editForm}
           onSubmit={onEditSubmit}
