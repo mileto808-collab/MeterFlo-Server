@@ -509,18 +509,7 @@ export function WorkOrderDetail({
 
       {/* Form with Collapsible Sections */}
       <Form {...form}>
-        <form onSubmit={(e) => {
-          console.log("Form submit event triggered");
-          form.handleSubmit(
-            (data) => {
-              console.log("Form handleSubmit success callback with data:", data);
-              onSubmit(data);
-            },
-            (errors) => {
-              console.error("Form validation errors:", errors);
-            }
-          )(e);
-        }} className="space-y-4">
+        <form onSubmit={(e) => e.preventDefault()} className="space-y-4">
           <Accordion 
             type="multiple" 
             value={openSections}
@@ -3282,11 +3271,18 @@ export function WorkOrderDetail({
                 </Button>
                 {canEdit && (
                   <Button 
-                    type="submit" 
+                    type="button" 
                     disabled={isSubmitting} 
                     data-testid="button-save"
-                    onClick={(e) => {
-                      alert("Save button clicked! Check form binding.");
+                    onClick={() => {
+                      form.handleSubmit(
+                        (data) => {
+                          onSubmit(data);
+                        },
+                        (errors) => {
+                          console.error("Form validation errors:", errors);
+                        }
+                      )();
                     }}
                   >
                     {isSubmitting ? (
