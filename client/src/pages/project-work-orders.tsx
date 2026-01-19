@@ -648,6 +648,7 @@ export default function ProjectWorkOrders() {
         queryClient.refetchQueries({ queryKey: [`/api/projects/${projectId}/work-orders/stats`] });
         setEditingWorkOrder(null);
         setCameFromSearch(false);
+        setEditingWorkOrderVersion(0);
       }
     };
 
@@ -673,6 +674,7 @@ export default function ProjectWorkOrders() {
       // Fallback: just close the detail view directly
       setEditingWorkOrder(null);
       setCameFromSearch(false);
+      setEditingWorkOrderVersion(0);
     }
     // Reset auto-launch flag when closing
     setAutoLaunchSystemChangeout(false);
