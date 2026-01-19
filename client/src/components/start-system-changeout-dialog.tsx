@@ -153,6 +153,8 @@ export function StartSystemChangeoutDialog({
 
   // Track if we've consumed the initial search value to prevent re-triggering
   const initialSearchConsumedRef = useRef(false);
+  // Store the initial search value to auto-trigger lookup after lookupWorkOrder is defined
+  const pendingAutoLookupRef = useRef<string | null>(null);
 
   // Handle initialSearchValue from HID scanner on the work orders page
   useEffect(() => {
@@ -163,18 +165,16 @@ export function StartSystemChangeoutDialog({
       setScanMode("manual");
       // Notify parent that we've consumed the value
       onInitialSearchValueConsumed?.();
-      // Trigger the lookup after a brief delay to let the UI update
-      setTimeout(() => {
-        // Trigger lookup by setting pendingResult (same flow as camera scan)
-        setPendingResult(initialSearchValue);
-      }, 100);
+      // Store for auto-lookup (will be triggered by separate effect after lookupWorkOrder is available)
+      pendingAutoLookupRef.current = initialSearchValue;
     }
   }, [isOpen, initialSearchValue, onInitialSearchValueConsumed]);
 
-  // Reset the consumed ref when dialog closes
+  // Reset the consumed ref and pending lookup when dialog closes
   useEffect(() => {
     if (!isOpen) {
       initialSearchConsumedRef.current = false;
+      pendingAutoLookupRef.current = null;
     }
   }, [isOpen]);
 
@@ -391,6 +391,18 @@ export function StartSystemChangeoutDialog({
       setIsLookingUp(false);
     }
   }, [projectId, stopScanning]);
+
+  // Auto-trigger lookup when initialSearchValue was provided (from HID scanner)
+  useEffect(() => {
+    if (pendingAutoLookupRef.current && scanMode === "manual") {
+      const searchValue = pendingAutoLookupRef.current;
+      pendingAutoLookupRef.current = null;
+      // Small delay to ensure UI has updated
+      setTimeout(() => {
+        lookupWorkOrder(searchValue);
+      }, 150);
+    }
+  }, [scanMode, lookupWorkOrder]);
 
   const [isClaiming, setIsClaiming] = useState(false);
   const [showClaimConfirm, setShowClaimConfirm] = useState(false);
