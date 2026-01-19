@@ -3281,7 +3281,16 @@ export function WorkOrderDetail({
                   {canEdit ? "Cancel" : "Back"}
                 </Button>
                 {canEdit && (
-                  <Button type="submit" disabled={isSubmitting} data-testid="button-save">
+                  <Button 
+                    type="submit" 
+                    disabled={isSubmitting} 
+                    data-testid="button-save"
+                    onClick={(e) => {
+                      console.log("Save button clicked!", e);
+                      console.log("Button type:", (e.target as HTMLButtonElement).type);
+                      console.log("Form parent:", (e.target as HTMLButtonElement).form);
+                    }}
+                  >
                     {isSubmitting ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
