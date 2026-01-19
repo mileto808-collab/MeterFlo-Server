@@ -42,6 +42,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useTimezone } from "@/hooks/use-timezone";
 import { formatDateTimeInTimezone, formatForExport, formatInTimezone } from "@/lib/timezone";
 import { useProjectEvents } from "@/hooks/useProjectEvents";
+import { useHidScanner } from "@/hooks/useHidScanner";
 import { usePageHeader } from "@/contexts/page-header-context";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, ArrowLeft, Search, ArrowUpDown, ArrowUp, ArrowDown, Download, FileSpreadsheet, FileText, Filter, X, Route, ChevronRight, Paperclip, Eye, FileIcon, ChevronsUp, UserPlus, UserMinus, AlertTriangle, Loader2, Wrench, Home, Gauge, Cpu, Calendar } from "lucide-react";
@@ -157,6 +158,20 @@ export default function ProjectWorkOrders() {
   
   useProjectEvents(projectId, { onWorkOrderUpdated: handleWorkOrderUpdated });
   
+  // HID scanner detection - when a barcode/QR code is scanned from the work orders page,
+  // automatically open the Start Changeout dialog with the scanned value
+  const handleHidScan = useCallback((scannedValue: string) => {
+    if (!showStartSystemChangeout && !editingWorkOrder) {
+      setHidScannerValue(scannedValue);
+      setShowStartSystemChangeout(true);
+    }
+  }, [showStartSystemChangeout, editingWorkOrder]);
+  
+  useHidScanner({
+    enabled: !showStartSystemChangeout && !editingWorkOrder,
+    onScan: handleHidScan,
+  });
+  
   const { user } = useAuth();
   const { hasPermission } = usePermissions();
   const { setHeaderContent } = usePageHeader();
@@ -178,6 +193,7 @@ export default function ProjectWorkOrders() {
   const [showStartSystemChangeout, setShowStartSystemChangeout] = useState(false);
   const [autoLaunchSystemChangeout, setAutoLaunchSystemChangeout] = useState(false);
   const [autoLaunchChangeoutScope, setAutoLaunchChangeoutScope] = useState<"system" | "module" | "both">("system");
+  const [hidScannerValue, setHidScannerValue] = useState<string | undefined>(undefined);
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
   const [selectedServiceType, setSelectedServiceType] = useState<string>("all");
   const [selectedAssignedTo, setSelectedAssignedTo] = useState<string>("all");
@@ -4085,7 +4101,10 @@ export default function ProjectWorkOrders() {
       {projectId && (
         <StartSystemChangeoutDialog
           isOpen={showStartSystemChangeout}
-          onClose={() => setShowStartSystemChangeout(false)}
+          onClose={() => {
+            setShowStartSystemChangeout(false);
+            setHidScannerValue(undefined);
+          }}
           projectId={projectId}
           onWorkOrderFound={(workOrder, scope) => {
             setAutoLaunchChangeoutScope(scope);
@@ -4099,6 +4118,8 @@ export default function ProjectWorkOrders() {
             searchShowManualEntry: (project as any)?.searchShowManualEntry !== false,
             searchShowHidScanner: (project as any)?.searchShowHidScanner !== false,
           }}
+          initialSearchValue={hidScannerValue}
+          onInitialSearchValueConsumed={() => setHidScannerValue(undefined)}
         />
       )}
 

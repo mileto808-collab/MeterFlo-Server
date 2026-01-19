@@ -46,6 +46,8 @@ interface StartSystemChangeoutDialogProps {
   onWorkOrderFound: (workOrder: ProjectWorkOrder, scope: ChangeoutScope) => void;
   wizardMode?: WizardMode;
   searchMethodSettings?: SearchMethodSettings;
+  initialSearchValue?: string;
+  onInitialSearchValueConsumed?: () => void;
 }
 
 type ScanMode = "select" | "barcode" | "qrcode" | "manual" | "hidscanner" | "confirm";
@@ -57,6 +59,8 @@ export function StartSystemChangeoutDialog({
   onWorkOrderFound,
   wizardMode = "changeout",
   searchMethodSettings,
+  initialSearchValue,
+  onInitialSearchValueConsumed,
 }: StartSystemChangeoutDialogProps) {
   // Determine if we're in reading-only mode for UI text
   const isReadingOnlyMode = wizardMode === "reading_only";
@@ -146,6 +150,33 @@ export function StartSystemChangeoutDialog({
       }
     };
   }, []);
+
+  // Track if we've consumed the initial search value to prevent re-triggering
+  const initialSearchConsumedRef = useRef(false);
+
+  // Handle initialSearchValue from HID scanner on the work orders page
+  useEffect(() => {
+    if (isOpen && initialSearchValue && !initialSearchConsumedRef.current) {
+      initialSearchConsumedRef.current = true;
+      // Set the manual input with the scanned value and go directly to manual mode
+      setManualInput(initialSearchValue);
+      setScanMode("manual");
+      // Notify parent that we've consumed the value
+      onInitialSearchValueConsumed?.();
+      // Trigger the lookup after a brief delay to let the UI update
+      setTimeout(() => {
+        // Trigger lookup by setting pendingResult (same flow as camera scan)
+        setPendingResult(initialSearchValue);
+      }, 100);
+    }
+  }, [isOpen, initialSearchValue, onInitialSearchValueConsumed]);
+
+  // Reset the consumed ref when dialog closes
+  useEffect(() => {
+    if (!isOpen) {
+      initialSearchConsumedRef.current = false;
+    }
+  }, [isOpen]);
 
   const resetState = useCallback(() => {
     stopScanning();
