@@ -340,8 +340,14 @@ export default function Settings() {
 
   // Mobile App Configuration state and query
   const [mobileUpdateUrl, setMobileUpdateUrl] = useState("");
+  const [iosUpdateSource, setIosUpdateSource] = useState<"appstore" | "eas" | "">("");
+  const [iosAppStoreId, setIosAppStoreId] = useState("");
   
-  const { data: mobileConfigData } = useQuery<{ mobileUpdateUrl: string | null }>({
+  const { data: mobileConfigData } = useQuery<{ 
+    mobileUpdateUrl: string | null;
+    iosUpdateSource: string | null;
+    iosAppStoreId: string | null;
+  }>({
     queryKey: ["/api/settings/mobile-config"],
     enabled: isAdmin || hasPermission("settings.mobileConfig"),
   });
@@ -388,21 +394,24 @@ export default function Settings() {
   });
 
   useEffect(() => {
-    if (mobileConfigData?.mobileUpdateUrl) {
-      setMobileUpdateUrl(mobileConfigData.mobileUpdateUrl);
+    if (mobileConfigData) {
+      setMobileUpdateUrl(mobileConfigData.mobileUpdateUrl || "");
+      setIosUpdateSource((mobileConfigData.iosUpdateSource as "appstore" | "eas" | "") || "");
+      setIosAppStoreId(mobileConfigData.iosAppStoreId || "");
     }
   }, [mobileConfigData]);
 
   const saveMobileConfigMutation = useMutation({
-    mutationFn: async (url: string) => {
-      return apiRequest("PUT", "/api/settings/mobile-config", { mobileUpdateUrl: url });
+    mutationFn: async (data: { mobileUpdateUrl: string; iosUpdateSource: string; iosAppStoreId: string }) => {
+      return apiRequest("PUT", "/api/settings/mobile-config", data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/settings/mobile-config"] });
       toast({ title: "Mobile app configuration saved" });
     },
-    onError: () => {
-      toast({ title: "Failed to save mobile configuration", variant: "destructive" });
+    onError: (error: any) => {
+      const message = error?.message || "Failed to save mobile configuration";
+      toast({ title: message, variant: "destructive" });
     },
   });
 
@@ -1857,41 +1866,142 @@ export default function Settings() {
                 <div className="flex items-center gap-2">
                   <Smartphone className="h-5 w-5 text-muted-foreground" />
                   <div>
-                    <CardTitle>Mobile App Configuration</CardTitle>
-                    <CardDescription className="mt-1">Configure mobile app update settings for the MeterFlo mobile application</CardDescription>
+                    <CardTitle>Mobile Application Updates</CardTitle>
+                    <CardDescription className="mt-1">Configure update settings for the MeterFlo mobile application</CardDescription>
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="mobileUpdateUrl">GitHub Releases API URL</Label>
-                  <Input
-                    id="mobileUpdateUrl"
-                    placeholder="https://api.github.com/repos/yourorg/meterflo-mobile/releases/latest"
-                    value={mobileUpdateUrl}
-                    onChange={(e) => setMobileUpdateUrl(e.target.value)}
-                    data-testid="input-mobile-update-url"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Enter the GitHub releases API URL to enable mobile app update checks. Leave empty to disable update checks.
-                    <br />
-                    Format: https://api.github.com/repos/ORG/REPO/releases/latest
-                  </p>
-                  {mobileUpdateUrl && !validateGitHubApiUrl(mobileUpdateUrl) && (
-                    <p className="text-xs text-destructive">
-                      Invalid GitHub releases API URL format. Must be: https://api.github.com/repos/ORG/REPO/releases/latest
+              <CardContent className="space-y-6">
+                {/* Android Updates Section */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">Android Updates</span>
+                    <span className="text-xs text-muted-foreground">(GitHub Releases)</span>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="mobileUpdateUrl">GitHub Releases API URL</Label>
+                    <Input
+                      id="mobileUpdateUrl"
+                      placeholder="https://api.github.com/repos/yourorg/meterflo-mobile/releases/latest"
+                      value={mobileUpdateUrl}
+                      onChange={(e) => setMobileUpdateUrl(e.target.value)}
+                      data-testid="input-mobile-update-url"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Enter the GitHub releases API URL to enable Android app update checks. Leave empty to disable.
+                      <br />
+                      Format: https://api.github.com/repos/ORG/REPO/releases/latest
                     </p>
-                  )}
+                    {mobileUpdateUrl && !validateGitHubApiUrl(mobileUpdateUrl) && (
+                      <p className="text-xs text-destructive">
+                        Invalid GitHub releases API URL format. Must be: https://api.github.com/repos/ORG/REPO/releases/latest
+                      </p>
+                    )}
+                  </div>
                 </div>
+
+                {/* iOS Updates Section */}
+                <div className="space-y-3 pt-4 border-t">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">iOS Updates</span>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <Label>Update Source</Label>
+                      <div className="flex flex-col gap-2">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="iosUpdateSource"
+                            value=""
+                            checked={iosUpdateSource === ""}
+                            onChange={() => setIosUpdateSource("")}
+                            className="h-4 w-4"
+                            data-testid="radio-ios-disabled"
+                          />
+                          <span className="text-sm">Disabled</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="iosUpdateSource"
+                            value="appstore"
+                            checked={iosUpdateSource === "appstore"}
+                            onChange={() => setIosUpdateSource("appstore")}
+                            className="h-4 w-4"
+                            data-testid="radio-ios-appstore"
+                          />
+                          <span className="text-sm">App Store</span>
+                          <span className="text-xs text-muted-foreground">- Check for updates via Apple App Store</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="iosUpdateSource"
+                            value="eas"
+                            checked={iosUpdateSource === "eas"}
+                            onChange={() => setIosUpdateSource("eas")}
+                            className="h-4 w-4"
+                            data-testid="radio-ios-eas"
+                          />
+                          <span className="text-sm">EAS Updates</span>
+                          <span className="text-xs text-muted-foreground">- Over-the-air updates via Expo</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {iosUpdateSource === "appstore" && (
+                      <div className="space-y-2 pl-6">
+                        <Label htmlFor="iosAppStoreId">App Store ID</Label>
+                        <Input
+                          id="iosAppStoreId"
+                          placeholder="123456789"
+                          value={iosAppStoreId}
+                          onChange={(e) => setIosAppStoreId(e.target.value)}
+                          data-testid="input-ios-appstore-id"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Enter your app's numeric App Store ID. You can find this in App Store Connect.
+                        </p>
+                        {iosAppStoreId && !/^\d+$/.test(iosAppStoreId) && (
+                          <p className="text-xs text-destructive">
+                            App Store ID must be a numeric value.
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {iosUpdateSource === "eas" && (
+                      <div className="pl-6">
+                        <p className="text-xs text-muted-foreground">
+                          EAS Updates configuration is managed in the mobile app's app.json. No additional server configuration is needed.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 <Button 
                   onClick={() => {
-                    if (!validateGitHubApiUrl(mobileUpdateUrl)) {
+                    if (mobileUpdateUrl && !validateGitHubApiUrl(mobileUpdateUrl)) {
                       toast({ title: "Invalid GitHub URL format", variant: "destructive" });
                       return;
                     }
-                    saveMobileConfigMutation.mutate(mobileUpdateUrl.trim());
+                    if (iosUpdateSource === "appstore" && !iosAppStoreId.trim()) {
+                      toast({ title: "App Store ID is required when App Store is selected", variant: "destructive" });
+                      return;
+                    }
+                    if (iosUpdateSource === "appstore" && !/^\d+$/.test(iosAppStoreId)) {
+                      toast({ title: "Invalid App Store ID format", variant: "destructive" });
+                      return;
+                    }
+                    saveMobileConfigMutation.mutate({
+                      mobileUpdateUrl: mobileUpdateUrl.trim(),
+                      iosUpdateSource: iosUpdateSource,
+                      iosAppStoreId: iosAppStoreId.trim()
+                    });
                   }}
-                  disabled={saveMobileConfigMutation.isPending || (!validateGitHubApiUrl(mobileUpdateUrl))}
+                  disabled={saveMobileConfigMutation.isPending || (mobileUpdateUrl !== "" && !validateGitHubApiUrl(mobileUpdateUrl)) || (iosUpdateSource === "appstore" && (!iosAppStoreId.trim() || !/^\d+$/.test(iosAppStoreId)))}
                   data-testid="button-save-mobile-config"
                 >
                   <Save className="h-4 w-4 mr-2" />

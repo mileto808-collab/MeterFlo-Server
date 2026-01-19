@@ -759,11 +759,17 @@ export async function registerRoutes(
       
       // Get mobile app configuration
       const mobileUpdateUrl = await storage.getSetting("mobileUpdateUrl");
+      const iosUpdateSource = await storage.getSetting("iosUpdateSource");
+      const iosAppStoreId = await storage.getSetting("iosAppStoreId");
       
       // Return response with projects and optional mobileConfig
       res.json({
         projects,
-        mobileConfig: mobileUpdateUrl ? { updateUrl: mobileUpdateUrl } : null
+        mobileConfig: {
+          updateUrl: mobileUpdateUrl || null,
+          iosUpdateSource: iosUpdateSource || null,
+          appStoreId: iosAppStoreId || null
+        }
       });
     } catch (error) {
       console.error("Error fetching user projects:", error);
@@ -4893,7 +4899,13 @@ export async function registerRoutes(
       }
       
       const mobileUpdateUrl = await storage.getSetting("mobileUpdateUrl");
-      res.json({ mobileUpdateUrl: mobileUpdateUrl || null });
+      const iosUpdateSource = await storage.getSetting("iosUpdateSource");
+      const iosAppStoreId = await storage.getSetting("iosAppStoreId");
+      res.json({ 
+        mobileUpdateUrl: mobileUpdateUrl || null,
+        iosUpdateSource: iosUpdateSource || null,
+        iosAppStoreId: iosAppStoreId || null
+      });
     } catch (error) {
       console.error("Error fetching mobile config:", error);
       res.status(500).json({ message: "Failed to fetch mobile configuration" });
@@ -4912,7 +4924,7 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Forbidden: You don't have permission to update mobile configuration" });
       }
       
-      const { mobileUpdateUrl } = req.body;
+      const { mobileUpdateUrl, iosUpdateSource, iosAppStoreId } = req.body;
       
       // Validate GitHub API URL format if provided
       if (mobileUpdateUrl && mobileUpdateUrl.trim() !== "") {
@@ -4926,6 +4938,36 @@ export async function registerRoutes(
       } else {
         // Empty URL - disable update checks
         await storage.setSetting("mobileUpdateUrl", "", "GitHub releases API URL for mobile app updates");
+      }
+      
+      // Save iOS update settings
+      if (iosUpdateSource) {
+        if (!["appstore", "eas"].includes(iosUpdateSource)) {
+          return res.status(400).json({ message: "Invalid iOS update source. Must be 'appstore' or 'eas'" });
+        }
+        // Require App Store ID when source is appstore
+        if (iosUpdateSource === "appstore") {
+          if (!iosAppStoreId || iosAppStoreId.trim() === "") {
+            return res.status(400).json({ message: "App Store ID is required when using App Store as update source." });
+          }
+          if (!/^\d+$/.test(iosAppStoreId.trim())) {
+            return res.status(400).json({ message: "Invalid App Store ID. Must be a numeric value." });
+          }
+        }
+        await storage.setSetting("iosUpdateSource", iosUpdateSource, "iOS update source (appstore or eas)");
+      } else {
+        await storage.setSetting("iosUpdateSource", "", "iOS update source (appstore or eas)");
+      }
+      
+      // Save App Store ID if provided
+      if (iosAppStoreId && iosAppStoreId.trim() !== "") {
+        // Validate App Store ID format (numeric string)
+        if (!/^\d+$/.test(iosAppStoreId.trim())) {
+          return res.status(400).json({ message: "Invalid App Store ID. Must be a numeric value." });
+        }
+        await storage.setSetting("iosAppStoreId", iosAppStoreId.trim(), "iOS App Store ID for update checks");
+      } else {
+        await storage.setSetting("iosAppStoreId", "", "iOS App Store ID for update checks");
       }
       
       res.json({ message: "Mobile configuration updated" });
