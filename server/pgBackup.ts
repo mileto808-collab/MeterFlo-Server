@@ -879,33 +879,31 @@ export async function restorePgBackup(
     const originalSql = fs.readFileSync(sqlFile, "utf8");
     const wrappedScript = path.join(os.tmpdir(), `wrapped_restore_${Date.now()}.sql`);
     
-    // For clean backups, we need to clear tables first since we only have INSERT statements
-    // Use DELETE (not TRUNCATE CASCADE) to avoid cascading to project schema tables
-    // session_replication_role = 'replica' disables FK trigger checks for DML
+    // For clean backups (fresh deployments), clear tables before inserting backup data
+    // Using TRUNCATE CASCADE is safe since clean backups are for fresh servers with no project schemas
     let clearStatements = "";
     if (options.isCleanBackup) {
-      // Delete from child tables first, then parent tables
       const tablesToClear = [
-        "subrole_permissions",  // child of subroles and permissions
+        "subrole_permissions",
         "file_import_history",
         "import_history", 
         "user_groups",
         "module_types",
         "system_types",
-        "trouble_codes",        // may be referenced by project work_orders, but replica mode bypasses
-        "work_order_statuses",  // may be referenced by project work_orders, but replica mode bypasses
+        "trouble_codes",
+        "work_order_statuses",
         "system_settings",
         "permissions",
         "subroles",
       ];
-      clearStatements = `-- Clear clean backup tables (DELETE, not TRUNCATE to avoid CASCADE to project schemas)
-${tablesToClear.map(t => `DELETE FROM public.${t};`).join('\n')}
+      clearStatements = `-- Clear clean backup tables for fresh deployment
+${tablesToClear.map(t => `TRUNCATE TABLE public.${t} CASCADE;`).join('\n')}
 
--- Delete non-system users
+-- Clear non-system users
 DELETE FROM public.users WHERE username NOT IN ('admin', 'file_import');
 
 `;
-      console.log(`[Restore] Clean backup: Adding DELETE for ${tablesToClear.length} tables`);
+      console.log(`[Restore] Clean backup: Adding TRUNCATE for ${tablesToClear.length} tables`);
     }
     
     // Create a single SQL file that disables FKs, runs the restore, and re-enables FKs
