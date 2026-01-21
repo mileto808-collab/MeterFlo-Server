@@ -476,8 +476,8 @@ export async function createCleanPgBackup(): Promise<PgBackupResult> {
     "--format=plain",
     "--no-owner",
     "--no-privileges",
-    "--clean",
-    "--if-exists",
+    "--data-only",
+    "--inserts",
     "--schema=public",
   ];
   
@@ -536,10 +536,8 @@ async function generateSystemUsersInserts(): Promise<string> {
       return "";
     }
     
-    let sql = "\n\n-- Clean backup: Remove all existing users except system users\n";
-    sql += "-- System users (admin, file_import) are required for system operation\n";
-    sql += "-- Delete non-system users first (FK cascade will clean up related tables)\n";
-    sql += "DELETE FROM public.users WHERE username NOT IN ('admin', 'file_import');\n\n";
+    let sql = "\n\n-- Clean backup: System users (admin, file_import) preserved\n";
+    sql += "-- Non-system users are deleted during restore via TRUNCATE/DELETE\n\n";
     
     for (const row of result.rows) {
       const values = [
@@ -567,7 +565,7 @@ async function generateSystemUsersInserts(): Promise<string> {
         escapeValue(row.updated_at),
       ];
       
-      sql += `INSERT INTO public.users (id, email, username, password_hash, first_name, last_name, profile_image_url, role, subrole_id, is_locked, locked_at, locked_reason, last_login_at, address, city, state, zip, phone, website, notes, created_at, updated_at) VALUES (${values.join(", ")}) ON CONFLICT (username) DO NOTHING;\n`;
+      sql += `INSERT INTO public.users (id, email, username, password_hash, first_name, last_name, profile_image_url, role, subrole_id, is_locked, locked_at, locked_reason, last_login_at, address, city, state, zip, phone, website, notes, created_at, updated_at) VALUES (${values.join(", ")}) ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash, first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name, role = EXCLUDED.role, subrole_id = EXCLUDED.subrole_id, updated_at = EXCLUDED.updated_at;\n`;
     }
     
     return sql;
@@ -856,7 +854,7 @@ export async function extractBackupFromArchive(zipBuffer: Buffer): Promise<{
 
 export async function restorePgBackup(
   sqlFile: string,
-  options: { disableForeignKeys?: boolean } = {}
+  options: { disableForeignKeys?: boolean; isCleanBackup?: boolean } = {}
 ): Promise<{
   success: boolean;
   error?: string;
@@ -881,11 +879,40 @@ export async function restorePgBackup(
     const originalSql = fs.readFileSync(sqlFile, "utf8");
     const wrappedScript = path.join(os.tmpdir(), `wrapped_restore_${Date.now()}.sql`);
     
+    // For clean backups, we need to clear tables first since we only have INSERT statements
+    // Use DELETE (not TRUNCATE CASCADE) to avoid cascading to project schema tables
+    // session_replication_role = 'replica' disables FK trigger checks for DML
+    let clearStatements = "";
+    if (options.isCleanBackup) {
+      // Delete from child tables first, then parent tables
+      const tablesToClear = [
+        "subrole_permissions",  // child of subroles and permissions
+        "file_import_history",
+        "import_history", 
+        "user_groups",
+        "module_types",
+        "system_types",
+        "trouble_codes",        // may be referenced by project work_orders, but replica mode bypasses
+        "work_order_statuses",  // may be referenced by project work_orders, but replica mode bypasses
+        "system_settings",
+        "permissions",
+        "subroles",
+      ];
+      clearStatements = `-- Clear clean backup tables (DELETE, not TRUNCATE to avoid CASCADE to project schemas)
+${tablesToClear.map(t => `DELETE FROM public.${t};`).join('\n')}
+
+-- Delete non-system users
+DELETE FROM public.users WHERE username NOT IN ('admin', 'file_import');
+
+`;
+      console.log(`[Restore] Clean backup: Adding DELETE for ${tablesToClear.length} tables`);
+    }
+    
     // Create a single SQL file that disables FKs, runs the restore, and re-enables FKs
     const wrappedSql = `-- Disable foreign key checks for this session
 SET session_replication_role = 'replica';
 
--- Original restore SQL
+${clearStatements}-- Original restore SQL
 ${originalSql}
 
 -- Re-enable foreign key checks

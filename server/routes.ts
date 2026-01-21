@@ -7891,7 +7891,7 @@ export async function registerRoutes(
         let filesResult = { filesRestored: 0, errors: [] as string[] };
         
         try {
-          const dbResult = await restorePgBackup(sqlFile, { disableForeignKeys: true });
+          const dbResult = await restorePgBackup(sqlFile, { disableForeignKeys: true, isCleanBackup });
           
           if (restoreFiles) {
             const filesPath = await getProjectFilesPath();
