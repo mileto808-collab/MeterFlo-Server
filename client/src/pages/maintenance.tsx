@@ -81,7 +81,6 @@ export default function Maintenance() {
   const [clearExisting, setClearExisting] = useState(false);
   const [systemClearExisting, setSystemClearExisting] = useState(false);
   const [filesClearExisting, setFilesClearExisting] = useState(false);
-  const [restoreFiles, setRestoreFiles] = useState(true);
   const [isRestoring, setIsRestoring] = useState(false);
   const [isSystemBackup, setIsSystemBackup] = useState(false);
   const [isSystemRestoring, setIsSystemRestoring] = useState(false);
@@ -262,7 +261,6 @@ export default function Maintenance() {
 
   const openSystemRestoreDialog = () => {
     setSystemClearExisting(false);
-    setRestoreFiles(true);
     setSystemRestoreDialogOpen(true);
   };
 
@@ -280,7 +278,6 @@ export default function Maintenance() {
       const formData = new FormData();
       formData.append("backup", file);
       formData.append("clearExisting", String(systemClearExisting));
-      formData.append("restoreFiles", String(restoreFiles));
 
       const response = await fetch("/api/system/restore", {
         method: "POST",
@@ -964,17 +961,6 @@ export default function Maintenance() {
                 </Label>
               </div>
 
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="restore-files"
-                  checked={restoreFiles}
-                  onCheckedChange={(checked) => setRestoreFiles(checked === true)}
-                  data-testid="checkbox-restore-files"
-                />
-                <Label htmlFor="restore-files" className="text-sm font-medium">
-                  Restore project files and documents (full backups only)
-                </Label>
-              </div>
             </div>
 
             <input
