@@ -7883,9 +7883,10 @@ export async function registerRoutes(
         });
       }
       
-      if (sqlFile && (metadata?.format === "pg_dump_sql" || metadata?.format === "full_system")) {
+      if (sqlFile && (metadata?.format === "pg_dump_sql" || metadata?.format === "pg_dump_full" || metadata?.format === "pg_dump_clean" || metadata?.format === "full_system")) {
         // New SQL format - use psql to restore with FK constraint handling
-        console.log(`Restoring SQL backup from ${metadata.backupDate}, schemas: ${metadata.schemas?.join(", ") || "none"}`);
+        const isCleanBackup = metadata?.format === "pg_dump_clean";
+        console.log(`Restoring SQL backup from ${metadata.backupDate}${isCleanBackup ? " (clean backup)" : ""}, schemas: ${metadata.schemas?.join(", ") || "none"}`);
         
         let filesResult = { filesRestored: 0, errors: [] as string[] };
         
@@ -7907,8 +7908,8 @@ export async function registerRoutes(
           }
           
           return res.json({
-            message: "Full system restore completed (SQL format)",
-            format: "pg_dump_sql",
+            message: isCleanBackup ? "Clean database restore completed" : "Full system restore completed (SQL format)",
+            format: metadata.format,
             backupDate: metadata.backupDate,
             schemas: metadata.schemas,
             filesRestored: filesResult.filesRestored,
