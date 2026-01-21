@@ -64,11 +64,13 @@ Preferred communication style: Simple, everyday language.
   - **Wizard ID Capture**: The same search methods apply to the New System/Module ID capture step in the changeout wizard. Auto-selection uses a ref-based approach (`lastAutoSelectedTarget`) to prevent redundant scanner triggers after successful capture. Clearing a captured ID resets the auto-selection state to allow re-entry.
 - **System Backup/Restore**: Two backup types available:
   - **Full Database Backup**: Complete pg_dump of all users, projects, work orders, and settings. For full data migration.
-  - **Clean Database Backup**: Configuration-only backup for fresh server deployments.
-    - **Exports (kept)**: subroles, permissions, subrole_permissions, system_settings, work_order_statuses, trouble_codes, service_types
-    - **Clears on restore**: projects, users (except admin/file_import), user_groups, system_types, module_types, file_import_history, import_history, and all related join tables
+  - **Clean Database Backup**: Full schema + configuration data for fresh server deployments.
+    - **Includes**: Full database schema (all tables) + configuration data
+    - **Configuration data**: subroles, permissions, subrole_permissions, system_settings, work_order_statuses, trouble_codes, service_types
+    - **Users**: Admin and file_import accounts only (two-pass INSERT with NULL subrole_id, then UPDATE)
     - **Disables**: Cloudflare Turnstile (for easy login on fresh server)
-    - Uses TRUNCATE CASCADE with session_replication_role='replica' to handle FK constraints
+    - **Restore to**: Empty database (no need to run `npm run db:push` or migrations)
+    - Does NOT include: projects, work orders, other users, user groups, system/module types, import history
 
 ### System Design Choices
 - **Storage Interface**: `IStorage` interface abstracts database operations.

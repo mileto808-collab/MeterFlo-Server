@@ -518,11 +518,12 @@ export default function Maintenance() {
                     )}
                     {backupType === "clean" && (
                       <ul className="space-y-1 ml-1">
-                        <li><strong>Exports:</strong> Roles, permissions, statuses, trouble codes, service types</li>
-                        <li><strong>Clears on restore:</strong> Projects, users (except admin/file_import), user groups, system types, module types, import history</li>
+                        <li><strong>Includes:</strong> Full database schema + configuration data</li>
+                        <li><strong>Configuration data:</strong> Roles, permissions, statuses, trouble codes, service types</li>
+                        <li><strong>Users:</strong> Admin and file_import accounts only</li>
                         <li><strong>Disables:</strong> Cloudflare Turnstile (for easy login on fresh server)</li>
-                        <li>Does NOT include projects or work orders</li>
-                        <li>Ideal for starting a fresh server with base configuration</li>
+                        <li>Does NOT include projects, work orders, or other users</li>
+                        <li><strong>Restore to:</strong> Empty database (no need to run migrations)</li>
                       </ul>
                     )}
                     {backupType === "files" && (

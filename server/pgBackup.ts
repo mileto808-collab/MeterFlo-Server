@@ -474,8 +474,39 @@ export async function createCleanPgBackup(): Promise<PgBackupResult> {
   const tempDir = os.tmpdir();
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
   const backupFile = path.join(tempDir, `pg_clean_backup_${timestamp}.sql`);
+  const schemaFile = path.join(tempDir, `pg_clean_schema_${timestamp}.sql`);
+  const dataFile = path.join(tempDir, `pg_clean_data_${timestamp}.sql`);
   
-  const args = [
+  const env = { PGPASSWORD: params.password };
+  
+  // Step 1: Export full schema (all tables, no data)
+  const schemaArgs = [
+    "-h", params.host,
+    "-p", params.port,
+    "-U", params.user,
+    "-d", params.database,
+    "--format=plain",
+    "--no-owner",
+    "--no-privileges",
+    "--schema-only",
+    "--schema=public",
+  ];
+  
+  console.log("[Clean Backup] Step 1: Exporting full database schema...");
+  const schemaResult = await runPgCommand("pg_dump", schemaArgs, env, schemaFile);
+  
+  if (!schemaResult.success) {
+    return {
+      success: false,
+      backupFile: "",
+      schemas: ["public"],
+      backupDate: new Date().toISOString(),
+      error: `Schema export failed: ${schemaResult.stderr}`,
+    };
+  }
+  
+  // Step 2: Export data for specific tables only
+  const dataArgs = [
     "-h", params.host,
     "-p", params.port,
     "-U", params.user,
@@ -489,33 +520,62 @@ export async function createCleanPgBackup(): Promise<PgBackupResult> {
   ];
   
   for (const table of CLEAN_BACKUP_TABLES) {
-    args.push(`--table=public.${table}`);
+    dataArgs.push(`--table=public.${table}`);
   }
   
-  const env = { PGPASSWORD: params.password };
+  console.log(`[Clean Backup] Step 2: Exporting data for ${CLEAN_BACKUP_TABLES.length} configuration tables...`);
+  const dataResult = await runPgCommand("pg_dump", dataArgs, env, dataFile);
   
-  const result = await runPgCommand("pg_dump", args, env, backupFile);
-  
-  if (!result.success) {
+  if (!dataResult.success) {
     return {
       success: false,
       backupFile: "",
       schemas: ["public"],
       backupDate: new Date().toISOString(),
-      error: result.stderr,
+      error: `Data export failed: ${dataResult.stderr}`,
     };
   }
   
-  // Append system users (admin, file_import) to the backup
+  // Step 3: Combine schema + data into single backup file
+  console.log("[Clean Backup] Step 3: Combining schema and data...");
+  let combinedSql = `-- MeterFlo Clean Database Backup
+-- Generated: ${new Date().toISOString()}
+-- This backup includes: full schema + configuration data only
+-- Use this for deploying fresh servers with base configuration
+-- Tables with data: ${CLEAN_BACKUP_TABLES.join(", ")}
+
+`;
+  
+  // Add schema
+  combinedSql += fs.readFileSync(schemaFile, "utf-8");
+  combinedSql += "\n\n-- Configuration Data\n";
+  
+  // Add data
+  combinedSql += fs.readFileSync(dataFile, "utf-8");
+  
+  // Step 4: Append system users (admin, file_import)
   try {
     const systemUsersInserts = await generateSystemUsersInserts();
     if (systemUsersInserts) {
-      fs.appendFileSync(backupFile, systemUsersInserts);
-      console.log(`[Clean Backup] Added ${SYSTEM_USERS.join(", ")} user(s) to backup`);
+      combinedSql += systemUsersInserts;
+      console.log(`[Clean Backup] Step 4: Added ${SYSTEM_USERS.join(", ")} user(s) to backup`);
     }
   } catch (error) {
     console.error("[Clean Backup] Error adding system users:", error);
   }
+  
+  // Write combined backup
+  fs.writeFileSync(backupFile, combinedSql);
+  
+  // Cleanup temp files
+  try {
+    fs.unlinkSync(schemaFile);
+    fs.unlinkSync(dataFile);
+  } catch (e) {
+    // Ignore cleanup errors
+  }
+  
+  console.log(`[Clean Backup] Complete: ${backupFile} (${combinedSql.length} bytes)`);
   
   return {
     success: true,
@@ -896,33 +956,18 @@ export async function restorePgBackup(
     const originalSql = fs.readFileSync(sqlFile, "utf8");
     const wrappedScript = path.join(os.tmpdir(), `wrapped_restore_${Date.now()}.sql`);
     
-    // For clean backups (fresh deployments), clear specified tables and disable Turnstile
-    // Using TRUNCATE CASCADE is safe since clean backups are for fresh servers with no project schemas
+    // For clean backups (fresh deployments), the backup now includes full schema
+    // No need to clear tables - the database should be empty for clean restores
+    // The backup file contains CREATE TABLE statements followed by INSERT statements
     let clearStatements = "";
     if (options.isCleanBackup) {
-      // All tables that need to be cleared before restore
-      // Includes both tables to leave empty AND tables that will be repopulated from backup
-      const allTablesToClear = [
-        ...CLEAN_TABLES_TO_CLEAR,
-        // Also clear tables that will be restored from backup to avoid duplicate key errors
-        "subrole_permissions",
-        "service_types",
-        "trouble_codes",
-        "work_order_statuses",
-        "system_settings",
-        "permissions",
-        "subroles",
-      ];
-      
-      clearStatements = `-- Clean backup restore: Clear all tables before repopulating from backup
--- Tables in CLEAN_TABLES_TO_CLEAR will remain empty, others will be restored from backup
-${allTablesToClear.map(t => `TRUNCATE TABLE public.${t} CASCADE;`).join('\n')}
-
--- Clear non-system users (keep admin and file_import only)
-DELETE FROM public.users WHERE username NOT IN ('admin', 'file_import');
+      // Clean backups now include schema, so they're meant for empty databases
+      // No TRUNCATE needed - just run the SQL which creates tables and inserts data
+      console.log(`[Restore] Clean backup: Database should be empty, schema will be created from backup`);
+      clearStatements = `-- Clean backup restore: Schema + configuration data for fresh deployment
+-- This backup includes CREATE TABLE statements, no need to clear existing tables
 
 `;
-      console.log(`[Restore] Clean backup: Clearing ${allTablesToClear.length} tables before restore`);
     }
     
     // For clean backups, add post-restore commands (like disabling Turnstile)
