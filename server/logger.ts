@@ -3,7 +3,6 @@ import * as path from 'path';
 
 const LOG_DIR = process.env.LOG_DIR || './logs';
 const ERROR_LOG = path.join(LOG_DIR, 'error.log');
-const APP_LOG = path.join(LOG_DIR, 'app.log');
 const MAX_LOG_SIZE = 10 * 1024 * 1024; // 10MB before rotation
 
 // Ensure log directory exists
@@ -48,13 +47,11 @@ export const logger = {
   info(message: string, context?: Record<string, any>) {
     const entry = formatLogEntry('INFO', message, context);
     console.log(entry.trim());
-    writeToLog(APP_LOG, entry);
   },
 
   warn(message: string, context?: Record<string, any>) {
     const entry = formatLogEntry('WARN', message, context);
     console.warn(entry.trim());
-    writeToLog(APP_LOG, entry);
   },
 
   error(message: string, error?: Error | unknown, context?: Record<string, any>) {
@@ -73,7 +70,6 @@ export const logger = {
     if (process.env.NODE_ENV === 'development') {
       const entry = formatLogEntry('DEBUG', message, context);
       console.log(entry.trim());
-      writeToLog(APP_LOG, entry);
     }
   },
 
@@ -99,7 +95,6 @@ export function initializeLogger() {
   logger.info('Logger initialized', {
     logDirectory: LOG_DIR,
     errorLog: ERROR_LOG,
-    appLog: APP_LOG,
     environment: process.env.NODE_ENV || 'development'
   });
 }

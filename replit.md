@@ -97,7 +97,7 @@ The application uses persistent file-based logging for production debugging:
 
 - **Location**: `./logs/` directory (configurable via `LOG_DIR` environment variable)
 - **Error Log**: `./logs/error.log` - Contains all errors with stack traces and context
-- **Application Log**: `./logs/app.log` - Contains info, warn, and debug messages
+- Info, warn, and debug messages are output to console only (not persisted to file)
 
 ### Log Rotation
 - Logs automatically rotate when they exceed 10MB
