@@ -86,7 +86,7 @@ export default function Maintenance() {
   const [isSystemBackup, setIsSystemBackup] = useState(false);
   const [isSystemRestoring, setIsSystemRestoring] = useState(false);
   const [isFilesRestoring, setIsFilesRestoring] = useState(false);
-  const [backupType, setBackupType] = useState<"database" | "full" | "files" | "project">("full");
+  const [backupType, setBackupType] = useState<"database" | "clean" | "files" | "project">("database");
   const [fileStats, setFileStats] = useState<Record<number, FileStats>>({});
 
   const { data: projects = [], isLoading, refetch } = useQuery<ProjectWithStats[]>({
@@ -228,9 +228,9 @@ export default function Maintenance() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      const filenamePrefix = backupType === "database" ? "db_backup" : 
-                             backupType === "files" ? "webapp_backup" : 
-                             backupType === "project" ? "project_backup" : "full_backup";
+      const filenamePrefix = backupType === "database" ? "full_db_backup" : 
+                             backupType === "clean" ? "clean_db_backup" :
+                             backupType === "files" ? "webapp_backup" : "project_backup";
       a.download = `${filenamePrefix}_${new Date().toISOString().slice(0, 10)}.zip`;
       document.body.appendChild(a);
       a.click();
@@ -238,12 +238,12 @@ export default function Maintenance() {
       URL.revokeObjectURL(url);
       
       const description = backupType === "database" 
-        ? "Successfully backed up all databases" 
+        ? "Successfully backed up full database with all projects" 
+        : backupType === "clean"
+        ? "Successfully backed up clean database (settings only, no users/projects)"
         : backupType === "files"
         ? "Successfully backed up web application source files"
-        : backupType === "project"
-        ? "Successfully backed up all project data files"
-        : "Successfully backed up databases, web app files, and project files";
+        : "Successfully backed up all project data files";
       
       toast({
         title: "Backup Created",
@@ -291,14 +291,15 @@ export default function Maintenance() {
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.message || "Failed to restore full system backup");
+        throw new Error(result.message || "Failed to restore system backup");
       }
 
       // Handle both new SQL format and legacy JSON format responses
       let description: string;
-      if (result.format === "pg_dump_sql") {
+      if (result.format === "pg_dump_sql" || result.format === "pg_dump_full" || result.format === "pg_dump_clean") {
         // New SQL format
-        description = `Restored ${result.schemas?.length || 0} database schemas and ${result.filesRestored || 0} files${result.errors?.length > 0 ? ` with ${result.errors.length} errors` : ""}`;
+        const cleanIndicator = result.format === "pg_dump_clean" ? " (clean backup)" : "";
+        description = `Restored ${result.schemas?.length || 0} database schemas and ${result.filesRestored || 0} files${cleanIndicator}${result.errors?.length > 0 ? ` with ${result.errors.length} errors` : ""}`;
       } else {
         // Legacy JSON format
         const mainTablesCount = result.mainTablesRestored 
@@ -308,7 +309,7 @@ export default function Maintenance() {
       }
       
       toast({
-        title: "Full System Restore Completed",
+        title: "System Restore Completed",
         description,
       });
 
@@ -321,7 +322,7 @@ export default function Maintenance() {
     } catch (error) {
       toast({
         title: "Restore failed",
-        description: error instanceof Error ? error.message : "Failed to restore full system backup",
+        description: error instanceof Error ? error.message : "Failed to restore system backup",
         variant: "destructive",
       });
     } finally {
@@ -460,7 +461,7 @@ export default function Maintenance() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Server className="h-5 w-5" />
-              Full System Backup
+              System Backup
             </CardTitle>
             <CardDescription>
               Create or restore a backup using PostgreSQL native format (pg_dump). Choose what to include in your backup.
@@ -476,7 +477,7 @@ export default function Maintenance() {
                   </div>
                   <Select 
                     value={backupType} 
-                    onValueChange={(value: "database" | "full" | "files" | "project") => setBackupType(value)}
+                    onValueChange={(value: "database" | "clean" | "files" | "project") => setBackupType(value)}
                     disabled={isSystemBackup}
                   >
                     <SelectTrigger className="w-full" data-testid="select-backup-type">
@@ -486,13 +487,13 @@ export default function Maintenance() {
                       <SelectItem value="database" data-testid="select-item-database">
                         <div className="flex items-center gap-2">
                           <Database className="h-4 w-4" />
-                          <span>Database Only</span>
+                          <span>Full Database + Projects</span>
                         </div>
                       </SelectItem>
-                      <SelectItem value="full" data-testid="select-item-full">
+                      <SelectItem value="clean" data-testid="select-item-clean">
                         <div className="flex items-center gap-2">
                           <Server className="h-4 w-4" />
-                          <span>Full System (Database + All Files)</span>
+                          <span>Full Clean Database No Projects or Users</span>
                         </div>
                       </SelectItem>
                       <SelectItem value="files" data-testid="select-item-files">
@@ -515,15 +516,15 @@ export default function Maintenance() {
                         <li>Main database (users, projects, settings, groups, permissions)</li>
                         <li>All project databases ({projects.length} projects)</li>
                         <li>SQL format compatible with pg_restore</li>
+                        <li>Complete database backup for full data migration</li>
                       </ul>
                     )}
-                    {backupType === "full" && (
+                    {backupType === "clean" && (
                       <ul className="space-y-1 ml-1">
-                        <li>Main database (users, projects, settings, groups, permissions)</li>
-                        <li>All project databases ({projects.length} projects)</li>
-                        <li>Web application source files (code, configs)</li>
-                        <li>All project files and documents (attachments, uploads)</li>
-                        <li>Complete system backup for full restore</li>
+                        <li>System settings (roles, permissions, statuses)</li>
+                        <li>Work order statuses and trouble codes</li>
+                        <li>Does NOT include users or projects</li>
+                        <li>Ideal for starting a fresh server with base configuration</li>
                       </ul>
                     )}
                     {backupType === "files" && (
@@ -932,10 +933,10 @@ export default function Maintenance() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Archive className="h-5 w-5" />
-              Restore Full System Backup
+              Restore System Backup
             </DialogTitle>
             <DialogDescription>
-              Restore the entire system from a backup archive
+              Restore from a backup archive (full database or clean database)
             </DialogDescription>
           </DialogHeader>
 
@@ -943,8 +944,9 @@ export default function Maintenance() {
             <div className="flex items-center gap-2 p-4 rounded-md bg-destructive/10 text-destructive">
               <AlertTriangle className="h-5 w-5 flex-shrink-0" />
               <p className="text-sm">
-                This will restore the main database, all project databases, and optionally all project files.
-                This is a major operation that may overwrite existing data.
+                This will restore database tables from the backup file.
+                For full backups, this includes all users, projects, and work orders.
+                For clean backups, this only includes system settings.
               </p>
             </div>
 

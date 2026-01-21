@@ -7743,10 +7743,10 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Forbidden: You don't have permission to create system backups" });
       }
       
-      // Get backup type from query parameter, default to 'full' for backward compatibility
-      const backupType = (req.query.type as BackupType) || "full";
-      if (!["database", "full", "files", "project"].includes(backupType)) {
-        return res.status(400).json({ message: "Invalid backup type. Must be 'database', 'full', 'files', or 'project'" });
+      // Get backup type from query parameter, default to 'database' for full database backup
+      const backupType = (req.query.type as BackupType) || "database";
+      if (!["database", "clean", "files", "project"].includes(backupType)) {
+        return res.status(400).json({ message: "Invalid backup type. Must be 'database', 'clean', 'files', or 'project'" });
       }
       
       await createPgBackupArchive(res, backupType);

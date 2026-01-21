@@ -433,20 +433,86 @@ function addWebAppFilesToArchive(
   }
 }
 
-export type BackupType = "database" | "full" | "files" | "project";
+export type BackupType = "database" | "clean" | "files" | "project";
 
-export async function createPgBackupArchive(res: any, backupType: BackupType = "full"): Promise<void> {
+const CLEAN_BACKUP_TABLES = [
+  "subroles",
+  "permissions", 
+  "subrole_permissions",
+  "system_settings",
+  "work_order_statuses",
+  "trouble_codes",
+];
+
+export async function createCleanPgBackup(): Promise<PgBackupResult> {
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    return {
+      success: false,
+      backupFile: "",
+      schemas: [],
+      backupDate: new Date().toISOString(),
+      error: "DATABASE_URL not configured",
+    };
+  }
+  
+  const params = parseConnectionString(connectionString);
+  const tempDir = os.tmpdir();
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const backupFile = path.join(tempDir, `pg_clean_backup_${timestamp}.sql`);
+  
+  const args = [
+    "-h", params.host,
+    "-p", params.port,
+    "-U", params.user,
+    "-d", params.database,
+    "--format=plain",
+    "--no-owner",
+    "--no-privileges",
+    "--clean",
+    "--if-exists",
+    "--schema=public",
+  ];
+  
+  for (const table of CLEAN_BACKUP_TABLES) {
+    args.push(`--table=public.${table}`);
+  }
+  
+  const env = { PGPASSWORD: params.password };
+  
+  const result = await runPgCommand("pg_dump", args, env, backupFile);
+  
+  if (!result.success) {
+    return {
+      success: false,
+      backupFile: "",
+      schemas: ["public"],
+      backupDate: new Date().toISOString(),
+      error: result.stderr,
+    };
+  }
+  
+  return {
+    success: true,
+    backupFile,
+    schemas: ["public"],
+    backupDate: new Date().toISOString(),
+  };
+}
+
+export async function createPgBackupArchive(res: any, backupType: BackupType = "database"): Promise<void> {
   console.log(`[Backup] Starting backup (type: ${backupType})...`);
   
   // Backup types:
-  // - "database": Database only
-  // - "full": Database + web app source files + project files (everything)
+  // - "database": Full database + all project schemas (pg_dump of everything)
+  // - "clean": Clean database (roles, permissions, settings, statuses only - no users/projects)
   // - "files": Web app source files only (excluding project files directory)
   // - "project": Project files only (uploads, attachments, work order files)
   
-  const includeDatabase = backupType === "database" || backupType === "full";
-  const includeWebAppFiles = backupType === "files" || backupType === "full";
-  const includeProjectFiles = backupType === "full" || backupType === "project";
+  const includeDatabase = backupType === "database";
+  const includeCleanDatabase = backupType === "clean";
+  const includeWebAppFiles = backupType === "files";
+  const includeProjectFiles = backupType === "project";
   
   let backupResult: PgBackupResult | null = null;
   
@@ -462,6 +528,21 @@ export async function createPgBackupArchive(res: any, backupType: BackupType = "
     } catch (error: any) {
       console.error("[Backup] Database backup error:", error);
       throw new Error(`Database backup failed: ${error.message}`);
+    }
+  }
+  
+  if (includeCleanDatabase) {
+    try {
+      backupResult = await createCleanPgBackup();
+      
+      if (!backupResult.success) {
+        console.error("[Backup] Clean pg_dump failed:", backupResult.error);
+        throw new Error(backupResult.error || "Failed to create clean database backup");
+      }
+      console.log(`[Backup] Clean database dump complete. Tables: ${CLEAN_BACKUP_TABLES.join(", ")}`);
+    } catch (error: any) {
+      console.error("[Backup] Clean database backup error:", error);
+      throw new Error(`Clean database backup failed: ${error.message}`);
     }
   }
   
@@ -497,9 +578,9 @@ export async function createPgBackupArchive(res: any, backupType: BackupType = "
     }
   });
   
-  const filenamePrefix = backupType === "database" ? "db_backup" : 
-                         backupType === "files" ? "webapp_backup" : 
-                         backupType === "project" ? "project_backup" : "full_backup";
+  const filenamePrefix = backupType === "database" ? "full_db_backup" : 
+                         backupType === "clean" ? "clean_db_backup" :
+                         backupType === "files" ? "webapp_backup" : "project_backup";
   
   res.setHeader("Content-Type", "application/zip");
   res.setHeader(
@@ -510,7 +591,7 @@ export async function createPgBackupArchive(res: any, backupType: BackupType = "
   archive.pipe(res);
   
   // Add database backup
-  if (includeDatabase && backupResult) {
+  if ((includeDatabase || includeCleanDatabase) && backupResult) {
     archive.file(backupResult.backupFile, { name: "database_backup.sql" });
     console.log("[Backup] Added database_backup.sql to archive");
   }
@@ -567,17 +648,19 @@ export async function createPgBackupArchive(res: any, backupType: BackupType = "
   
   // Add metadata
   const metadata = {
-    version: "2.1",
-    format: backupType === "database" ? "pg_dump_sql" : 
-            backupType === "files" ? "webapp_files_only" : 
-            backupType === "project" ? "project_files_only" : "full_system",
+    version: "2.2",
+    format: backupType === "database" ? "pg_dump_full" : 
+            backupType === "clean" ? "pg_dump_clean" :
+            backupType === "files" ? "webapp_files_only" : "project_files_only",
     backupType,
     backupDate: backupResult?.backupDate || new Date().toISOString(),
     schemas: backupResult?.schemas,
-    postgresVersion: includeDatabase ? await getPostgresVersion() : undefined,
+    tablesIncluded: includeCleanDatabase ? CLEAN_BACKUP_TABLES : undefined,
+    postgresVersion: (includeDatabase || includeCleanDatabase) ? await getPostgresVersion() : undefined,
     includesWebAppFiles: includeWebAppFiles,
     includesProjectFiles: includeProjectFiles,
     includesDatabase: includeDatabase,
+    includesCleanDatabase: includeCleanDatabase,
   };
   archive.append(JSON.stringify(metadata, null, 2), { name: "backup_metadata.json" });
   
@@ -607,9 +690,10 @@ async function getPostgresVersion(): Promise<string> {
 export interface BackupMetadata {
   version: string;
   format: string;
-  backupType?: "database" | "full" | "files" | "project";
+  backupType?: "database" | "clean" | "files" | "project";
   backupDate: string;
   schemas?: string[];
+  tablesIncluded?: string[];
   postgresVersion?: string;
 }
 
