@@ -536,9 +536,10 @@ async function generateSystemUsersInserts(): Promise<string> {
       return "";
     }
     
-    let sql = "\n\n-- Clean backup: Remove all existing users and restore only system users\n";
+    let sql = "\n\n-- Clean backup: Remove all existing users except system users\n";
     sql += "-- System users (admin, file_import) are required for system operation\n";
-    sql += "DELETE FROM public.users;\n\n";
+    sql += "-- Delete non-system users first (FK cascade will clean up related tables)\n";
+    sql += "DELETE FROM public.users WHERE username NOT IN ('admin', 'file_import');\n\n";
     
     for (const row of result.rows) {
       const values = [
