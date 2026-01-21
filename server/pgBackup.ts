@@ -544,8 +544,10 @@ async function generateSystemUsersInserts(): Promise<string> {
     }
     
     let sql = "\n\n-- Clean backup: System users (admin, file_import) preserved\n";
-    sql += "-- Non-system users are deleted during restore via TRUNCATE/DELETE\n\n";
+    sql += "-- Insert users first with NULL subrole_id to avoid FK issues during restore\n";
+    sql += "-- Then update subrole_id after subroles table is populated\n\n";
     
+    // First pass: INSERT users with NULL subrole_id to avoid FK constraint issues
     for (const row of result.rows) {
       const values = [
         escapeValue(row.id),
@@ -556,7 +558,7 @@ async function generateSystemUsersInserts(): Promise<string> {
         escapeValue(row.last_name),
         escapeValue(row.profile_image_url),
         escapeValue(row.role),
-        row.subrole_id !== null ? row.subrole_id : "NULL",
+        "NULL", // Insert with NULL subrole_id first
         row.is_locked !== null ? row.is_locked : "false",
         escapeValue(row.locked_at),
         escapeValue(row.locked_reason),
@@ -572,7 +574,15 @@ async function generateSystemUsersInserts(): Promise<string> {
         escapeValue(row.updated_at),
       ];
       
-      sql += `INSERT INTO public.users (id, email, username, password_hash, first_name, last_name, profile_image_url, role, subrole_id, is_locked, locked_at, locked_reason, last_login_at, address, city, state, zip, phone, website, notes, created_at, updated_at) VALUES (${values.join(", ")}) ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash, first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name, role = EXCLUDED.role, subrole_id = EXCLUDED.subrole_id, updated_at = EXCLUDED.updated_at;\n`;
+      sql += `INSERT INTO public.users (id, email, username, password_hash, first_name, last_name, profile_image_url, role, subrole_id, is_locked, locked_at, locked_reason, last_login_at, address, city, state, zip, phone, website, notes, created_at, updated_at) VALUES (${values.join(", ")}) ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash, first_name = EXCLUDED.first_name, last_name = EXCLUDED.last_name, role = EXCLUDED.role, updated_at = EXCLUDED.updated_at;\n`;
+    }
+    
+    // Second pass: UPDATE subrole_id for users that have one
+    sql += "\n-- Update subrole_id after subroles table is populated\n";
+    for (const row of result.rows) {
+      if (row.subrole_id !== null) {
+        sql += `UPDATE public.users SET subrole_id = ${row.subrole_id} WHERE username = ${escapeValue(row.username)};\n`;
+      }
     }
     
     return sql;
