@@ -544,10 +544,20 @@ export async function createCleanPgBackup(): Promise<PgBackupResult> {
 -- Use this for deploying fresh servers with base configuration
 -- Tables with data: ${CLEAN_BACKUP_TABLES.join(", ")}
 
+-- Drop and recreate public schema to ensure clean state
+-- This handles both empty databases and databases with existing public schema
+DROP SCHEMA IF EXISTS public CASCADE;
+CREATE SCHEMA public;
+GRANT ALL ON SCHEMA public TO public;
+
 `;
   
-  // Add schema
-  combinedSql += fs.readFileSync(schemaFile, "utf-8");
+  // Add schema - but filter out CREATE SCHEMA public since we handle it above
+  let schemaContent = fs.readFileSync(schemaFile, "utf-8");
+  // Remove any CREATE SCHEMA public statements from pg_dump output to avoid duplicates
+  schemaContent = schemaContent.replace(/CREATE SCHEMA public;/g, "-- CREATE SCHEMA public; (handled above)");
+  schemaContent = schemaContent.replace(/CREATE SCHEMA IF NOT EXISTS public;/g, "-- CREATE SCHEMA IF NOT EXISTS public; (handled above)");
+  combinedSql += schemaContent;
   combinedSql += "\n\n-- Configuration Data\n";
   
   // Add data
