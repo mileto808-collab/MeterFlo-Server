@@ -83,6 +83,10 @@ export type WizardMode = (typeof wizardModeEnum)[number];
 export const gpsModeEnum = ["automatic", "manual_step", "disabled"] as const;
 export type GpsMode = (typeof gpsModeEnum)[number];
 
+// Equipment type enum for changeout/reading configuration
+export const equipmentTypeEnum = ["system", "module", "both", "user_choice"] as const;
+export type EquipmentType = (typeof equipmentTypeEnum)[number];
+
 // Projects table - for customer organization with per-project database support
 export const projects = pgTable("projects", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -122,6 +126,9 @@ export const projects = pgTable("projects", {
   searchShowQrCodeScan: boolean("search_show_qr_code_scan").default(true),
   searchShowManualEntry: boolean("search_show_manual_entry").default(true),
   searchShowHidScanner: boolean("search_show_hid_scanner").default(true),
+  // Equipment type for changeout and reading modes
+  changeoutEquipmentType: varchar("changeout_equipment_type", { length: 20 }).default("both"),
+  readingEquipmentType: varchar("reading_equipment_type", { length: 20 }).default("both"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -548,6 +555,8 @@ export const insertProjectSchema = z.object({
   wizardShowBeforePhotosStep: z.boolean().optional().default(true),
   wizardShowAfterPhotosStep: z.boolean().optional().default(true),
   wizardShowSignatureStep: z.boolean().optional().default(true),
+  changeoutEquipmentType: z.enum(equipmentTypeEnum).optional().default("both"),
+  readingEquipmentType: z.enum(equipmentTypeEnum).optional().default("both"),
 });
 
 export const insertProjectHolidaySchema = z.object({
