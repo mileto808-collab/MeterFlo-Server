@@ -603,9 +603,9 @@ export function WorkOrderCalendar({
             </div>
           ))}
         </div>
-        <div className="flex-1 grid grid-rows-[repeat(auto-fill,minmax(100px,1fr))]">
+        <div className="flex-1 flex flex-col">
           {weeks.map((week, weekIdx) => (
-            <div key={weekIdx} className="grid grid-cols-7 border-b last:border-b-0">
+            <div key={weekIdx} className="flex-1 min-h-[100px] grid grid-cols-7 border-b last:border-b-0">
               {week.map((date) => {
                 const dayWorkOrders = getWorkOrdersForDate(date);
                 const isCurrentMonth = isSameMonth(date, currentDate);
