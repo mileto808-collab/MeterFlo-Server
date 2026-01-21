@@ -595,8 +595,8 @@ export function WorkOrderCalendar({
     }
 
     return (
-      <div className="flex flex-col h-full">
-        <div className="grid grid-cols-7 border-b">
+      <div className="flex flex-col min-h-[500px]">
+        <div className="grid grid-cols-7 border-b sticky top-0 bg-background z-10">
           {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
             <div key={d} className="p-2 text-center text-sm font-medium text-muted-foreground">
               {d}
@@ -884,7 +884,7 @@ export function WorkOrderCalendar({
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 min-h-0 overflow-auto">
         {view === "month" && renderMonthView()}
         {view === "week" && renderWeekView()}
         {view === "day" && renderDayView()}

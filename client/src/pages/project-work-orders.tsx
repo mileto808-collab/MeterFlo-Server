@@ -3804,8 +3804,8 @@ export default function ProjectWorkOrders() {
       )}
 
       {viewMode === "calendar" && hasPermission('workOrders.calendar') ? (
-        <Card className="overflow-hidden">
-          <CardContent className="p-0 h-[calc(100vh-180px)] min-h-[500px]">
+        <Card className="flex-1 min-h-0 overflow-hidden flex flex-col">
+          <CardContent className="p-0 flex-1 min-h-0 overflow-auto">
             <WorkOrderCalendar
               workOrders={workOrders}
               statuses={workOrderStatuses}
