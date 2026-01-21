@@ -557,6 +557,11 @@ export const insertProjectSchema = z.object({
   wizardShowSignatureStep: z.boolean().optional().default(true),
   changeoutEquipmentType: z.enum(equipmentTypeEnum).optional().default("both"),
   readingEquipmentType: z.enum(equipmentTypeEnum).optional().default("both"),
+  // Search method visibility settings
+  searchShowBarcodeScan: z.boolean().optional().default(true),
+  searchShowQrCodeScan: z.boolean().optional().default(true),
+  searchShowManualEntry: z.boolean().optional().default(true),
+  searchShowHidScanner: z.boolean().optional().default(true),
 });
 
 export const insertProjectHolidaySchema = z.object({

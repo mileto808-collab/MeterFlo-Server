@@ -60,6 +60,9 @@ const projectFormSchema = z.object({
   wizardShowBeforePhotosStep: z.boolean().optional().default(true),
   wizardShowAfterPhotosStep: z.boolean().optional().default(true),
   wizardShowSignatureStep: z.boolean().optional().default(true),
+  // Equipment type for changeout and reading modes
+  changeoutEquipmentType: z.enum(["system", "module", "both", "user_choice"]).optional().default("both"),
+  readingEquipmentType: z.enum(["system", "module", "both", "user_choice"]).optional().default("both"),
   // Search method visibility settings
   searchShowBarcodeScan: z.boolean().optional().default(true),
   searchShowQrCodeScan: z.boolean().optional().default(true),
@@ -159,6 +162,8 @@ export default function ProjectForm() {
         wizardShowBeforePhotosStep: project.wizardShowBeforePhotosStep !== false,
         wizardShowAfterPhotosStep: project.wizardShowAfterPhotosStep !== false,
         wizardShowSignatureStep: project.wizardShowSignatureStep !== false,
+        changeoutEquipmentType: ((project as any).changeoutEquipmentType as "system" | "module" | "both" | "user_choice") || "both",
+        readingEquipmentType: ((project as any).readingEquipmentType as "system" | "module" | "both" | "user_choice") || "both",
         searchShowBarcodeScan: (project as any).searchShowBarcodeScan !== false,
         searchShowQrCodeScan: (project as any).searchShowQrCodeScan !== false,
         searchShowManualEntry: (project as any).searchShowManualEntry !== false,
@@ -804,6 +809,71 @@ export default function ProjectForm() {
                     </FormItem>
                   )}
                 />
+
+                {/* Equipment Type Configuration based on Wizard Mode */}
+                {(form.watch("wizardMode") === "changeout" || form.watch("wizardMode") === "user_choice") && (
+                  <FormField
+                    control={form.control}
+                    name="changeoutEquipmentType"
+                    render={({ field }) => (
+                      <FormItem className="mb-4 pl-4 border-l-2 border-muted">
+                        <FormLabel>Changeout Equipment Type</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-changeout-equipment-type">
+                              <SelectValue placeholder="Select equipment type" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="system">System Only</SelectItem>
+                            <SelectItem value="module">Module Only</SelectItem>
+                            <SelectItem value="both">System and Module</SelectItem>
+                            <SelectItem value="user_choice">User Choice (Select at Start)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>
+                          {field.value === "system" && "Changeout workflow will only capture system data"}
+                          {field.value === "module" && "Changeout workflow will only capture module data"}
+                          {field.value === "both" && "Changeout workflow will capture both system and module data"}
+                          {field.value === "user_choice" && "Users choose between System, Module, or Both at the start of each changeout"}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+
+                {(form.watch("wizardMode") === "reading_only" || form.watch("wizardMode") === "user_choice") && (
+                  <FormField
+                    control={form.control}
+                    name="readingEquipmentType"
+                    render={({ field }) => (
+                      <FormItem className="mb-4 pl-4 border-l-2 border-muted">
+                        <FormLabel>Reading Capture Equipment Type</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger data-testid="select-reading-equipment-type">
+                              <SelectValue placeholder="Select equipment type" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="system">System Only</SelectItem>
+                            <SelectItem value="module">Module Only</SelectItem>
+                            <SelectItem value="both">System and Module</SelectItem>
+                            <SelectItem value="user_choice">User Choice (Select at Start)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>
+                          {field.value === "system" && "Reading capture will only capture system readings"}
+                          {field.value === "module" && "Reading capture will only capture module readings"}
+                          {field.value === "both" && "Reading capture will capture both system and module readings"}
+                          {field.value === "user_choice" && "Users choose between System, Module, or Both at the start of each reading capture"}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
 
                 <div className="space-y-3 pl-4 border-l-2 border-muted">
                   <p className="text-sm font-medium text-muted-foreground mb-2">Step Visibility</p>
