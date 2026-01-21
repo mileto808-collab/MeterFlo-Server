@@ -523,7 +523,8 @@ export default function Maintenance() {
                       <ul className="space-y-1 ml-1">
                         <li>System settings (roles, permissions, statuses)</li>
                         <li>Work order statuses and trouble codes</li>
-                        <li>Does NOT include users or projects</li>
+                        <li>Includes admin and file_import system users</li>
+                        <li>Does NOT include other users or projects</li>
                         <li>Ideal for starting a fresh server with base configuration</li>
                       </ul>
                     )}
@@ -946,7 +947,7 @@ export default function Maintenance() {
               <p className="text-sm">
                 This will restore database tables from the backup file.
                 For full backups, this includes all users, projects, and work orders.
-                For clean backups, this only includes system settings.
+                For clean backups, this includes system settings plus admin and file_import users.
               </p>
             </div>
 

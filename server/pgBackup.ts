@@ -444,6 +444,8 @@ const CLEAN_BACKUP_TABLES = [
   "trouble_codes",
 ];
 
+const SYSTEM_USERS = ["admin", "file_import"];
+
 export async function createCleanPgBackup(): Promise<PgBackupResult> {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
@@ -492,12 +494,96 @@ export async function createCleanPgBackup(): Promise<PgBackupResult> {
     };
   }
   
+  // Append system users (admin, file_import) to the backup
+  try {
+    const systemUsersInserts = await generateSystemUsersInserts();
+    if (systemUsersInserts) {
+      fs.appendFileSync(backupFile, systemUsersInserts);
+      console.log(`[Clean Backup] Added ${SYSTEM_USERS.join(", ")} user(s) to backup`);
+    }
+  } catch (error) {
+    console.error("[Clean Backup] Error adding system users:", error);
+  }
+  
   return {
     success: true,
     backupFile,
     schemas: ["public"],
     backupDate: new Date().toISOString(),
   };
+}
+
+async function generateSystemUsersInserts(): Promise<string> {
+  const client = await pool.connect();
+  try {
+    const placeholders = SYSTEM_USERS.map((_, i) => `$${i + 1}`).join(", ");
+    const result = await client.query(
+      `SELECT id, email, username, password_hash, first_name, last_name, profile_image_url, 
+              role, subrole_id, is_locked, locked_at, locked_reason, last_login_at,
+              address, city, state, zip, phone, website, notes, created_at, updated_at
+       FROM users 
+       WHERE username IN (${placeholders})`,
+      SYSTEM_USERS
+    );
+    
+    if (result.rows.length === 0) {
+      console.log("[Clean Backup] No system users found to backup");
+      return "";
+    }
+    
+    let sql = "\n\n-- System users (admin, file_import)\n";
+    sql += "-- These users are required for system operation\n";
+    
+    for (const row of result.rows) {
+      const values = [
+        escapeValue(row.id),
+        escapeValue(row.email),
+        escapeValue(row.username),
+        escapeValue(row.password_hash),
+        escapeValue(row.first_name),
+        escapeValue(row.last_name),
+        escapeValue(row.profile_image_url),
+        escapeValue(row.role),
+        row.subrole_id !== null ? row.subrole_id : "NULL",
+        row.is_locked !== null ? row.is_locked : "false",
+        escapeValue(row.locked_at),
+        escapeValue(row.locked_reason),
+        escapeValue(row.last_login_at),
+        escapeValue(row.address),
+        escapeValue(row.city),
+        escapeValue(row.state),
+        escapeValue(row.zip),
+        escapeValue(row.phone),
+        escapeValue(row.website),
+        escapeValue(row.notes),
+        escapeValue(row.created_at),
+        escapeValue(row.updated_at),
+      ];
+      
+      sql += `INSERT INTO public.users (id, email, username, password_hash, first_name, last_name, profile_image_url, role, subrole_id, is_locked, locked_at, locked_reason, last_login_at, address, city, state, zip, phone, website, notes, created_at, updated_at) VALUES (${values.join(", ")}) ON CONFLICT (id) DO NOTHING;\n`;
+    }
+    
+    return sql;
+  } finally {
+    client.release();
+  }
+}
+
+function escapeValue(value: any): string {
+  if (value === null || value === undefined) {
+    return "NULL";
+  }
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+  if (value instanceof Date) {
+    return `'${value.toISOString()}'`;
+  }
+  if (typeof value === "number") {
+    return String(value);
+  }
+  const escaped = String(value).replace(/'/g, "''");
+  return `'${escaped}'`;
 }
 
 export async function createPgBackupArchive(res: any, backupType: BackupType = "database"): Promise<void> {
@@ -656,6 +742,7 @@ export async function createPgBackupArchive(res: any, backupType: BackupType = "
     backupDate: backupResult?.backupDate || new Date().toISOString(),
     schemas: backupResult?.schemas,
     tablesIncluded: includeCleanDatabase ? CLEAN_BACKUP_TABLES : undefined,
+    systemUsersIncluded: includeCleanDatabase ? SYSTEM_USERS : undefined,
     postgresVersion: (includeDatabase || includeCleanDatabase) ? await getPostgresVersion() : undefined,
     includesWebAppFiles: includeWebAppFiles,
     includesProjectFiles: includeProjectFiles,
