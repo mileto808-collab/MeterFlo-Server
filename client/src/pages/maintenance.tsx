@@ -521,10 +521,9 @@ export default function Maintenance() {
                     )}
                     {backupType === "clean" && (
                       <ul className="space-y-1 ml-1">
-                        <li>System settings (roles, permissions, statuses, trouble codes)</li>
-                        <li>System types, module types, and user groups</li>
-                        <li>Import history (database and file imports)</li>
-                        <li>Admin and file_import users only (all other users removed)</li>
+                        <li><strong>Exports:</strong> Roles, permissions, statuses, trouble codes, service types</li>
+                        <li><strong>Clears on restore:</strong> Projects, users (except admin/file_import), user groups, system types, module types, import history</li>
+                        <li><strong>Disables:</strong> Cloudflare Turnstile (for easy login on fresh server)</li>
                         <li>Does NOT include projects or work orders</li>
                         <li>Ideal for starting a fresh server with base configuration</li>
                       </ul>
@@ -948,7 +947,7 @@ export default function Maintenance() {
               <p className="text-sm">
                 This will restore database tables from the backup file.
                 For full backups, this includes all users, projects, and work orders.
-                For clean backups, this removes all users except admin and file_import, and restores system configuration.
+                For clean backups, this clears projects, users (except admin and file_import), user groups, system types, module types, and disables Cloudflare Turnstile.
               </p>
             </div>
 
@@ -973,7 +972,7 @@ export default function Maintenance() {
                   data-testid="checkbox-restore-files"
                 />
                 <Label htmlFor="restore-files" className="text-sm font-medium">
-                  Restore project files and documents
+                  Restore project files and documents (full backups only)
                 </Label>
               </div>
             </div>

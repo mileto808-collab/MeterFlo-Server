@@ -435,6 +435,7 @@ function addWebAppFilesToArchive(
 
 export type BackupType = "database" | "clean" | "files" | "project";
 
+// Tables to EXPORT in clean backup (configuration to keep)
 const CLEAN_BACKUP_TABLES = [
   "subroles",
   "permissions", 
@@ -442,11 +443,23 @@ const CLEAN_BACKUP_TABLES = [
   "system_settings",
   "work_order_statuses",
   "trouble_codes",
-  "system_types",
-  "module_types",
-  "user_groups",
-  "import_history",
+  "service_types",
+];
+
+// Tables to CLEAR during clean restore (will be empty after restore)
+const CLEAN_TABLES_TO_CLEAR = [
+  "user_group_members",
+  "user_group_projects",
+  "user_projects",
+  "project_service_types",
+  "project_system_types",
+  "project_module_types",
   "file_import_history",
+  "import_history",
+  "user_groups",
+  "module_types",
+  "system_types",
+  "projects",
 ];
 
 const SYSTEM_USERS = ["admin", "file_import"];
@@ -879,31 +892,43 @@ export async function restorePgBackup(
     const originalSql = fs.readFileSync(sqlFile, "utf8");
     const wrappedScript = path.join(os.tmpdir(), `wrapped_restore_${Date.now()}.sql`);
     
-    // For clean backups (fresh deployments), clear tables before inserting backup data
+    // For clean backups (fresh deployments), clear specified tables and disable Turnstile
     // Using TRUNCATE CASCADE is safe since clean backups are for fresh servers with no project schemas
     let clearStatements = "";
     if (options.isCleanBackup) {
-      const tablesToClear = [
+      // All tables that need to be cleared before restore
+      // Includes both tables to leave empty AND tables that will be repopulated from backup
+      const allTablesToClear = [
+        ...CLEAN_TABLES_TO_CLEAR,
+        // Also clear tables that will be restored from backup to avoid duplicate key errors
         "subrole_permissions",
-        "file_import_history",
-        "import_history", 
-        "user_groups",
-        "module_types",
-        "system_types",
+        "service_types",
         "trouble_codes",
         "work_order_statuses",
         "system_settings",
         "permissions",
         "subroles",
       ];
-      clearStatements = `-- Clear clean backup tables for fresh deployment
-${tablesToClear.map(t => `TRUNCATE TABLE public.${t} CASCADE;`).join('\n')}
+      
+      clearStatements = `-- Clean backup restore: Clear all tables before repopulating from backup
+-- Tables in CLEAN_TABLES_TO_CLEAR will remain empty, others will be restored from backup
+${allTablesToClear.map(t => `TRUNCATE TABLE public.${t} CASCADE;`).join('\n')}
 
--- Clear non-system users
+-- Clear non-system users (keep admin and file_import only)
 DELETE FROM public.users WHERE username NOT IN ('admin', 'file_import');
 
 `;
-      console.log(`[Restore] Clean backup: Adding TRUNCATE for ${tablesToClear.length} tables`);
+      console.log(`[Restore] Clean backup: Clearing ${allTablesToClear.length} tables before restore`);
+    }
+    
+    // For clean backups, add post-restore commands (like disabling Turnstile)
+    let postRestoreStatements = "";
+    if (options.isCleanBackup) {
+      postRestoreStatements = `
+-- Disable Cloudflare Turnstile for fresh deployment (override backup value)
+UPDATE public.system_settings SET value = 'false' WHERE key = 'turnstile_enabled';
+
+`;
     }
     
     // Create a single SQL file that disables FKs, runs the restore, and re-enables FKs
@@ -912,7 +937,7 @@ SET session_replication_role = 'replica';
 
 ${clearStatements}-- Original restore SQL
 ${originalSql}
-
+${postRestoreStatements}
 -- Re-enable foreign key checks
 SET session_replication_role = 'origin';
 `;
