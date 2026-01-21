@@ -448,12 +448,6 @@ const CLEAN_BACKUP_TABLES = [
 
 // Tables to CLEAR during clean restore (will be empty after restore)
 const CLEAN_TABLES_TO_CLEAR = [
-  "user_group_members",
-  "user_group_projects",
-  "user_projects",
-  "project_service_types",
-  "project_system_types",
-  "project_module_types",
   "file_import_history",
   "import_history",
   "user_groups",
