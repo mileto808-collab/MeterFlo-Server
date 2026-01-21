@@ -521,10 +521,11 @@ export default function Maintenance() {
                     )}
                     {backupType === "clean" && (
                       <ul className="space-y-1 ml-1">
-                        <li>System settings (roles, permissions, statuses)</li>
-                        <li>Work order statuses and trouble codes</li>
-                        <li>Includes admin and file_import system users</li>
-                        <li>Does NOT include other users or projects</li>
+                        <li>System settings (roles, permissions, statuses, trouble codes)</li>
+                        <li>System types, module types, and user groups</li>
+                        <li>Import history (database and file imports)</li>
+                        <li>Admin and file_import users only (all other users removed)</li>
+                        <li>Does NOT include projects or work orders</li>
                         <li>Ideal for starting a fresh server with base configuration</li>
                       </ul>
                     )}
@@ -947,7 +948,7 @@ export default function Maintenance() {
               <p className="text-sm">
                 This will restore database tables from the backup file.
                 For full backups, this includes all users, projects, and work orders.
-                For clean backups, this includes system settings plus admin and file_import users.
+                For clean backups, this removes all users except admin and file_import, and restores system configuration.
               </p>
             </div>
 

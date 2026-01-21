@@ -442,6 +442,11 @@ const CLEAN_BACKUP_TABLES = [
   "system_settings",
   "work_order_statuses",
   "trouble_codes",
+  "system_types",
+  "module_types",
+  "user_groups",
+  "import_history",
+  "file_import_history",
 ];
 
 const SYSTEM_USERS = ["admin", "file_import"];
@@ -531,8 +536,9 @@ async function generateSystemUsersInserts(): Promise<string> {
       return "";
     }
     
-    let sql = "\n\n-- System users (admin, file_import)\n";
-    sql += "-- These users are required for system operation\n";
+    let sql = "\n\n-- Clean backup: Remove all existing users and restore only system users\n";
+    sql += "-- System users (admin, file_import) are required for system operation\n";
+    sql += "DELETE FROM public.users;\n\n";
     
     for (const row of result.rows) {
       const values = [
@@ -560,7 +566,7 @@ async function generateSystemUsersInserts(): Promise<string> {
         escapeValue(row.updated_at),
       ];
       
-      sql += `INSERT INTO public.users (id, email, username, password_hash, first_name, last_name, profile_image_url, role, subrole_id, is_locked, locked_at, locked_reason, last_login_at, address, city, state, zip, phone, website, notes, created_at, updated_at) VALUES (${values.join(", ")}) ON CONFLICT (id) DO NOTHING;\n`;
+      sql += `INSERT INTO public.users (id, email, username, password_hash, first_name, last_name, profile_image_url, role, subrole_id, is_locked, locked_at, locked_reason, last_login_at, address, city, state, zip, phone, website, notes, created_at, updated_at) VALUES (${values.join(", ")}) ON CONFLICT (username) DO NOTHING;\n`;
     }
     
     return sql;
