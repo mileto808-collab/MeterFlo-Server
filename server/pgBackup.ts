@@ -877,62 +877,73 @@ export async function restorePgBackup(
   let tablesRestored = 0;
   
   if (options.disableForeignKeys) {
-    const preScript = path.join(os.tmpdir(), `pre_restore_${Date.now()}.sql`);
-    const postScript = path.join(os.tmpdir(), `post_restore_${Date.now()}.sql`);
+    // Read the original SQL file and wrap it with FK disable/enable in a single session
+    const originalSql = fs.readFileSync(sqlFile, "utf8");
+    const wrappedScript = path.join(os.tmpdir(), `wrapped_restore_${Date.now()}.sql`);
     
-    fs.writeFileSync(preScript, `SET session_replication_role = 'replica';`);
-    fs.writeFileSync(postScript, `SET session_replication_role = 'origin';`);
+    // Create a single SQL file that disables FKs, runs the restore, and re-enables FKs
+    const wrappedSql = `-- Disable foreign key checks for this session
+SET session_replication_role = 'replica';
+
+-- Original restore SQL
+${originalSql}
+
+-- Re-enable foreign key checks
+SET session_replication_role = 'origin';
+`;
+    
+    fs.writeFileSync(wrappedScript, wrappedSql);
+    console.log(`[Restore] Created wrapped SQL script (${wrappedSql.length} bytes)`);
+    
+    // Log a preview of the SQL for debugging
+    const lines = wrappedSql.split('\n');
+    console.log(`[Restore] SQL script has ${lines.length} lines`);
+    if (lines.length > 20) {
+      console.log(`[Restore] Last 10 lines of SQL:`);
+      lines.slice(-10).forEach((line, i) => {
+        console.log(`[Restore]   ${lines.length - 10 + i + 1}: ${line.substring(0, 100)}`);
+      });
+    }
     
     let restoreSuccess = true;
     let restoreError = "";
     
     try {
-      let result = await runPgCommand("psql", [
+      const result = await runPgCommand("psql", [
         "-h", params.host,
         "-p", params.port,
         "-U", params.user,
         "-d", params.database,
-        "-f", preScript,
-      ], { PGPASSWORD: params.password });
-      
-      if (!result.success) {
-        return { success: false, error: "Failed to disable foreign keys: " + result.stderr, warnings };
-      }
-      
-      result = await runPgCommand("psql", [
-        "-h", params.host,
-        "-p", params.port,
-        "-U", params.user,
-        "-d", params.database,
-        "-f", sqlFile,
+        "-f", wrappedScript,
+        "-v", "ON_ERROR_STOP=1",
       ], { PGPASSWORD: params.password });
       
       if (result.stderr) {
-        const lines = result.stderr.split("\n");
-        for (const line of lines) {
+        const stderrLines = result.stderr.split("\n");
+        for (const line of stderrLines) {
           if (line.includes("WARNING") || line.includes("NOTICE")) {
             warnings.push(line);
           } else if (line.includes("DROP TABLE") || line.includes("CREATE TABLE") || line.includes("ALTER TABLE")) {
             tablesRestored++;
+          } else if (line.includes("ERROR")) {
+            console.error(`[Restore] SQL Error: ${line}`);
           }
         }
+      }
+      
+      if (result.stdout) {
+        console.log(`[Restore] psql output: ${result.stdout.substring(0, 500)}`);
       }
       
       if (!result.success) {
         restoreSuccess = false;
         restoreError = result.stderr;
+        console.error(`[Restore] Failed: ${restoreError}`);
+      } else {
+        console.log(`[Restore] SQL execution completed successfully`);
       }
     } finally {
-      await runPgCommand("psql", [
-        "-h", params.host,
-        "-p", params.port,
-        "-U", params.user,
-        "-d", params.database,
-        "-f", postScript,
-      ], { PGPASSWORD: params.password });
-      
-      if (fs.existsSync(preScript)) fs.unlinkSync(preScript);
-      if (fs.existsSync(postScript)) fs.unlinkSync(postScript);
+      if (fs.existsSync(wrappedScript)) fs.unlinkSync(wrappedScript);
     }
     
     if (!restoreSuccess) {
