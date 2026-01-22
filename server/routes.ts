@@ -3242,6 +3242,23 @@ export async function registerRoutes(
         ? `${currentUser.firstName}${currentUser.lastName ? ' ' + currentUser.lastName : ''}`
         : currentUser?.username || currentUser?.id;
       
+      // Get work order storage to calculate next auto-generated WO ID
+      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      let nextAutoId = BigInt(await workOrderStorage.getNextCustomerWoId());
+      
+      // Get project's configured service types for default assignment
+      const projectServiceTypes = await storage.getProjectServiceTypes(projectId);
+      const allowedServiceTypeCodes = new Set(projectServiceTypes.map(st => st.code));
+      const defaultServiceType = projectServiceTypes.length === 1 ? projectServiceTypes[0].code : null;
+      const hasMultipleServiceTypes = projectServiceTypes.length > 1;
+      
+      // Error if no service type is configured for the project
+      if (projectServiceTypes.length === 0) {
+        return res.status(400).json({ 
+          message: "No service types configured for this project. Please configure at least one service type in Project Settings before importing work orders." 
+        });
+      }
+      
       // Create import history entry
       const historyEntry = await storage.createFileImportHistoryEntry(
         null,
@@ -3253,60 +3270,100 @@ export async function registerRoutes(
       );
       
       // Pass through ALL fields from the mapped work order data
-      // Only set defaults for truly required fields
-      const toImport = workOrdersData.map((wo: any) => ({
-        customerWoId: wo.customerWoId || wo.title || null,
-        customerId: wo.customerId || null,
-        customerName: wo.customerName || null,
-        address: wo.address || null,
-        city: wo.city || null,
-        state: wo.state || null,
-        zip: wo.zip || null,
-        phone: wo.phone || null,
-        email: wo.email || null,
-        route: wo.route || null,
-        zone: wo.zone || null,
-        serviceType: wo.serviceType || "Water",
-        oldSystemId: wo.oldSystemId || wo.old_system_id || null,
-        oldSystemReading: (wo.oldSystemReading ?? wo.old_system_reading) != null ? (Number.isNaN(parseFloat(String(wo.oldSystemReading ?? wo.old_system_reading))) ? null : parseFloat(String(wo.oldSystemReading ?? wo.old_system_reading))) : null,
-        newSystemId: wo.newSystemId || wo.new_system_id || null,
-        newSystemReading: (wo.newSystemReading ?? wo.new_system_reading) != null ? (Number.isNaN(parseFloat(String(wo.newSystemReading ?? wo.new_system_reading))) ? null : parseFloat(String(wo.newSystemReading ?? wo.new_system_reading))) : null,
-        oldGps: wo.oldGps || wo.old_gps || null,
-        newGps: wo.newGps || wo.new_gps || null,
-        status: wo.status || "Open",
-        scheduledAt: wo.scheduledAt || wo.scheduledDate || wo.scheduled_date || wo.scheduled_at || null,
-        assignedUserId: wo.assignedUserId || wo.assigned_user_id || null,
-        assignedGroupId: wo.assignedGroupId || wo.assigned_group_id || null,
-        createdBy: createdByName,
-        trouble: wo.trouble || null,
-        notes: wo.notes || null,
-        attachments: wo.attachments || null,
-        oldSystemType: wo.oldSystemType || wo.old_system_type || null,
-        newSystemType: wo.newSystemType || wo.new_system_type || null,
-        oldModuleId: wo.oldModuleId || wo.old_module_id || null,
-        newModuleId: wo.newModuleId || wo.new_module_id || null,
-        oldModuleRead: (wo.oldModuleRead ?? wo.old_module_read) != null ? (Number.isNaN(parseFloat(String(wo.oldModuleRead ?? wo.old_module_read))) ? null : parseFloat(String(wo.oldModuleRead ?? wo.old_module_read))) : null,
-        newModuleRead: (wo.newModuleRead ?? wo.new_module_read) != null ? (Number.isNaN(parseFloat(String(wo.newModuleRead ?? wo.new_module_read))) ? null : parseFloat(String(wo.newModuleRead ?? wo.new_module_read))) : null,
-        oldModuleType: wo.oldModuleType || wo.old_module_type || null,
-        newModuleType: wo.newModuleType || wo.new_module_type || null,
-      }));
+      // Auto-generate customerWoId if not provided, use project's default service type
+      const toImport: any[] = [];
+      const importErrors: string[] = [];
       
-      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+      for (const wo of workOrdersData) {
+        // Auto-generate customerWoId if not provided
+        let customerWoId = wo.customerWoId || wo.title || null;
+        if (!customerWoId) {
+          customerWoId = String(nextAutoId);
+          nextAutoId++;
+        }
+        
+        // Handle serviceType: use project default if not provided
+        let serviceType = wo.serviceType ? String(wo.serviceType).trim() : "";
+        if (!serviceType) {
+          if (hasMultipleServiceTypes) {
+            importErrors.push(`Row missing serviceType and project has multiple service types configured (${Array.from(allowedServiceTypeCodes).join(", ")}) - cannot determine which to use. Customer: ${wo.customerName || 'unknown'}`);
+            continue;
+          }
+          if (defaultServiceType) {
+            serviceType = defaultServiceType;
+          }
+        } else {
+          // Normalize case: capitalize first letter
+          serviceType = serviceType.charAt(0).toUpperCase() + serviceType.slice(1).toLowerCase();
+          
+          // Validate against project's configured service types
+          if (allowedServiceTypeCodes.size > 0 && !allowedServiceTypeCodes.has(serviceType)) {
+            importErrors.push(`Row has invalid serviceType "${wo.serviceType}" - project only allows: ${Array.from(allowedServiceTypeCodes).join(", ")}. Customer: ${wo.customerName || 'unknown'}`);
+            continue;
+          }
+        }
+        
+        toImport.push({
+          customerWoId,
+          customerId: wo.customerId || null,
+          customerName: wo.customerName || null,
+          address: wo.address || null,
+          city: wo.city || null,
+          state: wo.state || null,
+          zip: wo.zip || null,
+          phone: wo.phone || null,
+          email: wo.email || null,
+          route: wo.route || null,
+          zone: wo.zone || null,
+          serviceType,
+          oldSystemId: wo.oldSystemId || wo.old_system_id || null,
+          oldSystemReading: (wo.oldSystemReading ?? wo.old_system_reading) != null ? (Number.isNaN(parseFloat(String(wo.oldSystemReading ?? wo.old_system_reading))) ? null : parseFloat(String(wo.oldSystemReading ?? wo.old_system_reading))) : null,
+          newSystemId: wo.newSystemId || wo.new_system_id || null,
+          newSystemReading: (wo.newSystemReading ?? wo.new_system_reading) != null ? (Number.isNaN(parseFloat(String(wo.newSystemReading ?? wo.new_system_reading))) ? null : parseFloat(String(wo.newSystemReading ?? wo.new_system_reading))) : null,
+          oldGps: wo.oldGps || wo.old_gps || null,
+          newGps: wo.newGps || wo.new_gps || null,
+          status: wo.status || "Open",
+          scheduledAt: wo.scheduledAt || wo.scheduledDate || wo.scheduled_date || wo.scheduled_at || null,
+          assignedUserId: wo.assignedUserId || wo.assigned_user_id || null,
+          assignedGroupId: wo.assignedGroupId || wo.assigned_group_id || null,
+          createdBy: createdByName,
+          trouble: wo.trouble || null,
+          notes: wo.notes || null,
+          attachments: wo.attachments || null,
+          oldSystemType: wo.oldSystemType || wo.old_system_type || null,
+          newSystemType: wo.newSystemType || wo.new_system_type || null,
+          oldModuleId: wo.oldModuleId || wo.old_module_id || null,
+          newModuleId: wo.newModuleId || wo.new_module_id || null,
+          oldModuleRead: (wo.oldModuleRead ?? wo.old_module_read) != null ? (Number.isNaN(parseFloat(String(wo.oldModuleRead ?? wo.old_module_read))) ? null : parseFloat(String(wo.oldModuleRead ?? wo.old_module_read))) : null,
+          newModuleRead: (wo.newModuleRead ?? wo.new_module_read) != null ? (Number.isNaN(parseFloat(String(wo.newModuleRead ?? wo.new_module_read))) ? null : parseFloat(String(wo.newModuleRead ?? wo.new_module_read))) : null,
+          oldModuleType: wo.oldModuleType || wo.old_module_type || null,
+          newModuleType: wo.newModuleType || wo.new_module_type || null,
+        });
+      }
+      
       const result = await workOrderStorage.importWorkOrders(toImport, createdByName);
       
+      // Combine pre-import validation errors with import errors
+      const allErrors = [...importErrors, ...(result.errors || [])];
+      const totalFailed = importErrors.length + (result.errors?.length || 0);
+      
       // Update history entry with results
-      const status = result.errors && result.errors.length > 0 
+      const status = allErrors.length > 0 
         ? (result.imported > 0 ? "partial" : "failed") 
         : "success";
       await storage.updateFileImportHistoryEntry(
         historyEntry.id,
         status,
         result.imported || 0,
-        result.errors?.length || 0,
-        result.errors?.slice(0, 10).join("\n") || null
+        totalFailed,
+        allErrors.slice(0, 10).join("\n") || null
       );
       
-      res.json(result);
+      res.json({
+        ...result,
+        errors: allErrors.length > 0 ? allErrors : undefined,
+        skipped: importErrors.length,
+      });
     } catch (error: any) {
       console.error("Error importing work orders:", error);
       res.status(500).json({ message: "Failed to import work orders" });
