@@ -40,7 +40,7 @@ Preferred communication style: Simple, everyday language.
 - **User Management**: Role assignment via subroles, user lock/unlock, password reset.
 - **Project Management**: Project creation, editing, and per-project database backup/restore.
 - **File Management**: Project-level and work order-specific file uploads, secure storage, and folder renaming on project updates.
-- **Import/Export**: CSV/Excel/JSON import with configurable delimiters and column mapping. Advanced search and reports with CSV/Excel/PDF export.
+- **Import/Export**: CSV/Excel/JSON import with configurable delimiters and column mapping. Advanced search and reports with CSV/Excel/PDF export. Both manual and scheduled imports auto-generate customer_wo_id if not provided and use the project's default service type when only one is configured. Imports require at least one service type configured for the project; if multiple service types exist and none is provided in the data, the row is skipped with an error.
 - **Route Sheets**: Generate printable PDF route sheets with barcodes or QR codes encoding old meter numbers. Available in both Work Orders and Search & Reports pages.
 - **Scheduled Imports**: FTP directory monitoring for automated file processing.
 - **System Settings**: Configurable max file size, allowed extensions, and work order statuses.
