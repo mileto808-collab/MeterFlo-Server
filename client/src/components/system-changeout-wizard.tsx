@@ -1387,6 +1387,17 @@ export function SystemChangeoutWizard({
             </div>
 
             <div className="space-y-2">
+              <Label>Note (optional)</Label>
+              <Textarea
+                value={data.troubleNote}
+                onChange={(e) => setData((prev) => ({ ...prev, troubleNote: e.target.value }))}
+                placeholder="Additional notes about the issue..."
+                rows={3}
+                data-testid="input-trouble-note"
+              />
+            </div>
+
+            <div className="space-y-2">
               <Label>Take Photo(s) * (at least 1 required)</Label>
               <Button
                 type="button"
@@ -1399,17 +1410,6 @@ export function SystemChangeoutWizard({
                 Take Photo ({data.troublePhotos.length} captured)
               </Button>
               {data.troublePhotos.length > 0 && renderPhotoGrid(data.troublePhotos, "trouble")}
-            </div>
-
-            <div className="space-y-2">
-              <Label>Note (optional)</Label>
-              <Textarea
-                value={data.troubleNote}
-                onChange={(e) => setData((prev) => ({ ...prev, troubleNote: e.target.value }))}
-                placeholder="Additional notes about the issue..."
-                rows={3}
-                data-testid="input-trouble-note"
-              />
             </div>
           </div>
         );
