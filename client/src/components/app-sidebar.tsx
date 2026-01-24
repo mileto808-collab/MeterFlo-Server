@@ -33,17 +33,20 @@ import {
   Database,
   Upload,
   FolderSync,
+  HelpCircle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { useState, useEffect } from "react";
 import type { Project } from "@shared/schema";
+import { SupportFormDialog } from "@/components/support-form-dialog";
 
 export function AppSidebar() {
   const [location] = useLocation();
   const { user, hasPermission } = usePermissions();
   const role = user?.role || "user";
   const [openProjects, setOpenProjects] = useState<number[]>([]);
+  const [supportDialogOpen, setSupportDialogOpen] = useState(false);
 
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
@@ -386,12 +389,26 @@ export function AppSidebar() {
             </Badge>
           </div>
         </div>
+        <Button 
+          variant="ghost" 
+          className="w-full justify-start" 
+          onClick={() => setSupportDialogOpen(true)}
+          data-testid="button-support"
+        >
+          <HelpCircle className="h-4 w-4 mr-2" />
+          Support
+        </Button>
         <a href="/api/logout">
           <Button variant="ghost" className="w-full justify-start" data-testid="button-logout">
             <LogOut className="h-4 w-4 mr-2" />
             Log Out
           </Button>
         </a>
+        <SupportFormDialog 
+          open={supportDialogOpen} 
+          onOpenChange={setSupportDialogOpen}
+          user={user}
+        />
       </SidebarFooter>
     </Sidebar>
   );

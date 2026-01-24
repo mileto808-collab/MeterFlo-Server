@@ -221,6 +221,20 @@ export const systemSettings = pgTable("system_settings", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Support submissions table - stores support form submissions
+export const supportSubmissions = pgTable("support_submissions", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }),
+  name: varchar("name", { length: 255 }).notNull(),
+  email: varchar("email", { length: 255 }).notNull(),
+  subject: varchar("subject", { length: 500 }).notNull(),
+  priority: varchar("priority", { length: 20 }).notNull().default("medium"),
+  message: text("message").notNull(),
+  emailSent: boolean("email_sent").default(false),
+  emailError: text("email_error"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Database types enum for external database connections
 export const databaseTypeEnum = ["postgresql", "mysql", "mssql", "oracle", "sqlite", "mariadb"] as const;
 export type DatabaseType = (typeof databaseTypeEnum)[number];
@@ -641,6 +655,17 @@ export const insertSystemSettingSchema = z.object({
   description: z.string().optional().nullable(),
 });
 
+export const insertSupportSubmissionSchema = z.object({
+  userId: z.string().optional().nullable(),
+  name: z.string().min(1).max(255),
+  email: z.string().email().max(255),
+  subject: z.string().min(1).max(500),
+  priority: z.enum(["low", "medium", "high"]).default("medium"),
+  message: z.string().min(1),
+  emailSent: z.boolean().optional().default(false),
+  emailError: z.string().optional().nullable(),
+});
+
 // Project work order schema for utility meter tracking
 export const insertProjectWorkOrderSchema = z.object({
   customerWoId: z.string().min(1, "Work Order ID is required").max(100),
@@ -838,6 +863,9 @@ export type UserGroupWithProjects = UserGroup & { projectIds: number[] };
 
 export type SystemSetting = typeof systemSettings.$inferSelect;
 export type InsertSystemSetting = z.infer<typeof insertSystemSettingSchema>;
+
+export type SupportSubmission = typeof supportSubmissions.$inferSelect;
+export type InsertSupportSubmission = z.infer<typeof insertSupportSubmissionSchema>;
 
 export type InsertProjectWorkOrder = z.infer<typeof insertProjectWorkOrderSchema>;
 

@@ -30,6 +30,7 @@ import {
   userColumnPreferences,
   userFilterPreferences,
   customerApiLogs,
+  supportSubmissions,
   type User,
   type UpsertUser,
   type Project,
@@ -80,6 +81,8 @@ import {
   type CustomerApiLog,
   type WorkOrderTimeTracking,
   type InsertWorkOrderTimeTracking,
+  type SupportSubmission,
+  type InsertSupportSubmission,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and } from "drizzle-orm";
@@ -261,6 +264,9 @@ export interface IStorage {
   // Work order time tracking operations
   getWorkOrderTimeTracking(projectId: number, systemWorkOrderId: string): Promise<WorkOrderTimeTracking | undefined>;
   saveWorkOrderTimeTracking(data: InsertWorkOrderTimeTracking): Promise<WorkOrderTimeTracking>;
+
+  // Support submission operations
+  createSupportSubmission(data: InsertSupportSubmission): Promise<SupportSubmission>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1854,6 +1860,24 @@ export class DatabaseStorage implements IStorage {
         systemWorkOrderId: data.systemWorkOrderId,
         startTime: new Date(data.startTime),
         endTime: new Date(data.endTime),
+      })
+      .returning();
+    return record;
+  }
+
+  // Support submission operations
+  async createSupportSubmission(data: InsertSupportSubmission): Promise<SupportSubmission> {
+    const [record] = await db
+      .insert(supportSubmissions)
+      .values({
+        userId: data.userId,
+        name: data.name,
+        email: data.email,
+        subject: data.subject,
+        priority: data.priority,
+        message: data.message,
+        emailSent: data.emailSent,
+        emailError: data.emailError,
       })
       .returning();
     return record;

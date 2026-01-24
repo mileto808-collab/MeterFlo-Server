@@ -13,7 +13,7 @@ import { promisify } from "util";
 const execAsync = promisify(exec);
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
-import { insertProjectWorkOrderSchema, insertProjectSchema, createUserSchema, updateUserSchema, resetPasswordSchema, changePasswordSchema, updateProfileSchema, permissionKeys, insertExternalDatabaseConfigSchema, updateExternalDatabaseConfigSchema, insertImportConfigSchema, updateImportConfigSchema, databaseTypeEnum, importScheduleFrequencyEnum, ADMINISTRATOR_SUBROLE_KEY, getSubroleLevel } from "@shared/schema";
+import { insertProjectWorkOrderSchema, insertProjectSchema, createUserSchema, updateUserSchema, resetPasswordSchema, changePasswordSchema, updateProfileSchema, permissionKeys, insertExternalDatabaseConfigSchema, updateExternalDatabaseConfigSchema, insertImportConfigSchema, updateImportConfigSchema, databaseTypeEnum, importScheduleFrequencyEnum, ADMINISTRATOR_SUBROLE_KEY, getSubroleLevel, insertSupportSubmissionSchema } from "@shared/schema";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import multer from "multer";
@@ -26,6 +26,7 @@ import { createPgBackupArchive, extractBackupFromArchive, restorePgBackup, resto
 import { projectEventEmitter, emitWorkOrderCreated, emitWorkOrderUpdated, emitWorkOrderDeleted, emitFileAdded, emitFileDeleted, type ProjectEvent } from "./eventEmitter";
 import { sendWorkOrderToCustomerApi } from "./customerApiService";
 import { toZonedTime, format as formatTz } from "date-fns-tz";
+import nodemailer from "nodemailer";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
@@ -5228,6 +5229,126 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error updating security settings:", error);
       res.status(500).json({ message: "Failed to update security settings" });
+    }
+  });
+
+  // Support form submission endpoint
+  app.post("/api/support", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      // Validate with Zod schema
+      const validationResult = insertSupportSubmissionSchema.safeParse({
+        ...req.body,
+        userId: currentUser.id,
+      });
+      
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: "Invalid form data", 
+          errors: validationResult.error.flatten().fieldErrors 
+        });
+      }
+      
+      const { name, email, subject, priority, message } = validationResult.data;
+      
+      // Get configured support email and SMTP settings
+      const supportFormEmail = await storage.getSetting("support_form_email");
+      const smtpHost = await storage.getSetting("smtp_host");
+      const smtpPort = await storage.getSetting("smtp_port");
+      const smtpUser = await storage.getSetting("smtp_user");
+      const smtpPass = process.env.SMTP_PASSWORD;
+      const smtpFrom = await storage.getSetting("smtp_from_email");
+      
+      let emailSent = false;
+      let emailError: string | null = null;
+      
+      // Attempt to send email if SMTP is configured and support email is set
+      if (supportFormEmail && smtpHost && smtpPort && smtpUser && smtpPass) {
+        try {
+          const transporter = nodemailer.createTransport({
+            host: smtpHost,
+            port: parseInt(smtpPort, 10),
+            secure: parseInt(smtpPort, 10) === 465,
+            auth: {
+              user: smtpUser,
+              pass: smtpPass,
+            },
+          });
+          
+          const priorityLabels: Record<string, string> = {
+            low: "Low",
+            medium: "Medium",
+            high: "High"
+          };
+          
+          await transporter.sendMail({
+            from: smtpFrom || smtpUser,
+            to: supportFormEmail,
+            replyTo: email,
+            subject: `[Support Request - ${priorityLabels[priority] || "Medium"}] ${subject}`,
+            text: `Support Request from MeterFlo\n\n` +
+              `From: ${name}\n` +
+              `Email: ${email}\n` +
+              `Priority: ${priorityLabels[priority] || "Medium"}\n` +
+              `Subject: ${subject}\n\n` +
+              `Message:\n${message}\n\n` +
+              `---\nSubmitted at: ${new Date().toLocaleString()}\n` +
+              `User ID: ${currentUser.id}`,
+            html: `
+              <h2>Support Request from MeterFlo</h2>
+              <table style="border-collapse: collapse; margin-bottom: 16px;">
+                <tr><td style="padding: 4px 8px; font-weight: bold;">From:</td><td style="padding: 4px 8px;">${name}</td></tr>
+                <tr><td style="padding: 4px 8px; font-weight: bold;">Email:</td><td style="padding: 4px 8px;"><a href="mailto:${email}">${email}</a></td></tr>
+                <tr><td style="padding: 4px 8px; font-weight: bold;">Priority:</td><td style="padding: 4px 8px;">${priorityLabels[priority] || "Medium"}</td></tr>
+                <tr><td style="padding: 4px 8px; font-weight: bold;">Subject:</td><td style="padding: 4px 8px;">${subject}</td></tr>
+              </table>
+              <h3>Message:</h3>
+              <p style="white-space: pre-wrap;">${message}</p>
+              <hr>
+              <p style="color: #666; font-size: 12px;">Submitted at: ${new Date().toLocaleString()}<br>User ID: ${currentUser.id}</p>
+            `,
+          });
+          
+          emailSent = true;
+          console.log(`[Support Request] Email sent to ${supportFormEmail}`);
+        } catch (err: any) {
+          emailError = err.message || "Unknown email error";
+          console.error("[Support Request] Failed to send email:", err);
+        }
+      } else if (supportFormEmail && (!smtpHost || !smtpPort || !smtpUser || !smtpPass)) {
+        emailError = "SMTP not configured";
+        console.warn("[Support Request] Support email configured but SMTP settings incomplete");
+      } else if (!supportFormEmail) {
+        emailError = "No support email configured";
+        console.warn("[Support Request] No support email configured in settings");
+      }
+      
+      // Always persist the submission to database
+      await storage.createSupportSubmission({
+        userId: currentUser.id,
+        name,
+        email,
+        subject,
+        priority,
+        message,
+        emailSent,
+        emailError,
+      });
+      
+      console.log(`[Support Request] Saved submission from: ${name} <${email}>, Subject: ${subject}, Priority: ${priority}`);
+      
+      res.json({ 
+        message: "Support request submitted successfully",
+        emailSent,
+        supportEmailConfigured: !!supportFormEmail,
+      });
+    } catch (error) {
+      console.error("Error submitting support request:", error);
+      res.status(500).json({ message: "Failed to submit support request" });
     }
   });
 
