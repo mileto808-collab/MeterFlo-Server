@@ -6,8 +6,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useToast } from "@/hooks/use-toast";
-import { ClipboardList, Users, Shield, Smartphone, FileUp, BarChart3, Loader2, Eye, EyeOff } from "lucide-react";
+import { ClipboardList, Users, Shield, Smartphone, FileUp, BarChart3, Loader2, Eye, EyeOff, Menu, Mail } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ContactFormDialog } from "@/components/contact-form-dialog";
 
 export default function Landing() {
   const [, setLocation] = useLocation();
@@ -16,6 +23,7 @@ export default function Landing() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [checkingTurnstile, setCheckingTurnstile] = useState(true);
+  const [contactFormOpen, setContactFormOpen] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -118,7 +126,7 @@ export default function Landing() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border">
+      <header className="sticky top-0 z-50 border-b border-border bg-background">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3">
             <img 
@@ -128,9 +136,29 @@ export default function Landing() {
               data-testid="img-meterflo-logo"
             />
           </div>
-          <ThemeToggle />
+          <div className="flex flex-col items-end gap-2">
+            <ThemeToggle />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" data-testid="button-menu">
+                  <Menu className="h-4 w-4 mr-2" />
+                  Menu
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem 
+                  onClick={() => setContactFormOpen(true)}
+                  data-testid="menu-item-contact-us"
+                >
+                  <Mail className="h-4 w-4 mr-2" />
+                  Contact Us
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
       </header>
+      <ContactFormDialog open={contactFormOpen} onOpenChange={setContactFormOpen} />
       <main>
         <section className="py-16 px-6">
           <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">

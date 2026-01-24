@@ -5232,6 +5232,104 @@ export async function registerRoutes(
     }
   });
 
+  // Contact form submission endpoint (for unauthenticated users on landing page)
+  app.post("/api/contact", async (req: any, res) => {
+    try {
+      const contactFormSchema = z.object({
+        name: z.string().min(1, "Name is required"),
+        email: z.string().email("Valid email is required"),
+        subject: z.string().min(1, "Subject is required"),
+        message: z.string().min(10, "Message must be at least 10 characters"),
+      });
+      
+      const validationResult = contactFormSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: "Validation failed",
+          errors: validationResult.error.errors 
+        });
+      }
+      
+      const { name, email, subject, message } = validationResult.data;
+      
+      const contactFormEmail = await storage.getSetting("contact_form_email");
+      const smtpHost = await storage.getSetting("smtp_host");
+      const smtpPort = await storage.getSetting("smtp_port");
+      const smtpUser = await storage.getSetting("smtp_user");
+      const smtpPass = process.env.SMTP_PASSWORD;
+      const smtpFrom = await storage.getSetting("smtp_from_email");
+      const smtpSecure = await storage.getSetting("smtp_secure");
+      const smtpRejectUnauthorized = await storage.getSetting("smtp_reject_unauthorized");
+      
+      let emailSent = false;
+      let emailError: string | null = null;
+      
+      // Attempt to send email if SMTP is configured and contact email is set
+      if (contactFormEmail && smtpHost && smtpPort && smtpUser && smtpPass) {
+        try {
+          const transporter = nodemailer.createTransport({
+            host: smtpHost,
+            port: parseInt(smtpPort, 10),
+            secure: smtpSecure === "true",
+            auth: {
+              user: smtpUser,
+              pass: smtpPass,
+            },
+            tls: {
+              rejectUnauthorized: smtpRejectUnauthorized !== "false",
+            },
+          });
+          
+          await transporter.sendMail({
+            from: smtpFrom || smtpUser,
+            to: contactFormEmail,
+            replyTo: email,
+            subject: `[Contact Form] ${subject}`,
+            text: `Contact Form Submission from MeterFlo\n\n` +
+              `From: ${name}\n` +
+              `Email: ${email}\n` +
+              `Subject: ${subject}\n\n` +
+              `Message:\n${message}\n\n` +
+              `---\nSubmitted at: ${new Date().toLocaleString()}`,
+            html: `
+              <h2>Contact Form Submission from MeterFlo</h2>
+              <table style="border-collapse: collapse; margin-bottom: 16px;">
+                <tr><td style="padding: 4px 8px; font-weight: bold;">From:</td><td style="padding: 4px 8px;">${name}</td></tr>
+                <tr><td style="padding: 4px 8px; font-weight: bold;">Email:</td><td style="padding: 4px 8px;"><a href="mailto:${email}">${email}</a></td></tr>
+                <tr><td style="padding: 4px 8px; font-weight: bold;">Subject:</td><td style="padding: 4px 8px;">${subject}</td></tr>
+              </table>
+              <h3>Message:</h3>
+              <p style="white-space: pre-wrap;">${message}</p>
+              <hr>
+              <p style="color: #666; font-size: 12px;">Submitted at: ${new Date().toLocaleString()}</p>
+            `,
+          });
+          
+          emailSent = true;
+          console.log(`[Contact Form] Email sent to ${contactFormEmail}`);
+        } catch (error: any) {
+          emailError = error.message || "Failed to send email";
+          console.error("[Contact Form] Email sending failed:", error);
+        }
+      } else {
+        emailError = "SMTP not configured or contact email not set";
+        console.warn("[Contact Form] SMTP not configured or contact email not set");
+      }
+      
+      res.json({ 
+        success: true, 
+        emailSent,
+        message: emailSent 
+          ? "Message sent successfully" 
+          : "Message received but email notification could not be sent",
+        emailError: emailError || undefined
+      });
+    } catch (error) {
+      console.error("Error processing contact form:", error);
+      res.status(500).json({ message: "Failed to process contact form" });
+    }
+  });
+
   // Support form submission endpoint
   app.post("/api/support", isAuthenticated, async (req: any, res) => {
     try {
