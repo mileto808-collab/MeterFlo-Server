@@ -43,6 +43,7 @@ module.exports = {
         SESSION_SECRET: 'YOUR SESSION SECRET',
         // Cookie settings for HTTP (set to 'true' if using HTTPS)
         COOKIE_SECURE: 'true',
+        SMTP_PASSWORD: "your-smtp-password-here"
       },
       
       // Process management
