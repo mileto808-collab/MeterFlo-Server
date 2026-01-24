@@ -35,6 +35,10 @@ interface FileSettings {
 interface ContactSupportSettings {
   contactFormEmail: string;
   supportFormEmail: string;
+  smtpHost: string;
+  smtpPort: string;
+  smtpUser: string;
+  smtpFromEmail: string;
 }
 
 const statusColors = [
@@ -92,6 +96,10 @@ export default function Settings() {
   const [timezoneEnabled, setTimezoneEnabled] = useState(true);
   const [contactFormEmail, setContactFormEmail] = useState("");
   const [supportFormEmail, setSupportFormEmail] = useState("");
+  const [smtpHost, setSmtpHost] = useState("");
+  const [smtpPort, setSmtpPort] = useState("");
+  const [smtpUser, setSmtpUser] = useState("");
+  const [smtpFromEmail, setSmtpFromEmail] = useState("");
 
   // User permissions query for granular settings access
   const { data: userPermissions = [] } = useQuery<string[]>({
@@ -419,6 +427,10 @@ export default function Settings() {
     if (contactSupportData) {
       setContactFormEmail(contactSupportData.contactFormEmail || "");
       setSupportFormEmail(contactSupportData.supportFormEmail || "");
+      setSmtpHost(contactSupportData.smtpHost || "");
+      setSmtpPort(contactSupportData.smtpPort || "");
+      setSmtpUser(contactSupportData.smtpUser || "");
+      setSmtpFromEmail(contactSupportData.smtpFromEmail || "");
     }
   }, [contactSupportData]);
 
@@ -1622,9 +1634,9 @@ export default function Settings() {
                 <Mail className="h-5 w-5 text-muted-foreground" />
                 <CardTitle>Contact & Support Forms</CardTitle>
               </div>
-              <CardDescription>Configure email addresses for Contact Us and Support forms</CardDescription>
+              <CardDescription>Configure email addresses for Contact Us and Support forms, and SMTP settings for sending emails</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-6">
               <div className="grid gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="contact-form-email">Contact Form Email</Label>
@@ -1655,8 +1667,59 @@ export default function Settings() {
                   </p>
                 </div>
               </div>
+
+              <div className="border-t pt-4">
+                <h4 className="text-sm font-medium mb-3">SMTP Configuration</h4>
+                <p className="text-xs text-muted-foreground mb-4">
+                  Configure your SMTP server to enable email sending. The SMTP password must be set as <code className="bg-muted px-1 rounded">SMTP_PASSWORD</code> in your <code className="bg-muted px-1 rounded">ecosystem.config.cjs</code> file (for Windows/PM2 deployments) or as a Secret in Replit.
+                </p>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid gap-2">
+                    <Label htmlFor="smtp-host">SMTP Host</Label>
+                    <Input
+                      id="smtp-host"
+                      value={smtpHost}
+                      onChange={(e) => setSmtpHost(e.target.value)}
+                      placeholder="smtp.gmail.com"
+                      data-testid="input-smtp-host"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="smtp-port">SMTP Port</Label>
+                    <Input
+                      id="smtp-port"
+                      value={smtpPort}
+                      onChange={(e) => setSmtpPort(e.target.value)}
+                      placeholder="587"
+                      data-testid="input-smtp-port"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="smtp-user">SMTP User</Label>
+                    <Input
+                      id="smtp-user"
+                      value={smtpUser}
+                      onChange={(e) => setSmtpUser(e.target.value)}
+                      placeholder="your-email@gmail.com"
+                      data-testid="input-smtp-user"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="smtp-from-email">From Email</Label>
+                    <Input
+                      id="smtp-from-email"
+                      type="email"
+                      value={smtpFromEmail}
+                      onChange={(e) => setSmtpFromEmail(e.target.value)}
+                      placeholder="noreply@company.com"
+                      data-testid="input-smtp-from-email"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <Button
-                onClick={() => saveContactSupportMutation.mutate({ contactFormEmail, supportFormEmail })}
+                onClick={() => saveContactSupportMutation.mutate({ contactFormEmail, supportFormEmail, smtpHost, smtpPort, smtpUser, smtpFromEmail })}
                 disabled={saveContactSupportMutation.isPending}
                 data-testid="button-save-contact-support"
               >

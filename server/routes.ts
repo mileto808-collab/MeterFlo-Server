@@ -5367,10 +5367,18 @@ export async function registerRoutes(
       
       const contactFormEmail = await storage.getSetting("contact_form_email");
       const supportFormEmail = await storage.getSetting("support_form_email");
+      const smtpHost = await storage.getSetting("smtp_host");
+      const smtpPort = await storage.getSetting("smtp_port");
+      const smtpUser = await storage.getSetting("smtp_user");
+      const smtpFromEmail = await storage.getSetting("smtp_from_email");
       
       res.json({
         contactFormEmail: contactFormEmail || "",
         supportFormEmail: supportFormEmail || "",
+        smtpHost: smtpHost || "",
+        smtpPort: smtpPort || "",
+        smtpUser: smtpUser || "",
+        smtpFromEmail: smtpFromEmail || "",
       });
     } catch (error) {
       console.error("Error fetching contact & support settings:", error);
@@ -5390,10 +5398,14 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Forbidden: You don't have permission to update contact & support settings" });
       }
       
-      const { contactFormEmail, supportFormEmail } = req.body;
+      const { contactFormEmail, supportFormEmail, smtpHost, smtpPort, smtpUser, smtpFromEmail } = req.body;
       
       await storage.setSetting("contact_form_email", contactFormEmail || "", "Email address for Contact Us form submissions");
       await storage.setSetting("support_form_email", supportFormEmail || "", "Email address for Support form submissions");
+      await storage.setSetting("smtp_host", smtpHost || "", "SMTP server host");
+      await storage.setSetting("smtp_port", smtpPort || "", "SMTP server port");
+      await storage.setSetting("smtp_user", smtpUser || "", "SMTP username");
+      await storage.setSetting("smtp_from_email", smtpFromEmail || "", "Email address to send from");
       
       res.json({ message: "Contact & support settings saved" });
     } catch (error) {
