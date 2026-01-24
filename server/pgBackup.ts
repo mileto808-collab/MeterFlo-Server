@@ -446,14 +446,31 @@ const CLEAN_BACKUP_TABLES = [
   "service_types",
 ];
 
-// Tables to CLEAR during clean restore (will be empty after restore)
+// Tables that will be EMPTY after clean restore (for documentation)
+// All other tables except CLEAN_BACKUP_TABLES and system users will be empty
 const CLEAN_TABLES_TO_CLEAR = [
+  "customer_api_logs",
+  "external_database_configs",
+  "file_import_configs",
   "file_import_history",
+  "import_configs",
   "import_history",
-  "user_groups",
+  "module_type_projects",
   "module_types",
-  "system_types",
+  "project_holidays",
+  "project_service_types",
   "projects",
+  "sessions",
+  "support_submissions",
+  "system_type_projects",
+  "system_types",
+  "user_column_preferences",
+  "user_filter_preferences",
+  "user_group_members",
+  "user_group_projects",
+  "user_groups",
+  "users", // except admin, file_import
+  "work_order_time_tracking",
 ];
 
 const SYSTEM_USERS = ["admin", "file_import"];
@@ -542,7 +559,30 @@ export async function createCleanPgBackup(): Promise<PgBackupResult> {
 -- Generated: ${new Date().toISOString()}
 -- This backup includes: full schema + configuration data only
 -- Use this for deploying fresh servers with base configuration
--- Tables with data: ${CLEAN_BACKUP_TABLES.join(", ")}
+--
+-- Tables with DATA: ${CLEAN_BACKUP_TABLES.join(", ")}, users (admin & file_import only)
+--
+-- Tables that will be EMPTY after restore:
+-- ${CLEAN_TABLES_TO_CLEAR.join(", ")}
+--
+-- Cloudflare Turnstile: Disabled for easy login on fresh server
+-- NOTE: Restore to an empty database (no need to run npm run db:push first)
+
+-- Drop all project schemas (pattern: *_UUID format) to ensure clean state
+-- This PL/pgSQL block finds and drops any existing project schemas
+DO $$
+DECLARE
+    schema_name TEXT;
+BEGIN
+    FOR schema_name IN 
+        SELECT nspname FROM pg_namespace 
+        WHERE nspname NOT IN ('public', 'information_schema', 'pg_catalog', 'pg_toast')
+        AND nspname NOT LIKE 'pg_%'
+    LOOP
+        EXECUTE 'DROP SCHEMA IF EXISTS ' || quote_ident(schema_name) || ' CASCADE';
+        RAISE NOTICE 'Dropped schema: %', schema_name;
+    END LOOP;
+END $$;
 
 -- Drop and recreate public schema to ensure clean state
 -- This handles both empty databases and databases with existing public schema
@@ -562,6 +602,10 @@ GRANT ALL ON SCHEMA public TO public;
   
   // Add data
   combinedSql += fs.readFileSync(dataFile, "utf-8");
+  
+  // Disable Cloudflare Turnstile for easy login on fresh server
+  combinedSql += "\n\n-- Disable Cloudflare Turnstile for fresh deployment\n";
+  combinedSql += "INSERT INTO public.system_settings (key, value) VALUES ('turnstile_enabled', 'false') ON CONFLICT (key) DO UPDATE SET value = 'false';\n";
   
   // Step 4: Append system users (admin, file_import)
   try {
