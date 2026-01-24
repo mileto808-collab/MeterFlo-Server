@@ -175,7 +175,7 @@ export default function Landing() {
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="absolute right-1 top-1/2 -translate-y-1/2 no-default-hover-elevate"
+                        className="absolute right-0 top-0 z-10 no-default-hover-elevate"
                         onClick={() => setShowPassword(!showPassword)}
                         data-testid="button-toggle-password"
                       >
