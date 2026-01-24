@@ -39,6 +39,7 @@ interface ContactSupportSettings {
   smtpPort: string;
   smtpUser: string;
   smtpFromEmail: string;
+  smtpSecure: boolean;
 }
 
 const statusColors = [
@@ -100,6 +101,7 @@ export default function Settings() {
   const [smtpPort, setSmtpPort] = useState("");
   const [smtpUser, setSmtpUser] = useState("");
   const [smtpFromEmail, setSmtpFromEmail] = useState("");
+  const [smtpSecure, setSmtpSecure] = useState(false);
 
   // User permissions query for granular settings access
   const { data: userPermissions = [] } = useQuery<string[]>({
@@ -431,6 +433,7 @@ export default function Settings() {
       setSmtpPort(contactSupportData.smtpPort || "");
       setSmtpUser(contactSupportData.smtpUser || "");
       setSmtpFromEmail(contactSupportData.smtpFromEmail || "");
+      setSmtpSecure(contactSupportData.smtpSecure || false);
     }
   }, [contactSupportData]);
 
@@ -1716,10 +1719,24 @@ export default function Settings() {
                     />
                   </div>
                 </div>
+                <div className="flex items-center justify-between mt-4 p-3 border rounded-md">
+                  <div>
+                    <Label htmlFor="smtp-secure">Use SSL/TLS</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Enable for port 465 (implicit TLS). Disable for port 587 with STARTTLS.
+                    </p>
+                  </div>
+                  <Switch
+                    id="smtp-secure"
+                    checked={smtpSecure}
+                    onCheckedChange={setSmtpSecure}
+                    data-testid="switch-smtp-secure"
+                  />
+                </div>
               </div>
 
               <Button
-                onClick={() => saveContactSupportMutation.mutate({ contactFormEmail, supportFormEmail, smtpHost, smtpPort, smtpUser, smtpFromEmail })}
+                onClick={() => saveContactSupportMutation.mutate({ contactFormEmail, supportFormEmail, smtpHost, smtpPort, smtpUser, smtpFromEmail, smtpSecure })}
                 disabled={saveContactSupportMutation.isPending}
                 data-testid="button-save-contact-support"
               >
