@@ -40,6 +40,7 @@ interface ContactSupportSettings {
   smtpUser: string;
   smtpFromEmail: string;
   smtpSecure: boolean;
+  smtpRejectUnauthorized: boolean;
 }
 
 const statusColors = [
@@ -102,6 +103,7 @@ export default function Settings() {
   const [smtpUser, setSmtpUser] = useState("");
   const [smtpFromEmail, setSmtpFromEmail] = useState("");
   const [smtpSecure, setSmtpSecure] = useState(false);
+  const [smtpRejectUnauthorized, setSmtpRejectUnauthorized] = useState(true);
 
   // User permissions query for granular settings access
   const { data: userPermissions = [] } = useQuery<string[]>({
@@ -434,6 +436,7 @@ export default function Settings() {
       setSmtpUser(contactSupportData.smtpUser || "");
       setSmtpFromEmail(contactSupportData.smtpFromEmail || "");
       setSmtpSecure(contactSupportData.smtpSecure || false);
+      setSmtpRejectUnauthorized(contactSupportData.smtpRejectUnauthorized !== false);
     }
   }, [contactSupportData]);
 
@@ -1733,10 +1736,24 @@ export default function Settings() {
                     data-testid="switch-smtp-secure"
                   />
                 </div>
+                <div className="flex items-center justify-between mt-2 p-3 border rounded-md">
+                  <div>
+                    <Label htmlFor="smtp-reject-unauthorized">Validate Certificates</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Disable if using shared hosting where the certificate doesn't match your domain.
+                    </p>
+                  </div>
+                  <Switch
+                    id="smtp-reject-unauthorized"
+                    checked={smtpRejectUnauthorized}
+                    onCheckedChange={setSmtpRejectUnauthorized}
+                    data-testid="switch-smtp-reject-unauthorized"
+                  />
+                </div>
               </div>
 
               <Button
-                onClick={() => saveContactSupportMutation.mutate({ contactFormEmail, supportFormEmail, smtpHost, smtpPort, smtpUser, smtpFromEmail, smtpSecure })}
+                onClick={() => saveContactSupportMutation.mutate({ contactFormEmail, supportFormEmail, smtpHost, smtpPort, smtpUser, smtpFromEmail, smtpSecure, smtpRejectUnauthorized })}
                 disabled={saveContactSupportMutation.isPending}
                 data-testid="button-save-contact-support"
               >

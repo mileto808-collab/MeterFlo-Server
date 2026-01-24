@@ -5263,6 +5263,7 @@ export async function registerRoutes(
       const smtpPass = process.env.SMTP_PASSWORD;
       const smtpFrom = await storage.getSetting("smtp_from_email");
       const smtpSecure = await storage.getSetting("smtp_secure");
+      const smtpRejectUnauthorized = await storage.getSetting("smtp_reject_unauthorized");
       
       let emailSent = false;
       let emailError: string | null = null;
@@ -5277,6 +5278,9 @@ export async function registerRoutes(
             auth: {
               user: smtpUser,
               pass: smtpPass,
+            },
+            tls: {
+              rejectUnauthorized: smtpRejectUnauthorized !== "false",
             },
           });
           
@@ -5373,6 +5377,7 @@ export async function registerRoutes(
       const smtpUser = await storage.getSetting("smtp_user");
       const smtpFromEmail = await storage.getSetting("smtp_from_email");
       const smtpSecure = await storage.getSetting("smtp_secure");
+      const smtpRejectUnauthorized = await storage.getSetting("smtp_reject_unauthorized");
       
       res.json({
         contactFormEmail: contactFormEmail || "",
@@ -5382,6 +5387,7 @@ export async function registerRoutes(
         smtpUser: smtpUser || "",
         smtpFromEmail: smtpFromEmail || "",
         smtpSecure: smtpSecure === "true",
+        smtpRejectUnauthorized: smtpRejectUnauthorized !== "false",
       });
     } catch (error) {
       console.error("Error fetching contact & support settings:", error);
@@ -5401,7 +5407,7 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Forbidden: You don't have permission to update contact & support settings" });
       }
       
-      const { contactFormEmail, supportFormEmail, smtpHost, smtpPort, smtpUser, smtpFromEmail, smtpSecure } = req.body;
+      const { contactFormEmail, supportFormEmail, smtpHost, smtpPort, smtpUser, smtpFromEmail, smtpSecure, smtpRejectUnauthorized } = req.body;
       
       await storage.setSetting("contact_form_email", contactFormEmail || "", "Email address for Contact Us form submissions");
       await storage.setSetting("support_form_email", supportFormEmail || "", "Email address for Support form submissions");
@@ -5410,6 +5416,7 @@ export async function registerRoutes(
       await storage.setSetting("smtp_user", smtpUser || "", "SMTP username");
       await storage.setSetting("smtp_from_email", smtpFromEmail || "", "Email address to send from");
       await storage.setSetting("smtp_secure", smtpSecure ? "true" : "false", "Use SSL/TLS for SMTP connection");
+      await storage.setSetting("smtp_reject_unauthorized", smtpRejectUnauthorized ? "true" : "false", "Reject invalid TLS certificates");
       
       res.json({ message: "Contact & support settings saved" });
     } catch (error) {
