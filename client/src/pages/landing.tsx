@@ -263,7 +263,7 @@ export default function Landing() {
             <ClipboardList className="h-4 w-4" />
             <span>MeterFlo</span>
           </div>
-          <p>MeterFlo all Rights Reserved</p>
+          <p>MeterFlo(c) all Rights Reserved</p>
         </div>
       </footer>
     </div>
