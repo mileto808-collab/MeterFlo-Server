@@ -420,7 +420,7 @@ export default function ProjectForm() {
                 name="name"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Name</FormLabel>
+                    <FormLabel>Name *</FormLabel>
                     <FormControl><Input placeholder="Project name" {...field} data-testid="input-name" /></FormControl>
                     <FormMessage />
                   </FormItem>

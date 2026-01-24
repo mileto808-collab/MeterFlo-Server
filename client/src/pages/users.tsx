@@ -1090,7 +1090,7 @@ export default function Users() {
                   name="username"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Username</FormLabel>
+                      <FormLabel>Username *</FormLabel>
                       <FormControl>
                         <Input {...field} placeholder="johndoe" data-testid="input-create-username" />
                       </FormControl>
@@ -1103,7 +1103,7 @@ export default function Users() {
                   name="password"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Password</FormLabel>
+                      <FormLabel>Password *</FormLabel>
                       <FormControl>
                         <Input type="password" {...field} placeholder="Min 8 characters" data-testid="input-create-password" />
                       </FormControl>
@@ -1477,7 +1477,7 @@ export default function Users() {
                   name="username"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Username</FormLabel>
+                      <FormLabel>Username *</FormLabel>
                       <FormControl>
                         <Input {...field} data-testid="input-edit-username" />
                       </FormControl>
@@ -2286,7 +2286,7 @@ export default function Users() {
                 name="newPassword"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>New Password</FormLabel>
+                    <FormLabel>New Password *</FormLabel>
                     <FormControl>
                       <Input type="password" placeholder="Min 6 characters" {...field} data-testid="input-new-password" />
                     </FormControl>
@@ -2299,7 +2299,7 @@ export default function Users() {
                 name="confirmPassword"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Confirm Password</FormLabel>
+                    <FormLabel>Confirm Password *</FormLabel>
                     <FormControl>
                       <Input type="password" placeholder="Confirm password" {...field} data-testid="input-confirm-password" />
                     </FormControl>
