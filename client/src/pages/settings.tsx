@@ -19,7 +19,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Moon, Sun, User as UserIcon, Shield, FolderOpen, Save, FileUp, Users, Plus, Pencil, Trash2, UsersRound, Clock, Copy, Gauge, Download, History, Send, ChevronDown, ChevronRight, Filter, CheckCircle2, XCircle, RefreshCw, Eye, EyeOff, Smartphone, Globe, GitBranch, ArrowUpCircle, FileCode, Clipboard, Lock } from "lucide-react";
+import { Moon, Sun, User as UserIcon, Shield, FolderOpen, Save, FileUp, Users, Plus, Pencil, Trash2, UsersRound, Clock, Copy, Gauge, Download, History, Send, ChevronDown, ChevronRight, Filter, CheckCircle2, XCircle, RefreshCw, Eye, EyeOff, Smartphone, Globe, GitBranch, ArrowUpCircle, FileCode, Clipboard, Lock, Mail } from "lucide-react";
 import type { Subrole, Permission, WorkOrderStatus, UserGroup, UserGroupWithProjects, User, TroubleCode, ServiceTypeRecord, SystemType, ModuleType, Project, FileImportHistory, ImportHistory, CustomerApiLog } from "@shared/schema";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -30,6 +30,11 @@ import { AlertTriangle } from "lucide-react";
 interface FileSettings {
   maxFileSizeMB: number;
   allowedExtensions: string;
+}
+
+interface ContactSupportSettings {
+  contactFormEmail: string;
+  supportFormEmail: string;
 }
 
 const statusColors = [
@@ -85,6 +90,8 @@ export default function Settings() {
   const [allowedExtensions, setAllowedExtensions] = useState("");
   const [selectedTimezone, setSelectedTimezone] = useState("America/Denver");
   const [timezoneEnabled, setTimezoneEnabled] = useState(true);
+  const [contactFormEmail, setContactFormEmail] = useState("");
+  const [supportFormEmail, setSupportFormEmail] = useState("");
 
   // User permissions query for granular settings access
   const { data: userPermissions = [] } = useQuery<string[]>({
@@ -399,6 +406,32 @@ export default function Settings() {
     },
     onError: (error: any) => {
       const message = error?.message || "Failed to save security settings";
+      toast({ title: message, variant: "destructive" });
+    },
+  });
+
+  const { data: contactSupportData } = useQuery<ContactSupportSettings>({
+    queryKey: ["/api/settings/contact-support"],
+    enabled: isAdmin || hasPermission("settings.contactSupport"),
+  });
+
+  useEffect(() => {
+    if (contactSupportData) {
+      setContactFormEmail(contactSupportData.contactFormEmail || "");
+      setSupportFormEmail(contactSupportData.supportFormEmail || "");
+    }
+  }, [contactSupportData]);
+
+  const saveContactSupportMutation = useMutation({
+    mutationFn: async (data: ContactSupportSettings) => {
+      return apiRequest("PUT", "/api/settings/contact-support", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/contact-support"] });
+      toast({ title: "Contact & support settings saved" });
+    },
+    onError: (error: any) => {
+      const message = error?.message || "Failed to save contact & support settings";
       toast({ title: message, variant: "destructive" });
     },
   });
@@ -1581,6 +1614,58 @@ export default function Settings() {
             </div>
           </CardContent>
         </Card>
+
+        {hasPermission("settings.contactSupport") && (
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Mail className="h-5 w-5 text-muted-foreground" />
+                <CardTitle>Contact & Support Forms</CardTitle>
+              </div>
+              <CardDescription>Configure email addresses for Contact Us and Support forms</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="contact-form-email">Contact Form Email</Label>
+                  <Input
+                    id="contact-form-email"
+                    type="email"
+                    value={contactFormEmail}
+                    onChange={(e) => setContactFormEmail(e.target.value)}
+                    placeholder="contact@company.com"
+                    data-testid="input-contact-form-email"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Email address where Contact Us form submissions will be sent
+                  </p>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="support-form-email">Support Form Email</Label>
+                  <Input
+                    id="support-form-email"
+                    type="email"
+                    value={supportFormEmail}
+                    onChange={(e) => setSupportFormEmail(e.target.value)}
+                    placeholder="support@company.com"
+                    data-testid="input-support-form-email"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Email address where Support form submissions will be sent
+                  </p>
+                </div>
+              </div>
+              <Button
+                onClick={() => saveContactSupportMutation.mutate({ contactFormEmail, supportFormEmail })}
+                disabled={saveContactSupportMutation.isPending}
+                data-testid="button-save-contact-support"
+              >
+                <Save className="h-4 w-4 mr-2" />
+                {saveContactSupportMutation.isPending ? "Saving..." : "Save Settings"}
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
         {hasPermission("settings.projectFiles") && (
             <Card>

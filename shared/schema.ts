@@ -1040,6 +1040,7 @@ export const permissionKeys = {
   SETTINGS_MOBILE_CONFIG: "settings.mobileConfig",
   SETTINGS_WEB_UPDATE: "settings.webUpdate",
   SETTINGS_SECURITY: "settings.security",
+  SETTINGS_CONTACT_SUPPORT: "settings.contactSupport",
   // Maintenance permissions
   MAINTENANCE_PROJECT_BACKUP: "maintenance.projectBackup",
   MAINTENANCE_PROJECT_RESTORE: "maintenance.projectRestore",

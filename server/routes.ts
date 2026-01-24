@@ -5231,6 +5231,56 @@ export async function registerRoutes(
     }
   });
 
+  // Contact & Support Forms Settings endpoints
+  app.get("/api/settings/contact-support", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const hasContactSupportPermission = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_CONTACT_SUPPORT);
+      if (!hasContactSupportPermission) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to view contact & support settings" });
+      }
+      
+      const contactFormEmail = await storage.getSetting("contact_form_email");
+      const supportFormEmail = await storage.getSetting("support_form_email");
+      
+      res.json({
+        contactFormEmail: contactFormEmail || "",
+        supportFormEmail: supportFormEmail || "",
+      });
+    } catch (error) {
+      console.error("Error fetching contact & support settings:", error);
+      res.status(500).json({ message: "Failed to fetch contact & support settings" });
+    }
+  });
+
+  app.put("/api/settings/contact-support", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const hasContactSupportPermission = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_CONTACT_SUPPORT);
+      if (!hasContactSupportPermission) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to update contact & support settings" });
+      }
+      
+      const { contactFormEmail, supportFormEmail } = req.body;
+      
+      await storage.setSetting("contact_form_email", contactFormEmail || "", "Email address for Contact Us form submissions");
+      await storage.setSetting("support_form_email", supportFormEmail || "", "Email address for Support form submissions");
+      
+      res.json({ message: "Contact & support settings saved" });
+    } catch (error) {
+      console.error("Error updating contact & support settings:", error);
+      res.status(500).json({ message: "Failed to update contact & support settings" });
+    }
+  });
+
   // Public endpoint to get Turnstile config (for the challenge page)
   app.get("/api/security/turnstile-config", async (req, res) => {
     try {

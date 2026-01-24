@@ -202,6 +202,13 @@ export const permissionRegistry: PermissionDefinition[] = [
     description: "Configure Cloudflare Turnstile and other security settings",
     defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
   },
+  {
+    key: "settings.contactSupport",
+    label: "Contact & Support Forms",
+    category: "Settings",
+    description: "Configure email addresses for Contact Us and Support forms",
+    defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
+  },
   // Maintenance action permissions - what users can do in the maintenance area
   {
     key: "maintenance.projectBackup",
