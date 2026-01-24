@@ -5295,15 +5295,22 @@ export async function registerRoutes(
             to: supportFormEmail,
             replyTo: email,
             subject: `[Support Request - ${priorityLabels[priority] || "Medium"}] ${subject}`,
-            text: `Support Request from MeterFlo\n\n` +
-              `From: ${name}\n` +
-              `Email: ${email}\n` +
-              `Priority: ${priorityLabels[priority] || "Medium"}\n` +
-              `Subject: ${subject}\n\n` +
-              `Message:\n${message}\n\n` +
-              `---\nSubmitted at: ${new Date().toLocaleString()}\n` +
-              `User ID: ${currentUser.id}`,
-            html: `
+            text: (() => {
+              const displayName = [currentUser.firstName, currentUser.lastName].filter(Boolean).join(" ");
+              const userDisplay = displayName ? `${currentUser.username || "(unknown)"} - ${displayName}` : (currentUser.username || "(unknown)");
+              return `Support Request from MeterFlo\n\n` +
+                `From: ${name}\n` +
+                `Email: ${email}\n` +
+                `Priority: ${priorityLabels[priority] || "Medium"}\n` +
+                `Subject: ${subject}\n\n` +
+                `Message:\n${message}\n\n` +
+                `---\nSubmitted at: ${new Date().toLocaleString()}\n` +
+                `User: ${userDisplay}`;
+            })(),
+            html: (() => {
+              const displayName = [currentUser.firstName, currentUser.lastName].filter(Boolean).join(" ");
+              const userDisplay = displayName ? `${currentUser.username || "(unknown)"} - ${displayName}` : (currentUser.username || "(unknown)");
+              return `
               <h2>Support Request from MeterFlo</h2>
               <table style="border-collapse: collapse; margin-bottom: 16px;">
                 <tr><td style="padding: 4px 8px; font-weight: bold;">From:</td><td style="padding: 4px 8px;">${name}</td></tr>
@@ -5314,8 +5321,9 @@ export async function registerRoutes(
               <h3>Message:</h3>
               <p style="white-space: pre-wrap;">${message}</p>
               <hr>
-              <p style="color: #666; font-size: 12px;">Submitted at: ${new Date().toLocaleString()}<br>User ID: ${currentUser.id}</p>
-            `,
+              <p style="color: #666; font-size: 12px;">Submitted at: ${new Date().toLocaleString()}<br>User: ${userDisplay}</p>
+            `;
+            })(),
           });
           
           emailSent = true;
