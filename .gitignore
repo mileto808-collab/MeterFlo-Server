@@ -6,3 +6,4 @@ vite.config.ts.*
 *.tar.gz
 deploy/ecosystem.config.cjs
 attached_assets
+Project Files/
