@@ -1007,7 +1007,57 @@ export async function restorePgBackup(
   
   if (options.disableForeignKeys) {
     // Read the original SQL file and wrap it with FK disable/enable in a single session
-    const originalSql = fs.readFileSync(sqlFile, "utf8");
+    let originalSql = fs.readFileSync(sqlFile, "utf8");
+    
+    // Filter out PostgreSQL version-specific settings that may not be compatible
+    // across different PostgreSQL versions (e.g., PostgreSQL 17 -> PostgreSQL 16)
+    // or between standard PostgreSQL and managed services like Neon
+    const incompatibleSettings = [
+      // PostgreSQL 17+ only
+      'transaction_timeout',
+      // PostgreSQL 14+ / may have issues on Neon
+      'idle_session_timeout',
+      'idle_in_transaction_session_timeout',
+      // Can cause issues on managed databases
+      'session_authorization',
+      'role',
+      // Version-specific or provider-specific
+      'row_security',
+      'force_parallel_mode',
+      'jit',
+      'jit_above_cost',
+      'jit_inline_above_cost',
+      'jit_optimize_above_cost',
+    ];
+    
+    const filteredLines: string[] = [];
+    let filteredCount = 0;
+    for (const line of originalSql.split('\n')) {
+      const trimmedLine = line.trim().toLowerCase();
+      let shouldFilter = false;
+      
+      // Check for SET statements with incompatible settings
+      if (trimmedLine.startsWith('set ') || trimmedLine.startsWith('reset ')) {
+        for (const setting of incompatibleSettings) {
+          if (trimmedLine.includes(setting.toLowerCase())) {
+            shouldFilter = true;
+            filteredCount++;
+            console.log(`[Restore] Filtered incompatible setting: ${line.trim()}`);
+            break;
+          }
+        }
+      }
+      
+      if (!shouldFilter) {
+        filteredLines.push(line);
+      }
+    }
+    
+    if (filteredCount > 0) {
+      console.log(`[Restore] Filtered ${filteredCount} incompatible PostgreSQL settings for cross-version compatibility`);
+      originalSql = filteredLines.join('\n');
+    }
+    
     const wrappedScript = path.join(os.tmpdir(), `wrapped_restore_${Date.now()}.sql`);
     
     // For clean backups (fresh deployments), the backup now includes full schema
