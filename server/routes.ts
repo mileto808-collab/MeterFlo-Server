@@ -31,8 +31,8 @@ import nodemailer from "nodemailer";
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 // Large file upload (1GB limit) - actual limit enforced by database settings in route handlers
 const largeFileUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 1024 * 1024 * 1024 } });
-// Chunk upload (5MB per chunk) - for chunked uploads to avoid proxy timeouts
-const chunkUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+// Chunk upload (6MB limit to allow 5MB chunks + multipart overhead) - for chunked uploads to avoid proxy timeouts
+const chunkUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 6 * 1024 * 1024 } });
 
 // In-memory storage for chunked uploads (keyed by upload ID)
 interface ChunkedUploadSession {
