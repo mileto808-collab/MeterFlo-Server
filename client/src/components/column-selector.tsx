@@ -46,9 +46,6 @@ export function ColumnSelector({
   })();
 
   const handleToggleColumn = (key: string, checked: boolean) => {
-    const column = allColumns.find(c => c.key === key);
-    if (column?.required) return;
-    
     if (checked) {
       // When adding a column, add it at the end of visible columns
       onChange([...visibleColumns, key]);
@@ -65,8 +62,7 @@ export function ColumnSelector({
   };
 
   const handleSelectNone = () => {
-    const requiredColumns = allColumns.filter(c => c.required).map(c => c.key);
-    onChange(requiredColumns);
+    onChange([]);
   };
 
   const handleMoveUp = (key: string) => {
@@ -159,15 +155,13 @@ export function ColumnSelector({
                   id={`col-${column.key}`}
                   checked={isVisible}
                   onCheckedChange={(checked) => handleToggleColumn(column.key, !!checked)}
-                  disabled={column.required}
                   data-testid={`checkbox-column-${column.key}`}
                 />
                 <label 
                   htmlFor={`col-${column.key}`}
-                  className={`text-sm cursor-pointer flex-1 truncate ${column.required ? 'text-muted-foreground' : ''}`}
+                  className="text-sm cursor-pointer flex-1 truncate"
                 >
                   {column.label}
-                  {column.required && <span className="text-xs ml-1">(required)</span>}
                 </label>
                 {isVisible && (
                   <div className="flex gap-0.5 flex-shrink-0">
