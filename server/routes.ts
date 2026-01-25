@@ -2717,6 +2717,11 @@ export async function registerRoutes(
         delete updateData.appendNotes;
       }
       
+      // Clear assignedGroupId when assignedUserId is set (work order should only show for assigned user)
+      if (updateData.assignedUserId) {
+        updateData.assignedGroupId = null;
+      }
+      
       const workOrder = await workOrderStorage.updateWorkOrder(workOrderId, updateData, updatedByUsername);
       
       if (!workOrder) {
