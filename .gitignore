@@ -5,5 +5,5 @@ server/public
 vite.config.ts.*
 *.tar.gz
 deploy/ecosystem.config.cjs
-attached_assets
+attached_assets/
 Project Files/
