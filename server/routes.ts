@@ -1355,7 +1355,10 @@ export async function registerRoutes(
       }
       
       const prefs = await storage.getUserColumnPreferences(targetUserId, req.params.pageKey);
-      res.json(prefs || { visibleColumns: [], stickyColumns: [] });
+      if (!prefs) {
+        return res.status(404).json({ message: "No column preferences found" });
+      }
+      res.json(prefs);
     } catch (error) {
       console.error("Error fetching column preferences:", error);
       res.status(500).json({ message: "Failed to fetch column preferences" });
