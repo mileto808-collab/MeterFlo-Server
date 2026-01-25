@@ -109,7 +109,7 @@ interface WorkOrderDetailProps {
   serviceTypes: Array<{ id: number; code: string; label: string; color?: string | null }>;
   systemTypes: Array<{ id: number; productId: string; productLabel: string }>;
   moduleTypes: Array<{ id: number; productId: string; productLabel: string }>;
-  workOrderStatuses: Array<{ id: number; code: string; label: string }>;
+  workOrderStatuses: Array<{ id: number; code: string; label: string; color?: string | null }>;
   troubleCodes: Array<{ id: number; code: string; label: string }>;
   assigneesData: any;
   workOrderFiles: string[];
@@ -326,16 +326,22 @@ export function WorkOrderDetail({
   }, [autoLaunchSystemChangeout, canSystemChangeout]);
 
   const getStatusBadge = (status: string) => {
-    const statusConfig: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; className?: string }> = {
-      Open: { variant: "outline" },
-      Scheduled: { variant: "secondary", className: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200" },
-      "In Progress": { variant: "secondary", className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200" },
-      Completed: { variant: "secondary", className: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" },
-      Cancelled: { variant: "destructive" },
-    };
-    const config = statusConfig[status] || { variant: "outline" };
+    // Find status color from workOrderStatuses table
+    const statusRecord = workOrderStatuses.find(s => s.code === status || s.label === status);
+    if (statusRecord && statusRecord.color) {
+      const hexColor = getColorHex(statusRecord.color);
+      return (
+        <Badge 
+          variant="outline"
+          style={{ color: hexColor }}
+        >
+          {status}
+        </Badge>
+      );
+    }
+    // Fallback to outline badge if no color configured
     return (
-      <Badge variant={config.variant} className={config.className}>
+      <Badge variant="outline">
         {status}
       </Badge>
     );
