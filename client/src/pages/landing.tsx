@@ -13,8 +13,13 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ContactFormDialog } from "@/components/contact-form-dialog";
+import { Link } from "wouter";
+import { Layers, Server } from "lucide-react";
 
 export default function Landing() {
   const [, setLocation] = useLocation();
@@ -146,6 +151,20 @@ export default function Landing() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger data-testid="menu-item-features">
+                    <Layers className="h-4 w-4 mr-2" />
+                    Features
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    <DropdownMenuItem asChild data-testid="menu-item-meterflo-server">
+                      <Link href="/features/meterflo-server">
+                        <Server className="h-4 w-4 mr-2" />
+                        MeterFlo Server
+                      </Link>
+                    </DropdownMenuItem>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
                 <DropdownMenuItem 
                   onClick={() => setContactFormOpen(true)}
                   data-testid="menu-item-contact-us"

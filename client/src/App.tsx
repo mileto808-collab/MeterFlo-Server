@@ -17,6 +17,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 
 import Landing from "@/pages/landing";
 import TurnstilePage from "@/pages/turnstile";
+import MeterFloServerFeatures from "@/pages/features/meterflo-server";
 import Dashboard from "@/pages/dashboard";
 import WorkOrders from "@/pages/work-orders";
 import WorkOrderDetail from "@/pages/work-order-detail";
@@ -260,6 +261,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/turnstile" component={TurnstilePage} />
+      <Route path="/features/meterflo-server" component={MeterFloServerFeatures} />
       <Route>
         {isAuthenticated ? <AuthenticatedLayout /> : <Landing />}
       </Route>
