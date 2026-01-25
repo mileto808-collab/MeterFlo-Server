@@ -29,6 +29,8 @@ import { toZonedTime, format as formatTz } from "date-fns-tz";
 import nodemailer from "nodemailer";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+// Large file upload (1GB limit) - actual limit enforced by database settings in route handlers
+const largeFileUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 1024 * 1024 * 1024 } });
 
 async function getTimezoneFormattedTimestamp(projectTimezone?: string | null): Promise<string> {
   const globalTimezone = await storage.getSetting("default_timezone") || "America/Denver";
@@ -3412,7 +3414,7 @@ export async function registerRoutes(
   });
 
   // File upload for work orders
-  app.post("/api/projects/:projectId/work-orders/:workOrderId/files", isAuthenticated, upload.single("file"), async (req: any, res) => {
+  app.post("/api/projects/:projectId/work-orders/:workOrderId/files", isAuthenticated, largeFileUpload.single("file"), async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       const projectId = parseInt(req.params.projectId);
@@ -3436,6 +3438,15 @@ export async function registerRoutes(
       
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
+      }
+      
+      // Check file size against settings
+      const maxFileSizeValue = await storage.getSetting("max_file_size_mb");
+      const maxFileSizeMB = maxFileSizeValue ? parseInt(maxFileSizeValue) : 100;
+      const maxFileSize = maxFileSizeMB * 1024 * 1024;
+      
+      if (req.file.size > maxFileSize) {
+        return res.status(400).json({ message: `File exceeds maximum size of ${maxFileSizeMB} MB` });
       }
       
       // Fetch the work order to get customer_wo_id for folder naming
@@ -4143,7 +4154,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/projects/:projectId/files", isAuthenticated, upload.single("file"), async (req: any, res) => {
+  app.post("/api/projects/:projectId/files", isAuthenticated, largeFileUpload.single("file"), async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       const projectId = parseInt(req.params.projectId);
@@ -4325,7 +4336,7 @@ export async function registerRoutes(
   });
 
   // Upload file to project FTP directory
-  app.post("/api/projects/:projectId/ftp-files", isAuthenticated, upload.single("file"), async (req: any, res) => {
+  app.post("/api/projects/:projectId/ftp-files", isAuthenticated, largeFileUpload.single("file"), async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       const projectId = parseInt(req.params.projectId);
@@ -4348,6 +4359,15 @@ export async function registerRoutes(
       
       if (!req.file) {
         return res.status(400).json({ message: "No file provided" });
+      }
+      
+      // Check file size against settings
+      const maxFileSizeValue = await storage.getSetting("max_file_size_mb");
+      const maxFileSizeMB = maxFileSizeValue ? parseInt(maxFileSizeValue) : 100;
+      const maxFileSize = maxFileSizeMB * 1024 * 1024;
+      
+      if (req.file.size > maxFileSize) {
+        return res.status(400).json({ message: `File exceeds maximum size of ${maxFileSizeMB} MB` });
       }
       
       // Get allowed extensions from settings
@@ -6408,7 +6428,7 @@ export async function registerRoutes(
   });
 
   // Restore database from backup
-  app.post("/api/projects/:projectId/database/restore", isAuthenticated, upload.single("backup"), async (req: any, res) => {
+  app.post("/api/projects/:projectId/database/restore", isAuthenticated, largeFileUpload.single("backup"), async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       if (!currentUser) {
