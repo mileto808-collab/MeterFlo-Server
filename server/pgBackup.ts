@@ -1166,16 +1166,15 @@ UPDATE public.system_settings SET value = 'false' WHERE key = 'turnstile_enabled
 `;
     }
     
-    // Create a single SQL file that disables FKs, runs the restore, and re-enables FKs
-    const wrappedSql = `-- Disable foreign key checks for this session
-SET session_replication_role = 'replica';
+    // Create a single SQL file that runs the restore
+    // Note: We don't use session_replication_role because Neon/managed databases restrict it
+    // Instead, the clearExisting flow drops FK constraints before restore
+    const wrappedSql = `-- Database restore script
+-- FK constraints are handled by dropping them before restore and recreating from backup
 
 ${clearStatements}-- Original restore SQL
 ${originalSql}
-${postRestoreStatements}
--- Re-enable foreign key checks
-SET session_replication_role = 'origin';
-`;
+${postRestoreStatements}`;
     
     fs.writeFileSync(wrappedScript, wrappedSql);
     console.log(`[Restore] Created wrapped SQL script (${wrappedSql.length} bytes)`);
