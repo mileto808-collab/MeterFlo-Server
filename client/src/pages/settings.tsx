@@ -4430,7 +4430,7 @@ export default function Settings() {
       </Dialog>
 
       <Dialog open={profileDialogOpen} onOpenChange={setProfileDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Profile</DialogTitle>
             <DialogDescription>
