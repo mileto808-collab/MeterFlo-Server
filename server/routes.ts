@@ -31,6 +31,30 @@ import nodemailer from "nodemailer";
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 // Large file upload (1GB limit) - actual limit enforced by database settings in route handlers
 const largeFileUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 1024 * 1024 * 1024 } });
+// Chunk upload (5MB per chunk) - for chunked uploads to avoid proxy timeouts
+const chunkUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+
+// In-memory storage for chunked uploads (keyed by upload ID)
+interface ChunkedUploadSession {
+  userId: string;
+  fileName: string;
+  totalChunks: number;
+  receivedChunks: Map<number, Buffer>;
+  clearExisting: boolean;
+  createdAt: Date;
+}
+const chunkedUploadSessions = new Map<string, ChunkedUploadSession>();
+
+// Clean up old upload sessions (older than 1 hour)
+setInterval(() => {
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  for (const [uploadId, session] of chunkedUploadSessions) {
+    if (session.createdAt < oneHourAgo) {
+      chunkedUploadSessions.delete(uploadId);
+      console.log(`[ChunkedUpload] Cleaned up stale session: ${uploadId}`);
+    }
+  }
+}, 5 * 60 * 1000); // Run every 5 minutes
 
 async function getTimezoneFormattedTimestamp(projectTimezone?: string | null): Promise<string> {
   const globalTimezone = await storage.getSetting("default_timezone") || "America/Denver";
@@ -8384,6 +8408,333 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error restoring full system backup:", error);
       res.status(500).json({ message: "Failed to restore full system backup" });
+    }
+  });
+
+  // ============================================================================
+  // CHUNKED UPLOAD ENDPOINTS FOR SYSTEM RESTORE
+  // These endpoints allow large files to be uploaded in chunks to avoid proxy timeouts
+  // ============================================================================
+
+  // Initialize a chunked upload session
+  app.post("/api/system/restore/init", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canSystemRestore = await storage.hasPermission(currentUser, permissionKeys.MAINTENANCE_SYSTEM_RESTORE);
+      if (!canSystemRestore) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to restore system backups" });
+      }
+
+      const { fileName, totalChunks, clearExisting } = req.body;
+      
+      if (!fileName || !totalChunks || totalChunks < 1) {
+        return res.status(400).json({ message: "Missing required fields: fileName, totalChunks" });
+      }
+
+      const uploadId = randomUUID();
+      
+      chunkedUploadSessions.set(uploadId, {
+        userId: currentUser.id,
+        fileName,
+        totalChunks: parseInt(totalChunks),
+        receivedChunks: new Map(),
+        clearExisting: clearExisting === true || clearExisting === "true",
+        createdAt: new Date(),
+      });
+
+      console.log(`[ChunkedUpload] Initialized session ${uploadId} for ${fileName} with ${totalChunks} chunks`);
+      
+      res.json({ 
+        uploadId,
+        message: "Upload session initialized",
+        chunkSize: 5 * 1024 * 1024, // 5MB chunks
+      });
+    } catch (error) {
+      console.error("Error initializing chunked upload:", error);
+      res.status(500).json({ message: "Failed to initialize upload" });
+    }
+  });
+
+  // Upload a single chunk
+  app.post("/api/system/restore/chunk", isAuthenticated, chunkUpload.single("chunk"), async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const { uploadId, chunkIndex } = req.body;
+      
+      if (!uploadId || chunkIndex === undefined) {
+        return res.status(400).json({ message: "Missing required fields: uploadId, chunkIndex" });
+      }
+
+      const session = chunkedUploadSessions.get(uploadId);
+      if (!session) {
+        return res.status(404).json({ message: "Upload session not found or expired" });
+      }
+
+      if (session.userId !== currentUser.id) {
+        return res.status(403).json({ message: "Forbidden: This upload session belongs to another user" });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ message: "No chunk data provided" });
+      }
+
+      const index = parseInt(chunkIndex);
+      if (isNaN(index) || index < 0 || index >= session.totalChunks) {
+        return res.status(400).json({ message: `Invalid chunk index: ${chunkIndex}` });
+      }
+
+      session.receivedChunks.set(index, req.file.buffer);
+      
+      const receivedCount = session.receivedChunks.size;
+      const progress = Math.round((receivedCount / session.totalChunks) * 100);
+      
+      console.log(`[ChunkedUpload] Session ${uploadId}: received chunk ${index + 1}/${session.totalChunks} (${progress}%)`);
+
+      res.json({
+        message: "Chunk received",
+        chunkIndex: index,
+        receivedChunks: receivedCount,
+        totalChunks: session.totalChunks,
+        progress,
+        complete: receivedCount === session.totalChunks,
+      });
+    } catch (error) {
+      console.error("Error uploading chunk:", error);
+      res.status(500).json({ message: "Failed to upload chunk" });
+    }
+  });
+
+  // Finalize the chunked upload and process the restore
+  app.post("/api/system/restore/finalize", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const canSystemRestore = await storage.hasPermission(currentUser, permissionKeys.MAINTENANCE_SYSTEM_RESTORE);
+      if (!canSystemRestore) {
+        return res.status(403).json({ message: "Forbidden: You don't have permission to restore system backups" });
+      }
+
+      const { uploadId } = req.body;
+      
+      if (!uploadId) {
+        return res.status(400).json({ message: "Missing required field: uploadId" });
+      }
+
+      const session = chunkedUploadSessions.get(uploadId);
+      if (!session) {
+        return res.status(404).json({ message: "Upload session not found or expired" });
+      }
+
+      if (session.userId !== currentUser.id) {
+        return res.status(403).json({ message: "Forbidden: This upload session belongs to another user" });
+      }
+
+      if (session.receivedChunks.size !== session.totalChunks) {
+        return res.status(400).json({ 
+          message: `Incomplete upload: received ${session.receivedChunks.size} of ${session.totalChunks} chunks` 
+        });
+      }
+
+      console.log(`[ChunkedUpload] Finalizing session ${uploadId}: assembling ${session.totalChunks} chunks`);
+
+      // Assemble all chunks in order
+      const chunks: Buffer[] = [];
+      for (let i = 0; i < session.totalChunks; i++) {
+        const chunk = session.receivedChunks.get(i);
+        if (!chunk) {
+          chunkedUploadSessions.delete(uploadId);
+          return res.status(400).json({ message: `Missing chunk at index ${i}` });
+        }
+        chunks.push(chunk);
+      }
+      
+      const fileBuffer = Buffer.concat(chunks);
+      console.log(`[ChunkedUpload] Assembled file: ${fileBuffer.length} bytes from ${chunks.length} chunks`);
+      
+      // Clean up session
+      chunkedUploadSessions.delete(uploadId);
+
+      // Now process the restore (same logic as the regular restore endpoint)
+      const fileName = session.fileName.toLowerCase();
+      const isPlainSql = fileName.endsWith(".sql");
+      
+      // Handle plain .sql file upload
+      if (isPlainSql) {
+        console.log(`[Restore] Detected plain SQL file: ${session.fileName}`);
+        const tempDir = os.tmpdir();
+        const timestamp = Date.now();
+        const sqlPath = path.join(tempDir, `restore_${timestamp}.sql`);
+        
+        await fs.writeFile(sqlPath, fileBuffer);
+        
+        try {
+          const dbResult = await restorePgBackup(sqlPath, { disableForeignKeys: true });
+          
+          if (!dbResult.success) {
+            return res.status(500).json({
+              message: "Database restore failed",
+              error: dbResult.error,
+              warnings: dbResult.warnings,
+              filesRestored: 0,
+            });
+          }
+          
+          return res.json({
+            message: "SQL restore completed successfully",
+            format: "plain_sql",
+            backupDate: new Date().toISOString(),
+            filesRestored: 0,
+            warnings: dbResult.warnings || [],
+            errors: [],
+          });
+        } finally {
+          if (existsSync(sqlPath)) {
+            unlinkSync(sqlPath);
+          }
+        }
+      }
+
+      // Extract and detect backup format from archive
+      const { sqlFile, metadata, legacyJson, foundFiles } = await extractBackupFromArchive(fileBuffer);
+      
+      // Handle webapp-files-only backup
+      if (metadata?.format === "files_only" || metadata?.format === "webapp_files_only" || metadata?.backupType === "files") {
+        console.log(`Restoring webapp-files-only backup from ${metadata.backupDate}`);
+        const appDir = process.cwd();
+        const filesResult = await restoreWebAppFilesFromArchive(fileBuffer, appDir);
+        
+        return res.json({
+          message: "Webapp files-only restore completed",
+          format: "webapp_files_only",
+          backupDate: metadata.backupDate,
+          filesRestored: filesResult.filesRestored,
+          errors: filesResult.errors,
+        });
+      }
+      
+      // Handle project-files-only backup
+      if (metadata?.format === "project_files_only" || metadata?.backupType === "project") {
+        console.log(`Restoring project-files-only backup from ${metadata.backupDate}`);
+        const filesPath = await getProjectFilesPath();
+        const filesResult = await restoreFilesFromPgArchive(fileBuffer, filesPath);
+        
+        return res.json({
+          message: "Project files-only restore completed",
+          format: "project_files_only",
+          backupDate: metadata.backupDate,
+          filesRestored: filesResult.filesRestored,
+          errors: filesResult.errors,
+        });
+      }
+      
+      // Handle SQL format backups
+      if (sqlFile && (metadata?.format === "pg_dump_sql" || metadata?.format === "pg_dump_full" || metadata?.format === "pg_dump_clean" || metadata?.format === "full_system")) {
+        const isCleanBackup = metadata?.format === "pg_dump_clean";
+        const clearExisting = session.clearExisting;
+        console.log(`Restoring SQL backup from ${metadata.backupDate}${isCleanBackup ? " (clean backup)" : ""}${clearExisting ? " (clearing existing data)" : ""}`);
+        
+        let filesResult = { filesRestored: 0, errors: [] as string[] };
+        
+        try {
+          const dbResult = await restorePgBackup(sqlFile, { disableForeignKeys: true, isCleanBackup, clearExisting });
+          
+          // Always try to restore files
+          const filesPath = await getProjectFilesPath();
+          filesResult = await restoreFilesFromPgArchive(fileBuffer, filesPath);
+          
+          if (!dbResult.success) {
+            return res.status(500).json({
+              message: "Database restore failed",
+              error: dbResult.error,
+              warnings: dbResult.warnings,
+              filesRestored: filesResult.filesRestored,
+            });
+          }
+          
+          return res.json({
+            message: isCleanBackup ? "Clean database restore completed" : "Full system restore completed (SQL format)",
+            format: metadata.format,
+            backupDate: metadata.backupDate,
+            schemas: metadata.schemas,
+            filesRestored: filesResult.filesRestored,
+            warnings: dbResult.warnings,
+            errors: filesResult.errors,
+          });
+        } finally {
+          if (sqlFile && existsSync(sqlFile)) {
+            unlinkSync(sqlFile);
+          }
+        }
+      }
+      
+      // Handle legacy JSON format
+      if (legacyJson) {
+        console.log(`Restoring legacy JSON backup from ${legacyJson.backupDate || "unknown date"}`);
+        const filesPath = await getProjectFilesPath();
+        
+        const result = await restoreFullSystem(legacyJson, true);
+        const filesResult = await restoreFilesFromArchive(fileBuffer, filesPath);
+        
+        return res.json({
+          message: "System restore completed (legacy format)",
+          format: "legacy_json",
+          backupDate: legacyJson.backupDate,
+          mainTablesRestored: result.mainTablesRestored,
+          projectsRestored: result.projectsRestored,
+          filesRestored: filesResult.filesRestored,
+          errors: [...result.errors, ...filesResult.errors],
+          warnings: result.warnings,
+        });
+      }
+      
+      // Unknown format
+      const filesPreview = foundFiles.slice(0, 10).join(", ");
+      const moreFiles = foundFiles.length > 10 ? ` and ${foundFiles.length - 10} more` : "";
+      return res.status(400).json({ 
+        message: `Invalid backup archive: could not find database_backup.sql or database_backup.json. Found files: ${filesPreview}${moreFiles}` 
+      });
+    } catch (error) {
+      console.error("Error finalizing chunked upload:", error);
+      res.status(500).json({ message: "Failed to finalize restore" });
+    }
+  });
+
+  // Get upload session status
+  app.get("/api/system/restore/status/:uploadId", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const session = chunkedUploadSessions.get(req.params.uploadId);
+      if (!session) {
+        return res.status(404).json({ message: "Upload session not found or expired" });
+      }
+
+      if (session.userId !== currentUser.id) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      res.json({
+        fileName: session.fileName,
+        totalChunks: session.totalChunks,
+        receivedChunks: session.receivedChunks.size,
+        progress: Math.round((session.receivedChunks.size / session.totalChunks) * 100),
+        complete: session.receivedChunks.size === session.totalChunks,
+      });
+    } catch (error) {
+      console.error("Error getting upload status:", error);
+      res.status(500).json({ message: "Failed to get upload status" });
     }
   });
 

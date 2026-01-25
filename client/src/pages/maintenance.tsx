@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Progress } from "@/components/ui/progress";
 import {
   Table,
   TableBody,
@@ -87,6 +88,11 @@ export default function Maintenance() {
   const [isFilesRestoring, setIsFilesRestoring] = useState(false);
   const [backupType, setBackupType] = useState<"database" | "clean" | "files" | "project">("database");
   const [fileStats, setFileStats] = useState<Record<number, FileStats>>({});
+  const [uploadProgress, setUploadProgress] = useState<{
+    stage: "uploading" | "processing";
+    percent: number;
+    message: string;
+  } | null>(null);
 
   const { data: projects = [], isLoading, refetch } = useQuery<ProjectWithStats[]>({
     queryKey: ["/api/maintenance/projects"],
@@ -273,45 +279,155 @@ export default function Maintenance() {
     if (!file) return;
 
     setIsSystemRestoring(true);
+    setUploadProgress({ stage: "uploading", percent: 0, message: "Preparing upload..." });
     
     try {
-      const formData = new FormData();
-      formData.append("backup", file);
-      formData.append("clearExisting", String(systemClearExisting));
-
-      const response = await fetch("/api/system/restore", {
-        method: "POST",
-        credentials: "include",
-        body: formData,
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result.message || "Failed to restore system backup");
-      }
-
-      // Handle both new SQL format and legacy JSON format responses
-      let description: string;
-      if (result.format === "pg_dump_sql" || result.format === "pg_dump_full" || result.format === "pg_dump_clean") {
-        // New SQL format
-        const cleanIndicator = result.format === "pg_dump_clean" ? " (clean backup)" : "";
-        description = `Restored ${result.schemas?.length || 0} database schemas and ${result.filesRestored || 0} files${cleanIndicator}${result.errors?.length > 0 ? ` with ${result.errors.length} errors` : ""}`;
-      } else {
-        // Legacy JSON format
-        const mainTablesCount = result.mainTablesRestored 
-          ? Object.values(result.mainTablesRestored as Record<string, number>).reduce((a, b) => a + b, 0) 
-          : 0;
-        description = `Restored ${mainTablesCount} main database records, ${result.projectsRestored || 0} project databases, and ${result.filesRestored || 0} files${result.errors?.length > 0 ? ` with ${result.errors.length} errors` : ""}`;
-      }
+      const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks
+      const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
       
-      toast({
-        title: "System Restore Completed",
-        description,
-      });
+      // Use chunked upload for files larger than one chunk, otherwise use direct upload
+      if (file.size > CHUNK_SIZE) {
+        // Step 1: Initialize chunked upload session
+        setUploadProgress({ stage: "uploading", percent: 0, message: "Initializing upload..." });
+        
+        const initResponse = await fetch("/api/system/restore/init", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileName: file.name,
+            totalChunks,
+            clearExisting: systemClearExisting,
+          }),
+        });
+        
+        if (!initResponse.ok) {
+          const error = await initResponse.json();
+          throw new Error(error.message || "Failed to initialize upload");
+        }
+        
+        const { uploadId } = await initResponse.json();
+        
+        // Step 2: Upload chunks
+        for (let i = 0; i < totalChunks; i++) {
+          const start = i * CHUNK_SIZE;
+          const end = Math.min(start + CHUNK_SIZE, file.size);
+          const chunk = file.slice(start, end);
+          
+          const chunkFormData = new FormData();
+          chunkFormData.append("chunk", chunk, file.name);
+          chunkFormData.append("uploadId", uploadId);
+          chunkFormData.append("chunkIndex", String(i));
+          
+          const percent = Math.round(((i + 1) / totalChunks) * 90); // 0-90% for upload
+          setUploadProgress({ 
+            stage: "uploading", 
+            percent, 
+            message: `Uploading chunk ${i + 1} of ${totalChunks}...` 
+          });
+          
+          const chunkResponse = await fetch("/api/system/restore/chunk", {
+            method: "POST",
+            credentials: "include",
+            body: chunkFormData,
+          });
+          
+          if (!chunkResponse.ok) {
+            const error = await chunkResponse.json();
+            throw new Error(error.message || `Failed to upload chunk ${i + 1}`);
+          }
+        }
+        
+        // Step 3: Finalize and process
+        setUploadProgress({ stage: "processing", percent: 95, message: "Processing restore..." });
+        
+        const finalizeResponse = await fetch("/api/system/restore/finalize", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ uploadId }),
+        });
+        
+        const result = await finalizeResponse.json();
+        
+        if (!finalizeResponse.ok) {
+          throw new Error(result.message || "Failed to finalize restore");
+        }
+        
+        setUploadProgress({ stage: "processing", percent: 100, message: "Complete!" });
+        
+        // Build success message
+        let description: string;
+        if (result.format === "pg_dump_sql" || result.format === "pg_dump_full" || result.format === "pg_dump_clean") {
+          const cleanIndicator = result.format === "pg_dump_clean" ? " (clean backup)" : "";
+          description = `Restored ${result.schemas?.length || 0} database schemas and ${result.filesRestored || 0} files${cleanIndicator}${result.errors?.length > 0 ? ` with ${result.errors.length} errors` : ""}`;
+        } else if (result.format === "project_files_only") {
+          description = `Restored ${result.filesRestored || 0} project files`;
+        } else if (result.format === "webapp_files_only") {
+          description = `Restored ${result.filesRestored || 0} webapp files`;
+        } else {
+          const mainTablesCount = result.mainTablesRestored 
+            ? Object.values(result.mainTablesRestored as Record<string, number>).reduce((a, b) => a + b, 0) 
+            : 0;
+          description = `Restored ${mainTablesCount} main database records, ${result.projectsRestored || 0} project databases, and ${result.filesRestored || 0} files${result.errors?.length > 0 ? ` with ${result.errors.length} errors` : ""}`;
+        }
+        
+        toast({
+          title: "System Restore Completed",
+          description,
+        });
 
-      if (result.errors?.length > 0) {
-        console.error("Restore errors:", result.errors);
+        if (result.errors?.length > 0) {
+          console.error("Restore errors:", result.errors);
+        }
+      } else {
+        // Small file - use direct upload (original method)
+        setUploadProgress({ stage: "uploading", percent: 50, message: "Uploading file..." });
+        
+        const formData = new FormData();
+        formData.append("backup", file);
+        formData.append("clearExisting", String(systemClearExisting));
+
+        const response = await fetch("/api/system/restore", {
+          method: "POST",
+          credentials: "include",
+          body: formData,
+        });
+
+        setUploadProgress({ stage: "processing", percent: 90, message: "Processing restore..." });
+        
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(result.message || "Failed to restore system backup");
+        }
+
+        setUploadProgress({ stage: "processing", percent: 100, message: "Complete!" });
+
+        // Handle both new SQL format and legacy JSON format responses
+        let description: string;
+        if (result.format === "pg_dump_sql" || result.format === "pg_dump_full" || result.format === "pg_dump_clean") {
+          const cleanIndicator = result.format === "pg_dump_clean" ? " (clean backup)" : "";
+          description = `Restored ${result.schemas?.length || 0} database schemas and ${result.filesRestored || 0} files${cleanIndicator}${result.errors?.length > 0 ? ` with ${result.errors.length} errors` : ""}`;
+        } else if (result.format === "project_files_only") {
+          description = `Restored ${result.filesRestored || 0} project files`;
+        } else if (result.format === "webapp_files_only") {
+          description = `Restored ${result.filesRestored || 0} webapp files`;
+        } else {
+          const mainTablesCount = result.mainTablesRestored 
+            ? Object.values(result.mainTablesRestored as Record<string, number>).reduce((a, b) => a + b, 0) 
+            : 0;
+          description = `Restored ${mainTablesCount} main database records, ${result.projectsRestored || 0} project databases, and ${result.filesRestored || 0} files${result.errors?.length > 0 ? ` with ${result.errors.length} errors` : ""}`;
+        }
+        
+        toast({
+          title: "System Restore Completed",
+          description,
+        });
+
+        if (result.errors?.length > 0) {
+          console.error("Restore errors:", result.errors);
+        }
       }
 
       queryClient.invalidateQueries({ queryKey: ["/api/maintenance/projects"] });
@@ -324,6 +440,7 @@ export default function Maintenance() {
       });
     } finally {
       setIsSystemRestoring(false);
+      setUploadProgress(null);
       if (systemFileInputRef.current) {
         systemFileInputRef.current.value = "";
       }
@@ -968,16 +1085,30 @@ export default function Maintenance() {
               type="file"
               ref={systemFileInputRef}
               className="hidden"
-              accept=".zip"
+              accept=".zip,.sql"
               onChange={handleSystemFileChange}
               data-testid="input-system-restore-file"
             />
+
+            {uploadProgress && (
+              <div className="space-y-2 p-4 rounded-md bg-muted">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium">
+                    {uploadProgress.stage === "uploading" ? "Uploading" : "Processing"}
+                  </span>
+                  <span className="text-muted-foreground">{uploadProgress.percent}%</span>
+                </div>
+                <Progress value={uploadProgress.percent} className="h-2" />
+                <p className="text-xs text-muted-foreground">{uploadProgress.message}</p>
+              </div>
+            )}
           </div>
 
           <DialogFooter>
             <Button
               variant="outline"
               onClick={() => setSystemRestoreDialogOpen(false)}
+              disabled={isSystemRestoring}
               data-testid="button-cancel-system-restore"
             >
               Cancel
