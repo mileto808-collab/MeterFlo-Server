@@ -1099,8 +1099,9 @@ export async function restorePgBackup(
       // PostgreSQL 14+ / may have issues on Neon
       'idle_session_timeout',
       'idle_in_transaction_session_timeout',
-      // Can cause issues on managed databases
+      // Can cause issues on managed databases (Neon restricts these)
       'session_authorization',
+      'session_replication_role',
       'role',
       // Version-specific or provider-specific
       'row_security',
