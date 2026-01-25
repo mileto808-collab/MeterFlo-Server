@@ -8278,12 +8278,13 @@ export async function registerRoutes(
       if (sqlFile && (metadata?.format === "pg_dump_sql" || metadata?.format === "pg_dump_full" || metadata?.format === "pg_dump_clean" || metadata?.format === "full_system")) {
         // New SQL format - use psql to restore with FK constraint handling
         const isCleanBackup = metadata?.format === "pg_dump_clean";
-        console.log(`Restoring SQL backup from ${metadata.backupDate}${isCleanBackup ? " (clean backup)" : ""}, schemas: ${metadata.schemas?.join(", ") || "none"}`);
+        const clearExisting = req.body.clearExisting === "true";
+        console.log(`Restoring SQL backup from ${metadata.backupDate}${isCleanBackup ? " (clean backup)" : ""}${clearExisting ? " (clearing existing data)" : ""}, schemas: ${metadata.schemas?.join(", ") || "none"}`);
         
         let filesResult = { filesRestored: 0, errors: [] as string[] };
         
         try {
-          const dbResult = await restorePgBackup(sqlFile, { disableForeignKeys: true, isCleanBackup });
+          const dbResult = await restorePgBackup(sqlFile, { disableForeignKeys: true, isCleanBackup, clearExisting });
           
           if (restoreFiles) {
             const filesPath = await getProjectFilesPath();

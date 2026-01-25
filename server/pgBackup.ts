@@ -985,7 +985,7 @@ export async function extractBackupFromArchive(zipBuffer: Buffer): Promise<{
 
 export async function restorePgBackup(
   sqlFile: string,
-  options: { disableForeignKeys?: boolean; isCleanBackup?: boolean } = {}
+  options: { disableForeignKeys?: boolean; isCleanBackup?: boolean; clearExisting?: boolean } = {}
 ): Promise<{
   success: boolean;
   error?: string;
@@ -1004,6 +1004,49 @@ export async function restorePgBackup(
   const params = parseConnectionString(connectionString);
   const warnings: string[] = [];
   let tablesRestored = 0;
+  
+  // If clearExisting is true, drop all existing project schemas first
+  // This is necessary because the backup may contain DROP CONSTRAINT statements
+  // that fail if foreign keys from existing project schemas still reference them
+  if (options.clearExisting) {
+    console.log(`[Restore] Clearing existing project schemas before restore...`);
+    const pool = new Pool({ connectionString });
+    try {
+      // Find all project_ schemas
+      const schemasResult = await pool.query(`
+        SELECT schema_name 
+        FROM information_schema.schemata 
+        WHERE schema_name LIKE 'project_%'
+        ORDER BY schema_name
+      `);
+      
+      const existingSchemas = schemasResult.rows.map(r => r.schema_name);
+      
+      if (existingSchemas.length > 0) {
+        console.log(`[Restore] Found ${existingSchemas.length} existing project schemas to drop: ${existingSchemas.join(', ')}`);
+        
+        // Drop each schema with CASCADE to remove all dependent objects
+        for (const schemaName of existingSchemas) {
+          try {
+            await pool.query(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`);
+            console.log(`[Restore] Dropped schema: ${schemaName}`);
+          } catch (dropErr: any) {
+            console.warn(`[Restore] Warning: Failed to drop schema ${schemaName}: ${dropErr.message}`);
+            warnings.push(`Failed to drop existing schema ${schemaName}: ${dropErr.message}`);
+          }
+        }
+        
+        console.log(`[Restore] Successfully dropped ${existingSchemas.length} project schemas`);
+      } else {
+        console.log(`[Restore] No existing project schemas found to drop`);
+      }
+    } catch (schemaErr: any) {
+      console.error(`[Restore] Error clearing existing schemas: ${schemaErr.message}`);
+      warnings.push(`Warning: Failed to clear existing schemas: ${schemaErr.message}`);
+    } finally {
+      await pool.end();
+    }
+  }
   
   if (options.disableForeignKeys) {
     // Read the original SQL file and wrap it with FK disable/enable in a single session
