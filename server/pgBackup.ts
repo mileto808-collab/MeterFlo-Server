@@ -1009,10 +1009,46 @@ export async function restorePgBackup(
   // This is necessary because the backup may contain DROP CONSTRAINT statements
   // that fail if foreign keys from existing project schemas still reference them
   if (options.clearExisting) {
-    console.log(`[Restore] Clearing existing project schemas before restore...`);
+    console.log(`[Restore] Clearing existing data before restore...`);
     const pool = new Pool({ connectionString });
     try {
-      // Find all project_ schemas
+      // Step 1: Drop all foreign key constraints from ANY schema that reference PUBLIC tables
+      // This is critical because project schemas have FKs pointing to public tables
+      // (e.g., project_foo.work_orders.status_code -> public.work_order_statuses.code)
+      // These cross-schema FKs block DROP CONSTRAINT on public tables during restore
+      console.log(`[Restore] Dropping foreign key constraints referencing public tables...`);
+      const fkResult = await pool.query(`
+        SELECT 
+          n.nspname AS schema_name,
+          c.relname AS table_name,
+          con.conname AS constraint_name
+        FROM pg_constraint con
+        JOIN pg_class c ON con.conrelid = c.oid
+        JOIN pg_namespace n ON c.relnamespace = n.oid
+        JOIN pg_class ref ON con.confrelid = ref.oid
+        JOIN pg_namespace ref_ns ON ref.relnamespace = ref_ns.oid
+        WHERE con.contype = 'f'
+          AND ref_ns.nspname = 'public'
+        ORDER BY n.nspname, c.relname, con.conname
+      `);
+      
+      const fkConstraints = fkResult.rows;
+      if (fkConstraints.length > 0) {
+        console.log(`[Restore] Found ${fkConstraints.length} foreign key constraints referencing public tables`);
+        for (const fk of fkConstraints) {
+          try {
+            await pool.query(`ALTER TABLE "${fk.schema_name}"."${fk.table_name}" DROP CONSTRAINT IF EXISTS "${fk.constraint_name}" CASCADE`);
+            console.log(`[Restore] Dropped FK: ${fk.schema_name}.${fk.table_name}.${fk.constraint_name}`);
+          } catch (fkErr: any) {
+            console.warn(`[Restore] Warning: Failed to drop FK ${fk.constraint_name}: ${fkErr.message}`);
+            warnings.push(`Failed to drop FK ${fk.schema_name}.${fk.constraint_name}: ${fkErr.message}`);
+          }
+        }
+      } else {
+        console.log(`[Restore] No foreign key constraints referencing public tables found`);
+      }
+      
+      // Step 2: Drop all project_ schemas
       const schemasResult = await pool.query(`
         SELECT schema_name 
         FROM information_schema.schemata 
@@ -1040,9 +1076,11 @@ export async function restorePgBackup(
       } else {
         console.log(`[Restore] No existing project schemas found to drop`);
       }
+      
+      console.log(`[Restore] Existing data cleared successfully`);
     } catch (schemaErr: any) {
-      console.error(`[Restore] Error clearing existing schemas: ${schemaErr.message}`);
-      warnings.push(`Warning: Failed to clear existing schemas: ${schemaErr.message}`);
+      console.error(`[Restore] Error clearing existing data: ${schemaErr.message}`);
+      warnings.push(`Warning: Failed to clear existing data: ${schemaErr.message}`);
     } finally {
       await pool.end();
     }
