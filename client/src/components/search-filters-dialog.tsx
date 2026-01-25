@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -42,10 +43,10 @@ interface SearchFiltersDialogProps {
   hasModules: boolean;
   selectedProject: string;
   setSelectedProject: (value: string) => void;
-  selectedStatus: string;
-  setSelectedStatus: (value: string) => void;
-  selectedServiceType: string;
-  setSelectedServiceType: (value: string) => void;
+  selectedStatuses: string[];
+  setSelectedStatuses: (value: string[]) => void;
+  selectedServiceTypes: string[];
+  setSelectedServiceTypes: (value: string[]) => void;
   filterSystemWoId: string;
   setFilterSystemWoId: (value: string) => void;
   filterCustomerWoId: string;
@@ -136,10 +137,10 @@ export function SearchFiltersDialog({
   hasModules,
   selectedProject,
   setSelectedProject,
-  selectedStatus,
-  setSelectedStatus,
-  selectedServiceType,
-  setSelectedServiceType,
+  selectedStatuses,
+  setSelectedStatuses,
+  selectedServiceTypes,
+  setSelectedServiceTypes,
   filterSystemWoId,
   setFilterSystemWoId,
   filterCustomerWoId,
@@ -285,33 +286,89 @@ export function SearchFiltersDialog({
                   </SelectContent>
                 </Select>
               </div>
-              <div>
+              <div className="col-span-2">
                 <Label>Status</Label>
-                <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-                  <SelectTrigger data-testid="select-filter-status">
-                    <SelectValue placeholder="All Statuses" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Statuses</SelectItem>
-                    {workOrderStatuses.map((status) => (
-                      <SelectItem key={status.id} value={status.label}>{status.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex flex-wrap gap-3 mt-2">
+                  {workOrderStatuses.map((status) => {
+                    const isSelected = selectedStatuses.includes(status.label);
+                    return (
+                      <div key={status.id} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`search-status-${status.id}`}
+                          checked={isSelected}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setSelectedStatuses([...selectedStatuses, status.label]);
+                            } else {
+                              setSelectedStatuses(selectedStatuses.filter(s => s !== status.label));
+                            }
+                          }}
+                          data-testid={`checkbox-search-status-${status.label.toLowerCase().replace(/\s+/g, '-')}`}
+                        />
+                        <label
+                          htmlFor={`search-status-${status.id}`}
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                        >
+                          {status.label}
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
+                {selectedStatuses.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-2"
+                    onClick={() => setSelectedStatuses([])}
+                    data-testid="button-clear-search-status-filter"
+                  >
+                    <X className="h-3 w-3 mr-1" />
+                    Clear Status Filter
+                  </Button>
+                )}
               </div>
-              <div>
+              <div className="col-span-2">
                 <Label>Service Type</Label>
-                <Select value={selectedServiceType} onValueChange={setSelectedServiceType}>
-                  <SelectTrigger data-testid="select-filter-service-type">
-                    <SelectValue placeholder="All Service Types" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Service Types</SelectItem>
-                    {serviceTypes.map((st) => (
-                      <SelectItem key={st.id} value={st.label}>{st.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex flex-wrap gap-3 mt-2">
+                  {serviceTypes.map((type) => {
+                    const isSelected = selectedServiceTypes.includes(type.code);
+                    return (
+                      <div key={type.id} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`search-service-type-${type.id}`}
+                          checked={isSelected}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setSelectedServiceTypes([...selectedServiceTypes, type.code]);
+                            } else {
+                              setSelectedServiceTypes(selectedServiceTypes.filter(s => s !== type.code));
+                            }
+                          }}
+                          data-testid={`checkbox-search-service-type-${type.code.toLowerCase().replace(/\s+/g, '-')}`}
+                        />
+                        <label
+                          htmlFor={`search-service-type-${type.id}`}
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                        >
+                          {type.label}
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
+                {selectedServiceTypes.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-2"
+                    onClick={() => setSelectedServiceTypes([])}
+                    data-testid="button-clear-search-service-type-filter"
+                  >
+                    <X className="h-3 w-3 mr-1" />
+                    Clear Service Type Filter
+                  </Button>
+                )}
               </div>
               {troubleCodes.length > 0 && (
                 <div>

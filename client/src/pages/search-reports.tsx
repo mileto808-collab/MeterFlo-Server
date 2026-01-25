@@ -112,8 +112,8 @@ export default function SearchReports() {
   const setSelectedProject = (value: string) => {
     setSelectedProjectState(value);
   };
-  const [selectedStatus, setSelectedStatus] = useState<string>("all");
-  const [selectedServiceType, setSelectedServiceType] = useState<string>("all");
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+  const [selectedServiceTypes, setSelectedServiceTypes] = useState<string[]>([]);
   const [filterSystemWoId, setFilterSystemWoId] = useState("");
   const [filterCustomerWoId, setFilterCustomerWoId] = useState("");
   const [filterCustomerId, setFilterCustomerId] = useState("");
@@ -258,8 +258,8 @@ export default function SearchReports() {
         const state = JSON.parse(savedState);
         setSearchQuery(state.searchQuery || "");
         setSelectedProjectState(state.selectedProject || "all");
-        setSelectedStatus(state.selectedStatus || "all");
-        setSelectedServiceType(state.selectedServiceType || "all");
+        setSelectedStatuses(state.selectedStatuses || []);
+        setSelectedServiceTypes(state.selectedServiceTypes || []);
         setIsSearchActive(state.isSearchActive || false);
         setStateRestored(true);
         // Clear the stored state after restoring
@@ -306,6 +306,32 @@ export default function SearchReports() {
   const { data: workOrderStatuses = [] } = useQuery<WorkOrderStatus[]>({
     queryKey: ["/api/work-order-statuses"],
   });
+
+  // Set default status filters for field technicians
+  // Field technicians default to showing Open, Scheduled, and Trouble statuses
+  const defaultFiltersAppliedRef = useRef(false);
+  useEffect(() => {
+    if (defaultFiltersAppliedRef.current || !user?.subroleKey || workOrderStatuses.length === 0) {
+      return;
+    }
+    
+    if (user.subroleKey === "field_technician") {
+      const defaultStatuses: string[] = [];
+      const openStatus = workOrderStatuses.find(s => s.label === "Open");
+      const scheduledStatus = workOrderStatuses.find(s => s.label === "Scheduled");
+      const troubleStatus = workOrderStatuses.find(s => s.label === "Trouble");
+      
+      if (openStatus) defaultStatuses.push(openStatus.label);
+      if (scheduledStatus) defaultStatuses.push(scheduledStatus.label);
+      if (troubleStatus) defaultStatuses.push(troubleStatus.label);
+      
+      if (defaultStatuses.length > 0) {
+        setSelectedStatuses(defaultStatuses);
+      }
+    }
+    
+    defaultFiltersAppliedRef.current = true;
+  }, [user?.subroleKey, workOrderStatuses]);
 
   const { data: systemTypes = [] } = useQuery<SystemType[]>({
     queryKey: ["/api/system-types", { projectId: selectedProject !== "all" ? selectedProject : undefined }],
@@ -390,8 +416,8 @@ export default function SearchReports() {
     const params = new URLSearchParams();
     if (searchQuery) params.append("query", searchQuery);
     if (selectedProject !== "all") params.append("projectId", selectedProject);
-    if (selectedStatus !== "all") params.append("status", selectedStatus);
-    if (selectedServiceType !== "all") params.append("serviceType", selectedServiceType);
+    if (selectedStatuses.length > 0) params.append("status", selectedStatuses.join(","));
+    if (selectedServiceTypes.length > 0) params.append("serviceType", selectedServiceTypes.join(","));
     if (filterCreatedAtFrom) params.append("dateFrom", filterCreatedAtFrom);
     if (filterCreatedAtTo) params.append("dateTo", filterCreatedAtTo);
     return params.toString();
@@ -418,8 +444,8 @@ export default function SearchReports() {
   const clearFilters = () => {
     setSearchQuery("");
     setSelectedProject("all");
-    setSelectedStatus("all");
-    setSelectedServiceType("all");
+    setSelectedStatuses([]);
+    setSelectedServiceTypes([]);
     setFilterSystemWoId("");
     setFilterCustomerWoId("");
     setFilterCustomerId("");
@@ -990,8 +1016,8 @@ export default function SearchReports() {
   // Calculate active filters
   const activeFiltersArray = [
     selectedProject !== "all",
-    selectedStatus !== "all",
-    selectedServiceType !== "all",
+    selectedStatuses.length > 0,
+    selectedServiceTypes.length > 0,
     filterSystemWoId !== "",
     filterCustomerWoId !== "",
     filterCustomerId !== "",
@@ -1278,10 +1304,10 @@ export default function SearchReports() {
               hasModules={hasModules}
               selectedProject={selectedProject}
               setSelectedProject={setSelectedProject}
-              selectedStatus={selectedStatus}
-              setSelectedStatus={setSelectedStatus}
-              selectedServiceType={selectedServiceType}
-              setSelectedServiceType={setSelectedServiceType}
+              selectedStatuses={selectedStatuses}
+              setSelectedStatuses={setSelectedStatuses}
+              selectedServiceTypes={selectedServiceTypes}
+              setSelectedServiceTypes={setSelectedServiceTypes}
               filterSystemWoId={filterSystemWoId}
               setFilterSystemWoId={setFilterSystemWoId}
               filterCustomerWoId={filterCustomerWoId}
@@ -1470,8 +1496,8 @@ export default function SearchReports() {
                               const searchState = {
                                 searchQuery,
                                 selectedProject,
-                                selectedStatus,
-                                selectedServiceType,
+                                selectedStatuses,
+                                selectedServiceTypes,
                                 isSearchActive,
                               };
                               sessionStorage.setItem('searchReportsState', JSON.stringify(searchState));
@@ -1497,8 +1523,8 @@ export default function SearchReports() {
                                     const searchState = {
                                       searchQuery,
                                       selectedProject,
-                                      selectedStatus,
-                                      selectedServiceType,
+                                      selectedStatuses,
+                                      selectedServiceTypes,
                                       isSearchActive,
                                     };
                                     sessionStorage.setItem('searchReportsState', JSON.stringify(searchState));

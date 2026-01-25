@@ -187,7 +187,7 @@ export default function ProjectWorkOrders() {
   const [autoLaunchChangeoutScope, setAutoLaunchChangeoutScope] = useState<"system" | "module" | "both">("system");
   const [hidScannerValue, setHidScannerValue] = useState<string | undefined>(undefined);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
-  const [selectedServiceType, setSelectedServiceType] = useState<string>("all");
+  const [selectedServiceTypes, setSelectedServiceTypes] = useState<string[]>([]);
   const [selectedAssignedTo, setSelectedAssignedTo] = useState<string>("all");
   const [selectedAssignedGroup, setSelectedAssignedGroup] = useState<string>("all");
   const [selectedTrouble, setSelectedTrouble] = useState<string>("all");
@@ -578,7 +578,7 @@ export default function ProjectWorkOrders() {
   useEffect(() => {
     setSearchQuery("");
     setSelectedStatuses([]);
-    setSelectedServiceType("all");
+    setSelectedServiceTypes([]);
     setShowFilters(false);
     setIsCreatingWorkOrder(false);
     // Clean up history if we had pushed a state before project change
@@ -1668,9 +1668,9 @@ export default function ProjectWorkOrders() {
       result = result.filter(wo => selectedStatuses.includes(wo.status));
     }
     
-    // Filter by service type
-    if (selectedServiceType !== "all") {
-      result = result.filter(wo => wo.serviceType === selectedServiceType);
+    // Filter by service type (multi-select)
+    if (selectedServiceTypes.length > 0) {
+      result = result.filter(wo => wo.serviceType && selectedServiceTypes.includes(wo.serviceType));
     }
     
     // Filter by assigned to user using ID
@@ -1940,7 +1940,7 @@ export default function ProjectWorkOrders() {
     }
     
     return result;
-  }, [workOrders, searchQuery, sortCriteria, selectedStatuses, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldSystemType, selectedNewSystemType, selectedOldModuleType, selectedNewModuleType, systemTypes, moduleTypes, assigneesData, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterNewSystemId, filterOldModuleId, filterNewModuleId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
+  }, [workOrders, searchQuery, sortCriteria, selectedStatuses, selectedServiceTypes, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldSystemType, selectedNewSystemType, selectedOldModuleType, selectedNewModuleType, systemTypes, moduleTypes, assigneesData, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterNewSystemId, filterOldModuleId, filterNewModuleId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
 
   const totalPages = Math.ceil(filteredAndSortedWorkOrders.length / pageSize);
   const paginatedWorkOrders = useMemo(() => {
@@ -1958,7 +1958,7 @@ export default function ProjectWorkOrders() {
   useEffect(() => {
     setCurrentPage(1);
     setSelectedWorkOrderIds(new Set());
-  }, [workOrders, searchQuery, selectedStatuses, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldSystemType, selectedNewSystemType, selectedOldModuleType, selectedNewModuleType, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterNewSystemId, filterOldModuleId, filterNewModuleId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
+  }, [workOrders, searchQuery, selectedStatuses, selectedServiceTypes, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldSystemType, selectedNewSystemType, selectedOldModuleType, selectedNewModuleType, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterNewSystemId, filterOldModuleId, filterNewModuleId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
 
   useEffect(() => {
     if (currentPage > totalPages && totalPages > 0) {
@@ -2064,7 +2064,7 @@ export default function ProjectWorkOrders() {
   const clearFilters = () => {
     setSearchQuery("");
     setSelectedStatuses([]);
-    setSelectedServiceType("all");
+    setSelectedServiceTypes([]);
     setSelectedAssignedTo("all");
     setSelectedAssignedGroup("all");
     setSelectedTrouble("all");
@@ -2103,11 +2103,11 @@ export default function ProjectWorkOrders() {
     setCurrentPage(1);
   };
 
-  const hasActiveFilters = selectedStatuses.length > 0 || selectedServiceType !== "all" || selectedAssignedTo !== "all" || selectedAssignedGroup !== "all" || selectedTrouble !== "all" || selectedOldSystemType !== "all" || selectedNewSystemType !== "all" || selectedOldModuleType !== "all" || selectedNewModuleType !== "all" || filterSystemWoId !== "" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldSystemId !== "" || filterNewSystemId !== "" || filterOldModuleId !== "" || filterNewModuleId !== "" || filterScheduledDateFrom !== "" || filterScheduledDateTo !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterScheduledBy !== "all" || filterCompletedBy !== "all" || filterCompletedAtFrom !== "" || filterCompletedAtTo !== "" || filterNotes !== "" || filterCreatedAtFrom !== "" || filterCreatedAtTo !== "" || filterUpdatedAtFrom !== "" || filterUpdatedAtTo !== "";
+  const hasActiveFilters = selectedStatuses.length > 0 || selectedServiceTypes.length > 0 || selectedAssignedTo !== "all" || selectedAssignedGroup !== "all" || selectedTrouble !== "all" || selectedOldSystemType !== "all" || selectedNewSystemType !== "all" || selectedOldModuleType !== "all" || selectedNewModuleType !== "all" || filterSystemWoId !== "" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldSystemId !== "" || filterNewSystemId !== "" || filterOldModuleId !== "" || filterNewModuleId !== "" || filterScheduledDateFrom !== "" || filterScheduledDateTo !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterScheduledBy !== "all" || filterCompletedBy !== "all" || filterCompletedAtFrom !== "" || filterCompletedAtTo !== "" || filterNotes !== "" || filterCreatedAtFrom !== "" || filterCreatedAtTo !== "" || filterUpdatedAtFrom !== "" || filterUpdatedAtTo !== "";
 
   const activeFilterCount = [
     selectedStatuses.length > 0,
-    selectedServiceType !== "all",
+    selectedServiceTypes.length > 0,
     selectedAssignedTo !== "all",
     selectedAssignedGroup !== "all",
     selectedTrouble !== "all",
@@ -3616,8 +3616,8 @@ export default function ProjectWorkOrders() {
                 setSearchQuery={setSearchQuery}
                 selectedStatuses={selectedStatuses}
                 setSelectedStatuses={setSelectedStatuses}
-                selectedServiceType={selectedServiceType}
-                setSelectedServiceType={setSelectedServiceType}
+                selectedServiceTypes={selectedServiceTypes}
+                setSelectedServiceTypes={setSelectedServiceTypes}
                 selectedAssignedTo={selectedAssignedTo}
                 setSelectedAssignedTo={setSelectedAssignedTo}
                 selectedAssignedGroup={selectedAssignedGroup}

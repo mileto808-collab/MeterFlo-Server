@@ -4702,7 +4702,12 @@ export async function registerRoutes(
           const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
           const filters: { status?: string; assignedTo?: string } = {};
           
-          if (status) filters.status = status;
+          // Handle comma-separated status values
+          const statusArray = status ? String(status).split(",").map((s: string) => s.trim()) : [];
+          // Handle comma-separated serviceType values
+          const serviceTypeArray = serviceType ? String(serviceType).split(",").map((s: string) => s.trim()) : [];
+          
+          if (statusArray.length === 1) filters.status = statusArray[0];
           if (assignedTo) filters.assignedTo = assignedTo;
           
           // Customers can only see completed work orders
@@ -4729,8 +4734,15 @@ export async function registerRoutes(
                   !matchesOldSystem && !matchesNewSystem && !matchesRoute && !matchesZone) return false;
             }
             
-            // Service type filter
-            if (serviceType && wo.serviceType !== serviceType) return false;
+            // Status filter (multi-select support)
+            if (statusArray.length > 1 && !statusArray.includes(wo.status)) return false;
+            
+            // Service type filter (multi-select support, matches both code and label)
+            if (serviceTypeArray.length > 0 && wo.serviceType) {
+              if (!serviceTypeArray.includes(wo.serviceType)) return false;
+            } else if (serviceTypeArray.length > 0 && !wo.serviceType) {
+              return false;
+            }
             
             // Old system type filter
             if (oldSystemType && (wo as any).oldSystemType !== oldSystemType) return false;

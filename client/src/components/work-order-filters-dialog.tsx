@@ -46,8 +46,8 @@ interface WorkOrderFiltersDialogProps {
   setSearchQuery: (value: string) => void;
   selectedStatuses: string[];
   setSelectedStatuses: (value: string[]) => void;
-  selectedServiceType: string;
-  setSelectedServiceType: (value: string) => void;
+  selectedServiceTypes: string[];
+  setSelectedServiceTypes: (value: string[]) => void;
   selectedAssignedTo: string;
   setSelectedAssignedTo: (value: string) => void;
   selectedAssignedGroup: string;
@@ -136,8 +136,8 @@ export function WorkOrderFiltersDialog({
   setSearchQuery,
   selectedStatuses,
   setSelectedStatuses,
-  selectedServiceType,
-  setSelectedServiceType,
+  selectedServiceTypes,
+  setSelectedServiceTypes,
   selectedAssignedTo,
   setSelectedAssignedTo,
   selectedAssignedGroup,
@@ -316,19 +316,47 @@ export function WorkOrderFiltersDialog({
                   </Button>
                 )}
               </div>
-              <div>
-                <Label htmlFor="dialog-filter-service-type">Service Type</Label>
-                <Select value={selectedServiceType} onValueChange={setSelectedServiceType}>
-                  <SelectTrigger id="dialog-filter-service-type" data-testid="dialog-select-filter-service-type">
-                    <SelectValue placeholder="All types" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Service Types</SelectItem>
-                    {serviceTypes.map((type) => (
-                      <SelectItem key={type.id} value={type.code}>{type.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="md:col-span-2">
+                <Label>Service Type</Label>
+                <div className="flex flex-wrap gap-3 mt-2">
+                  {serviceTypes.map((type) => {
+                    const isSelected = selectedServiceTypes.includes(type.code);
+                    return (
+                      <div key={type.id} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`service-type-${type.id}`}
+                          checked={isSelected}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setSelectedServiceTypes([...selectedServiceTypes, type.code]);
+                            } else {
+                              setSelectedServiceTypes(selectedServiceTypes.filter(s => s !== type.code));
+                            }
+                          }}
+                          data-testid={`checkbox-service-type-${type.code.toLowerCase().replace(/\s+/g, '-')}`}
+                        />
+                        <label
+                          htmlFor={`service-type-${type.id}`}
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                        >
+                          {type.label}
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
+                {selectedServiceTypes.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-2"
+                    onClick={() => setSelectedServiceTypes([])}
+                    data-testid="button-clear-service-type-filter"
+                  >
+                    <X className="h-3 w-3 mr-1" />
+                    Clear Service Type Filter
+                  </Button>
+                )}
               </div>
               {assigneesData && (
                 <div>
