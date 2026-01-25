@@ -163,6 +163,12 @@ export default function Landing() {
                         MeterFlo Server
                       </Link>
                     </DropdownMenuItem>
+                    <DropdownMenuItem asChild data-testid="menu-item-meterflo-mobile">
+                      <Link href="/features/meterflo-mobile">
+                        <Smartphone className="h-4 w-4 mr-2" />
+                        MeterFlo Mobile
+                      </Link>
+                    </DropdownMenuItem>
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
                 <DropdownMenuItem 

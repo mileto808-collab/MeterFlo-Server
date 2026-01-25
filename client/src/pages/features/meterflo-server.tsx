@@ -6,6 +6,7 @@ import {
   Mail, 
   Layers, 
   Server,
+  Smartphone,
   ChevronLeft
 } from "lucide-react";
 import {
@@ -86,6 +87,12 @@ export default function MeterFloServerFeatures() {
                       <Link href="/features/meterflo-server">
                         <Server className="h-4 w-4 mr-2" />
                         MeterFlo Server
+                      </Link>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild data-testid="menu-item-meterflo-mobile">
+                      <Link href="/features/meterflo-mobile">
+                        <Smartphone className="h-4 w-4 mr-2" />
+                        MeterFlo Mobile
                       </Link>
                     </DropdownMenuItem>
                   </DropdownMenuSubContent>
