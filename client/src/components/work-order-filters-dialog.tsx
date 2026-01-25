@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -43,8 +44,8 @@ interface WorkOrderFiltersDialogProps {
   setFilterSystemWoId: (value: string) => void;
   searchQuery: string;
   setSearchQuery: (value: string) => void;
-  selectedStatus: string;
-  setSelectedStatus: (value: string) => void;
+  selectedStatuses: string[];
+  setSelectedStatuses: (value: string[]) => void;
   selectedServiceType: string;
   setSelectedServiceType: (value: string) => void;
   selectedAssignedTo: string;
@@ -133,8 +134,8 @@ export function WorkOrderFiltersDialog({
   setFilterSystemWoId,
   searchQuery,
   setSearchQuery,
-  selectedStatus,
-  setSelectedStatus,
+  selectedStatuses,
+  setSelectedStatuses,
   selectedServiceType,
   setSelectedServiceType,
   selectedAssignedTo,
@@ -273,19 +274,47 @@ export function WorkOrderFiltersDialog({
             <Separator className="my-4" />
             <SectionHeader title="Status & Assignment" />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="dialog-filter-status">Status</Label>
-                <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-                  <SelectTrigger id="dialog-filter-status" data-testid="dialog-select-filter-status">
-                    <SelectValue placeholder="All statuses" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Statuses</SelectItem>
-                    {workOrderStatuses.map((status) => (
-                      <SelectItem key={status.id} value={status.label}>{status.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="md:col-span-2">
+                <Label>Status</Label>
+                <div className="flex flex-wrap gap-3 mt-2">
+                  {workOrderStatuses.map((status) => {
+                    const isSelected = selectedStatuses.includes(status.label);
+                    return (
+                      <div key={status.id} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`status-${status.id}`}
+                          checked={isSelected}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setSelectedStatuses([...selectedStatuses, status.label]);
+                            } else {
+                              setSelectedStatuses(selectedStatuses.filter(s => s !== status.label));
+                            }
+                          }}
+                          data-testid={`checkbox-status-${status.label.toLowerCase().replace(/\s+/g, '-')}`}
+                        />
+                        <label
+                          htmlFor={`status-${status.id}`}
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                        >
+                          {status.label}
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
+                {selectedStatuses.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-2"
+                    onClick={() => setSelectedStatuses([])}
+                    data-testid="button-clear-status-filter"
+                  >
+                    <X className="h-3 w-3 mr-1" />
+                    Clear Status Filter
+                  </Button>
+                )}
               </div>
               <div>
                 <Label htmlFor="dialog-filter-service-type">Service Type</Label>

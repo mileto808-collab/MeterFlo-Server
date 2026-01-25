@@ -186,7 +186,7 @@ export default function ProjectWorkOrders() {
   const [autoLaunchSystemChangeout, setAutoLaunchSystemChangeout] = useState(false);
   const [autoLaunchChangeoutScope, setAutoLaunchChangeoutScope] = useState<"system" | "module" | "both">("system");
   const [hidScannerValue, setHidScannerValue] = useState<string | undefined>(undefined);
-  const [selectedStatus, setSelectedStatus] = useState<string>("all");
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [selectedServiceType, setSelectedServiceType] = useState<string>("all");
   const [selectedAssignedTo, setSelectedAssignedTo] = useState<string>("all");
   const [selectedAssignedGroup, setSelectedAssignedGroup] = useState<string>("all");
@@ -577,7 +577,7 @@ export default function ProjectWorkOrders() {
   // Reset filters when project changes
   useEffect(() => {
     setSearchQuery("");
-    setSelectedStatus("all");
+    setSelectedStatuses([]);
     setSelectedServiceType("all");
     setShowFilters(false);
     setIsCreatingWorkOrder(false);
@@ -590,6 +590,38 @@ export default function ProjectWorkOrders() {
     setEditingWorkOrder(null);
     setCameFromSearch(false);
   }, [projectId]);
+
+  // Set default status filters for field technicians
+  // Field technicians default to showing Open, Scheduled, and Trouble statuses
+  // Track which project we last applied defaults for to reapply on project change
+  const lastAppliedProjectIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!user?.subroleKey || workOrderStatuses.length === 0 || !projectId) {
+      return;
+    }
+    
+    // Only apply defaults once per project
+    if (lastAppliedProjectIdRef.current === projectId) {
+      return;
+    }
+    
+    if (user.subroleKey === "field_technician") {
+      const defaultStatuses: string[] = [];
+      const openStatus = workOrderStatuses.find(s => s.label === "Open");
+      const scheduledStatus = workOrderStatuses.find(s => s.label === "Scheduled");
+      const troubleStatus = workOrderStatuses.find(s => s.label === "Trouble");
+      
+      if (openStatus) defaultStatuses.push(openStatus.label);
+      if (scheduledStatus) defaultStatuses.push(scheduledStatus.label);
+      if (troubleStatus) defaultStatuses.push(troubleStatus.label);
+      
+      if (defaultStatuses.length > 0) {
+        setSelectedStatuses(defaultStatuses);
+      }
+    }
+    
+    lastAppliedProjectIdRef.current = projectId;
+  }, [user?.subroleKey, workOrderStatuses, projectId]);
 
   // Handle ?edit=workOrderId&from=search query parameters OR history.state to auto-open a work order
   // This handles both deep links from search results AND browser back from Manage Attachments page
@@ -1631,9 +1663,9 @@ export default function ProjectWorkOrders() {
       });
     }
     
-    // Filter by status
-    if (selectedStatus !== "all") {
-      result = result.filter(wo => wo.status === selectedStatus);
+    // Filter by status (multi-select)
+    if (selectedStatuses.length > 0) {
+      result = result.filter(wo => selectedStatuses.includes(wo.status));
     }
     
     // Filter by service type
@@ -1908,7 +1940,7 @@ export default function ProjectWorkOrders() {
     }
     
     return result;
-  }, [workOrders, searchQuery, sortCriteria, selectedStatus, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldSystemType, selectedNewSystemType, selectedOldModuleType, selectedNewModuleType, systemTypes, moduleTypes, assigneesData, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterNewSystemId, filterOldModuleId, filterNewModuleId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
+  }, [workOrders, searchQuery, sortCriteria, selectedStatuses, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldSystemType, selectedNewSystemType, selectedOldModuleType, selectedNewModuleType, systemTypes, moduleTypes, assigneesData, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterNewSystemId, filterOldModuleId, filterNewModuleId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
 
   const totalPages = Math.ceil(filteredAndSortedWorkOrders.length / pageSize);
   const paginatedWorkOrders = useMemo(() => {
@@ -1926,7 +1958,7 @@ export default function ProjectWorkOrders() {
   useEffect(() => {
     setCurrentPage(1);
     setSelectedWorkOrderIds(new Set());
-  }, [workOrders, searchQuery, selectedStatus, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldSystemType, selectedNewSystemType, selectedOldModuleType, selectedNewModuleType, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterNewSystemId, filterOldModuleId, filterNewModuleId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
+  }, [workOrders, searchQuery, selectedStatuses, selectedServiceType, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldSystemType, selectedNewSystemType, selectedOldModuleType, selectedNewModuleType, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterNewSystemId, filterOldModuleId, filterNewModuleId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
 
   useEffect(() => {
     if (currentPage > totalPages && totalPages > 0) {
@@ -2031,7 +2063,7 @@ export default function ProjectWorkOrders() {
 
   const clearFilters = () => {
     setSearchQuery("");
-    setSelectedStatus("all");
+    setSelectedStatuses([]);
     setSelectedServiceType("all");
     setSelectedAssignedTo("all");
     setSelectedAssignedGroup("all");
@@ -2071,10 +2103,10 @@ export default function ProjectWorkOrders() {
     setCurrentPage(1);
   };
 
-  const hasActiveFilters = selectedStatus !== "all" || selectedServiceType !== "all" || selectedAssignedTo !== "all" || selectedAssignedGroup !== "all" || selectedTrouble !== "all" || selectedOldSystemType !== "all" || selectedNewSystemType !== "all" || selectedOldModuleType !== "all" || selectedNewModuleType !== "all" || filterSystemWoId !== "" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldSystemId !== "" || filterNewSystemId !== "" || filterOldModuleId !== "" || filterNewModuleId !== "" || filterScheduledDateFrom !== "" || filterScheduledDateTo !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterScheduledBy !== "all" || filterCompletedBy !== "all" || filterCompletedAtFrom !== "" || filterCompletedAtTo !== "" || filterNotes !== "" || filterCreatedAtFrom !== "" || filterCreatedAtTo !== "" || filterUpdatedAtFrom !== "" || filterUpdatedAtTo !== "";
+  const hasActiveFilters = selectedStatuses.length > 0 || selectedServiceType !== "all" || selectedAssignedTo !== "all" || selectedAssignedGroup !== "all" || selectedTrouble !== "all" || selectedOldSystemType !== "all" || selectedNewSystemType !== "all" || selectedOldModuleType !== "all" || selectedNewModuleType !== "all" || filterSystemWoId !== "" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldSystemId !== "" || filterNewSystemId !== "" || filterOldModuleId !== "" || filterNewModuleId !== "" || filterScheduledDateFrom !== "" || filterScheduledDateTo !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterScheduledBy !== "all" || filterCompletedBy !== "all" || filterCompletedAtFrom !== "" || filterCompletedAtTo !== "" || filterNotes !== "" || filterCreatedAtFrom !== "" || filterCreatedAtTo !== "" || filterUpdatedAtFrom !== "" || filterUpdatedAtTo !== "";
 
   const activeFilterCount = [
-    selectedStatus !== "all",
+    selectedStatuses.length > 0,
     selectedServiceType !== "all",
     selectedAssignedTo !== "all",
     selectedAssignedGroup !== "all",
@@ -3582,8 +3614,8 @@ export default function ProjectWorkOrders() {
                 setFilterSystemWoId={setFilterSystemWoId}
                 searchQuery={searchQuery}
                 setSearchQuery={setSearchQuery}
-                selectedStatus={selectedStatus}
-                setSelectedStatus={setSelectedStatus}
+                selectedStatuses={selectedStatuses}
+                setSelectedStatuses={setSelectedStatuses}
                 selectedServiceType={selectedServiceType}
                 setSelectedServiceType={setSelectedServiceType}
                 selectedAssignedTo={selectedAssignedTo}
