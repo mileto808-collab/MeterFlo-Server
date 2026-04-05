@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Progress } from "@/components/ui/progress";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,6 +18,7 @@ import { Upload, File, Trash2, ArrowLeft, ShieldAlert, Download, Folder, List, G
 import type { Project } from "@shared/schema";
 import { useTimezone } from "@/hooks/use-timezone";
 import { useProjectEvents } from "@/hooks/useProjectEvents";
+import { uploadFileWithChunking, type ChunkedUploadProgress } from "@/lib/chunkedUpload";
 
 type ViewMode = "list" | "thumbnail";
 
@@ -53,6 +55,7 @@ export default function ProjectFiles() {
   const [accessDeniedForProject, setAccessDeniedForProject] = useState<number | null>(null);
   const accessDenied = accessDeniedForProject === projectId;
   const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [uploadProgress, setUploadProgress] = useState<ChunkedUploadProgress | null>(null);
 
   // Subscribe to SSE events for real-time file updates
   useProjectEvents(projectId);
@@ -103,14 +106,13 @@ export default function ProjectFiles() {
     }
     
     setUploading(true);
-    const formData = new FormData();
-    formData.append("file", file);
+    setUploadProgress(null);
     
     try {
-      const response = await fetch(`/api/projects/${projectId}/files`, {
-        method: "POST",
-        body: formData,
-        credentials: "include",
+      const response = await uploadFileWithChunking({
+        file,
+        url: `/api/projects/${projectId}/files`,
+        onProgress: setUploadProgress,
       });
       
       if (response.status === 403) {
@@ -131,6 +133,7 @@ export default function ProjectFiles() {
       toast({ title: "Failed to upload file", variant: "destructive" });
     } finally {
       setUploading(false);
+      setUploadProgress(null);
     }
   };
 
@@ -264,6 +267,12 @@ export default function ProjectFiles() {
               </>
             )}
           </div>
+          {uploadProgress && (
+            <div className="mt-3 space-y-1">
+              <Progress value={uploadProgress.percent} className="h-2" />
+              <p className="text-xs text-muted-foreground">{uploadProgress.message}</p>
+            </div>
+          )}
         </CardHeader>
         <CardContent>
           {isLoading ? (

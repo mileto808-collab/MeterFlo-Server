@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Progress } from "@/components/ui/progress";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
@@ -11,6 +12,7 @@ import { Upload, File, Trash2, ArrowLeft, ShieldAlert, Download, FolderSync, Ref
 import type { Project } from "@shared/schema";
 import { useTimezone } from "@/hooks/use-timezone";
 import { useProjectEvents } from "@/hooks/useProjectEvents";
+import { uploadFileWithChunking, type ChunkedUploadProgress } from "@/lib/chunkedUpload";
 
 interface FtpFile {
   name: string;
@@ -37,6 +39,7 @@ export default function ProjectFtpFiles() {
   const [uploading, setUploading] = useState(false);
   const [accessDeniedForProject, setAccessDeniedForProject] = useState<number | null>(null);
   const accessDenied = accessDeniedForProject === projectId;
+  const [uploadProgress, setUploadProgress] = useState<ChunkedUploadProgress | null>(null);
 
   // Subscribe to SSE events for real-time file updates
   useProjectEvents(projectId);
@@ -70,14 +73,13 @@ export default function ProjectFtpFiles() {
     }
     
     setUploading(true);
-    const formData = new FormData();
-    formData.append("file", file);
+    setUploadProgress(null);
     
     try {
-      const response = await fetch(`/api/projects/${projectId}/ftp-files`, {
-        method: "POST",
-        body: formData,
-        credentials: "include",
+      const response = await uploadFileWithChunking({
+        file,
+        url: `/api/projects/${projectId}/ftp-files`,
+        onProgress: setUploadProgress,
       });
       
       if (response.status === 403) {
@@ -98,6 +100,7 @@ export default function ProjectFtpFiles() {
       toast({ title: "Failed to upload file", variant: "destructive" });
     } finally {
       setUploading(false);
+      setUploadProgress(null);
     }
   };
 
@@ -230,6 +233,12 @@ export default function ProjectFtpFiles() {
               </Button>
             </div>
           </div>
+          {uploadProgress && (
+            <div className="mt-3 space-y-1">
+              <Progress value={uploadProgress.percent} className="h-2" />
+              <p className="text-xs text-muted-foreground">{uploadProgress.message}</p>
+            </div>
+          )}
           <CardDescription>
             Upload CSV or Excel files here for scheduled import processing. The latest file in this directory will be picked up by the file import scheduler.
           </CardDescription>

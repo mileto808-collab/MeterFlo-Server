@@ -42,6 +42,7 @@ interface ChunkedUploadSession {
   receivedChunks: Map<number, Buffer>;
   clearExisting: boolean;
   createdAt: Date;
+  targetUrl?: string;
 }
 const chunkedUploadSessions = new Map<string, ChunkedUploadSession>();
 
@@ -8411,6 +8412,314 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error restoring full system backup:", error);
       res.status(500).json({ message: "Failed to restore full system backup" });
+    }
+  });
+
+  // ============================================================================
+  // GENERIC CHUNKED FILE UPLOAD ENDPOINTS
+  // These endpoints allow large files (project files, work order files, FTP files)
+  // to be uploaded in chunks to avoid reverse proxy body size limits in production
+  // ============================================================================
+
+  app.post("/api/files/chunked/init", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      if (currentUser.role === "customer") {
+        return res.status(403).json({ message: "Customers cannot upload files" });
+      }
+
+      const { fileName, totalChunks: rawTotalChunks, targetUrl } = req.body;
+
+      if (!fileName || rawTotalChunks === undefined || !targetUrl) {
+        return res.status(400).json({ message: "Missing required fields: fileName, totalChunks, targetUrl" });
+      }
+
+      const totalChunks = parseInt(rawTotalChunks);
+      if (isNaN(totalChunks) || totalChunks < 1 || totalChunks > 200) {
+        return res.status(400).json({ message: "totalChunks must be a number between 1 and 200" });
+      }
+
+      const projectFileMatch = targetUrl.match(/^\/api\/projects\/(\d+)\/files$/);
+      const woFileMatch = targetUrl.match(/^\/api\/projects\/(\d+)\/work-orders\/(\d+)\/files$/);
+      const ftpFileMatch = targetUrl.match(/^\/api\/projects\/(\d+)\/ftp-files$/);
+
+      if (!projectFileMatch && !woFileMatch && !ftpFileMatch) {
+        return res.status(400).json({ message: "Invalid target URL" });
+      }
+
+      const projectId = parseInt((projectFileMatch || woFileMatch || ftpFileMatch)![1]);
+      if (currentUser.role !== "admin") {
+        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
+        if (!isAssigned) {
+          return res.status(403).json({ message: "Forbidden" });
+        }
+      }
+
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      let activeSessionsForUser = 0;
+      for (const session of chunkedUploadSessions.values()) {
+        if (session.userId === currentUser.id && session.targetUrl) {
+          activeSessionsForUser++;
+        }
+      }
+      if (activeSessionsForUser >= 3) {
+        return res.status(429).json({ message: "Too many concurrent upload sessions. Please wait for existing uploads to complete." });
+      }
+
+      const uploadId = randomUUID();
+
+      chunkedUploadSessions.set(uploadId, {
+        userId: currentUser.id,
+        fileName,
+        totalChunks,
+        receivedChunks: new Map(),
+        clearExisting: false,
+        createdAt: new Date(),
+        targetUrl,
+      });
+
+      console.log(`[ChunkedFileUpload] Initialized session ${uploadId} for ${fileName} (${totalChunks} chunks) -> ${targetUrl}`);
+
+      res.json({
+        uploadId,
+        message: "Upload session initialized",
+        chunkSize: 5 * 1024 * 1024,
+      });
+    } catch (error) {
+      console.error("Error initializing chunked file upload:", error);
+      res.status(500).json({ message: "Failed to initialize upload" });
+    }
+  });
+
+  app.post("/api/files/chunked/chunk", isAuthenticated, chunkUpload.single("chunk"), async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const { uploadId, chunkIndex } = req.body;
+
+      if (!uploadId || chunkIndex === undefined) {
+        return res.status(400).json({ message: "Missing required fields: uploadId, chunkIndex" });
+      }
+
+      const session = chunkedUploadSessions.get(uploadId);
+      if (!session || !session.targetUrl) {
+        return res.status(404).json({ message: "Upload session not found or expired" });
+      }
+
+      if (session.userId !== currentUser.id) {
+        return res.status(403).json({ message: "Forbidden: This upload session belongs to another user" });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ message: "No chunk data provided" });
+      }
+
+      const index = parseInt(chunkIndex);
+      if (isNaN(index) || index < 0 || index >= session.totalChunks) {
+        return res.status(400).json({ message: `Invalid chunk index: ${chunkIndex}` });
+      }
+
+      let currentBytes = req.file.buffer.length;
+      for (const buf of session.receivedChunks.values()) {
+        currentBytes += buf.length;
+      }
+      const maxFileSizeValue = await storage.getSetting("max_file_size_mb");
+      const maxFileSizeMB = maxFileSizeValue ? parseInt(maxFileSizeValue) : 100;
+      if (currentBytes > maxFileSizeMB * 1024 * 1024) {
+        chunkedUploadSessions.delete(uploadId);
+        return res.status(400).json({ message: `File exceeds maximum size of ${maxFileSizeMB} MB` });
+      }
+
+      session.receivedChunks.set(index, req.file.buffer);
+
+      const receivedCount = session.receivedChunks.size;
+      const progress = Math.round((receivedCount / session.totalChunks) * 100);
+
+      console.log(`[ChunkedFileUpload] Session ${uploadId}: received chunk ${index + 1}/${session.totalChunks} (${progress}%)`);
+
+      res.json({
+        message: "Chunk received",
+        chunkIndex: index,
+        receivedChunks: receivedCount,
+        totalChunks: session.totalChunks,
+        progress,
+        complete: receivedCount === session.totalChunks,
+      });
+    } catch (error) {
+      console.error("Error uploading file chunk:", error);
+      res.status(500).json({ message: "Failed to upload chunk" });
+    }
+  });
+
+  app.post("/api/files/chunked/finalize", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      if (!currentUser) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const { uploadId } = req.body;
+
+      if (!uploadId) {
+        return res.status(400).json({ message: "Missing required field: uploadId" });
+      }
+
+      const session = chunkedUploadSessions.get(uploadId);
+      if (!session) {
+        return res.status(404).json({ message: "Upload session not found or expired" });
+      }
+
+      if (session.userId !== currentUser.id) {
+        return res.status(403).json({ message: "Forbidden: This upload session belongs to another user" });
+      }
+
+      if (session.receivedChunks.size !== session.totalChunks) {
+        return res.status(400).json({
+          message: `Incomplete upload: received ${session.receivedChunks.size} of ${session.totalChunks} chunks`
+        });
+      }
+
+      console.log(`[ChunkedFileUpload] Finalizing session ${uploadId}: assembling ${session.totalChunks} chunks`);
+
+      const chunks: Buffer[] = [];
+      for (let i = 0; i < session.totalChunks; i++) {
+        const chunk = session.receivedChunks.get(i);
+        if (!chunk) {
+          chunkedUploadSessions.delete(uploadId);
+          return res.status(400).json({ message: `Missing chunk at index ${i}` });
+        }
+        chunks.push(chunk);
+      }
+
+      const fileBuffer = Buffer.concat(chunks);
+      console.log(`[ChunkedFileUpload] Assembled file: ${fileBuffer.length} bytes from ${chunks.length} chunks`);
+
+      chunkedUploadSessions.delete(uploadId);
+
+      const targetUrl = session.targetUrl!;
+
+      const maxFileSizeValue = await storage.getSetting("max_file_size_mb");
+      const maxFileSizeMB = maxFileSizeValue ? parseInt(maxFileSizeValue) : 100;
+      const maxFileSize = maxFileSizeMB * 1024 * 1024;
+
+      if (fileBuffer.length > maxFileSize) {
+        return res.status(400).json({ message: `File exceeds maximum size of ${maxFileSizeMB} MB` });
+      }
+
+      const projectFileMatch = targetUrl.match(/^\/api\/projects\/(\d+)\/files$/);
+      const woFileMatch = targetUrl.match(/^\/api\/projects\/(\d+)\/work-orders\/(\d+)\/files$/);
+      const ftpFileMatch = targetUrl.match(/^\/api\/projects\/(\d+)\/ftp-files$/);
+
+      if (projectFileMatch) {
+        const projectId = parseInt(projectFileMatch[1]);
+
+        if (currentUser.role === "customer") {
+          return res.status(403).json({ message: "Customers cannot upload files" });
+        }
+        if (currentUser.role !== "admin") {
+          const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
+          if (!isAssigned) {
+            return res.status(403).json({ message: "Forbidden" });
+          }
+        }
+
+        const project = await storage.getProject(projectId);
+        if (!project) {
+          return res.status(404).json({ message: "Project not found" });
+        }
+
+        const allowedExtensionsValue = await storage.getSetting("allowed_extensions");
+        if (allowedExtensionsValue && allowedExtensionsValue.trim()) {
+          const allowedExts = allowedExtensionsValue.split(",").map(e => e.trim().toLowerCase());
+          const fileExt = "." + session.fileName.split(".").pop()?.toLowerCase();
+          if (!allowedExts.includes(fileExt)) {
+            return res.status(400).json({ message: `File type ${fileExt} is not allowed. Allowed types: ${allowedExtensionsValue}` });
+          }
+        }
+
+        const filePath = await saveProjectFile(project.name, project.id, session.fileName, fileBuffer);
+        emitFileAdded(projectId, undefined, currentUser?.id);
+        return res.status(201).json({ message: "File uploaded", path: filePath });
+
+      } else if (woFileMatch) {
+        const projectId = parseInt(woFileMatch[1]);
+        const workOrderId = parseInt(woFileMatch[2]);
+
+        if (currentUser.role === "customer") {
+          return res.status(403).json({ message: "Customers cannot upload files" });
+        }
+        if (currentUser.role !== "admin") {
+          const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
+          if (!isAssigned) {
+            return res.status(403).json({ message: "Forbidden" });
+          }
+        }
+
+        const project = await storage.getProject(projectId);
+        if (!project || !project.databaseName) {
+          return res.status(404).json({ message: "Project not found" });
+        }
+
+        const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
+        const workOrder = await workOrderStorage.getWorkOrder(workOrderId);
+        if (!workOrder) {
+          return res.status(404).json({ message: "Work order not found" });
+        }
+
+        const folderName = workOrder.customerWoId || String(workOrder.id);
+        const filePath = await saveWorkOrderFile(
+          project.name, project.id, folderName,
+          session.fileName, fileBuffer, workOrder.id
+        );
+        return res.status(201).json({ message: "File uploaded", path: filePath });
+
+      } else if (ftpFileMatch) {
+        const projectId = parseInt(ftpFileMatch[1]);
+
+        if (currentUser.role === "customer") {
+          return res.status(403).json({ message: "Customers cannot upload files" });
+        }
+        if (currentUser.role !== "admin") {
+          const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
+          if (!isAssigned) {
+            return res.status(403).json({ message: "Forbidden" });
+          }
+        }
+
+        const project = await storage.getProject(projectId);
+        if (!project) {
+          return res.status(404).json({ message: "Project not found" });
+        }
+
+        const allowedExtensionsSetting = await storage.getSetting("allowed_extensions");
+        const allowedExtensions = allowedExtensionsSetting ? allowedExtensionsSetting.split(",").map(e => e.trim().toLowerCase()) : [".csv", ".xlsx", ".xls", ".txt"];
+        const fileExtension = "." + session.fileName.split(".").pop()?.toLowerCase();
+
+        if (!allowedExtensions.includes(fileExtension)) {
+          return res.status(400).json({ message: `File type ${fileExtension} not allowed. Allowed: ${allowedExtensions.join(", ")}` });
+        }
+
+        const savedPath = await saveProjectFtpFile(project.name, project.id, session.fileName, fileBuffer);
+        emitFileAdded(projectId, undefined, currentUser?.id);
+        return res.status(201).json({ message: "File uploaded", path: savedPath });
+
+      } else {
+        return res.status(400).json({ message: "Unsupported target URL" });
+      }
+    } catch (error) {
+      console.error("Error finalizing chunked file upload:", error);
+      res.status(500).json({ message: "Failed to finalize upload" });
     }
   });
 

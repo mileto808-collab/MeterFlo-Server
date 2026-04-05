@@ -3,6 +3,7 @@ import { useRoute, Link, useLocation } from "wouter";
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import { Upload, File, Trash2, ArrowLeft, ShieldAlert, List, Grid, Image as ImageIcon, Download, Eye, MoreVertical } from "lucide-react";
 import type { Project } from "@shared/schema";
+import { uploadFileWithChunking, type ChunkedUploadProgress } from "@/lib/chunkedUpload";
 
 type ViewMode = "list" | "thumbnail";
 
@@ -36,6 +38,7 @@ export default function WorkOrderFiles() {
   const [accessDeniedForProject, setAccessDeniedForProject] = useState<number | null>(null);
   const accessDenied = accessDeniedForProject === projectId;
   const [viewMode, setViewMode] = useState<ViewMode>("list");
+  const [uploadProgress, setUploadProgress] = useState<ChunkedUploadProgress | null>(null);
   
   // Check if we came from work order detail dialog
   const returnTo = new URLSearchParams(window.location.search).get("returnTo");
@@ -89,14 +92,13 @@ export default function WorkOrderFiles() {
     }
     
     setUploading(true);
-    const formData = new FormData();
-    formData.append("file", file);
+    setUploadProgress(null);
     
     try {
-      const response = await fetch(`/api/projects/${projectId}/work-orders/${workOrderId}/files`, {
-        method: "POST",
-        body: formData,
-        credentials: "include",
+      const response = await uploadFileWithChunking({
+        file,
+        url: `/api/projects/${projectId}/work-orders/${workOrderId}/files`,
+        onProgress: setUploadProgress,
       });
       
       if (response.status === 403) {
@@ -106,7 +108,9 @@ export default function WorkOrderFiles() {
       }
       
       if (!response.ok) {
-        throw new Error("Upload failed");
+        const data = await response.json();
+        toast({ title: data.message || "Upload failed", variant: "destructive" });
+        return;
       }
       
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/work-orders/${workOrderId}/files`] });
@@ -115,6 +119,7 @@ export default function WorkOrderFiles() {
       toast({ title: "Failed to upload file", variant: "destructive" });
     } finally {
       setUploading(false);
+      setUploadProgress(null);
     }
   };
 
@@ -228,6 +233,12 @@ export default function WorkOrderFiles() {
             <Upload className="h-4 w-4 mr-2" />
             {uploading ? "Uploading..." : "Select File"}
           </Button>
+          {uploadProgress && (
+            <div className="mt-3 space-y-1">
+              <Progress value={uploadProgress.percent} className="h-2" />
+              <p className="text-xs text-muted-foreground">{uploadProgress.message}</p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
