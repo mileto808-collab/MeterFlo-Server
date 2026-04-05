@@ -116,7 +116,7 @@ export default function WorkOrderFiles() {
       queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/work-orders/${workOrderId}/files`] });
       toast({ title: "File uploaded successfully" });
     } catch (error) {
-      toast({ title: "Failed to upload file", variant: "destructive" });
+      toast({ title: error instanceof Error ? error.message : "Failed to upload file", variant: "destructive" });
     } finally {
       setUploading(false);
       setUploadProgress(null);
