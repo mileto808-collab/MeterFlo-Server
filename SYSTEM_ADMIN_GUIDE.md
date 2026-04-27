@@ -11,26 +11,27 @@ This guide covers the operational requirements, business logic, and configuratio
 3. [Service Types, System Types, Module Types & Trouble Codes](#service-types-system-types-module-types--trouble-codes)
 4. [Role-Based Access Control (RBAC)](#role-based-access-control-rbac)
 5. [Project-Based Access Control](#project-based-access-control)
-6. [Setting Up a New Project](#setting-up-a-new-project)
-7. [Processing a Work Order](#processing-a-work-order)
-8. [Wizard Workflow Modes](#wizard-workflow-modes)
-9. [Search Methods (Mobile / Wizard)](#search-methods-mobile--wizard)
-10. [Operational Hours & Holidays](#operational-hours--holidays)
-11. [Project Timezones](#project-timezones)
-12. [Inactive Projects](#inactive-projects)
-13. [Copy Project](#copy-project)
-14. [Scheduled File Imports](#scheduled-file-imports)
-15. [Multi-Tenancy Architecture](#multi-tenancy-architecture)
-16. [File Management](#file-management)
-17. [Database Considerations](#database-considerations)
-18. [Customer API Integration](#customer-api-integration)
-19. [Real-Time Updates](#real-time-updates)
-20. [Cloudflare Turnstile (Login Protection)](#cloudflare-turnstile-login-protection)
-21. [Backup and Restore](#backup-and-restore)
-22. [Web Application Updates](#web-application-updates)
-23. [Logging](#logging)
-24. [Best Practices](#best-practices)
-25. [Troubleshooting](#troubleshooting)
+6. [Settings Page Reference](#settings-page-reference)
+7. [Setting Up a New Project](#setting-up-a-new-project)
+8. [Processing a Work Order](#processing-a-work-order)
+9. [Wizard Workflow Modes](#wizard-workflow-modes)
+10. [Search Methods (Mobile / Wizard)](#search-methods-mobile--wizard)
+11. [Operational Hours & Holidays](#operational-hours--holidays)
+12. [Project Timezones](#project-timezones)
+13. [Inactive Projects](#inactive-projects)
+14. [Copy Project](#copy-project)
+15. [Scheduled File Imports](#scheduled-file-imports)
+16. [Multi-Tenancy Architecture](#multi-tenancy-architecture)
+17. [File Management](#file-management)
+18. [Database Considerations](#database-considerations)
+19. [Customer API Integration](#customer-api-integration)
+20. [Real-Time Updates](#real-time-updates)
+21. [Cloudflare Turnstile (Login Protection)](#cloudflare-turnstile-login-protection)
+22. [Backup and Restore](#backup-and-restore)
+23. [Web Application Updates](#web-application-updates)
+24. [Logging](#logging)
+25. [Best Practices](#best-practices)
+26. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -175,6 +176,104 @@ In addition to subrole permissions, non-admin users are restricted by their **pr
 To assign a user to a project:
 1. **Users** → click the user → **Projects** tab → add the project.
 2. Or **Projects** → edit the project → **Assigned Users** section.
+
+---
+
+## Settings Page Reference
+
+The **Settings** page is the main control surface for the whole system. It is laid out as a stack of cards, each card focused on one area of configuration. Three cards have no permission gate and are visible to every signed-in user — **Profile** and **Appearance** sit at the top of the page, and **Security** sits at the very bottom. All other cards are gated by individual permissions and only appear if the current user's subrole grants the matching permission key.
+
+The two subsections below group the cards by visibility (Account vs Administrative). Administrative cards are listed in the order they appear on the page.
+
+### Account cards (always visible)
+
+These three cards have no permission gate and appear for every signed-in user.
+
+#### Profile
+Shows the signed-in user's avatar, name, email, and current main role. The **Edit** button opens a dialog for updating first / last name, email, phone, address (street, city, state, zip), and changing the account password.
+- Permission: *(none — always visible)*
+
+#### Appearance
+Switches the UI between **Light** and **Dark** themes for the current browser. The choice is stored locally in the browser, not on the user account.
+- Permission: *(none — always visible)*
+
+#### Security
+Confirms the current session and provides a **Log Out** button. Rendered at the very bottom of the Settings page.
+- Permission: *(none — always visible)*
+
+### Administrative cards (permission-gated)
+
+These cards only render if the signed-in user's subrole includes the listed permission. Administrators always see all of them.
+
+#### Contact & Support Forms
+Sets the destination email addresses for the public **Contact Us** and **Support** forms, plus the SMTP server (host, port, user, from-address, SSL/TLS, certificate validation) used to send those emails. The SMTP password itself is read from the `SMTP_PASSWORD` secret rather than from this form.
+- Permission: `settings.contactSupport`
+
+#### Project Files Directory
+Configures the root directory used for all project file storage. Files for each project end up under `{root}/{ProjectName}_{ID}/...`. See [File Management](#file-management) and [Multi-Tenancy Architecture](#multi-tenancy-architecture) for the full directory layout.
+- Permission: `settings.projectFiles`
+
+#### File Upload Settings
+Sets the maximum allowed upload size per file and the comma-separated list of allowed file extensions. An empty extension list allows all file types.
+- Permission: `settings.fileUpload`
+
+#### Timezone
+Controls the **global** default timezone used in the UI and a master switch for whether timestamps are shown in the local zone or in UTC. Each project can override this with its own zone — see [Project Timezones](#project-timezones).
+- Permission: `settings.timezone`
+
+#### Customer API Logs
+A read-only viewer for every outbound call MeterFlo has made to a project's customer API. Includes filters by project and success/failure, and an expandable view that shows the request URL, payload, response status, response body, and any error message. See [Customer API Integration](#customer-api-integration) and [`CUSTOMER_API_INTEGRATION.md`](./CUSTOMER_API_INTEGRATION.md) for how to configure outgoing calls.
+- Permission: `settings.customerApiLogs`
+
+#### Mobile Application Updates
+Configures where the MeterFlo mobile app looks for updates. For Android, set the GitHub Releases API URL the app should poll. For iOS, choose the update source (disabled, App Store with App Store ID, or EAS Updates).
+- Permission: `settings.mobileConfig`
+
+#### Web Application Updates
+Configures the GitHub Releases API URL the web app should check, runs an on-demand update check, and previews the exact shell command to run on the server to apply an update (with a fallback hard-reset command). The card itself does not run the update — the displayed command must be executed on the server. See [Web Application Updates](#web-application-updates).
+- Permission: `settings.webUpdate`
+
+#### Security Settings
+Toggles **Cloudflare Turnstile** pre-login bot protection and stores the Turnstile site key and secret. See [Cloudflare Turnstile (Login Protection)](#cloudflare-turnstile-login-protection) for the verification flow and emergency bypass.
+- Permission: `settings.security`
+
+#### File Import History
+Cross-project log of every one-time and scheduled file import, with the date, source, file name, project, user, status, and imported / failed row counts.
+- Permission: `settings.importHistory`
+
+#### External Database Import History
+Cross-project log of every external-database import run (the SQL-source equivalent of file imports), with the same date / source / project / status / row-count columns as the file-import log.
+- Permission: `settings.dbImportHistory`
+
+#### Work Order Statuses
+Manage the global catalog of work order status codes — add custom statuses, change the displayed label and color, and pick which status is the default for new work orders. The five core statuses (Open, Closed, Completed, Scheduled, Trouble) are protected. See [Core Status Codes](#core-status-codes).
+- Permission: `settings.statuses`
+
+#### Trouble Codes
+Manage the global list of reasons a technician could not complete a changeout (e.g. "Cannot Locate Meter"). These codes are referenced from work orders with `ON DELETE RESTRICT`. See [Trouble codes](#trouble-codes).
+- Permission: `settings.troubleCodes`
+
+#### User Groups
+Define groups of users and assign projects to those groups. Group members inherit access to every project assigned to the group, which is the easiest way to grant a team access to many projects at once.
+- Permission: `settings.userGroups`
+
+#### Access Levels
+Manage **subroles** — the named bundles of permissions that drive [Role-Based Access Control (RBAC)](#role-based-access-control-rbac). Create, edit, copy, and delete subroles, and toggle individual permissions per subrole. The four built-in subroles (Administrator, Project Manager, Field Technician, Viewer) cannot be deleted.
+- Permission: `settings.accessLevels` *(also visible to any user with the admin main role)*
+
+#### Service Types
+Manage the global catalog of service types (e.g. "Water", "Electric", "Gas") that projects can enable. A project must have at least one enabled service type before it can accept work orders. See [Service types](#service-types).
+- Permission: `settings.serviceTypes`
+
+#### System Types
+Manage the global catalog of meter / system equipment models referenced by work order `old_system_type` and `new_system_type` columns. See [System types & module types](#system-types--module-types).
+- Permission: `settings.systemTypes`
+
+#### Module Types
+Manage the global catalog of radio / module equipment models referenced by work order `old_module_type` and `new_module_type` columns. See [System types & module types](#system-types--module-types).
+- Permission: `settings.moduleTypes`
+
+> Backup and restore controls live on the dedicated **Maintenance** page rather than on Settings — see [Backup and Restore](#backup-and-restore).
 
 ---
 
