@@ -12,6 +12,7 @@ This comprehensive guide walks you through deploying MeterFlo (or any Replit Nod
 4. [Clone the Project](#4-clone-the-project)
 5. [Environment Variables](#5-environment-variables)
 6. [Build the Application](#6-build-the-application)
+   - [6a. Initialize the Database Schema](#6a-initialize-the-database-schema) (fresh installs)
 7. [PM2 Process Manager Setup](#7-pm2-process-manager-setup)
 8. [Apache Reverse Proxy Configuration](#8-apache-reverse-proxy-configuration)
    - [8a. Subdirectory Deployment](#8a-subdirectory-deployment-multiple-sites-on-same-server) (e.g., `/htdocs/meterflo/`)
@@ -51,7 +52,7 @@ Before starting, ensure you have administrator access to your Windows server.
    npm --version
    ```
 
-> **Note:** MeterFlo runs on **port 3000** by default. This is configured in the PM2 ecosystem file and environment variables. Apache will reverse proxy requests to this port.
+> **Note:** This deployment configures MeterFlo to listen on **port 3000** via the PM2 ecosystem file (`PORT=3000`). The application's underlying default in `server/index.ts` is port 5000 — the PM2 config overrides that here so Apache can reverse-proxy to a non-conflicting port. If you change the port in the ecosystem file, update the Apache `ProxyPass` lines to match.
 
 ### 2.2 Install PostgreSQL
 
@@ -221,6 +222,9 @@ HOST=127.0.0.1
 PORT=3000
 DATABASE_URL=postgresql://meterflo_user:your_password@localhost:5432/meterflo
 SESSION_SECRET=generate-a-random-64-character-string-here
+# Optional - only set if you configure email sending
+# in Settings > Contact & Support Forms
+SMTP_PASSWORD=your-smtp-password
 ```
 
 **For HTTPS connections (with SSL):**
@@ -231,7 +235,14 @@ PORT=3000
 DATABASE_URL=postgresql://meterflo_user:your_password@localhost:5432/meterflo
 SESSION_SECRET=generate-a-random-64-character-string-here
 COOKIE_SECURE=true
+# Optional - only set if you configure email sending
+# in Settings > Contact & Support Forms
+SMTP_PASSWORD=your-smtp-password
 ```
+
+> **Why `HOST=127.0.0.1`:** Binding the Node listener to the loopback interface means port 3000 is reachable only from this machine. All public traffic comes through Apache on ports 80/443. Treat the firewall rule that blocks port 3000 as a fallback — `HOST=127.0.0.1` is the primary defense.
+
+> **Security:** Never commit real values for `DATABASE_URL`, `SESSION_SECRET`, or `SMTP_PASSWORD` into `deploy/ecosystem.config.cjs`. That file is checked into git. Set the real values in a `.env` file (which should be gitignored) or as Windows system environment variables. If a secret was previously committed to this file, rotate it at the source (database password, SMTP provider, etc.) — scrubbing only the working copy does not remove it from git history.
 
 ### 5.2 Cookie Security Explained
 
@@ -290,6 +301,35 @@ You should see `index.cjs` and a `public` folder.
 
 ---
 
+## 6a. Initialize the Database Schema
+
+On a brand-new database (the one you created in Section 3), the application's tables don't exist yet. The application will start without errors but every page will fail at runtime once it queries the database. You have two ways to populate the schema.
+
+### 6a.1 Option A — Push the schema with Drizzle (fresh install)
+
+This is the standard path for a clean install:
+
+```cmd
+cd C:\xampp\htdocs
+npm run db:push
+```
+
+This runs `drizzle-kit push` (defined in `package.json`) and creates every table the application needs. It reads `DATABASE_URL` from your environment, so make sure the variables from Section 5 are set in your shell before running it.
+
+If `drizzle-kit` reports that it would drop columns or tables and asks for confirmation, abort and re-check that you pointed it at an empty database — never accept destructive changes against a database that already holds work order data.
+
+### 6a.2 Option B — Restore a Clean Database Backup
+
+If you have a Clean Database Backup file (see "System Backup/Restore" in the System Admin Guide), restore it instead:
+
+```cmd
+psql -U postgres -d meterflo -f C:\path\to\clean-backup.sql
+```
+
+A Clean Database Backup includes the full schema plus the minimum configuration data needed to log in (admin user, subroles, permissions, system settings, work order statuses). After restoring, you do **not** need to run `npm run db:push`.
+
+---
+
 ## 7. PM2 Process Manager Setup
 
 ### 7.1 Create Logs Directory
@@ -301,7 +341,7 @@ mkdir logs
 
 ### 7.2 Configure PM2 Ecosystem File
 
-The file `deploy/ecosystem.config.cjs` is already configured. Verify the path matches your installation:
+The file `deploy/ecosystem.config.cjs` is already configured. Open it and confirm the values match your installation. The file ships with the root install path (`C:\xampp\htdocs`) and placeholder values for secrets:
 
 ```javascript
 module.exports = {
@@ -309,17 +349,28 @@ module.exports = {
     {
       name: 'meterflo',
       script: 'dist/index.cjs',
-      cwd: 'C:\\xampp\\htdocs',  // Adjust if your path is different
+      // Use 'C:\\xampp\\htdocs' for a root install.
+      // Use 'C:\\xampp\\htdocs\\meterflo' for a subdirectory install (Section 8a).
+      cwd: 'C:\\xampp\\htdocs',
       env: {
         NODE_ENV: 'production',
         PORT: 3000,
         HOST: '127.0.0.1',
+        // Replace YOURPASSWORD with the password from Section 3.
+        // Postgres' default port is 5432.
+        DATABASE_URL: 'postgresql://meterflo_user:YOURPASSWORD@localhost:5432/meterflo',
+        SESSION_SECRET: 'YOUR_SESSION_SECRET',
+        // Leave 'false' on HTTP. Flip to 'true' only after Section 9 (HTTPS).
+        COOKIE_SECURE: 'false',
+        // SMTP_PASSWORD: 'set-in-env-not-here',
       },
       // ... rest of config
     }
   ]
 };
 ```
+
+> **Reminder:** Prefer setting `DATABASE_URL`, `SESSION_SECRET`, and `SMTP_PASSWORD` via a `.env` file or Windows system environment variables rather than editing this file. Anything you put in `deploy/ecosystem.config.cjs` is committed to git.
 
 ### 7.3 Start the Application
 
@@ -468,6 +519,26 @@ export default defineConfig({
 
 > **Important:** The `base` path must match your subdirectory name with leading and trailing slashes.
 
+#### Also set the wouter router base path
+
+Vite's `base` only fixes asset URLs (the `<script>` and `<link>` tags in the HTML). The frontend uses [wouter](https://github.com/molefrog/wouter) for client-side routing, and wouter still thinks the app is mounted at `/`. Without a matching router base, in-app links generated by `<Link href="/work-orders">` will navigate to `/work-orders` instead of `/meterflo/work-orders`, the browser will hit Apache's root rules instead of the proxy, and you'll see 404s or the wrong site.
+
+Edit `client/src/App.tsx` (or wherever the top-level `<Router>` lives) and pass the matching `base` prop:
+
+```typescript
+import { Router } from "wouter";
+
+// At the root of your app:
+<Router base="/meterflo">
+  {/* ...routes... */}
+</Router>
+```
+
+Notes:
+- The wouter `base` does **not** include a trailing slash (use `/meterflo`, not `/meterflo/`). The Vite `base` does (use `/meterflo/`). This asymmetry is by design in each library.
+- Keep the two values in sync. If you change the subdirectory name, update both files.
+- Rebuild after the change (Section 8a.9).
+
 ### 8a.3 Update PM2 Ecosystem Configuration
 
 Edit `deploy/ecosystem.config.cjs` to update the working directory:
@@ -596,7 +667,7 @@ app.use('/meterflo', router);
 
 > **Recommendation:** Use the path-stripping approach (Section 8a.4) as it requires no code changes.
 
-### 8a.6 HTTPS Configuration for Subdirectory
+### 8a.7 HTTPS Configuration for Subdirectory
 
 For SSL/HTTPS with subdirectory deployment, update your VirtualHost:
 
@@ -638,7 +709,7 @@ For SSL/HTTPS with subdirectory deployment, update your VirtualHost:
 </VirtualHost>
 ```
 
-### 8a.7 Environment Variables for Subdirectory
+### 8a.8 Environment Variables for Subdirectory
 
 Your `.env` file or Windows System Environment Variables remain the same as a standard installation:
 
@@ -652,7 +723,7 @@ SESSION_SECRET=your-secret-key
 
 > **Note:** No special environment variables are needed for subdirectory deployment. Apache handles the path prefix stripping, so the Node.js server runs identically to a root installation.
 
-### 8a.8 Rebuild and Restart
+### 8a.9 Rebuild and Restart
 
 After making these changes:
 
@@ -667,27 +738,29 @@ Restart Apache:
 C:\xampp\apache\bin\httpd.exe -k restart
 ```
 
-### 8a.9 Verify Subdirectory Setup
+### 8a.10 Verify Subdirectory Setup
 
 1. **Test MeterFlo**: Open `http://localhost/meterflo/` - should show login page
 2. **Test other sites**: Open `http://localhost/` - should show htdocs index
 3. **Test API**: Open `http://localhost/meterflo/api/health` - should return OK
 
-### 8a.10 Troubleshooting Subdirectory Issues
+### 8a.11 Troubleshooting Subdirectory Issues
 
 | Issue | Solution |
 |-------|----------|
 | **404 on static assets** | Verify `base` in vite.config.ts matches your subdirectory |
 | **API calls fail** | Check ProxyPass has correct trailing slashes |
-| **Login redirect loops** | Ensure session cookie path is set correctly |
+| **Login redirect loops** | With the path-stripping config in Section 8a.4, the session cookie path can stay at the default `/` — no extra config needed. If you still get loops, you almost always have `COOKIE_SECURE=true` set while accessing over HTTP. Set it to `false` until HTTPS is configured (see Section 5.2 / 9.6), and confirm the browser is actually receiving and sending the `connect.sid` cookie via DevTools > Application > Cookies. |
 | **CSS/JS not loading** | Rebuild after changing vite.config.ts base path |
+| **In-app links go to the wrong URL** | The wouter router `base` is missing or doesn't match the Vite base — see Section 8a.2 |
 | **Apache shows "Forbidden"** | Check Directory permissions in httpd.conf |
 
-### 8a.11 Files Changed Summary
+### 8a.12 Files Changed Summary
 
 | File | Change |
 |------|--------|
 | `vite.config.ts` | Add `base: "/meterflo/"` for correct asset URLs |
+| `client/src/App.tsx` | Add matching `base="/meterflo"` on the wouter `<Router>` |
 | `deploy/ecosystem.config.cjs` | Update `cwd` path to subdirectory location |
 | `C:\xampp\apache\conf\httpd.conf` | Add ProxyPass for subdirectory with path stripping |
 
@@ -759,13 +832,13 @@ Edit `C:\xampp\apache\conf\extra\httpd-vhosts.conf` and add:
     
     # Reverse proxy to Node.js app
     ProxyPreserveHost On
-    ProxyPass / http://localhost:3000/
-    ProxyPassReverse / http://localhost:3000/
+    ProxyPass / http://127.0.0.1:3000/
+    ProxyPassReverse / http://127.0.0.1:3000/
     
     # WebSocket support for SSE
     RewriteEngine On
     RewriteCond %{HTTP:Upgrade} websocket [NC]
-    RewriteRule /(.*) ws://localhost:3000/$1 [P,L]
+    RewriteRule /(.*) ws://127.0.0.1:3000/$1 [P,L]
     
     # SSE support
     ProxyTimeout 600
@@ -773,7 +846,7 @@ Edit `C:\xampp\apache\conf\extra\httpd-vhosts.conf` and add:
 </VirtualHost>
 ```
 
-> **Note:** Replace `192.168.1.152` with your server's IP address and `3000` with your Node.js port.
+> **Note:** Replace `192.168.1.152` with your server's IP address and `3000` with your Node.js port. Keep the upstream URL as `127.0.0.1` (not `localhost`) to skip the DNS / IPv6 resolution step on Windows.
 
 ---
 
@@ -838,13 +911,13 @@ Edit `C:\xampp\apache\conf\extra\httpd-vhosts.conf`:
     
     # Reverse proxy to Node.js app
     ProxyPreserveHost On
-    ProxyPass / http://localhost:3000/
-    ProxyPassReverse / http://localhost:3000/
+    ProxyPass / http://127.0.0.1:3000/
+    ProxyPassReverse / http://127.0.0.1:3000/
     
     # WebSocket support for SSE
     RewriteEngine On
     RewriteCond %{HTTP:Upgrade} websocket [NC]
-    RewriteRule /(.*) ws://localhost:3000/$1 [P,L]
+    RewriteRule /(.*) ws://127.0.0.1:3000/$1 [P,L]
     
     # SSE support
     ProxyTimeout 600
@@ -1039,19 +1112,31 @@ npm install
 npx tsx script/build.ts
 ```
 
-### 10.5 Restart the Application
+### 10.5 Apply Database Schema Changes (when required)
+
+If the release notes call out a schema change (new tables, new columns, dropped columns), run:
+
+```cmd
+npm run db:push
+```
+
+against the production database before restarting PM2. If a release does not mention schema changes, you can skip this step. Always take a database backup first when running schema changes against production data — see "System Backup/Restore" in the System Admin Guide.
+
+### 10.6 Restart the Application
 
 ```cmd
 pm2 restart meterflo
 ```
 
-### 10.6 Quick Update Command (All-in-One)
+### 10.7 Quick Update Command (All-in-One)
 
 ```cmd
 cd C:\xampp\htdocs && git pull origin main && npm install && npx tsx script/build.ts && pm2 restart meterflo
 ```
 
-### 10.7 Troubleshooting Git Issues
+> Add `&& npm run db:push` before `&& pm2 restart meterflo` only when the release notes call for a schema change.
+
+### 10.8 Troubleshooting Git Issues
 
 > **Important**: Before running any `git reset --hard` command, always back up your entire htdocs folder. This command will overwrite ALL files.
 
@@ -1325,24 +1410,31 @@ pm2 logs meterflo --lines 50
 
 ## Security Recommendations
 
-1. **Use HTTPS in Production**
+1. **Never commit secrets to `deploy/ecosystem.config.cjs`**
+   - That file is committed to git. Anything you put in it (database passwords, `SESSION_SECRET`, `SMTP_PASSWORD`, API keys, etc.) ends up in the repository history forever, even if you later delete it.
+   - Set real values via a `.env` file at the install root (and add `.env` to `.gitignore`) or as Windows system environment variables.
+   - If a secret was committed in the past, rotate it at the source — change the database password in PostgreSQL, generate a new `SESSION_SECRET`, and reset the SMTP password at your mail provider. Scrubbing the working copy does not undo the leak.
+   - Audit git history with `git log -p deploy/ecosystem.config.cjs` to confirm what was previously exposed and decide whether to rewrite history (a destructive operation that requires coordination with anyone else who has cloned the repo).
+
+2. **Use HTTPS in Production**
    - Get a proper SSL certificate
    - Set `COOKIE_SECURE=true`
    - Redirect HTTP to HTTPS
 
-2. **Firewall Configuration**
-   - Block external access to port 3000
-   - Only allow ports 80 (HTTP) and 443 (HTTPS)
+3. **Firewall Configuration**
+   - Bind the Node listener to `127.0.0.1` (`HOST=127.0.0.1`) so port 3000 is unreachable from the network — this is the primary defense.
+   - Block external access to port 3000 at the firewall as a fallback.
+   - Only allow ports 80 (HTTP) and 443 (HTTPS) inbound.
 
-3. **Strong Passwords**
+4. **Strong Passwords**
    - Use complex passwords for PostgreSQL and SESSION_SECRET
-   - Store passwords securely
+   - Store passwords securely (`.env` file or Windows credential store, never in committed config files)
 
-4. **Regular Backups**
+5. **Regular Backups**
    - Use the built-in backup feature in the application's Maintenance page
    - Also schedule PostgreSQL backups via Windows Task Scheduler
 
-5. **Keep Software Updated**
+6. **Keep Software Updated**
    - Regularly update Node.js, PostgreSQL, and Apache
    - Pull application updates from Replit
 
@@ -1352,19 +1444,20 @@ pm2 logs meterflo --lines 50
 
 ### First-Time Setup (in order)
 ```cmd
-1. Install Node.js, PostgreSQL, Git, XAMPP
-2. npm install -g pm2 pm2-windows-startup
-3. Create PostgreSQL database and user
-4. git clone <repo-url> C:\xampp\htdocs
-5. cd C:\xampp\htdocs && npm install
-6. Set environment variables
-7. npx tsx script/build.ts
-8. mkdir logs
-9. pm2 start deploy/ecosystem.config.cjs
-10. pm2 save && pm2-startup install
-11. Configure Apache proxy in httpd.conf
-12. Restart Apache
-13. Test at http://localhost
+1.  Install Node.js, PostgreSQL, Git, XAMPP
+2.  npm install -g pm2 pm2-windows-startup
+3.  Create PostgreSQL database and user
+4.  git clone <repo-url> C:\xampp\htdocs
+5.  cd C:\xampp\htdocs && npm install
+6.  Set environment variables (Section 5)
+7.  npx tsx script/build.ts
+8.  npm run db:push          REM initialize the database schema (Section 6a)
+9.  mkdir logs
+10. pm2 start deploy/ecosystem.config.cjs
+11. pm2 save && pm2-startup install
+12. Configure Apache proxy in httpd.conf
+13. Restart Apache
+14. Test at http://localhost
 ```
 
 ### After Code Updates
@@ -1373,6 +1466,7 @@ cd C:\xampp\htdocs
 git pull origin main
 npm install
 npx tsx script/build.ts
+REM npm run db:push        (only if release notes mention a schema change)
 pm2 restart meterflo
 ```
 
