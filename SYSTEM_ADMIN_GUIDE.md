@@ -801,8 +801,121 @@ Optional pre-login bot protection. When enabled, users must complete a Turnstile
 
 - Configured under **Settings** → **Security Settings**.
 - Successful verification is stored in a signed cookie (`turnstile_verified`, 24-hour expiry), with session storage as a fallback.
-- **Emergency bypass:** set environment variable `TURNSTILE_EMERGENCY_BYPASS=true` to disable Turnstile without database access — useful if you get locked out.
-- **Windows / reverse proxy notes:** ensure `COOKIE_SECURE=true` if serving over HTTPS, and that the proxy forwards cookies. Verification loops usually mean cookies are being dropped.
+- **Emergency bypass:** set environment variable `TURNSTILE_EMERGENCY_BYPASS=true` to disable Turnstile without database access — useful if you get locked out. See [Recovery & Troubleshooting](#recovery--troubleshooting) below.
+- **Windows / reverse proxy notes:** ensure `COOKIE_SECURE=true` if serving over HTTPS, and that the proxy forwards cookies. Verification loops usually mean cookies are being dropped — see the troubleshooting note below before assuming Turnstile itself is at fault.
+
+### Recovery & Troubleshooting
+
+If Turnstile is misconfigured (bad site key, bad secret, blocked Cloudflare script, dropped cookies behind a proxy, etc.) every browser-based login can fail and lock administrators out of the system. There are two ways out, and either one is enough on its own.
+
+> **Verification loop?** If users complete the challenge but get sent back to it again immediately, the problem is almost always cookies being dropped between the browser and the server (HTTPS without `COOKIE_SECURE=true`, a reverse proxy not forwarding cookies, or `SameSite` issues). Fix that first before assuming Turnstile is broken. The recovery methods below are for when you genuinely cannot get past the challenge.
+
+#### Method A — Emergency environment-variable bypass
+
+Setting `TURNSTILE_EMERGENCY_BYPASS=true` makes the Turnstile gate / status checks report "no challenge required", regardless of what the database says. The mobile app already bypasses Turnstile, so this only affects the web login.
+
+The Node process reads `process.env` at startup, so **the app must be restarted after changing the variable**. After you regain access and clean the configuration up, remove the variable and restart again so production goes back to normal.
+
+##### Windows server (PM2)
+
+1. Open `ecosystem.config.cjs` in the MeterFlo install folder.
+2. In the `env` block of the `meterflo` app, add the variable:
+
+   ```js
+   module.exports = {
+     apps: [
+       {
+         name: "meterflo",
+         script: "dist/index.js",
+         env: {
+           NODE_ENV: "production",
+           // ... existing variables ...
+           TURNSTILE_EMERGENCY_BYPASS: "true",
+         },
+       },
+     ],
+   };
+   ```
+3. Save the file, then restart from an Administrator PowerShell or Command Prompt:
+
+   ```powershell
+   pm2 restart meterflo --update-env
+   ```
+
+##### Linux server (PM2 or systemd)
+
+If you run MeterFlo with PM2, follow the same steps as the Windows section — edit `ecosystem.config.cjs`, then:
+
+```bash
+pm2 restart meterflo --update-env
+```
+
+If you run MeterFlo as a `systemd` service, edit the unit file (typically `/etc/systemd/system/meterflo.service`) and add the variable to the `[Service]` section:
+
+```ini
+[Service]
+Environment=TURNSTILE_EMERGENCY_BYPASS=true
+```
+
+Then reload and restart:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart meterflo
+```
+
+If the service uses an `EnvironmentFile=` instead, add `TURNSTILE_EMERGENCY_BYPASS=true` to that file and run the same `daemon-reload` + `restart` pair.
+
+##### Replit
+
+1. Open the **Secrets** pane in the workspace.
+2. Add a new secret with **Key** = `TURNSTILE_EMERGENCY_BYPASS` and **Value** = `true`.
+3. Restart the **Start application** workflow so the new value is picked up.
+
+#### Method B — Disable Turnstile directly in the database
+
+The on/off switch for Turnstile is stored as a row in the `public.system_settings` table with `key = 'turnstile_enabled'`. Setting that row's `value` to `'false'` turns Turnstile off immediately on the next request — no app restart is required, and the change persists across deploys.
+
+The exact SQL is the same on every platform:
+
+```sql
+UPDATE public.system_settings
+SET value = 'false'
+WHERE key = 'turnstile_enabled';
+```
+
+##### Windows server (pgAdmin)
+
+1. Open **pgAdmin** and connect to the MeterFlo PostgreSQL database.
+2. Right-click the database → **Query Tool**.
+3. Paste and run the `UPDATE` statement above.
+4. Confirm the row count is `1` and commit (pgAdmin commits automatically when the query succeeds).
+5. Reload the login page in the browser — the Turnstile challenge should be gone.
+
+##### Linux server (psql or pgAdmin)
+
+Either use pgAdmin exactly as above, or connect with `psql` from the shell:
+
+```bash
+psql "$DATABASE_URL" -c "UPDATE public.system_settings SET value='false' WHERE key='turnstile_enabled';"
+```
+
+(If the database is on a different host or you do not have `DATABASE_URL` exported, substitute the full connection string.)
+
+##### Replit
+
+1. Open the database query tool from the workspace tools sidebar (or run `psql "$DATABASE_URL"` in the Shell).
+2. Run the same `UPDATE` statement shown above.
+3. Reload the login page.
+
+#### After you regain access
+
+Once you can sign in, clean up so production stops running in bypass mode:
+
+1. Sign in as `admin`.
+2. Go to **Settings** → **Security Settings** and either turn Turnstile off cleanly (toggle and save) or fix the bad site key / secret and confirm a normal login works in a private browser window.
+3. If you used Method A (env-var bypass), remove `TURNSTILE_EMERGENCY_BYPASS` from the place you set it (PM2 ecosystem file, systemd unit, or Replit Secrets) and restart the app one more time so the bypass is no longer active.
+4. If you used Method B (database edit) and you do want Turnstile on, re-enable it from **Settings** → **Security Settings** rather than flipping the row back manually — the UI also re-checks the site key and secret are present.
 
 ---
 
