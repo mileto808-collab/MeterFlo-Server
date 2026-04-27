@@ -271,7 +271,7 @@ The `data` JSON body uses these field names (all optional unless noted; field na
 | `completionNotes` | string | Free-text completion notes. |
 | `signatureData` | string | Base64-encoded signature image. |
 | `signatureName` | string | The name typed/printed alongside the signature. |
-| `photoTypes` | string[] | **Required when `photos` are sent.** Array with one entry per `photos` file, in the same order. Allowed values: `"before"`, `"after"`, `"trouble"`. The server validates that lengths match. |
+| `photoTypes` | string[] | **Treat as required when `photos` are sent** — this is a client contract the mobile app must honor. (Server-side, validation only fires when `photoTypes` is present *and* an array; if it is missing the server skips the check, which can lead to mistagged photos. Always send it.) Array with one entry per `photos` file, in the same order. Allowed values: `"before"`, `"after"`, `"trouble"`. |
 | `changeoutScope` | string | `"system"`, `"module"`, or `"both"`. |
 | `isReadingOnly` | boolean | `true` when the user is in reading-only mode. |
 
@@ -572,6 +572,8 @@ The server allows **reading** project and work order data on inactive projects, 
 | `GET /api/projects/:projectId/work-orders/:workOrderId` | Allowed |
 | `POST /api/projects/:projectId/work-orders` | **403** — `"Cannot create work orders on inactive projects"` |
 | `PATCH /api/projects/:projectId/work-orders/:workOrderId` | **403** — `"Cannot edit work orders on inactive projects"` |
+| `POST .../work-orders/:id/system-changeout` | **Not currently blocked server-side.** The mobile app should still treat inactive projects as off-limits and prevent users from reaching the wizard in the first place. |
+| `POST .../work-orders/:id/time-tracking` | **Not currently blocked server-side** (it is purely a metrics write). Same client-side guidance as above. |
 | Scheduled FTP / database imports | Skipped automatically |
 
 ### 8.1 Check Project Status
