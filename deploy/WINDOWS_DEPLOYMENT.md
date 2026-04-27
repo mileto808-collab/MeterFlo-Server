@@ -341,7 +341,7 @@ mkdir logs
 
 ### 7.2 Configure PM2 Ecosystem File
 
-The file `deploy/ecosystem.config.cjs` is already configured. Open it and confirm the values match your installation. The file ships with the root install path (`C:\xampp\htdocs`) and placeholder values for secrets:
+The file `deploy/ecosystem.config.cjs` is already configured. Open it and confirm the values match your installation. The file ships with the root install path (`C:\xampp\htdocs`) and only the non-secret values in `env`. Database, session, and SMTP secrets are read from your `.env` file or Windows system environment variables (Section 5):
 
 ```javascript
 module.exports = {
@@ -356,13 +356,11 @@ module.exports = {
         NODE_ENV: 'production',
         PORT: 3000,
         HOST: '127.0.0.1',
-        // Replace YOURPASSWORD with the password from Section 3.
-        // Postgres' default port is 5432.
-        DATABASE_URL: 'postgresql://meterflo_user:YOURPASSWORD@localhost:5432/meterflo',
-        SESSION_SECRET: 'YOUR_SESSION_SECRET',
         // Leave 'false' on HTTP. Flip to 'true' only after Section 9 (HTTPS).
         COOKIE_SECURE: 'false',
-        // SMTP_PASSWORD: 'set-in-env-not-here',
+        // DATABASE_URL, SESSION_SECRET, and SMTP_PASSWORD are intentionally
+        // omitted here — they are read from .env / Windows system env vars.
+        // See the "IMPORTANT" comment block in the file before adding any.
       },
       // ... rest of config
     }
@@ -370,7 +368,7 @@ module.exports = {
 };
 ```
 
-> **Reminder:** Prefer setting `DATABASE_URL`, `SESSION_SECRET`, and `SMTP_PASSWORD` via a `.env` file or Windows system environment variables rather than editing this file. Anything you put in `deploy/ecosystem.config.cjs` is committed to git.
+> **Why secrets are not in this snippet:** PM2's `env` block **overrides** values inherited from `.env` or Windows system environment variables. So if `DATABASE_URL` is listed in both your `.env` file and the PM2 `env` block, the PM2 value wins. Leaving the secret keys *out* of `env` is the only way to make `.env` / system env vars actually take effect. The shipped file already has those keys commented out — leave them that way.
 
 ### 7.3 Start the Application
 

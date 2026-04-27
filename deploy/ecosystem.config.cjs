@@ -42,23 +42,30 @@ module.exports = {
       cwd: 'C:\\xampp\\htdocs',
 
       // Environment variables
+      //
+      // IMPORTANT: anything declared in this `env` block OVERRIDES values
+      // inherited from the parent shell, a `.env` file, or Windows system
+      // environment variables. So if you want to keep secrets out of this
+      // file (recommended), do NOT add `DATABASE_URL`, `SESSION_SECRET`,
+      // or `SMTP_PASSWORD` keys here at all — leave them commented out
+      // and set them via `.env` or Windows system env vars instead.
+      // Only the non-secret values (NODE_ENV/PORT/HOST/COOKIE_SECURE)
+      // are set here.
       env: {
         NODE_ENV: 'production',
         PORT: 3000,
         HOST: '127.0.0.1',
-        // Database connection - UPDATE THIS with your PostgreSQL credentials.
-        // PostgreSQL's default port is 5432.
-        DATABASE_URL: 'postgresql://meterflo_user:YOURPASSWORD@localhost:5432/meterflo',
-        // Session secret - UPDATE THIS with a random 64-character string
-        // (see Section 5.4 of WINDOWS_DEPLOYMENT.md to generate one).
-        SESSION_SECRET: 'YOUR_SESSION_SECRET',
         // Cookie security - leave as 'false' for HTTP. Flip to 'true' ONLY after
         // HTTPS is configured (see Section 9). Setting 'true' on HTTP will
         // silently break login because browsers will not send the session cookie.
         COOKIE_SECURE: 'false',
-        // SMTP password - only required if Settings > Contact & Support Forms is
-        // configured to send email. Set this via .env or Windows system env vars,
-        // not in this file.
+        // The following are intentionally commented out so the values from
+        // your `.env` file or Windows system environment variables are used.
+        // Uncomment ONLY if you have no other way to set them — and remember
+        // that anything you put here is committed to git.
+        //
+        // DATABASE_URL: 'postgresql://meterflo_user:YOURPASSWORD@localhost:5432/meterflo',
+        // SESSION_SECRET: 'YOUR_SESSION_SECRET',
         // SMTP_PASSWORD: 'set-in-env-not-here',
       },
 
