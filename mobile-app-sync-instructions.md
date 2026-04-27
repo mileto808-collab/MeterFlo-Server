@@ -29,10 +29,11 @@ All endpoints require an authenticated session cookie unless otherwise noted.
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
-| POST | `/api/auth/local/login` | Username/password login (mobile bypasses Cloudflare Turnstile) |
+| POST | `/api/auth/local/login` | Username/password login. The mobile client should always use this endpoint — it bypasses Cloudflare Turnstile. |
 | GET | `/api/auth/user` | Returns the current authenticated user (use to verify session) |
-| GET | `/api/login` | Replit OIDC web login flow (web only) |
 | GET | `/api/logout` | End the current session |
+
+> The web app's Replit OIDC login flow is registered by the framework (not by an explicit `/api/login` route in `server/routes.ts`) and is not used by the mobile app.
 
 ### 1.2 Project Configuration
 
@@ -54,9 +55,12 @@ Cache these settings locally and refresh periodically to ensure updated policies
 | GET | `/api/projects/:projectId/work-orders` | List work orders (supports search/filter query params) |
 | GET | `/api/projects/:projectId/work-orders/:workOrderId` | Fetch a single work order |
 | POST | `/api/projects/:projectId/work-orders` | Create a work order (blocked on inactive projects) |
-| PATCH | `/api/projects/:projectId/work-orders/:workOrderId` | Update / submit a completed work order (blocked on inactive projects) |
+| PATCH | `/api/projects/:projectId/work-orders/:workOrderId` | Update general work order fields, e.g. assign / reschedule (blocked on inactive projects) |
+| POST | `/api/projects/:projectId/work-orders/:workOrderId/system-changeout` | **Submit the wizard.** This is the single endpoint for both successful changeouts (`canChange: true`) and trouble reports (`canChange: false`). Multipart request; see Section 3.4. |
 
-Time tracking is **not** part of this payload — it has its own endpoints (Section 5).
+> **Important:** the wizard does *not* submit through `PATCH .../work-orders/:workOrderId`. It uses the multipart `POST .../system-changeout` endpoint for both the success path and the trouble path. The PATCH endpoint is reserved for general edits like assignment, scheduling, status changes, etc.
+
+Time tracking is **not** part of either of these payloads — it has its own endpoints (Section 5).
 
 ### 1.4 Time Tracking
 
@@ -232,6 +236,54 @@ Present a selection modal when the technician starts a work order:
 - If "Complete Changeout" → Follow Changeout Mode flow (apply `changeoutEquipmentType`)
 - If "Capture Reading Only" → Follow Reading Only Mode flow (apply `readingEquipmentType`)
 
+### 3.4 Wizard Submission Contract (changeout, reading-only, AND trouble)
+
+All three paths submit through the same endpoint:
+
+```
+POST /api/projects/:projectId/work-orders/:workOrderId/system-changeout
+Content-Type: multipart/form-data
+```
+
+The request has exactly two kinds of parts:
+
+| Part | Repeats | Description |
+|------|---------|-------------|
+| `photos` | 0–20 | Binary image files. Their *order* is the source of truth — the matching `photoTypes` entries below identify each one. |
+| `data` | 1 | A single JSON-encoded string with all the structured fields below. |
+
+The `data` JSON body uses these field names (all optional unless noted; field names match the server exactly):
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `canChange` | boolean | **Required.** `true` for the success path (changeout or reading-only). `false` for the trouble path. |
+| `troubleCode` | string \| null | Trouble code value selected from `/api/trouble-codes`. Used when `canChange === false`. |
+| `troubleNote` | string | Free-text trouble note. **Singular** — the field is `troubleNote`, not `troubleNotes`. |
+| `oldSystemReading` | string | Captured pre-changeout reading. |
+| `oldModuleReading` | string | Captured pre-changeout module reading. |
+| `newSystemId` | string | New system identifier (in reading-only mode, set this equal to the old system id). |
+| `newSystemReading` | string | Reading on the new system / current reading in reading-only mode. |
+| `newModuleId` | string | New module identifier (in reading-only mode, set this equal to the old module id). |
+| `newModuleReading` | string | Reading on the new module / current reading in reading-only mode. |
+| `newSystemType` | string | System type for the new equipment. |
+| `newModuleType` | string | Module type for the new equipment. |
+| `gpsCoordinates` | object | `{ latitude, longitude, accuracy }` or `null` if GPS is disabled or on the trouble path. |
+| `completionNotes` | string | Free-text completion notes. |
+| `signatureData` | string | Base64-encoded signature image. |
+| `signatureName` | string | The name typed/printed alongside the signature. |
+| `photoTypes` | string[] | **Required when `photos` are sent.** Array with one entry per `photos` file, in the same order. Allowed values: `"before"`, `"after"`, `"trouble"`. The server validates that lengths match. |
+| `changeoutScope` | string | `"system"`, `"module"`, or `"both"`. |
+| `isReadingOnly` | boolean | `true` when the user is in reading-only mode. |
+
+Photo packing rule used by the web app — mobile should mirror this:
+
+```
+canChange === true   → pack beforePhotos as "before" then afterPhotos as "after"
+canChange === false  → pack troublePhotos as "trouble"
+```
+
+In other words, there is no separate `troublePhotos` field on the wire — trouble photos travel inside the same `photos` multipart array, tagged via `photoTypes`.
+
 ---
 
 ## 4. Search Method Configuration
@@ -338,10 +390,13 @@ Capture `endTime` when the work order is **successfully submitted**, then POST t
 
 ```javascript
 const handleSubmit = async () => {
-  // 1. Submit the work order itself (no time fields here)
-  await api.patch(
-    `/api/projects/${projectId}/work-orders/${workOrderId}`,
-    workOrderData
+  // 1. Submit the wizard via the multipart system-changeout endpoint
+  //    (handles BOTH success and trouble paths — see Section 3.4).
+  //    No time fields go in this payload.
+  const formData = buildSystemChangeoutFormData(submitData); // includes "photos" + "data"
+  await fetch(
+    `/api/projects/${projectId}/work-orders/${workOrderId}/system-changeout`,
+    { method: "POST", body: formData, credentials: "include" }
   );
 
   // 2. Save time tracking as a separate call
@@ -620,37 +675,41 @@ const getLabel = (key) => {
 
 ## 10. Trouble / "Report Issue" Path
 
-When the technician taps **"No - Report Issue"** at the confirmation step, the wizard takes a separate path. The mobile app must implement this flow in addition to the success path.
+When the technician taps **"No - Report Issue"** at the confirmation step, the wizard takes a different in-app path but submits through the **same** `POST .../system-changeout` endpoint described in Section 3.4. The only thing that changes on the wire is the contents of the `data` JSON and which photos are tagged.
 
-### 10.1 Flow
+### 10.1 In-App Flow
 
-1. **Trouble Code Selection** — Pull from `GET /api/trouble-codes` and present the available codes for selection.
-2. **Trouble Notes** — Free-text field (optional) describing the issue.
-3. **Trouble Photos** — Optional photo capture documenting the problem.
-4. **Review & Submit** — Submit the work order with the trouble information attached.
+1. **Trouble Code Selection** — Pull from `GET /api/trouble-codes` and present the available codes for selection. At least one trouble code is required to submit (matches `canProceed` in `system-changeout-wizard.tsx`).
+2. **Trouble Photos** — At least one trouble photo is required (the wizard enforces `troublePhotos.length >= 1`).
+3. **Trouble Note** — Optional free-text note describing the issue.
+4. **Review & Submit**.
 
-### 10.2 Submission Payload
+### 10.2 What Changes in the Submission
 
-The work order PATCH should include:
+Use the contract in Section 3.4 with the following adjustments:
 
-| Field | Description |
-|-------|-------------|
-| `troubleCode` | The selected trouble code value |
-| `troubleNotes` | Optional free-text notes |
-| `troublePhotos` | Photo files (uploaded via the file endpoints in Section 1.5 / Section 11) |
+| Field | Trouble path value |
+|-------|--------------------|
+| `canChange` | `false` |
+| `troubleCode` | The selected trouble code (required) |
+| `troubleNote` | Optional free-text note. **Singular field name (`troubleNote`).** |
+| `photoTypes` | One `"trouble"` entry per uploaded photo (the trouble photos travel inside the same `photos` multipart array — there is no separate `troublePhotos` field on the wire) |
+| `gpsCoordinates` | Send `null` (see 10.4) |
+| `signatureData` / `signatureName` | Not required |
+| `newSystemId` / `newSystemReading` / `newModuleId` / `newModuleReading` / `newSystemType` / `newModuleType` | Not required — the work order is being closed as a trouble report, not a changeout |
 
-The work order is marked complete with the trouble status (rather than the normal completion status). Standard fields like new IDs, new readings, before/after photos, and signature are **not** required on this path.
+The server appends the trouble code and note to the work order's notes and marks the work order with the configured trouble status; standard completion fields are not required on this path.
 
 ### 10.3 Time Tracking on the Trouble Path
 
-Time tracking still applies. The timer started in Section 5.1 continues to run, and `endTime` should be captured + submitted when the trouble report is submitted, exactly like the success path.
+Time tracking still applies. The timer started in Section 5.1 continues to run, and `endTime` should be captured + submitted via the dedicated `POST .../time-tracking` endpoint after the system-changeout submission completes, exactly like the success path.
 
 ### 10.4 GPS on the Trouble Path
 
 When the user selects "No - Report Issue":
 - Stop any in-progress automatic GPS capture
 - Clear any captured coordinates
-- Do not include GPS data in the trouble submission
+- Send `gpsCoordinates: null` in the submission
 
 ---
 
@@ -766,19 +825,23 @@ const getCachedConfig = async (projectId) => {
 
 ### 12.2 Work Order Queue
 
-Queue completed work orders for retry when offline. Remember to also queue the time-tracking POST (Section 5.2) and any pending chunked uploads (Section 11):
+Queue completed work orders for retry when offline. The wizard submission is multipart (Section 3.4), so the queue must persist both the binary photos and the JSON `data` blob. Remember to also queue the time-tracking POST (Section 5.2):
 
 ```javascript
-const submitWorkOrder = async (payload) => {
+const submitWizard = async ({ photos, data }) => {
   try {
-    await api.patch(
-      `/api/projects/${projectId}/work-orders/${workOrderId}`,
-      payload
+    const formData = new FormData();
+    photos.forEach((p) => formData.append("photos", p.file));
+    formData.append("data", JSON.stringify(data));
+
+    await fetch(
+      `/api/projects/${projectId}/work-orders/${workOrderId}/system-changeout`,
+      { method: "POST", body: formData, credentials: "include" }
     );
     showSuccess("Work order submitted successfully");
   } catch (error) {
     if (!navigator.onLine || error.message === 'Network Error') {
-      await queueForRetry(payload);
+      await queueForRetry({ photos, data, projectId, workOrderId });
       showInfo("Saved offline. Will submit when connection restores.");
     } else {
       throw error;
@@ -789,7 +852,7 @@ const submitWorkOrder = async (payload) => {
 
 ### 12.3 Background Sync
 
-Retry queued submissions when connection restores:
+Retry queued submissions when connection restores. Each queued item must remember its target endpoint and rebuild the multipart body:
 
 ```javascript
 const processOfflineQueue = async () => {
@@ -797,7 +860,17 @@ const processOfflineQueue = async () => {
 
   for (const item of queue) {
     try {
-      await api.patch(item.url, item.payload);
+      if (item.type === "wizard") {
+        const formData = new FormData();
+        item.photos.forEach((p) => formData.append("photos", p.file));
+        formData.append("data", JSON.stringify(item.data));
+        await fetch(
+          `/api/projects/${item.projectId}/work-orders/${item.workOrderId}/system-changeout`,
+          { method: "POST", body: formData, credentials: "include" }
+        );
+      } else if (item.type === "timeTracking") {
+        await api.post(item.url, item.payload);
+      }
       await removeFromQueue(item.id);
     } catch (error) {
       console.log('Retry failed, will try again later:', error);
@@ -820,20 +893,23 @@ Before release, verify the mobile app:
 - [ ] Respects search method configuration (barcode, QR, manual, HID)
 - [ ] Auto-opens single search method when only one is enabled
 - [ ] HID scanner input field is read-only
+- [ ] Submits the wizard (success AND trouble) via multipart `POST .../system-changeout` — NOT via PATCH
+- [ ] Uses singular field name `troubleNote` (not `troubleNotes`)
+- [ ] Sends trouble photos inside the unified `photos` part with `photoTypes[i] === "trouble"` (no separate `troublePhotos` field on the wire)
 - [ ] Captures time tracking start on confirmation (Yes or No - Report Issue)
 - [ ] Captures time tracking end on successful submission
-- [ ] Submits time tracking via the dedicated `POST .../time-tracking` endpoint, NOT in the work order PATCH payload
+- [ ] Submits time tracking via the dedicated `POST .../time-tracking` endpoint, NOT in the wizard payload
 - [ ] Dynamically builds step list based on visibility settings
 - [ ] Handles GPS mode using the correct enum values: `"automatic"`, `"manual_step"`, `"disabled"`
 - [ ] In reading-only mode: forces `newId = oldId`
 - [ ] Displays mode-aware labels
-- [ ] Implements the trouble / "Report Issue" path (trouble codes, notes, photos)
+- [ ] Implements the trouble / "Report Issue" path (trouble code required, ≥ 1 trouble photo required)
 - [ ] Reads inactive project state and shows a blocking message before create/edit
 - [ ] Handles 403 errors for inactive projects (`"Cannot create..."` / `"Cannot edit..."`)
 - [ ] Refreshes project config on app resume
 - [ ] Uses chunked uploads (`/api/files/chunked/...`) for files > 5 MB, including photos in production
 - [ ] Limits itself to 3 concurrent chunked upload sessions per user
-- [ ] Queues submissions for offline retry (work orders, time tracking, file uploads)
+- [ ] Queues submissions for offline retry (wizard multipart, time tracking, file uploads)
 
 ---
 
