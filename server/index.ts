@@ -1,3 +1,9 @@
+// Load environment variables from a .env file in the current working directory
+// before anything else runs. `dotenv` does NOT override variables that are
+// already set in the process environment (e.g. Windows system env vars or
+// Replit secrets), so this is safe to run unconditionally in dev and prod.
+import "dotenv/config";
+
 // Force UTC timezone for consistent behavior across Windows and Linux servers
 // This must be set BEFORE any Date operations or imports that use Date
 process.env.TZ = 'UTC';

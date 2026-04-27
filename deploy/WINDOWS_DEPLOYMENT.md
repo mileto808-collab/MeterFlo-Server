@@ -211,15 +211,24 @@ npm install
 
 ## 5. Environment Variables
 
-### 5.1 Required Variables
+The application reads its secrets and runtime settings from a `.env` file in the install root. The repository ships a `.env.example` template — your only job here is to copy it to `.env` and fill in the real values. The server loads `.env` automatically on startup (via `dotenv`, imported at the top of `server/index.ts`), so there is nothing to wire up in the PM2 ecosystem file.
 
-Create a `.env` file in `C:\xampp\htdocs\` or set as Windows System Environment Variables.
+### 5.1 Create your `.env` from the template
+
+```cmd
+cd C:\xampp\htdocs
+copy .env.example .env
+notepad .env
+```
+
+`.env.example` is committed to the repo and contains only safe placeholders. `.env` is listed in `.gitignore` and must never be committed. Open `.env` and replace the placeholder values:
 
 **For HTTP connections (no SSL):**
 ```env
 NODE_ENV=production
 HOST=127.0.0.1
 PORT=3000
+COOKIE_SECURE=false
 DATABASE_URL=postgresql://meterflo_user:your_password@localhost:5432/meterflo
 SESSION_SECRET=generate-a-random-64-character-string-here
 # Optional - only set if you configure email sending
@@ -227,22 +236,11 @@ SESSION_SECRET=generate-a-random-64-character-string-here
 SMTP_PASSWORD=your-smtp-password
 ```
 
-**For HTTPS connections (with SSL):**
-```env
-NODE_ENV=production
-HOST=127.0.0.1
-PORT=3000
-DATABASE_URL=postgresql://meterflo_user:your_password@localhost:5432/meterflo
-SESSION_SECRET=generate-a-random-64-character-string-here
-COOKIE_SECURE=true
-# Optional - only set if you configure email sending
-# in Settings > Contact & Support Forms
-SMTP_PASSWORD=your-smtp-password
-```
+**For HTTPS connections (with SSL):** the only change is `COOKIE_SECURE=true`. Set it after you have completed Section 9.
 
 > **Why `HOST=127.0.0.1`:** Binding the Node listener to the loopback interface means port 3000 is reachable only from this machine. All public traffic comes through Apache on ports 80/443. Treat the firewall rule that blocks port 3000 as a fallback — `HOST=127.0.0.1` is the primary defense.
 
-> **Security:** Never commit real values for `DATABASE_URL`, `SESSION_SECRET`, or `SMTP_PASSWORD` into `deploy/ecosystem.config.cjs`. That file is checked into git. Set the real values in a `.env` file (which should be gitignored) or as Windows system environment variables. If a secret was previously committed to this file, rotate it at the source (database password, SMTP provider, etc.) — scrubbing only the working copy does not remove it from git history.
+> **Security:** Never put `DATABASE_URL`, `SESSION_SECRET`, `SMTP_PASSWORD`, or any other secret into `deploy/ecosystem.config.cjs`. That file is committed to git, and PM2's `env` block also overrides values from `.env` — so a secret pasted there both leaks into source control *and* silently shadows the one in your `.env`. Keep secrets in `.env` only. If a secret was previously committed (to the ecosystem file or anywhere else), rotate it at the source — change the database password in PostgreSQL, generate a new `SESSION_SECRET`, reset the SMTP password at your mail provider — because scrubbing the working copy does not remove it from git history.
 
 ### 5.2 Cookie Security Explained
 
@@ -253,25 +251,26 @@ SMTP_PASSWORD=your-smtp-password
 
 **Important:** If you set `COOKIE_SECURE=true` but don't have HTTPS configured, users will NOT be able to log in because the browser won't send the session cookie over HTTP.
 
-### 5.3 Setting Windows System Environment Variables
-
-1. Right-click "This PC" → Properties
-2. Click "Advanced system settings"
-3. Click "Environment Variables"
-4. Under "System variables", click "New" for each variable
-5. Add all the variables from Section 5.1
-6. Click OK to save
-
-**Note:** After changing system environment variables, you must restart Command Prompt and PM2.
-
-### 5.4 Generate a Secure SESSION_SECRET
+### 5.3 Generate a Secure SESSION_SECRET
 
 Use Node.js to generate a random secret:
 ```cmd
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-Copy the output and use it as your SESSION_SECRET.
+Copy the output and paste it as the `SESSION_SECRET` value in your `.env` file.
+
+### 5.4 Restart PM2 After Editing `.env`
+
+`.env` is read once when the server starts. After any change to `.env`, restart the app so the new values take effect:
+
+```cmd
+pm2 restart meterflo
+```
+
+### 5.5 Alternative: Windows System Environment Variables
+
+`.env` is the recommended path because it keeps every variable in one obvious file and survives a server reboot without extra setup. If your organization requires that secrets live in the Windows credential store / system environment instead, you can set them there (Control Panel → System → Advanced → Environment Variables) and skip the corresponding entries in `.env`. `dotenv` does not override variables that are already present in the process environment, so the system value wins. Restart Command Prompt and PM2 after changing system environment variables.
 
 ---
 
@@ -341,7 +340,7 @@ mkdir logs
 
 ### 7.2 Configure PM2 Ecosystem File
 
-The file `deploy/ecosystem.config.cjs` is already configured. Open it and confirm the values match your installation. The file ships with the root install path (`C:\xampp\htdocs`) and only the non-secret values in `env`. Database, session, and SMTP secrets are read from your `.env` file or Windows system environment variables (Section 5):
+The file `deploy/ecosystem.config.cjs` is already configured and contains **no secrets at all**. It only sets non-sensitive runtime defaults (`NODE_ENV`, `PORT`, `HOST`, `COOKIE_SECURE`) and points PM2 at the built server entry. The only thing you may need to change is `cwd` if you are installing into a subdirectory (Section 8a).
 
 ```javascript
 module.exports = {
@@ -358,9 +357,6 @@ module.exports = {
         HOST: '127.0.0.1',
         // Leave 'false' on HTTP. Flip to 'true' only after Section 9 (HTTPS).
         COOKIE_SECURE: 'false',
-        // DATABASE_URL, SESSION_SECRET, and SMTP_PASSWORD are intentionally
-        // omitted here — they are read from .env / Windows system env vars.
-        // See the "IMPORTANT" comment block in the file before adding any.
       },
       // ... rest of config
     }
@@ -368,7 +364,7 @@ module.exports = {
 };
 ```
 
-> **Why secrets are not in this snippet:** PM2's `env` block **overrides** values inherited from `.env` or Windows system environment variables. So if `DATABASE_URL` is listed in both your `.env` file and the PM2 `env` block, the PM2 value wins. Leaving the secret keys *out* of `env` is the only way to make `.env` / system env vars actually take effect. The shipped file already has those keys commented out — leave them that way.
+> **Why no secrets appear here:** This file is committed to git, and PM2's `env` block **overrides** values inherited from `.env` or Windows system environment variables. So pasting `DATABASE_URL`, `SESSION_SECRET`, or `SMTP_PASSWORD` here would both leak the secret into source control *and* silently shadow whatever is in your `.env`. Secrets live in `.env` only (Section 5), and the server loads them on startup via `dotenv`. Do not add secret keys back to this `env` block — not even as commented-out placeholders, since the next operator who follows this guide will uncomment them and commit real values.
 
 ### 7.3 Start the Application
 
@@ -952,15 +948,17 @@ For domain-based setup:
 
 After enabling HTTPS, configure the application to use secure cookies:
 
-1. Edit `C:\xampp\htdocs\deploy\ecosystem.config.cjs` and add to the `env` section:
+1. Edit `C:\xampp\htdocs\deploy\ecosystem.config.cjs` and change the `COOKIE_SECURE` value in the `env` section from `'false'` to `'true'`:
    ```javascript
-   COOKIE_SECURE: "true",
+   COOKIE_SECURE: 'true',
    ```
 
 2. Restart PM2:
    ```cmd
    pm2 restart meterflo
    ```
+
+> `COOKIE_SECURE` is a non-secret runtime flag, so it lives in the ecosystem file alongside `NODE_ENV`/`PORT`/`HOST`. (You can equivalently set `COOKIE_SECURE=true` in `.env` and remove the line from the ecosystem file — they end up at the same place. Don't set it in both, since the ecosystem `env` block overrides `.env`.)
 
 ---
 
@@ -1007,6 +1005,17 @@ netsh advfirewall firewall add rule name="HTTPS" dir=in action=allow protocol=TC
 ---
 
 ## 10. Updating the Application
+
+> **One-time migration for existing installs (April 2026 release):** Earlier versions of this guide had operators paste `DATABASE_URL`, `SESSION_SECRET`, and `SMTP_PASSWORD` directly into `deploy/ecosystem.config.cjs`. The application now loads those secrets from a `.env` file at the install root, and `deploy/ecosystem.config.cjs` is no longer tracked in git at all (it has always been listed in `.gitignore`; this release removes the previously-tracked copy from the repository). Your **local** `deploy/ecosystem.config.cjs` on the production server is unaffected by `git pull` — it stays exactly where it is, with whatever values are currently in it. Before restarting PM2 after the first `git pull` that brings in this change, do the following:
+>
+> 1. Open your **current** `deploy/ecosystem.config.cjs` and copy any real values you have for `DATABASE_URL`, `SESSION_SECRET`, and `SMTP_PASSWORD` somewhere safe.
+> 2. Run `copy .env.example .env` in the install root (`C:\xampp\htdocs`).
+> 3. Open `.env` and paste the values you saved into `DATABASE_URL`, `SESSION_SECRET`, and `SMTP_PASSWORD` (and adjust `HOST`, `PORT`, `COOKIE_SECURE` if your install uses non-default values).
+> 4. Edit your local `deploy/ecosystem.config.cjs` and **delete** the `DATABASE_URL`, `SESSION_SECRET`, and `SMTP_PASSWORD` lines from its `env` block (and any other secret keys that crept in there over time). Use the snippet in Section 7.2 as the reference for what should remain. The file is gitignored, so this edit is purely local.
+> 5. Run `pm2 restart meterflo` and confirm the app comes up (`pm2 logs meterflo`).
+> 6. **Rotate** the secrets that were previously in `deploy/ecosystem.config.cjs` if they were ever committed to git history — change the PostgreSQL password, regenerate `SESSION_SECRET`, and reset the SMTP password at your mail provider. Update the new values in `.env` and restart PM2 again. Scrubbing the working copy does not remove a leaked secret from git history.
+>
+> **Fresh installs** do not see this migration: there is no `deploy/ecosystem.config.cjs` in a fresh clone, so create one by copying the snippet in Section 7.2 into `deploy/ecosystem.config.cjs` and proceeding with Section 5 to set up `.env`.
 
 ### 10.1 Setting Up GitHub for Updates (Recommended)
 
@@ -1141,7 +1150,8 @@ cd C:\xampp\htdocs && git pull origin main && npm install && npx tsx script/buil
 #### Complete Backup Before Git Reset
 
 Always create a full backup before destructive git commands. This protects:
-- `deploy\ecosystem.config.cjs` - Database connection and environment settings
+- `.env` - Database connection string, session secret, SMTP password, and any other per-install secrets (gitignored, so a `git reset --hard` does NOT touch it, but `rmdir`/`robocopy /MIR` will)
+- `deploy\ecosystem.config.cjs` - Non-secret runtime defaults (cwd path, port, host, COOKIE_SECURE)
 - `Project Files\` folder - Work order attachments and uploads
 
 **Full backup command:**
@@ -1408,11 +1418,11 @@ pm2 logs meterflo --lines 50
 
 ## Security Recommendations
 
-1. **Never commit secrets to `deploy/ecosystem.config.cjs`**
-   - That file is committed to git. Anything you put in it (database passwords, `SESSION_SECRET`, `SMTP_PASSWORD`, API keys, etc.) ends up in the repository history forever, even if you later delete it.
-   - Set real values via a `.env` file at the install root (and add `.env` to `.gitignore`) or as Windows system environment variables.
-   - If a secret was committed in the past, rotate it at the source — change the database password in PostgreSQL, generate a new `SESSION_SECRET`, and reset the SMTP password at your mail provider. Scrubbing the working copy does not undo the leak.
-   - Audit git history with `git log -p deploy/ecosystem.config.cjs` to confirm what was previously exposed and decide whether to rewrite history (a destructive operation that requires coordination with anyone else who has cloned the repo).
+1. **Keep secrets in `.env`, never in `deploy/ecosystem.config.cjs`**
+   - `.env` is in `.gitignore` and is the only place real secret values should live. The shipped `deploy/ecosystem.config.cjs` contains no secret keys at all — leave it that way. Both the file itself being committed *and* PM2's `env` block overriding `.env` mean that any secret added there gets leaked AND silently shadows the matching `.env` value.
+   - On a fresh install, copy `.env.example` to `.env` and edit (Section 5). The application loads `.env` automatically on startup via `dotenv`.
+   - If a secret was committed in the past — to `deploy/ecosystem.config.cjs` or anywhere else — rotate it at the source: change the database password in PostgreSQL, generate a new `SESSION_SECRET`, reset the SMTP password at your mail provider. Scrubbing the working copy does not undo the leak.
+   - Audit git history with `git log -p deploy/ecosystem.config.cjs` (and `git log -p` on any other file you suspect) to confirm what was previously exposed, and decide whether to rewrite history (a destructive operation that requires coordination with anyone else who has cloned the repo).
 
 2. **Use HTTPS in Production**
    - Get a proper SSL certificate
@@ -1447,7 +1457,7 @@ pm2 logs meterflo --lines 50
 3.  Create PostgreSQL database and user
 4.  git clone <repo-url> C:\xampp\htdocs
 5.  cd C:\xampp\htdocs && npm install
-6.  Set environment variables (Section 5)
+6.  copy .env.example .env  REM then edit .env and fill in real values (Section 5)
 7.  npx tsx script/build.ts
 8.  npm run db:push          REM initialize the database schema (Section 6a)
 9.  mkdir logs

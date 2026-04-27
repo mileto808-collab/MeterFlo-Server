@@ -50,3 +50,7 @@ TURNSTILE_EMERGENCY_BYPASS = "true"
 
 [userenv.production]
 TURNSTILE_EMERGENCY_BYPASS = "false"
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 120000
