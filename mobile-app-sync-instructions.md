@@ -145,7 +145,7 @@ These fields restrict when work orders may be scheduled. The mobile app should r
 | `operationalHoursEnabled` | boolean | If true, scheduling is restricted to the configured window |
 | `operationalHoursStart` | string | Start time in `"HH:mm"` 24-hour format |
 | `operationalHoursEnd` | string | End time in `"HH:mm"` 24-hour format |
-| `operationalHoursDays` | string[] | Allowed weekdays (e.g. `["mon","tue","wed","thu","fri"]`) |
+| `operationalHoursDays` | string[] | Allowed weekdays as **full lowercase names**: `["sunday","monday","tuesday","wednesday","thursday","friday","saturday"]`. The server compares against this exact spelling — abbreviated forms like `"mon"` will not match. Typical example: `["monday","tuesday","wednesday","thursday","friday"]`. |
 | `timezone` | string | IANA timezone (e.g. `"America/Chicago"`); falls back to the global system timezone |
 
 Project holidays are fetched separately via `GET /api/projects/:projectId/holidays` (dates excluded from scheduling).
@@ -267,7 +267,7 @@ The `data` JSON body uses these field names (all optional unless noted; field na
 | `newModuleReading` | string | Reading on the new module / current reading in reading-only mode. |
 | `newSystemType` | string | System type for the new equipment. |
 | `newModuleType` | string | Module type for the new equipment. |
-| `gpsCoordinates` | object | `{ latitude, longitude, accuracy }` or `null` if GPS is disabled or on the trouble path. |
+| `gpsCoordinates` | string | `"lat,lng"` format, e.g. `"40.7128,-74.0060"`. Validated server-side by regex `^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$` with `lat ∈ [-90, 90]` and `lng ∈ [-180, 180]`. Send `""` (empty string) when GPS is disabled or on the trouble path. |
 | `completionNotes` | string | Free-text completion notes. |
 | `signatureData` | string | Base64-encoded signature image. |
 | `signatureName` | string | The name typed/printed alongside the signature. |
@@ -694,7 +694,7 @@ Use the contract in Section 3.4 with the following adjustments:
 | `troubleCode` | The selected trouble code (required) |
 | `troubleNote` | Optional free-text note. **Singular field name (`troubleNote`).** |
 | `photoTypes` | One `"trouble"` entry per uploaded photo (the trouble photos travel inside the same `photos` multipart array — there is no separate `troublePhotos` field on the wire) |
-| `gpsCoordinates` | Send `null` (see 10.4) |
+| `gpsCoordinates` | Send `""` (empty string) — see 10.4 |
 | `signatureData` / `signatureName` | Not required |
 | `newSystemId` / `newSystemReading` / `newModuleId` / `newModuleReading` / `newSystemType` / `newModuleType` | Not required — the work order is being closed as a trouble report, not a changeout |
 
@@ -709,13 +709,15 @@ Time tracking still applies. The timer started in Section 5.1 continues to run, 
 When the user selects "No - Report Issue":
 - Stop any in-progress automatic GPS capture
 - Clear any captured coordinates
-- Send `gpsCoordinates: null` in the submission
+- Send `gpsCoordinates: ""` (empty string) in the submission
 
 ---
 
 ## 11. Chunked File Uploads (Production-Safe)
 
-In production, large single-request uploads can be rejected by the reverse proxy before reaching the server (this commonly affects APKs and high-resolution photo bundles). The mobile app **must** use chunked uploads for any file larger than 5 MB.
+In production, large single-request uploads can be rejected by the reverse proxy before reaching the server. The mobile app **must** use chunked uploads for any **standalone** file upload larger than 5 MB.
+
+> **Scope:** this section is about the standalone file-upload endpoints listed in Section 1.5 (project files, work-order attachments uploaded outside the wizard, FTP files). Photos captured inside the wizard are submitted differently — see Sections 3.4 and 11.8.
 
 ### 11.1 When to Use
 
@@ -794,9 +796,18 @@ The web app's `client/src/lib/chunkedUpload.ts` is the canonical implementation.
 3. Report progress to the user (uploading vs finalizing stages).
 4. Surface server error messages (`error.message`) to the user — they include actionable detail like "File exceeds maximum size of N MB" or "File type X not allowed".
 
-### 11.8 Photos & Signatures
+### 11.8 When NOT to Use Chunked Uploads — Wizard Photos
 
-For photo uploads in the wizard, send each captured photo through this flow against `/api/projects/:projectId/work-orders/:workOrderId/files`. Doing this avoids the production reverse-proxy size limit and gives the user a visible progress indicator.
+The chunked upload endpoints in this section are for **standalone file uploads** (project files, work order attachment files, FTP files). They are **not** the path the wizard uses to deliver before/after/trouble photos.
+
+The wizard submission (Section 3.4) is the single multipart `POST .../system-changeout` request that bundles all photos with their `photoTypes` tags and the structured `data` JSON. Splitting wizard photos out into separate chunked uploads to `/api/projects/:projectId/work-orders/:workOrderId/files` would:
+- Bypass the `photoTypes` tagging the wizard endpoint relies on,
+- Persist photos to a different storage location than the wizard expects, and
+- Produce results that diverge from the web app's behavior.
+
+If field technicians regularly capture very large image bundles in the wizard and you hit production reverse-proxy size limits, the right fix is to either (a) compress images on-device before submission, or (b) coordinate a separate server-side enhancement so the wizard endpoint can accept chunked submissions. **Do not silently re-route wizard photos to the standalone file endpoints.**
+
+Use the chunked endpoints for the cases they were designed for: ad-hoc project-level files, project FTP files, and standalone work-order attachments uploaded outside the wizard flow.
 
 ---
 
@@ -907,7 +918,7 @@ Before release, verify the mobile app:
 - [ ] Reads inactive project state and shows a blocking message before create/edit
 - [ ] Handles 403 errors for inactive projects (`"Cannot create..."` / `"Cannot edit..."`)
 - [ ] Refreshes project config on app resume
-- [ ] Uses chunked uploads (`/api/files/chunked/...`) for files > 5 MB, including photos in production
+- [ ] Uses chunked uploads (`/api/files/chunked/...`) for **standalone** file uploads > 5 MB (project files, project FTP files, ad-hoc work-order attachments) — does NOT re-route wizard photos through this path (see Section 11.8)
 - [ ] Limits itself to 3 concurrent chunked upload sessions per user
 - [ ] Queues submissions for offline retry (wizard multipart, time tracking, file uploads)
 
