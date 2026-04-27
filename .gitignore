@@ -7,3 +7,6 @@ vite.config.ts.*
 deploy/ecosystem.config.cjs
 attached_assets/
 Project Files/
+.env
+.env.local
+.env.*.local
