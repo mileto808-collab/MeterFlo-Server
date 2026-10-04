@@ -16,13 +16,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-
-export type ResetWorkOrderOptions = {
-  attachments: "keep" | "delete";
-  assignment: "keep" | "user" | "group";
-  assignedUserId?: string;
-  assignedGroupId?: string;
-};
+import type { ResetWorkOrderOptions } from "@shared/work-order-reset";
+export type { ResetWorkOrderOptions } from "@shared/work-order-reset";
 
 type Assignee = { id?: string; key?: string; label?: string };
 
@@ -33,6 +28,7 @@ type ResetWorkOrderDialogProps = {
   pending: boolean;
   assigneesData: any;
   workOrderLabel: string;
+  canChangeAssignment?: boolean;
 };
 
 const USER_PLACEHOLDER = "__choose_technician__";
@@ -45,6 +41,7 @@ export function ResetWorkOrderDialog({
   pending,
   assigneesData,
   workOrderLabel,
+  canChangeAssignment = true,
 }: ResetWorkOrderDialogProps) {
   const [attachments, setAttachments] =
     useState<ResetWorkOrderOptions["attachments"]>("keep");
@@ -177,8 +174,8 @@ export function ResetWorkOrderDialog({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="keep">Keep current assignment</SelectItem>
-                <SelectItem value="user">Assign to a technician</SelectItem>
-                <SelectItem value="group">Assign to a group</SelectItem>
+                <SelectItem value="user" disabled={!canChangeAssignment}>Assign to a technician</SelectItem>
+                <SelectItem value="group" disabled={!canChangeAssignment}>Assign to a group</SelectItem>
               </SelectContent>
             </Select>
           </div>

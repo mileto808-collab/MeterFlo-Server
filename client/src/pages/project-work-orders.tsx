@@ -2488,6 +2488,7 @@ export default function ProjectWorkOrders() {
           }}
           onConfirm={options => resetMutation.mutate(options)}
           pending={resetMutation.isPending}
+          canChangeAssignment={hasPermission("workOrders.assign")}
           assigneesData={hasPermission("workOrders.assign") ? assigneesData : { users: [], groups: [] }}
           workOrderLabel={editingWorkOrder.customerWoId || `WO #${editingWorkOrder.id}`}
         />
@@ -2497,7 +2498,9 @@ export default function ProjectWorkOrders() {
           form={editForm}
           onSubmit={onEditSubmit}
           onRequestReset={() => {
-            if (hasPermission("workOrders.edit")) setResetDialogOpen(true);
+            if (hasPermission("workOrders.edit") && !updateMutation.isPending && !resetMutation.isPending) {
+              setResetDialogOpen(true);
+            }
           }}
           onBack={closeDetailView}
           isSubmitting={updateMutation.isPending || resetMutation.isPending}

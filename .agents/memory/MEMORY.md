@@ -1,0 +1,1 @@
+- [Work-order reset scope](work-order-reset-scope.md) — reopening clears completion lifecycle state, not customer or meter/module baseline data.

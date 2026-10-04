@@ -991,8 +991,11 @@ export class ProjectWorkOrderStorage {
       return this.mapRowToWorkOrder(result.rows[0]);
     } catch (error) {
       if (!committed) {
-        await client.query("ROLLBACK");
-        if (files) await files.rollback();
+        try {
+          await client.query("ROLLBACK");
+        } finally {
+          if (files) await files.rollback();
+        }
       }
       throw error;
     } finally {
