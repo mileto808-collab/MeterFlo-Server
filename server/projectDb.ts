@@ -3,6 +3,7 @@ import { pgTable, text, varchar, timestamp, integer, numeric } from "drizzle-orm
 import { pool } from "./db";
 import { sql } from "drizzle-orm";
 import { storage } from "./storage";
+import { appendResetNote, resetAssignment, WorkOrderResetError, type ResetWorkOrderOptions } from "../shared/work-order-reset";
 
 // Service type enum for work orders
 export const serviceTypeEnum = ["Water", "Electric", "Gas"] as const;
@@ -930,6 +931,73 @@ export class ProjectWorkOrderStorage {
       hour12: true,
       timeZone: timezone
     });
+  }
+
+  async resetCompletedWorkOrder(
+    id: number,
+    projectId: number,
+    options: ResetWorkOrderOptions,
+    actor: string,
+    prepareFiles: (workOrder: ProjectWorkOrder) => Promise<{
+      removedNames: string[];
+      rollback: () => Promise<void>;
+      commit: () => Promise<void>;
+    }>,
+  ): Promise<ProjectWorkOrder> {
+    await this.ensureMigrated();
+    const client = await pool.connect();
+    let files: Awaited<ReturnType<typeof prepareFiles>> | undefined;
+    let committed = false;
+    try {
+      await client.query("BEGIN");
+      const existing = await client.query(
+        `SELECT * FROM "${this.schemaName}".work_orders WHERE id = $1 FOR UPDATE`, [id],
+      );
+      const row = existing.rows[0];
+      if (!row) throw new WorkOrderResetError("Work order not found", 404);
+      if (row.status !== "Completed") {
+        throw new WorkOrderResetError("Only a Completed work order can be reset. Refresh and try again.", 409);
+      }
+      const current = this.mapRowToWorkOrder(row);
+      files = await prepareFiles(current);
+      const assignment = resetAssignment({
+        assignedUserId: current.assignedUserId,
+        assignedGroupId: current.assignedGroupId,
+      }, options);
+      const notes = appendResetNote(current.notes, await this.getTimezoneFormattedTimestamp(), actor, options);
+      const attachments = options.attachments === "delete" ? [] : (current.attachments || []).filter(
+        attachment => !files!.removedNames.includes(attachment.split(/[\\/]/).pop() || ""),
+      );
+      const result = await client.query(
+        `UPDATE "${this.schemaName}".work_orders SET
+          status = 'Open', completed_at = NULL, completed_by = NULL,
+          scheduled_at = NULL, scheduled_by = NULL, trouble = NULL,
+          signature_data = NULL, signature_name = NULL,
+          assigned_user_id = $2, assigned_group_id = $3, attachments = $4,
+          notes = $5, updated_by = $6, updated_at = NOW()
+         WHERE id = $1 RETURNING *`,
+        [id, assignment.assignedUserId, assignment.assignedGroupId, attachments, notes, actor],
+      );
+      await client.query(
+        `DELETE FROM public.work_order_time_tracking WHERE project_id = $1 AND system_work_order_id = $2`,
+        [projectId, current.customerWoId || String(current.id)],
+      );
+      await client.query("COMMIT");
+      committed = true;
+      // The database is already committed: cleanup failure must not masquerade as a failed reset.
+      try { await files.commit(); } catch (error) {
+        console.error("Work order reset staging cleanup failed:", error);
+      }
+      return this.mapRowToWorkOrder(result.rows[0]);
+    } catch (error) {
+      if (!committed) {
+        await client.query("ROLLBACK");
+        if (files) await files.rollback();
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async updateWorkOrder(id: number, updates: Partial<InsertProjectWorkOrder>, updatedBy?: string): Promise<ProjectWorkOrder | undefined> {

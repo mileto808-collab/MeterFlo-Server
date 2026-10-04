@@ -275,6 +275,47 @@ export async function getWorkOrderFiles(
 }
 
 // Delete a file from a work order directory
+// Move reset files out of the visible folder before the database commit.
+// A failed reset restores them; a successful reset removes the staging folder.
+export async function stageWorkOrderResetFiles(
+  projectName: string,
+  projectId: number,
+  customerWoId: string,
+  workOrderId: number,
+  deleteAttachments: boolean,
+) {
+  const directory = await ensureWorkOrderDirectory(projectName, projectId, customerWoId, workOrderId);
+  const files = await fs.readdir(directory, { withFileTypes: true });
+  const signatureNames = new Set([
+    `${customerWoId}-signature.png`.replace(/[^a-zA-Z0-9._-]/g, "_"),
+    `${workOrderId}-signature.png`,
+    `${path.basename(directory)}-signature.png`,
+  ]);
+  const selected = files.filter(file => deleteAttachments || signatureNames.has(file.name));
+  const staging = await fs.mkdtemp(path.join(path.dirname(directory), ".reset-"));
+  const moved: string[] = [];
+  const rollback = async () => {
+    for (const name of [...moved].reverse()) {
+      await fs.rename(path.join(staging, name), path.join(directory, name));
+    }
+    await fs.rm(staging, { recursive: true, force: true });
+  };
+  try {
+    for (const file of selected) {
+      await fs.rename(path.join(directory, file.name), path.join(staging, file.name));
+      moved.push(file.name);
+    }
+  } catch (error) {
+    await rollback();
+    throw error;
+  }
+  return {
+    removedNames: selected.map(file => file.name),
+    rollback,
+    commit: () => fs.rm(staging, { recursive: true, force: true }),
+  };
+}
+
 export async function deleteWorkOrderFile(
   projectName: string,
   projectId: number,

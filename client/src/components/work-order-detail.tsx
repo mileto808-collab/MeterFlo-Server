@@ -101,6 +101,7 @@ interface WorkOrderDetailProps {
   workOrder: any;
   form: UseFormReturn<any>;
   onSubmit: (data: any) => void;
+  onRequestReset?: () => void;
   onBack: () => void;
   isSubmitting: boolean;
   projectId: string | number;
@@ -141,6 +142,7 @@ export function WorkOrderDetail({
   workOrder,
   form,
   onSubmit,
+  onRequestReset,
   onBack,
   isSubmitting,
   projectId,
@@ -2466,6 +2468,10 @@ export function WorkOrderDetail({
                           <Select 
                             value={field.value || workOrder.status} 
                             onValueChange={(newStatus) => {
+                              if (workOrder.status === "Completed" && newStatus === "Open" && onRequestReset) {
+                                onRequestReset();
+                                return;
+                              }
                               field.onChange(newStatus);
                               const currentScheduledAt = form.getValues("scheduledAt");
                               if (currentScheduledAt && newStatus !== "Scheduled") {
@@ -2733,6 +2739,10 @@ export function WorkOrderDetail({
                         <Select 
                           value={field.value || workOrder.status} 
                           onValueChange={(newStatus) => {
+                            if (workOrder.status === "Completed" && newStatus === "Open" && onRequestReset) {
+                              onRequestReset();
+                              return;
+                            }
                             field.onChange(newStatus);
                             const currentScheduledAt = form.getValues("scheduledAt");
                             if (currentScheduledAt && newStatus !== "Scheduled") {

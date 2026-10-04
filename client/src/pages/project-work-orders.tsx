@@ -5,6 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
+import { ResetWorkOrderDialog, type ResetWorkOrderOptions } from "@/components/reset-work-order-dialog";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ColumnSelector, type ColumnConfig } from "@/components/column-selector";
 import { useColumnPreferences } from "@/hooks/use-column-preferences";
@@ -172,6 +173,7 @@ export default function ProjectWorkOrders() {
   // Version counter to force WorkOrderDetail re-mount when SSE updates the same work order
   // This ensures the form is properly re-initialized with fresh state
   const [editingWorkOrderVersion, setEditingWorkOrderVersion] = useState(0);
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
   
   // Keep ref in sync with editingWorkOrder state for SSE callback
   useEffect(() => {
@@ -895,6 +897,32 @@ export default function ProjectWorkOrders() {
     },
   });
 
+  const resetMutation = useMutation({
+    mutationFn: async (options: ResetWorkOrderOptions) => {
+      if (!editingWorkOrder || !hasPermission("workOrders.edit") || accessDenied) {
+        throw new Error("You do not have permission to reset this work order");
+      }
+      const response = await apiRequest("POST", `/api/projects/${projectId}/work-orders/${editingWorkOrder.id}/reset`, options);
+      return response.json();
+    },
+    onSuccess: async (workOrder: ProjectWorkOrder) => {
+      editSignaturePadRef.current?.clear();
+      setEditingWorkOrder(workOrder);
+      setEditingWorkOrderVersion(version => version + 1);
+      setResetDialogOpen(false);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/work-orders`] }),
+        queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/work-orders/stats`] }),
+        queryClient.invalidateQueries({ queryKey: [`/api/projects/${projectId}/work-orders/${workOrder.id}/files`] }),
+        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "work-orders", workOrder.id, "time-tracking"] }),
+      ]);
+      toast({ title: "Work order reset to Open", description: "Notes were preserved and the reset was recorded." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Failed to reset work order", description: error.message, variant: "destructive" });
+    },
+  });
+
   const updateMutation = useMutation({
     mutationFn: async ({ id, ...data }: { id: number } & Partial<WorkOrderFormData>) => {
       if (accessDenied) throw new Error("403: Access denied");
@@ -1274,6 +1302,10 @@ export default function ProjectWorkOrders() {
       return;
     }
     if (editingWorkOrder) {
+      if (editingWorkOrder.status === "Completed" && data.status === "Open") {
+        setResetDialogOpen(true);
+        return;
+      }
       updateMutation.mutate({ id: editingWorkOrder.id, ...data });
     }
   };
@@ -2446,13 +2478,29 @@ export default function ProjectWorkOrders() {
   if (editingWorkOrder) {
     return (
       <>
+        <ResetWorkOrderDialog
+          open={resetDialogOpen}
+          onOpenChange={open => {
+            if (!resetMutation.isPending) {
+              setResetDialogOpen(open);
+              if (!open) editForm.setValue("status", editingWorkOrder.status);
+            }
+          }}
+          onConfirm={options => resetMutation.mutate(options)}
+          pending={resetMutation.isPending}
+          assigneesData={hasPermission("workOrders.assign") ? assigneesData : { users: [], groups: [] }}
+          workOrderLabel={editingWorkOrder.customerWoId || `WO #${editingWorkOrder.id}`}
+        />
         <WorkOrderDetail
           key={`${editingWorkOrder.id}-${editingWorkOrderVersion}`}
           workOrder={editingWorkOrder}
           form={editForm}
           onSubmit={onEditSubmit}
+          onRequestReset={() => {
+            if (hasPermission("workOrders.edit")) setResetDialogOpen(true);
+          }}
           onBack={closeDetailView}
-          isSubmitting={updateMutation.isPending}
+          isSubmitting={updateMutation.isPending || resetMutation.isPending}
           projectId={projectId!}
           projectName={project?.name}
           cameFromSearch={cameFromSearch}

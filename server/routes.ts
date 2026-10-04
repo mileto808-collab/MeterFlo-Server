@@ -3,6 +3,8 @@ import { createServer, type Server } from "http";
 import path from "path";
 import os from "os";
 import { promises as fs, existsSync, unlinkSync, readdirSync, statSync, mkdirSync, rmSync, createWriteStream } from "fs";
+import { resetWorkOrderOptionsSchema, WorkOrderResetError } from "../shared/work-order-reset";
+import { stageWorkOrderResetFiles } from "./fileStorage";
 import archiver from "archiver";
 import unzipper from "unzipper";
 import { Readable } from "stream";
@@ -2603,6 +2605,58 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/projects/:projectId/work-orders/:workOrderId/reset", isAuthenticated, async (req: any, res) => {
+    try {
+      const currentUser = await storage.getUser(req.user.claims.sub);
+      const projectId = Number(req.params.projectId);
+      const workOrderId = Number(req.params.workOrderId);
+      if (!Number.isSafeInteger(projectId) || projectId < 1 || !Number.isSafeInteger(workOrderId) || workOrderId < 1) {
+        return res.status(400).json({ message: "Invalid project or work order" });
+      }
+      if (!currentUser || currentUser.role === "customer" ||
+          !await storage.hasPermission(currentUser, permissionKeys.WORK_ORDERS_EDIT)) {
+        return res.status(403).json({ message: "You do not have permission to reset work orders" });
+      }
+      if (currentUser.role !== "admin" && !await storage.isUserAssignedToProject(currentUser.id, projectId)) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      const project = await storage.getProject(projectId);
+      if (!project?.databaseName) return res.status(404).json({ message: "Project not found" });
+      if (project.isActive === false) return res.status(403).json({ message: "Cannot reset work orders on inactive projects" });
+      const parsed = resetWorkOrderOptionsSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ message: parsed.error.issues[0].message });
+      const options = parsed.data;
+      if (options.assignment !== "keep") {
+        if (!await storage.hasPermission(currentUser, permissionKeys.WORK_ORDERS_ASSIGN)) {
+          return res.status(403).json({ message: "You do not have permission to change assignments" });
+        }
+        if (options.assignment === "user") {
+          const users = await storage.getProjectUsers(projectId);
+          if (!users.some(user => user.id === options.assignedUserId)) {
+            return res.status(400).json({ message: "Select a technician assigned to this project" });
+          }
+        } else {
+          const groups = await storage.getAllUserGroupsWithProjects();
+          if (!groups.some(group => group.name === options.assignedGroupId && group.projectIds.includes(projectId))) {
+            return res.status(400).json({ message: "Select a group assigned to this project" });
+          }
+        }
+      }
+      const workOrder = await getProjectWorkOrderStorage(project.databaseName).resetCompletedWorkOrder(
+        workOrderId, projectId, options, currentUser.username || currentUser.id,
+        current => stageWorkOrderResetFiles(
+          project.name, projectId, current.customerWoId || String(current.id), current.id, options.attachments === "delete",
+        ),
+      );
+      emitWorkOrderUpdated(projectId, workOrderId, currentUser.id);
+      res.json(workOrder);
+    } catch (error) {
+      if (error instanceof WorkOrderResetError) return res.status(error.status).json({ message: error.message });
+      console.error("Error resetting work order:", error);
+      res.status(500).json({ message: "Failed to reset work order" });
+    }
+  });
+
   app.patch("/api/projects/:projectId/work-orders/:workOrderId", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
@@ -2648,6 +2702,9 @@ export async function registerRoutes(
       
       // Check if status is being set to "Completed" and validate required fields
       const finalStatus = req.body.status || existingWorkOrder.status;
+      if (existingWorkOrder.status === "Completed" && finalStatus === "Open") {
+        return res.status(409).json({ message: "Confirm the reset using the work order reset dialog before reopening this work order" });
+      }
       if (finalStatus === "Completed") {
         const mergedData = { ...existingWorkOrder, ...req.body };
         const missingFields: string[] = [];
