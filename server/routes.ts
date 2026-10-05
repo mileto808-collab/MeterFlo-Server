@@ -2635,7 +2635,7 @@ export async function registerRoutes(
           if (!users.some(user => user.id === options.assignedUserId)) {
             return res.status(400).json({ message: "Select a technician assigned to this project" });
           }
-        } else {
+        } else if (options.assignment === "group") {
           const groups = await storage.getAllUserGroupsWithProjects();
           if (!groups.some(group => group.name === options.assignedGroupId && group.projectIds.includes(projectId))) {
             return res.status(400).json({ message: "Select a group assigned to this project" });

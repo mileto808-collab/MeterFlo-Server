@@ -3,7 +3,7 @@ import { z } from "zod";
 export const resetWorkOrderOptionsSchema = z.object({
   capturedData: z.enum(["keep", "clear"]),
   attachments: z.enum(["keep", "delete"]),
-  assignment: z.enum(["keep", "user", "group"]),
+  assignment: z.enum(["keep", "none", "user", "group"]),
   assignedUserId: z.string().trim().min(1).optional(),
   assignedGroupId: z.string().trim().min(1).optional(),
 }).strict().superRefine((options, ctx) => {
@@ -36,6 +36,9 @@ export function resetAssignment(
   current: { assignedUserId: string | null; assignedGroupId: string | null },
   options: ResetWorkOrderOptions,
 ) {
+  if (options.assignment === "none") {
+    return { assignedUserId: null, assignedGroupId: null };
+  }
   if (options.assignment === "user") {
     return { assignedUserId: options.assignedUserId!, assignedGroupId: null };
   }
@@ -53,6 +56,7 @@ export function appendResetNote(
   previousData: CapturedDataSnapshot,
 ) {
   const assignment = options.assignment === "keep" ? "kept" :
+    options.assignment === "none" ? "None (unassigned)" :
     options.assignment === "user" ? `technician ${options.assignedUserId}` : `group ${options.assignedGroupId}`;
   const snapshot = capturedDataFields.map(([key, label]) => {
     const value = previousData[key];

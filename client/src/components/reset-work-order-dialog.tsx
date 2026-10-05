@@ -199,7 +199,7 @@ export function ResetWorkOrderDialog({
               value={assignment}
               onValueChange={(value) => {
                 const nextAssignment =
-                  value === "user" || value === "group" ? value : "keep";
+                  value === "none" || value === "user" || value === "group" ? value : "keep";
                 setAssignment(nextAssignment);
                 if (nextAssignment !== "user") setAssignedUserId("");
                 if (nextAssignment !== "group") setAssignedGroupId("");
@@ -215,6 +215,7 @@ export function ResetWorkOrderDialog({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="keep">Keep current assignment</SelectItem>
+                <SelectItem value="none" disabled={!canChangeAssignment}>None</SelectItem>
                 <SelectItem value="user" disabled={!canChangeAssignment}>Assign to a technician</SelectItem>
                 <SelectItem value="group" disabled={!canChangeAssignment}>Assign to a group</SelectItem>
               </SelectContent>
