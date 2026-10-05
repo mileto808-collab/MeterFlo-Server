@@ -1,10 +1,10 @@
 ---
 name: Work-order reset scope
-description: Why reopening a Completed work order preserves customer and meter/module information.
+description: User-defined retention and audit expectations when reopening a Completed work order.
 ---
 
-Treat reopening a Completed work order as lifecycle-state cleanup, not recreation of a completely blank work order.
+Reopening must offer one keep-or-clear choice for all captured changeout data, not separate choices for system, module, and GPS. Record the previous captured values in the reset Note, whether kept or cleared.
 
-**Why:** The approved request specified clearing time tracking, signature, and completion-related audit information while retaining work-order identity and history. Deleting customer or meter/module data was not requested and could erase baseline information needed for another visit.
+**Why:** The user corrected the original lifecycle-only reset: “It should also reset previously captured data, but let the user decide what to keep,” and asked to log the previous data in the Note. They selected one choice for all captured data.
 
-**How to apply:** Preserve customer and meter/module fields during reset unless the user explicitly requests broader clearing. Keep creation history; record the reset as the latest update instead of erasing it.
+**How to apply:** Apply the retention choice to replacement-device captures and New GPS. Preserve old installed-device and customer baseline information, existing Notes, and creation history.

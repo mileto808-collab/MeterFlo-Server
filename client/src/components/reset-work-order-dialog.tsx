@@ -43,6 +43,8 @@ export function ResetWorkOrderDialog({
   workOrderLabel,
   canChangeAssignment = true,
 }: ResetWorkOrderDialogProps) {
+  const [capturedData, setCapturedData] =
+    useState<ResetWorkOrderOptions["capturedData"]>("clear");
   const [attachments, setAttachments] =
     useState<ResetWorkOrderOptions["attachments"]>("keep");
   const [assignment, setAssignment] =
@@ -61,6 +63,7 @@ export function ResetWorkOrderDialog({
 
   useEffect(() => {
     if (!open) return;
+    setCapturedData("clear");
     setAttachments("keep");
     setAssignment("keep");
     setAssignedUserId("");
@@ -79,6 +82,7 @@ export function ResetWorkOrderDialog({
   const handleConfirm = () => {
     if (pending || selectionMissing) return;
     onConfirm({
+      capturedData,
       attachments,
       assignment,
       ...(assignment === "user" ? { assignedUserId } : {}),
@@ -114,9 +118,46 @@ export function ResetWorkOrderDialog({
             <p className="text-sm leading-relaxed text-muted-foreground">
               Old time tracking, completion and scheduling audit fields, and
               the technician&apos;s signature and name will be cleared. Notes
-              remain, and this reset will be logged.
+              remain, and this reset and the previous captured values will be logged.
             </p>
           </section>
+
+          <div className="space-y-2">
+            <Label htmlFor="reset-captured-data">Captured changeout data</Label>
+            <Select
+              value={capturedData}
+              onValueChange={(value) =>
+                setCapturedData(value === "keep" ? "keep" : "clear")
+              }
+              disabled={pending}
+            >
+              <SelectTrigger
+                id="reset-captured-data"
+                data-testid="reset-captured-data-select"
+                aria-label="Choose what to do with captured changeout data"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="clear">Clear captured data</SelectItem>
+                <SelectItem value="keep">Keep captured data</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-sm text-muted-foreground">
+              Covers new system and module IDs, readings and types, and New GPS.
+              Old system and module details, Old GPS, and customer information stay unchanged.
+              Previous captured values are saved in Notes whether you keep or clear them.
+            </p>
+            {capturedData === "clear" && (
+              <p
+                className="text-sm font-medium text-destructive"
+                role="alert"
+                data-testid="reset-captured-data-warning"
+              >
+                These captured fields will be cleared after their previous values are recorded in Notes.
+              </p>
+            )}
+          </div>
 
           <div className="space-y-2">
             <Label htmlFor="reset-attachments">Attachments</Label>

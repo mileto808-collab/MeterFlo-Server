@@ -964,7 +964,15 @@ export class ProjectWorkOrderStorage {
         assignedUserId: current.assignedUserId,
         assignedGroupId: current.assignedGroupId,
       }, options);
-      const notes = appendResetNote(current.notes, await this.getTimezoneFormattedTimestamp(), actor, options);
+      const notes = appendResetNote(current.notes, await this.getTimezoneFormattedTimestamp(), actor, options, {
+        newSystemId: row.new_system_id,
+        newSystemReading: row.new_system_reading,
+        newSystemType: row.new_system_type,
+        newModuleId: row.new_module_id,
+        newModuleRead: row.new_module_read,
+        newModuleType: row.new_module_type,
+        newGps: row.new_gps,
+      });
       const attachments = options.attachments === "delete" ? [] : (current.attachments || []).filter(
         attachment => !files!.removedNames.includes(attachment.split(/[\\/]/).pop() || ""),
       );
@@ -974,9 +982,16 @@ export class ProjectWorkOrderStorage {
           scheduled_at = NULL, scheduled_by = NULL, trouble = NULL,
           signature_data = NULL, signature_name = NULL,
           assigned_user_id = $2, assigned_group_id = $3, attachments = $4,
-          notes = $5, updated_by = $6, updated_at = NOW()
+          notes = $5, updated_by = $6, updated_at = NOW(),
+          new_system_id = CASE WHEN $7::boolean THEN NULL ELSE new_system_id END,
+          new_system_reading = CASE WHEN $7::boolean THEN NULL ELSE new_system_reading END,
+          new_system_type = CASE WHEN $7::boolean THEN NULL ELSE new_system_type END,
+          new_module_id = CASE WHEN $7::boolean THEN NULL ELSE new_module_id END,
+          new_module_read = CASE WHEN $7::boolean THEN NULL ELSE new_module_read END,
+          new_module_type = CASE WHEN $7::boolean THEN NULL ELSE new_module_type END,
+          new_gps = CASE WHEN $7::boolean THEN NULL ELSE new_gps END
          WHERE id = $1 RETURNING *`,
-        [id, assignment.assignedUserId, assignment.assignedGroupId, attachments, notes, actor],
+        [id, assignment.assignedUserId, assignment.assignedGroupId, attachments, notes, actor, options.capturedData === "clear"],
       );
       await client.query(
         `DELETE FROM public.work_order_time_tracking WHERE project_id = $1 AND system_work_order_id = $2`,

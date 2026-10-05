@@ -1,1 +1,1 @@
-- [Work-order reset scope](work-order-reset-scope.md) — reopening clears completion lifecycle state, not customer or meter/module baseline data.
+- [Work-order reset scope](work-order-reset-scope.md) — one keep/clear choice for captured changeout data; save prior values in Notes and preserve old-device/customer baseline data.
