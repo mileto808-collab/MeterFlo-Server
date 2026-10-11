@@ -3,3 +3,4 @@
 - [Permission verification](permission-verification.md) — verify permission grants through normal role management; directly seeded keys can hide missing administrator controls.
 - [Scroll-container verification](scroll-container-verification.md) — page-width checks can pass while nested content is clipped; inspect actual content widths and screenshots.
 - [Isolated browser verification](isolated-browser-verification.md) — HTTP-only test proxies can create dev-transport errors; use the built UI for acceptance checks.
+- [Image fixture validity](image-fixture-validity.md) — byte-for-byte transport checks can pass with corrupt images; verify fixture format integrity too.

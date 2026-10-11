@@ -37,6 +37,12 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || "playwright")
     const missingAnchors = await article.evaluate(element => [...element.querySelectorAll('a[href^="#"]')]
       .map(link => link.getAttribute("href").slice(1)).filter(id => !document.getElementById(id)));
     assert.deepEqual(missingAnchors, [], "Every customer-guide section link should resolve.");
+    await article.locator("#receiving-and-storing-field-images").scrollIntoViewIfNeeded();
+    assert.ok((await article.textContent()).includes("Customer receiving workflow"));
+    assert.ok((await article.textContent()).includes("Image request limits and troubleshooting"));
+    assert.ok((await article.locator("code.language-javascript").allTextContents())
+      .some(text => text.includes("export function createImageReceiver")));
+    await page.screenshot({ path: "/tmp/documentation-images-desktop.jpg", type: "jpeg", quality: 65 });
     await article.getByRole("link", { name: "Every API Import field and option", exact: true }).click();
     await page.waitForFunction(() => {
       const target = document.getElementById("api-import-field-reference");
@@ -45,6 +51,14 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || "playwright")
     await page.screenshot({ path: "/tmp/documentation-fields-desktop.jpg", type: "jpeg", quality: 65 });
     await page.getByTestId("button-back-to-docs").click();
     assert.equal(new URL(page.url()).search, "");
+    await page.getByTestId("card-doc-system-admin").click();
+    await article.getByRole("link", { name: "field-image receiver instructions and runnable example", exact: true }).click();
+    await page.waitForURL("**/documentation?doc=customer-api#receiving-and-storing-field-images");
+    await page.waitForFunction(() => {
+      const target = document.getElementById("receiving-and-storing-field-images");
+      return target && target.getBoundingClientRect().top >= 0 && target.getBoundingClientRect().top < innerHeight;
+    });
+    await page.getByTestId("button-back-to-docs").click();
     await page.getByTestId("card-doc-system-admin").click();
     await article.getByRole("link", { name: "API Import field reference", exact: true }).first().click();
     await page.waitForURL("**/documentation?doc=customer-api#api-import-field-reference");
@@ -66,6 +80,21 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE_PATH || "playwright")
     assert.ok(widths.articleViewport <= widths.viewport, "Scroll container must not hide an intrinsically wide article.");
     assert.ok(widths.article <= widths.articleViewport + 1, "Wide tables/code must scroll locally instead of clipping guide text.");
     await page.screenshot({ path: "/tmp/documentation-fields-mobile.jpg", type: "jpeg", quality: 65 });
+    await page.goto("/documentation?doc=customer-api#receiving-and-storing-field-images");
+    await article.locator("#receiving-and-storing-field-images").waitFor();
+    await page.waitForFunction(() => {
+      const target = document.getElementById("receiving-and-storing-field-images");
+      return target && target.getBoundingClientRect().top >= 0 && target.getBoundingClientRect().top < innerHeight;
+    });
+    const imageWidths = await article.evaluate(element => ({
+      page: document.documentElement.scrollWidth, viewport: innerWidth,
+      article: element.scrollWidth, articleViewport: element.clientWidth,
+      overflowingParagraphs: [...element.querySelectorAll("p")].filter(p => p.scrollWidth > p.clientWidth + 1).length,
+    }));
+    assert.ok(imageWidths.page <= imageWidths.viewport + 1);
+    assert.ok(imageWidths.article <= imageWidths.articleViewport + 1);
+    assert.equal(imageWidths.overflowingParagraphs, 0);
+    await page.screenshot({ path: "/tmp/documentation-images-mobile.jpg", type: "jpeg", quality: 65 });
     await page.goto("/documentation?doc=not-a-guide");
     await page.getByTestId("card-doc-customer-api").waitFor();
     await page.goto("/documentation?doc=customer-api#%not-valid");

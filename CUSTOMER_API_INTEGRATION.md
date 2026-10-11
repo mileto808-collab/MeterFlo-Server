@@ -17,6 +17,8 @@ This feature works on independent Windows or Linux installations. It does not re
 - [Pull permissions, history, retries, and troubleshooting](#permissions-retries-and-troubleshooting)
 - [Outbound push configuration](#push-completed-data-configure-a-project)
 - [Outbound payload](#json-payload-contract)
+- [Receiving and storing field images](#receiving-and-storing-field-images)
+- [Image request limits and troubleshooting](#image-request-limits-and-troubleshooting)
 - [Outbound administrator workflow](#administrator-workflow-and-troubleshooting)
 
 ## Pull work orders: API Import
@@ -585,6 +587,351 @@ The receiving backend should:
 5. Respond with a 2xx status only after durable acceptance.
 
 Do not return a 2xx response for an update that was rejected or lost. Return an appropriate non-2xx status with a useful, non-sensitive response message when processing fails.
+
+## Receiving and storing field images
+
+**Audience:** the developer of the customer's receiving backend. Selecting **Customer API → Push delivery → Include field images** sends available image bytes **inside the same POST JSON body as the work-order update**. It does not initiate separate uploads, send multipart/form-data, split images into smaller requests, or provide MeterFlo download URLs. The customer must decode, store, and make those images available through its own authorized application.
+
+### What MeterFlo sends
+
+| Situation | Outbound behavior | Customer handling |
+| --- | --- | --- |
+| Include field images on | `photos` is an array of available recognized image files, potentially containing several images of the same category. | Process every entry, not only the first before/after image. |
+| On, but no image files found | `photos: []`. A saved signature can still appear separately as `signature`. A missing work-order folder produces an empty array, not a delivery error. Other file-reading errors fail payload preparation and are retried. | Do not interpret an empty array as an instruction to delete previously stored images. Check for standalone `signature`. |
+| Include field images off | `photos`, `beforePhoto`, `afterPhoto`, and `signature` are omitted. `attachments` and `signatureName` remain. | Apply the work-order data without requiring images; preserve existing customer-side images. Attachment references are not public download links. |
+| Before/after/signature compatibility fields | `beforePhoto` and `afterPhoto` repeat the bytes of the first matching categorized photo; `signature` repeats the first signature photo when one exists. | Prefer `photos`. Do not save these aliases a second time when that category was already received. |
+| Saved signature only | When no signature photo was found, the stored signature data is placed in `signature`, with any data-URL prefix removed. It is not automatically added to `photos`. This standalone field has **no filename or MIME-type field**. | Decode it independently and determine its format from the bytes. Keep `signatureName` as signer metadata, not as proof of cryptographic authenticity. |
+| PDF or other non-image attachment | File bytes are not embedded. `attachments` can still contain stored filenames/references. | Do not assume every attachment has an accompanying `photos` entry, or try to fetch a filename as a URL. |
+
+The server recursively reads the configured project's work-order folder. Recognized extensions, case-insensitively, are `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`, `.bmp`, `.tif`, and `.tiff`. Symlinks are not followed. `contentType` is inferred from the extension, **not from image decoding**; the receiver must verify the actual bytes.
+
+`filename` can include relative category folders, such as `before/meter.png`. It is descriptive metadata, **never a safe filesystem path**. Exact lowercase folders `before`, `after`, `trouble`, and `signature` categorize their images; matching filename tokens also identify these categories (for example `after-meter.jpg`). Otherwise `type` is `photo`. These categories help organize the customer display; they do not alter the bytes. Folder categorization takes precedence over filename categorization.
+
+**Timing:** work-order fields are captured at save time, but images are read when the worker first prepares the payload. The initial delay is five seconds; it is not an upload-completion guarantee. Images arriving after payload preparation are not inserted into that delivery. Automatic and manual retries resend the saved JSON unchanged. Turning image inclusion off later does not remove bytes from an already prepared delivery. This is neither a live image synchronization feed nor a backfill operation.
+
+### Annotated image payload
+
+This is a **schema-v2 excerpt**, not the complete work-order contract. The strings starting `BASE64_` are deliberately shortened explanatory placeholders and **are not valid base64 or runnable fixtures**. The executable tests below use a complete, valid one-pixel PNG.
+
+```javascript
+{
+  "schemaVersion": 2,
+  "deliveryId": "11111111-1111-4111-8111-111111111111",
+  "projectId": 1,
+  "workOrderId": 42,
+  "customerWoId": "0002042",
+  "updatedAt": "2026-10-11T20:00:00.000Z",
+  "deliveryCreatedAt": "2026-10-11T20:00:01.000Z",
+  "signatureName": "Demo signer",
+  "photos": [
+    {"filename":"before/meter.png","type":"before","contentType":"image/png","data":"BASE64_BEFORE_1"},
+    {"filename":"before/connection.png","type":"before","contentType":"image/png","data":"BASE64_BEFORE_2"},
+    {"filename":"after/meter.jpg","type":"after","contentType":"image/jpeg","data":"BASE64_AFTER"},
+    {"filename":"trouble/access.png","type":"trouble","contentType":"image/png","data":"BASE64_TROUBLE"},
+    {"filename":"signature/signature.png","type":"signature","contentType":"image/png","data":"BASE64_SIGNATURE"},
+    {"filename":"site.webp","type":"photo","contentType":"image/webp","data":"BASE64_SITE"}
+  ],
+  "beforePhoto": "BASE64_BEFORE_1",
+  "afterPhoto": "BASE64_AFTER",
+  "signature": "BASE64_SIGNATURE"
+}
+```
+
+Here there are **six distinct photo entries**, not nine images: the three compatibility fields repeat entries already in `photos`. For a saved-signature-only delivery, the relevant excerpt could instead be `{"photos":[],"signature":"BASE64_SIGNATURE","signatureName":"Demo signer"}`. Do not require `photos[].contentType` for that standalone field; identify its byte format.
+
+### Customer receiving workflow
+
+1. **Authenticate before parsing a large body.** Resolve the integration's identity from verified credentials, and authorize its project. Do not trust a body-supplied customer/project identifier as authorization.
+2. **Validate the envelope.** Schema-v2 deliveries contain matching `deliveryId`, `Idempotency-Key`, and `X-MeterFlo-Delivery-Id`. Use the authenticated integration identity plus delivery ID as the idempotency key; scope work orders by integration, `projectId`, and `workOrderId`, and retain `customerWoId` for external matching.
+3. **Handle duplicates and stale revisions.** Use a durable unique receipt record with a transaction/lock, not an in-memory set or an unprotected “check, then insert.” Return successful acceptance for an already committed delivery without storing its images again. Compare `updatedAt`, then `deliveryCreatedAt`, before replacing newer work-order state with a historical replay.
+4. **Validate and decode all images.** Validate base64 strictly; `Buffer.from(data, "base64")` alone is permissive. Enforce encoded body, decoded image, aggregate byte, and image-count limits. Check the actual image format against the declared `contentType`; extension/MIME checks alone do not establish safety.
+5. **Store bytes and metadata durably.** Use generated object/file IDs, storing the original filename only as metadata. Link category, verified content type, work-order keys, signer name and delivery ID. Store raw binary bytes, not a second base64 copy, unless your storage specifically requires it.
+6. **Commit before acknowledging.** The example below stores image BLOBs, metadata, and the receipt in one SQLite transaction, so an error rolls them all back. With external object storage, stage uploads under unique private keys, commit references/receipt only after uploads succeed, and clean up uncommitted objects after errors/crashes. Never mark a receipt processed before its images are durable.
+7. **Provide controlled retrieval.** The customer owns its download/display endpoints; enforce customer/project authorization on every read. Use generated IDs and verified content types, never a request-provided path or public bucket.
+
+A reliable alternative is to authenticate/validate and **durably queue the complete payload, including bytes**, then return `202`. The customer is responsible for its own downstream retries, failure visibility and storage recovery: MeterFlo considers that `202` delivered and does not monitor the customer's queue.
+
+### Runnable Node/Express receiver example
+
+The reference implementation is also in `examples/customer-image-receiver.mjs`. It is **customer-side sample code**, not a new MeterFlo endpoint or a service started by MeterFlo. It uses Node.js with built-in `fetch` (use a supported LTS release), Express 4 and `better-sqlite3` 12; those packages are already installed in this repository. In a separate customer project, run `npm install express@4 better-sqlite3@12` and save the following as `customer-image-receiver.mjs`. The native SQLite package requires a compatible Node runtime and prebuilt binary or native build tools.
+
+**Prerequisites and boundaries:**
+
+- Supply a dedicated SQLite database on durable, private local disk, and verified **synchronous** `authenticate` and `authorizeProject` adapters. The example fails closed when the caller/project is unauthorized. Never use the demo keys in production.
+- SQLite serializes concurrent writers using `BEGIN IMMEDIATE`; image BLOBs, work-order metadata and receipt commit together. A failed transaction leaves nothing partially accepted, so a retry can succeed after recovery. Multi-host deployments should use a shared transactional database or durable inbox with equivalent unique-key/locking semantics, not separate per-host SQLite files or a SQLite file on unsupported network storage.
+- This sample checks actual byte signatures against declared MIME types. **It is not a full image decoder or production security gateway.** Add a maintained image decoder/scanner with dimension, pixel/decompression and processing-time limits before displaying untrusted images. The PNG fixture is a real complete image; passing a byte-signature check alone does not prove an arbitrary image is complete or safe.
+- The default customer-side limits are **30 MiB JSON**, **8 MiB per decoded image**, **20 MiB decoded images total**, and **64 images**. They are demonstration receiver policies, not MeterFlo settings. Adjust them to the real contract, available memory and proxy limits.
+- Only schema-v2, matching-header requests are accepted by this example. Historical legacy replay payloads may require a separately validated adapter; do not assume old contracts have these fields.
+
+```javascript
+// Customer-side reference only. MeterFlo does not import or run this module.
+import express from "express";
+import { randomUUID } from "node:crypto";
+
+const categories = new Set(["before", "after", "trouble", "signature", "photo"]);
+const problem = (status, message) => Object.assign(new Error(message), { status });
+
+// Inspect bytes, not the filename. This identifies format, not complete image
+// validity: a production decoder must also enforce dimensions and pixel limits.
+export function imageFormat(bytes) {
+  const hex = bytes.subarray(0, 8).toString("hex");
+  if (hex === "89504e470d0a1a0a") return "image/png";
+  if (hex.startsWith("ffd8ff")) return "image/jpeg";
+  if (["GIF87a", "GIF89a"].includes(bytes.subarray(0, 6).toString())) return "image/gif";
+  if (bytes.length >= 12 && bytes.toString("ascii", 0, 4) === "RIFF" &&
+      bytes.toString("ascii", 8, 12) === "WEBP") return "image/webp";
+  if (hex.startsWith("424d")) return "image/bmp";
+  if (hex.startsWith("49492a00") || hex.startsWith("4d4d002a")) return "image/tiff";
+  throw problem(422, "Unsupported image byte format");
+}
+
+export function decodeImage(data, maxBytes) {
+  if (typeof data !== "string" || !data.length || data.length % 4 !== 0 ||
+      !/^[A-Za-z0-9+/]+={0,2}$/.test(data)) {
+    throw problem(422, "Invalid base64 image");
+  }
+  if (data.length > 4 * Math.ceil(maxBytes / 3)) throw problem(413, "Image exceeds decoded-size limit");
+  const bytes = Buffer.from(data, "base64");
+  if (bytes.length > maxBytes) throw problem(413, "Image exceeds decoded-size limit");
+  if (bytes.toString("base64") !== data) throw problem(422, "Noncanonical base64 image");
+  return bytes;
+}
+
+export function collectImages(payload, { maxImageBytes, maxTotalBytes, maxImages }) {
+  if (payload.photos !== undefined && !Array.isArray(payload.photos)) throw problem(422, "photos must be an array");
+  const inputs = [...(payload.photos ?? [])];
+  // These fields repeat the first matching photo; do not store them twice.
+  for (const [key, type] of [["beforePhoto", "before"], ["afterPhoto", "after"], ["signature", "signature"]]) {
+    if (payload[key] && !inputs.some(image => image?.type === type)) {
+      inputs.push({ filename: `${type}-compatibility`, type, data: payload[key] });
+    }
+  }
+  if (inputs.length > maxImages) throw problem(413, "Too many images");
+  let total = 0;
+  return inputs.map(image => {
+    if (!image || !categories.has(image.type) || typeof image.filename !== "string" ||
+        image.filename.length > 2000) throw problem(422, "Invalid image metadata");
+    const bytes = decodeImage(image.data, maxImageBytes);
+    total += bytes.length;
+    if (total > maxTotalBytes) throw problem(413, "Images exceed total decoded-size limit");
+    const contentType = imageFormat(bytes);
+    if (image.contentType !== undefined && image.contentType !== contentType) {
+      throw problem(422, "Image MIME type does not match bytes");
+    }
+    return { id: randomUUID(), filename: image.filename, type: image.type, contentType, bytes };
+  });
+}
+
+/**
+ * db: a dedicated better-sqlite3 Database on durable, private local storage.
+ * authenticate(req): synchronous verified principal or null; never body-derived.
+ * authorizeProject(principal, projectId): synchronous boolean.
+ * This is a receiving customer service, NOT a route to install into MeterFlo.
+ */
+export function createImageReceiver({
+  db, authenticate, authorizeProject, jsonLimit = "30mb",
+  maxImageBytes = 8 * 1024 * 1024, maxTotalBytes = 20 * 1024 * 1024, maxImages = 64,
+}) {
+  if (typeof authenticate !== "function" || typeof authorizeProject !== "function") {
+    throw new Error("Authentication and project authorization adapters are required");
+  }
+  for (const limit of [maxImageBytes, maxTotalBytes, maxImages]) {
+    if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("Limits must be positive integers");
+  }
+  db.pragma("journal_mode = WAL");
+  db.pragma("synchronous = FULL");
+  db.pragma("busy_timeout = 5000");
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS receipts (
+      sender TEXT NOT NULL, id TEXT NOT NULL, result TEXT NOT NULL,
+      PRIMARY KEY(sender,id));
+    CREATE TABLE IF NOT EXISTS work_orders (
+      sender TEXT NOT NULL, project INTEGER NOT NULL, wo INTEGER NOT NULL,
+      updated INTEGER NOT NULL, created INTEGER NOT NULL, metadata TEXT NOT NULL, refs TEXT NOT NULL,
+      PRIMARY KEY(sender,project,wo));
+    CREATE TABLE IF NOT EXISTS images (
+      id TEXT PRIMARY KEY, sender TEXT NOT NULL, project INTEGER NOT NULL, wo INTEGER NOT NULL,
+      delivery TEXT NOT NULL, filename TEXT NOT NULL, category TEXT NOT NULL,
+      mime TEXT NOT NULL, bytes BLOB NOT NULL);
+  `);
+  const save = db.transaction((sender, payload) => {
+    const prior = db.prepare("SELECT result FROM receipts WHERE sender=? AND id=?").get(sender, payload.deliveryId);
+    if (prior) return JSON.parse(prior.result);
+    const old = db.prepare("SELECT * FROM work_orders WHERE sender=? AND project=? AND wo=?")
+      .get(sender, payload.projectId, payload.workOrderId);
+    const updated = Date.parse(payload.updatedAt), created = Date.parse(payload.deliveryCreatedAt);
+    if (old && (updated < old.updated || (updated === old.updated && created <= old.created))) {
+      const result = { deliveryId: payload.deliveryId, state: "ignored-stale", images: [] };
+      db.prepare("INSERT INTO receipts VALUES (?,?,?)").run(sender, payload.deliveryId, JSON.stringify(result));
+      return result;
+    }
+    const images = collectImages(payload, { maxImageBytes, maxTotalBytes, maxImages });
+    const insert = db.prepare("INSERT INTO images VALUES (?,?,?,?,?,?,?,?,?)");
+    for (const image of images) insert.run(image.id, sender, payload.projectId, payload.workOrderId,
+      payload.deliveryId, image.filename, image.type, image.contentType, image.bytes);
+    const refs = images.map(({ id, filename, type, contentType }) => ({
+      id, filename, type, contentType, url: `/images/${id}`,
+    }));
+    // Absence/empty is not a deletion instruction. Retain earlier references.
+    const currentRefs = refs.length ? refs : JSON.parse(old?.refs ?? "[]");
+    const { photos, beforePhoto, afterPhoto, signature, ...metadata } = payload;
+    db.prepare(`INSERT INTO work_orders VALUES (?,?,?,?,?,?,?)
+      ON CONFLICT(sender,project,wo) DO UPDATE SET updated=excluded.updated,
+      created=excluded.created,metadata=excluded.metadata,refs=excluded.refs`)
+      .run(sender, payload.projectId, payload.workOrderId, updated, created,
+        JSON.stringify(metadata), JSON.stringify(currentRefs));
+    const result = { deliveryId: payload.deliveryId, state: "accepted", images: refs };
+    db.prepare("INSERT INTO receipts VALUES (?,?,?)").run(sender, payload.deliveryId, JSON.stringify(result));
+    return result;
+  });
+  const app = express();
+  app.disable("x-powered-by");
+  // Authenticate BEFORE allocating memory to parse a potentially large body.
+  app.use((req, res, next) => {
+    try {
+      const principal = authenticate(req);
+      if (!principal || typeof principal.id !== "string" || !principal.id) return res.sendStatus(401);
+      req.principal = principal;
+      next();
+    } catch { res.sendStatus(401); }
+  });
+  app.post("/work-orders", express.json({ limit: jsonLimit, inflate: false }), (req, res, next) => {
+    try {
+      const p = req.body;
+      if (!p || p.schemaVersion !== 2 || typeof p.deliveryId !== "string" ||
+          !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(p.deliveryId) ||
+          !Number.isSafeInteger(p.projectId) || p.projectId < 1 ||
+          !Number.isSafeInteger(p.workOrderId) || p.workOrderId < 1 ||
+          typeof p.updatedAt !== "string" || !Number.isFinite(Date.parse(p.updatedAt)) ||
+          typeof p.deliveryCreatedAt !== "string" || !Number.isFinite(Date.parse(p.deliveryCreatedAt))) {
+        throw problem(422, "Invalid schema-v2 delivery identifiers or timestamps");
+      }
+      if (req.get("Idempotency-Key") !== p.deliveryId || req.get("X-MeterFlo-Delivery-Id") !== p.deliveryId) {
+        throw problem(422, "Delivery headers and body must match");
+      }
+      if (authorizeProject(req.principal, p.projectId) !== true) throw problem(403, "Project not authorized");
+      // BEGIN IMMEDIATE serializes competing SQLite writers; PK prevents duplicates.
+      // Image BLOBs, references, work-order metadata and receipt commit together.
+      res.status(200).json(save.immediate(req.principal.id, p));
+    } catch (error) { next(error); }
+  });
+  app.get("/images/:id", (req, res, next) => {
+    try {
+      const image = db.prepare("SELECT * FROM images WHERE id=? AND sender=?")
+        .get(req.params.id, req.principal.id);
+      if (!image || authorizeProject(req.principal, image.project) !== true) return res.sendStatus(404);
+      res.set({
+        "Content-Type": image.mime, "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "private, no-store", "Content-Security-Policy": "default-src 'none'",
+        "Content-Disposition": `attachment; filename="${image.id}"`,
+      }).send(image.bytes);
+    } catch (error) { next(error); }
+  });
+  app.use((error, req, res, next) => {
+    const status = error.status >= 400 && error.status < 500 ? error.status : 503;
+    // Never log the payload, bytes, auth headers, DB paths or internal errors.
+    res.status(status).json({ error: status === 503 ? "Storage unavailable; retry later" :
+      error.type === "entity.too.large" ? "JSON body exceeds receiver limit" :
+      error.type === "entity.parse.failed" ? "Invalid JSON" : error.message });
+  });
+  return app;
+}
+```
+
+The example stores an update's image references in `work_orders.refs`; older image rows are retained as delivery history, not deleted automatically. Adopt an explicit customer retention policy before production. An empty/missing photo collection preserves the current references. A newer nonempty collection becomes the current collection; its images are independently linked to the new delivery. Only duplicate retries of the **same delivery** are deduplicated; this is not cross-revision content deduplication.
+
+For a **local-only demonstration**, save this second file as `customer-image-receiver-demo.mjs` alongside the module. From this repository, run `node examples/customer-image-receiver-demo.mjs /tmp/customer-image-receiver-demo.sqlite`. No MeterFlo settings or customer endpoints need to be changed. The public dummy key is intentionally unsuitable for production:
+
+The `/tmp` path is a disposable Linux example. On Windows, pass a database path in an existing private test directory, such as `node examples/customer-image-receiver-demo.mjs "C:\PrivateDemo\receiver.sqlite"`. For production, use persistent storage and an explicit backup/retention policy, not `/tmp`. Stop the local launcher with Ctrl+C and remove its disposable database files after testing.
+
+```javascript
+// LOCAL DEMONSTRATION ONLY. These public dummy keys provide no real security.
+// Never deploy this launcher or configure a production MeterFlo project with it.
+import Database from "better-sqlite3";
+import { createImageReceiver } from "./customer-image-receiver.mjs";
+
+const db = new Database(process.argv[2] || "/tmp/customer-image-receiver-demo.sqlite");
+const app = createImageReceiver({
+  db,
+  authenticate: req => req.get("X-Demo-Key") === "local-demo-only" ? { id: "demo-customer" } : null,
+  authorizeProject: (principal, projectId) => principal.id === "demo-customer" && projectId === 1,
+});
+const server = app.listen(5101, "127.0.0.1", () => {
+  console.log("Local demo receiver on http://127.0.0.1:5101/work-orders; dummy projectId 1 only");
+});
+process.on("SIGINT", () => server.close(() => { db.close(); process.exit(0); }));
+```
+
+Send a complete PNG to that demo without involving MeterFlo, using Node's built-in `fetch`:
+
+```javascript
+// Save as send-demo.mjs and run: node send-demo.mjs
+import { randomUUID } from "node:crypto";
+const data = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
+const deliveryId = randomUUID();
+const body = {
+  schemaVersion: 2, deliveryId, projectId: 1, workOrderId: 42,
+  customerWoId: "0002042", updatedAt: new Date().toISOString(),
+  deliveryCreatedAt: new Date().toISOString(),
+  photos: [{ filename: "before/demo.png", type: "before", contentType: "image/png", data }],
+  beforePhoto: data,
+};
+const response = await fetch("http://127.0.0.1:5101/work-orders", {
+  method: "POST",
+  headers: { "Content-Type": "application/json", "X-Demo-Key": "local-demo-only",
+    "Idempotency-Key": deliveryId, "X-MeterFlo-Delivery-Id": deliveryId },
+  body: JSON.stringify(body),
+});
+const result = await response.json();
+console.log(response.status, result);
+if (!response.ok) throw new Error("Demo delivery rejected");
+// Retry this SAME body with the SAME deliveryId: no second image is stored.
+const image = await fetch(`http://127.0.0.1:5101${result.images[0].url}`, {
+  headers: { "X-Demo-Key": "local-demo-only" },
+});
+if (!image.ok) throw new Error("Demo image retrieval rejected");
+const bytes = Buffer.from(await image.arrayBuffer());
+if (!bytes.equals(Buffer.from(data, "base64"))) throw new Error("Image bytes differ");
+console.log("Decoded/retrieved PNG matches original bytes");
+```
+
+### Displaying images in the customer's application
+
+The example's `/images/<generated-id>` URLs belong to the **customer receiver**, not MeterFlo. An `<img>` tag cannot attach a custom API-key header. Prefer a customer UI endpoint protected by its own user session and project permissions, or have the UI fetch through an authorized customer backend and create an object URL from the returned Blob. Revoke object URLs when no longer needed. **Never put the integration secret in browser JavaScript, a query string or an image URL.** The demo key is public only because the demo is local and disposable.
+
+Serve verified image types with `X-Content-Type-Options: nosniff`, appropriate cache controls, and access checks. Keep the attachment disposition for downloads; for inline display, use a separately authorized, image-validated endpoint. Sanitize original filenames before rendering them as text, and do not treat embedded GPS/customer information or signatures as public data.
+
+## Image request limits and troubleshooting
+
+MeterFlo currently has **no outbound per-image/aggregate size setting, resizing, compression, thumbnail generation, multipart mode, or image-URL mode**. It loads recognized files, base64-encodes them, and prepares one full JSON payload in memory. Customer-side limits do not cause MeterFlo to automatically shrink or split the payload.
+
+- Base64 length is `4 × ceil(binaryBytes / 3)`—approximately **33% larger** than the binary image. JSON metadata and repeated `beforePhoto`, `afterPhoto`, and `signature` fields add more. For example, 6 MiB before plus 6 MiB after is about 16 MiB in `photos`, **another 16 MiB in aliases**, plus metadata: it exceeds the example's 30 MiB body limit even though the distinct decoded images total only 12 MiB.
+- Configure both the receiver's JSON parser **and every reverse proxy/gateway** for the maximum accepted body. Express's usual small default is inadequate for photos; the sample explicitly sets a configurable limit. Check infrastructure upload and read timeouts too.
+- MeterFlo's request timeout is fixed at **30 seconds**. If synchronous validation/storage cannot reliably finish within that time, accept into a durable customer-side inbox/queue first. A timeout can occur after the customer commits: idempotency is therefore required.
+- MeterFlo treats **all 2xx statuses as success**, including `202` and a `200` response whose JSON says `{"success":false}`. Return non-2xx for unaccepted work. Non-2xx responses **including 400, 401, 403, 413 and 422** are retried under the same five-attempt policy; they are not automatically classified as permanent errors.
+- A helpful rejection can identify a limit/category or missing field without repeating image bytes, credentials, signer/customer details, stack traces or storage paths. The receiver's demo policies return `413` for size/count limits, `422` for invalid image/envelope data, and `503` for storage failures.
+
+| Symptom | Likely cause and action |
+| --- | --- |
+| HTTP 413 / “request entity too large” | A customer parser/proxy limit was exceeded. Measure the full serialized body, including aliases; adjust approved limits and capacity, then admin retry the same delivery. Turning images off does not rebuild a prepared oversized payload. |
+| HTTP 422 / image MIME mismatch | MeterFlo derives MIME from file extension; content may not match. Inspect the affected file safely and the receiver's supported formats. Do not bypass validation or rename malicious content to make it pass. Existing prepared deliveries retain their original bytes; fixing a source file alone does not rewrite them. |
+| Accepted work order but no images | Check whether inclusion was off at preparation, `photos` is empty, files have recognized extensions, or uploads arrived after preparation. Look for standalone `signature`. A filename in `attachments` alone does not carry bytes. |
+| Duplicate photos after retry | The receiver lacks a durable, concurrency-safe delivery receipt or also stored compatibility aliases as extra images. Deduplicate by authenticated integration and stable delivery ID, not by work-order ID alone. |
+| Timeout / 503 / partial customer storage | Do not acknowledge lost work. Roll back or clean up partial storage, resolve the customer's capacity/storage issue, and retry the same delivery. A previously committed receipt must return success without writing twice. |
+
+Use **Customer API → Push delivery → delivery activity → View attempts**, or **Settings → Customer API Logs**, to inspect delivery IDs, HTTP status and response/error history. Base64 bodies can contain private customer photos and signatures; protect database/backups, do not copy them into support messages or ordinary request logs, and use sanitized samples for troubleshooting. Base64 is not encryption: require HTTPS outside a controlled local test network, restrict storage access, and define customer retention/deletion rules explicitly.
+
+### Verify the receiver examples
+
+Run from the repository root:
+
+```bash
+node --import tsx --test tests/customer-image-receiver.test.mjs
+npm run test:api-import-docs
+npm run test:customer-api
+```
+
+The receiver suite uses disposable SQLite databases, local HTTP servers and complete dummy PNGs, with no customer endpoint, real credentials or production work-order changes. It checks byte-for-byte decoding/retrieval, categories and multiple images, alias handling, off/empty/signature fallback, concurrent retries and durable receipts, stale updates, invalid data/MIME, image/body limits, and rollback/recovery after a storage failure. It also checks that this embedded receiver source matches the runnable module. These checks validate the example, **not a customer's deployment**; review its real storage, authentication, full image decoding/scanning, resource limits and monitoring before going live.
 
 ## Administrator workflow and troubleshooting
 
