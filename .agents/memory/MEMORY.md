@@ -1,1 +1,2 @@
 - [Work-order reset scope](work-order-reset-scope.md) — one keep/clear choice for captured changeout data; save prior values in Notes and preserve old-device/customer baseline data.
+- [Customer API expectations](customer-api-reliability.md) — enabled delivery must be complete, automatically retried, admin-retryable, and diagnosable.

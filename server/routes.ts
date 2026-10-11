@@ -26,7 +26,7 @@ import { ExternalDatabaseService } from "./externalDbService";
 import { createBackupArchive, extractDatabaseBackupFromArchive, restoreFullSystem, restoreFilesFromArchive } from "./systemBackup";
 import { createPgBackupArchive, extractBackupFromArchive, restorePgBackup, restoreFilesFromPgArchive, restoreWebAppFilesFromArchive, BackupType } from "./pgBackup";
 import { projectEventEmitter, emitWorkOrderCreated, emitWorkOrderUpdated, emitWorkOrderDeleted, emitFileAdded, emitFileDeleted, type ProjectEvent } from "./eventEmitter";
-import { sendWorkOrderToCustomerApi } from "./customerApiService";
+import { retryCustomerDelivery, retryLegacyCustomerLog } from "./customerApiService";
 import { toZonedTime, format as formatTz } from "date-fns-tz";
 import nodemailer from "nodemailer";
 
@@ -2831,21 +2831,7 @@ export async function registerRoutes(
         );
       }
       
-      // Send to customer API if work order was just completed
-      const wasCompleted = existingWorkOrder.status !== "Completed" && workOrder.status === "Completed";
-      if (wasCompleted) {
-        const folderName = workOrder.customerWoId || String(workOrder.id);
-        const woFolderPath = path.join(
-          await getProjectFilesPath(),
-          getProjectDirectoryName(project.name, project.id),
-          "Work Orders",
-          folderName
-        );
-        
-        sendWorkOrderToCustomerApi(projectId, workOrder, {
-          workOrderFolderPath: woFolderPath,
-        }).catch(err => console.error("[CustomerAPI] Background send failed:", err));
-      }
+      // Customer delivery is recorded transactionally by updateWorkOrder.
       
       emitWorkOrderUpdated(projectId, workOrderId, currentUser?.id);
       res.json(workOrder);
@@ -3789,6 +3775,10 @@ export async function registerRoutes(
       
       if (!startTime || !endTime) {
         return res.status(400).json({ message: "Start time and end time are required" });
+      }
+      if (!Number.isFinite(new Date(startTime).getTime()) || !Number.isFinite(new Date(endTime).getTime()) ||
+          new Date(endTime).getTime() < new Date(startTime).getTime()) {
+        return res.status(400).json({ message: "Time tracking requires valid dates with end time at or after start time" });
       }
       
       // Use the customerWoId from the work order as the identifier
@@ -6135,6 +6125,97 @@ export async function registerRoutes(
     return 0;
   }
 
+  const customerApiRow = (row: any) => Object.fromEntries(
+    Object.entries(row).map(([key, value]) => [key.replace(/_([a-z])/g, (_: string, letter: string) => letter.toUpperCase()), value]));
+
+  app.get("/api/customer-api-deliveries", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.claims.sub);
+      if (!user || !await storage.hasPermission(user, permissionKeys.SETTINGS_CUSTOMER_API_LOGS)) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      const admin = user.role === "admin" || await storage.isAdminUser(user);
+      const ids = admin ? null : (await storage.getUserProjects(user.id)).map(p => p.id);
+      const projectId = req.query.projectId ? Number(req.query.projectId) : null;
+      const status = req.query.status ? String(req.query.status) : null;
+      if ((projectId !== null && (!Number.isSafeInteger(projectId) || projectId < 1)) ||
+          (status && !["pending","processing","retrying","delivered","failed","paused"].includes(status))) {
+        return res.status(400).json({ message: "Invalid delivery filter" });
+      }
+      if (ids && projectId && !ids.includes(projectId)) return res.status(403).json({ message: "Forbidden" });
+      const limit = Math.min(500, Math.max(1, Number(req.query.limit) || 50));
+      const offset = Math.max(0, Number(req.query.offset) || 0);
+      if (!Number.isSafeInteger(limit) || !Number.isSafeInteger(offset)) return res.status(400).json({ message: "Invalid pagination" });
+      const where = `($1::int IS NULL OR d.project_id=$1) AND ($2::text IS NULL OR d.status=$2)
+        AND ($3::int[] IS NULL OR d.project_id=ANY($3))`;
+      const { rows } = await pool.query(
+        `SELECT d.id,d.project_id,d.work_order_id,d.customer_wo_id,d.status,d.attempt_count,d.cycle_attempts,
+          d.next_attempt_at,d.last_error,d.last_response_status,d.delivered_at,d.created_at,d.updated_at,
+          p.name AS project_name
+         FROM public.customer_api_deliveries d JOIN public.projects p ON p.id=d.project_id
+         WHERE ${where} ORDER BY d.created_at DESC LIMIT $4 OFFSET $5`, [projectId,status,ids,limit,offset]);
+      const { rows: [count] } = await pool.query(
+        `SELECT count(*) FROM public.customer_api_deliveries d WHERE ${where}`, [projectId,status,ids]);
+      res.json({ deliveries: rows.map(customerApiRow), total: Number(count.count), limit, offset });
+    } catch (error) {
+      console.error("[CustomerAPI] Listing deliveries failed:", error);
+      res.status(500).json({ message: "Failed to load customer API deliveries" });
+    }
+  });
+
+  app.get("/api/customer-api-deliveries/:deliveryId/attempts", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.claims.sub);
+      if (!user || !await storage.hasPermission(user, permissionKeys.SETTINGS_CUSTOMER_API_LOGS)) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      const { rows: [delivery] } = await pool.query(`SELECT project_id FROM public.customer_api_deliveries WHERE id=$1`, [req.params.deliveryId]);
+      if (!delivery) return res.status(404).json({ message: "Delivery not found" });
+      if (user.role !== "admin" && !await storage.isAdminUser(user) && !await storage.isUserAssignedToProject(user.id, delivery.project_id)) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      const { rows } = await pool.query(`SELECT * FROM public.customer_api_logs WHERE delivery_id=$1 ORDER BY attempt_number DESC`, [req.params.deliveryId]);
+      res.json(rows.map(customerApiRow));
+    } catch (error) {
+      console.error("[CustomerAPI] Loading attempts failed:", error);
+      res.status(500).json({ message: "Failed to load delivery attempts" });
+    }
+  });
+
+  app.post("/api/customer-api-deliveries/:deliveryId/retry", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.claims.sub);
+      if (!user || (user.role !== "admin" && !await storage.isAdminUser(user))) return res.status(403).json({ message: "Admin access required" });
+      const { rows: [delivery] } = await pool.query(`SELECT id FROM public.customer_api_deliveries WHERE id=$1`, [req.params.deliveryId]);
+      if (!delivery) return res.status(404).json({ message: "Delivery not found" });
+      const queued = await retryCustomerDelivery(delivery.id, user.id);
+      if (!queued) return res.status(409).json({ message: "Enable the project's Customer API and retry a failed, scheduled, or paused delivery. Queued, running, and delivered requests cannot be retried." });
+      res.status(202).json({ message: "Delivery queued for retry", deliveryId: queued.id, status: queued.status });
+    } catch (error) {
+      console.error("[CustomerAPI] Manual retry failed:", error);
+      res.status(500).json({ message: "Failed to queue delivery retry" });
+    }
+  });
+
+  app.post("/api/customer-api-logs/:logId/retry", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.claims.sub);
+      if (!user || (user.role !== "admin" && !await storage.isAdminUser(user))) return res.status(403).json({ message: "Admin access required" });
+      const id = Number(req.params.logId);
+      if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ message: "Invalid log ID" });
+      const deliveryId = await retryLegacyCustomerLog(id, user.id);
+      res.status(202).json({ deliveryId, status: "pending", message: "Historical delivery queued for retry" });
+    } catch (error: any) {
+      const expected = ["Log entry not found", "Only failed legacy log entries can be replayed",
+        "Enable this project's Customer API before retrying", "This log has no saved payload to replay",
+        "Saved payload is not a JSON object"];
+      if (error instanceof SyntaxError) return res.status(409).json({ message: "Saved payload is not valid JSON" });
+      if (expected.includes(error.message)) return res.status(409).json({ message: error.message });
+      console.error("[CustomerAPI] Historical retry failed:", error);
+      res.status(500).json({ message: "Failed to queue historical delivery" });
+    }
+  });
+
   // Customer API Logs endpoint
   app.get("/api/customer-api-logs", isAuthenticated, async (req: any, res) => {
     try {
@@ -6148,7 +6229,7 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Forbidden: You don't have permission to view customer API logs" });
       }
       
-      const isAdmin = await storage.isAdminUser(currentUser);
+      const isAdmin = currentUser.role === "admin" || await storage.isAdminUser(currentUser);
       const userProjects = isAdmin ? null : await storage.getUserProjects(currentUser.id);
       const userProjectIds = userProjects ? userProjects.map(p => p.id) : null;
       
@@ -6162,9 +6243,9 @@ export async function registerRoutes(
       }
       
       const success = req.query.success === "true" ? true : req.query.success === "false" ? false : undefined;
-      const limit = parseInt(req.query.limit as string) || 100;
+      const limit = Math.min(500, Math.max(1, parseInt(req.query.limit as string) || 100));
       
-      let logs = await storage.getCustomerApiLogs({ projectId, success, limit });
+      let logs = await storage.getCustomerApiLogs({ projectId, projectIds: userProjectIds ?? undefined, success, limit });
       
       // Filter to user's projects if non-admin and no specific project requested
       if (!isAdmin && !projectId && userProjectIds) {
@@ -9775,22 +9856,7 @@ export async function registerRoutes(
       // Trigger webhook if configured
       await triggerProjectWebhook(project, "work_order.completed", updatedWorkOrder, currentUser);
       
-      // Send to customer API if configured and work order is completed
-      if (canChange && updatedWorkOrder) {
-        const woFolderPath = path.join(
-          await getProjectFilesPath(),
-          getProjectDirectoryName(project.name, project.id),
-          "Work Orders",
-          folderName
-        );
-        
-        sendWorkOrderToCustomerApi(projectId, updatedWorkOrder, {
-          beforePhoto: existsSync(path.join(woFolderPath, "before")) ? path.join(woFolderPath, "before") : null,
-          afterPhoto: existsSync(path.join(woFolderPath, "after")) ? path.join(woFolderPath, "after") : null,
-          signature: existsSync(path.join(woFolderPath, `${folderName}-signature.png`)) ? path.join(woFolderPath, `${folderName}-signature.png`) : null,
-          workOrderFolderPath: woFolderPath,
-        }).catch(err => console.error("[CustomerAPI] Background send failed:", err));
-      }
+      // Customer delivery is recorded transactionally by updateWorkOrder.
       
       // Emit SSE event to notify other connected clients
       emitWorkOrderUpdated(projectId, workOrderId, currentUser.id);
@@ -10242,23 +10308,7 @@ export async function registerRoutes(
       // Trigger webhook if configured
       await triggerProjectWebhook(project, "work_order.completed", updatedWorkOrder, currentUser);
       
-      // Send to customer API if configured
-      if (updatedWorkOrder) {
-        const woFolderPath = path.join(
-          await getProjectFilesPath(),
-          getProjectDirectoryName(project.name, project.id),
-          "Work Orders",
-          folderName
-        );
-        const signatureFilePath = path.join(woFolderPath, `${folderName}-signature.png`);
-        
-        sendWorkOrderToCustomerApi(projectId, updatedWorkOrder, {
-          beforePhoto: null,
-          afterPhoto: null,
-          signature: existsSync(signatureFilePath) ? signatureFilePath : null,
-          workOrderFolderPath: woFolderPath,
-        }).catch(err => console.error("[CustomerAPI] Background send failed:", err));
-      }
+      // Customer delivery is recorded transactionally by updateWorkOrder.
       
       // Emit SSE event to notify dashboard users
       emitWorkOrderUpdated(projectId, workOrderId, currentUser.id);
@@ -10721,23 +10771,7 @@ export async function registerRoutes(
       // Trigger webhook if configured
       await triggerProjectWebhook(project, "work_order.completed", updatedWorkOrder, currentUser);
       
-      // Send to customer API if configured
-      if (updatedWorkOrder) {
-        const woFolderPath = path.join(
-          await getProjectFilesPath(),
-          getProjectDirectoryName(project.name, project.id),
-          "Work Orders",
-          folderName
-        );
-        const signatureFilePath = path.join(woFolderPath, `${folderName}-signature.png`);
-        
-        sendWorkOrderToCustomerApi(projectId, updatedWorkOrder, {
-          beforePhoto: null,
-          afterPhoto: null,
-          signature: existsSync(signatureFilePath) ? signatureFilePath : null,
-          workOrderFolderPath: woFolderPath,
-        }).catch(err => console.error("[CustomerAPI] Background send failed:", err));
-      }
+      // Customer delivery is recorded transactionally by updateWorkOrder.
       
       // Emit SSE event
       emitWorkOrderUpdated(projectId, workOrderId, currentUser.id);

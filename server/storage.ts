@@ -84,8 +84,9 @@ import {
   type SupportSubmission,
   type InsertSupportSubmission,
 } from "@shared/schema";
-import { db } from "./db";
-import { eq, desc, and } from "drizzle-orm";
+import { db, pool } from "./db";
+import { enqueueCustomerDelivery } from "./customerApiService";
+import { eq, desc, and, inArray } from "drizzle-orm";
 
 export interface IStorage {
   // User operations
@@ -259,7 +260,7 @@ export interface IStorage {
   setUserFilterPreferences(userId: string, pageKey: string, visibleFilters: string[], knownFilters?: string[]): Promise<UserFilterPreferences>;
 
   // Customer API logs operations
-  getCustomerApiLogs(options?: { projectId?: number; success?: boolean; limit?: number }): Promise<CustomerApiLog[]>;
+  getCustomerApiLogs(options?: { projectId?: number; projectIds?: number[]; success?: boolean; limit?: number }): Promise<CustomerApiLog[]>;
 
   // Work order time tracking operations
   getWorkOrderTimeTracking(projectId: number, systemWorkOrderId: string): Promise<WorkOrderTimeTracking | undefined>;
@@ -1818,12 +1819,16 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Customer API logs operations
-  async getCustomerApiLogs(options?: { projectId?: number; success?: boolean; limit?: number }): Promise<CustomerApiLog[]> {
+  async getCustomerApiLogs(options?: { projectId?: number; projectIds?: number[]; success?: boolean; limit?: number }): Promise<CustomerApiLog[]> {
     const limit = options?.limit || 100;
     
     let query = db.select().from(customerApiLogs).orderBy(desc(customerApiLogs.createdAt)).limit(limit);
     
     const conditions = [];
+    if (options?.projectIds !== undefined) {
+      if (!options.projectIds.length) return [];
+      conditions.push(inArray(customerApiLogs.projectId, options.projectIds));
+    }
     if (options?.projectId !== undefined) {
       conditions.push(eq(customerApiLogs.projectId, options.projectId));
     }
@@ -1853,16 +1858,27 @@ export class DatabaseStorage implements IStorage {
   }
 
   async saveWorkOrderTimeTracking(data: InsertWorkOrderTimeTracking): Promise<WorkOrderTimeTracking> {
-    const [record] = await db
-      .insert(workOrderTimeTracking)
-      .values({
-        projectId: data.projectId,
-        systemWorkOrderId: data.systemWorkOrderId,
-        startTime: new Date(data.startTime),
-        endTime: new Date(data.endTime),
-      })
-      .returning();
-    return record;
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const { rows: [record] } = await client.query(
+        `INSERT INTO public.work_order_time_tracking (project_id,system_work_order_id,start_time,end_time)
+         VALUES ($1,$2,$3,$4) RETURNING *`,
+        [data.projectId, data.systemWorkOrderId, new Date(data.startTime), new Date(data.endTime)]);
+      const { rows: [project] } = await client.query(`SELECT database_name FROM public.projects WHERE id=$1`, [data.projectId]);
+      if (project?.database_name && /^[a-zA-Z0-9_]+$/.test(project.database_name)) {
+        const { rows: [workOrder] } = await client.query(
+          `SELECT * FROM "${project.database_name}".work_orders WHERE customer_wo_id=$1 OR id::text=$1 LIMIT 1`,
+          [data.systemWorkOrderId]);
+        if (workOrder) await enqueueCustomerDelivery(client, project.database_name, workOrder, `time-tracking:${record.id}`);
+      }
+      await client.query("COMMIT");
+      return { id: record.id, projectId: record.project_id, systemWorkOrderId: record.system_work_order_id,
+        startTime: record.start_time, endTime: record.end_time, createdAt: record.created_at };
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally { client.release(); }
   }
 
   // Support submission operations

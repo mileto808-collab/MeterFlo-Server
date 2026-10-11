@@ -1,381 +1,237 @@
-import { db } from "./db";
-import { customerApiLogs, projects } from "@shared/schema";
-import { eq } from "drizzle-orm";
-import * as fs from "fs/promises";
-import * as fsSync from "fs";
-import * as path from "path";
+import { randomUUID } from "crypto";
+import path from "path";
+import type { PoolClient } from "pg";
+import { pool } from "./db";
+import { CUSTOMER_API_SCHEMA_SQL } from "./customerApiSchema";
+import { buildCustomerPayload, customerAuthHeaders, readDeliveryPhotos, retryDelay } from "./customerApiPayload";
+import { getProjectFilesPath, getProjectDirectoryName } from "./fileStorage";
 
-function findFirstImageInDirectory(dirPath: string, photoPattern?: string): string | null {
-  if (!fsSync.existsSync(dirPath)) return null;
-  
-  const stat = fsSync.statSync(dirPath);
-  if (!stat.isDirectory()) {
-    if (isImageFile(dirPath)) return dirPath;
-    return null;
+export async function initializeCustomerApi() {
+  await pool.query(CUSTOMER_API_SCHEMA_SQL);
+}
+
+/** The caller's transaction includes both the work-order update and the outbox insert. */
+export async function enqueueCustomerDelivery(client: PoolClient, schemaName: string, row: Record<string, any>, versionKey?: string) {
+  const { rows: [project] } = await client.query(
+    `SELECT id, customer_api_enabled FROM public.projects WHERE database_name = $1`, [schemaName]);
+  if (!project?.customer_api_enabled) return;
+  const { rows: statuses } = await client.query(
+    `SELECT code, label FROM public.work_order_statuses WHERE lower(code) = lower($1)`, [row.status]);
+  const status = `${row.status} ${statuses[0]?.label ?? ""}`.toLowerCase();
+  if (!/\bcompleted\b|\btrouble\b|\bunable\b/.test(status)) return;
+  const version = versionKey ?? String(row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at);
+  await client.query(
+    `INSERT INTO public.customer_api_deliveries
+     (id, project_id, work_order_id, customer_wo_id, version_key, snapshot, next_attempt_at)
+     VALUES ($1,$2,$3,$4,$5,$6,now() + interval '5 seconds')
+     ON CONFLICT (project_id,work_order_id,version_key) DO NOTHING`,
+    [randomUUID(), project.id, row.id, row.customer_wo_id, version, JSON.stringify(row)]);
+}
+
+async function snapshotPayload(job: any, project: any) {
+  const payload: Record<string, any> = buildCustomerPayload(job.snapshot, project, job.id);
+  payload.deliveryCreatedAt = job.created_at;
+  const { rows: [tracking] } = await pool.query(
+    `SELECT start_time, end_time FROM public.work_order_time_tracking
+     WHERE project_id=$1 AND system_work_order_id=$2 ORDER BY created_at DESC LIMIT 1`,
+    [job.project_id, job.customer_wo_id || String(job.work_order_id)]);
+  payload.timeTracking = tracking ? {
+    startTime: tracking.start_time, endTime: tracking.end_time,
+    durationSeconds: Math.max(0, (new Date(tracking.end_time).getTime() - new Date(tracking.start_time).getTime()) / 1000),
+  } : null;
+  if (project.customer_api_send_photos) {
+    const folderName = job.customer_wo_id || String(job.work_order_id);
+    // Legacy identifiers must not escape the configured project's work-order folder.
+    if (/[\\/]/.test(folderName) || folderName === "..") throw new Error("Unsafe work-order attachment folder identifier");
+    const folder = path.join(await getProjectFilesPath(), getProjectDirectoryName(project.name, project.id), "Work Orders", folderName);
+    payload.photos = await readDeliveryPhotos(folder);
+    for (const [type, key] of [["before", "beforePhoto"], ["after", "afterPhoto"], ["signature", "signature"]]) {
+      const found = payload.photos.find((photo: any) => photo.type === type);
+      if (found) payload[key] = found.data;
+    }
+    if (!payload.signature && job.snapshot.signature_data) {
+      payload.signature = String(job.snapshot.signature_data).replace(/^data:[^,]*,/, "");
+    }
   }
-  
-  const imageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"];
-  
+  return JSON.stringify(payload);
+}
+
+async function boundedResponse(response: Response) {
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  let bytes = 0;
+  const buffers: Uint8Array[] = [];
   try {
-    const files = fsSync.readdirSync(dirPath);
-    
-    for (const file of files) {
-      const ext = path.extname(file).toLowerCase();
-      if (imageExtensions.includes(ext)) {
-        const filePath = path.join(dirPath, file);
-        const fileStat = fsSync.statSync(filePath);
-        if (fileStat.isFile()) {
-          if (photoPattern && !file.toLowerCase().includes(photoPattern.toLowerCase())) {
-            continue;
-          }
-          return filePath;
-        }
-      }
+    while (true) {
+      const next = await reader.read();
+      if (next.done) break;
+      const remaining = 65536 - bytes;
+      buffers.push(next.value.subarray(0, remaining));
+      bytes += next.value.length;
+      if (bytes > 65536) { await reader.cancel(); break; }
     }
-    
-    for (const file of files) {
-      const subPath = path.join(dirPath, file);
-      try {
-        const subStat = fsSync.statSync(subPath);
-        if (subStat.isDirectory()) {
-          const found = findFirstImageInDirectory(subPath, photoPattern);
-          if (found) return found;
-        }
-      } catch {
-      }
-    }
-  } catch (err) {
-    console.error("[CustomerAPI] Error reading directory:", err);
-  }
-  
-  return null;
+  } finally { reader.releaseLock(); }
+  return Buffer.concat(buffers).toString("utf8") + (bytes > 65536 ? "\n[Response truncated at 64 KiB]" : "");
 }
 
-function findPhotoInWorkOrderFolder(folderPath: string, photoType: string): string | null {
-  if (!fsSync.existsSync(folderPath)) return null;
-  
-  const subfolderPath = path.join(folderPath, photoType);
-  if (fsSync.existsSync(subfolderPath)) {
-    const result = findFirstImageInDirectory(subfolderPath);
-    if (result) return result;
-  }
-  
-  const imageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"];
+function safeRequestUrl(value: string) {
   try {
-    const files = fsSync.readdirSync(folderPath);
-    for (const file of files) {
-      const lowerFile = file.toLowerCase();
-      if (lowerFile.includes(`-${photoType}-`) || lowerFile.includes(`_${photoType}_`) || lowerFile.startsWith(`${photoType}-`) || lowerFile.startsWith(`${photoType}_`)) {
-        const ext = path.extname(file).toLowerCase();
-        if (imageExtensions.includes(ext)) {
-          return path.join(folderPath, file);
-        }
-      }
-    }
-  } catch {
+    const url = new URL(value);
+    url.username = ""; url.password = "";
+    for (const key of Array.from(url.searchParams.keys())) url.searchParams.set(key, "[redacted]");
+    return url.toString();
+  } catch { return "Invalid or missing URL"; }
+}
+
+function redactCredentials(value: string | null, config: any) {
+  if (!value) return value;
+  const secret = process.env[config.customer_api_secret_env_var];
+  if (!secret) return value;
+  for (const token of [secret, Buffer.from(secret).toString("base64")]) value = value.split(token).join("[redacted]");
+  return value;
+}
+
+async function processDelivery(job: any) {
+  const { rows: [project] } = await pool.query(`SELECT * FROM public.projects WHERE id=$1`, [job.project_id]);
+  if (!project) return;
+  if (!project.customer_api_enabled) {
+    await pool.query(`UPDATE public.customer_api_deliveries SET status='paused', next_attempt_at=now()+interval '1 minute',
+      locked_at=NULL, lock_token=NULL, updated_at=now() WHERE id=$1 AND lock_token=$2`, [job.id, job.lock_token]);
+    return;
   }
-  
-  return null;
+  let payload = job.payload;
+  let url = project.customer_api_url || "";
+  let status: number | null = null;
+  let body: string | null = null;
+  let error: string | null = null;
+  let retryAfter: string | null = null;
+  let success = false;
+  try {
+    const endpoint = new URL(url);
+    if (!["http:", "https:"].includes(endpoint.protocol) || endpoint.username || endpoint.password) {
+      throw new Error("Customer API URL must be HTTP(S) without embedded credentials");
+    }
+    const headers = customerAuthHeaders(project, process.env);
+    headers["Idempotency-Key"] = job.id;
+    headers["X-MeterFlo-Delivery-Id"] = job.id;
+    if (!payload) {
+      payload = await snapshotPayload(job, project);
+      await pool.query(`UPDATE public.customer_api_deliveries SET payload=$2 WHERE id=$1 AND lock_token=$3`,
+        [job.id, payload, job.lock_token]);
+    }
+    const response = await fetch(url, {
+      method: "POST", headers, body: payload, redirect: "error", signal: AbortSignal.timeout(30_000),
+    });
+    status = response.status;
+    retryAfter = response.headers.get("retry-after");
+    body = await boundedResponse(response);
+    success = response.ok;
+    if (!success) error = `HTTP ${response.status}: ${response.statusText}`;
+  } catch (failure) {
+    error = failure instanceof Error ? failure.message : "Customer API delivery failed";
+  }
+  const attempt = job.attempt_count + 1;
+  const cycleAttempt = job.cycle_attempts + 1;
+  const nextStatus = success ? "delivered" : cycleAttempt >= 5 ? "failed" : "retrying";
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rowCount } = await client.query(
+      `UPDATE public.customer_api_deliveries SET status=$3::varchar, attempt_count=$4, cycle_attempts=$5,
+       next_attempt_at=$6, last_error=$7, last_response_status=$8,
+       delivered_at=CASE WHEN $3::varchar='delivered' THEN now() ELSE NULL END,
+       requested_by=NULL, locked_at=NULL, lock_token=NULL, updated_at=now()
+       WHERE id=$1 AND lock_token=$2`,
+      [job.id, job.lock_token, nextStatus, attempt, cycleAttempt,
+        new Date(Date.now() + retryDelay(cycleAttempt, retryAfter)), error, status]);
+    if (rowCount) {
+      await client.query(
+        `INSERT INTO public.customer_api_logs
+        (project_id,work_order_id,customer_wo_id,request_url,request_method,request_payload,
+         response_status,response_body,success,error_message,retry_count,delivery_id,attempt_number,triggered_by)
+        VALUES ($1,$2,$3,$4,'POST',$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+        [job.project_id, job.work_order_id, job.customer_wo_id, safeRequestUrl(url), payload,
+          status, redactCredentials(body, project), success, redactCredentials(error, project), attempt - 1,
+          job.id, attempt, job.requested_by ? `manual:${job.requested_by}` : "automatic"]);
+    }
+    await client.query("COMMIT");
+  } catch (failure) {
+    await client.query("ROLLBACK");
+    throw failure;
+  } finally { client.release(); }
 }
 
-function isImageFile(filePath: string): boolean {
-  const ext = path.extname(filePath).toLowerCase();
-  return [".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"].includes(ext);
+/** SKIP LOCKED + expiring claim token prevents overlapping workers/manual retries. */
+export async function runCustomerApiWorker(projectId?: number) {
+  for (let i = 0; i < 5; i++) {
+    const { rows: [job] } = await pool.query(
+      `UPDATE public.customer_api_deliveries SET status='processing', locked_at=now(), lock_token=$1, updated_at=now()
+       WHERE id=(SELECT d.id FROM public.customer_api_deliveries d
+         WHERE ($2::int IS NULL OR d.project_id=$2)
+           AND ((d.status IN ('pending','retrying','paused') AND d.next_attempt_at<=now())
+             OR (d.status='processing' AND d.locked_at<now()-interval '2 minutes'))
+           AND NOT EXISTS (SELECT 1 FROM public.customer_api_deliveries older
+             WHERE older.project_id=d.project_id AND older.work_order_id=d.work_order_id
+               AND older.status IN ('pending','retrying','processing','paused')
+               AND (older.created_at,older.id)<(d.created_at,d.id))
+         ORDER BY d.next_attempt_at FOR UPDATE SKIP LOCKED LIMIT 1)
+       RETURNING *`, [randomUUID(), projectId ?? null]);
+    if (!job) return;
+    await processDelivery(job);
+  }
 }
 
-interface WorkOrderPayload {
-  workOrderId: number;
-  customerWoId: string;
-  status: string;
-  oldMeterNumber: string | null;
-  newMeterNumber: string | null;
-  oldMeterReading: string | null;
-  newMeterReading: string | null;
-  oldModuleId: string | null;
-  newModuleId: string | null;
-  oldModuleReading: string | null;
-  newModuleReading: string | null;
-  oldModuleType: string | null;
-  newModuleType: string | null;
-  latitude: string | null;
-  longitude: string | null;
-  gpsAccuracy: string | null;
-  serviceAddress: string | null;
-  serviceCity: string | null;
-  serviceState: string | null;
-  serviceZip: string | null;
-  completedAt: string | null;
-  completedBy: string | null;
-  notes: string | null;
-  troubleCode: string | null;
-  serviceType: string | null;
-  meterType: string | null;
-  beforePhoto?: string | null;
-  afterPhoto?: string | null;
-  signature?: string | null;
-}
-
-interface CustomerApiConfig {
-  projectId: number;
-  customerApiEnabled: boolean | null;
-  customerApiUrl: string | null;
-  customerApiAuthType: string | null;
-  customerApiKeyHeader: string | null;
-  customerApiSecretEnvVar: string | null;
-  customerApiSendPhotos: boolean | null;
-}
-
-async function getProjectApiConfig(projectId: number): Promise<CustomerApiConfig | null> {
-  const [project] = await db
-    .select({
-      projectId: projects.id,
-      customerApiEnabled: projects.customerApiEnabled,
-      customerApiUrl: projects.customerApiUrl,
-      customerApiAuthType: projects.customerApiAuthType,
-      customerApiKeyHeader: projects.customerApiKeyHeader,
-      customerApiSecretEnvVar: projects.customerApiSecretEnvVar,
-      customerApiSendPhotos: projects.customerApiSendPhotos,
-    })
-    .from(projects)
-    .where(eq(projects.id, projectId));
-
-  return project || null;
-}
-
-function getAuthHeaders(config: CustomerApiConfig): Record<string, string> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+let workerTimer: ReturnType<typeof setInterval> | undefined;
+let running = false;
+export function startCustomerApiWorker() {
+  if (workerTimer) return;
+  const tick = async () => {
+    if (running) return;
+    running = true;
+    try { await runCustomerApiWorker(); }
+    catch (error) { console.error("[CustomerAPI] Queue worker failed; delivery will be recovered:", error); }
+    finally { running = false; }
   };
-
-  if (!config.customerApiAuthType || config.customerApiAuthType === "none") {
-    return headers;
-  }
-
-  const secretEnvVar = config.customerApiSecretEnvVar;
-  if (!secretEnvVar) {
-    console.warn(`[CustomerAPI] No secret env var configured for project ${config.projectId}`);
-    return headers;
-  }
-
-  const secret = process.env[secretEnvVar];
-  if (!secret) {
-    console.warn(`[CustomerAPI] Environment variable ${secretEnvVar} not found`);
-    return headers;
-  }
-
-  switch (config.customerApiAuthType) {
-    case "api_key":
-      const headerName = config.customerApiKeyHeader || "X-API-Key";
-      headers[headerName] = secret;
-      break;
-    case "bearer_token":
-      headers["Authorization"] = `Bearer ${secret}`;
-      break;
-    case "basic_auth":
-      headers["Authorization"] = `Basic ${Buffer.from(secret).toString("base64")}`;
-      break;
-  }
-
-  return headers;
+  workerTimer = setInterval(tick, 5_000);
+  workerTimer.unref();
+  void tick();
 }
 
-async function readFileAsBase64(filePath: string): Promise<string | null> {
+export async function retryCustomerDelivery(id: string, actorId: string) {
+  const { rows: [row] } = await pool.query(
+    `UPDATE public.customer_api_deliveries d SET status='pending', cycle_attempts=0, next_attempt_at=now(),
+     requested_by=$2, last_error=NULL, updated_at=now()
+     FROM public.projects p WHERE d.id=$1 AND p.id=d.project_id AND p.customer_api_enabled=true
+       AND d.status IN ('failed','retrying','paused') RETURNING d.*`, [id, actorId]);
+  return row;
+}
+
+/** Historical fire-and-forget failures are only replayed after explicit admin action. */
+export async function retryLegacyCustomerLog(logId: number, actorId: string) {
+  const client = await pool.connect();
   try {
-    if (!filePath) return null;
-    const absolutePath = path.isAbsolute(filePath) 
-      ? filePath 
-      : path.join(process.cwd(), filePath);
-    const fileBuffer = await fs.readFile(absolutePath);
-    return fileBuffer.toString("base64");
+    await client.query("BEGIN");
+    const { rows: [log] } = await client.query(
+      `SELECT l.*,p.customer_api_enabled,p.name AS project_name FROM public.customer_api_logs l
+       JOIN public.projects p ON p.id=l.project_id WHERE l.id=$1 FOR UPDATE OF l`, [logId]);
+    if (!log) throw new Error("Log entry not found");
+    if (log.success || log.delivery_id) throw new Error("Only failed legacy log entries can be replayed");
+    if (!log.customer_api_enabled) throw new Error("Enable this project's Customer API before retrying");
+    if (!log.request_payload) throw new Error("This log has no saved payload to replay");
+    const original = JSON.parse(log.request_payload);
+    if (!original || typeof original !== "object" || Array.isArray(original)) throw new Error("Saved payload is not a JSON object");
+    const id = randomUUID();
+    const payload = original.workOrderId != null ? original :
+      buildCustomerPayload(original, { id: log.project_id, name: log.project_name }, id);
+    await client.query(
+      `INSERT INTO public.customer_api_deliveries (id,project_id,work_order_id,customer_wo_id,version_key,snapshot,payload,requested_by,attempt_count)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,1)`,
+      [id,log.project_id,log.work_order_id,log.customer_wo_id,`legacy-log:${log.id}`,JSON.stringify(original),JSON.stringify(payload),actorId]);
+    await client.query(`UPDATE public.customer_api_logs SET delivery_id=$2,attempt_number=1,triggered_by='legacy' WHERE id=$1`, [log.id,id]);
+    await client.query("COMMIT");
+    return id;
   } catch (error) {
-    console.warn(`[CustomerAPI] Failed to read file ${filePath}:`, error);
-    return null;
-  }
-}
-
-async function logApiCall(
-  projectId: number,
-  workOrderId: number | null,
-  customerWoId: string | null,
-  requestUrl: string,
-  requestPayload: string,
-  responseStatus: number | null,
-  responseBody: string | null,
-  success: boolean,
-  errorMessage: string | null
-): Promise<void> {
-  try {
-    await db.insert(customerApiLogs).values({
-      projectId,
-      workOrderId,
-      customerWoId,
-      requestUrl,
-      requestMethod: "POST",
-      requestPayload,
-      responseStatus,
-      responseBody,
-      success,
-      errorMessage,
-      retryCount: 0,
-    });
-  } catch (error) {
-    console.error("[CustomerAPI] Failed to log API call:", error);
-  }
-}
-
-export async function sendWorkOrderToCustomerApi(
-  projectId: number,
-  workOrder: Record<string, any>,
-  photoFiles?: {
-    beforePhoto?: string | null;
-    afterPhoto?: string | null;
-    signature?: string | null;
-    workOrderFolderPath?: string | null;
-  }
-): Promise<{ success: boolean; error?: string }> {
-  try {
-    const config = await getProjectApiConfig(projectId);
-    
-    if (!config || !config.customerApiEnabled || !config.customerApiUrl) {
-      console.log(`[CustomerAPI] API not enabled for project ${projectId}`);
-      return { success: true };
-    }
-
-    console.log(`[CustomerAPI] Sending work order ${workOrder.id} to ${config.customerApiUrl}`);
-
-    const rawCompletedAt = workOrder.completedAt || workOrder.completed_at || null;
-    const completedAt = rawCompletedAt instanceof Date 
-      ? rawCompletedAt.toISOString() 
-      : (typeof rawCompletedAt === 'string' ? rawCompletedAt : null);
-    
-    const gpsString = workOrder.newGps || workOrder.new_gps || workOrder.oldGps || workOrder.old_gps || "";
-    const gpsParts = gpsString.split(",").map((s: string) => s.trim());
-    const latitude = workOrder.latitude || (gpsParts[0] || null);
-    const longitude = workOrder.longitude || (gpsParts[1] || null);
-    
-    const payload: WorkOrderPayload = {
-      workOrderId: workOrder.id,
-      customerWoId: workOrder.customerWoId || workOrder.customer_wo_id || "",
-      status: workOrder.status || "",
-      oldMeterNumber: workOrder.oldSystemId || workOrder.old_system_id || workOrder.oldMeterNumber || workOrder.old_meter_number || workOrder.oldMeterId || workOrder.old_meter_id || null,
-      newMeterNumber: workOrder.newSystemId || workOrder.new_system_id || workOrder.newMeterNumber || workOrder.new_meter_number || workOrder.newMeterId || workOrder.new_meter_id || null,
-      oldMeterReading: (workOrder.oldSystemReading ?? workOrder.old_system_reading ?? workOrder.oldMeterReading ?? workOrder.old_meter_reading)?.toString() || null,
-      newMeterReading: (workOrder.newSystemReading ?? workOrder.new_system_reading ?? workOrder.newMeterReading ?? workOrder.new_meter_reading)?.toString() || null,
-      oldModuleId: workOrder.oldModuleId || workOrder.old_module_id || null,
-      newModuleId: workOrder.newModuleId || workOrder.new_module_id || null,
-      oldModuleReading: (workOrder.oldModuleReading ?? workOrder.old_module_read ?? workOrder.old_module_reading)?.toString() || null,
-      newModuleReading: (workOrder.newModuleReading ?? workOrder.new_module_read ?? workOrder.new_module_reading)?.toString() || null,
-      oldModuleType: workOrder.oldModuleType || workOrder.old_module_type || null,
-      newModuleType: workOrder.newModuleType || workOrder.new_module_type || null,
-      latitude,
-      longitude,
-      gpsAccuracy: workOrder.gpsAccuracy || workOrder.gps_accuracy || null,
-      serviceAddress: workOrder.serviceAddress || workOrder.service_address || workOrder.address || null,
-      serviceCity: workOrder.serviceCity || workOrder.service_city || workOrder.city || null,
-      serviceState: workOrder.serviceState || workOrder.service_state || workOrder.state || null,
-      serviceZip: workOrder.serviceZip || workOrder.service_zip || workOrder.zip || null,
-      completedAt,
-      completedBy: workOrder.completedBy || workOrder.completed_by || null,
-      notes: workOrder.notes || null,
-      troubleCode: workOrder.troubleCode || workOrder.trouble_code || workOrder.trouble || null,
-      serviceType: workOrder.serviceType || workOrder.service_type || null,
-      meterType: workOrder.meterType || workOrder.meter_type || workOrder.newMeterType || workOrder.new_meter_type || null,
-    };
-
-    if (config.customerApiSendPhotos && photoFiles) {
-      const folderPath = photoFiles.workOrderFolderPath;
-      
-      let beforePath: string | null = null;
-      if (photoFiles.beforePhoto) {
-        beforePath = findFirstImageInDirectory(photoFiles.beforePhoto);
-      }
-      if (!beforePath && folderPath) {
-        beforePath = findPhotoInWorkOrderFolder(folderPath, "before");
-      }
-      if (beforePath) {
-        payload.beforePhoto = await readFileAsBase64(beforePath);
-      }
-      
-      let afterPath: string | null = null;
-      if (photoFiles.afterPhoto) {
-        afterPath = findFirstImageInDirectory(photoFiles.afterPhoto);
-      }
-      if (!afterPath && folderPath) {
-        afterPath = findPhotoInWorkOrderFolder(folderPath, "after");
-      }
-      if (afterPath) {
-        payload.afterPhoto = await readFileAsBase64(afterPath);
-      }
-      
-      let signaturePath: string | null = null;
-      if (photoFiles.signature) {
-        signaturePath = findFirstImageInDirectory(photoFiles.signature);
-      }
-      if (!signaturePath && folderPath) {
-        signaturePath = findPhotoInWorkOrderFolder(folderPath, "signature");
-      }
-      if (signaturePath) {
-        payload.signature = await readFileAsBase64(signaturePath);
-      }
-    }
-
-    const headers = getAuthHeaders(config);
-    const payloadString = JSON.stringify(payload);
-
-    const response = await fetch(config.customerApiUrl, {
-      method: "POST",
-      headers,
-      body: payloadString,
-    });
-
-    const responseBody = await response.text();
-    const success = response.ok;
-
-    await logApiCall(
-      projectId,
-      workOrder.id,
-      workOrder.customerWoId,
-      config.customerApiUrl,
-      payloadString,
-      response.status,
-      responseBody,
-      success,
-      success ? null : `HTTP ${response.status}: ${response.statusText}`
-    );
-
-    if (!success) {
-      console.error(`[CustomerAPI] Failed to send work order ${workOrder.id}: HTTP ${response.status}`);
-      return { success: false, error: `HTTP ${response.status}: ${response.statusText}` };
-    }
-
-    console.log(`[CustomerAPI] Successfully sent work order ${workOrder.id}`);
-    return { success: true };
-
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    console.error(`[CustomerAPI] Error sending work order:`, error);
-
-    await logApiCall(
-      projectId,
-      workOrder.id,
-      workOrder.customerWoId || null,
-      "N/A",
-      JSON.stringify(workOrder),
-      null,
-      null,
-      false,
-      errorMessage
-    );
-
-    return { success: false, error: errorMessage };
-  }
-}
-
-export async function getApiLogs(projectId: number, limit: number = 50) {
-  return db
-    .select()
-    .from(customerApiLogs)
-    .where(eq(customerApiLogs.projectId, projectId))
-    .orderBy(customerApiLogs.createdAt)
-    .limit(limit);
+    await client.query("ROLLBACK");
+    throw error;
+  } finally { client.release(); }
 }

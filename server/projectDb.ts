@@ -4,6 +4,7 @@ import { pool } from "./db";
 import { sql } from "drizzle-orm";
 import { storage } from "./storage";
 import { appendResetNote, resetAssignment, WorkOrderResetError, type ResetWorkOrderOptions } from "../shared/work-order-reset";
+import { enqueueCustomerDelivery } from "./customerApiService";
 
 // Service type enum for work orders
 export const serviceTypeEnum = ["Water", "Electric", "Gas"] as const;
@@ -1423,13 +1424,21 @@ export class ProjectWorkOrderStorage {
       setClauses.push(`updated_at = NOW()`);
       values.push(id);
 
-      const result = await client.query(
-        `UPDATE "${this.schemaName}".work_orders SET ${setClauses.join(", ")} WHERE id = $${paramCount} RETURNING id`,
-        values
-      );
-      
-      if (!result.rows[0]) {
-        return undefined;
+      await client.query("BEGIN");
+      try {
+        const result = await client.query(
+          `UPDATE "${this.schemaName}".work_orders SET ${setClauses.join(", ")} WHERE id = $${paramCount} RETURNING *`,
+          values
+        );
+        if (!result.rows[0]) {
+          await client.query("COMMIT");
+          return undefined;
+        }
+        await enqueueCustomerDelivery(client, this.schemaName, result.rows[0]);
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
       }
       
       // Re-fetch with JOINs to get display fields (scheduledByDisplay, completedByDisplay)

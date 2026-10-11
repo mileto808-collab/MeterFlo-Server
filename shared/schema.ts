@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, jsonb, index, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, jsonb, index, uniqueIndex, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -189,8 +189,34 @@ export const customerApiLogs = pgTable("customer_api_logs", {
   success: boolean("success").default(false),
   errorMessage: text("error_message"),
   retryCount: integer("retry_count").default(0),
+  deliveryId: text("delivery_id"),
+  attemptNumber: integer("attempt_number"),
+  triggeredBy: text("triggered_by"),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+export const customerApiDeliveries = pgTable("customer_api_deliveries", {
+  id: text("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  workOrderId: integer("work_order_id").notNull(),
+  customerWoId: varchar("customer_wo_id", { length: 100 }),
+  versionKey: text("version_key").notNull(),
+  snapshot: jsonb("snapshot").notNull(),
+  payload: text("payload"),
+  status: varchar("status", { length: 20 }).notNull().default("pending"),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  cycleAttempts: integer("cycle_attempts").notNull().default(0),
+  nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+  lockedAt: timestamp("locked_at", { withTimezone: true }),
+  lockToken: text("lock_token"),
+  lastError: text("last_error"),
+  lastResponseStatus: integer("last_response_status"),
+  requestedBy: text("requested_by"),
+  deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, table => [index("customer_api_deliveries_due").on(table.status, table.nextAttemptAt),
+  uniqueIndex("customer_api_deliveries_version").on(table.projectId, table.workOrderId, table.versionKey)]);
 
 // User column preferences - stores which columns each user wants visible per page
 export const userColumnPreferences = pgTable("user_column_preferences", {

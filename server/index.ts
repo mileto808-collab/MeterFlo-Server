@@ -17,6 +17,7 @@ import { importScheduler } from "./importScheduler";
 import { fileImportScheduler } from "./fileImportScheduler";
 import { storage } from "./storage";
 import { initializeLogger, logger } from "./logger";
+import { initializeCustomerApi, startCustomerApiWorker } from "./customerApiService";
 
 const app = express();
 
@@ -96,7 +97,7 @@ app.use((req, res, next) => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
+      if (capturedJsonResponse && !path.startsWith("/api/customer-api-")) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
 
@@ -110,6 +111,7 @@ app.use((req, res, next) => {
 (async () => {
   // Initialize persistent file logging
   initializeLogger();
+  await initializeCustomerApi();
   
   await registerRoutes(httpServer, app);
 
@@ -152,6 +154,7 @@ app.use((req, res, next) => {
     },
     () => {
       log(`serving on port ${port}`);
+      startCustomerApiWorker();
       // Ensure administrator subrole exists with all permissions
       storage.ensureAdministratorSubrole().then(() => {
         log("Administrator subrole initialized");

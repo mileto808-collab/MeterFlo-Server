@@ -1,404 +1,213 @@
-# Customer API Integration Guide
+# Customer API Integration
 
-This guide explains how to configure MeterFlo to send completed work order data to your customer's backend systems via REST API.
+MeterFlo sends completed work-order and trouble-report data to a customer's backend using HTTP POST. Delivery runs in a persistent PostgreSQL queue, with automatic retries, an admin retry action, and a log for each attempt.
 
----
+This feature works on independent Windows or Linux installations. It does not require Replit, OpenID Connect, or a Replit login. MeterFlo users sign in through the application's local username/password session authentication.
 
-## Overview
+## Configure a project
 
-MeterFlo can automatically push work order data to external customer systems whenever a work order is completed. Each project can have its own API configuration, allowing you to integrate with multiple customer backends.
+1. Sign in as an administrator and open **Projects**.
+2. Edit the project and find **Customer API Integration**.
+3. Enable the integration, enter the receiving URL, choose authentication, and set the photo preference.
+4. If authentication is required, configure the named secret environment variable on the server running MeterFlo, then restart that server process so it can read the variable.
 
-### When the API fires
+| Setting | Stored project column | Behavior |
+| --- | --- | --- |
+| Enable Customer API | `customer_api_enabled` | New deliveries are recorded only when enabled. Existing queued deliveries pause while disabled and resume after re-enabling. |
+| API Endpoint URL | `customer_api_url` | HTTP(S) endpoint for JSON POST requests. Use HTTPS outside a trusted network. URLs with embedded username/password are rejected. Redirects are not followed. |
+| Authentication Type | `customer_api_auth_type` | `none`, `api_key`, `bearer_token`, or `basic_auth`. |
+| API Key Header Name | `customer_api_key_header` | Custom header for `api_key`; defaults to `X-API-Key`. Reserved delivery headers and `Content-Type` cannot be overridden. |
+| Secret Environment Variable | `customer_api_secret_env_var` | The **name** of a server environment variable; never enter the credential itself here. |
+| Include Photos | `customer_api_send_photos` | Include all work-order images and signature image data. Defaults to true. When false, image bytes and signature data are omitted; attachment filenames and signature name still remain. |
 
-The customer API call is triggered from four places in the server, all of which only fire when a work order reaches a completed state:
+### Authentication sent to the customer
 
-| Endpoint | Path | Trigger condition |
-|----------|------|-------------------|
-| Dashboard / web update | `PATCH /api/projects/:projectId/work-orders/:workOrderId` | Status transitions to `Completed` (i.e. previous status was not `Completed`). Updates that leave the status unchanged or set it to `Trouble` do **not** trigger the API. |
-| Mobile system changeout | `POST /api/projects/:projectId/mobile/work-orders/:workOrderId/complete-changeout` | Only when the changeout actually succeeds (the technician answered "Yes – Proceed" and the system / module was changed). The "Trouble" branch of this endpoint does **not** call the customer API. |
-| Mobile completion (legacy) | `POST /api/mobile/workorders/:workOrderId/complete` | Always — this endpoint marks the work order as completed. |
-| Mobile completion (project-scoped) | `POST /api/mobile/projects/:projectId/work-orders/:workOrderId/complete` | Always — this endpoint marks the work order as completed. |
+| Type | Request header |
+| --- | --- |
+| `none` | No authorization header. |
+| `api_key` | `<configured header>: <secret value>` |
+| `bearer_token` | `Authorization: Bearer <secret value>` |
+| `basic_auth` | `Authorization: Basic <base64 of username:password>` |
 
-### Delivery semantics
+For Basic authentication, the named environment variable must contain `username:password`. Supply server environment variables through your installation's secure environment configuration (for example, the service account or PM2 environment on an independent server, or workspace Secrets on Replit). Do not put credentials into source control.
 
-- **Fire-and-forget.** All four call sites invoke `sendWorkOrderToCustomerApi(...)` without `await` and attach a `.catch(...)` that only logs to the console. A customer API failure will **never** roll back the work order or fail the user-facing request.
-- **No retries.** The service writes one row to `customer_api_logs` per attempt with `retry_count = 0`. There is no automatic retry loop. If a delivery fails you must either fix the work order and re-complete it, or have your customer-side endpoint queue / retry on its end.
-- **Project copy.** When a project is duplicated via the "Copy Project" button, all customer API settings (URL, auth type, header name, secret env var name, send-photos toggle, enabled flag) are copied to the new project.
+**Missing credentials do not fall back to unauthenticated delivery.** The attempt fails before any HTTP request is sent, is logged, and enters the normal retry cycle. Invalid or missing URLs behave the same way.
 
----
+Each attempt reads the project's **current URL and authentication settings**, so a configuration correction is used by the next retry. A payload already prepared for delivery is not rebuilt when these settings change.
 
-## Configuration
+## What triggers a delivery?
 
-### Step 1: Navigate to Project Settings
+The trigger is centralized in project work-order storage, not separately implemented by each HTTP route. An enabled project's work-order update records an event when its status code or configured status label indicates **Completed**, **Trouble**, or **Unable to Complete**.
 
-1. Log in as an Administrator
-2. Go to **Projects** in the sidebar
-3. Click the **Edit** button on the project you want to configure
+This covers:
 
-### Step 2: Enable Customer API
+- Dashboard work-order edits and the current system-changeout / reading-only wizard.
+- Legacy and project-scoped mobile completion and system-changeout submissions.
+- Mobile trouble reports and accepted offline synchronization uploads.
+- Subsequent edits to already completed/trouble work orders.
+- Time-tracking saves for an already finalized work order; these create a follow-up delivery with the updated timing.
 
-Scroll down to the **Customer API Integration** section and configure:
+The work-order update and delivery event are committed in the **same database transaction**. If the event cannot be recorded, the work-order database update rolls back instead of silently losing delivery. Time-tracking saves and their events are also transactional. File uploads and separate webhook integrations are not part of this database transaction.
 
-| Setting | Database column | Description |
-|---------|-----------------|-------------|
-| **Enable Customer API** | `customer_api_enabled` | Toggle to enable/disable API integration |
-| **API Endpoint URL** | `customer_api_url` (varchar 500) | The URL where work order data will be POSTed |
-| **Authentication Type** | `customer_api_auth_type` | One of `none`, `api_key`, `bearer_token`, `basic_auth` |
-| **API Key Header Name** | `customer_api_key_header` (varchar 100) | Header name for API key (only used when auth type is `api_key`) |
-| **Secret Environment Variable** | `customer_api_secret_env_var` (varchar 100) | Name of the env var on the server containing the secret |
-| **Include Photos** | `customer_api_send_photos` (default `true`) | Whether to send photos as base64-encoded data |
+Open/in-progress updates, work-order creation/imports, and rejected/conflicted synchronization uploads do not create delivery events. The dedicated reset operation does not send a customer update. Enabling a project does not automatically backfill older records or replay earlier failed logs.
 
-### Step 3: Set Up Authentication
+## Delivery and automatic retry process
 
-Choose an authentication type based on your customer's requirements:
+1. The server records a work-order snapshot in `customer_api_deliveries`.
+2. A worker checks due deliveries every **5 seconds**. New events are initially delayed 5 seconds to let the normal completion flow finish.
+3. On the first send, the worker prepares and saves the outbound JSON, adding the latest recorded time-tracking entry and, when enabled, the available work-order images. Once prepared, this JSON is reused unchanged for every retry.
+4. MeterFlo POSTs JSON with a **30-second HTTP timeout**. Any **2xx** response is successful; no particular response-body structure is required.
+5. Non-2xx responses, network/timeout errors, payload/file preparation errors, and configuration/authentication errors are logged and automatically retried.
+6. One cycle permits **5 attempts total**: the initial attempt plus retries after **1 minute, 5 minutes, 15 minutes, and 1 hour**. These delays begin after the previous attempt finishes.
+7. A valid `Retry-After` response header can extend a retry delay, up to 24 hours. It never shortens the normal delay.
+8. After five unsuccessful attempts, the delivery remains **failed** until an administrator retries it.
 
-#### No Authentication (`none`)
-Use for internal or trusted network endpoints. No `Authorization` or API-key header is sent.
+Retries are persistent, not browser timers or an in-memory queue. They resume when the server restarts. An abandoned processing claim becomes eligible for recovery after **2 minutes**. The worker needs a running MeterFlo server and access to PostgreSQL.
 
-#### API Key (`api_key`)
-- Set **Authentication Type** to "API Key (Header)"
-- Enter the header name (e.g. `X-API-Key`). If left blank, MeterFlo defaults to `X-API-Key`.
-- Set **Secret Environment Variable** to a name like `PROJECT_1_API_KEY`
-- Add the actual API key to your server environment variables. MeterFlo sends `<HeaderName>: <secret value>`.
+Delivery does not wait for the customer's backend before returning from a work-order save. A customer rejection does **not** undo a successfully saved work order.
 
-#### Bearer Token (`bearer_token`)
-- Set **Authentication Type** to "Bearer Token"
-- Set **Secret Environment Variable** to a name like `PROJECT_1_TOKEN`
-- Add the actual token to your server environment variables
-- MeterFlo will send: `Authorization: Bearer <token>`
+### Delivery states
 
-#### Basic Authentication (`basic_auth`)
-- Set **Authentication Type** to "Basic Authentication"
-- Set **Secret Environment Variable** to a name like `PROJECT_1_BASIC_AUTH`
-- Store credentials in `username:password` format in the environment variable
-- MeterFlo will Base64-encode the value and send: `Authorization: Basic <encoded>`
+| State | Meaning |
+| --- | --- |
+| `pending` | Waiting for the initial send or an administrator-requested retry. |
+| `processing` | Claimed by a worker. |
+| `retrying` | An unsuccessful attempt has a scheduled automatic retry. |
+| `paused` | The project's integration is disabled; checked again after approximately one minute. No attempt is consumed while paused. |
+| `delivered` | A 2xx response was recorded. No further automatic attempts. |
+| `failed` | The current five-attempt cycle was exhausted. |
 
-> **Important:** If `customer_api_auth_type` is anything other than `none` and either the secret env var name is missing or the env var itself is not set on the server, MeterFlo logs a warning to the console and sends the request **without** an auth header. Set the env var on the server before enabling auth.
+Active deliveries for the same project/work order are processed in creation order. A terminal failure does not permanently block later revisions.
 
----
+### Duplicate and stale-update protection
 
-## Environment Variables
+Requests include:
 
-For security, API credentials are stored as environment variables on the server, not in the database.
-
-### Windows Server (PM2)
-
-Add to `deploy/ecosystem.config.cjs`:
-
-```javascript
-env: {
-  NODE_ENV: 'production',
-  PORT: 3000,
-  // Customer API secrets
-  PROJECT_1_API_KEY: 'your-api-key-here',
-  PROJECT_2_TOKEN: 'your-bearer-token-here',
-}
+```text
+Content-Type: application/json
+Idempotency-Key: <delivery UUID>
+X-MeterFlo-Delivery-Id: <same delivery UUID>
 ```
 
-Then restart PM2:
-```cmd
-pm2 restart meterflo
-```
-
-### Replit
-
-Add secrets in the Replit Secrets panel with the matching variable names.
-
----
-
-## Payload Format
-
-When the customer API fires, MeterFlo sends a JSON `POST` with `Content-Type: application/json` and the following body shape:
-
-```json
-{
-  "workOrderId": 123,
-  "customerWoId": "WO-2024-001",
-  "status": "Completed",
-  "oldMeterNumber": "SYS12345678",
-  "newMeterNumber": "SYS87654321",
-  "oldMeterReading": "10523",
-  "newMeterReading": "0",
-  "oldModuleId": "MOD-ABC123",
-  "newModuleId": "MOD-XYZ789",
-  "oldModuleReading": "5024",
-  "newModuleReading": "0",
-  "oldModuleType": "ITRON",
-  "newModuleType": "ITRON-2",
-  "latitude": "39.7392",
-  "longitude": "-104.9903",
-  "gpsAccuracy": null,
-  "serviceAddress": "123 Main Street",
-  "serviceCity": "Denver",
-  "serviceState": "CO",
-  "serviceZip": "80202",
-  "completedAt": "2025-12-28T14:30:00.000Z",
-  "completedBy": "user-uuid-here",
-  "notes": "System replaced successfully",
-  "troubleCode": null,
-  "serviceType": "Residential",
-  "meterType": null,
-  "beforePhoto": "base64-encoded-image-data...",
-  "afterPhoto": "base64-encoded-image-data...",
-  "signature": "base64-encoded-signature-data..."
-}
-```
-
-### Field Descriptions
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `workOrderId` | number | MeterFlo internal work order ID |
-| `customerWoId` | string | Customer's work order ID |
-| `status` | string | Work order status (almost always `"Completed"` — see "When the API fires" above) |
-| `oldMeterNumber` | string \| null | Old system serial number (from `old_system_id`) |
-| `newMeterNumber` | string \| null | New system serial number (from `new_system_id`) |
-| `oldMeterReading` | string \| null | Final reading from old system (from `old_system_reading`, serialized as a string) |
-| `newMeterReading` | string \| null | Initial reading on new system (from `new_system_reading`, serialized as a string) |
-| `oldModuleId` | string \| null | Old module serial number (from `old_module_id`) |
-| `newModuleId` | string \| null | New module serial number (from `new_module_id`) |
-| `oldModuleReading` | string \| null | Final reading from old module (from `old_module_read`, serialized as a string) |
-| `newModuleReading` | string \| null | Initial reading on new module (from `new_module_read`, serialized as a string) |
-| `oldModuleType` | string \| null | Old module type/model (from `old_module_type`) |
-| `newModuleType` | string \| null | New module type/model (from `new_module_type`) |
-| `latitude` | string \| null | GPS latitude — see "GPS handling" below |
-| `longitude` | string \| null | GPS longitude — see "GPS handling" below |
-| `gpsAccuracy` | string \| null | **Currently always `null`.** No upstream column populates this field today; it is reserved for future use. |
-| `serviceAddress` | string \| null | Service location address (from `service_address`, falls back to `address`) |
-| `serviceCity` | string \| null | Service location city (from `service_city`, falls back to `city`) |
-| `serviceState` | string \| null | Service location state (from `service_state`, falls back to `state`) |
-| `serviceZip` | string \| null | Service location ZIP (from `service_zip`, falls back to `zip`) |
-| `completedAt` | string \| null | ISO 8601 timestamp of completion (`completed_at`) |
-| `completedBy` | string \| null | User ID who completed the work (`completed_by`) |
-| `notes` | string \| null | Field notes (`notes`) |
-| `troubleCode` | string \| null | Trouble code if present on the work order (from `trouble_code` / `trouble`). Usually `null` since trouble work orders generally don't trigger the API. |
-| `serviceType` | string \| null | Service type (`service_type`) |
-| `meterType` | string \| null | Equipment type/model. Sourced from `meter_type` or `new_meter_type`; `null` if neither is set. |
-| `beforePhoto` | string \| null | Base64-encoded before photo. Only present when **Include Photos** is enabled and a before image was found. |
-| `afterPhoto` | string \| null | Base64-encoded after photo. Same conditions as `beforePhoto`. |
-| `signature` | string \| null | Base64-encoded signature image. Same conditions as `beforePhoto`. |
-
-### Note on field names
-
-The payload uses legacy "meter" field names for backward compatibility with existing customer integrations. The mapping to the actual work order columns is:
-
-- `oldMeterNumber` ← `old_system_id`
-- `newMeterNumber` ← `new_system_id`
-- `oldMeterReading` ← `old_system_reading`
-- `newMeterReading` ← `new_system_reading`
-- `meterType` ← `meter_type` or `new_meter_type` (whichever is set)
-
-Module fields (`oldModuleId`, `newModuleId`, `oldModuleReading`, `newModuleReading`, `oldModuleType`, `newModuleType`) keep their natural names and may be `null` if the work order has no module data. Note the underlying reading columns are `old_module_read` / `new_module_read` (no trailing `ing`), which differs from the system reading columns.
-
-### GPS handling
-
-`latitude` and `longitude` are derived as follows:
-
-1. If the work order has explicit `latitude` / `longitude` properties (uncommon), those are used directly.
-2. Otherwise the service reads the work order's `new_gps` value (falling back to `old_gps`), which is stored as a single `"lat,lng"` string, and splits on the comma. Both halves are trimmed.
-3. If neither is available, both fields are `null`.
+The ID is stable across automatic and manual retries of the same delivery. Worker claims prevent overlapping attempts against one delivery.
+
+HTTP delivery is **at least once**, not exactly once: a customer may accept a request just before the connection or MeterFlo process fails. The receiving system should persist the delivery ID and return a successful response for an already processed ID, without applying it twice.
 
-### Photo handling
+Use `projectId` plus `workOrderId` as the internal work-order key; internal IDs are project-scoped. `customerWoId` is the customer's external identifier when available. Apply newer revisions using `updatedAt` and `deliveryCreatedAt`, and ignore older state updates if a historical delivery is manually replayed after a newer revision was accepted.
 
-When **Include Photos** is enabled and the calling endpoint passes a work order folder path, the service tries to find each photo in this order:
+## JSON payload contract
 
-1. If the caller passed an explicit path or directory (e.g. `<folder>/before` or a specific file), it walks that directory recursively and returns the first image (`.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`, `.bmp`).
-2. If nothing was found, it looks for a `before` / `after` / `signature` subfolder under the work-order folder and returns the first image there.
-3. If still nothing, it scans files at the root of the work-order folder for filenames containing `-before-`, `_before_`, `before-`, `before_` (and the same for `after` / `signature`).
+New deliveries use **schemaVersion 2**. The original meter-named fields remain for compatibility and are aliases of the canonical system fields. Missing values are `null` unless noted. Database numeric readings are sent as **strings**, preserving precision.
 
-The found image is read from disk and base64-encoded into the payload. If no image is found, the corresponding field is simply omitted from the JSON.
+| Fields | Meaning / source |
+| --- | --- |
+| `schemaVersion`, `deliveryId`, `deliveryCreatedAt` | Contract version (2), stable delivery UUID, and event creation timestamp. |
+| `projectId`, `projectName`, `workOrderId` | MeterFlo project ID/name and project-scoped internal work-order ID. |
+| `customerWoId` | Customer's external work-order identifier; empty string if absent. |
+| `customerId`, `customerName`, `phone`, `email`, `route`, `zone` | Stored customer/contact and route information. |
+| `status`, `serviceType`, `troubleCode`, `notes` | Saved work-order outcome and notes, including trouble information. |
+| `oldSystemId`, `newSystemId`, `oldSystemReading`, `newSystemReading`, `oldSystemType`, `newSystemType` | Old/new system identifiers, readings, and types. |
+| `oldMeterNumber`, `newMeterNumber`, `oldMeterReading`, `newMeterReading` | Compatibility aliases for the corresponding system identifiers/readings. |
+| `meterType` | New system type, falling back to old system type. |
+| `oldModuleId`, `newModuleId`, `oldModuleReading`, `newModuleReading`, `oldModuleType`, `newModuleType` | Module data. Readings correctly map from `old_module_read` / `new_module_read`. |
+| `oldGps`, `newGps` | Both stored GPS strings. |
+| `latitude`, `longitude` | Strings derived from `newGps`, falling back to `oldGps`; `null` when absent. |
+| `gpsAccuracy` | Optional stored accuracy. The current canonical work-order table has no accuracy column, so this is normally `null`; no accuracy is fabricated. |
+| `serviceAddress`, `serviceCity`, `serviceState`, `serviceZip` | Stored address components. |
+| `createdBy`, `updatedBy`, `completedBy`, `scheduledBy` | Stored actor identifiers/names (not necessarily display names). |
+| `assignedUserId`, `assignedGroupId` | Saved assignment. Completion can clear these, so they may be `null`; `completedBy` is separate. |
+| `createdAt`, `updatedAt`, `scheduledAt`, `completedAt` | Stored timestamps as JSON dates, or `null`. |
+| `attachments` | Stored attachment filenames/references, default `[]`. Non-image attachment contents, such as PDFs, are not embedded. |
+| `signatureName` | Stored signer name even if image inclusion is off. |
+| `timeTracking` | Latest saved entry as `{startTime, endTime, durationSeconds}`, or `null`. |
+| `photos` | Only with image inclusion enabled: array of `{filename, type, contentType, data}` for every available image, including before/after/trouble/signature images and uncategorized photos. `data` is base64 without a data-URL prefix. |
+| `beforePhoto`, `afterPhoto` | Optional compatibility base64 fields for the first categorized image of each type. |
+| `signature` | Optional base64 signature, from an image file or saved signature data. Omitted with image inclusion off. |
 
----
+Core fields are frozen from the work-order save. Image bytes and timing are captured when the outbound payload is first prepared. A later time-tracking save produces another event rather than altering an already sent payload.
 
-## API Logging
+Historical deliveries replayed from earlier logs may have the **older contract**; their original outbound JSON is preserved when available. They still receive the new stable delivery headers.
 
-Every outbound call writes one row to the `customer_api_logs` table:
+### Receiving endpoint example
 
-| Column | Description |
-|--------|-------------|
-| `id` | Log entry ID |
-| `project_id` | Project ID |
-| `work_order_id` | Work order ID |
-| `customer_wo_id` | Customer work order ID |
-| `request_url` | API endpoint URL (or `"N/A"` if the request never left the server) |
-| `request_method` | Always `POST` |
-| `request_payload` | The JSON payload that was sent (string) |
-| `response_status` | HTTP status code, or `null` if the request never completed |
-| `response_body` | Raw response body returned by the customer API |
-| `success` | Boolean — `true` only when the response was 2xx |
-| `error_message` | Error message if `success` is `false` |
-| `retry_count` | **Always `0`.** No automatic retry mechanism exists today. |
-| `created_at` | Timestamp of the API call |
+The receiving backend should:
 
-### Viewing logs in the UI
+1. Authenticate the configured header.
+2. Validate required identifiers and parse JSON.
+3. Check its persisted idempotency record for the incoming delivery ID.
+4. Apply the work-order update and persist the delivery ID atomically.
+5. Respond with a 2xx status only after durable acceptance.
 
-Administrators (and any user with the `settings.customerApiLogs` permission) can view Customer API logs in the web app:
+Do not return a 2xx response for an update that was rejected or lost. Return an appropriate non-2xx status with a useful, non-sensitive response message when processing fails.
 
-1. Go to **Settings** in the sidebar
-2. Open the **Customer API Logs** card
-3. Filter by project or success/failure status
+## Administrator workflow and troubleshooting
 
-Non-admin users only see logs from projects they are assigned to.
+Open **Settings → Customer API Logs**.
 
-### Viewing logs via the REST API
+### Delivery queue
 
-For programmatic access, the same data is exposed via:
+- Filter by project or state and page through deliveries.
+- See lifetime attempt count, last HTTP status/error, and the next scheduled check.
+- Open **View attempts** for the selected delivery's chronological attempt numbers, request URL, error, response, and outbound payload.
+- Data refreshes every 5 seconds. Image bytes are summarized in the delivery dialog to keep it readable.
+- An administrator can select **Retry delivery** for `failed`, `retrying`, or `paused` deliveries after enabling the project's integration. This queues an immediate retry and begins a fresh five-attempt cycle. The original payload and delivery ID remain unchanged.
+- Queued, processing, and delivered requests cannot be manually retried; repeated clicks do not create parallel sends.
 
-```
-GET /api/customer-api-logs
-```
+### Earlier attempt history
 
-Query parameters (all optional):
+The existing attempt history remains available, including logs from the old implementation. It supports project and success/failure filters and expandable payload/response details.
 
-| Param | Type | Description |
-|-------|------|-------------|
-| `projectId` | integer | Filter to a single project. Non-admins must be assigned to this project or they receive `403`. |
-| `success` | `"true"` \| `"false"` | Filter by success state |
-| `limit` | integer | Maximum rows to return (default `100`) |
+For a failed older log without a delivery ID, an administrator can choose **Retry legacy delivery**. MeterFlo creates a persistent delivery from the saved outbound JSON (or maps a logged raw work-order record into the current contract), links the original attempt, and begins a new retry cycle. A missing/invalid payload or disabled integration produces a visible error instead of pretending to replay it. Older successes are not replayed.
 
-Authentication is required (Replit OIDC session). The caller must have the `settings.customerApiLogs` permission (admins always do). The response is a JSON array of log rows enriched with a `projectName` field.
+### Common failures
 
-### Viewing logs via SQL
+| Symptom | Action |
+| --- | --- |
+| No delivery event | Confirm integration was enabled at save time and the work order was finalized. Creation/import and reset are not triggers. |
+| Pending/retrying never progresses | Confirm the MeterFlo server and database are running; check the server's queue-worker errors. |
+| Paused | Re-enable the project's Customer API. Wait for the next check or use admin retry. |
+| Authentication secret not configured | Set the named secret on the running server and restart the process, then retry. |
+| HTTP 401/403 | Check auth type, variable name, value, and header expected by the customer. |
+| HTTP 400/422 | Inspect the request and response. Confirm the receiver supports the documented types/null values and compatibility fields. |
+| HTTP 404 | Correct the endpoint path; MeterFlo does not append a route to the configured URL. |
+| HTTP 429/503 | Check customer availability/rate limits; automatic retries honor `Retry-After`. |
+| No HTTP response / timeout | Check DNS, TLS, firewall/routing, endpoint availability, and the 30-second timeout. |
+| Redirect error | Configure the final receiving URL directly. |
+| File preparation error | Check the configured project file root, folder permissions, and existing image files. |
+| Failed after five attempts | Correct the cause, then use Retry delivery. |
 
-```sql
-SELECT * FROM customer_api_logs
-WHERE project_id = 1
-ORDER BY created_at DESC
-LIMIT 50;
-```
+## Administration API
 
----
+These routes use MeterFlo's authenticated local session cookie, not customer-backend credentials.
 
-## Expected Response
+| Route | Access and response |
+| --- | --- |
+| `GET /api/customer-api-deliveries` | Requires `settings.customerApiLogs`. Optional `projectId`, `status`, `limit` (1–500, default 50), `offset` (default 0). Returns `{deliveries, total, limit, offset}`; no image payloads in summaries. |
+| `GET /api/customer-api-deliveries/:deliveryId/attempts` | Same log permission; returns the attempts for that delivery, including saved request/response/error details. |
+| `POST /api/customer-api-deliveries/:deliveryId/retry` | Admin only. Returns 202 when queued, 404 if missing, 409 if integration is disabled or the state cannot be retried. |
+| `POST /api/customer-api-logs/:logId/retry` | Admin only. Returns 202 for an eligible historical failure with saved JSON; 409 for an ineligible replay. |
+| `GET /api/customer-api-logs` | Same log permission. Existing `projectId`, `success=true/false`, `limit` filters; limit defaults to 100 and is capped at 500. |
 
-Your customer API should return:
-- **2xx status code** for success (any 2xx is treated as success)
-- Any other status code is treated as a failure and logged with `success = false` and `error_message = "HTTP <status>: <statusText>"`
+Non-admin log viewers see only projects assigned to them; filtering is applied before limiting results. Permission to view logs does **not** grant manual retry rights.
 
-MeterFlo logs the response body for debugging purposes regardless of outcome. Because calls are fire-and-forget, a non-2xx response does **not** block the user-facing work order completion.
+New attempt records include `deliveryId`, `attemptNumber` (lifetime one-based number), `triggeredBy` (`automatic` or `manual:<admin ID>`), `retryCount` (attempt number minus one), URL, payload, HTTP response, success/error, and timestamp. A replayed historical attempt is labeled `legacy`.
 
----
+Authentication headers are not saved. URL credentials/query values and known configured credential values in new response/error logs are redacted. Response bodies are limited to **64 KiB**. Work-order payloads can contain customer information and base64 images, so restrict log access and protect database backups. Existing historical logs are retained as they were originally recorded.
 
-## Troubleshooting
+## Installation and implementation
 
-### API Calls Not Being Made
+At startup MeterFlo applies an additive, idempotent schema update: it creates `customer_api_deliveries` and adds delivery/attempt fields to existing `customer_api_logs`. The server's database account needs the required table/column creation permissions for this update. No database replacement or destructive migration is required.
 
-1. Verify **Enable Customer API** is turned on for the project.
-2. Verify **API Endpoint URL** is set — if it's blank the service short-circuits and returns success without sending anything (you will see `[CustomerAPI] API not enabled for project <id>` in the server logs).
-3. Confirm the work order actually transitioned to `Completed`. Trouble reports do not trigger the API in any of the four call sites.
-4. Confirm you are looking at the right call site. The dashboard PATCH endpoint only fires the API when the status transitions from non-Completed → Completed; saving an already-Completed work order will not re-trigger.
+The queue and attempt logs are included in MeterFlo PostgreSQL backups. Pending events remain in PostgreSQL through application restarts.
 
-### Authentication Failures
+Implementation:
 
-1. Verify the **Secret Environment Variable** name matches exactly what is set on the server.
-2. Restart PM2 (or the Node process) after adding or changing environment variables — they are read at request time but the new env vars must be present in the running process.
-3. Check the console for `[CustomerAPI] Environment variable <name> not found` — this means the env var is missing on the server.
-4. Check PM2 logs: `pm2 logs meterflo`.
+- `server/customerApiService.ts`: transactional enqueue helper, worker claims/sends, persisted retries, and manual replay.
+- `server/customerApiPayload.ts`: payload mapping, image collection, auth headers, and retry delays.
+- `server/customerApiSchema.ts` and `shared/schema.ts`: additive database schema.
+- `server/projectDb.ts`: transactional work-order update trigger.
+- `server/storage.ts`: transactional timing trigger and scoped log queries.
+- `server/routes.ts`: authenticated administration routes.
+- `client/src/components/customer-api-deliveries.tsx` and `client/src/pages/settings.tsx`: delivery queue and troubleshooting UI.
 
-### Connection Errors
-
-1. Verify the endpoint URL is reachable from the server.
-2. Check firewall rules allow outbound connections.
-3. For HTTPS endpoints, ensure SSL certificates are valid.
-
-### Checking Logs
-
-View PM2 logs for API call information:
-```cmd
-pm2 logs meterflo --lines 100 | findstr CustomerAPI
-```
-
-Query the database for failed API log entries:
-```sql
-SELECT * FROM customer_api_logs
-WHERE success = false
-ORDER BY created_at DESC;
-```
-
----
-
-## Security Recommendations
-
-1. **Use HTTPS** — Always use HTTPS endpoints for customer APIs.
-2. **Rotate Secrets** — Regularly rotate API keys and tokens.
-3. **Limit Access** — Use API keys with minimal required permissions.
-4. **Monitor Logs** — Regularly review API logs for failures or anomalies.
-5. **Test First** — Test with a staging endpoint before production.
-6. **Implement idempotency on your side.** Because MeterFlo does not retry, but operators may re-complete a work order, your endpoint should be safe to receive the same `workOrderId` more than once.
-
----
-
-## Sample Customer API Implementation
-
-Here's a simple Node.js/Express endpoint to receive MeterFlo data:
-
-```javascript
-const express = require('express');
-const app = express();
-
-app.use(express.json({ limit: '50mb' }));
-
-app.post('/api/meterflo/work-orders', (req, res) => {
-  const apiKey = req.headers['x-api-key'];
-
-  if (apiKey !== process.env.EXPECTED_API_KEY) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-
-  const workOrder = req.body;
-
-  console.log('Received work order:', workOrder.customerWoId);
-  console.log('Status:', workOrder.status);
-  console.log('Old System ID:', workOrder.oldMeterNumber);
-  console.log('New System ID:', workOrder.newMeterNumber);
-  console.log('Old Reading:', workOrder.oldMeterReading);
-  console.log('New Reading:', workOrder.newMeterReading);
-  console.log('System Type:', workOrder.meterType);
-  console.log('Completed At:', workOrder.completedAt);
-
-  // Process photos if included
-  if (workOrder.beforePhoto) {
-    const photoBuffer = Buffer.from(workOrder.beforePhoto, 'base64');
-    // Save or process the photo
-  }
-
-  // Update your database
-  // ...
-
-  res.json({
-    success: true,
-    message: 'Work order received',
-    workOrderId: workOrder.workOrderId
-  });
-});
-
-app.listen(3001, () => {
-  console.log('Customer API listening on port 3001');
-});
-```
-
----
-
-## Implementation Files
-
-If you need to dig into the code:
-
-- **Service** — `server/customerApiService.ts` (payload assembly, auth, photo lookup, logging, fetch call).
-- **Trigger sites in `server/routes.ts`:**
-  - `~line 2788` — dashboard `PATCH /api/projects/:projectId/work-orders/:workOrderId` (status → Completed transition)
-  - `~line 9724` — mobile `POST /api/projects/:projectId/mobile/work-orders/:workOrderId/complete-changeout` (only when the changeout succeeds)
-  - `~line 10192` — mobile `POST /api/mobile/workorders/:workOrderId/complete`
-  - `~line 10671` — mobile `POST /api/mobile/projects/:projectId/work-orders/:workOrderId/complete`
-- **Log API endpoint** — `server/routes.ts ~line 6076` (`GET /api/customer-api-logs`).
-- **Project copy of API settings** — `server/routes.ts ~line 1698`.
-- **Schema** — `shared/schema.ts`:
-  - Auth-type enum at `~line 75` (`customerApiAuthTypes`)
-  - `projects` columns at `~lines 106–111`
-  - `customer_api_logs` table at `~line 179`
-  - Project insert schema additions at `~lines 567–572`
-  - Permission key `SETTINGS_CUSTOMER_API_LOGS` at `~line 1067`
-- **Storage method** — `server/storage.ts` `getCustomerApiLogs(...)` at `~line 1821`.
-
----
-
-*Last updated: April 2026*
+Run the targeted regression suite with `npm run test:customer-api`. It uses a temporary test project and local HTTP receiver, then removes its fixtures; it does not send data to a real customer endpoint.

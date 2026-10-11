@@ -26,6 +26,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Database } from "lucide-react";
 import { Wrench } from "lucide-react";
 import { AlertTriangle } from "lucide-react";
+import { CustomerApiDeliveries } from "@/components/customer-api-deliveries";
 
 interface FileSettings {
   maxFileSizeMB: number;
@@ -229,6 +230,15 @@ export default function Settings() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const isAdmin = user?.role === "admin";
+  const retryLegacyApiLog = useMutation({
+    mutationFn: async (id: number) => { await apiRequest("POST", `/api/customer-api-logs/${id}/retry`, {}); },
+    onSuccess: () => {
+      toast({ title: "Historical delivery queued for retry" });
+      queryClient.invalidateQueries({ queryKey: ["/api/customer-api-deliveries"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/customer-api-logs"] });
+    },
+    onError: (error: Error) => toast({ title: "Retry could not be queued", description: error.message, variant: "destructive" }),
+  });
 
   const { data: subroles, isLoading: loadingSubroles } = useQuery<Subrole[]>({
     queryKey: ["/api/subroles"],
@@ -1937,7 +1947,7 @@ export default function Settings() {
                     <Send className="h-5 w-5 text-muted-foreground" />
                     <div>
                       <CardTitle>Customer API Logs</CardTitle>
-                      <CardDescription className="mt-1">View API calls made to customer backend systems when work orders are completed</CardDescription>
+                      <CardDescription className="mt-1">Track customer deliveries, retry failures, and inspect completion and trouble-report attempts</CardDescription>
                     </div>
                   </div>
                   <Button
@@ -1952,6 +1962,8 @@ export default function Settings() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
+                <CustomerApiDeliveries isAdmin={isAdmin} projects={projectsList || []} />
+                <h3 className="font-semibold">Attempt history</h3>
                 <div className="flex gap-3 flex-wrap items-center">
                   <div className="flex items-center gap-2">
                     <Filter className="h-4 w-4 text-muted-foreground" />
@@ -2039,6 +2051,10 @@ export default function Settings() {
                             </CollapsibleTrigger>
                             <CollapsibleContent>
                               <div className="border-t p-3 space-y-3 bg-muted/30">
+                                {isAdmin && !log.success && !log.deliveryId && (
+                                  <Button size="sm" disabled={retryLegacyApiLog.isPending}
+                                    onClick={() => retryLegacyApiLog.mutate(log.id)}>Retry legacy delivery</Button>
+                                )}
                                 {log.errorMessage && (
                                   <div>
                                     <Label className="text-xs text-muted-foreground">Error Message</Label>
@@ -2075,7 +2091,7 @@ export default function Settings() {
                     </div>
                   </ScrollArea>
                 ) : (
-                  <p className="text-muted-foreground">No API logs found. API calls are logged when work orders are completed and customer API integration is configured for the project.</p>
+                  <p className="text-muted-foreground">No API attempts match these filters. New attempts appear after a queued delivery runs.</p>
                 )}
               </CardContent>
             </Card>
