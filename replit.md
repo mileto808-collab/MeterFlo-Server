@@ -1,7 +1,7 @@
 # MeterFlo - Utility Meter Work Order Management System
 
 ## Overview
-MeterFlo is a full-stack utility meter work order management system designed for field operations, offering role-based access control (RBAC) to create, assign, track, and manage meter work orders across projects. It features a modern React frontend, a Node.js/Express backend, PostgreSQL for data persistence, and Replit Auth for secure authentication. The system supports multi-tenancy with per-project database schemas, customizable work order statuses, advanced search and reporting capabilities, and robust file management, aiming to streamline field service operations for businesses.
+MeterFlo is a full-stack utility meter work order management system designed for field operations, offering role-based access control (RBAC) to create, assign, track, and manage meter work orders across projects. It features a modern React frontend, a Node.js/Express backend, PostgreSQL for data persistence, and application-managed username/password authentication. Authentication and session storage are managed by the application and do not depend on Replit or an external identity provider. The system supports multi-tenancy with per-project database schemas, customizable work order statuses, advanced search and reporting capabilities, and robust file management, aiming to streamline field service operations for businesses.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -16,7 +16,7 @@ Preferred communication style: Simple, everyday language.
 ### Technical Implementations
 - **Backend**: Node.js with Express, TypeScript
 - **API**: RESTful JSON API (`/api` prefix)
-- **Authentication**: Replit OpenID Connect (OIDC) via Passport.js, with session management in PostgreSQL.
+- **Authentication**: Application-managed username/password login, with passwords verified against bcrypt hashes. Passport.js manages authenticated sessions stored in PostgreSQL through `connect-pg-simple`; authentication does not depend on Replit or OpenID Connect.
 - **State Management**: TanStack React Query for server state.
 - **Form Handling**: React Hook Form with Zod validation.
 - **Build Tool**: Vite for frontend, esbuild for backend.
@@ -81,8 +81,9 @@ Preferred communication style: Simple, everyday language.
 ## External Dependencies
 
 ### Authentication
-- **Replit Auth**: OpenID Connect
-- **connect-pg-simple**: PostgreSQL session store
+- **Local username/password authentication**: Application-managed login with bcrypt password hashes and Passport.js session handling.
+- **connect-pg-simple**: PostgreSQL session store for Express sessions.
+- Authentication does not require Replit Auth, OpenID Connect, or a Replit-specific identity provider.
 
 ### Database
 - **PostgreSQL**

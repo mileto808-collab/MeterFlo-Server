@@ -11,9 +11,15 @@ import { FileText, Server, Smartphone, ChevronLeft, Download, Globe, Shield, Ref
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 
-type DocType = "windows-deployment" | "mobile-api" | "mobile-sync" | "customer-api" | "system-admin" | null;
+type DocType = "system-overview" | "windows-deployment" | "mobile-api" | "mobile-sync" | "customer-api" | "system-admin" | null;
 
 const docOptions = [
+  {
+    id: "system-overview" as DocType,
+    title: "MeterFlo Work Order Management System",
+    description: "System overview of MeterFlo's architecture, features, authentication, and external dependencies.",
+    icon: FileText,
+  },
   {
     id: "system-admin" as DocType,
     title: "System Administration Guide",
