@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -53,7 +53,10 @@ const docOptions = [
 ];
 
 export default function Documentation() {
-  const [selectedDoc, setSelectedDoc] = useState<DocType>(null);
+  const [selectedDoc, setSelectedDoc] = useState<DocType>(() => {
+    const requested = new URLSearchParams(window.location.search).get("doc");
+    return docOptions.find(doc => doc.id === requested)?.id ?? null;
+  });
   const [isDownloading, setIsDownloading] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
@@ -62,6 +65,28 @@ export default function Documentation() {
     queryKey: [`/api/documentation/${selectedDoc}`],
     enabled: !!selectedDoc,
   });
+
+  useEffect(() => {
+    if (!docContent || !selectedDoc || !window.location.hash) return;
+    const frame = requestAnimationFrame(() => {
+      try {
+        const id = decodeURIComponent(window.location.hash.slice(1));
+        contentRef.current?.querySelectorAll("[id]").forEach(element => {
+          if (element.id === id) element.scrollIntoView({ block: "start" });
+        });
+      } catch { /* An invalid fragment must not prevent reading the guide. */ }
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [docContent, selectedDoc]);
+
+  const selectDocument = (doc: DocType) => {
+    const url = new URL(window.location.href);
+    if (doc) url.searchParams.set("doc", doc);
+    else url.searchParams.delete("doc");
+    url.hash = "";
+    window.history.replaceState(window.history.state, "", url);
+    setSelectedDoc(doc);
+  };
 
   const handleDownloadPdf = async () => {
     if (!contentRef.current || !selectedDoc) return;
@@ -110,7 +135,7 @@ export default function Documentation() {
             <Card
               key={doc.id}
               className="cursor-pointer hover-elevate"
-              onClick={() => setSelectedDoc(doc.id)}
+              onClick={() => selectDocument(doc.id)}
               data-testid={`card-doc-${doc.id}`}
             >
               <CardHeader className="flex flex-row items-center gap-4">
@@ -140,7 +165,7 @@ export default function Documentation() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => setSelectedDoc(null)}
+            onClick={() => selectDocument(null)}
             data-testid="button-back-to-docs"
           >
             <ChevronLeft className="h-4 w-4 mr-1" />
@@ -166,7 +191,7 @@ export default function Documentation() {
       </div>
 
       <Card className="flex-1 overflow-hidden">
-        <ScrollArea className="h-[calc(100vh-200px)]">
+        <ScrollArea className="h-[calc(100vh-200px)] [&_[data-radix-scroll-area-viewport]>div]:!block">
           <CardContent className="p-6">
             {isLoading ? (
               <div className="space-y-4">
@@ -181,8 +206,18 @@ export default function Documentation() {
               </div>
             ) : (
               <div ref={contentRef}>
-                <article className="prose prose-sm dark:prose-invert max-w-none" data-testid="text-doc-content">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSlug]}>
+                  <article className="prose prose-sm dark:prose-invert max-w-none break-words" data-testid="text-doc-content">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      rehypePlugins={[rehypeSlug]}
+                      components={{
+                        table: ({ children, ...props }) => (
+                          <div className="my-6 w-full overflow-x-auto" tabIndex={0} role="region" aria-label="Scrollable documentation table">
+                            <table {...props}>{children}</table>
+                          </div>
+                        ),
+                      }}
+                    >
                     {docContent || ""}
                   </ReactMarkdown>
                 </article>

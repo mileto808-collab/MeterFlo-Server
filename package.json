@@ -10,6 +10,7 @@
     "check": "tsc",
     "test:customer-api": "tsx --test tests/customer-api.test.ts",
     "test:api-import": "tsx --test tests/api-import.test.ts",
+    "test:api-import-docs": "tsx --test tests/api-import-docs.test.ts",
     "db:push": "drizzle-kit push"
   },
   "dependencies": {

@@ -1,3 +1,4 @@
 - [Work-order reset scope](work-order-reset-scope.md) — one keep/clear choice for captured changeout data; save prior values in Notes and preserve old-device/customer baseline data.
 - [Customer API expectations](customer-api-reliability.md) — enabled delivery must be complete, automatically retried, admin-retryable, and diagnosable.
 - [Permission verification](permission-verification.md) — verify permission grants through normal role management; directly seeded keys can hide missing administrator controls.
+- [Scroll-container verification](scroll-container-verification.md) — page-width checks can pass while nested content is clipped; inspect actual content widths and screenshots.

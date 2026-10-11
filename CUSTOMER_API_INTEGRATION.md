@@ -6,19 +6,32 @@ MeterFlo also supports optional **inbound API Import**: pulling new work orders 
 
 This feature works on independent Windows or Linux installations. It does not require Replit, OpenID Connect, or a Replit login. MeterFlo users sign in through the application's local username/password session authentication.
 
+## Guide navigation
+
+- [Pull setup](#supported-contract-and-setup)
+- [Every API Import field and option](#api-import-field-reference)
+- [Every mapping target and safe-update checkbox](#mapping-targets-and-update-checkboxes)
+- [Complete configurations and pagination examples](#complete-configurations-and-pagination-examples)
+- [Incremental cursors and watermarks](#pagination-and-incremental-pulls)
+- [Protected updates](#duplicate-matching-and-protected-updates)
+- [Pull permissions, history, retries, and troubleshooting](#permissions-retries-and-troubleshooting)
+- [Outbound push configuration](#push-completed-data-configure-a-project)
+- [Outbound payload](#json-payload-contract)
+- [Outbound administrator workflow](#administrator-workflow-and-troubleshooting)
+
 ## Pull work orders: API Import
 
 ### Supported contract and setup
 
 Ask the customer for their API documentation and a sanitized response sample before configuring a real feed. The built-in importer supports HTTP(S) GET returning a JSON array, either at the response root or a configured dot-separated path. It does not support SOAP, GraphQL, OAuth authorization flows, attachment downloads, customer-side acknowledgments, or general two-way synchronization.
 
-1. Sign in as an administrator and open a project's **API Import** page.
-2. Choose **Add source**, enter a name and endpoint URL, and configure authentication independently of the project's outbound settings.
+1. Sign in as an administrator and open a project's **Customer API Import** sidebar item. The page heading is **Customer API pull**.
+2. Choose **Add API source** (or **Set up first source** when empty), enter a name and endpoint URL, and configure authentication independently of the project's outbound settings.
 3. Enter only the **name** of the server environment variable holding the credential. Configure its value on the MeterFlo server and restart the server to make new environment variables available. API key header, bearer token, Basic authentication, and no authentication are supported. Basic credentials use `username:password` as the environment variable's value.
-4. Set the records path: leave blank for a root array, or use a path such as `data` or `result.workOrders`. Property names must use letters, digits, underscores, and hyphens; dots separate levels. Array-index notation and property names containing dots are not supported.
+4. Set the records path: leave blank for a root array, or use a path such as `data` or `result.workOrders`. Property names must use letters, digits, underscores, and hyphens; dots separate levels. Bracket-style array-index notation and property names containing dots are not supported.
 5. Map **source property paths to MeterFlo target fields**. Map `customerWoId`, `customerId`, `customerName`, `address`, and `serviceType`; each is required on every imported record. Map a stable customer identifier, not a page position. IDs are never generated automatically for API pulls.
-6. Use **Test / preview** to inspect mapped values and validation errors before saving or importing. Preview fetches only the first page and displays at most 20 records. It writes no work orders, checkpoints, or import runs.
-7. Save, then choose **Pull now**. Runs are queued immediately and processed in the background; results appear in **Run history**. Scheduling is manual by default. A nonzero interval enables polling every configured number of minutes, with a minimum of 15 and maximum of 43,200 minutes. Intervals are elapsed server time, not local calendar/cron appointments.
+6. Use **Test & preview unsaved settings** in the dialog to inspect mapped values and validation errors. After saving, the source card has **Test / preview**. Preview fetches only the first page, without saved cursor/watermark checkpoints, and displays at most 20 records. It writes no work orders, checkpoints, or import runs and does not predict whether an existing order will be skipped by update protection.
+7. Choose **Create source**, then **Pull now**. Runs are queued immediately and processed in the background; results appear in **Run history**. Start with manual scheduling (`0`) until the contract and a complete pull are verified; saving an enabled nonzero schedule starts the polling countdown without another confirmation.
 
 Example customer response:
 
@@ -54,6 +67,287 @@ Service codes must match the project's configured service types (or global types
 
 Send identifiers and readings as **JSON strings** to retain leading zeros and exact decimal precision. Finite, safely representable JSON numbers are accepted, but precision already lost in a customer's JSON number cannot be recovered. Use numeric strings for large or high-precision values.
 
+### API Import field reference
+
+These labels match **Add customer API source** and **Edit API source**. Parenthesized keys are the stored configuration names, used by the complete JSON examples below. A placeholder is not a default: Source name, Endpoint URL, and Records path start blank. Hidden fields retain their settings when you change options and still undergo configuration validation; use the documented defaults for inactive options.
+
+#### Source and scheduling
+
+| Field | Use, default, and valid values | Example and how to use it |
+| --- | --- | --- |
+| Source name (`name`) | Required descriptive label; blank initially; trimmed, 1–150 characters. Not the customer order ID and need not be globally unique. | Enter `North district work orders` to recognize this source in cards and history; use a different descriptive name for the south district. |
+| Endpoint URL (`endpoint`) | Required complete HTTP(S) GET URL, no default; at most 2,000 characters. No username/password, fragment, or credential-like query names. Redirects are not followed. | Enter `https://api.customer.example/v1/work-orders`; MeterFlo does not append a route. Use the final URL and HTTPS outside a trusted network. `https://user:pass@host/orders`, `#section`, and `?api_key=...` are invalid choices. |
+| Records path (`recordsPath`) | Optional; default blank means the response itself is an array. Otherwise a dot-separated path, maximum 200 characters, resolving to an array. Segments use letters/digits/underscores/hyphens. | For `{"data":{"records":[]}}`, enter `data.records`. For the root-array example below, leave blank. This is a path in the whole response, not a path inside one work order. |
+| Schedule (minutes) (`intervalMinutes`) | Required numeric control; default `0` means manual only. Whole numbers `15`–`43200` enable polling. `1`–`14`, fractions, and negatives are invalid. | Use `0` while testing; `15` every quarter hour, `60` hourly, `1440` every 24 hours. A `1440` schedule is not “midnight daily.” The first scheduled time is the save/enable time plus the interval; queuing any pull advances the next time by that interval. Runs cannot overlap for the same source. |
+| Enabled (`isEnabled`) | Default on, **Scheduled / runnable**; off displays **Disabled**. On permits manual pulls and, if scheduled, polling; it does not override inactive-project or missing-database checks. | Leave on with Schedule `0` for manual pulls. Turn off to stop polling and cancel queued/retrying runs; a running page checks cancellation before writing. Previously committed data stays. Test / preview remains available while disabled. Turning on restarts the schedule countdown. **Current limitation: saving/toggling can reset saved incremental checkpoints**, as explained below. |
+
+An active project with its own database is required for **Pull now** and **Retry run**. The MeterFlo server and PostgreSQL must remain running for automatic processing; keeping the browser open is not required. During an active run use the **source-card On/Off switch** to disable; a full edit/save, even with Enabled off, is rejected while that run is active.
+
+#### Authentication
+
+**Method** (`authType`) defaults to **None**. Select exactly the method specified by the customer's API; these authenticate MeterFlo's GET request to that backend, not users signing into MeterFlo.
+
+| Method / stored value | When and how to use it | Fields shown and request example |
+| --- | --- | --- |
+| None / `none` | Use only when the feed intentionally allows unauthenticated GET requests, such as an access-controlled internal test feed. | No credential fields are shown. Request includes `Accept: application/json` and `Content-Type: application/json` but no authentication header. Example: select None for an anonymous test `/v1/work-orders` feed. |
+| API key header / `api_key` | Use when the customer expects a static key in a custom request header. Configure the key value securely on the server, not in the form. | Set Server environment variable name to `CUSTOMER_API_KEY` and Request header to `X-API-Key` (or the customer's documented `X-Customer-Key`). Server sends `X-API-Key: <server-managed key>`. |
+| Bearer token / `bearer_token` | Use a customer-issued static bearer credential. Token acquisition, OAuth login, refresh, and renewal are not performed by the importer. | Set Server environment variable name to `CUSTOMER_API_TOKEN`. Server sends `Authorization: Bearer <server-managed token>`; the variable must contain the token only, without the `Bearer ` prefix. |
+| Basic authentication / `basic_auth` | Use when the customer expects HTTP Basic. Store `username:password` as one server variable and use HTTPS. | Set Server environment variable name to `CUSTOMER_API_BASIC`. A fictitious value `demo-user:demo-password` becomes `Authorization: Basic <base64 of demo-user:demo-password>`. Do not pre-base64 the variable or paste this value into the UI. |
+
+| Conditional field | Requirement/default/format | Example and how to use it |
+| --- | --- | --- |
+| Server environment variable name (`secretEnvVar`) | Shown and required for every method except None; default blank. Maximum 100 characters; starts with uppercase letter/underscore and then uppercase letters/digits/underscores. The UI uppercases typing. Only the name is stored. | Enter `CUSTOMER_API_TOKEN`; a server administrator supplies its value to the MeterFlo process separately. `customer-token` is not a valid variable name. Leave unused with None. |
+| Request header (`keyHeader`) | Shown/required for API key header only; default `X-API-Key`; maximum 100 characters, letters/digits/hyphens. Reserved names rejected during validation or request construction: Authorization, Host, Cookie, Connection, Content-Length, Accept, Content-Type, Proxy-Authorization, Idempotency-Key, X-MeterFlo-Delivery-Id (case-insensitive). | Use `X-Customer-Key` if that is what the customer specifies. Do not enter the key value here. For a standard Authorization bearer header select Bearer token instead. |
+
+**Independent-server setup:** create the named variable in the environment of the actual account/service running MeterFlo, using the deployment's protected environment configuration. On Linux this might be a protected service EnvironmentFile or a locally maintained, permission-restricted PM2 environment file. On Windows it might be the service account environment or a protected PM2 environment loaded by that process. Never put real values in committed ecosystem files, documentation, URLs, or shell command examples. Restart the MeterFlo service/process with the updated environment; a variable in an unrelated terminal or desktop user account is insufficient. MeterFlo needs no Replit-managed login or secret service for this setup.
+
+For example, arrange for the running process to receive variable **name** `CUSTOMER_API_BASIC` with the fictitious Basic format shown above, then choose Basic authentication and enter only `CUSTOMER_API_BASIC` in the form. Missing/empty values fail **before** a network request; inbound authentication/configuration errors do not automatically retry. Correct the environment, restart the process, and use administrator Retry run. An HTTP 401/403 means the backend rejected the request; check the method, header, variable, and customer credential permissions.
+
+#### Mapping, filters, and incremental reads
+
+| Field | Use, default, and constraints | Example and how to use it |
+| --- | --- | --- |
+| Field mapping JSON (`fieldMapping`) | Required JSON object of **source record path → MeterFlo target**. Initial `{"id":"customerWoId"}` is incomplete and cannot be saved/tested until all five required targets are present. Each target can appear only once; source paths are nonempty dot paths, maximum 200 characters. | Paste the seven-field mapping in the setup example above, after Records path selects the array. `customer.id` is relative to each record, not `data.0.customer.id`. See the full target reference below. |
+| Query parameters JSON (`queryParams`) | Optional JSON object; default `{}` adds no static filters. Keys: 1–100 letters/digits/underscores/hyphens; values: strings, maximum 1,000 characters (empty string allowed). Credential-like names are rejected, including names containing password, secret, token, api-key/api_key, authorization, or credential. | Use `{"region":"north","include_open":"true"}`; the request gets `?region=north&include_open=true`. Use `"true"`/`"100"` rather than booleans/numbers. To remove static filters enter `{}`. Do not use arrays, trailing commas, comments, or a token here. |
+| Watermark parameter (optional) (`watermarkParam`) | Optional name, default blank disables watermark use/storage. Maximum 100 letters/digits/underscores/hyphens; credential-like names invalid. Customer must support a UTC updated-since timestamp and inclusive, reliable semantics. It is not a date-value input. | Enter `updated_since` only if documented by the customer. First pull has no saved timestamp; after a fully successful run starting `2026-10-11T20:00:00.000Z`, the next first request carries `updated_since=2026-10-11T20%3A00%3A00.000Z`. See incremental rules below. |
+
+Static query values replace matching parameters already in Endpoint URL. MeterFlo then sets page size for any paginated strategy, the starting page for Page number, saved cursor when enabled and present, and watermark when present, in that order. Those generated values replace same-named static values; use distinct parameter names. Without a checkpoint a static/endpoint parameter remains as configured, so **do not hard-code `cursor` or `updated_since` as a filter** when MeterFlo should manage it. Example: Page size `100` overrides static `"limit":"50"`. Cursor/page-number requests preserve filters; Next URL follows the customer's URL as supplied without reapplying filters or watermark to later pages, so its links must carry required parameters.
+
+Paths such as `data.records`, `customer.id`, and `links.next` are supported. JSONPath (`$.data.records`), brackets (`records[0]`), wildcard notation, and property names containing literal dots are not supported. Numeric dot segments technically address own properties (including an array index), but Records path must resolve to the **whole records array**, not one indexed item; use object-property paths for interoperable feeds. Prototype/constructor paths are never traversed.
+
+#### Pagination controls
+
+**Strategy** (`pagination`) defaults to **None**. Choose based on the customer's documented response, not merely on the number of current work orders.
+
+| Strategy / stored value | When to choose it and termination | Example |
+| --- | --- | --- |
+| None / `none` | The endpoint returns the complete array in one response; no generated page-size/page parameters. Stops after that response. | For a small root-array feed, choose None and leave Records path blank; Example A below creates one order. Do not choose None if more results are on another page. |
+| Page number / `page` | Feed honors a page number and requested page size. Advances until fewer records than requested are returned (including an empty array). | Page parameter `page`, First page `1`, Page size parameter `limit`, Page size `2` produces pages 1, 2, and an empty page 3 for four records. Example B uses two records and two pages. |
+| Cursor / `cursor` | Feed returns an opaque next cursor. Stops when the configured next value is missing, null, or `""`, not merely when the record array is short. | Cursor response path `paging.nextCursor`, Cursor query parameter `cursor`; a value `after-0002042` yields `?cursor=after-0002042`. Example C has two pages. |
+| Next URL / `next_url` | Feed returns a next-link string. Stops on missing/null/empty next value. Each URL must remain on the endpoint's exact scheme, host, and port. | Next URL response path `links.next`; `/v1/work-orders?limit=2&offset=2` is accepted on the same origin. `https://other.customer.example/...` or HTTP instead of configured HTTPS is rejected. Example D follows a relative link. |
+
+| Conditional control | Visibility, default, and accepted values | Example and how to use it |
+| --- | --- | --- |
+| Page parameter (`pageParam`) | Page number only; required, default `page`; 1–100 letters/digits/underscores/hyphens. | Enter `pageNumber` for a feed using `?pageNumber=1`. This is the name, not the page value. |
+| First page (`startPage`) | Page number only; default `1`; whole number `0`–`1000000`. | Use `0` only for a zero-based customer API; requests become page 0, 1, 2. Use `1` for the examples below. Not an offset in records. |
+| Page size parameter (`pageSizeParam`) | Shown for Page number; default `limit`; required 1–100 letters/digits/underscores/hyphens. The stored parameter is also sent on the first Cursor/Next URL request. | Use `pageSize` if the customer expects `?pageSize=100`, otherwise keep `limit`. |
+| Page size (`pageSize`) | Shown for Page number; default `100`; whole number `1`–`1000`. Also used on the first Cursor/Next URL request, though hidden in those modes. | Set `2` for demonstration feeds, or `100` if the customer supports it. For Cursor/Next URL, set this and Page size parameter while Strategy is Page number, then switch Strategy; values are retained. Alternatively send the documented admin configuration JSON. |
+| Cursor response path (`nextPath`) | Cursor only; required, no default; nonempty dot path, maximum 200 characters, relative to the entire response. | Enter `paging.nextCursor` for `{"paging":{"nextCursor":"after-0002042"}}`. A scalar string or safe integer is accepted; `0` is a cursor, not an end marker. Arrays/objects/booleans are rejected; next values cannot exceed 2,000 characters. |
+| Next URL response path (`nextPath`) | Next URL only; required, no default; nonempty dot path, maximum 200 characters, relative to the entire response. | Enter `links.next` for `{"links":{"next":"/v1/work-orders?offset=2"}}`. The returned value must be a string; resolve relative links against the current page. No credentials/fragments, cross-origin links, or HTTP redirects. |
+| Cursor query parameter (`cursorParam`) | Cursor only; required, default `cursor`; 1–100 letters/digits/underscores/hyphens. | Enter `after` if the backend expects `?after=after-0002042`; do not paste the actual cursor value into this control. |
+| Resume saved cursor (`resumeCursor`) | Cursor only; default off. Off restarts at the endpoint on each new pull. On starts future pulls from a last-successful cursor when one exists. Not valid for other strategies. | Leave off for expiring snapshot cursors. Turn on only for a customer-documented durable cursor; Example C shows why its final page may be replayed. Turn it off before switching to another strategy. |
+
+Parameter names must follow the customer's contract and must not carry credentials. Keep inactive pagination fields at their valid defaults. If the customer caps responses below the requested page size, Page number would stop early: set a page size it actually honors. Cursor and Next URL terminate from next metadata even on an empty page. Repeated URLs/cursors fail as a pagination loop before writing that looping page.
+
+#### Update behavior
+
+| Option/control | Default and eligibility | Example and how to use it |
+| --- | --- | --- |
+| Create-only (recommended) (`updateMode: "create_only"`) | Default. Stable customer work-order ID matches within this project; existing IDs are skipped, never overwritten. New valid records are created with all mapped baseline values. | Pull `0002042` twice: first run creates it, second skips it even if the incoming address changed. Choose this when the feed is an order-creation list or technicians may already be working. |
+| Safe update selected fields (`updateMode: "safe_update"`) | Opt-in. Shows baseline checkboxes, initially all unchecked. At least one must be selected; only API-created, untouched Open records with matching saved versions are eligible. New IDs still create with **all** mapped values; checkboxes limit updates, not creates. | Select Address and Old system reading for incoming address corrections. An eligible `0002042` can change from `123 Example Street` to `456 Example Street`; a later API-only correction can update it again. A technician edit protects the entire existing order. |
+| Baseline field checkboxes (`updateFields`) | Shown only for Safe update selected fields; default `[]`. Schema permits at most 20 entries; the UI offers the 18 fields marked Yes in the target table. Selection does not supply a mapping or override required-record validation. | Check Address only and map the address source path. A changed Phone is preserved because Phone is not checked. Uncheck Address to stop changing it, but select another field or return to Create-only before saving. |
+
+See the target table for an individual example/use of every checkbox. Customer work-order ID, Status, and Notes have no safe-update checkbox. A supplied Note on creation protects that order from later safe updates; do not map a nonempty baseline note if you expect it to remain eligible.
+
+### Mapping targets and update checkboxes
+
+Each target below is a valid mapping value; source keys are customer-specific. Required targets must be mapped **and nonempty on every record**, even when safe-updating only one field. Maximums are string lengths after trimming; ordinary strings/numbers are accepted, but nested objects, arrays, and booleans are not. Other than readings, JSON numbers must be safe integers; send IDs and readings as strings.
+
+“Safe update: Yes” identifies a checkbox with the same label. Check it only if the customer is authoritative for that baseline field; an eligible existing record changes only if the source value is present and different. Leave it unchecked to retain the existing value. The examples are fictitious, and product/service codes must be replaced by actual project codes.
+
+| UI label / target | Required / maximum characters | Example value and how to use it | Safe update |
+| --- | --- | --- | --- |
+| Customer work-order ID / `customerWoId` | Yes / 100 | `"0002042"`: map `orderId`; stable external order key for deduplication within a project, never a page index. No slash/backslash or sole `"."`/`".."`; cannot be renamed by import. | No |
+| Customer ID / `customerId` | Yes / 100 | `"C-100"`: map `customer.id`; identify the customer, not the MeterFlo user. Check Customer ID for permitted baseline customer-reference corrections. | Yes |
+| Customer name / `customerName` | Yes / 100 | `"Sample customer"`: map `customer.name`; check Customer name for customer-supplied spelling corrections. | Yes |
+| Address / `address` | Yes / 500 | `"123 Example Street"`: map `address`; service street address. Check Address for corrected premises on an untouched order. | Yes |
+| City / `city` | No / 100 | `"Example City"`: map `location.city`; check City for baseline city corrections, not a GPS value. | Yes |
+| State / region / `state` | No / 50 | `"CO"`: map `location.state`; check State / region to update a region code/name from the customer. | Yes |
+| ZIP / postal code / `zip` | No / 20 | `"00801"`: map `location.postalCode` as a string to preserve zeros; check ZIP / postal code for corrections. | Yes |
+| Phone / `phone` | No / 50 | `"+1-555-0100"`: map `customer.phone` as text; check Phone to refresh the baseline contact number. No importer-specific phone pattern. | Yes |
+| Email / `email` | No / 100 | `"sample@example.invalid"`: map `customer.email`; requires a basic non-whitespace `name@domain.suffix` form. Check Email for contact corrections. | Yes |
+| Route / `route` | No / 100 | `"NORTH-01"`: map `routeCode`; check Route to update a baseline routing label, not a technician assignment. | Yes |
+| Zone / `zone` | No / 100 | `"ZONE-A"`: map `zoneCode`; check Zone for geographic/service-area classification. | Yes |
+| Service type / `serviceType` | Yes / 50 | `"Water"` only if this is an actual eligible service **code**, not a display label. Map `service`; check Service type for permitted baseline recategorization. Uses assigned project codes, or global codes if none are assigned; it is never inferred automatically for API Import. | Yes |
+| Old system ID / `oldSystemId` | No / 100 | `"OLD-100"`: map `meter.id`; check Old system ID to correct the expected existing meter ID, not a newly installed ID. | Yes |
+| Old system reading / `oldSystemReading` | No / 100 | `"12345678901234567890.001"`: map `meter.reading` as an exact decimal string. Check Old system reading only for authoritative baseline readings, never to overwrite technician captures. | Yes |
+| Old GPS / `oldGps` | No / 100 | `"40.7128,-74.0093"`: map `location.gps`; exactly latitude,longitude with ranges ±90/±180. Check Old GPS to correct baseline location, not New GPS. | Yes |
+| Old system type / `oldSystemType` | No / 100 | `"SYS-W1"`: map `meter.productId`; must be a system **product ID assigned to this project**. Check Old system type for baseline model corrections; do not send a friendly model label. | Yes |
+| Old module ID / `oldModuleId` | No / 100 | `"RADIO-100"`: map `module.id`; check Old module ID to correct the expected existing radio/module identifier. | Yes |
+| Old module reading / `oldModuleRead` | No / 100 | `"0.001"`: map `module.reading`; target is exactly `oldModuleRead`, not outbound `oldModuleReading`. Check Old module reading for baseline reading corrections. | Yes |
+| Old module type / `oldModuleType` | No / 100 | `"MOD-W1"`: map `module.productId`; must be a module **product ID assigned to this project**. Check Old module type for a baseline model correction. | Yes |
+| Status / `status` | No / 50 | `"Open"` only when this is the configured Open status code. Omit mapping or send null/empty to use that code automatically. Any supplied non-Open or unknown code fails the record; custom “default” status is not used. | No |
+| Notes / `notes` | No / 10000 | `"Access via north gate"`: map `instruction` only to create a baseline note on new orders. Existing notes/reset history are never replaced or appended through safe update; a nonempty note protects the order. | No |
+
+Decimal strings allow optional sign and a decimal point, e.g. `"0"`, `"-0.001"`, `"12.5"`; scientific notation (`"1e3"`), thousands separators, and units are invalid. Safely bounded decimal JSON numbers are accepted only for the two reading targets; string values preserve precision before JSON parsing. Database column constraints still apply after mapping (including uniqueness/foreign keys); a validation preview is not a guarantee of successful storage.
+
+On a new record, omitted optional fields use normal database defaults/nulls; mapped null/`""` becomes null (Status still becomes Open). On an eligible safe update, an **absent** optional source property leaves the previous value alone, while explicit null/`""` clears a selected optional field. For example, with Phone selected, no `customer.phone` preserves `"+1-555-0100"`; `"phone":null` clears it. Empty Address or missing Customer ID fails validation rather than clearing a required field.
+
+Only the five required plus sixteen optional targets above are supported. Do not map internal IDs, new system/module IDs/types/readings, New GPS, signatures, photos/files, assignments/groups, schedules, trouble/completion outcomes, time tracking, or actor/timestamp fields. Unexpected target names make the configuration invalid; use MeterFlo's technician/work-order workflow for those values.
+
+### Complete configurations and pagination examples
+
+All URLs below are non-routable examples, not a real customer connection. Configure an **active test project** with service code `Water` (or replace that value with an existing assigned code), and securely provision fictitious test credentials only on a mock backend if testing authentication. Never enable scheduled production pulls from these examples.
+
+The configuration blocks are complete **admin REST settings objects**, accepted by `POST /api/projects/:projectId/api-import/configs` using a signed-in local administrator session. There is no whole-configuration JSON paste control in the form: enter the corresponding values manually and paste only `fieldMapping` and `queryParams` into their own JSON textareas. Leave Schedule `0` initially. For Cursor/Next URL page-size changes, follow the temporary Page number selection described above.
+
+For each example: enter settings → **Test & preview unsaved settings** → inspect Valid / Needs attention → **Close** → **Create source** → **Pull now** → inspect **Run history**. A saved source can be retested using **Test / preview**. No actual import occurs until a pull is queued (or an enabled schedule comes due).
+
+#### Example A: None authentication, None pagination, root array
+
+Use this for a complete, unauthenticated mock feed. Records path is blank.
+
+```json
+{
+  "name": "Example A manual root feed",
+  "endpoint": "https://api.customer.example/v1/work-orders",
+  "authType": "none", "secretEnvVar": "", "keyHeader": "X-API-Key",
+  "recordsPath": "",
+  "fieldMapping": {"orderId":"customerWoId","customer.id":"customerId","customer.name":"customerName","address":"address","service":"serviceType","meter.id":"oldSystemId","meter.reading":"oldSystemReading"},
+  "queryParams": {}, "watermarkParam": "",
+  "pagination": "none", "pageParam": "page", "startPage": 1,
+  "pageSizeParam": "limit", "pageSize": 100, "nextPath": "",
+  "cursorParam": "cursor", "resumeCursor": false,
+  "intervalMinutes": 0, "isEnabled": true,
+  "updateMode": "create_only", "updateFields": []
+}
+```
+
+Mock response to `GET /v1/work-orders`:
+
+```json
+[
+  {"orderId":"0002042","customer":{"id":"C-100","name":"Sample customer"},"address":"123 Example Street","service":"Water","meter":{"id":"OLD-100","reading":"12345678901234567890.001"}}
+]
+```
+
+Preview: 1 sampled / 1 valid, no records written. First pull: succeeded, 1 created / 0 updated / 0 skipped / 0 failed, 1 page. Repeat: succeeded, 1 skipped. These counts assume an empty test project and valid project codes/constraints.
+
+#### Example B: API key header, Page number, nested records
+
+Use for an API honoring `page` and `limit`. Select API key header, enter variable name `CUSTOMER_API_KEY`, and choose Page number with size `2`. Static region filtering is preserved on later pages.
+
+```json
+{
+  "name": "Example B north page feed",
+  "endpoint": "https://api.customer.example/v1/work-orders",
+  "authType": "api_key", "secretEnvVar": "CUSTOMER_API_KEY", "keyHeader": "X-Customer-Key",
+  "recordsPath": "data.records",
+  "fieldMapping": {"orderId":"customerWoId","customer.id":"customerId","customer.name":"customerName","address":"address","service":"serviceType","meter.id":"oldSystemId","meter.reading":"oldSystemReading"},
+  "queryParams": {"region":"north"}, "watermarkParam": "",
+  "pagination": "page", "pageParam": "page", "startPage": 1,
+  "pageSizeParam": "limit", "pageSize": 2, "nextPath": "",
+  "cursorParam": "cursor", "resumeCursor": false,
+  "intervalMinutes": 0, "isEnabled": true,
+  "updateMode": "safe_update", "updateFields": ["address","oldSystemReading"]
+}
+```
+
+First request: `GET /v1/work-orders?region=north&limit=2&page=1`, header `X-Customer-Key: <server-managed key>`.
+
+```json
+{
+  "data": {"records": [
+    {"orderId":"0002043","customer":{"id":"C-101","name":"Example one"},"address":"125 Example Street","service":"Water","meter":{"id":"OLD-101","reading":"0.001"}},
+    {"orderId":"0002044","customer":{"id":"C-102","name":"Example two"},"address":"127 Example Street","service":"Water","meter":{"id":"OLD-102","reading":"12.5"}}
+  ]}
+}
+```
+
+Second request keeps region/limit and changes `page=2`; mock response:
+
+```json
+{"data":{"records":[]}}
+```
+
+It stops because 0 < Page size 2. Preview samples the two first-page records and reports more available because a full page requires another fetch. First pull creates 2 and counts 2 pages (including the empty page). Another identical pull skips 2. If this API instead starts at zero, set First page `0` and serve the same first response for `page=0`, then empty for `page=1`.
+
+For an update demonstration, change the source address for `0002043` to `"129 Example Street"` without editing its MeterFlo order. The next run updates 1 and skips the unchanged other order; a later source-only change can update again. Phone cannot change because it is not selected. Assigning the order or adding a note in MeterFlo causes subsequent customer corrections to skip it.
+
+After successful test pulls, an administrator may change Schedule to `60` for hourly polling. This is optional; saving that changed setting clears saved incremental checkpoints even if other settings are unchanged.
+
+#### Example C: Bearer token, Cursor, optional watermark
+
+Use only when the customer documents `paging.nextCursor` and inclusive `updated_since` UTC filtering. Set size `2` while Page number is selected, then switch to Cursor and fill the cursor controls. Enable Resume saved cursor only if the customer explicitly guarantees durable cursors **and** compatibility with updated-since filtering; otherwise leave it off. The example leaves it off.
+
+```json
+{
+  "name": "Example C incremental cursor feed",
+  "endpoint": "https://api.customer.example/v1/work-orders",
+  "authType": "bearer_token", "secretEnvVar": "CUSTOMER_API_TOKEN", "keyHeader": "X-API-Key",
+  "recordsPath": "data.records",
+  "fieldMapping": {"orderId":"customerWoId","customer.id":"customerId","customer.name":"customerName","address":"address","service":"serviceType","meter.id":"oldSystemId","meter.reading":"oldSystemReading"},
+  "queryParams": {}, "watermarkParam": "updated_since",
+  "pagination": "cursor", "pageParam": "page", "startPage": 1,
+  "pageSizeParam": "limit", "pageSize": 2, "nextPath": "paging.nextCursor",
+  "cursorParam": "cursor", "resumeCursor": false,
+  "intervalMinutes": 0, "isEnabled": true,
+  "updateMode": "create_only", "updateFields": []
+}
+```
+
+First-ever request: `GET /v1/work-orders?limit=2`, header `Authorization: Bearer <server-managed token>`. A short array does not stop cursor pagination:
+
+```json
+{
+  "data":{"records":[{"orderId":"0002045","customer":{"id":"C-103","name":"Example three"},"address":"131 Example Street","service":"Water","meter":{"id":"OLD-103","reading":"0.002"}}]},
+  "paging":{"nextCursor":"after-0002045"}
+}
+```
+
+Second request: `GET /v1/work-orders?limit=2&cursor=after-0002045`:
+
+```json
+{
+  "data":{"records":[{"orderId":"0002046","customer":{"id":"C-104","name":"Example four"},"address":"133 Example Street","service":"Water","meter":{"id":"OLD-104","reading":"0.003"}}]},
+  "paging":{"nextCursor":null}
+}
+```
+
+First pull creates 2 in 2 pages; preview shows just 1 sampled / 1 valid with more available. If the successful run started at `2026-10-11T20:00:00.000Z`, the next first request adds the URL-encoded `updated_since` timestamp shown in the field reference. It starts without a saved cursor because Resume saved cursor is off.
+
+For a **durable-cursor-only** variation, clear Watermark parameter, turn Resume saved cursor on, and save before another pull; the setting edit clears old checkpoints. After that fully successful two-page run, `after-0002045` is saved. The next pull begins at the final-page cursor, which can replay `0002046`; Create-only skips it. The importer does not save a null terminal cursor as an “after all orders” marker. Never enable this on expiring cursors.
+
+#### Example D: Basic authentication, Next URL
+
+Use when the customer provides next links on the same origin. Set Basic authentication and variable name `CUSTOMER_API_BASIC` (server value format `username:password`). Set Page size `2` before switching Strategy to Next URL.
+
+```json
+{
+  "name": "Example D next-link feed",
+  "endpoint": "https://api.customer.example/v1/work-orders",
+  "authType": "basic_auth", "secretEnvVar": "CUSTOMER_API_BASIC", "keyHeader": "X-API-Key",
+  "recordsPath": "data.records",
+  "fieldMapping": {"orderId":"customerWoId","customer.id":"customerId","customer.name":"customerName","address":"address","service":"serviceType","meter.id":"oldSystemId","meter.reading":"oldSystemReading"},
+  "queryParams": {}, "watermarkParam": "",
+  "pagination": "next_url", "pageParam": "page", "startPage": 1,
+  "pageSizeParam": "limit", "pageSize": 2, "nextPath": "links.next",
+  "cursorParam": "cursor", "resumeCursor": false,
+  "intervalMinutes": 0, "isEnabled": true,
+  "updateMode": "create_only", "updateFields": []
+}
+```
+
+First request: `GET /v1/work-orders?limit=2`, header `Authorization: Basic <base64 of server-managed username:password>`:
+
+```json
+{
+  "data":{"records":[{"orderId":"0002047","customer":{"id":"C-105","name":"Example five"},"address":"135 Example Street","service":"Water","meter":{"id":"OLD-105","reading":"0.004"}}]},
+  "links":{"next":"/v1/work-orders?limit=2&offset=2"}
+}
+```
+
+Second request: `GET /v1/work-orders?limit=2&offset=2` on **https://api.customer.example**, with the same Basic header:
+
+```json
+{
+  "data":{"records":[{"orderId":"0002048","customer":{"id":"C-106","name":"Example six"},"address":"137 Example Street","service":"Water","meter":{"id":"OLD-106","reading":"0.005"}}]},
+  "links":{"next":""}
+}
+```
+
+Stops at the empty next link, creating 2 in 2 pages. An absolute next link on the same exact origin is also supported; a different port, host, scheme, fragment, or credentials fails. The next link must include all filters needed for the second page; MeterFlo does not append the first request's query settings to it.
+
 ### Pagination and incremental pulls
 
 | Mode | Behavior |
@@ -68,6 +362,8 @@ Non-credential query parameters support customer filters. Credentials must not b
 **Resume saved cursor** is optional and only supported with cursor pagination. A successful run saves the last next cursor encountered; later runs may replay the final page. Stable ID matching makes this safe. Enable only if the customer documents durable cursors suitable for later polling; cursors tied to an expiring snapshot are not suitable.
 
 An optional **watermark query parameter** sends the last successful run's MeterFlo start timestamp (UTC). On complete success the watermark advances to the new run's start timestamp, not the last fetched page. The customer must support this timestamp format and appropriate inclusive updated-since semantics; eventually consistent feeds may require an adapter/overlap strategy. Partial errors, failed fetches, cancellation, and interruption never advance the configured watermark/cursor. Retrying an unsuccessful run starts from its original checkpoint using current configuration, provided the endpoint and pagination mode have not changed.
+
+**Current checkpoint-reset limitation:** editing settings resets the saved cursor/watermark. The current settings comparison is sensitive to stored JSON property ordering, so even saving unchanged settings or toggling Enabled can clear these checkpoints. Do not rely on pause/resume preserving them. After a toggle, a new pull may reread the full feed; stable IDs and the update protections still prevent duplicate creation or overwriting protected work. A manual retry can still use its prior run's original checkpoint when endpoint/pagination are unchanged. This is separate from successful-run checkpoint advancement; resetting a source does not erase imported orders or run history.
 
 Limits: 30 seconds per HTTP fetch, 5 MiB per response page, 1,000 records per page, 100 pages and 50,000 records per run. Pagination loops and unsupported shapes fail explicitly. Split larger feeds with customer filters or provide a suitable adapter.
 
@@ -88,6 +384,38 @@ Non-admin users need **`project.apiImport`** and assignment to the project to vi
 
 The permission appears as **Customer API Import** under **Project Menu** in role management. It is enabled for administrators by default, and disabled for the other default roles; administrators must grant it explicitly when non-admin access is desired.
 
+To grant operator access: **Settings → Access Levels → Edit** the relevant non-admin access level → **Project Menu → Customer API Import** → **Update**, then assign that user (directly or through a group) to the project. For example, a project-assigned Viewer with that grant can test a saved source and pull it, but cannot add/edit/remove sources or retry history. Documentation downloads themselves are administrator-only; share an approved guide with operators as appropriate.
+
+#### Operator actions and examples
+
+| Action | How and when to use it | Example result / limits |
+| --- | --- | --- |
+| Add API source / Set up first source | Administrator opens the configuration dialog and fills all mandatory fields/mappings. | Enter Example A; nothing is imported merely by opening the dialog. |
+| Test & preview unsaved settings | Administrator tests the current draft before saving. | Example B shows 2 sampled / 2 Valid and more available; missing customer IDs show Needs attention. Close returns to the unchanged draft. Only the first page is tested, never later pages or saved checkpoints. |
+| Create source / Save changes | Administrator validates and persists the current settings; waits until no active run before full edits. | Create Example A and see its source card. Saving Example B with Schedule `60` enables its future polling countdown; saving can clear checkpoints. There is no separate production activation step. |
+| Cancel / Close | Cancel dismisses the editor without saving; Close dismisses the preview. | An unsaved endpoint change is discarded with Cancel; an already performed read-only customer GET cannot be undone, but no work orders were written. |
+| Test / preview | Anyone with allowed project access tests a saved source. | A disabled source can still be previewed; a backend 401 shows Preview failed immediately, with no retry/run-history entry. |
+| Pull now | Allowed project user queues an enabled source on an active project with a database. | Example A reports Import queued then progresses in history. A second active pull for the same source is rejected instead of running in parallel. Preview success is not required/enforced before pulling. |
+| On / Off switch | Administrator disables or re-enables a saved source. | Off cancels a queued retry; committed earlier pages remain. A running page checks for cancellation before writes. On permits future pulls and restarts any schedule; observe the checkpoint-reset warning above. |
+| Edit (code icon) | Administrator adjusts the source after its active run ends or is disabled and cancellation completes. | Correct Records path from `data.items` to `data.records`, preview, then Save changes. A running run retains its original settings; editing it is blocked. |
+| Remove (trash icon) → Keep source / Remove source | Administrator confirms removal of a connection, not its imported work. Disable and wait if active. | Keep source cancels removal. Remove source retains work orders and historical counts/messages; those history entries can no longer be retried without an existing configuration. Create a new source to import again. |
+| Retry run (source card) / Retry (history row) | Administrator queues a **new** audited run for partial/failed/interrupted/cancelled history whose source still exists. Source must be enabled, project active, and no run already active. | Fix a 401 credential on the server and restart, then retry. The original failed run remains. Previously committed IDs skip or receive eligible safe updates on replay. Succeeded/active runs cannot be retried. |
+| Issues / notes button | Expand the history row's diagnostic messages with page/row coordinates and actions. | `1 issues` may show `page 1 · failed · Customer API returned HTTP 401`; correct authentication. A skipped protected-order message explains why a baseline correction was not applied. |
+| Refresh / Newer / Older | Refresh reloads source/history data; history pages contain 25 entries, with Older enabled when the page is full and Newer when not at the first page. | Use Older to inspect an earlier failure, then Newer to return. Active run data also refreshes about every 5 seconds while visible. |
+
+#### Run-history examples
+
+| Status | Meaning and example | What to do |
+| --- | --- | --- |
+| queued | Awaiting a worker/page; e.g. Pull now accepted or the next page is due. | Wait for background processing; no parallel pull for this source. |
+| running | Worker processing a page. | Keep the server running; browser may be closed. |
+| retrying | Transient fetch failed; e.g. HTTP 503. | Expand issues to see Next retry; automatic attempts persist. Do not try to manually retry an active run. |
+| succeeded | Every record validated/stored or safely skipped; e.g. Example A repeated gives 1 skipped. | Inspect counts; success does not mean every incoming row was created or updated. |
+| partial | Record failures alongside created/updated/skipped rows; e.g. 1 created and 1 failed missing Customer ID. | Fix source data/mapping then administrator retry; successful pages remain and checkpoints did not advance. |
+| failed | Fetch/configuration/storage failure, or no successful/skipped records alongside record errors. E.g. HTTP 401 may have 0 failed **records**. | Read status and issues, correct the cause, then administrator retry. A fully rejected record set is failed, not partial. |
+| interrupted | A stale running claim is recovered after the worker stops (approximately two minutes, once no worker lock remains). | Restart/check server/database, then administrator retry. Do not assume uncommitted work completed. |
+| cancelled | Source disabled or project inactive before a page write. | Re-enable/activate as appropriate; administrator can retry. Prior committed pages are not rolled back. |
+
 Runs display queued/running/retrying/succeeded/partial/failed/interrupted/cancelled status, page and fetch counts, created/updated/skipped/failed record counts, and up to 100 diagnostic messages. Error messages take priority over skipped-record examples (at most 50 skip examples). A page-fetch failure can fail the run while the record-failure count remains zero; inspect the run status and messages, not just the counters. Remote error response bodies, credential values, and SQL parameters are not logged.
 
 Connection failures, HTTP 408/429, and HTTP 5xx receive up to **four total attempts per page**, with persistent retry delays of 1, 5, and 15 minutes. `Retry-After` can extend these delays, capped at 24 hours. Authentication/configuration/validation failures stop without network retries. Preview reports errors immediately without retrying.
@@ -104,7 +432,7 @@ All endpoints are session-authenticated and project-scoped under `/api/projects/
 | --- | --- |
 | `GET /configs` | List configurations and latest run summaries. |
 | `POST /configs` | Admin: create configuration. |
-| `PATCH /configs/:id` | Admin: edit or disable configuration. Settings changes reset saved cursor/watermark; enable/disable alone preserves them. |
+| `PATCH /configs/:id` | Admin: edit or disable configuration. Settings saves can reset saved cursor/watermark, including enable/disable in the current implementation; see the checkpoint-reset warning. |
 | `DELETE /configs/:id` | Admin: remove an inactive configuration, retaining work orders/history. |
 | `POST /preview` | Admin: preview unsaved complete settings. |
 | `POST /configs/:id/preview` | Preview an existing configured source without a request body. |
@@ -319,3 +647,5 @@ Implementation:
 - `client/src/components/customer-api-deliveries.tsx` and `client/src/pages/settings.tsx`: delivery queue and troubleshooting UI.
 
 Run the targeted regression suite with `npm run test:customer-api`. It uses a temporary test project and local HTTP receiver, then removes its fixtures; it does not send data to a real customer endpoint.
+
+Run the field-reference checks with `npm run test:api-import-docs`. They verify form/option coverage, all mapping-target limits and update checkboxes, the four complete configuration objects, mock response paths, authentication headers, pagination termination, and incremental query examples. They use the shared validators/fetch helpers without network calls, database writes, or real credentials. The optional `tests/documentation-ui.cjs` harness verifies normal signed-in guide navigation and narrow-screen rendering using an available Playwright/Chromium runtime and a disposable administrator; it creates no projects or work orders and cleans up its account/session afterward.

@@ -222,7 +222,7 @@ Controls the **global** default timezone used in the UI and a master switch for 
 - Permission: `settings.timezone`
 
 #### Customer API Logs
-A read-only viewer for every outbound call MeterFlo has made to a project's customer API. Includes filters by project and success/failure, and an expandable view that shows the request URL, payload, response status, response body, and any error message. See [Customer API Integration](#customer-api-integration) and [`CUSTOMER_API_INTEGRATION.md`](./CUSTOMER_API_INTEGRATION.md) for how to configure outgoing calls.
+A viewer for outbound deliveries and their attempts, including automatic retry status, admin retry actions, filters, and expandable request/response/error details. Inbound pull history is separate on the project's Customer API Import page. See [Customer API Integration](#customer-api-integration) and the [Customer API guide](/documentation?doc=customer-api) for configuration and troubleshooting.
 - Permission: `settings.customerApiLogs`
 
 #### Mobile Application Updates
@@ -355,7 +355,7 @@ In the **Timezone** dropdown, pick the project's local timezone. Choices are:
 
 ### Step 7 — Configure the customer API (optional)
 
-If completed work orders need to be pushed to an external system, fill in the **Customer API Integration** section. Full setup details live in [`CUSTOMER_API_INTEGRATION.md`](./CUSTOMER_API_INTEGRATION.md).
+If completed/trouble work orders need to be pushed to an external system, fill in the **Customer API Integration** section. To pull customer work orders, configure a separate source under **Customer API Import**. Full setup details live in the [Customer API guide](/documentation?doc=customer-api).
 
 ### Step 8 — Assign users
 
@@ -364,13 +364,14 @@ If completed work orders need to be pushed to an external system, fill in the **
 
 ### Step 9 — Load work orders
 
-Three ways to bring work orders into a project:
+Work-order loading options include:
 
 1. **Manual entry** — open the project, click **Add Work Order**.
 2. **One-time file import** — **Project** → **File Import** → upload a CSV/Excel/JSON file and map columns.
 3. **Scheduled FTP import** — see [Scheduled File Imports](#scheduled-file-imports).
+4. **Customer API Import** — pull from a customer's HTTP(S) JSON REST feed; see [Customer API Integration](#customer-api-integration) and the detailed [API Import field reference](/documentation?doc=customer-api#api-import-field-reference).
 
-> Imports require at least one service type enabled on the project. Customer WO IDs are auto-generated if not provided.
+> Configure the project's eligible service types first. Unlike file-import ID/default handling, API Import requires an explicit stable customer work-order ID and service code on every row; it never generates an ID or infers a missing service type.
 
 ### Step 10 — (Optional) Configure route sheets, file storage, and reports
 
@@ -405,7 +406,7 @@ The wizard asks **"Can the changeout / reading proceed?"**. The technician answe
 
 ### 4. Trouble Capture (only on the "No" branch)
 
-The technician picks a trouble code (from the global trouble code list), optionally adds a note, optionally captures trouble photos, and submits. The work order's status becomes `Trouble`. The customer API is **not** called for trouble reports.
+The technician picks a trouble code (from the global trouble code list), optionally adds a note, optionally captures trouble photos, and submits. The work order's status becomes `Trouble`. If outbound Customer API delivery is enabled, that saved outcome queues an asynchronous customer delivery; inbound pull configuration is independent.
 
 ### 5. Old reading capture
 
@@ -450,7 +451,7 @@ The technician reviews the captured data and submits. The server:
 1. Updates the work order's status to `Completed`, persists all readings/IDs, and writes the report header into `notes`.
 2. Records the end time in `work_order_time_tracking` (start–end gives the duration shown in the System | Module Details accordion and on the PDF report).
 3. Triggers any configured project webhook.
-4. Calls the customer API if configured (fire-and-forget — see [`CUSTOMER_API_INTEGRATION.md`](./CUSTOMER_API_INTEGRATION.md)).
+4. Queues persistent asynchronous outbound delivery if enabled, with automatic retries and administrator troubleshooting/retry actions — see the [Customer API guide](/documentation?doc=customer-api).
 5. Emits a Server-Sent Event (SSE) so connected dashboards refresh in real time.
 
 If the wizard is reopened later, a new time-tracking session starts; the most recent session is what gets displayed.
@@ -777,6 +778,12 @@ Projects can be configured to push completed work order data to external custome
 
 Projects also have an independent **API Import** option for pulling work orders from a customer's HTTP(S) JSON REST API. Excel/text imports and direct database imports remain available. Administrators configure endpoints, server secret-variable names, source-field mappings, record paths, pagination, and optional polling intervals (manual by default; scheduled intervals must be at least 15 minutes).
 
+For the complete field-by-field reference, use **Documentation → Customer API Integration** or open the [API Import field reference](/documentation?doc=customer-api#api-import-field-reference). It follows the Add/Edit form, including all four authentication methods, required mappings and every target/update checkbox, JSON filters, watermarks, all pagination options, schedule/enablement, and copyable mock configurations. Each field/option includes a practical example, accepted values, defaults, and instructions. See [complete examples](/documentation?doc=customer-api#complete-configurations-and-pagination-examples) and [operator actions](/documentation?doc=customer-api#operator-actions-and-examples).
+
+Start with Schedule `0`, choose **Add API source**, then **Test & preview unsaved settings → Create source → Pull now**. Configure credential values in the environment of the actual Windows/Linux service account running MeterFlo and enter only their variable names in the form; inbound settings are not copied from outbound delivery. For Cursor/Next URL, the current form hides page-size controls: set them while Page number is selected before switching strategies.
+
+**Current limitation:** saving/toggling a source can reset its saved cursor/watermark, even for an enable/disable change. Do not rely on pause/resume keeping incremental checkpoints; the next new pull can reread earlier records safely through stable IDs and protected updates. See the detailed guide's checkpoint-reset warning.
+
 Use **Test / preview** before **Pull now**. Every row needs a stable customer work-order ID, customer ID/name, address, and valid service code. Readings/identifiers should be strings to preserve exact decimals and leading zeros. The importer creates Open baseline work orders; it does not import completion or new-device capture data.
 
 Create-only is the default and skips matching work-order IDs. Optional safe updates apply only to explicitly selected baseline fields on untouched Open records originally created by API Import. Row-version checks, technician data, notes/reset history, photos/signatures, assignments, scheduling, and time tracking protect existing work. Imported changes never trigger outbound completion delivery.
@@ -787,7 +794,7 @@ Non-admin access to configured previews, Pull Now, and history requires the **`p
 
 The full setup, payload, log endpoint, and troubleshooting guide lives in:
 
-→ [`CUSTOMER_API_INTEGRATION.md`](./CUSTOMER_API_INTEGRATION.md)
+→ [Customer API Integration](/documentation?doc=customer-api)
 
 Logs of every outbound call are visible in **Settings** → **Customer API Logs** (requires the `settings.customerApiLogs` permission).
 
