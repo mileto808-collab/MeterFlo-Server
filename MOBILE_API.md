@@ -2,6 +2,8 @@
 
 Complete REST API reference for building the MeterFlo mobile application.
 
+This reference documents the HTTP contract. For workflow configuration, wizard behavior, offline retry strategy, and upload decision rules, see the separate **MeterFlo Mobile App Synchronization Guide** on the Documentation page.
+
 ---
 
 ## Table of Contents
@@ -113,10 +115,10 @@ Returns groups the current user is a member of.
 
 ### Logout
 ```
-POST /api/auth/logout
+GET /api/logout
 ```
 
-Destroys the current session.
+Ends the current session and redirects to `/`. Mobile clients should follow the redirect or treat any successful 3xx response as logout completion.
 
 ---
 
@@ -131,22 +133,23 @@ Use the `user.id` from login response. Returns all projects the user is assigned
 
 **Response:**
 ```json
-[
-  {
-    "id": 1,
-    "name": "Springfield Water District",
-    "description": "Meter replacement project for Springfield",
-    "databaseName": "springfield_water_1",
-    "createdAt": "2025-01-15T...",
-    "updatedAt": "2025-12-20T..."
-  },
-  {
-    "id": 2,
-    "name": "Metro Gas Company",
-    "description": "Gas meter upgrades",
-    "databaseName": "metro_gas_2"
+{
+  "projects": [
+    {
+      "id": 1,
+      "name": "Springfield Water District",
+      "description": "Meter replacement project for Springfield",
+      "databaseName": "springfield_water_1",
+      "isActive": true,
+      "wizardMode": "changeout"
+    }
+  ],
+  "mobileConfig": {
+    "updateUrl": null,
+    "iosUpdateSource": null,
+    "appStoreId": null
   }
-]
+}
 ```
 
 ---
@@ -222,22 +225,20 @@ Downloads work orders with incremental sync support.
   ],
   "referenceData": {
     "workOrderStatuses": [
-      {"id": 1, "name": "Open", "isDefault": true},
-      {"id": 2, "name": "In Progress"},
-      {"id": 3, "name": "Completed"},
-      {"id": 4, "name": "Trouble"}
+      {"id": 1, "code": "Open", "label": "Open", "isDefault": true},
+      {"id": 2, "code": "In Progress", "label": "In Progress"}
     ],
     "troubleCodes": [
-      {"id": 1, "code": "TC001", "description": "Meter locked/inaccessible"},
-      {"id": 2, "code": "TC002", "description": "Dog on property"}
+      {"id": 1, "code": "TC001", "label": "Meter locked", "description": "Meter locked/inaccessible"}
     ],
-    "meterTypes": [
-      {"id": 1, "name": "Residential"},
-      {"id": 2, "name": "Commercial"}
+    "systemTypes": [
+      {"id": 1, "productId": "FLOWIQ2200", "productLabel": "FLOWIQ 2200"}
+    ],
+    "moduleTypes": [
+      {"id": 1, "productId": "AMI-2000", "productLabel": "AMI 2000"}
     ],
     "serviceTypes": [
-      {"id": 1, "name": "Water"},
-      {"id": 2, "name": "Gas"}
+      {"id": 1, "code": "Water", "label": "Water", "isDefault": true}
     ],
     "assignees": {
       "users": [
@@ -436,12 +437,12 @@ If already assigned to this user:
 
 ---
 
-### Complete Meter Changeout
+### Submit Changeout, Reading, or Trouble Workflow
 ```
-POST /api/projects/:projectId/work-orders/:workOrderId/meter-changeout
+POST /api/projects/:projectId/work-orders/:workOrderId/system-changeout
 ```
 
-Complete a meter changeout with photos, GPS, and signature. Supports system-only, module-only, or combined system+module changeouts.
+This is the current wizard submission endpoint for successful changeouts, reading-only submissions, and trouble reports. It supports system-only, module-only, or combined system+module scopes.
 
 **Content-Type:** `multipart/form-data`
 
@@ -449,9 +450,9 @@ Complete a meter changeout with photos, GPS, and signature. Supports system-only
 - `photos` - File array (up to 20 photos)
 - `data` - JSON string with changeout data
 
-#### Data-Driven Scope Detection
+#### Scope Detection
 
-The API automatically determines the changeout scope based on which IDs exist in the work order:
+Send `changeoutScope` as `"system"`, `"module"`, or `"both"`. If it is omitted, the API falls back to the IDs present on the work order:
 - **System changeout**: Work order has `old_system_id` set
 - **Module changeout**: Work order has `old_module_id` set  
 - **Both**: Work order has both `old_system_id` and `old_module_id` set
@@ -464,10 +465,14 @@ Required fields in the submission depend on which IDs are present:
 | `old_module_id` only | `oldModuleReading`, `newModuleId`, `newModuleReading` |
 | Both IDs | All system AND module fields above |
 
+For reading-only submissions, send `isReadingOnly: true`. Only the relevant new reading fields are required; the server copies the old IDs and equipment types. Successful submissions also require `gpsCoordinates` and `signatureName`. Trouble submissions use `canChange: false` and require `troubleCode`.
+
 **Successful Changeout Data (System Only):**
 ```json
 {
   "canChange": true,
+  "changeoutScope": "system",
+  "isReadingOnly": false,
   "troubleCode": null,
   "troubleNote": null,
   "oldSystemReading": "12345",
@@ -484,6 +489,8 @@ Required fields in the submission depend on which IDs are present:
 ```json
 {
   "canChange": true,
+  "changeoutScope": "module",
+  "isReadingOnly": false,
   "troubleCode": null,
   "troubleNote": null,
   "oldModuleReading": "54321",
@@ -500,6 +507,8 @@ Required fields in the submission depend on which IDs are present:
 ```json
 {
   "canChange": true,
+  "changeoutScope": "both",
+  "isReadingOnly": false,
   "troubleCode": null,
   "troubleNote": null,
   "oldSystemReading": "12345",
@@ -531,10 +540,12 @@ Required fields in the submission depend on which IDs are present:
 **Response:**
 ```json
 {
-  "message": "Meter changeout completed successfully",
+  "success": true,
+  "message": "System changeout completed successfully",
   "uploadedPhotos": [
-    "/files/Project_1/Work Orders/WO-001/before_1.jpg",
-    "/files/Project_1/Work Orders/WO-001/after_1.jpg"
+    "before_1.jpg",
+    "after_1.jpg",
+    "WO-001-signature.png"
   ]
 }
 ```
@@ -628,7 +639,7 @@ Update status on multiple work orders.
 
 ## Mobile JSON Endpoints (Base64 Photos)
 
-These endpoints accept JSON payloads with base64-encoded photos, ideal for mobile apps that don't use multipart form-data.
+These supported compatibility endpoints accept JSON payloads with base64-encoded photos. New wizard implementations should use the multipart `/system-changeout` contract above so changeout, reading-only, and trouble behavior stay aligned with the web app.
 
 ### Report Trouble (JSON)
 ```
@@ -762,6 +773,8 @@ The `filename` fields in requests are ignored - the server enforces standardized
 
 ## Photo & Signature Upload (Multipart)
 
+These endpoints support standalone photo and signature updates. Wizard photos and signatures should normally travel in the `/system-changeout` request.
+
 ### Upload Photos
 ```
 POST /api/projects/:projectId/mobile/work-orders/:workOrderId/photos
@@ -780,9 +793,11 @@ Upload photos for a work order separately from the changeout workflow.
 {
   "success": true,
   "uploadedPhotos": [
-    "/files/Project_1/Work Orders/WO-001/before_2.jpg",
-    "/files/Project_1/Work Orders/WO-001/after_3.jpg"
-  ]
+    {"filename": "before_1700000000000_0.jpg", "type": "before", "path": "before/before_1700000000000_0.jpg"},
+    {"filename": "after_1700000000000_1.jpg", "type": "after", "path": "after/after_1700000000000_1.jpg"}
+  ],
+  "workOrderId": 123,
+  "message": "2 photo(s) uploaded successfully"
 }
 ```
 
@@ -900,13 +915,13 @@ Common HTTP status codes:
 | Login | POST | `/api/auth/local/login` |
 | Get User | GET | `/api/auth/user` |
 | Get User Groups | GET | `/api/auth/user/groups` |
-| Logout | POST | `/api/auth/logout` |
+| Logout | GET | `/api/logout` |
 | Get Projects | GET | `/api/users/:userId/projects` |
 | Get Work Order | GET | `/api/projects/:projectId/work-orders/:workOrderId` |
 | Download Sync | GET | `/api/projects/:projectId/mobile/sync/download` |
 | Upload Sync | POST | `/api/projects/:projectId/mobile/sync/upload` |
 | Claim WO | POST | `/api/projects/:projectId/work-orders/:workOrderId/claim` |
-| Changeout | POST | `/api/projects/:projectId/work-orders/:workOrderId/meter-changeout` |
+| Wizard submission | POST | `/api/projects/:projectId/work-orders/:workOrderId/system-changeout` |
 | Bulk Claim | POST | `/api/projects/:projectId/mobile/work-orders/bulk-claim` |
 | Bulk Status | POST | `/api/projects/:projectId/mobile/work-orders/bulk-status` |
 | Upload Photos | POST | `/api/projects/:projectId/mobile/work-orders/:workOrderId/photos` |
@@ -914,4 +929,4 @@ Common HTTP status codes:
 
 ---
 
-*Last updated: January 13, 2026*
+*Last verified against server routes: October 11, 2026*

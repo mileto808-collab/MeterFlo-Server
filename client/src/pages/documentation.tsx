@@ -7,11 +7,11 @@ import html2pdf from "html2pdf.js";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { FileText, Server, Smartphone, ChevronLeft, Download, Globe, Shield } from "lucide-react";
+import { FileText, Server, Smartphone, ChevronLeft, Download, Globe, Shield, RefreshCw } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 
-type DocType = "windows-deployment" | "mobile-api" | "customer-api" | "system-admin" | null;
+type DocType = "windows-deployment" | "mobile-api" | "mobile-sync" | "customer-api" | "system-admin" | null;
 
 const docOptions = [
   {
@@ -29,8 +29,14 @@ const docOptions = [
   {
     id: "mobile-api" as DocType,
     title: "Mobile API Documentation",
-    description: "REST API reference for mobile app integration, work order sync, and offline support.",
+    description: "REST API reference for authentication, work orders, synchronization, and uploads.",
     icon: Smartphone,
+  },
+  {
+    id: "mobile-sync" as DocType,
+    title: "Mobile App Synchronization Guide",
+    description: "Implementation guide for workflow settings, offline behavior, time tracking, and file uploads.",
+    icon: RefreshCw,
   },
   {
     id: "customer-api" as DocType,

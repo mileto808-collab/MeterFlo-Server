@@ -4924,6 +4924,9 @@ export async function registerRoutes(
         case "mobile-api":
           filePath = path.join(process.cwd(), "MOBILE_API.md");
           break;
+        case "mobile-sync":
+          filePath = path.join(process.cwd(), "mobile-app-sync-instructions.md");
+          break;
         case "customer-api":
           filePath = path.join(process.cwd(), "CUSTOMER_API_INTEGRATION.md");
           break;

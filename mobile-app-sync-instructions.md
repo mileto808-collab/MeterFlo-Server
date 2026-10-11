@@ -2,6 +2,8 @@
 
 This document provides comprehensive instructions for updating the mobile application to synchronize with the web application's workflow configuration, search methods, time tracking, file uploads, and other features.
 
+This guide explains client behavior and implementation decisions. For the endpoint-by-endpoint HTTP contract, use the separate **MeterFlo Mobile API Documentation** on the Documentation page.
+
 ---
 
 ## Table of Contents
@@ -77,7 +79,7 @@ Time tracking is **not** part of either of these payloads — it has its own end
 | POST | `/api/projects/:projectId/work-orders/:workOrderId/files` | Upload a file attached to a work order (photos, signatures) |
 | POST | `/api/projects/:projectId/ftp-files` | Upload a project FTP file |
 
-For files larger than 5 MB — and for all uploads in production — use the chunked endpoints in Section 11 instead.
+For standalone files up to and including 5 MB, use the direct upload endpoints above. For standalone files larger than 5 MB, use the chunked endpoints in Section 11. Wizard photos are always sent through `/system-changeout`; do not reroute them through the standalone or chunked file APIs.
 
 ### 1.6 Lookup / Reference Data
 
