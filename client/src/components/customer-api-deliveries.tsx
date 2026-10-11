@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -33,18 +33,24 @@ function readablePayload(value: string | null) {
   } catch { return value; }
 }
 
-export function CustomerApiDeliveries({ isAdmin, projects }: { isAdmin: boolean; projects: { id: number; name: string }[] }) {
-  const [project, setProject] = useState("all");
+export function CustomerApiDeliveries({ isAdmin, projects, fixedProjectId }: { isAdmin: boolean; projects: { id: number; name: string }[]; fixedProjectId?: number }) {
+  const [project, setProject] = useState(fixedProjectId == null ? "all" : String(fixedProjectId));
   const [status, setStatus] = useState("all");
   const [page, setPage] = useState(0);
   const [selected, setSelected] = useState<Delivery | null>(null);
   const { toast } = useToast();
   const cache = useQueryClient();
+  useEffect(() => {
+    setProject(fixedProjectId == null ? "all" : String(fixedProjectId));
+    setPage(0);
+    setSelected(null);
+  }, [fixedProjectId]);
   const list = useQuery<{ deliveries: Delivery[]; total: number }>({
-    queryKey: ["/api/customer-api-deliveries", project, status, page],
+    queryKey: ["/api/customer-api-deliveries", fixedProjectId ?? project, status, page],
     queryFn: () => {
       const params = new URLSearchParams({ limit: "25", offset: String(page * 25) });
-      if (project !== "all") params.set("projectId", project);
+      if (fixedProjectId != null) params.set("projectId", String(fixedProjectId));
+      else if (project !== "all") params.set("projectId", project);
       if (status !== "all") params.set("status", status);
       return readJson(`/api/customer-api-deliveries?${params}`);
     },
@@ -73,11 +79,11 @@ export function CustomerApiDeliveries({ isAdmin, projects }: { isAdmin: boolean;
       </Button>
     </div>
     <div className="flex flex-wrap gap-3">
-      <Select value={project} onValueChange={value => { setProject(value); setPage(0); }}>
+      {fixedProjectId == null && <Select value={project} onValueChange={value => { setProject(value); setPage(0); }}>
         <SelectTrigger className="w-[220px]" aria-label="Delivery project"><SelectValue /></SelectTrigger>
         <SelectContent><SelectItem value="all">All projects</SelectItem>
           {projects.map(p => <SelectItem key={p.id} value={String(p.id)}>{p.name}</SelectItem>)}</SelectContent>
-      </Select>
+      </Select>}
       <Select value={status} onValueChange={value => { setStatus(value); setPage(0); }}>
         <SelectTrigger className="w-[180px]" aria-label="Delivery status"><SelectValue /></SelectTrigger>
         <SelectContent><SelectItem value="all">All delivery states</SelectItem>

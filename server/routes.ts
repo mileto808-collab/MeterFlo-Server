@@ -28,6 +28,8 @@ import { createPgBackupArchive, extractBackupFromArchive, restorePgBackup, resto
 import { projectEventEmitter, emitWorkOrderCreated, emitWorkOrderUpdated, emitWorkOrderDeleted, emitFileAdded, emitFileDeleted, type ProjectEvent } from "./eventEmitter";
 import { retryCustomerDelivery, retryLegacyCustomerLog } from "./customerApiService";
 import { registerApiImportRoutes } from "./apiImportRoutes";
+import { registerCustomerApiSettings, validateProjectCustomerPush } from "./customerApiSettings";
+import { customerPushFields, customerPushSettings } from "../shared/customer-api-settings";
 import { toZonedTime, format as formatTz } from "date-fns-tz";
 import nodemailer from "nodemailer";
 
@@ -190,6 +192,7 @@ export async function registerRoutes(
   await storage.syncPermissionsFromRegistry();
   await storage.ensureDefaultSubroles();
   registerApiImportRoutes(app);
+  registerCustomerApiSettings(app);
 
   // Local authentication
   app.post("/api/auth/local/login", async (req, res) => {
@@ -1646,13 +1649,25 @@ export async function registerRoutes(
       if (!canCreateProjects) {
         return res.status(403).json({ message: "Forbidden: You don't have permission to create projects" });
       }
+
+      if (req.body && Object.keys(req.body).some(key => key.startsWith("customerApi")) &&
+          !await storage.hasPermission(currentUser, permissionKeys.PROJECTS_EDIT)) {
+        return res.status(403).json({ message: "Project-edit permission is required to configure push delivery." });
+      }
       
-      const parsed = insertProjectSchema.safeParse(req.body);
+      const pushValidation = validateProjectCustomerPush(req.body);
+      if (!pushValidation.data) return res.status(400).json({ message: "Check the push delivery settings.", errors: pushValidation.errors });
+      const parsed = insertProjectSchema.safeParse(pushValidation.data);
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid project data", errors: parsed.error.errors });
       }
       
-      const project = await storage.createProject(parsed.data);
+      const project = customerPushFields.some(key => Object.hasOwn(req.body, key))
+        ? await storage.createProjectWithFullData({
+            name: parsed.data.name, description: parsed.data.description, customerEmail: parsed.data.customerEmail,
+            ...customerPushSettings(parsed.data),
+          })
+        : await storage.createProject(parsed.data);
       
       const schemaName = await createProjectSchema(project.name, project.id);
       await storage.updateProjectDatabaseName(project.id, schemaName);
@@ -1764,13 +1779,25 @@ export async function registerRoutes(
       if (!existingProject) {
         return res.status(404).json({ message: "Project not found" });
       }
+
+      if (Object.keys(req.body).some(key => key.startsWith("customerApi")) &&
+          !await storage.isAdminUser(currentUser) &&
+          !await storage.isUserAssignedToProject(currentUser.id, projectId)) {
+        return res.status(403).json({ message: "You are not assigned to this project." });
+      }
+      if (Object.keys(req.body).some(key => key.startsWith("customerApi")) &&
+          existingProject.isActive === false && !await storage.hasPermission(currentUser, permissionKeys.PROJECTS_VIEW_INACTIVE)) {
+        return res.status(403).json({ message: "Access to this inactive project is unavailable." });
+      }
+      const pushValidation = validateProjectCustomerPush(req.body, existingProject);
+      if (!pushValidation.data) return res.status(400).json({ message: "Check the push delivery settings.", errors: pushValidation.errors });
       
       // If name is changing, rename the project directory
       if (req.body.name && req.body.name !== existingProject.name) {
         await renameProjectDirectory(existingProject.name, req.body.name, projectId);
       }
       
-      const project = await storage.updateProject(projectId, req.body);
+      const project = await storage.updateProject(projectId, pushValidation.data);
       if (!project) {
         return res.status(404).json({ message: "Project not found" });
       }

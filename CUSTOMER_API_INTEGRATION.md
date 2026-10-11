@@ -25,7 +25,7 @@ This feature works on independent Windows or Linux installations. It does not re
 
 Ask the customer for their API documentation and a sanitized response sample before configuring a real feed. The built-in importer supports HTTP(S) GET returning a JSON array, either at the response root or a configured dot-separated path. It does not support SOAP, GraphQL, OAuth authorization flows, attachment downloads, customer-side acknowledgments, or general two-way synchronization.
 
-1. Sign in as an administrator and open a project's **Customer API Import** sidebar item. The page heading is **Customer API pull**.
+1. Sign in as an administrator and open a project's **Customer API** sidebar item, then select **Pull import**. The importer heading is **Customer API pull**. Existing `/projects/<id>/api-import` bookmarks still open the importer directly.
 2. Choose **Add API source** (or **Set up first source** when empty), enter a name and endpoint URL, and configure authentication independently of the project's outbound settings.
 3. Enter only the **name** of the server environment variable holding the credential. Configure its value on the MeterFlo server and restart the server to make new environment variables available. API key header, bearer token, Basic authentication, and no authentication are supported. Basic credentials use `username:password` as the environment variable's value.
 4. Set the records path: leave blank for a root array, or use a path such as `data` or `result.workOrders`. Property names must use letters, digits, underscores, and hyphens; dots separate levels. Bracket-style array-index notation and property names containing dots are not supported.
@@ -442,28 +442,38 @@ All endpoints are session-authenticated and project-scoped under `/api/projects/
 
 ## Push completed data: configure a project
 
-1. Sign in as an administrator and open **Projects**.
-2. Edit the project and find **Customer API Integration**.
-3. Enable the integration, enter the receiving URL, choose authentication, and set the photo preference.
-4. If authentication is required, configure the named secret environment variable on the server running MeterFlo, then restart that server process so it can read the variable.
+1. Create the project first if necessary. Project create/edit now links to the canonical integration page instead of maintaining a second editable form.
+2. Open **Customer API → Push delivery** in the project's menu. Push and **Pull import** are independent: enabling or saving one never enables, edits, or removes the other.
+3. Enter the receiving URL, choose authentication, and set the photo preference. If authentication is required, configure the named variable through the server's secure environment configuration and restart the server process so it can read it.
+4. Turn on **Enable outbound delivery**, then choose **Save push settings**. Incomplete settings can be saved while disabled. Enabled settings must pass validation, including server-side credential availability; this is not a connection test and sends no customer request.
 
-| Setting | Stored project column | Behavior |
+### Push delivery field reference
+
+| UI field / stored column | Use and requirements | Example and how to use it |
 | --- | --- | --- |
-| Enable Customer API | `customer_api_enabled` | New deliveries are recorded only when enabled. Existing queued deliveries pause while disabled and resume after re-enabling. |
-| API Endpoint URL | `customer_api_url` | HTTP(S) endpoint for JSON POST requests. Use HTTPS outside a trusted network. URLs with embedded username/password are rejected. Redirects are not followed. |
-| Authentication Type | `customer_api_auth_type` | `none`, `api_key`, `bearer_token`, or `basic_auth`. |
-| API Key Header Name | `customer_api_key_header` | Custom header for `api_key`; defaults to `X-API-Key`. Reserved delivery headers and `Content-Type` cannot be overridden. |
-| Secret Environment Variable | `customer_api_secret_env_var` | The **name** of a server environment variable; never enter the credential itself here. |
-| Include Photos | `customer_api_send_photos` | Include all work-order images and signature image data. Defaults to true. When false, image bytes and signature data are omitted; attachment filenames and signature name still remain. |
+| Enable outbound delivery / `customer_api_enabled` | Default false. Records new completed/trouble delivery events only when enabled. Existing pending work pauses while disabled and resumes after re-enabling. No backfill is performed. | Leave off while configuring; turn on and **Save push settings** once the endpoint/credentials are ready. Turn off and save to pause future delivery. This switch does not disable pull sources. |
+| Customer endpoint URL / `customer_api_url` | Maximum 500 characters. Enabled delivery requires a complete HTTP(S) URL without embedded username/password or a fragment. POST/JSON is fixed; redirects are not followed. Use HTTPS outside a trusted network and keep credentials out of URLs. | `https://api.customer.example/v1/completions` receives MeterFlo's fixed work-order payload. Enter the full receiving path, not merely the customer's home page. Blank or `not-a-url` can be retained while disabled, but cannot be enabled. |
+| Authentication / `customer_api_auth_type` | One of No authentication (`none`), API key header (`api_key`), Bearer token (`bearer_token`), Basic authentication (`basic_auth`). Default None. Select the customer's actual supported method. | Choose **Bearer token** for an API requiring `Authorization: Bearer ...`; choose **No authentication** only for a deliberately unauthenticated endpoint. Conditional fields below follow this selection. |
+| API key header name / `customer_api_key_header` | Shown for API key header only. Maximum 100 characters. Blank means `X-API-Key`. HTTP token characters are accepted; Content-Type, Idempotency-Key and X-MeterFlo-Delivery-Id are reserved, case-insensitively. | Leave blank for `X-API-Key`, or enter `X-Customer-Key` if the customer's contract requires it. Enter a header name, never its secret value. `Bad Header` and `Idempotency-Key` cannot be used when enabled. |
+| Server environment variable name / `customer_api_secret_env_var` | Shown for authenticated modes. Maximum 100 characters; enabled authentication requires letters/digits/underscores, beginning with a letter or underscore. Names retain their case, preserving existing mixed-case references; match the actual server variable exactly. The named variable must be populated. | Enter `CUSTOMER_API_TOKEN` for Bearer authentication, `CUSTOMER_API_KEY` for an API key, or `CUSTOMER_API_BASIC` for Basic. Set its value separately in the Windows/Linux service or PM2 environment; never paste a password/token into this field. |
+| Include field images / `customer_api_send_photos` | Default true. Includes before, after, trouble, signature and other image files, plus signature image data. Off omits image bytes/signature data; attachment filenames and signature name remain. Applies when a delivery's payload is first prepared; prepared retry payloads remain unchanged. | Leave on if the customer accepts base64 images. Turn off and save for a JSON-only integration that does not accept image bytes. Changing this option does not rebuild previously prepared deliveries. |
+
+**Save behavior and credential status:** Only the six push fields are submitted; unrelated project details and pull sources remain intact. **Last-saved credential availability** reports available, missing, or not required for the saved selection, without showing values. It does not verify unsaved edits or customer acceptance. A syntactically valid variable name is not proof that the variable exists: enabled saves reject a missing server variable with a field error. If an installed server later loses its variable, existing deliveries still fail safely and retry—there is no unauthenticated fallback.
+
+**Access and troubleshooting:** Saving push settings requires **Projects → Edit** (`projects.edit`) and project membership for non-admins. **Customer API Logs** (`settings.customerApiLogs`) grants read-only push/activity access without granting editing. Pull-only access does not reveal a push editor. Users without inactive-project access cannot configure an inactive project. The **Delivery activity** panel is fixed to the current project and includes status filtering, attempts, errors and eligible administrator retries; the global **Settings → Customer API Logs** view remains available. Documentation itself remains administrator-only.
+
+**Supported contract:** Push is fixed POST with MeterFlo's JSON payload, not a customizable field mapper. The 30-second timeout, five-attempt cycle and retry delays of 1, 5, 15 and 60 minutes are fixed behavior, not missing form controls. OAuth token acquisition/refresh, arbitrary methods and arbitrary additional headers are not supported. HTTP 2xx counts as success; a 200 response containing an application-level rejection is not interpreted automatically.
+
+**Settings API:** `GET /api/projects/:projectId/customer-api` returns `{ settings, credentialStatus, canEdit }`, never credential values. `PUT` to the same route accepts exactly the six camelCase counterparts of the stored columns above and returns the same envelope. Field errors use HTTP 400 with `{ message, errors: { fieldName: ["explanation"] } }`. Legacy project create/update requests containing push fields are also validated; normal project-detail edits that omit them preserve saved push configuration.
 
 ### Authentication sent to the customer
 
-| Type | Request header |
+| UI option / stored type | Request header and setup example |
 | --- | --- |
-| `none` | No authorization header. |
-| `api_key` | `<configured header>: <secret value>` |
-| `bearer_token` | `Authorization: Bearer <secret value>` |
-| `basic_auth` | `Authorization: Basic <base64 of username:password>` |
+| No authentication / `none` | No authorization header. Example: select this for a trusted test endpoint explicitly accepting unauthenticated POSTs; no secret field is needed. |
+| API key header / `api_key` | `<configured header>: <secret value>`. Example: select API key header, enter `X-Customer-Key` and variable name `CUSTOMER_API_KEY`; configure the actual key separately in the server environment. A blank header uses `X-API-Key`. |
+| Bearer token / `bearer_token` | `Authorization: Bearer <secret value>`. Example: select Bearer token and `CUSTOMER_API_TOKEN`; the server variable must contain the token alone, without the `Bearer ` prefix. |
+| Basic authentication / `basic_auth` | `Authorization: Basic <base64 of username:password>`. Example: select Basic authentication and `CUSTOMER_API_BASIC`; set that variable separately to the customer's `username:password` credential pair. Do not enter that pair into the form or URL. |
 
 For Basic authentication, the named environment variable must contain `username:password`. Supply server environment variables through your installation's secure environment configuration (for example, the service account or PM2 environment on an independent server, or workspace Secrets on Replit). Do not put credentials into source control.
 
@@ -556,7 +566,7 @@ New deliveries use **schemaVersion 2**. The original meter-named fields remain f
 | `attachments` | Stored attachment filenames/references, default `[]`. Non-image attachment contents, such as PDFs, are not embedded. |
 | `signatureName` | Stored signer name even if image inclusion is off. |
 | `timeTracking` | Latest saved entry as `{startTime, endTime, durationSeconds}`, or `null`. |
-| `photos` | Only with image inclusion enabled: array of `{filename, type, contentType, data}` for every available image, including before/after/trouble/signature images and uncategorized photos. `data` is base64 without a data-URL prefix. |
+| `photos` | Only with image inclusion enabled: array of `{filename, type, contentType, data}` for every available image. Categorized types are `before`, `after`, `trouble`, `signature`; other/uncategorized images use type `photo`. `data` is base64 without a data-URL prefix. |
 | `beforePhoto`, `afterPhoto` | Optional compatibility base64 fields for the first categorized image of each type. |
 | `signature` | Optional base64 signature, from an image file or saved signature data. Omitted with image inclusion off. |
 
@@ -647,5 +657,7 @@ Implementation:
 - `client/src/components/customer-api-deliveries.tsx` and `client/src/pages/settings.tsx`: delivery queue and troubleshooting UI.
 
 Run the targeted regression suite with `npm run test:customer-api`. It uses a temporary test project and local HTTP receiver, then removes its fixtures; it does not send data to a real customer endpoint.
+
+Run `npx tsx --test tests/customer-api-settings.test.ts` for push validation/field coverage. Run `npm run build` first; with the dev app running and Playwright/Chromium available, `node --import tsx tests/customer-api-hub.cjs` verifies all four saved authentication selections, mock HTTP delivery, image inclusion, retries, normal role-management permissions, signed-in navigation and phone layout. Set `PLAYWRIGHT_MODULE_PATH` and `CHROMIUM_PATH` if the browser tooling is outside normal package resolution. The harness serves the built frontend with normal session authentication, uses test-process-only dummy credentials and cleans up its disposable projects, roles, users, sessions and images; no real customer URL or credentials are required.
 
 Run the field-reference checks with `npm run test:api-import-docs`. They verify form/option coverage, all mapping-target limits and update checkboxes, the four complete configuration objects, mock response paths, authentication headers, pagination termination, and incremental query examples. They use the shared validators/fetch helpers without network calls, database writes, or real credentials. The optional `tests/documentation-ui.cjs` harness verifies normal signed-in guide navigation and narrow-screen rendering using an available Playwright/Chromium runtime and a disposable administrator; it creates no projects or work orders and cleans up its account/session afterward.

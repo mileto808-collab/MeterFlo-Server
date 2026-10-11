@@ -28,6 +28,7 @@ import ProjectWorkOrders from "@/pages/project-work-orders";
 import ProjectImport from "@/pages/project-import";
 import ProjectDbImport from "@/pages/project-db-import";
 import ProjectApiImport from "@/pages/project-api-import";
+import ProjectCustomerApi from "@/pages/project-customer-api";
 import ProjectFtpFiles from "@/pages/project-ftp-files";
 import ProjectFiles from "@/pages/project-files";
 import WorkOrderFiles from "@/pages/work-order-files";
@@ -81,6 +82,8 @@ function AuthenticatedRouter() {
           <Route path="/projects/:projectId/db-import" component={ProjectDbImport} />
         </>
       )}
+
+      <Route path="/projects/:projectId/customer-api" component={ProjectCustomerApi} />
       
       {hasPermission("nav.users") && (
         <Route path="/users" component={Users} />
@@ -105,7 +108,7 @@ function AuthenticatedRouter() {
           <Route path="/projects/:projectId/ftp-files" component={ProjectFtpFiles} />
           <Route path="/projects/:projectId/work-orders/:workOrderId/files" component={WorkOrderFiles} />
           <Route path="/projects/:projectId/import" component={ProjectImport} />
-          <Route path="/projects/:projectId/api-import" component={ProjectApiImport} />
+          <Route path="/projects/:projectId/api-import"><ProjectApiImport /></Route>
         </>
       )}
       

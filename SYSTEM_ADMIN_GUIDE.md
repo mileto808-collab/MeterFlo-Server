@@ -222,7 +222,7 @@ Controls the **global** default timezone used in the UI and a master switch for 
 - Permission: `settings.timezone`
 
 #### Customer API Logs
-A viewer for outbound deliveries and their attempts, including automatic retry status, admin retry actions, filters, and expandable request/response/error details. Inbound pull history is separate on the project's Customer API Import page. See [Customer API Integration](#customer-api-integration) and the [Customer API guide](/documentation?doc=customer-api) for configuration and troubleshooting.
+A viewer for outbound deliveries and their attempts, including automatic retry status, admin retry actions, filters, and expandable request/response/error details. Project-filtered delivery activity is also available under **Customer API → Push delivery**. Inbound history is separate under **Customer API → Pull import**. See [Customer API Integration](#customer-api-integration) and the [Customer API guide](/documentation?doc=customer-api) for configuration and troubleshooting.
 - Permission: `settings.customerApiLogs`
 
 #### Mobile Application Updates
@@ -355,7 +355,7 @@ In the **Timezone** dropdown, pick the project's local timezone. Choices are:
 
 ### Step 7 — Configure the customer API (optional)
 
-If completed/trouble work orders need to be pushed to an external system, fill in the **Customer API Integration** section. To pull customer work orders, configure a separate source under **Customer API Import**. Full setup details live in the [Customer API guide](/documentation?doc=customer-api).
+Create the project, then open its **Customer API** menu item. **Push delivery** configures the receiving endpoint, authentication and image preference for completed/trouble outcomes; **Pull import** configures independent inbound work-order sources. Project create/edit links to this canonical page instead of maintaining duplicate controls. Existing settings are preserved. Full setup details and examples live in the [Customer API guide](/documentation?doc=customer-api#push-delivery-field-reference).
 
 ### Step 8 — Assign users
 
@@ -369,7 +369,7 @@ Work-order loading options include:
 1. **Manual entry** — open the project, click **Add Work Order**.
 2. **One-time file import** — **Project** → **File Import** → upload a CSV/Excel/JSON file and map columns.
 3. **Scheduled FTP import** — see [Scheduled File Imports](#scheduled-file-imports).
-4. **Customer API Import** — pull from a customer's HTTP(S) JSON REST feed; see [Customer API Integration](#customer-api-integration) and the detailed [API Import field reference](/documentation?doc=customer-api#api-import-field-reference).
+4. **Customer API → Pull import** — pull from a customer's HTTP(S) JSON REST feed; see [Customer API Integration](#customer-api-integration) and the detailed [API Import field reference](/documentation?doc=customer-api#api-import-field-reference).
 
 > Configure the project's eligible service types first. Unlike file-import ID/default handling, API Import requires an explicit stable customer work-order ID and service code on every row; it never generates an ID or infers a missing service type.
 
@@ -774,9 +774,15 @@ Work order assignments use IDs / names rather than free text, which keeps assign
 
 ## Customer API Integration
 
-Projects can be configured to push completed work order data to external customer systems. Each project has its own configuration, supporting `none`, `api_key`, `bearer_token`, and `basic_auth` authentication.
+Open a project's **Customer API** sidebar item for **Push delivery** and **Pull import**. These independently enabled sections are the canonical setup location; project create/edit links here after project creation. Existing `/projects/<id>/api-import` bookmarks continue to open the importer.
 
-Projects also have an independent **API Import** option for pulling work orders from a customer's HTTP(S) JSON REST API. Excel/text imports and direct database imports remain available. Administrators configure endpoints, server secret-variable names, source-field mappings, record paths, pagination, and optional polling intervals (manual by default; scheduled intervals must be at least 15 minutes).
+Push sends completed/readings/trouble outcomes and captured data to the customer's endpoint. Its six settings are **Enable outbound delivery**, **Customer endpoint URL**, **Authentication**, conditional **API key header name**, conditional **Server environment variable name**, and **Include field images**. For example, use `https://api.customer.example/v1/completions`, select **Bearer token**, enter variable name `CUSTOMER_API_TOKEN` after configuring that variable on the independent server, choose the image preference, enable, and **Save push settings**. Incomplete disabled drafts can be saved; enabled saves validate HTTP(S), header/variable-name syntax and server credential availability. No actual credential value is stored in the form or returned by the API.
+
+No authentication requires no variable; API key header defaults to `X-API-Key` (or enter the customer's header such as `X-Customer-Key`); Bearer uses the token alone as the variable value; Basic uses `username:password` in the variable. Images include before/after/trouble/signature/other categories. Turning them off omits image bytes but preserves attachment filenames/signature name. Previously prepared retry payloads are unchanged. All six fields and every option have examples and instructions in the [Push delivery field reference](/documentation?doc=customer-api#push-delivery-field-reference).
+
+Push settings require `projects.edit`; non-admins must be project-assigned. `settings.customerApiLogs` alone allows read-only settings/activity, not editing. Pull-only access never grants push editing. Delivery activity is filtered to this project, exposes attempts/errors, and retains administrator-only retry actions. POST/JSON, the 30-second timeout and five-attempt cycle (1, 5, 15 and 60-minute retries) are fixed, not omitted settings. Enabling does not backfill older completions or enable pull sources.
+
+Projects also have an independent **Pull import** section for pulling work orders from a customer's HTTP(S) JSON REST API. Excel/text imports and direct database imports remain available. Administrators configure endpoints, server secret-variable names, source-field mappings, record paths, pagination, and optional polling intervals (manual by default; scheduled intervals must be at least 15 minutes).
 
 For the complete field-by-field reference, use **Documentation → Customer API Integration** or open the [API Import field reference](/documentation?doc=customer-api#api-import-field-reference). It follows the Add/Edit form, including all four authentication methods, required mappings and every target/update checkbox, JSON filters, watermarks, all pagination options, schedule/enablement, and copyable mock configurations. Each field/option includes a practical example, accepted values, defaults, and instructions. See [complete examples](/documentation?doc=customer-api#complete-configurations-and-pagination-examples) and [operator actions](/documentation?doc=customer-api#operator-actions-and-examples).
 

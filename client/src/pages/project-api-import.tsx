@@ -85,9 +85,9 @@ function statusTone(status: string) {
 const activeRunStatuses = ["queued", "running", "retrying"];
 const retryableRunStatuses = ["partial", "failed", "interrupted", "cancelled"];
 
-export default function ProjectApiImport() {
+export default function ProjectApiImport({ projectId: explicitProjectId }: { projectId?: number } = {}) {
   const [, params] = useRoute("/projects/:projectId/api-import");
-  const projectId = Number(params?.projectId);
+  const projectId = explicitProjectId ?? Number(params?.projectId);
   const [, navigate] = useLocation();
   const { user, hasPermission } = usePermissions();
   const { toast } = useToast();

@@ -239,7 +239,8 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {role !== "customer" && hasPermission("project.workOrders") && projects.length > 0 && (
+        {role !== "customer" && projects.length > 0 &&
+          (hasPermission("project.workOrders") || hasPermission("projects.edit") || hasPermission("project.apiImport") || hasPermission("settings.customerApiLogs")) && (
           <SidebarGroup>
             <SidebarGroupLabel>Projects</SidebarGroupLabel>
             <SidebarGroupContent>
@@ -354,16 +355,16 @@ export function AppSidebar() {
                                 </SidebarMenuSubButton>
                               </SidebarMenuSubItem>
                             )}
-                            {hasPermission("project.apiImport") && (
+                            {(hasPermission("projects.edit") || hasPermission("project.apiImport") || hasPermission("settings.customerApiLogs")) && (
                               <SidebarMenuSubItem>
                                 <SidebarMenuSubButton
                                   asChild
-                                  isActive={location.startsWith(`/projects/${project.id}/api-import`)}
-                                  data-testid={`nav-project-${project.id}-api-import`}
+                                  isActive={location.startsWith(`/projects/${project.id}/customer-api`) || location.startsWith(`/projects/${project.id}/api-import`)}
+                                  data-testid={`nav-project-${project.id}-customer-api`}
                                 >
-                                  <NavLink href={`/projects/${project.id}/api-import`}>
+                                  <NavLink href={`/projects/${project.id}/customer-api`}>
                                     <Cable className="h-3 w-3" />
-                                    <span>Customer API Import</span>
+                                    <span>Customer API</span>
                                   </NavLink>
                                 </SidebarMenuSubButton>
                               </SidebarMenuSubItem>
