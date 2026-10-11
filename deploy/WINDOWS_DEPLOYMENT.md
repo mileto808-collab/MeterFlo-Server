@@ -251,6 +251,8 @@ SMTP_PASSWORD=your-smtp-password
 
 **Important:** If you set `COOKIE_SECURE=true` but don't have HTTPS configured, users will NOT be able to log in because the browser won't send the session cookie over HTTP.
 
+If this mismatch locks you out, use the temporary [HTTP login recovery procedure](#temporary-http-login-recovery) in Section 12. The recovery flag takes precedence over `COOKIE_SECURE` without editing its permanent value. Cookie security is controlled by the running server's environment, not a database setting.
+
 ### 5.3 Generate a Secure SESSION_SECRET
 
 Use Node.js to generate a random secret:
@@ -1301,6 +1303,36 @@ This usually means authentication failed. Ensure:
    - Check `DATABASE_URL` is correct
    - Verify PostgreSQL is running
    - Check PM2 logs: `pm2 logs meterflo`
+
+#### Temporary HTTP login recovery
+
+Use **`EMERGENCY_HTTP_LOGIN=true`** only when HTTPS-only session cookies prevent login over HTTP. It temporarily forces session-cookie `secure=false`, even when `COOKIE_SECURE=true`. Only the exact lowercase string `true` enables it; unset or `false` leaves the normal policy intact.
+
+**Security warning:** this is a server-wide cookie policy, not an admin-only session exemption. All users' session cookies can travel over unencrypted HTTP while it is enabled. Use a trusted local/private connection; restrict server access during recovery. Username/password verification, account locks, session expiry and role permissions remain enforced. It does not reset passwords, unlock accounts, fix a missing session secret/database, bypass Turnstile, or require Replit authentication.
+
+1. On the server, open the protected environment configuration used by the MeterFlo service. If the variable is not already supplied by PM2/service configuration, add this **non-secret** line to the install-root `.env`:
+
+   ```ini
+   EMERGENCY_HTTP_LOGIN=true
+   ```
+
+2. Restart the server. For PM2, restart from its configuration so changed environment settings are re-read:
+
+   ```cmd
+   cd C:\xampp\htdocs
+   pm2 restart deploy/ecosystem.config.cjs --update-env
+   ```
+
+   PM2's `env` block and service environment override `.env` values. If either already specifies this flag, change it there instead. A setting in another desktop account/terminal is insufficient. PM2 can retain cached environment values; verify the effective behavior through the administrator warning.
+
+3. Sign in using a valid, unlocked administrator account through the trusted HTTP connection. A persistent **HTTP login recovery is enabled** warning appears on every signed-in administrator page and links to this procedure. It cannot be dismissed while the flag is active.
+4. Correct the underlying mismatch: use `COOKIE_SECURE=false` only for an intentionally HTTP-only local/private deployment, or fix HTTPS/proxy forwarding and keep `COOKIE_SECURE=true`. The emergency flag does not change the configured value. For a subdirectory deployment, also check cookie/proxy path handling described in Section 8a.
+5. **Set `EMERGENCY_HTTP_LOGIN=false` in the effective environment** (including any PM2/service override or cached setting), then repeat the restart command. Once confirmed disabled, the unused variable can be removed. The flag is read from the process environment; editing an environment file alone does not update a running process.
+6. Sign out, clear recovery-era browser cookies and sign in again through the intended URL. Confirm the administrator warning disappears. With `COOKIE_SECURE=true`, check that a new HTTPS login sets a `Secure`, `HttpOnly`, `SameSite=Lax` session cookie and an HTTP-only login does not establish a new browser session. With an intentional `COOKIE_SECURE=false` deployment, HTTP remains allowed after the override is removed.
+
+Restoring secure-cookie policy does **not** revoke all existing database sessions or make your server reject every HTTP request. Enforce HTTP-to-HTTPS redirects/access restrictions at the proxy, and do not leave recovery-era cookies in use over HTTP. Existing sessions loaded after restart have their cookie options reapplied under the current policy; no permanent settings or work-order data are changed.
+
+If Turnstile separately prevents reaching the login form, use its documented `TURNSTILE_EMERGENCY_BYPASS` procedure as a separate recovery action. The HTTP flag does not disable that challenge; remove any Turnstile bypass after correcting it too.
 
 ### Application Won't Start
 

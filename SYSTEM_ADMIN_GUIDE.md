@@ -839,6 +839,8 @@ If Turnstile is misconfigured (bad site key, bad secret, blocked Cloudflare scri
 
 Setting `TURNSTILE_EMERGENCY_BYPASS=true` makes the Turnstile gate / status checks report "no challenge required", regardless of what the database says. The mobile app already bypasses Turnstile, so this only affects the web login.
 
+**Session-cookie lockout is separate:** if `COOKIE_SECURE=true` prevents login over HTTP, a server operator can temporarily set `EMERGENCY_HTTP_LOGIN=true` and restart MeterFlo. This server-wide override permits HTTP session cookies for all users; it does not bypass passwords, locked accounts, session expiry, roles or Turnstile. An administrator warning remains visible while active. Use a trusted local/private connection, correct HTTPS/`COOKIE_SECURE`, set the override to `false` in the effective service environment, restart and clear recovery-era browser cookies. See the [complete HTTP login recovery instructions](/documentation?doc=windows-deployment#temporary-http-login-recovery) for PM2/environment precedence and verification.
+
 The Node process reads `process.env` at startup, so **the app must be restarted after changing the variable**. After you regain access and clean the configuration up, remove the variable and restart again so production goes back to normal.
 
 ##### Windows server (PM2)

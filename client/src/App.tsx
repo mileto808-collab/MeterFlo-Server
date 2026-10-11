@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { ArrowUpCircle } from "lucide-react";
 import { useState, useCallback, useEffect, useRef } from "react";
+import { HttpLoginRecoveryAlert } from "@/components/http-login-recovery-alert";
 
 import Landing from "@/pages/landing";
 import TurnstilePage from "@/pages/turnstile";
@@ -247,6 +248,7 @@ function AuthenticatedLayout() {
                 <ThemeToggle />
               </div>
             </header>
+            <HttpLoginRecoveryAlert />
             <main className="flex-1 overflow-auto">
               <AuthenticatedRouter />
             </main>
