@@ -27,6 +27,7 @@ import { createBackupArchive, extractDatabaseBackupFromArchive, restoreFullSyste
 import { createPgBackupArchive, extractBackupFromArchive, restorePgBackup, restoreFilesFromPgArchive, restoreWebAppFilesFromArchive, BackupType } from "./pgBackup";
 import { projectEventEmitter, emitWorkOrderCreated, emitWorkOrderUpdated, emitWorkOrderDeleted, emitFileAdded, emitFileDeleted, type ProjectEvent } from "./eventEmitter";
 import { retryCustomerDelivery, retryLegacyCustomerLog } from "./customerApiService";
+import { registerApiImportRoutes } from "./apiImportRoutes";
 import { toZonedTime, format as formatTz } from "date-fns-tz";
 import nodemailer from "nodemailer";
 
@@ -188,6 +189,7 @@ export async function registerRoutes(
   await storage.seedDefaultWorkOrderStatuses();
   await storage.syncPermissionsFromRegistry();
   await storage.ensureDefaultSubroles();
+  registerApiImportRoutes(app);
 
   // Local authentication
   app.post("/api/auth/local/login", async (req, res) => {

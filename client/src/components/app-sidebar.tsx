@@ -31,6 +31,7 @@ import {
   Wrench,
   FileText,
   Database,
+  Cable,
   Upload,
   FolderSync,
   HelpCircle,
@@ -349,6 +350,20 @@ export function AppSidebar() {
                                   <NavLink href={`/projects/${project.id}/db-import`}>
                                     <Database className="h-3 w-3" />
                                     <span>Database Import/Export</span>
+                                  </NavLink>
+                                </SidebarMenuSubButton>
+                              </SidebarMenuSubItem>
+                            )}
+                            {hasPermission("project.apiImport") && (
+                              <SidebarMenuSubItem>
+                                <SidebarMenuSubButton
+                                  asChild
+                                  isActive={location.startsWith(`/projects/${project.id}/api-import`)}
+                                  data-testid={`nav-project-${project.id}-api-import`}
+                                >
+                                  <NavLink href={`/projects/${project.id}/api-import`}>
+                                    <Cable className="h-3 w-3" />
+                                    <span>Customer API Import</span>
                                   </NavLink>
                                 </SidebarMenuSubButton>
                               </SidebarMenuSubItem>

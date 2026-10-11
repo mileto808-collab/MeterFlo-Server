@@ -14,3 +14,9 @@ API-based work-order pulling is an additional import option alongside Excel/text
 **Why:** The user requested pulling customer work orders as an additional option to uploading Excel/text files.
 
 **How to apply:** Keep the existing file-upload import paths available when adding customer API imports.
+
+Conservative import merging is intentional: protecting field work takes precedence over applying the latest customer baseline. An Open status or an absent editor name is not sufficient proof that a work order is untouched.
+
+**Why:** Technician workflows can change baseline values before completion, and not every mutation records an editor. A permissive merge could erase work while appearing safe.
+
+**How to apply:** Preserve provenance/version-based merge protection. Do not widen eligibility based only on status or missing actor metadata; describe the conservative behavior clearly in customer setup instructions.

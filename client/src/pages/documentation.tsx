@@ -47,7 +47,7 @@ const docOptions = [
   {
     id: "customer-api" as DocType,
     title: "Customer API Integration",
-    description: "Configure outbound API calls to push work order data to customer backend systems.",
+    description: "Configure customer work-order pulls and outbound delivery, with retries and troubleshooting logs.",
     icon: Globe,
   },
 ];

@@ -102,6 +102,13 @@ export const permissionRegistry: PermissionDefinition[] = [
     description: "Access to database import and export tools",
     defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
   },
+  {
+    key: "project.apiImport",
+    label: "Customer API Import",
+    category: "Project Menu",
+    description: "Preview configured customer feeds, pull work orders, and view import history on assigned projects",
+    defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
+  },
 
   // Settings card permissions - individual cards in the settings page
   {

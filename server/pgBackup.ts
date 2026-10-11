@@ -449,6 +449,9 @@ const CLEAN_BACKUP_TABLES = [
 // Tables that will be EMPTY after clean restore (for documentation)
 // All other tables except CLEAN_BACKUP_TABLES and system users will be empty
 const CLEAN_TABLES_TO_CLEAR = [
+  "api_import_versions",
+  "api_import_runs",
+  "api_import_configs",
   "customer_api_deliveries",
   "customer_api_logs",
   "external_database_configs",

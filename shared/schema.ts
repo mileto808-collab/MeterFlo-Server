@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, jsonb, index, uniqueIndex, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, serial, jsonb, index, uniqueIndex, primaryKey, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -217,6 +217,54 @@ export const customerApiDeliveries = pgTable("customer_api_deliveries", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, table => [index("customer_api_deliveries_due").on(table.status, table.nextAttemptAt),
   uniqueIndex("customer_api_deliveries_version").on(table.projectId, table.workOrderId, table.versionKey)]);
+
+// Customer API pull imports, independent of outbound delivery.
+export const apiImportConfigs = pgTable("api_import_configs", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  settings: jsonb("settings").notNull(),
+  cursor: text("cursor"),
+  watermark: timestamp("watermark", { withTimezone: true }),
+  nextRunAt: timestamp("next_run_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+export const apiImportRuns = pgTable("api_import_runs", {
+  id: text("id").primaryKey(),
+  configId: integer("config_id").references(() => apiImportConfigs.id, { onDelete: "set null" }),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  configName: text("config_name").notNull(),
+  settings: jsonb("settings").notNull(),
+  checkpoint: jsonb("checkpoint").notNull().default({}),
+  status: text("status").notNull().default("queued"),
+  triggeredBy: text("triggered_by").notNull(),
+  currentUrl: text("current_url"),
+  pageNumber: integer("page_number").notNull().default(0),
+  pageValue: integer("page_value").notNull().default(1),
+  candidateCursor: text("candidate_cursor"),
+  visited: jsonb("visited").notNull().default([]),
+  createdCount: integer("created_count").notNull().default(0),
+  updatedCount: integer("updated_count").notNull().default(0),
+  skippedCount: integer("skipped_count").notNull().default(0),
+  failedCount: integer("failed_count").notNull().default(0),
+  fetchAttempts: integer("fetch_attempts").notNull().default(0),
+  pageAttempts: integer("page_attempts").notNull().default(0),
+  messages: jsonb("messages").notNull().default([]),
+  heartbeatAt: timestamp("heartbeat_at", { withTimezone: true }).notNull().defaultNow(),
+  nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+}, table => [
+  uniqueIndex("api_import_one_active_run").on(table.configId).where(sql`${table.status} IN ('queued','running','retrying')`),
+  index("api_import_due").on(table.status, table.nextAttemptAt),
+  index("api_import_project_history").on(table.projectId, table.startedAt),
+]);
+export const apiImportVersions = pgTable("api_import_versions", {
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  workOrderId: integer("work_order_id").notNull(),
+  customerWoId: text("customer_wo_id").notNull(),
+  rowVersion: text("row_version").notNull(),
+}, table => [primaryKey({ columns: [table.projectId, table.workOrderId] })]);
 
 // User column preferences - stores which columns each user wants visible per page
 export const userColumnPreferences = pgTable("user_column_preferences", {
@@ -1058,6 +1106,7 @@ export const permissionKeys = {
   PROJECT_IMPORT: "project.import",
   PROJECT_FTP_FILES: "project.ftpFiles",
   PROJECT_DB_IMPORT: "project.dbImport",
+  PROJECT_API_IMPORT: "project.apiImport",
   // Project actions
   PROJECTS_VIEW: "projects.view",
   PROJECTS_VIEW_INACTIVE: "projects.viewInactive",

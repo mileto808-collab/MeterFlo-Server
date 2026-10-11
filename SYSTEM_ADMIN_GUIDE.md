@@ -775,6 +775,16 @@ Work order assignments use IDs / names rather than free text, which keeps assign
 
 Projects can be configured to push completed work order data to external customer systems. Each project has its own configuration, supporting `none`, `api_key`, `bearer_token`, and `basic_auth` authentication.
 
+Projects also have an independent **API Import** option for pulling work orders from a customer's HTTP(S) JSON REST API. Excel/text imports and direct database imports remain available. Administrators configure endpoints, server secret-variable names, source-field mappings, record paths, pagination, and optional polling intervals (manual by default; scheduled intervals must be at least 15 minutes).
+
+Use **Test / preview** before **Pull now**. Every row needs a stable customer work-order ID, customer ID/name, address, and valid service code. Readings/identifiers should be strings to preserve exact decimals and leading zeros. The importer creates Open baseline work orders; it does not import completion or new-device capture data.
+
+Create-only is the default and skips matching work-order IDs. Optional safe updates apply only to explicitly selected baseline fields on untouched Open records originally created by API Import. Row-version checks, technician data, notes/reset history, photos/signatures, assignments, scheduling, and time tracking protect existing work. Imported changes never trigger outbound completion delivery.
+
+The project's **API Import → Run history** shows counts and diagnostics, persistent transient retries, cancellation, and interrupted runs. Admins can retry unsuccessful runs with a retained configuration. Disabling a source stops queued retries and cancels ongoing processing at a page boundary. Removing a source retains its imported work orders and history.
+
+Non-admin access to configured previews, Pull Now, and history requires the **`project.apiImport`** permission plus project assignment. Only admins can configure/remove sources, preview unsaved endpoints, or retry failed history. Inbound and outbound enabled settings are independent; this is not unrestricted two-way synchronization.
+
 The full setup, payload, log endpoint, and troubleshooting guide lives in:
 
 → [`CUSTOMER_API_INTEGRATION.md`](./CUSTOMER_API_INTEGRATION.md)

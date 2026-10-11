@@ -2,9 +2,117 @@
 
 MeterFlo sends completed work-order and trouble-report data to a customer's backend using HTTP POST. Delivery runs in a persistent PostgreSQL queue, with automatic retries, an admin retry action, and a log for each attempt.
 
+MeterFlo also supports optional **inbound API Import**: pulling new work orders from a customer's JSON REST API using HTTP GET. Pull configuration is separate from outbound delivery. Either direction can be enabled without the other, and Excel/text uploads and direct database imports remain available.
+
 This feature works on independent Windows or Linux installations. It does not require Replit, OpenID Connect, or a Replit login. MeterFlo users sign in through the application's local username/password session authentication.
 
-## Configure a project
+## Pull work orders: API Import
+
+### Supported contract and setup
+
+Ask the customer for their API documentation and a sanitized response sample before configuring a real feed. The built-in importer supports HTTP(S) GET returning a JSON array, either at the response root or a configured dot-separated path. It does not support SOAP, GraphQL, OAuth authorization flows, attachment downloads, customer-side acknowledgments, or general two-way synchronization.
+
+1. Sign in as an administrator and open a project's **API Import** page.
+2. Choose **Add source**, enter a name and endpoint URL, and configure authentication independently of the project's outbound settings.
+3. Enter only the **name** of the server environment variable holding the credential. Configure its value on the MeterFlo server and restart the server to make new environment variables available. API key header, bearer token, Basic authentication, and no authentication are supported. Basic credentials use `username:password` as the environment variable's value.
+4. Set the records path: leave blank for a root array, or use a path such as `data` or `result.workOrders`. Property names must use letters, digits, underscores, and hyphens; dots separate levels. Array-index notation and property names containing dots are not supported.
+5. Map **source property paths to MeterFlo target fields**. Map `customerWoId`, `customerId`, `customerName`, `address`, and `serviceType`; each is required on every imported record. Map a stable customer identifier, not a page position. IDs are never generated automatically for API pulls.
+6. Use **Test / preview** to inspect mapped values and validation errors before saving or importing. Preview fetches only the first page and displays at most 20 records. It writes no work orders, checkpoints, or import runs.
+7. Save, then choose **Pull now**. Runs are queued immediately and processed in the background; results appear in **Run history**. Scheduling is manual by default. A nonzero interval enables polling every configured number of minutes, with a minimum of 15 and maximum of 43,200 minutes. Intervals are elapsed server time, not local calendar/cron appointments.
+
+Example customer response:
+
+```json
+{
+  "data": [
+    {
+      "orderId": "0002042",
+      "customer": { "id": "C-100", "name": "Sample customer" },
+      "address": "123 Example Street",
+      "service": "Water",
+      "meter": { "id": "OLD-100", "reading": "12345678901234567890.001" }
+    }
+  ]
+}
+```
+
+Use records path `data` and this mapping:
+
+```json
+{
+  "orderId": "customerWoId",
+  "customer.id": "customerId",
+  "customer.name": "customerName",
+  "address": "address",
+  "service": "serviceType",
+  "meter.id": "oldSystemId",
+  "meter.reading": "oldSystemReading"
+}
+```
+
+Service codes must match the project's configured service types (or global types if the project has no specific assignments). Old system/module product IDs must be assigned to that project. Unknown codes, missing required values, invalid GPS/email/decimal values, overlength values, and database uniqueness/foreign-key violations are reported, never silently defaulted. New records are **Open**; any supplied status must be the configured Open code. New-device readings/IDs/GPS, signatures, assignments, timing, and completion outcomes cannot be mapped through this importer.
+
+Send identifiers and readings as **JSON strings** to retain leading zeros and exact decimal precision. Finite, safely representable JSON numbers are accepted, but precision already lost in a customer's JSON number cannot be recovered. Use numeric strings for large or high-precision values.
+
+### Pagination and incremental pulls
+
+| Mode | Behavior |
+| --- | --- |
+| None | Import the single returned array. Do not select this for a paginated feed. |
+| Page number | Send the configured page parameter, starting page, and page-size parameter. Increment the page until the returned array contains fewer than the requested page size. The customer's API must honor that page size. |
+| Cursor | Read the next cursor from the configured response path and send it using the configured cursor query parameter. Missing, null, or empty next values end the run. |
+| Next URL | Read a URL from the configured response path. Relative URLs resolve against the current page; every URL must remain on the original endpoint's exact origin. Missing, null, or empty values end the run. |
+
+Non-credential query parameters support customer filters. Credentials must not be placed in URLs or query parameters; authentication uses headers populated server-side. HTTP redirects are rejected, including same-origin redirects. Use HTTPS outside a trusted network.
+
+**Resume saved cursor** is optional and only supported with cursor pagination. A successful run saves the last next cursor encountered; later runs may replay the final page. Stable ID matching makes this safe. Enable only if the customer documents durable cursors suitable for later polling; cursors tied to an expiring snapshot are not suitable.
+
+An optional **watermark query parameter** sends the last successful run's MeterFlo start timestamp (UTC). On complete success the watermark advances to the new run's start timestamp, not the last fetched page. The customer must support this timestamp format and appropriate inclusive updated-since semantics; eventually consistent feeds may require an adapter/overlap strategy. Partial errors, failed fetches, cancellation, and interruption never advance the configured watermark/cursor. Retrying an unsuccessful run starts from its original checkpoint using current configuration, provided the endpoint and pagination mode have not changed.
+
+Limits: 30 seconds per HTTP fetch, 5 MiB per response page, 1,000 records per page, 100 pages and 50,000 records per run. Pagination loops and unsupported shapes fail explicitly. Split larger feeds with customer filters or provide a suitable adapter.
+
+### Duplicate matching and protected updates
+
+- **Create only** is the default. A work order with the same `customerWoId` in that project is skipped. Missing records in the feed never cause local deletion.
+- **Safe update** is an explicit opt-in allowlist of baseline fields. It only updates Open work orders **originally created by API Import**, whose saved row version still matches. Any edit outside API Import protects that record, even if no editor name was recorded. File-imported or manually created existing work orders are skipped.
+- Notes (including reset history), assignment, scheduling, trouble/completion, new-device data, signatures, attachments/photos (including legacy folders), or time tracking also protect a record. Notes and status are not eligible for baseline updates.
+- Only selected baseline fields actually present in the record are changed. Unmapped/absent values are preserved; explicit null/empty optional fields can clear a selected baseline value. Required values cannot be cleared.
+- Each page's successful writes and progress counters commit together. Invalid records are reported while other valid records on the page may import. Previously committed pages remain if a later page fails.
+- Imported creates/updates never enqueue outbound completion deliveries. Existing completion/trouble workflows still use their normal outbound queue.
+
+### Permissions, retries, and troubleshooting
+
+Administrators configure, edit, disable, and remove sources; removal needs confirmation and retains work orders and historical runs. Active sources cannot be edited/removed until the run finishes or is disabled and cancellation completes.
+
+Non-admin users need **`project.apiImport`** and assignment to the project to view history, preview an already configured source, and use Pull Now. They cannot configure endpoints, preview arbitrary unsaved endpoints, remove sources, or retry failed runs. Administrators alone can retry unsuccessful history entries with a still-existing configuration. A retry creates a separate audited run; it does not erase the original failure.
+
+The permission appears as **Customer API Import** under **Project Menu** in role management. It is enabled for administrators by default, and disabled for the other default roles; administrators must grant it explicitly when non-admin access is desired.
+
+Runs display queued/running/retrying/succeeded/partial/failed/interrupted/cancelled status, page and fetch counts, created/updated/skipped/failed record counts, and up to 100 diagnostic messages. Error messages take priority over skipped-record examples (at most 50 skip examples). A page-fetch failure can fail the run while the record-failure count remains zero; inspect the run status and messages, not just the counters. Remote error response bodies, credential values, and SQL parameters are not logged.
+
+Connection failures, HTTP 408/429, and HTTP 5xx receive up to **four total attempts per page**, with persistent retry delays of 1, 5, and 15 minutes. `Retry-After` can extend these delays, capped at 24 hours. Authentication/configuration/validation failures stop without network retries. Preview reports errors immediately without retrying.
+
+Per-configuration database locks and an active-run constraint prevent overlapping runs. Queued/retrying pages and scheduled polling survive server restarts. A worker interrupted during a page becomes **interrupted** after approximately two minutes and can be retried manually from its original checkpoint. Disabled configurations cancel queued/retrying runs immediately; a currently processing page checks for cancellation before writing. Inactive projects do not poll and cancel pending processing at a page boundary.
+
+If importing fails, check records path, mapping, service/product codes, pagination contract, server network access, and the named server environment variable. Configure the corrected source after the active run ends, then retry. If the source has been removed, create a new configuration instead. No real customer feed compatibility is implied by the example above; validate the customer's test endpoint before enabling scheduled production pulls.
+
+### Inbound administration endpoints
+
+All endpoints are session-authenticated and project-scoped under `/api/projects/:projectId/api-import`:
+
+| Method and path suffix | Purpose |
+| --- | --- |
+| `GET /configs` | List configurations and latest run summaries. |
+| `POST /configs` | Admin: create configuration. |
+| `PATCH /configs/:id` | Admin: edit or disable configuration. Settings changes reset saved cursor/watermark; enable/disable alone preserves them. |
+| `DELETE /configs/:id` | Admin: remove an inactive configuration, retaining work orders/history. |
+| `POST /preview` | Admin: preview unsaved complete settings. |
+| `POST /configs/:id/preview` | Preview an existing configured source without a request body. |
+| `POST /configs/:id/run` | Queue Pull Now; returns HTTP 202 and run summary. |
+| `GET /runs?limit=25&offset=0` | History; limit 1–100. |
+| `POST /runs/:runId/retry` | Admin: queue a new retry run for failed/partial/interrupted/cancelled history. |
+
+## Push completed data: configure a project
 
 1. Sign in as an administrator and open **Projects**.
 2. Edit the project and find **Customer API Integration**.
