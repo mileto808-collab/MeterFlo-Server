@@ -15,7 +15,7 @@ import { promisify } from "util";
 const execAsync = promisify(exec);
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
-import { insertProjectWorkOrderSchema, insertProjectSchema, createUserSchema, updateUserSchema, resetPasswordSchema, changePasswordSchema, updateProfileSchema, permissionKeys, insertExternalDatabaseConfigSchema, updateExternalDatabaseConfigSchema, insertImportConfigSchema, updateImportConfigSchema, databaseTypeEnum, importScheduleFrequencyEnum, ADMINISTRATOR_SUBROLE_KEY, getSubroleLevel, insertSupportSubmissionSchema } from "@shared/schema";
+import { insertProjectWorkOrderSchema, insertProjectSchema, createUserSchema, updateUserSchema, resetPasswordSchema, changePasswordSchema, updateProfileSchema, permissionKeys, insertExternalDatabaseConfigSchema, updateExternalDatabaseConfigSchema, insertImportConfigSchema, updateImportConfigSchema, databaseTypeEnum, importScheduleFrequencyEnum, ADMINISTRATOR_SUBROLE_KEY, getSubroleLevel, insertSupportSubmissionSchema, type CustomerApiAuthType, type GpsMode, type WizardMode } from "@shared/schema";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import multer from "multer";
@@ -1701,6 +1701,21 @@ export async function registerRoutes(
       }
       
       // Create new project with copied settings (convert nulls to undefined for proper typing)
+      const sourceAuthType = sourceProject.customerApiAuthType;
+      const customerApiAuthType: CustomerApiAuthType =
+        sourceAuthType === "api_key" ||
+        sourceAuthType === "bearer_token" ||
+        sourceAuthType === "basic_auth"
+          ? sourceAuthType
+          : "none";
+      const wizardMode: WizardMode =
+        sourceProject.wizardMode === "reading_only" || sourceProject.wizardMode === "user_choice"
+          ? sourceProject.wizardMode
+          : "changeout";
+      const wizardGpsMode: GpsMode =
+        sourceProject.wizardGpsMode === "manual_step" || sourceProject.wizardGpsMode === "disabled"
+          ? sourceProject.wizardGpsMode
+          : "automatic";
       const newProjectData = {
         name: `Copy of ${sourceProject.name}`,
         description: sourceProject.description ?? undefined,
@@ -1716,7 +1731,7 @@ export async function registerRoutes(
         webhookEnabled: sourceProject.webhookEnabled ?? false,
         customerApiEnabled: sourceProject.customerApiEnabled ?? false,
         customerApiUrl: sourceProject.customerApiUrl ?? undefined,
-        customerApiAuthType: sourceProject.customerApiAuthType ?? "none",
+        customerApiAuthType,
         customerApiKeyHeader: sourceProject.customerApiKeyHeader ?? undefined,
         customerApiSecretEnvVar: sourceProject.customerApiSecretEnvVar ?? undefined,
         customerApiSendPhotos: sourceProject.customerApiSendPhotos ?? true,
@@ -1725,8 +1740,8 @@ export async function registerRoutes(
         operationalHoursEnd: sourceProject.operationalHoursEnd ?? undefined,
         operationalHoursDays: sourceProject.operationalHoursDays ?? undefined,
         timezone: sourceProject.timezone ?? undefined,
-        wizardMode: sourceProject.wizardMode ?? "changeout",
-        wizardGpsMode: sourceProject.wizardGpsMode ?? "automatic",
+        wizardMode,
+        wizardGpsMode,
         wizardShowNotesStep: sourceProject.wizardShowNotesStep ?? true,
         wizardShowGpsStep: sourceProject.wizardShowGpsStep ?? true,
         wizardShowBeforePhotosStep: sourceProject.wizardShowBeforePhotosStep ?? true,
@@ -9166,7 +9181,7 @@ export async function registerRoutes(
         console.log(`Restoring legacy JSON backup from ${legacyJson.backupDate || "unknown date"}`);
         const filesPath = await getProjectFilesPath();
         
-        const result = await restoreFullSystem(legacyJson, true);
+        const result = await restoreFullSystem(legacyJson, { clearExisting: false });
         const filesResult = await restoreFilesFromArchive(fileBuffer, filesPath);
         
         return res.json({

@@ -180,7 +180,16 @@ export interface IStorage {
   getAllEnabledFileImportConfigs(): Promise<FileImportConfig[]>;
   getFileImportConfig(id: number): Promise<FileImportConfig | undefined>;
   createFileImportConfig(config: InsertFileImportConfig): Promise<FileImportConfig>;
-  updateFileImportConfig(id: number, data: UpdateFileImportConfig): Promise<FileImportConfig | undefined>;
+  updateFileImportConfig(
+    id: number,
+    data: UpdateFileImportConfig & {
+      lastProcessedFile?: string | null;
+      lastRunStatus?: string | null;
+      lastRunMessage?: string | null;
+      lastRunRecordCount?: number | null;
+      lastRunAt?: Date | null;
+    }
+  ): Promise<FileImportConfig | undefined>;
   updateFileImportConfigLastRun(id: number, status: string, message: string | null, recordCount: number | null, lastProcessedFile: string | null): Promise<FileImportConfig | undefined>;
   clearLastProcessedFileByFilename(projectId: number, filename: string): Promise<number>;
   deleteFileImportConfig(id: number): Promise<boolean>;
@@ -705,8 +714,8 @@ export class DatabaseStorage implements IStorage {
     // Helper to get all permission keys (old + new from registry)
     const getAllPermissionKeys = async (): Promise<string[]> => {
       const { getAllPermissionKeys: getRegistryKeys } = await import("@shared/permissionRegistry");
-      const oldKeys = Object.values(permissionKeys);
-      const newKeys = getRegistryKeys();
+      const oldKeys: string[] = Object.values(permissionKeys);
+      const newKeys: string[] = getRegistryKeys();
       // Combine and deduplicate without using Set spread
       const combined = oldKeys.concat(newKeys);
       const unique: string[] = [];
@@ -739,7 +748,7 @@ export class DatabaseStorage implements IStorage {
     return [
       permissionKeys.PROJECTS_VIEW,
       permissionKeys.WORK_ORDERS_VIEW,
-      permissionKeys.SEARCH_REPORTS,
+      permissionKeys.NAV_SEARCH_REPORTS,
       "nav.dashboard",
       "project.workOrders",
       "project.documents",
@@ -1132,7 +1141,16 @@ export class DatabaseStorage implements IStorage {
     return created;
   }
 
-  async updateFileImportConfig(id: number, data: UpdateFileImportConfig): Promise<FileImportConfig | undefined> {
+  async updateFileImportConfig(
+    id: number,
+    data: UpdateFileImportConfig & {
+      lastProcessedFile?: string | null;
+      lastRunStatus?: string | null;
+      lastRunMessage?: string | null;
+      lastRunRecordCount?: number | null;
+      lastRunAt?: Date | null;
+    }
+  ): Promise<FileImportConfig | undefined> {
     const [updated] = await db
       .update(fileImportConfigs)
       .set({ ...data, updatedAt: new Date() })
@@ -1343,7 +1361,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteTroubleCode(id: number): Promise<boolean> {
     const result = await db.delete(troubleCodes).where(eq(troubleCodes.id, id));
-    return result.rowCount > 0;
+    return (result.rowCount ?? 0) > 0;
   }
 
   // Service type operations
@@ -1381,7 +1399,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteServiceType(id: number): Promise<boolean> {
     const result = await db.delete(serviceTypes).where(eq(serviceTypes.id, id));
-    return result.rowCount > 0;
+    return (result.rowCount ?? 0) > 0;
   }
 
   // User group operations

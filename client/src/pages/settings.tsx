@@ -867,7 +867,7 @@ export default function Settings() {
 
   // Service Types mutations
   const createServiceTypeMutation = useMutation({
-    mutationFn: async (data: { code: string; label: string; isDefault?: boolean }) => {
+    mutationFn: async (data: { code: string; label: string; color?: string; isDefault?: boolean }) => {
       return apiRequest("POST", "/api/service-types", data);
     },
     onSuccess: () => {
@@ -882,7 +882,7 @@ export default function Settings() {
   });
 
   const updateServiceTypeMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: { code?: string; label?: string; isDefault?: boolean } }) => {
+    mutationFn: async ({ id, data }: { id: number; data: { code?: string; label?: string; color?: string; isDefault?: boolean } }) => {
       return apiRequest("PATCH", `/api/service-types/${id}`, data);
     },
     onSuccess: () => {

@@ -943,6 +943,22 @@ export type InsertSupportSubmission = z.infer<typeof insertSupportSubmissionSche
 
 export type InsertProjectWorkOrder = z.infer<typeof insertProjectWorkOrderSchema>;
 
+// Legacy global work-order screens use a separate API shape from project work orders.
+export interface WorkOrder {
+  id: number;
+  title: string;
+  description: string | null;
+  status: string;
+  priority: string;
+  projectId: number | null;
+  assignedTo: string | null;
+  dueDate: string | Date | null;
+  notes: string | null;
+  attachments: string[] | null;
+  createdAt: string | Date | null;
+  completedAt?: string | Date | null;
+}
+
 export type Subrole = typeof subroles.$inferSelect;
 export type InsertSubrole = z.infer<typeof insertSubroleSchema>;
 

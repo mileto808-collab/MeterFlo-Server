@@ -79,9 +79,9 @@ export type ChangeoutScope = "system" | "module" | "both";
 export type WizardWorkflowMode = "changeout" | "reading_only" | "user_choice";
 export type GpsCaptureMode = "automatic" | "manual_step" | "disabled";
 
-interface WizardConfig {
+export interface WizardConfig {
   wizardMode: WizardWorkflowMode;
-  gpsMode: GpsCaptureMode;
+  gpsMode?: GpsCaptureMode;
   showNotesStep: boolean;
   showGpsStep: boolean; // Deprecated - use gpsMode instead
   showBeforePhotosStep: boolean;
@@ -105,8 +105,10 @@ interface SystemChangeoutData {
   oldModuleReading: string;
   beforePhotos: CapturedPhoto[];
   newSystemId: string;
+  newSystemType?: string;
   newSystemReading: string;
   newModuleId: string;
+  newModuleType?: string;
   newModuleReading: string;
   afterPhotos: CapturedPhoto[];
   gpsCoordinates: string;

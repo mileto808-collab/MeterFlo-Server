@@ -29,6 +29,7 @@ import { useTimezone } from "@/hooks/use-timezone";
 import { useGlobalEvents } from "@/hooks/useProjectEvents";
 import { usePageHeader } from "@/contexts/page-header-context";
 import { ColumnSelector, type ColumnConfig } from "@/components/column-selector";
+import type { FilterConfig } from "@/components/filter-selector";
 import { useColumnPreferences } from "@/hooks/use-column-preferences";
 import { SearchFiltersDialog } from "@/components/search-filters-dialog";
 import { SortDialog } from "@/components/SortDialog";

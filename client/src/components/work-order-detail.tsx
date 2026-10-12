@@ -77,7 +77,7 @@ import {
 } from "lucide-react";
 import { FileIcon } from "lucide-react";
 import SignaturePad, { type SignaturePadRef } from "@/components/signature-pad";
-import { SystemChangeoutWizard } from "@/components/system-changeout-wizard";
+import { SystemChangeoutWizard, type WizardConfig } from "@/components/system-changeout-wizard";
 import { DateTimePicker } from "@/components/ui/datetime-picker";
 import { WorkOrderPdf } from "@/components/work-order-pdf";
 
@@ -85,16 +85,6 @@ interface OperationalHoursConfig {
   enabled: boolean;
   start: string | null;
   end: string | null;
-}
-
-interface WizardConfig {
-  wizardMode: "changeout" | "reading_only" | "user_choice";
-  gpsMode?: "automatic" | "manual_step" | "disabled";
-  showNotesStep: boolean;
-  showGpsStep: boolean;
-  showBeforePhotosStep: boolean;
-  showAfterPhotosStep: boolean;
-  showSignatureStep: boolean;
 }
 
 interface WorkOrderDetailProps {
@@ -117,7 +107,7 @@ interface WorkOrderDetailProps {
   filesLoading: boolean;
   formatDateTime: (date: string | Date) => string;
   getAssignedUserName: (userId: string | null | undefined) => string | null;
-  signaturePadRef: React.RefObject<SignaturePadRef | null>;
+  signaturePadRef: React.RefObject<SignaturePadRef>;
   openCreateSystemTypeDialog: (field: "oldSystemType" | "newSystemType" | "editOldSystemType" | "editNewSystemType") => void;
   toast: any;
   canEdit?: boolean;
