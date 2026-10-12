@@ -68,7 +68,7 @@ test("customer API pull importer: durable runs, safe merges, pagination, and acc
       assert.deepEqual(permission?.defaultAccess, { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false });
       assert.throws(() => apiImportConfigSchema.parse({ ...settings, endpoint: "https://user:password@example.invalid" }));
       assert.throws(() => apiImportConfigSchema.parse({ ...settings, endpoint: "https://example.invalid?api_key=x" }));
-      assert.throws(() => apiImportConfigSchema.parse({ ...settings, queryParams: { token: "x" } }));
+      assert.throws(() => apiImportConfigSchema.parse({ ...settings, queryParams: { token: "fixture_invalid_token" } }));
       assert.throws(() => apiImportConfigSchema.parse({ ...settings, fieldMapping: { id: "customerWoId" } }));
       assert.throws(() => apiImportConfigSchema.parse({ ...settings, authType: "api_key", secretEnvVar: "MISSING_TEST", keyHeader: "Host" }));
       const rules = { services: [service], statuses: ["Open"], systems: [], modules: [], openStatus: "Open" };

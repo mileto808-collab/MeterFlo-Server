@@ -4,3 +4,4 @@
 - [Scroll-container verification](scroll-container-verification.md) — page-width checks can pass while nested content is clipped; inspect actual content widths and screenshots.
 - [Isolated browser verification](isolated-browser-verification.md) — HTTP-only test proxies can create dev-transport errors; use the built UI for acceptance checks.
 - [Image fixture validity](image-fixture-validity.md) — byte-for-byte transport checks can pass with corrupt images; verify fixture format integrity too.
+- [Secret audit classification](secret-audit-scope.md) — distinguish code references and safe fixtures from literals; audit output is metadata only, not proof of validity or rotation.

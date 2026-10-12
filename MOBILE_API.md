@@ -29,7 +29,7 @@ POST /api/auth/local/login
 ```json
 {
   "username": "jsmith",
-  "password": "password123"
+  "password": "YOUR_PASSWORD"
 }
 ```
 

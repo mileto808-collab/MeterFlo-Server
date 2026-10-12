@@ -1,0 +1,4 @@
+#!/bin/sh
+# Opt in with git config core.hooksPath .githooks (see deployment guide).
+# Respect existing organizational hooks; do not replace them without review.
+exec npm run check:deployment-secrets:staged

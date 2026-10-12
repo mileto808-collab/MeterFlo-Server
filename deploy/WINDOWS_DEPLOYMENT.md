@@ -52,7 +52,7 @@ Before starting, ensure you have administrator access to your Windows server.
    npm --version
    ```
 
-> **Note:** This deployment configures MeterFlo to listen on **port 3000** via the PM2 ecosystem file (`PORT=3000`). The application's underlying default in `server/index.ts` is port 5000 — the PM2 config overrides that here so Apache can reverse-proxy to a non-conflicting port. If you change the port in the ecosystem file, update the Apache `ProxyPass` lines to match.
+> **Note:** Set `PORT=3000` in the protected install-root `.env`. The application's fallback is port 5000; the PM2 template no longer overrides host, port or cookie security. Keep Apache's `ProxyPass` target in sync with `.env`.
 
 ### 2.2 Install PostgreSQL
 
@@ -78,7 +78,7 @@ Before starting, ensure you have administrator access to your Windows server.
 
 > **Important:** The `pg_dump.exe` tool must be accessible from the command line for the Database Backup feature to work. If `pg_dump --version` returns an error, the backup/restore functionality will not work.
 
-> **Alternative:** If adding to PATH doesn't work, you can set the `PG_BIN_PATH` environment variable to point directly to your PostgreSQL bin folder (e.g., `C:\Program Files\PostgreSQL\18\bin`). Add this to your PM2 ecosystem file or Windows system environment variables, then restart PM2.
+> **Alternative:** Set `PG_BIN_PATH` in the private `.env` or an approved service environment (e.g., `C:\Program Files\PostgreSQL\18\bin`), then restart MeterFlo. Do not add application settings to the PM2 configuration.
 
 ### 2.3 Install Git for Windows (includes Git Bash)
 
@@ -122,10 +122,11 @@ psql -U postgres
 
 Enter the postgres password you set during installation.
 
-Run these SQL commands (replace `your_password` with a strong password):
+Create the role and use psql's interactive password prompt, which avoids putting the password into SQL or operating-system command history:
 ```sql
 -- Create a dedicated user for the application
-CREATE USER meterflo_user WITH PASSWORD 'your_password';
+CREATE USER meterflo_user;
+\password meterflo_user
 
 -- Create the database
 CREATE DATABASE meterflo OWNER meterflo_user;
@@ -240,7 +241,25 @@ SMTP_PASSWORD=your-smtp-password
 
 > **Why `HOST=127.0.0.1`:** Binding the Node listener to the loopback interface means port 3000 is reachable only from this machine. All public traffic comes through Apache on ports 80/443. Treat the firewall rule that blocks port 3000 as a fallback — `HOST=127.0.0.1` is the primary defense.
 
-> **Security:** Never put `DATABASE_URL`, `SESSION_SECRET`, `SMTP_PASSWORD`, or any other secret into `deploy/ecosystem.config.cjs`. That file is committed to git, and PM2's `env` block also overrides values from `.env` — so a secret pasted there both leaks into source control *and* silently shadows the one in your `.env`. Keep secrets in `.env` only. If a secret was previously committed (to the ecosystem file or anywhere else), rotate it at the source — change the database password in PostgreSQL, generate a new `SESSION_SECRET`, reset the SMTP password at your mail provider — because scrubbing the working copy does not remove it from git history.
+> **Security:** The repository ships `deploy/ecosystem.config.example.cjs`, not the machine-specific `deploy/ecosystem.config.cjs`. Copy the template as described in Section 7.2. The local copy is ignored, but ignore rules do not protect already-tracked/force-added files or remove historical secrets. Neither configuration file may contain credentials. The template's runtime guard permits only `NODE_ENV=production` in PM2's `env` block and rejects other environment blocks or command arguments.
+
+**Settings precedence:** the PM2 template fixes production launch mode only. Approved inherited service/system variables win over `.env`; dotenv fills variables not already present, without overriding external secrets. Set `HOST`, `PORT`, `COOKIE_SECURE`, both recovery flags and application credentials in `.env` or your approved service environment, not both. Only root `.env` loads automatically; ignored variants such as `.env.production` do not load automatically.
+
+**Optional settings and examples:** use `SMTP_PASSWORD` only when outbound email is configured; set `PG_BIN_PATH` to your PostgreSQL bin folder if it is not on PATH; set `LOG_DIR` to a protected log directory if the default `logs/` is unsuitable. Keep `EMERGENCY_HTTP_LOGIN=false` and `TURNSTILE_EMERGENCY_BYPASS=false` normally. Customer API settings can reference additional credential names, for example `CUSTOMER_API_TOKEN`; create that variable privately and configure only its name in MeterFlo.
+
+**Protect private files:** restrict `.env`, logs, backups and PM2's home directory to the service identity and authorized administrators. On Windows, review Properties → Security and verify the service can still read `.env` before restarting. Do not place secret-bearing backups in Git or a publicly served directory. If Apache can serve install-root files directly, deny private files and `.git` as shown below, and verify direct HTTP requests are denied. Adapt the directory scope for subdirectory installs.
+An example defense for a root install is below; adapt both paths for a subdirectory and verify requests such as `/.env` and `/.git/config` are denied (not served by an alias or fallback):
+
+```apache
+<Directory "C:/xampp/htdocs">
+    <FilesMatch "(?i)^(\.env(?:\..*)?|ecosystem.*\.(?:cjs|js|mjs)|dump\.pm2(?:\.bak)?)$">
+        Require all denied
+    </FilesMatch>
+</Directory>
+<Directory "C:/xampp/htdocs/.git">
+    Require all denied
+</Directory>
+```
 
 ### 5.2 Cookie Security Explained
 
@@ -270,9 +289,11 @@ Copy the output and paste it as the `SESSION_SECRET` value in your `.env` file.
 pm2 restart meterflo
 ```
 
+This works when the settings exist only in `.env` and the copied configuration already follows the new policy. **`--update-env` is not a guarantee that old PM2 overrides are removed.** For legacy/cached overrides, follow the clean-process migration in Section 10; verify the resulting cookie policy and recovery warning, not just an `online` status.
+
 ### 5.5 Alternative: Windows System Environment Variables
 
-`.env` is the recommended path because it keeps every variable in one obvious file and survives a server reboot without extra setup. If your organization requires that secrets live in the Windows credential store / system environment instead, you can set them there (Control Panel → System → Advanced → Environment Variables) and skip the corresponding entries in `.env`. `dotenv` does not override variables that are already present in the process environment, so the system value wins. Restart Command Prompt and PM2 after changing system environment variables.
+`.env` is the recommended path because it keeps application settings in one protected file. If your organization supplies credentials through an approved service environment, omit those entries from `.env`; inherited values take precedence. A Windows credential-store entry alone does not become a process variable—the service must explicitly supply it. After changing system variables, open a fresh terminal and restart the relevant PM2 service/daemon using your administrator's procedure; an already-running daemon may retain its old environment. Never print the full environment or PM2 process dump for troubleshooting.
 
 ---
 
@@ -342,31 +363,17 @@ mkdir logs
 
 ### 7.2 Configure PM2 Ecosystem File
 
-The file `deploy/ecosystem.config.cjs` is already configured and contains **no secrets at all**. It only sets non-sensitive runtime defaults (`NODE_ENV`, `PORT`, `HOST`, `COOKIE_SECURE`) and points PM2 at the built server entry. The only thing you may need to change is `cwd` if you are installing into a subdirectory (Section 8a).
+Fresh clones contain a **secret-free template** and its policy validator. Create the ignored local copy:
 
-```javascript
-module.exports = {
-  apps: [
-    {
-      name: 'meterflo',
-      script: 'dist/index.cjs',
-      // Use 'C:\\xampp\\htdocs' for a root install.
-      // Use 'C:\\xampp\\htdocs\\meterflo' for a subdirectory install (Section 8a).
-      cwd: 'C:\\xampp\\htdocs',
-      env: {
-        NODE_ENV: 'production',
-        PORT: 3000,
-        HOST: '127.0.0.1',
-        // Leave 'false' on HTTP. Flip to 'true' only after Section 9 (HTTPS).
-        COOKIE_SECURE: 'false',
-      },
-      // ... rest of config
-    }
-  ]
-};
+```cmd
+cd C:\xampp\htdocs
+copy deploy\ecosystem.config.example.cjs deploy\ecosystem.config.cjs
+node script/check-deployment-secrets.mjs --config deploy/ecosystem.config.cjs
 ```
 
-> **Why no secrets appear here:** This file is committed to git, and PM2's `env` block **overrides** values inherited from `.env` or Windows system environment variables. So pasting `DATABASE_URL`, `SESSION_SECRET`, or `SMTP_PASSWORD` here would both leak the secret into source control *and* silently shadow whatever is in your `.env`. Secrets live in `.env` only (Section 5), and the server loads them on startup via `dotenv`. Do not add secret keys back to this `env` block — not even as commented-out placeholders, since the next operator who follows this guide will uncomment them and commit real values.
+Keep the copy in `deploy/` alongside `pm2-config-policy.cjs`. Its paths derive automatically from that directory on Windows/Linux, including subdirectory installs. Do not load dotenv inside the PM2 configuration: that would copy credentials into PM2's environment and saved process state. The application itself already loads dotenv.
+
+The only fixed environment entry is `NODE_ENV: 'production'`. Do not add `HOST`, `PORT`, `COOKIE_SECURE`, recovery flags, credential placeholders, alternate `env_*` blocks or CLI arguments. Runtime validation rejects unsupported additions without printing values; static checks also reject unguarded configuration. These checks prevent accidental changes, not a privileged operator deliberately removing safeguards.
 
 ### 7.3 Start the Application
 
@@ -396,6 +403,8 @@ Save the current process list:
 ```cmd
 pm2 save
 ```
+
+Protect PM2's home directory and saved dumps. PM2 can serialize inherited environment variables; never commit or share its dumps, and do not restore an old dump containing legacy credential overrides after migration. Dotenv loading inside the application does not itself populate the PM2 daemon's environment.
 
 Install Windows startup script:
 ```cmd
@@ -537,28 +546,14 @@ Notes:
 
 ### 8a.3 Update PM2 Ecosystem Configuration
 
-Edit `deploy/ecosystem.config.cjs` to update the working directory:
+From the subdirectory install root, copy the template:
 
-```javascript
-module.exports = {
-  apps: [
-    {
-      name: 'meterflo',
-      script: 'dist/index.cjs',
-      cwd: 'C:\\xampp\\htdocs\\meterflo',  // Updated path to subdirectory
-      env: {
-        NODE_ENV: 'production',
-        PORT: 3000,
-        HOST: '127.0.0.1',
-        // Note: No BASE_PATH needed - Apache strips the /meterflo prefix
-      },
-      // ... rest of config
-    }
-  ]
-};
+```cmd
+cd C:\xampp\htdocs\meterflo
+copy deploy\ecosystem.config.example.cjs deploy\ecosystem.config.cjs
 ```
 
-> **Note:** The `cwd` (current working directory) must point to your MeterFlo subdirectory where `dist/index.cjs` is located.
+No `cwd` edit is needed: the copied template derives `C:\xampp\htdocs\meterflo` from its location. Put `.env` in that root; configure host/port there. No `BASE_PATH` is needed because Apache strips the `/meterflo` prefix. Keep the validator file alongside the copy.
 
 ### 8a.4 Configure Apache httpd.conf for Subdirectory
 
@@ -950,9 +945,10 @@ For domain-based setup:
 
 After enabling HTTPS, configure the application to use secure cookies:
 
-1. Edit `C:\xampp\htdocs\deploy\ecosystem.config.cjs` and change the `COOKIE_SECURE` value in the `env` section from `'false'` to `'true'`:
-   ```javascript
-   COOKIE_SECURE: 'true',
+1. Edit the protected install-root `.env` (or the approved service environment), setting:
+   ```ini
+   COOKIE_SECURE=true
+   EMERGENCY_HTTP_LOGIN=false
    ```
 
 2. Restart PM2:
@@ -960,7 +956,7 @@ After enabling HTTPS, configure the application to use secure cookies:
    pm2 restart meterflo
    ```
 
-> `COOKIE_SECURE` is a non-secret runtime flag, so it lives in the ecosystem file alongside `NODE_ENV`/`PORT`/`HOST`. (You can equivalently set `COOKIE_SECURE=true` in `.env` and remove the line from the ecosystem file — they end up at the same place. Don't set it in both, since the ecosystem `env` block overrides `.env`.)
+> Do not set cookie security in the PM2 configuration. If an old PM2/system override exists, migrate it using Section 10. Verify a fresh HTTPS login sets a `Secure`, `HttpOnly`, `SameSite=Lax` cookie and the HTTP recovery warning is absent.
 
 ---
 
@@ -1008,16 +1004,27 @@ netsh advfirewall firewall add rule name="HTTPS" dir=in action=allow protocol=TC
 
 ## 10. Updating the Application
 
-> **One-time migration for existing installs (April 2026 release):** Earlier versions of this guide had operators paste `DATABASE_URL`, `SESSION_SECRET`, and `SMTP_PASSWORD` directly into `deploy/ecosystem.config.cjs`. The application now loads those secrets from a `.env` file at the install root, and `deploy/ecosystem.config.cjs` is no longer tracked in git at all (it has always been listed in `.gitignore`; this release removes the previously-tracked copy from the repository). Your **local** `deploy/ecosystem.config.cjs` on the production server is unaffected by `git pull` — it stays exactly where it is, with whatever values are currently in it. Before restarting PM2 after the first `git pull` that brings in this change, do the following:
->
-> 1. Open your **current** `deploy/ecosystem.config.cjs` and copy any real values you have for `DATABASE_URL`, `SESSION_SECRET`, and `SMTP_PASSWORD` somewhere safe.
-> 2. Run `copy .env.example .env` in the install root (`C:\xampp\htdocs`).
-> 3. Open `.env` and paste the values you saved into `DATABASE_URL`, `SESSION_SECRET`, and `SMTP_PASSWORD` (and adjust `HOST`, `PORT`, `COOKIE_SECURE` if your install uses non-default values).
-> 4. Edit your local `deploy/ecosystem.config.cjs` and **delete** the `DATABASE_URL`, `SESSION_SECRET`, and `SMTP_PASSWORD` lines from its `env` block (and any other secret keys that crept in there over time). Use the snippet in Section 7.2 as the reference for what should remain. The file is gitignored, so this edit is purely local.
-> 5. Run `pm2 restart meterflo` and confirm the app comes up (`pm2 logs meterflo`).
-> 6. **Rotate** the secrets that were previously in `deploy/ecosystem.config.cjs` if they were ever committed to git history — change the PostgreSQL password, regenerate `SESSION_SECRET`, and reset the SMTP password at your mail provider. Update the new values in `.env` and restart PM2 again. Scrubbing the working copy does not remove a leaked secret from git history.
->
-> **Fresh installs** do not see this migration: there is no `deploy/ecosystem.config.cjs` in a fresh clone, so create one by copying the snippet in Section 7.2 into `deploy/ecosystem.config.cjs` and proceeding with Section 5 to set up `.env`.
+### Deployment configuration migration
+
+**Plan a short outage and secure backup first.** Earlier configurations may contain credentials, hard-coded cookie/port settings or cached recovery flags. A pull deleting a formerly tracked file can remove a clean local copy; a modified copy can instead block the pull. Do not rely on Git preserving it, and do not force-reset before backup.
+
+1. Before upgrading, privately back up `.env`, the local configuration and necessary data outside the repository/web root with restricted access. Do not paste them into chat, logs or tickets. If `.env` already exists, preserve it; otherwise copy the safe environment template. Move any legacy configuration credentials and application settings into that private file, retaining your actual host, port, cookie and recovery choices.
+2. Update and build the application. Check that the new PM2 example and policy validator are present. After confirming the private settings/backup, replace the old local configuration with the shipped template; remove old commented credential examples too:
+   ```cmd
+   copy /Y deploy\ecosystem.config.example.cjs deploy\ecosystem.config.cjs
+   node script/check-deployment-secrets.mjs --config deploy/ecosystem.config.cjs
+   ```
+3. Correct/remove duplicate application overrides in the approved service/system environment. Open a fresh terminal. Recreate **only the MeterFlo app** to discard its per-app cached PM2 settings (this interrupts service):
+   ```cmd
+   pm2 delete meterflo
+   pm2 start deploy/ecosystem.config.cjs
+   pm2 save
+   ```
+   Do not use a restart alone to remove old keys. If the PM2 daemon/service itself inherited old settings, have the service administrator restart it with the corrected environment and recreate applications from approved definitions, not an old saved dump. Do not run `pm2 kill` on a shared daemon without coordinating downtime for every app.
+4. Verify the intended port/host, successful login, correct HTTPS cookie flags, and absence of the recovery warning when `EMERGENCY_HTTP_LOGIN=false`. Reboot/service restart should retain the intended configuration. If a recovery flag is still enabled, correct the effective service environment rather than repeatedly editing `.env`.
+5. Review the values-free history audit and arrange separately approved credential rotation for actual exposures. Session-secret rotation invalidates browser sessions; database-password changes require coordinated application updates; SMTP/API credentials must be revoked at their provider. Do not claim old credentials are safe merely because the file is now ignored.
+
+Fresh installs follow Sections 5 and 7.2 directly. This release does not automatically overwrite an operator's ignored local configuration, change live credentials, revoke sessions, or rewrite Git history.
 
 ### 10.1 Setting Up GitHub for Updates (Recommended)
 
@@ -1152,8 +1159,8 @@ cd C:\xampp\htdocs && git pull origin main && npm install && npx tsx script/buil
 #### Complete Backup Before Git Reset
 
 Always create a full backup before destructive git commands. This protects:
-- `.env` - Database connection string, session secret, SMTP password, and any other per-install secrets (gitignored, so a `git reset --hard` does NOT touch it, but `rmdir`/`robocopy /MIR` will)
-- `deploy\ecosystem.config.cjs` - Non-secret runtime defaults (cwd path, port, host, COOKIE_SECURE)
+- `.env` - Private application settings and credentials. An untracked, ignored file is preserved by a normal Git reset, but a previously tracked file is not protected by ignore rules; deletion/mirror commands can remove it.
+- `deploy\ecosystem.config.cjs` - Ignored local copy of the secret-free template (automatic install-root paths and production launch mode only). Legacy copies must be reviewed before backing up or restoring.
 - `Project Files\` folder - Work order attachments and uploads
 
 **Full backup command:**
@@ -1316,18 +1323,18 @@ Use **`EMERGENCY_HTTP_LOGIN=true`** only when HTTPS-only session cookies prevent
    EMERGENCY_HTTP_LOGIN=true
    ```
 
-2. Restart the server. For PM2, restart from its configuration so changed environment settings are re-read:
+2. Restart the server. With the new template and settings supplied only by `.env`:
 
    ```cmd
    cd C:\xampp\htdocs
-   pm2 restart deploy/ecosystem.config.cjs --update-env
+   pm2 restart meterflo
    ```
 
-   PM2's `env` block and service environment override `.env` values. If either already specifies this flag, change it there instead. A setting in another desktop account/terminal is insufficient. PM2 can retain cached environment values; verify the effective behavior through the administrator warning.
+   The template rejects recovery flags in its `env` block. Service/system variables still override `.env`; a change in another desktop account/terminal is insufficient. For legacy PM2 overrides or cached settings, use the clean-process procedure in Section 10 instead of assuming `--update-env` removes old keys. Verify the effective behavior through the administrator warning.
 
 3. Sign in using a valid, unlocked administrator account through the trusted HTTP connection. A persistent **HTTP login recovery is enabled** warning appears on every signed-in administrator page and links to this procedure. It cannot be dismissed while the flag is active.
 4. Correct the underlying mismatch: use `COOKIE_SECURE=false` only for an intentionally HTTP-only local/private deployment, or fix HTTPS/proxy forwarding and keep `COOKIE_SECURE=true`. The emergency flag does not change the configured value. For a subdirectory deployment, also check cookie/proxy path handling described in Section 8a.
-5. **Set `EMERGENCY_HTTP_LOGIN=false` in the effective environment** (including any PM2/service override or cached setting), then repeat the restart command. Once confirmed disabled, the unused variable can be removed. The flag is read from the process environment; editing an environment file alone does not update a running process.
+5. **Set `EMERGENCY_HTTP_LOGIN=false` in the effective `.env` or approved service environment**, then restart. Clear legacy/cached PM2 overrides using Section 10 if necessary. Once confirmed disabled, the unused variable can be removed. Editing a file alone does not update a running process.
 6. Sign out, clear recovery-era browser cookies and sign in again through the intended URL. Confirm the administrator warning disappears. With `COOKIE_SECURE=true`, check that a new HTTPS login sets a `Secure`, `HttpOnly`, `SameSite=Lax` session cookie and an HTTP-only login does not establish a new browser session. With an intentional `COOKIE_SECURE=false` deployment, HTTP remains allowed after the override is removed.
 
 Restoring secure-cookie policy does **not** revoke all existing database sessions or make your server reject every HTTP request. Enforce HTTP-to-HTTPS redirects/access restrictions at the proxy, and do not leave recovery-era cookies in use over HTTP. Existing sessions loaded after restart have their cookie options reapplied under the current policy; no permanent settings or work-order data are changed.
@@ -1451,10 +1458,29 @@ pm2 logs meterflo --lines 50
 ## Security Recommendations
 
 1. **Keep secrets in `.env`, never in `deploy/ecosystem.config.cjs`**
-   - `.env` is in `.gitignore` and is the only place real secret values should live. The shipped `deploy/ecosystem.config.cjs` contains no secret keys at all — leave it that way. Both the file itself being committed *and* PM2's `env` block overriding `.env` mean that any secret added there gets leaked AND silently shadows the matching `.env` value.
+   - Private environment variants and the local PM2 copy are ignored; the safe `.env.example` and `deploy/ecosystem.config.example.cjs` are tracked. Keep credentials in the protected environment and never force-add private files. Ignore rules do not remove already-tracked files.
    - On a fresh install, copy `.env.example` to `.env` and edit (Section 5). The application loads `.env` automatically on startup via `dotenv`.
    - If a secret was committed in the past — to `deploy/ecosystem.config.cjs` or anywhere else — rotate it at the source: change the database password in PostgreSQL, generate a new `SESSION_SECRET`, reset the SMTP password at your mail provider. Scrubbing the working copy does not undo the leak.
-   - Audit git history with `git log -p deploy/ecosystem.config.cjs` (and `git log -p` on any other file you suspect) to confirm what was previously exposed, and decide whether to rewrite history (a destructive operation that requires coordination with anyone else who has cloned the repo).
+   - Audit accessible history using the redacted command below, not raw `git log -p` output, which can reveal credential values. See `deploy/SECRET_AUDIT.md` for findings, limits and unverified rotation actions. History rewriting is destructive, requires separate approval and coordination, and does not replace credential rotation.
+
+### Deployment regression checks
+
+Run from the repository root:
+
+```cmd
+npm run check:deployment-secrets
+npm run test:deployment-secrets
+npm run check:deployment-secrets:staged
+npm run audit:secrets:history -- --report generated-artifacts/secrets/history-audit.json
+```
+
+The current-tree check examines tracked and non-ignored new text files plus ignore rules. The staged check reads **index contents**, so cleaning a working file does not hide a staged credential; tracked private files fail even if ignored. Stage intentional ignore-rule updates before running the staged check. Findings contain file/line/rule metadata only, never values or source excerpts. History findings classify known placeholders, examples and test fixtures separately from potential credential literals; they cannot establish provider validity or completed rotation.
+
+The GitHub workflow runs current-tree checks and focused tests without live secrets. Other Git hosts need the same commands in their CI. To opt into the supplied local pre-commit hook, first review existing organizational hooks and then run `git config core.hooksPath .githooks`; do not replace required hooks without approval. Git hooks can be bypassed, so keep CI checks enabled. Do not commit generated audit artifacts, logs or PM2 dumps.
+
+### Target-platform verification
+
+Automated verification uses isolated Linux processes, temporary Git repositories and dummy credentials. It covers template paths, dotenv precedence, fresh-process reload, cookie-policy choices, stale external recovery overrides, index scanning and value redaction. **Actual Windows/PM2 service startup and reboot have not been verified here.** A Windows operator must check fresh-clone copying, NTFS/web access restrictions, service identity/cwd, host/port, HTTPS cookie flags, clean-process migration, both recovery flags disabled, and persistence after reboot—without printing the environment or using real values as command arguments.
 
 2. **Use HTTPS in Production**
    - Get a proper SSL certificate
@@ -1493,7 +1519,9 @@ pm2 logs meterflo --lines 50
 7.  npx tsx script/build.ts
 8.  npm run db:push          REM initialize the database schema (Section 6a)
 9.  mkdir logs
-10. pm2 start deploy/ecosystem.config.cjs
+10. copy deploy\ecosystem.config.example.cjs deploy\ecosystem.config.cjs
+    node script/check-deployment-secrets.mjs --config deploy/ecosystem.config.cjs
+    pm2 start deploy/ecosystem.config.cjs
 11. pm2 save && pm2-startup install
 12. Configure Apache proxy in httpd.conf
 13. Restart Apache
