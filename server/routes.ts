@@ -28,6 +28,7 @@ import { createPgBackupArchive, extractBackupFromArchive, restorePgBackup, resto
 import { projectEventEmitter, emitWorkOrderCreated, emitWorkOrderUpdated, emitWorkOrderDeleted, emitFileAdded, emitFileDeleted, type ProjectEvent } from "./eventEmitter";
 import { retryCustomerDelivery, retryLegacyCustomerLog } from "./customerApiService";
 import { registerApiImportRoutes } from "./apiImportRoutes";
+import { registerLogMaintenanceRoutes } from "./logMaintenanceRoutes";
 import { registerCustomerApiSettings, validateProjectCustomerPush } from "./customerApiSettings";
 import { customerPushFields, customerPushSettings } from "../shared/customer-api-settings";
 import { toZonedTime, format as formatTz } from "date-fns-tz";
@@ -192,6 +193,7 @@ export async function registerRoutes(
   await storage.syncPermissionsFromRegistry();
   await storage.ensureDefaultSubroles();
   registerApiImportRoutes(app);
+  registerLogMaintenanceRoutes(app);
   registerCustomerApiSettings(app);
 
   // Local authentication

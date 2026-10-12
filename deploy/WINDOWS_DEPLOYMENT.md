@@ -1544,3 +1544,83 @@ pm2 list                    # Check status
 pm2 logs meterflo        # View logs
 pm2 restart meterflo     # Restart if needed
 ```
+
+## Log maintenance and external log rotation
+
+MeterFlo's **Maintenance → Log maintenance** manages only its `LOG_DIR` error
+file/archives and eligible database history. It is separate from PM2
+`logs/meterflo-out.log` and `logs/meterflo-error.log`, IIS/Apache/nginx, Windows
+Event Logs and PostgreSQL server logs. These externally managed logs are
+unsupported by the in-app cleanup controls; monitor their space separately.
+Never manually rename/delete a log file while its owning process still holds it.
+
+### In-app fields and actions
+
+Administrator access is default. Delegated subroles need **Navigation →
+Maintenance** plus **Maintenance → Log Management**; this is a global permission.
+
+| Field/action | Example and use |
+| --- | --- |
+| Automatic cleanup (default Off) | Keep Off to require manual confirmation. On + Save policy permits hourly automatic deletion; saving never deletes immediately. |
+| Rotation size (default 10 MiB, range 1–100) | `20` rotates MeterFlo `error.log` on the next write after its existing size exceeds 20 MiB. Rotation still applies with automatic deletion Off. |
+| Archive retention (default 30 days, range 1–3650) | `14` makes archives modified more than 14 days ago eligible for automated cleanup. |
+| Archive budget (default 200 MiB, range 10–10000) | `500` deletes oldest archives until the budget is met, subject to the 500-item batch bound. This may delete archives younger than the day limit. |
+| History retention (default 90 days, range 1–3650) | `180` automatically cleans only eligible database history whose attempt/run began more than 180 days ago. |
+| Save policy | Persist these values across restart, invalidate previews, record the actor; other worker processes refresh rotation limits hourly. |
+| Log categories | Choose Customer API attempt history / API imports / Database imports / File imports, Archived error reports or explicitly Active error reports. Active selection truncates `error.log` in place, not by replacing its inode. Automatic cleanup never clears it. |
+| Project (optional) | All projects / global is default; choose North District for database-history cleanup only. File categories cannot have a project filter. |
+| Delete records older than | Example: `2026-07-01 00:00` local time is converted to UTC. Only strictly older items qualify; no future cutoff. This overrides the automatic age limit for this manual batch. |
+| Preview cleanup | Non-destructive, server-issued preview of up to 500 files/rows combined. Shows estimated bytes/count and expiry (10 minutes). |
+| Review irreversible cleanup / Cancel | Review the permanent loss warning. Cancel performs no cleanup. |
+| Permanently clean selected logs | Confirm that old diagnostics may be irreversibly lost. Rechecks candidates; changed or locked items are skipped. Restart/policy changes/previous use invalidate the token; preview again. Multi-process deployments require sticky routing for preview/confirm. |
+| Refresh / Recent cleanup history | Refresh shows current counts/bytes/oldest/newest/protected totals. The latest 20 cleanup attempts and policy saves show actor, time, removed/skipped and safe error messages. An unfinished “Cleanup started” entry means inspect/re-preview after interruption. |
+
+Only MeterFlo `error.log` and timestamped `error-<UTC timestamp>[-suffix].log`
+archives under the real `LOG_DIR` are eligible. No symlink path, symlink/hard-link
+file, other app log, backup, attachment or `.env` file is accepted. File
+modification time determines age; inspection is bounded at 10,000 entries.
+Grant the MeterFlo service account read/write/delete rights to that directory.
+Example: `LOG_DIR=C:\MeterFlo\logs` in the deployment's ignored `.env`.
+
+Eligible database cleanup excludes latest import diagnostics and preserves all
+failed/partial/interrupted/cancelled or active runs, unsuccessful legacy API
+attempts and attempts for undelivered queues. It never deletes delivery queue
+records/snapshots/payloads, work orders/Notes, source configuration,
+checkpoints/cursors/watermarks, deduplication versions or attachments. Successful
+legacy API history and attempts belonging to delivered queues can be cleaned;
+only completed successful database/file import history with zero failed records
+and non-latest completed successful API-pull runs can be cleaned. See the System
+Administration Guide for category examples.
+
+Cleanup takes a database lock, is bounded to 500 items per hourly pass (with a
+15-second history-work budget and bounded lock/query waits) and reports
+failures instead of claiming it freed storage. Protected data and external logs
+can still fill the disk: resolve failed deliveries/imports and monitor capacity.
+Database bytes are estimates. PostgreSQL deletion generally reuses space after
+normal autovacuum; it does not immediately shrink database files or run
+`VACUUM FULL`.
+
+### PM2 and other externally owned files
+
+Use your process manager's supported per-application rotation configuration
+(for example, an operator-installed PM2 rotation module), not the MeterFlo
+cleanup controls. Review its schedule, file-size trigger, archive count and
+permissions; validate rotation without stopping production delivery unexpectedly.
+
+For an explicitly approved one-time reset of PM2 output:
+
+1. Inspect `pm2 describe meterflo` to confirm the application's exact stdout and
+   stderr paths. Copy any needed diagnostic evidence first.
+2. Schedule a maintenance window and `pm2 stop meterflo` so no writer owns these
+   files. Pending deliveries remain in the database and resume after restart.
+3. Only after verifying those paths, truncate those two files. Example PowerShell
+   from `C:\MeterFlo` for the supplied template (not a wildcard):
+   ```powershell
+   Clear-Content -LiteralPath '.\logs\meterflo-out.log'
+   Clear-Content -LiteralPath '.\logs\meterflo-error.log'
+   ```
+4. `pm2 start meterflo`, verify application health, then confirm logging resumes.
+
+Do not run blanket `pm2 flush` on a shared host: it can clear other applications'
+diagnostics. Proxy, Windows and PostgreSQL logs require their own operator-owned
+retention policies. Never paste credentials into tracked deployment configuration.

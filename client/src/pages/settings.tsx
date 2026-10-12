@@ -1573,6 +1573,27 @@ export default function Settings() {
       </div>
 
       <div className="space-y-6">
+        {hasPermission("maintenance.logManagement") && (
+          <Card data-testid="logs-card">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Database className="h-5 w-5 text-muted-foreground" />
+                <div>
+                  <CardTitle>Log maintenance</CardTitle>
+                  <CardDescription className="mt-1">Review operational log storage and manage retention.</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <a
+                href="/maintenance#log-maintenance"
+                className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              >
+                Open log maintenance
+              </a>
+            </CardContent>
+          </Card>
+        )}
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between gap-2">

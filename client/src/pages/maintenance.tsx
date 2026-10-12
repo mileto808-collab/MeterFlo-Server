@@ -51,6 +51,7 @@ import {
 import { useTimezone } from "@/hooks/use-timezone";
 import { usePermissions } from "@/hooks/usePermissions";
 import type { Project } from "@shared/schema";
+import { LogMaintenance } from "@/components/log-maintenance";
 
 interface ProjectWithStats extends Project {
   stats: {
@@ -94,14 +95,17 @@ export default function Maintenance() {
     message: string;
   } | null>(null);
 
-  const { data: projects = [], isLoading, refetch } = useQuery<ProjectWithStats[]>({
-    queryKey: ["/api/maintenance/projects"],
-  });
-
   const canProjectBackup = !isPermissionsLoading && hasPermission("maintenance.projectBackup");
   const canProjectRestore = !isPermissionsLoading && hasPermission("maintenance.projectRestore");
   const canSystemBackup = !isPermissionsLoading && hasPermission("maintenance.systemBackup");
   const canSystemRestore = !isPermissionsLoading && hasPermission("maintenance.systemRestore");
+  const canAccessProjectMaintenance = canProjectBackup || canProjectRestore;
+  const canAccessAnyBackupRestore = canAccessProjectMaintenance || canSystemBackup || canSystemRestore;
+
+  const { data: projects = [], isLoading, refetch } = useQuery<ProjectWithStats[]>({
+    queryKey: ["/api/maintenance/projects"],
+    enabled: canAccessAnyBackupRestore,
+  });
 
   useEffect(() => {
     const fetchFileStats = async () => {
@@ -119,10 +123,10 @@ export default function Maintenance() {
       }
       setFileStats(stats);
     };
-    if (projects.length > 0) {
+    if (canAccessProjectMaintenance && projects.length > 0) {
       fetchFileStats();
     }
-  }, [projects]);
+  }, [projects, canAccessProjectMaintenance]);
 
   const handleBackup = async (project: ProjectWithStats) => {
     try {
@@ -564,11 +568,15 @@ export default function Maintenance() {
             Backup and restore project databases
           </p>
         </div>
-        <Button variant="outline" onClick={() => refetch()} data-testid="button-refresh">
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Refresh Stats
-        </Button>
+        {canAccessAnyBackupRestore && (
+          <Button variant="outline" onClick={() => refetch()} data-testid="button-refresh">
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh Stats
+          </Button>
+        )}
       </div>
+
+      <LogMaintenance />
 
       {(canSystemBackup || canSystemRestore) && (
         <Card>
@@ -708,7 +716,7 @@ export default function Maintenance() {
         </Card>
       )}
 
-      <Card>
+      {canAccessProjectMaintenance && <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Database className="h-5 w-5" />
@@ -838,9 +846,9 @@ export default function Maintenance() {
             </Table>
           )}
         </CardContent>
-      </Card>
+      </Card>}
 
-      <Card>
+      {canAccessProjectMaintenance && <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Files className="h-5 w-5" />
@@ -970,7 +978,7 @@ export default function Maintenance() {
             </Table>
           )}
         </CardContent>
-      </Card>
+      </Card>}
 
       <Dialog open={restoreDialogOpen} onOpenChange={setRestoreDialogOpen}>
         <DialogContent>

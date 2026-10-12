@@ -1161,4 +1161,100 @@ For Customer API call logs (different system) see **Settings** → **Customer AP
 
 ---
 
-*Last updated: April 2026*
+## Log Maintenance
+
+Open **Maintenance → Log maintenance**. Administrators have access by default.
+To delegate this globally, grant a subrole **Navigation → Maintenance** and
+**Maintenance → Log Management** in Settings → User Groups / subroles. This
+permission allows permanent history cleanup and retention changes across all
+projects, not only the user's assigned projects. Ordinary users cannot call the
+maintenance endpoints without it.
+
+### Inventory and protected records
+
+Each inventory card shows record/file count, estimated bytes, protected count,
+and oldest/newest timestamp. **Refresh** reloads this information without
+changing settings or deleting anything. File dates use modification time;
+database dates use the original attempt/run start time.
+
+| Category | What can be cleaned | What stays protected |
+| --- | --- | --- |
+| Archived error reports | MeterFlo `error-<UTC timestamp>[-suffix].log` archives in `LOG_DIR` | Other filenames, symlinks, hard links and files outside the trusted directory |
+| Active error reports | Explicit manual selection truncates `error.log` in place | Automatic cleanup never truncates the active log |
+| Customer API attempt history | Old attempts attached to a delivered queue record; successful legacy attempts without a delivery record | Pending, processing, retrying, paused or failed deliveries' attempts; unsuccessful legacy attempts; orphaned attempts with an unknown delivery |
+| API imports | Completed successful (`succeeded`) runs that are not the latest run for their source | Latest diagnostics and all queued, running, retrying, failed, partial, interrupted or cancelled runs |
+| Database imports | Completed `success` runs with no failed records, excluding the latest run for their configuration | Latest runs, incomplete runs and unsuccessful history |
+| File imports | Completed `success` runs with no failed records, excluding the latest run for a scheduled configuration; successful manual imports | Latest scheduled runs, incomplete and unsuccessful history |
+
+Delivery queue records, snapshots, payloads (including image data), work orders,
+Notes, attachments, import configuration, recovery checkpoints, cursors,
+watermarks and version/deduplication records are **never deleted by this feature**.
+The separate protected-payload byte estimate is not a cleanup target. Resolve
+delivery/import failures to reduce growing protected history; plan database
+capacity for retained application data.
+
+### Retention settings and examples
+
+| Setting | Default / allowed values | How to use it |
+| --- | --- | --- |
+| Automatic cleanup | **Off** / On or Off | Leave Off for preview-and-confirm cleanup only. Turn On and Save policy to allow hourly bounded cleanup of eligible history and archives; active `error.log` stays untouched. Saving does not immediately delete anything. |
+| Rotation size (MiB) | **10**, whole numbers **1–100** | Example: `20` rotates the app's active error log on a subsequent write when its existing size exceeds 20 MiB. Applies even when automatic deletion is Off. A single large entry can exceed the threshold until the next write. |
+| Archive retention (days) | **30**, whole numbers **1–3650** | Example: `14` makes archives modified more than 14 days ago eligible for hourly deletion when automatic cleanup is On. |
+| Archive budget (MiB) | **200**, whole numbers **10–10000** | Example: `500` removes the oldest archives first when their combined size exceeds 500 MiB, even if they are younger than the archive-day setting. Active/external logs are excluded. |
+| History retention (days) | **90**, whole numbers **1–3650** | Example: `180` cleans eligible database history whose attempt/run started more than 180 days ago; recovery-protected history is excluded regardless of age. |
+| Save policy | Explicit action | Validate and persist the settings. Example: save `Off, 10, 30, 200, 90` to retain manual-only deletion. Saving invalidates prior cleanup previews and records the actor in recent history. |
+
+Settings survive restart. Cleanup runs once an hour after the server starts, with
+at most **500 files/rows combined per pass**. History cleanup also has a
+15-second work budget, with bounded row-lock/query waits. Remaining eligible items wait for
+later passes. Age/budget limits are retention targets, not hard disk-capacity
+guarantees. Multiple server processes serialize cleanup and policy saves with a
+database lock. Other processes refresh their rotation threshold on the hourly
+tick. An invalid saved policy stops automatic deletion until corrected.
+
+### Manual cleanup: preview, cancel and confirm
+
+1. **Log categories:** select one or more categories. Example: Customer API
+   attempt history and API imports. Active error reports is never preselected;
+   choose it only if you intentionally want to discard the current error file.
+2. **Project (optional):** All projects / global is the default. Example: select
+   North District to limit database history to that project. File logs are
+   global, so a project filter and file categories cannot be combined.
+3. **Delete records older than:** choose a local date/time. Example:
+   `2026-07-01 00:00` selects records strictly before that cutoff; the UI sends
+   its UTC equivalent. Future cutoffs are rejected. This manual date is
+   independent of automatic retention and can remove newer eligible history.
+4. **Preview cleanup:** creates an actor-bound, 10-minute preview containing up
+   to 500 candidate items. Nothing is deleted. The preview reports count,
+   estimated bytes, expiry and whether another batch will be needed.
+5. **Review irreversible cleanup:** inspect the confirmation before proceeding.
+   **Cancel** closes it without deleting anything. Back up troubleshooting
+   evidence you need before choosing **Permanently clean selected logs**:
+   deleted request/response history and error messages cannot be recovered in
+   the app. Queue payloads remain, but deleted attempt diagnostics do not.
+6. Review **Recent cleanup history** for the actual removed/skipped counts,
+   estimated bytes, actor identifier, timestamp and safe error descriptions.
+   Items changed/locked since preview are skipped; retry from a fresh preview.
+   Filesystem/database failures are reported, not claimed as successful cleanup.
+
+Previews expire on restart, policy changes or successful use. In a multi-process
+deployment, route preview and confirmation to the same process (sticky routing).
+Only the latest 20 cleanup attempts/policy changes are retained. An entry marked
+“Cleanup started; completion has not yet been recorded” indicates an interrupted
+operation; inspect storage and preview again, rather than assuming it completed.
+
+### Storage and operator limits
+
+Database byte totals are estimates, not free-disk measurements. Deleting rows
+makes PostgreSQL space reusable through normal vacuum/autovacuum; it does **not**
+promise an immediate reduction in database file size. This feature never runs
+`VACUUM FULL`. It does not expose raw logs or add downloads.
+
+PM2 stdout/stderr, proxy and operating-system logs are explicitly outside this
+feature. For Windows/PM2 operator steps, see the deployment guide's **Log
+maintenance and external log rotation** section. Monitor these independently.
+`LOG_DIR` must be a real writable directory without symlinks in its path; only
+allowlisted regular files with a single hard link are managed. Inspection stops
+at 10,000 directory entries rather than performing unbounded filesystem work.
+
+*Last updated: October 2026*

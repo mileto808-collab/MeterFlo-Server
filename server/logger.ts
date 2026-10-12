@@ -1,9 +1,15 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { randomBytes } from "node:crypto";
 
 const LOG_DIR = process.env.LOG_DIR || './logs';
 const ERROR_LOG = path.join(LOG_DIR, 'error.log');
-const MAX_LOG_SIZE = 10 * 1024 * 1024; // 10MB before rotation
+let MAX_LOG_SIZE = 10 * 1024 * 1024; // 10MB before rotation
+
+export function setLogRotationMiB(value: number) {
+  if (!Number.isInteger(value) || value < 1 || value > 100) throw new Error("Invalid rotation size");
+  MAX_LOG_SIZE = value * 1024 * 1024;
+}
 
 // Ensure log directory exists
 function ensureLogDir() {
@@ -19,7 +25,7 @@ function rotateLogIfNeeded(logPath: string) {
       const stats = fs.statSync(logPath);
       if (stats.size > MAX_LOG_SIZE) {
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const rotatedPath = logPath.replace('.log', `-${timestamp}.log`);
+        const rotatedPath = logPath.replace('.log', `-${timestamp}-${randomBytes(4).toString("hex")}.log`);
         fs.renameSync(logPath, rotatedPath);
       }
     }
@@ -37,9 +43,18 @@ function formatLogEntry(level: string, message: string, context?: Record<string,
 
 // Write to log file
 function writeToLog(logPath: string, entry: string) {
-  ensureLogDir();
-  rotateLogIfNeeded(logPath);
-  fs.appendFileSync(logPath, entry);
+  try {
+    ensureLogDir();
+    if (fs.existsSync(logPath)) {
+      const stat = fs.lstatSync(logPath);
+      if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1) throw new Error("Unsafe error-log file");
+    }
+    rotateLogIfNeeded(logPath);
+    const fd = fs.openSync(logPath, fs.constants.O_WRONLY | fs.constants.O_APPEND | fs.constants.O_CREAT | (fs.constants.O_NOFOLLOW || 0), 0o600);
+    try { fs.writeSync(fd, entry); } finally { fs.closeSync(fd); }
+  } catch {
+    console.error("Error log write failed; check LOG_DIR permissions and file safety.");
+  }
 }
 
 // Logger interface

@@ -218,6 +218,13 @@ export const permissionRegistry: PermissionDefinition[] = [
   },
   // Maintenance action permissions - what users can do in the maintenance area
   {
+    key: "maintenance.logManagement",
+    label: "Log Management",
+    category: "Maintenance",
+    description: "Preview and permanently clean eligible logs; configure global retention",
+    defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
+  },
+  {
     key: "maintenance.projectBackup",
     label: "Project Backup",
     category: "Maintenance",

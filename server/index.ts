@@ -19,6 +19,7 @@ import { storage } from "./storage";
 import { initializeLogger, logger } from "./logger";
 import { initializeCustomerApi, startCustomerApiWorker } from "./customerApiService";
 import { initializeApiImports, startApiImportWorker } from "./apiImportService";
+import { startLogMaintenance } from "./logMaintenanceRoutes";
 
 const app = express();
 
@@ -158,6 +159,7 @@ app.use((req, res, next) => {
       log(`serving on port ${port}`);
       startCustomerApiWorker();
       startApiImportWorker();
+      startLogMaintenance();
       // Ensure administrator subrole exists with all permissions
       storage.ensureAdministratorSubrole().then(() => {
         log("Administrator subrole initialized");
