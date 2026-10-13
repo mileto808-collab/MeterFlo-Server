@@ -34,6 +34,9 @@ import { projectEventEmitter, emitWorkOrderCreated, emitWorkOrderUpdated, emitWo
 import { retryCustomerDelivery, retryLegacyCustomerLog } from "./customerApiService";
 import { registerApiImportRoutes } from "./apiImportRoutes";
 import { registerLogMaintenanceRoutes } from "./logMaintenanceRoutes";
+import { registerMobileReleaseRoutes } from "./mobileReleaseRoutes";
+import { MobileReleaseRepository } from "./mobileReleaseRepository";
+import { MobileReleaseService } from "./mobileReleaseService";
 import { registerCustomerApiSettings, validateProjectCustomerPush } from "./customerApiSettings";
 import { customerPushFields, customerPushSettings } from "../shared/customer-api-settings";
 import { toZonedTime, format as formatTz } from "date-fns-tz";
@@ -66,7 +69,7 @@ setInterval(() => {
       console.log(`[ChunkedUpload] Cleaned up stale session: ${uploadId}`);
     }
   }
-}, 5 * 60 * 1000); // Run every 5 minutes
+}, 5 * 60 * 1000).unref(); // Run every 5 minutes without keeping maintenance-only processes alive
 
 async function getTimezoneFormattedTimestamp(projectTimezone?: string | null): Promise<string> {
   const globalTimezone = await storage.getSetting("default_timezone") || "America/Denver";
@@ -199,6 +202,25 @@ export async function registerRoutes(
   await storage.ensureDefaultSubroles();
   registerApiImportRoutes(app);
   registerLogMaintenanceRoutes(app);
+  const mobileReleaseRepo = new MobileReleaseRepository(pool);
+  await mobileReleaseRepo.initialize();
+  const mobileReleaseService = new MobileReleaseService(mobileReleaseRepo);
+  registerMobileReleaseRoutes(app, mobileReleaseService, {
+    authenticated: isAuthenticated,
+    userId: async (req: any) => {
+      const user = await storage.getUser(req.user?.claims?.sub);
+      return user && !user.isLocked ? user.id : null;
+    },
+    canManage: async id => {
+      const user = await storage.getUser(id);
+      return !!user && !user.isLocked && await storage.hasPermission(user, permissionKeys.SETTINGS_MOBILE_CONFIG);
+    },
+  });
+  const cleanupMobileReleases = () => mobileReleaseService.cleanup().catch(() => {
+    console.error("[MobileReleases] Cleanup is pending. Check database and release storage access.");
+  });
+  void cleanupMobileReleases();
+  setInterval(cleanupMobileReleases, 5 * 60 * 1000).unref();
   registerCustomerApiSettings(app);
 
   // Local authentication

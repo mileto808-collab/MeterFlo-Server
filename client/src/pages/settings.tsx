@@ -27,6 +27,7 @@ import { Database } from "lucide-react";
 import { Wrench } from "lucide-react";
 import { AlertTriangle } from "lucide-react";
 import { CustomerApiDeliveries } from "@/components/customer-api-deliveries";
+import { MobileReleaseManager } from "@/components/mobile-release-manager";
 
 interface FileSettings {
   maxFileSizeMB: number;
@@ -2117,6 +2118,7 @@ export default function Settings() {
         )}
 
         {hasPermission("settings.mobileConfig") && (
+          <>
             <Card>
               <CardHeader>
                 <div className="flex items-center gap-2">
@@ -2265,6 +2267,8 @@ export default function Settings() {
                 </Button>
               </CardContent>
             </Card>
+            <MobileReleaseManager />
+          </>
         )}
 
         {hasPermission("settings.webUpdate") && (

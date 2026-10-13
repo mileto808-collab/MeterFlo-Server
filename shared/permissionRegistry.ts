@@ -185,7 +185,7 @@ export const permissionRegistry: PermissionDefinition[] = [
     key: "settings.mobileConfig",
     label: "Mobile App Configuration",
     category: "Settings",
-    description: "Configure mobile app update URL and settings",
+    description: "Configure mobile updates; upload, publish, and remove Android APK releases",
     defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
   },
   {

@@ -5,6 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/useAuth";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
+import { DashboardMobileRelease } from "@/components/mobile-release-manager";
 import type { Project, User } from "@shared/schema";
 import {
   ClipboardList,
@@ -43,6 +44,8 @@ export default function Dashboard() {
               : "Access your assigned projects"}
         </p>
       </div>
+
+      <DashboardMobileRelease />
 
       {role === "admin" && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">

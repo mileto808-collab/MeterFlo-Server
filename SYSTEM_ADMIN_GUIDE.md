@@ -229,6 +229,102 @@ A viewer for outbound deliveries and their attempts, including automatic retry s
 Configures where the MeterFlo mobile app looks for updates. For Android, set the GitHub Releases API URL the app should poll. For iOS, choose the update source (disabled, App Store with App Store ID, or EAS Updates).
 - Permission: `settings.mobileConfig`
 
+##### Android APK Releases and dashboard downloads
+
+In **Settings → Mobile Application Updates → Android APK Releases**, an administrator
+can upload Android builds and explicitly publish the one users should download.
+This is instance-wide distribution, not a per-project attachment.
+
+**Access:** the existing **Mobile App Configuration** permission
+(`settings.mobileConfig`) controls listing/history, uploading, publishing, deleting,
+and storage cleanup on both the page and API. Administrators have access by default.
+To delegate it, use **Users → Access Levels**, grant the permission and Settings
+navigation access to the user's access level, and assign that access level.
+The grant is checked again on each upload step and before finalization/publication.
+All signed-in roles, including technicians and customers, can see and download the
+latest published APK on their Dashboard without this management permission.
+Anonymous visitors cannot fetch release metadata or bytes.
+
+| Field or action | Example | How to use it |
+| --- | --- | --- |
+| APK file | `MeterFlo-2.4.0.apk` | Select a trusted **base APK**, not an AAB, split APK, text file, or generic ZIP renamed to `.apk`. Maximum **512 MiB (536,870,912 bytes)**. Use an ASCII filename starting with a letter/digit; spaces, dots, hyphens, underscores and parentheses are accepted, but paths and special characters are not. |
+| Version | `2.4.0` | Required display label, 1–64 characters. Enter the actual app version from your build. This label is administrator-supplied, not extracted or verified against the manifest. |
+| Android build/version code | `240` | Optional integer from **1 to 2,100,000,000**. Leave blank if unknown. Match your Android `versionCode`; this value is also administrator-supplied and does not change the APK itself. |
+| Release notes | `Fixes offline sync; install before Monday's shift.` | Optional, at most 5,000 characters. Users see these notes on the Dashboard. Do not put credentials or private customer data here. |
+| Upload APK | Click after filling the fields | Uploads in bounded 5 MiB chunks with progress. Wait for success; the release is then **unpublished**. It does not replace the Dashboard download until you explicitly publish it. After an error, correct the cause and retry from the selected file. |
+| Publish / set latest | Publish `2.4.0` | Makes this completed release the single latest release atomically. Publishing `2.3.9` later deliberately makes that release latest; filenames and version labels are not automatically sorted. Concurrent publishes are serialized. |
+| Download | Download the listed APK | Opens an authenticated same-origin browser attachment download, without loading the whole APK into JavaScript memory. Management users can inspect unpublished/older builds; ordinary users can download only the current published release. |
+| Delete | Delete an obsolete `2.3.9` build | Confirm removal. To delete the **latest** release, explicitly confirm withdrawal or publish a replacement first. Withdrawal leaves the Dashboard with **no published release**; no older build is silently promoted. |
+| Retry storage cleanup | Retry after restoring disk/bucket access | Removed releases cannot be advertised or downloaded even if physical file cleanup fails. A visible pending-cleanup notice remains until cleanup succeeds. The retry also clears expired uploads. Automatic cleanup runs at startup and every five minutes. |
+
+The history shows version, build code, uploaded date, filename, size, notes, and the
+latest marker. The Dashboard shows the latest version, published date, notes, and
+**Download APK**. Pages refresh on focus and poll every minute. Loading, no published
+release, session/permission failures, and storage errors are separate states with
+retry controls. A stale download is checked before opening; refresh if the release
+was replaced or withdrawn. Transfers already started cannot be recalled.
+
+**Validation and trust:** the server verifies bounded ZIP structure, safe and unique
+entry names, expansion limits, all entry CRCs/sizes, Android binary manifest structure
+and base `classes.dex` header, then records SHA-256. These are structural/integrity
+checks—not malware scanning, APK signature validation, device compatibility, or
+proof that the entered version/build code matches the APK. Only distribute builds
+from your trusted signing/build process. For upgrades, retain the same application
+ID and signing certificate and use a higher embedded Android version code.
+
+**Installing:** on Android, open the downloaded APK, allow “Install unknown apps”
+for the browser/file manager if permitted by your organization, and follow Android's
+installation prompts. This website does not install automatically. If Android
+rejects an upgrade, check application ID, signing certificate, embedded version
+code, device requirements, and device-management policy. Revoke the temporary
+unknown-app permission after installation if required.
+
+**Storage and deployment:**
+
+- **Replit:** APK bytes and staging chunks use private **App Storage**, not the
+  published app's temporary filesystem. In the editor, open **App Storage → Create
+  new bucket**, enter a name, and create the bucket. Attach/use that bucket in this
+  app. Its ID is available from the bucket's **Settings** view; optionally pin it
+  using `MOBILE_APK_BUCKET_ID`. Set `MOBILE_APK_STORAGE=app_storage` if an explicit
+  provider is needed. The SDK authenticates through the hosted runtime; no Replit
+  login or credential value is added to the application login flow. If no accessible
+  bucket exists, Settings reports storage unavailable and disables uploads rather
+  than pretending the filesystem is durable. Restart after changing service
+  configuration. Local storage is rejected on published Replit deployments.
+- **Standalone Windows:** set `MOBILE_APK_STORAGE=local` and, for example,
+  `MOBILE_APK_LOCAL_DIR=C:\MeterFloData\Mobile APK Releases` in the private `.env`
+  or approved service environment. Grant the Node/PM2 service account read/write
+  access. This is independent of Replit and does not initialize hosted credentials.
+- **Standalone Linux:** use `MOBILE_APK_STORAGE=local` and, for example,
+  `MOBILE_APK_LOCAL_DIR=/var/lib/meterflo/mobile-apks`; create/protect the directory
+  for the service account. The path must be absolute. Do not expose it through a
+  static web server.
+- When not specified, standalone local storage uses **Project Files Directory /
+  Mobile APK Releases**. A protected data directory **outside the Git checkout** and
+  Apache document root is recommended so code-update/clean scripts cannot erase it.
+  Individual records retain their original provider/location; changing the current
+  root or bucket is **not** a migration of existing releases.
+
+Metadata/publication state and upload ownership live in PostgreSQL. Startup performs
+an additive, repeatable table initialization; the normal dependency-install/update
+process does not erase release records or bytes. Upload sessions expire one hour
+after initialization, are owner-bound, and are limited to three pending sessions per
+user / twenty per instance. Temporary local assembly files are deleted after each
+attempt. Provider failures do not trigger an alternate-storage fallback.
+
+**Backups:** back up PostgreSQL **and** the release directory or App Storage bucket;
+database-only backups do not contain APK bytes. Preserve the configured
+provider/location and service access on restore. Cross-platform or cross-bucket
+transfers need an explicit byte/metadata migration or fresh uploads; a database
+restore alone does not make another host's release files available. Keep APKs,
+staging chunks and test fixtures out of Git and deployment bundles. `.env.example`
+contains safe configuration examples, never credentials.
+
+**Native app update behavior is unchanged.** Dashboard APK downloads are manual
+distribution. They do not modify the existing GitHub Android update URL, iOS update
+options, or the `mobileConfig` returned by `/api/users/:id/projects`. An Expo app
+does not automatically discover these uploads without a separate native-app update.
+
 #### Web Application Updates
 Configures the GitHub Releases API URL the web app should check, runs an on-demand update check, and previews the exact shell command to run on the server to apply an update (with a fallback hard-reset command). The card itself does not run the update — the displayed command must be executed on the server. See [Web Application Updates](#web-application-updates).
 - Permission: `settings.webUpdate`

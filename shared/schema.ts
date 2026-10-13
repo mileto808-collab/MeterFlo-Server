@@ -298,6 +298,39 @@ export const systemSettings = pgTable("system_settings", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Instance-wide Android distribution, independent of project files and native update URLs.
+export const mobileApkReleases = pgTable("mobile_apk_releases", {
+  id: text("id").primaryKey(),
+  version: varchar("version", { length: 64 }).notNull(),
+  buildCode: integer("build_code"),
+  notes: text("notes").notNull().default(""),
+  fileName: varchar("file_name", { length: 180 }).notNull(),
+  size: integer("size").notNull(),
+  sha256: varchar("sha256", { length: 64 }).notNull(),
+  provider: text("provider").notNull(),
+  location: text("location").notNull(),
+  uploadedAt: timestamp("uploaded_at", { withTimezone: true }).notNull().defaultNow(),
+  publishedAt: timestamp("published_at", { withTimezone: true }),
+  deleted: boolean("deleted").notNull().default(false),
+  ready: boolean("ready").notNull().default(false),
+});
+export const mobileApkPublication = pgTable("mobile_apk_publication", {
+  id: integer("id").primaryKey(),
+  releaseId: text("release_id").references(() => mobileApkReleases.id, { onDelete: "set null" }),
+});
+export const mobileApkUploads = pgTable("mobile_apk_uploads", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  fileName: varchar("file_name", { length: 180 }).notNull(),
+  totalSize: integer("total_size").notNull(),
+  totalChunks: integer("total_chunks").notNull(),
+  metadata: jsonb("metadata").notNull(),
+  provider: text("provider").notNull(),
+  location: text("location").notNull(),
+  received: integer("received").array().notNull().default(sql`'{}'::integer[]`),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull().default(sql`now() + interval '1 hour'`),
+}, table => [index("mobile_apk_upload_expiry").on(table.expiresAt)]);
+
 // Support submissions table - stores support form submissions
 export const supportSubmissions = pgTable("support_submissions", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),

@@ -11,6 +11,9 @@ export interface ChunkedUploadOptions {
   url: string;
   onProgress?: (progress: ChunkedUploadProgress) => void;
   fieldName?: string;
+  forceChunking?: boolean;
+  chunkBaseUrl?: string;
+  metadata?: unknown;
 }
 
 export async function uploadFileWithChunking({
@@ -18,8 +21,11 @@ export async function uploadFileWithChunking({
   url,
   onProgress,
   fieldName = "file",
+  forceChunking = false,
+  chunkBaseUrl = "/api/files/chunked",
+  metadata,
 }: ChunkedUploadOptions): Promise<Response> {
-  if (file.size <= CHUNK_SIZE) {
+  if (file.size <= CHUNK_SIZE && !forceChunking) {
     onProgress?.({ stage: "uploading", percent: 50, message: "Uploading file..." });
 
     const formData = new FormData();
@@ -38,68 +44,105 @@ export async function uploadFileWithChunking({
   }
 
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+  const isCustomUpload = chunkBaseUrl !== "/api/files/chunked";
+  const route = (name: string) => `${chunkBaseUrl}/${name}`;
+  let uploadId: string | undefined;
 
   onProgress?.({ stage: "uploading", percent: 0, message: "Initializing upload..." });
 
-  const initResponse = await fetch("/api/files/chunked/init", {
+  const initPayload: Record<string, unknown> = {
+    fileName: file.name,
+    totalChunks,
+  };
+  if (chunkBaseUrl === "/api/files/chunked") initPayload.targetUrl = url;
+  if (metadata !== undefined) {
+    initPayload.totalSize = file.size;
+    initPayload.metadata = metadata;
+  }
+  const initResponse = await fetch(route("init"), {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      fileName: file.name,
-      totalChunks,
-      targetUrl: url,
-    }),
+    body: JSON.stringify(initPayload),
   });
 
   if (!initResponse.ok) {
-    const error = await initResponse.json();
-    throw new Error(error.message || "Failed to initialize upload");
+    throw await uploadError(initResponse, "Failed to initialize upload", isCustomUpload);
   }
 
-  const { uploadId } = await initResponse.json();
+  const initialized = await initResponse.json();
+  if (typeof initialized?.uploadId !== "string" || !initialized.uploadId) {
+    throw new Error("The upload service did not return an upload session.");
+  }
+  uploadId = initialized.uploadId;
+  try {
+    for (let i = 0; i < totalChunks; i++) {
+      const start = i * CHUNK_SIZE;
+      const end = Math.min(start + CHUNK_SIZE, file.size);
+      const chunk = file.slice(start, end);
 
-  for (let i = 0; i < totalChunks; i++) {
-    const start = i * CHUNK_SIZE;
-    const end = Math.min(start + CHUNK_SIZE, file.size);
-    const chunk = file.slice(start, end);
+      const chunkFormData = new FormData();
+      chunkFormData.append("chunk", chunk, file.name);
+      chunkFormData.append("uploadId", initialized.uploadId);
+      chunkFormData.append("chunkIndex", String(i));
 
-    const chunkFormData = new FormData();
-    chunkFormData.append("chunk", chunk, file.name);
-    chunkFormData.append("uploadId", uploadId);
-    chunkFormData.append("chunkIndex", String(i));
+      const percent = Math.round(((i + 1) / totalChunks) * 90);
+      onProgress?.({
+        stage: "uploading",
+        percent,
+        message: `Uploading chunk ${i + 1} of ${totalChunks}...`,
+      });
 
-    const percent = Math.round(((i + 1) / totalChunks) * 90);
-    onProgress?.({
-      stage: "uploading",
-      percent,
-      message: `Uploading chunk ${i + 1} of ${totalChunks}...`,
-    });
+      const chunkResponse = await fetch(route("chunk"), {
+        method: "POST",
+        credentials: "include",
+        body: chunkFormData,
+      });
 
-    const chunkResponse = await fetch("/api/files/chunked/chunk", {
+      if (!chunkResponse.ok) {
+        throw await uploadError(chunkResponse, `Failed to upload chunk ${i + 1}`, isCustomUpload);
+      }
+    }
+
+    onProgress?.({ stage: "processing", percent: 95, message: "Finalizing upload..." });
+
+    const finalizeResponse = await fetch(route("finalize"), {
       method: "POST",
       credentials: "include",
-      body: chunkFormData,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ uploadId: initialized.uploadId }),
     });
 
-    if (!chunkResponse.ok) {
-      const error = await chunkResponse.json();
-      throw new Error(error.message || `Failed to upload chunk ${i + 1}`);
+    if (!finalizeResponse.ok) {
+      throw await uploadError(finalizeResponse, "Failed to finalize upload", isCustomUpload);
     }
-  }
-
-  onProgress?.({ stage: "processing", percent: 95, message: "Finalizing upload..." });
-
-  const finalizeResponse = await fetch("/api/files/chunked/finalize", {
-    method: "POST",
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ uploadId }),
-  });
-
-  if (finalizeResponse.ok) {
     onProgress?.({ stage: "processing", percent: 100, message: "Complete!" });
+    return finalizeResponse;
+  } catch (error) {
+    if (isCustomUpload && uploadId) {
+      try {
+        await fetch(`${chunkBaseUrl}/${encodeURIComponent(uploadId)}`, {
+          method: "DELETE",
+          credentials: "include",
+        });
+      } catch {
+        // Preserve the original upload error; the session may expire server-side.
+      }
+    }
+    throw error;
   }
+}
 
-  return finalizeResponse;
+async function getUploadError(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = await response.json();
+    return typeof body?.message === "string" ? body.message : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+async function uploadError(response: Response, fallback: string, includeStatus: boolean): Promise<Error> {
+  const message = await getUploadError(response, fallback);
+  return new Error(includeStatus ? `${response.status}: ${message}` : message);
 }
