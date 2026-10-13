@@ -80,6 +80,7 @@ import SignaturePad, { type SignaturePadRef } from "@/components/signature-pad";
 import { SystemChangeoutWizard, type WizardConfig } from "@/components/system-changeout-wizard";
 import { DateTimePicker } from "@/components/ui/datetime-picker";
 import { WorkOrderPdf } from "@/components/work-order-pdf";
+import type { EquipmentVisibility } from "@shared/project-equipment-scope";
 
 interface OperationalHoursConfig {
   enabled: boolean;
@@ -126,6 +127,7 @@ interface WorkOrderDetailProps {
     searchShowManualEntry: boolean;
     searchShowHidScanner: boolean;
   };
+  equipmentVisibility?: EquipmentVisibility;
 }
 
 export function WorkOrderDetail({
@@ -162,7 +164,10 @@ export function WorkOrderDetail({
   canScheduleInCalendar = false,
   wizardConfig,
   searchMethodSettings,
+  equipmentVisibility = { showSystem: true, showModule: true },
 }: WorkOrderDetailProps) {
+  const equipmentDetailsLabel = equipmentVisibility.showSystem && equipmentVisibility.showModule
+    ? "System | Module Details" : equipmentVisibility.showSystem ? "System Details" : "Module Details";
   const { setHeaderContent } = usePageHeader();
   const [openSections, setOpenSections] = useState<string[]>([]);
   const [showSystemChangeoutWizard, setShowSystemChangeoutWizard] = useState(false);
@@ -181,6 +186,8 @@ export function WorkOrderDetail({
   
   // Auto-determine scope based on work order data
   const changeoutScope: "system" | "module" | "both" = (() => {
+    if (!equipmentVisibility.showModule) return "system";
+    if (!equipmentVisibility.showSystem) return "module";
     const hasSystem = !!workOrder.oldSystemId;
     const hasModule = !!workOrder.oldModuleId;
     if (hasSystem && hasModule) return "both";
@@ -1075,7 +1082,7 @@ export function WorkOrderDetail({
               <AccordionTrigger className="hover:no-underline py-4" data-testid="accordion-system">
                 <div className="flex items-center gap-2">
                   <Gauge className="h-4 w-4 text-primary" />
-                  <span className="font-medium">System | Module Details</span>
+                  <span className="font-medium">{equipmentDetailsLabel}</span>
                 </div>
               </AccordionTrigger>
               <AccordionContent className="pb-4">
@@ -1099,7 +1106,7 @@ export function WorkOrderDetail({
                     )}
 
                     {/* Old System - Green border - only show if has data */}
-                    {(workOrder.oldSystemId || workOrder.oldSystemReading != null || workOrder.oldSystemType) && (
+                    {equipmentVisibility.showSystem && (workOrder.oldSystemId || workOrder.oldSystemReading != null || workOrder.oldSystemType) && (
                       <div className="border-l-4 border-l-green-500 pl-3 py-2">
                         <h4 className="text-base font-semibold text-green-500 mb-2">Old System</h4>
                         <div className="grid grid-cols-3 gap-2">
@@ -1132,7 +1139,7 @@ export function WorkOrderDetail({
                     )}
 
                     {/* Old Module - Green border - only show if has data */}
-                    {(workOrder.oldModuleId || workOrder.oldModuleRead != null || workOrder.oldModuleType) && (
+                    {equipmentVisibility.showModule && (workOrder.oldModuleId || workOrder.oldModuleRead != null || workOrder.oldModuleType) && (
                       <div className="border-l-4 border-l-green-500 pl-3 py-2">
                         <h4 className="text-base font-semibold text-muted-foreground mb-2">Old Module</h4>
                         <div className="grid grid-cols-3 gap-2">
@@ -1202,7 +1209,7 @@ export function WorkOrderDetail({
                     )}
 
                     {/* New System - Cyan border - only show if has data */}
-                    {(workOrder.newSystemId || workOrder.newSystemReading != null || workOrder.newSystemType) && (
+                    {equipmentVisibility.showSystem && (workOrder.newSystemId || workOrder.newSystemReading != null || workOrder.newSystemType) && (
                       <div className="border-l-4 border-l-cyan-500 pl-3 py-2">
                         <h4 className="text-base font-semibold text-cyan-500 mb-2">New System</h4>
                         <div className="grid grid-cols-3 gap-2">
@@ -1235,7 +1242,7 @@ export function WorkOrderDetail({
                     )}
 
                     {/* New Module - Cyan border - only show if has data */}
-                    {(workOrder.newModuleId || workOrder.newModuleRead != null || workOrder.newModuleType) && (
+                    {equipmentVisibility.showModule && (workOrder.newModuleId || workOrder.newModuleRead != null || workOrder.newModuleType) && (
                       <div className="border-l-4 border-l-cyan-500 pl-3 py-2">
                         <h4 className="text-base font-semibold text-cyan-500 mb-2">New Module</h4>
                         <div className="grid grid-cols-3 gap-2">
@@ -1300,7 +1307,7 @@ export function WorkOrderDetail({
                 {mobileSystemEditMode && canEdit && (
                   <div className="md:hidden space-y-4">
                     <div className="flex justify-between items-center mb-2">
-                      <span className="text-sm font-medium">Editing System | Module Details</span>
+                      <span className="text-sm font-medium">Editing {equipmentDetailsLabel}</span>
                       <Button
                         type="button"
                         variant="outline"
@@ -1337,7 +1344,7 @@ export function WorkOrderDetail({
                     />
 
                     {/* Old System Section */}
-                    <div className="border-l-4 border-l-green-500 pl-3 py-2 space-y-3">
+                    {equipmentVisibility.showSystem && <div className="border-l-4 border-l-green-500 pl-3 py-2 space-y-3">
                       <h4 className="text-sm font-medium text-green-500">Old System</h4>
                       <FormField
                         control={form.control}
@@ -1403,10 +1410,10 @@ export function WorkOrderDetail({
                           </FormItem>
                         )}
                       />
-                    </div>
+                    </div>}
 
                     {/* Old Module Section */}
-                    <div className="border-l-4 border-l-green-500 pl-3 py-2 space-y-3">
+                    {equipmentVisibility.showModule && <div className="border-l-4 border-l-green-500 pl-3 py-2 space-y-3">
                       <h4 className="text-sm font-medium text-muted-foreground">Old Module</h4>
                       <FormField
                         control={form.control}
@@ -1472,10 +1479,10 @@ export function WorkOrderDetail({
                           </FormItem>
                         )}
                       />
-                    </div>
+                    </div>}
 
                     {/* New System Section */}
-                    <div className="border-l-4 border-l-cyan-500 pl-3 py-2 space-y-3">
+                    {equipmentVisibility.showSystem && <div className="border-l-4 border-l-cyan-500 pl-3 py-2 space-y-3">
                       <h4 className="text-sm font-medium text-cyan-500">New System</h4>
                       <FormField
                         control={form.control}
@@ -1541,10 +1548,10 @@ export function WorkOrderDetail({
                           </FormItem>
                         )}
                       />
-                    </div>
+                    </div>}
 
                     {/* New Module Section */}
-                    <div className="border-l-4 border-l-cyan-500 pl-3 py-2 space-y-3">
+                    {equipmentVisibility.showModule && <div className="border-l-4 border-l-cyan-500 pl-3 py-2 space-y-3">
                       <h4 className="text-sm font-medium text-cyan-500">New Module</h4>
                       <FormField
                         control={form.control}
@@ -1610,7 +1617,7 @@ export function WorkOrderDetail({
                           </FormItem>
                         )}
                       />
-                    </div>
+                    </div>}
                   </div>
                 )}
 
@@ -1644,7 +1651,7 @@ export function WorkOrderDetail({
                     </div>
 
                     {/* Old System - Green border - only show if has data */}
-                    {(workOrder.oldSystemId || workOrder.oldSystemReading != null || workOrder.oldSystemType) && (
+                    {equipmentVisibility.showSystem && (workOrder.oldSystemId || workOrder.oldSystemReading != null || workOrder.oldSystemType) && (
                       <div className="border-l-4 border-l-green-500 pl-3 py-2">
                         <h4 className="text-base font-semibold text-green-500 mb-2">Old System</h4>
                         <div className="grid grid-cols-3 gap-4">
@@ -1677,7 +1684,7 @@ export function WorkOrderDetail({
                     )}
 
                     {/* Old Module - Green border - only show if has data */}
-                    {(workOrder.oldModuleId || workOrder.oldModuleRead != null || workOrder.oldModuleType) && (
+                    {equipmentVisibility.showModule && (workOrder.oldModuleId || workOrder.oldModuleRead != null || workOrder.oldModuleType) && (
                       <div className="border-l-4 border-l-green-500 pl-3 py-2">
                         <h4 className="text-base font-semibold text-muted-foreground mb-2">Old Module</h4>
                         <div className="grid grid-cols-3 gap-4">
@@ -1747,7 +1754,7 @@ export function WorkOrderDetail({
                     )}
 
                     {/* New System - Cyan border - only show if has data */}
-                    {(workOrder.newSystemId || workOrder.newSystemReading != null || workOrder.newSystemType) && (
+                    {equipmentVisibility.showSystem && (workOrder.newSystemId || workOrder.newSystemReading != null || workOrder.newSystemType) && (
                       <div className="border-l-4 border-l-cyan-500 pl-3 py-2">
                         <h4 className="text-base font-semibold text-cyan-500 mb-2">New System</h4>
                         <div className="grid grid-cols-3 gap-4">
@@ -1780,7 +1787,7 @@ export function WorkOrderDetail({
                     )}
 
                     {/* New Module - Cyan border - only show if has data */}
-                    {(workOrder.newModuleId || workOrder.newModuleRead != null || workOrder.newModuleType) && (
+                    {equipmentVisibility.showModule && (workOrder.newModuleId || workOrder.newModuleRead != null || workOrder.newModuleType) && (
                       <div className="border-l-4 border-l-cyan-500 pl-3 py-2">
                         <h4 className="text-base font-semibold text-cyan-500 mb-2">New Module</h4>
                         <div className="grid grid-cols-3 gap-4">
@@ -1873,7 +1880,7 @@ export function WorkOrderDetail({
                 {desktopSystemEditMode && canEdit && (
                   <div className="hidden md:block space-y-4">
                     <div className="flex justify-between items-center mb-2">
-                      <span className="text-sm font-medium">Editing System | Module Details</span>
+                      <span className="text-sm font-medium">Editing {equipmentDetailsLabel}</span>
                       <Button
                         type="button"
                         variant="outline"
@@ -1909,7 +1916,7 @@ export function WorkOrderDetail({
                   />
                   
                   {/* Old System Section */}
-                  <div className="md:col-span-2 border-t pt-4 mt-2">
+                  {equipmentVisibility.showSystem && <div className="md:col-span-2 border-t pt-4 mt-2">
                     <h4 className="text-sm font-medium mb-3 text-muted-foreground">Old System</h4>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <FormField
@@ -1996,10 +2003,10 @@ export function WorkOrderDetail({
                         )}
                       />
                     </div>
-                  </div>
+                  </div>}
 
                   {/* Old Module Section */}
-                  <div className="md:col-span-2 border-t pt-4 mt-2">
+                  {equipmentVisibility.showModule && <div className="md:col-span-2 border-t pt-4 mt-2">
                     <h4 className="text-sm font-medium mb-3 text-muted-foreground">Old Module</h4>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <FormField
@@ -2070,7 +2077,7 @@ export function WorkOrderDetail({
                         )}
                       />
                     </div>
-                  </div>
+                  </div>}
 
                   {/* GPS Coordinates Section */}
                   <div className="md:col-span-2 border-t pt-4 mt-2">
@@ -2146,7 +2153,7 @@ export function WorkOrderDetail({
                   </div>
 
                   {/* New System Section */}
-                  <div className="md:col-span-2 border-t pt-4 mt-2">
+                  {equipmentVisibility.showSystem && <div className="md:col-span-2 border-t pt-4 mt-2">
                     <h4 className="text-sm font-medium mb-3 text-muted-foreground">New System</h4>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <FormField
@@ -2233,10 +2240,10 @@ export function WorkOrderDetail({
                         )}
                       />
                     </div>
-                  </div>
+                  </div>}
 
                   {/* New Module Section */}
-                  <div className="md:col-span-2 border-t pt-4 mt-2">
+                  {equipmentVisibility.showModule && <div className="md:col-span-2 border-t pt-4 mt-2">
                     <h4 className="text-sm font-medium mb-3 text-muted-foreground">New Module</h4>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <FormField
@@ -2307,7 +2314,7 @@ export function WorkOrderDetail({
                         )}
                       />
                     </div>
-                  </div>
+                  </div>}
 
                   {/* Signature */}
                   <div className="md:col-span-2 border-t pt-4 mt-2">

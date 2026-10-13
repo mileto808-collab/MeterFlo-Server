@@ -46,7 +46,7 @@ import { useProjectEvents } from "@/hooks/useProjectEvents";
 import { useHidScanner } from "@/hooks/useHidScanner";
 import { usePageHeader } from "@/contexts/page-header-context";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, ArrowLeft, Search, ArrowUpDown, ArrowUp, ArrowDown, Download, FileSpreadsheet, FileText, Filter, X, Route, ChevronRight, Paperclip, Eye, FileIcon, ChevronsUp, UserPlus, UserMinus, AlertTriangle, Loader2, Wrench, Home, Gauge, Cpu, Calendar } from "lucide-react";
+import { Plus, ClipboardList, Trash2, ShieldAlert, Folder, Pencil, Upload, ArrowLeft, Search, ArrowUpDown, ArrowUp, ArrowDown, Download, FileSpreadsheet, FileText, Filter, X, Route, ChevronRight, Paperclip, Eye, FileIcon, ChevronsUp, UserPlus, UserMinus, AlertTriangle, Loader2, Wrench, Home, Gauge, Cpu, Calendar, MapPin } from "lucide-react";
 import { BackToTop } from "@/components/ui/back-to-top";
 import { TablePagination } from "@/components/ui/table-pagination";
 import * as XLSX from "xlsx";
@@ -93,6 +93,7 @@ import { WorkOrderCalendar } from "@/components/work-order-calendar";
 import { WorkOrderFiltersDialog } from "@/components/work-order-filters-dialog";
 import { Calendar as CalendarIcon, List } from "lucide-react";
 import { getReadingPrecision, normalizeReadingInput, validateCapturedReadings } from "@shared/reading-precision";
+import { getProjectEquipmentVisibility, omitInapplicableEquipmentFields } from "@shared/project-equipment-scope";
 
 type Assignee = {
   type: "user" | "group";
@@ -446,6 +447,7 @@ export default function ProjectWorkOrders() {
     enabled: !!projectId,
     retry: false,
   });
+  const equipmentVisibility = getProjectEquipmentVisibility(project);
 
   // HID scanner detection - when a barcode/QR code is scanned from the work orders page,
   // automatically open the Start Changeout dialog with the scanned value
@@ -890,7 +892,8 @@ export default function ProjectWorkOrders() {
   const createMutation = useMutation({
     mutationFn: async (data: WorkOrderFormData) => {
       if (accessDenied) throw new Error("403: Access denied");
-      const readingErrors = getManualReadingErrors(data);
+      const applicableData = omitInapplicableEquipmentFields(data, equipmentVisibility);
+      const readingErrors = getManualReadingErrors(applicableData);
       if (readingErrors.length) throw new Error(readingErrors.map(({ message }) => message).join(" "));
       const troubleStatus = workOrderStatuses.find(s => s.label === "Trouble")?.label || "Trouble";
       const defaultStatus = workOrderStatuses.find(s => s.isDefault)?.label || "Open";
@@ -898,7 +901,7 @@ export default function ProjectWorkOrders() {
       const signatureData = signaturePadRef.current?.getSignatureData() || null;
       const signatureName = signaturePadRef.current?.getSignatureName() || "";
       return apiRequest("POST", `/api/projects/${projectId}/work-orders`, {
-        ...normalizeOptionalFields(data),
+        ...omitInapplicableEquipmentFields(normalizeOptionalFields(applicableData), equipmentVisibility),
         status,
         signatureData,
         signatureName: signatureName || null,
@@ -953,9 +956,10 @@ export default function ProjectWorkOrders() {
     mutationFn: async ({ id, ...data }: { id: number } & Partial<WorkOrderFormData>) => {
       if (accessDenied) throw new Error("403: Access denied");
       const existingWo = editingWorkOrder as any;
-      const readingErrors = getManualReadingErrors(data as WorkOrderFormData, existingWo);
+      const applicableData = omitInapplicableEquipmentFields(data, equipmentVisibility);
+      const readingErrors = getManualReadingErrors(applicableData as WorkOrderFormData, existingWo);
       if (readingErrors.length) throw new Error(readingErrors.map(({ message }) => message).join(" "));
-      const normalizedData = normalizeOptionalFields(data as WorkOrderFormData, existingWo);
+      const normalizedData = omitInapplicableEquipmentFields(normalizeOptionalFields(applicableData as WorkOrderFormData, existingWo), equipmentVisibility);
       const troubleStatus = workOrderStatuses.find(s => s.label === "Trouble")?.label || "Trouble";
       if ((data as any).trouble) {
         (normalizedData as any).status = troubleStatus;
@@ -970,11 +974,11 @@ export default function ProjectWorkOrders() {
       // Validate required fields for Completed status
       const completedStatus = workOrderStatuses.find(s => s.label === "Completed")?.label || "Completed";
       if ((data as any).status === completedStatus || (normalizedData as any).status === completedStatus) {
-        const checkData = {
+        const checkData = omitInapplicableEquipmentFields({
           ...existingWo,
           ...normalizedData,
           attachments: existingWo?.attachments || normalizedData.attachments,
-        };
+        }, equipmentVisibility);
         const missingFields = validateCompletedStatus(checkData, finalSignatureData, finalSignatureName);
         if (missingFields.length > 0) {
           throw new Error(`Cannot set status to Completed. Missing required fields: ${missingFields.join(", ")}`);
@@ -1321,8 +1325,9 @@ export default function ProjectWorkOrders() {
   };
 
   const onSubmit = (data: WorkOrderFormData) => {
-    if (showManualReadingErrors(getManualReadingErrors(data), form)) return;
-    createMutation.mutate(data);
+    const applicableData = omitInapplicableEquipmentFields(data, equipmentVisibility);
+    if (showManualReadingErrors(getManualReadingErrors(applicableData), form)) return;
+    createMutation.mutate(applicableData);
   };
 
   const onEditSubmit = (data: WorkOrderFormData) => {
@@ -1331,12 +1336,13 @@ export default function ProjectWorkOrders() {
       return;
     }
     if (editingWorkOrder) {
-      if (showManualReadingErrors(getManualReadingErrors(data, editingWorkOrder), editForm)) return;
+      const applicableData = omitInapplicableEquipmentFields(data, equipmentVisibility);
+      if (showManualReadingErrors(getManualReadingErrors(applicableData, editingWorkOrder), editForm)) return;
       if (editingWorkOrder.status === "Completed" && data.status === "Open") {
         setResetDialogOpen(true);
         return;
       }
-      updateMutation.mutate({ id: editingWorkOrder.id, ...data });
+      updateMutation.mutate({ id: editingWorkOrder.id, ...applicableData });
     }
   };
 
@@ -2576,6 +2582,7 @@ export default function ProjectWorkOrders() {
             searchShowManualEntry: (project as any)?.searchShowManualEntry !== false,
             searchShowHidScanner: (project as any)?.searchShowHidScanner !== false,
           }}
+          equipmentVisibility={equipmentVisibility}
           canScheduleInCalendar={hasPermission('workOrders.calendar')}
           onScheduleInCalendar={() => {
             // Store the work order to schedule, close detail view, and switch to calendar
@@ -2809,7 +2816,7 @@ export default function ProjectWorkOrders() {
               </AccordionItem>
 
               {/* System Details */}
-              <AccordionItem value="system" className="border rounded-lg px-4">
+              {equipmentVisibility.showSystem && <AccordionItem value="system" className="border rounded-lg px-4">
                 <AccordionTrigger className="hover:no-underline py-4" data-testid="accordion-create-system">
                   <div className="flex items-center gap-2">
                     <Gauge className="h-4 w-4 text-primary" />
@@ -2902,24 +2909,6 @@ export default function ProjectWorkOrders() {
                           </FormItem>
                         )}
                       />
-                      <FormField
-                        control={form.control}
-                        name="oldGps"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>GPS Coordinates</FormLabel>
-                            <FormControl>
-                              <GPSCapture 
-                                value={field.value || ""} 
-                                onChange={field.onChange} 
-                                placeholder="40.7128,-74.0060" 
-                                data-testid="input-create-old-gps" 
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
                     </div>
 
                     {/* New System - Right Column */}
@@ -3006,31 +2995,13 @@ export default function ProjectWorkOrders() {
                           </FormItem>
                         )}
                       />
-                      <FormField
-                        control={form.control}
-                        name="newGps"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>GPS Coordinates</FormLabel>
-                            <FormControl>
-                              <GPSCapture 
-                                value={field.value || ""} 
-                                onChange={field.onChange} 
-                                placeholder="40.7128,-74.0060" 
-                                data-testid="input-create-new-gps" 
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
                     </div>
                   </div>
                 </AccordionContent>
-              </AccordionItem>
+              </AccordionItem>}
 
               {/* Module Details */}
-              <AccordionItem value="module" className="border rounded-lg px-4">
+              {equipmentVisibility.showModule && <AccordionItem value="module" className="border rounded-lg px-4">
                 <AccordionTrigger className="hover:no-underline py-4" data-testid="accordion-create-module">
                   <div className="flex items-center gap-2">
                     <Cpu className="h-4 w-4 text-primary" />
@@ -3180,6 +3151,23 @@ export default function ProjectWorkOrders() {
                         )}
                       />
                     </div>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>}
+
+              {/* GPS is common project metadata, independent of equipment visibility. */}
+              <AccordionItem value="gps" className="border rounded-lg px-4">
+                <AccordionTrigger className="hover:no-underline py-4" data-testid="accordion-create-gps">
+                  <div className="flex items-center gap-2"><MapPin className="h-4 w-4 text-primary" /><span className="font-medium">GPS Coordinates</span></div>
+                </AccordionTrigger>
+                <AccordionContent className="pb-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField control={form.control} name="oldGps" render={({ field }) => (
+                      <FormItem><FormLabel>Old GPS</FormLabel><FormControl><GPSCapture value={field.value || ""} onChange={field.onChange} placeholder="40.7128,-74.0060" data-testid="input-create-old-gps" /></FormControl><FormMessage /></FormItem>
+                    )} />
+                    <FormField control={form.control} name="newGps" render={({ field }) => (
+                      <FormItem><FormLabel>New GPS</FormLabel><FormControl><GPSCapture value={field.value || ""} onChange={field.onChange} placeholder="40.7128,-74.0060" data-testid="input-create-new-gps" /></FormControl><FormMessage /></FormItem>
+                    )} />
                   </div>
                 </AccordionContent>
               </AccordionItem>
@@ -3499,6 +3487,7 @@ export default function ProjectWorkOrders() {
           </FormItem>
         )}
       />
+      {equipmentVisibility.showSystem && <>
       <FormField
         control={formInstance.control}
         name="oldSystemId"
@@ -3569,6 +3558,8 @@ export default function ProjectWorkOrders() {
           </FormItem>
         )}
       />
+      </>}
+      {equipmentVisibility.showModule && <>
       <FormField
         control={formInstance.control}
         name="oldModuleRead"
@@ -3613,6 +3604,7 @@ export default function ProjectWorkOrders() {
           </FormItem>
         )}
       />
+      </>}
       <FormField
         control={formInstance.control}
         name="oldGps"

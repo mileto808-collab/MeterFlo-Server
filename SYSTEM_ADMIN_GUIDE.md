@@ -460,7 +460,7 @@ If the wizard is reopened later, a new time-tracking session starts; the most re
 
 ### Project reading precision
 
-In **Projects → Create/Edit Project → Reading Precision**, configure separate
+In **Projects → Create/Edit Project → Wizard Configuration → Reading Precision**, configure separate
 **System reading** and **Module reading** maximum decimal places. Administrators
 have **Configure reading precision** (`projects.readingPrecision`) by default.
 To delegate this setting, grant that permission in the normal access-level
@@ -468,7 +468,19 @@ permission editor together with project create/edit access; non-admins must
 also be assigned to a project to change its limits. Users without the permission
 can see effective limits but cannot change them.
 
-Both selectors offer 0 through 6. New/existing unconfigured projects default to
+Only applicable precision controls are shown. **Changeout Only** uses Changeout
+Equipment Type; **Reading Only** uses Reading Equipment Type. **User Choice**
+shows the combined equipment allowed by both workflows. System-only shows just
+system precision; module-only shows just module precision; both or equipment
+user-choice keeps both available. Changing the scope hides unused limits without
+erasing them.
+
+Manual work-order creation, details, and editing follow the same equipment scope
+for old/new IDs, types, and readings. GPS and customer information remain common
+to both equipment types. Hidden existing equipment data is preserved; it is not
+cleared by an unrelated manual save.
+
+Each visible selector offers 0 through 6. New/existing unconfigured projects default to
 3 for each. For example, set system=0 and module=6 for whole-number system
 registers and six-digit module registers. Copy Project inherits both source
 limits, including an explicit 0.

@@ -22,6 +22,7 @@ import type { ProjectHoliday } from "@shared/schema";
 import { Checkbox } from "@/components/ui/checkbox";
 import { usePermissions } from "@/hooks/usePermissions";
 import { getReadingPrecision } from "@shared/reading-precision";
+import { getProjectEquipmentVisibility } from "@shared/project-equipment-scope";
 
 const DAYS_OF_WEEK = [
   { value: 'monday', label: 'Mon' },
@@ -125,6 +126,14 @@ export default function ProjectForm() {
       systemReadingDecimalPlaces: 3,
       moduleReadingDecimalPlaces: 3,
     },
+  });
+  const wizardMode = form.watch("wizardMode");
+  const changeoutEquipmentType = form.watch("changeoutEquipmentType");
+  const readingEquipmentType = form.watch("readingEquipmentType");
+  const equipmentVisibility = getProjectEquipmentVisibility({
+    wizardMode,
+    changeoutEquipmentType,
+    readingEquipmentType,
   });
 
   useEffect(() => {
@@ -549,51 +558,6 @@ export default function ProjectForm() {
               />
 
               <div className="border-t pt-6 mt-6">
-                <h3 className="text-lg font-medium">Reading precision</h3>
-                <p className="text-sm text-muted-foreground mt-1 mb-4">
-                  Set the maximum number of fractional digits technicians may capture. Values are not rounded or padded.
-                </p>
-                {canConfigureReadingPrecision ? (
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    {([
-                      ["systemReadingDecimalPlaces", "System reading"],
-                      ["moduleReadingDecimalPlaces", "Module reading"],
-                    ] as const).map(([name, label]) => (
-                      <FormField
-                        key={name}
-                        control={form.control}
-                        name={name}
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>{label} decimal places</FormLabel>
-                            <Select value={String(field.value ?? 3)} onValueChange={(value) => field.onChange(Number(value))}>
-                              <FormControl>
-                                <SelectTrigger data-testid={`select-${name}`}>
-                                  <SelectValue>{field.value ?? 3}</SelectValue>
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {Array.from({ length: 7 }, (_, places) => (
-                                  <SelectItem key={places} value={String(places)}>{places}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormDescription>Maximum fractional digits: {field.value ?? 3}</FormDescription>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="grid gap-3 rounded-md border bg-muted/30 p-4 sm:grid-cols-2">
-                    <p className="text-sm">System readings: <span className="font-medium">{getReadingPrecision(project).systemReadingDecimalPlaces} decimal places max</span></p>
-                    <p className="text-sm">Module readings: <span className="font-medium">{getReadingPrecision(project).moduleReadingDecimalPlaces} decimal places max</span></p>
-                  </div>
-                )}
-              </div>
-
-              <div className="border-t pt-6 mt-6">
                 <div className="flex items-center gap-2 mb-2">
                   <Globe className="h-5 w-5 text-muted-foreground" />
                   <h3 className="text-lg font-medium">Customer API</h3>
@@ -788,6 +752,47 @@ export default function ProjectForm() {
                     )}
                   />
                 )}
+
+                <div className="space-y-3 pl-4 border-l-2 border-muted mb-5">
+                  <div>
+                    <h4 className="text-sm font-medium">Reading precision</h4>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Set the maximum fractional digits technicians may capture. Values are not rounded or padded.
+                    </p>
+                  </div>
+                  <div className={`grid gap-4 ${equipmentVisibility.showSystem && equipmentVisibility.showModule ? "sm:grid-cols-2" : ""}`}>
+                    {equipmentVisibility.showSystem && (canConfigureReadingPrecision ? (
+                      <FormField control={form.control} name="systemReadingDecimalPlaces" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>System reading decimal places</FormLabel>
+                          <Select value={String(field.value ?? 3)} onValueChange={(value) => field.onChange(Number(value))}>
+                            <FormControl><SelectTrigger data-testid="select-systemReadingDecimalPlaces"><SelectValue>{field.value ?? 3}</SelectValue></SelectTrigger></FormControl>
+                            <SelectContent>{Array.from({ length: 7 }, (_, places) => <SelectItem key={places} value={String(places)}>{places}</SelectItem>)}</SelectContent>
+                          </Select>
+                          <FormDescription>Maximum fractional digits: {field.value ?? 3}</FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                    ) : (
+                      <p className="text-sm">System readings: <span className="font-medium">{getReadingPrecision(project).systemReadingDecimalPlaces} decimal places max</span></p>
+                    ))}
+                    {equipmentVisibility.showModule && (canConfigureReadingPrecision ? (
+                      <FormField control={form.control} name="moduleReadingDecimalPlaces" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Module reading decimal places</FormLabel>
+                          <Select value={String(field.value ?? 3)} onValueChange={(value) => field.onChange(Number(value))}>
+                            <FormControl><SelectTrigger data-testid="select-moduleReadingDecimalPlaces"><SelectValue>{field.value ?? 3}</SelectValue></SelectTrigger></FormControl>
+                            <SelectContent>{Array.from({ length: 7 }, (_, places) => <SelectItem key={places} value={String(places)}>{places}</SelectItem>)}</SelectContent>
+                          </Select>
+                          <FormDescription>Maximum fractional digits: {field.value ?? 3}</FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                    ) : (
+                      <p className="text-sm">Module readings: <span className="font-medium">{getReadingPrecision(project).moduleReadingDecimalPlaces} decimal places max</span></p>
+                    ))}
+                  </div>
+                </div>
 
                 <div className="space-y-3 pl-4 border-l-2 border-muted">
                   <p className="text-sm font-medium text-muted-foreground mb-2">Step Visibility</p>
