@@ -395,7 +395,6 @@ export default function Settings() {
   const [turnstileEnabled, setTurnstileEnabled] = useState(false);
   const [turnstileSiteKey, setTurnstileSiteKey] = useState("");
   const [turnstileSecretKey, setTurnstileSecretKey] = useState("");
-  const [turnstileChallengePoint, setTurnstileChallengePoint] = useState<"turnstile" | "login">("turnstile");
   
   interface SecuritySettings {
     turnstileEnabled: boolean;
@@ -414,7 +413,6 @@ export default function Settings() {
       setTurnstileEnabled(securitySettingsData.turnstileEnabled);
       setTurnstileSiteKey(securitySettingsData.turnstileSiteKey || "");
       setTurnstileSecretKey(securitySettingsData.turnstileSecretKey || "");
-      setTurnstileChallengePoint(securitySettingsData.turnstileChallengePoint || "turnstile");
     }
   }, [securitySettingsData]);
 
@@ -2602,28 +2600,17 @@ export default function Settings() {
                       </p>
                     </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="turnstile-challenge-point">Challenge Point</Label>
-                      <Select
-                        value={turnstileChallengePoint}
-                        onValueChange={(val) => setTurnstileChallengePoint(val as "turnstile" | "login")}
-                      >
-                        <SelectTrigger data-testid="select-turnstile-challenge-point">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="turnstile">
-                            Turnstile Page (Recommended)
-                          </SelectItem>
-                          <SelectItem value="login">
-                            Login Page (May break mobile app)
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
+                    <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
+                      <Label>Security verification location</Label>
+                      <div className="flex flex-wrap items-center gap-2 text-sm font-medium" aria-label="Home, Security verification, Login">
+                        <span>Home</span>
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        <span>Security verification</span>
+                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        <span>Login</span>
+                      </div>
                       <p className="text-xs text-muted-foreground">
-                        <strong>Turnstile Page:</strong> Shows a branded security page before login. Compatible with mobile apps.
-                        <br />
-                        <strong>Login Page:</strong> Embeds challenge directly on login. May break React Native mobile apps.
+                        Before sign-in, MeterFlo sends users through the dedicated verification page when protection is enabled. This is fixed for web and mobile compatibility.
                       </p>
                     </div>
                   </>
@@ -2639,7 +2626,8 @@ export default function Settings() {
                       turnstileSecretKey: turnstileSecretKey.trim() === "" && securitySettingsData?.turnstileSecretKey === "***configured***"
                         ? "***configured***" 
                         : turnstileSecretKey.trim(),
-                      turnstileChallengePoint,
+                      // Normalize the legacy "login" option without changing protection or keys.
+                      turnstileChallengePoint: "turnstile",
                     });
                   }}
                   disabled={saveSecuritySettingsMutation.isPending}

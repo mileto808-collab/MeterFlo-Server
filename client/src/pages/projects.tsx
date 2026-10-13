@@ -87,7 +87,7 @@ export default function Projects() {
           description: "You are logged out. Logging in again...",
           variant: "destructive",
         });
-        setTimeout(() => { window.location.href = "/api/login"; }, 500);
+        setTimeout(() => { window.location.href = "/login"; }, 500);
         return;
       }
       toast({ title: "Error", description: "Failed to delete project", variant: "destructive" });

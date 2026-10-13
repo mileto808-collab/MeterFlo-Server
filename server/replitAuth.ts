@@ -68,8 +68,14 @@ export async function setupAuth(app: Express, cookieEnvironment: Record<string, 
     }
   });
 
+  registerLogoutRoute(app);
+}
+
+export function registerLogoutRoute(app: Express) {
   app.get("/api/logout", (req, res) => {
-    req.logout(() => {
+    res.set("Cache-Control", "no-store");
+    req.logout((error) => {
+      if (error) return res.status(500).send("Logout could not be completed. Please retry.");
       res.redirect("/");
     });
   });

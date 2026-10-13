@@ -5736,6 +5736,7 @@ export async function registerRoutes(
 
   // Public endpoint to get Turnstile config (for the challenge page)
   app.get("/api/security/turnstile-config", async (req, res) => {
+    res.set("Cache-Control", "no-store");
     try {
       // Emergency bypass via environment variable
       if (process.env.TURNSTILE_EMERGENCY_BYPASS === "true") {
@@ -5744,12 +5745,12 @@ export async function registerRoutes(
       
       const turnstileEnabled = await storage.getSetting("turnstile_enabled");
       const turnstileSiteKey = await storage.getSetting("turnstile_site_key");
-      const turnstileChallengePoint = await storage.getSetting("turnstile_challenge_point");
       
       res.json({
         enabled: turnstileEnabled === "true",
         siteKey: turnstileSiteKey || "",
-        challengePoint: turnstileChallengePoint || "turnstile",
+        // Legacy saved "login" values also use the separate pre-login page.
+        challengePoint: "turnstile",
       });
     } catch (error) {
       console.error("Error fetching turnstile config:", error);

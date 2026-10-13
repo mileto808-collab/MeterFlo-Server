@@ -1,13 +1,23 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { useToast } from "@/hooks/use-toast";
-import { ClipboardList, Users, Shield, Smartphone, FileUp, BarChart3, Loader2, Eye, EyeOff, Menu, Mail } from "lucide-react";
-import { apiRequest } from "@/lib/queryClient";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { fetchTurnstileStatus } from "@/lib/login-security";
+import {
+  ClipboardList,
+  Users,
+  Shield,
+  Smartphone,
+  FileUp,
+  BarChart3,
+  Menu,
+  Mail,
+  Layers,
+  Server,
+  ArrowRight,
+} from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,70 +29,32 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ContactFormDialog } from "@/components/contact-form-dialog";
 import { Link } from "wouter";
-import { Layers, Server } from "lucide-react";
 
 export default function Landing() {
-  const [, setLocation] = useLocation();
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [checkingTurnstile, setCheckingTurnstile] = useState(true);
   const [contactFormOpen, setContactFormOpen] = useState(false);
-  const { toast } = useToast();
+  const [checkingLogin, setCheckingLogin] = useState(false);
+  const [loginCheckError, setLoginCheckError] = useState<string | null>(null);
+  const [, setLocation] = useLocation();
 
-  useEffect(() => {
-    const checkTurnstileStatus = async () => {
-      try {
-        const [statusRes, configRes] = await Promise.all([
-          fetch("/api/security/turnstile/status", { credentials: "include" }),
-          fetch("/api/security/turnstile-config", { credentials: "include" }),
-        ]);
-        
-        const status = await statusRes.json();
-        const config = await configRes.json();
-        
-        if (config.enabled && config.challengePoint === "turnstile" && status.required && !status.verified) {
-          setLocation("/turnstile");
-          return;
-        }
-      } catch (err) {
-        console.error("Failed to check turnstile status:", err);
-      } finally {
-        setCheckingTurnstile(false);
-      }
-    };
-    
-    checkTurnstileStatus();
-  }, [setLocation]);
-
-  const handleLocalLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!username || !password) {
-      toast({
-        title: "Error",
-        description: "Please enter both username and password",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    setIsLoading(true);
+  const checkSignInRoute = async () => {
+    if (checkingLogin) return;
+    setCheckingLogin(true);
+    setLoginCheckError(null);
     try {
-      await apiRequest("POST", "/api/auth/local/login", { 
-        username, 
-        password
-      });
-      window.location.href = "/";
-    } catch (error: any) {
-      toast({
-        title: "Login Failed",
-        description: error.message || "Invalid username or password",
-        variant: "destructive",
-      });
+      const status = await fetchTurnstileStatus();
+      setLocation(status.required && !status.verified ? "/turnstile" : "/login");
+    } catch (failure) {
+      setLoginCheckError(failure instanceof Error ? failure.message : "Could not confirm sign-in security. Please try again.");
     } finally {
-      setIsLoading(false);
+      setCheckingLogin(false);
     }
+  };
+
+  const handleLoginClick = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    // Preserve the native link for keyboard activation and modified/new-tab clicks.
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    void checkSignInRoute();
   };
 
   const features = [
@@ -118,36 +90,36 @@ export default function Landing() {
     },
   ];
 
-  if (checkingTurnstile) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-muted-foreground">Loading...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-50 border-b border-border bg-background">
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-3">
-            <img 
-              src="/meterflo-logo.png" 
-              alt="MeterFlo" 
-              className="h-40 w-auto"
+      <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur">
+        <div className="max-w-7xl mx-auto px-5 sm:px-6 py-3 flex items-center justify-between gap-4">
+          <Link href="/" aria-label="MeterFlo home" className="flex items-center shrink-0">
+            <img
+              src="/meterflo-logo.png"
+              alt="MeterFlo"
+              className="h-16 sm:h-20 w-auto object-contain"
               data-testid="img-meterflo-logo"
             />
-          </div>
-          <div className="flex flex-col items-end gap-2">
+          </Link>
+          <div className="flex items-center gap-2 sm:gap-3">
             <ThemeToggle />
+            <Button asChild className="hidden sm:inline-flex gap-2" aria-busy={checkingLogin}>
+              <Link
+                href="/login"
+                onClick={handleLoginClick}
+                aria-disabled={checkingLogin}
+                tabIndex={checkingLogin ? -1 : undefined}
+                data-testid="link-login-desktop"
+              >
+                {checkingLogin ? "Checking…" : "Log In"} <ArrowRight className="h-4 w-4" />
+              </Link>
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="sm" data-testid="button-menu">
-                  <Menu className="h-4 w-4 mr-2" />
-                  Menu
+                <Button variant="outline" size="sm" data-testid="button-menu" aria-label="Open menu">
+                  <Menu className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Menu</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -171,10 +143,7 @@ export default function Landing() {
                     </DropdownMenuItem>
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
-                <DropdownMenuItem 
-                  onClick={() => setContactFormOpen(true)}
-                  data-testid="menu-item-contact-us"
-                >
+                <DropdownMenuItem onClick={() => setContactFormOpen(true)} data-testid="menu-item-contact-us">
                   <Mail className="h-4 w-4 mr-2" />
                   Contact Us
                 </DropdownMenuItem>
@@ -185,96 +154,93 @@ export default function Landing() {
       </header>
       <ContactFormDialog open={contactFormOpen} onOpenChange={setContactFormOpen} />
       <main>
-        <section className="py-16 px-6">
-          <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-            <div>
-              <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-6">Streamline your Smart Meter & AMI Module Changeout Projects</h1>
-              <p className="text-lg text-muted-foreground mb-8">Get up and running fast with a work-ready solution to manage work orders for utility meter & AMR/AMI module changeout projects. Track progress, assign tasks, and sync with mobile teams and backend systems seamlessly.</p>
+        <section className="relative overflow-hidden py-16 sm:py-24 px-6">
+          <div className="absolute inset-y-0 right-0 w-1/2 bg-primary/[0.035] -skew-x-12 translate-x-1/4 pointer-events-none" />
+          <div className="relative max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-[1.15fr_0.85fr] gap-12 items-center">
+            <div className="max-w-2xl">
+              <p className="text-sm font-semibold tracking-[0.16em] uppercase text-primary mb-5">Field work, in sync</p>
+              <h1 className="text-4xl md:text-5xl lg:text-[3.4rem] font-bold tracking-tight leading-[1.08] mb-6">
+                The work behind a smarter meter network.
+              </h1>
+              <p className="text-lg text-muted-foreground leading-relaxed mb-8">
+                MeterFlo keeps utility meter and AMI module changeout projects moving—from a clean work order at the office to a reliable sync in the field.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <Button asChild size="lg" className="w-full sm:w-auto gap-2" aria-busy={checkingLogin}>
+                  <Link
+                    href="/login"
+                    onClick={handleLoginClick}
+                    aria-disabled={checkingLogin}
+                    tabIndex={checkingLogin ? -1 : undefined}
+                    data-testid="link-login-phone"
+                  >
+                    {checkingLogin ? "Checking…" : "Log In to MeterFlo"} <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+                <Button size="lg" variant="outline" onClick={() => setContactFormOpen(true)}>
+                  Talk to our team
+                </Button>
+              </div>
+              {loginCheckError && (
+                <Alert variant="destructive" className="mt-5" role="alert">
+                  <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+                    <span>Sign-in security could not be checked: {loginCheckError}</span>
+                    <Button variant="ghost" className="h-auto p-0 text-destructive" onClick={() => void checkSignInRoute()} disabled={checkingLogin}>
+                      Retry check
+                    </Button>
+                  </AlertDescription>
+                </Alert>
+              )}
             </div>
-            
-            <Card className="max-w-md mx-auto w-full">
-              <CardHeader>
-                <CardTitle>Sign In</CardTitle>
-                <CardDescription>
-                  Enter your credentials to access the system
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <form onSubmit={handleLocalLogin} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="username">Username</Label>
-                    <Input
-                      id="username"
-                      type="text"
-                      placeholder="Enter username"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      data-testid="input-username"
-                    />
+            <Card className="border-primary/15 shadow-lg shadow-primary/5 overflow-hidden">
+              <CardHeader className="border-b border-border bg-muted/40">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                    <ClipboardList className="h-5 w-5" />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="password">Password</Label>
-                    <div className="relative">
-                      <Input
-                        id="password"
-                        type={showPassword ? "text" : "password"}
-                        placeholder="Enter password"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        data-testid="input-password"
-                        className="pr-10"
-                      />
-                      <button
-                        type="button"
-                        className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground hover:text-foreground"
-                        onClick={() => setShowPassword(!showPassword)}
-                        data-testid="button-toggle-password"
-                      >
-                        {showPassword ? (
-                          <EyeOff className="h-4 w-4" />
-                        ) : (
-                          <Eye className="h-4 w-4" />
-                        )}
-                      </button>
+                  <div>
+                    <CardTitle className="text-lg">Built for the whole crew</CardTitle>
+                    <CardDescription>One steady view from dispatch to closeout</CardDescription>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-6 space-y-5">
+                {[
+                  ["01", "Plan the work", "Organize projects, routes, assignments, and deadlines."],
+                  ["02", "Keep crews moving", "Sync work to mobile teams—even when coverage drops."],
+                  ["03", "See what’s done", "Follow progress and bring field updates back together."],
+                ].map(([number, title, description]) => (
+                  <div key={number} className="flex gap-4">
+                    <span className="font-mono text-xs text-primary pt-1">{number}</span>
+                    <div>
+                      <p className="font-semibold">{title}</p>
+                      <p className="text-sm text-muted-foreground mt-1">{description}</p>
                     </div>
                   </div>
-                  <Button 
-                    type="submit" 
-                    className="w-full" 
-                    disabled={isLoading}
-                    data-testid="button-login-submit"
-                  >
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Signing in...
-                      </>
-                    ) : (
-                      "Sign In"
-                    )}
-                  </Button>
-                </form>
+                ))}
               </CardContent>
             </Card>
           </div>
         </section>
 
-        <section className="py-16 px-6 bg-muted/30">
+        <section className="py-16 px-6 bg-muted/30 border-y border-border/70">
           <div className="max-w-7xl mx-auto">
-            <h2 className="text-3xl font-bold text-center mb-12">Smart Utility. Seamless Changeout.</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {features.map((feature) => (
-                <Card key={feature.title} className="hover-elevate">
+            <div className="max-w-2xl mb-10">
+              <p className="text-sm font-semibold tracking-[0.14em] uppercase text-primary mb-3">A connected operation</p>
+              <h2 className="text-3xl font-bold tracking-tight mb-3">Smart utility. Seamless changeout.</h2>
+              <p className="text-muted-foreground">Practical tools for the people planning, completing, and supporting every meter change.</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {features.map((feature, index) => (
+                <Card key={feature.title} className={`hover-elevate ${index === 0 ? "lg:row-span-2" : ""}`}>
                   <CardHeader className="pb-3">
-                    <div className="h-10 w-10 rounded-md bg-primary/10 flex items-center justify-center mb-3">
+                    <div className="h-10 w-10 rounded-md bg-primary/10 flex items-center justify-center mb-2">
                       <feature.icon className="h-5 w-5 text-primary" />
                     </div>
                     <CardTitle className="text-lg">{feature.title}</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <CardDescription className="text-sm">
-                      {feature.description}
-                    </CardDescription>
+                    <CardDescription className="text-sm leading-relaxed">{feature.description}</CardDescription>
                   </CardContent>
                 </Card>
               ))}

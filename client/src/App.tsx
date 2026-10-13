@@ -1,4 +1,4 @@
-import { Switch, Route, Link } from "wouter";
+import { Switch, Route, Link, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -17,6 +17,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { HttpLoginRecoveryAlert } from "@/components/http-login-recovery-alert";
 
 import Landing from "@/pages/landing";
+import LoginPage from "@/pages/login";
 import TurnstilePage from "@/pages/turnstile";
 import MeterFloServerFeatures from "@/pages/features/meterflo-server";
 import MeterFloMobileFeatures from "@/pages/features/meterflo-mobile";
@@ -262,13 +263,29 @@ function AuthenticatedLayout() {
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
 
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        // A restored browser snapshot may contain the user who just logged out.
+        // Reload before reusing any cached private queries or role state.
+        queryClient.clear();
+        window.location.reload();
+      }
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
+  }, []);
+
   if (isLoading) {
     return <LoadingScreen />;
   }
 
   return (
     <Switch>
-      <Route path="/turnstile" component={TurnstilePage} />
+      <Route path="/login">{isAuthenticated ? <Redirect to="/" /> : <LoginPage />}</Route>
+      <Route path="/auth"><Redirect to="/login" /></Route>
+      <Route path="/api/login"><Redirect to="/login" /></Route>
+      <Route path="/turnstile">{isAuthenticated ? <Redirect to="/" /> : <TurnstilePage />}</Route>
       <Route path="/features/meterflo-server" component={MeterFloServerFeatures} />
       <Route path="/features/meterflo-mobile" component={MeterFloMobileFeatures} />
       <Route>
