@@ -480,6 +480,13 @@ for old/new IDs, types, and readings. GPS and customer information remain common
 to both equipment types. Hidden existing equipment data is preserved; it is not
 cleared by an unrelated manual save.
 
+**Print PDF** follows this same effective project equipment scope, including the
+union of scopes in User Choice workflow mode. Historical/imported IDs, types,
+and readings for hidden equipment are not printed or erased. Only populated,
+applicable old/new equipment columns are printed; GPS remains available even
+when there is no visible equipment data. Customer information, notes, signatures,
+time tracking, and the existing photo options remain unchanged.
+
 Each visible selector offers 0 through 6. New/existing unconfigured projects default to
 3 for each. For example, set system=0 and module=6 for whole-number system
 registers and six-digit module registers. Copy Project inherits both source

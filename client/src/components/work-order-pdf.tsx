@@ -12,6 +12,8 @@ import {
 } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
+import type { EquipmentVisibility } from "@shared/project-equipment-scope";
+import { buildWorkOrderEquipmentHtml } from "./work-order-pdf-equipment";
 
 interface TimeTrackingData {
   id: number;
@@ -31,6 +33,7 @@ interface WorkOrderPdfProps {
   getAssignedUserName: (userId: string | null | undefined) => string | null;
   serviceTypes: Array<{ id: number; code: string; label: string }>;
   troubleCodes: Array<{ id: number; code: string; label: string }>;
+  equipmentVisibility: EquipmentVisibility;
   timeTracking?: TimeTrackingData | null;
   variant?: "default" | "outline" | "secondary" | "ghost" | "destructive";
   size?: "default" | "sm" | "lg" | "icon";
@@ -48,6 +51,7 @@ export function WorkOrderPdf({
   getAssignedUserName,
   serviceTypes,
   troubleCodes,
+  equipmentVisibility,
   timeTracking,
   variant = "outline",
   size,
@@ -316,145 +320,7 @@ export function WorkOrderPdf({
           </tbody>
         </table>
 
-        ${(() => {
-          const wo = workOrder as any;
-          // Detect scope based on actual data presence (excluding GPS since GPS is shared)
-          const hasOldSystem = workOrder.oldSystemId || workOrder.oldSystemReading != null || workOrder.oldSystemType;
-          const hasNewSystem = workOrder.newSystemId || workOrder.newSystemReading != null || workOrder.newSystemType;
-          const hasOldModule = wo.oldModuleId || wo.oldModuleRead != null || wo.oldModuleType;
-          const hasNewModule = wo.newModuleId || wo.newModuleRead != null || wo.newModuleType;
-          const hasSystem = hasOldSystem || hasNewSystem;
-          const hasModule = hasOldModule || hasNewModule;
-          
-          // Determine if GPS should be shown in system or module section
-          // For module-only work orders, GPS goes in module section
-          const showGpsInSystem = hasSystem;
-          const showGpsInModule = hasModule && !hasSystem;
-          
-          let html = '';
-          
-          if (hasSystem) {
-            html += `
-        <table style="width: 100%; border-collapse: collapse; margin-bottom: 10px;">
-          <tbody>
-            <tr>
-              <td style="width: 50%; vertical-align: top; padding-right: 10px;">
-                <div style="background-color: #e8f4f8; padding: 8px; border-radius: 4px;">
-                  <h3 style="margin: 0 0 6px 0; font-size: 12px; font-weight: bold; color: #333;">Old System</h3>
-                  <table style="width: 100%; font-size: 11px;">
-                    <tbody>
-                      <tr>
-                        <td style="font-weight: bold; width: 100px; padding: 2px 0;">System ID:</td>
-                        <td style="padding: 2px 0;">${workOrder.oldSystemId || "-"}</td>
-                      </tr>
-                      <tr>
-                        <td style="font-weight: bold; padding: 2px 0;">Reading:</td>
-                        <td style="padding: 2px 0;">${workOrder.oldSystemReading ?? "-"}</td>
-                      </tr>
-                      <tr>
-                        <td style="font-weight: bold; padding: 2px 0;">Type:</td>
-                        <td style="padding: 2px 0;">${workOrder.oldSystemType || "-"}</td>
-                      </tr>
-                      ${showGpsInSystem ? `<tr>
-                        <td style="font-weight: bold; padding: 2px 0;">GPS:</td>
-                        <td style="padding: 2px 0;">${workOrder.oldGps || "-"}</td>
-                      </tr>` : ""}
-                    </tbody>
-                  </table>
-                </div>
-              </td>
-              <td style="width: 50%; vertical-align: top; padding-left: 10px;">
-                <div style="background-color: #e8f8e8; padding: 8px; border-radius: 4px;">
-                  <h3 style="margin: 0 0 6px 0; font-size: 12px; font-weight: bold; color: #333;">New System</h3>
-                  <table style="width: 100%; font-size: 11px;">
-                    <tbody>
-                      <tr>
-                        <td style="font-weight: bold; width: 100px; padding: 2px 0;">System ID:</td>
-                        <td style="padding: 2px 0;">${workOrder.newSystemId || "-"}</td>
-                      </tr>
-                      <tr>
-                        <td style="font-weight: bold; padding: 2px 0;">Reading:</td>
-                        <td style="padding: 2px 0;">${workOrder.newSystemReading ?? "-"}</td>
-                      </tr>
-                      <tr>
-                        <td style="font-weight: bold; padding: 2px 0;">Type:</td>
-                        <td style="padding: 2px 0;">${workOrder.newSystemType || "-"}</td>
-                      </tr>
-                      ${showGpsInSystem ? `<tr>
-                        <td style="font-weight: bold; padding: 2px 0;">GPS:</td>
-                        <td style="padding: 2px 0;">${workOrder.newGps || "-"}</td>
-                      </tr>` : ""}
-                    </tbody>
-                  </table>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>`;
-          }
-          
-          if (hasModule) {
-            html += `
-        <table style="width: 100%; border-collapse: collapse; margin-bottom: 10px;">
-          <tbody>
-            <tr>
-              <td style="width: 50%; vertical-align: top; padding-right: 10px;">
-                <div style="background-color: #f8e8f4; padding: 8px; border-radius: 4px;">
-                  <h3 style="margin: 0 0 6px 0; font-size: 12px; font-weight: bold; color: #333;">Old Module</h3>
-                  <table style="width: 100%; font-size: 11px;">
-                    <tbody>
-                      <tr>
-                        <td style="font-weight: bold; width: 100px; padding: 2px 0;">Module ID:</td>
-                        <td style="padding: 2px 0;">${wo.oldModuleId || "-"}</td>
-                      </tr>
-                      <tr>
-                        <td style="font-weight: bold; padding: 2px 0;">Reading:</td>
-                        <td style="padding: 2px 0;">${wo.oldModuleRead ?? "-"}</td>
-                      </tr>
-                      <tr>
-                        <td style="font-weight: bold; padding: 2px 0;">Type:</td>
-                        <td style="padding: 2px 0;">${wo.oldModuleType || "-"}</td>
-                      </tr>
-                      ${showGpsInModule ? `<tr>
-                        <td style="font-weight: bold; padding: 2px 0;">GPS:</td>
-                        <td style="padding: 2px 0;">${workOrder.oldGps || "-"}</td>
-                      </tr>` : ""}
-                    </tbody>
-                  </table>
-                </div>
-              </td>
-              <td style="width: 50%; vertical-align: top; padding-left: 10px;">
-                <div style="background-color: #f8f4e8; padding: 8px; border-radius: 4px;">
-                  <h3 style="margin: 0 0 6px 0; font-size: 12px; font-weight: bold; color: #333;">New Module</h3>
-                  <table style="width: 100%; font-size: 11px;">
-                    <tbody>
-                      <tr>
-                        <td style="font-weight: bold; width: 100px; padding: 2px 0;">Module ID:</td>
-                        <td style="padding: 2px 0;">${wo.newModuleId || "-"}</td>
-                      </tr>
-                      <tr>
-                        <td style="font-weight: bold; padding: 2px 0;">Reading:</td>
-                        <td style="padding: 2px 0;">${wo.newModuleRead ?? "-"}</td>
-                      </tr>
-                      <tr>
-                        <td style="font-weight: bold; padding: 2px 0;">Type:</td>
-                        <td style="padding: 2px 0;">${wo.newModuleType || "-"}</td>
-                      </tr>
-                      ${showGpsInModule ? `<tr>
-                        <td style="font-weight: bold; padding: 2px 0;">GPS:</td>
-                        <td style="padding: 2px 0;">${workOrder.newGps || "-"}</td>
-                      </tr>` : ""}
-                    </tbody>
-                  </table>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>`;
-          }
-          
-          return html;
-        })()}
+        ${buildWorkOrderEquipmentHtml(workOrder, equipmentVisibility)}
 
         ${timeTrackingHtml}
         ${notesHtml}

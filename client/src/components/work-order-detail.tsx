@@ -483,6 +483,7 @@ export function WorkOrderDetail({
               getAssignedUserName={getAssignedUserName}
               serviceTypes={serviceTypes}
               troubleCodes={troubleCodes}
+              equipmentVisibility={equipmentVisibility}
               timeTracking={timeTracking}
               variant="outline"
               size="sm"
@@ -499,7 +500,7 @@ export function WorkOrderDetail({
     workOrder, cameFromSearch, onBack, canSystemChangeout, isClaiming, 
     wizardConfig, projectId, workOrderFiles, canPrint, formatDateTime, 
     getAssignedUserName, serviceTypes, troubleCodes, watchedAssignedUserId,
-    setHeaderContent, handleStartSystemChangeout
+    setHeaderContent, handleStartSystemChangeout, equipmentVisibility
   ]);
 
   return (
