@@ -1,6 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { fetchTurnstileStatus, fetchTurnstileConfig } from "../client/src/lib/login-security";
+
+test("documentation distinguishes the web gate from the unchanged mobile credential API", () => {
+  for (const path of ["SYSTEM_ADMIN_GUIDE.md", "replit.md"]) {
+    const text = readFileSync(path, "utf8").replace(/\*/g, "");
+    assert.ok(text.includes("POST /api/auth/local/login"));
+    assert.ok(text.includes("does not enforce Turnstile"));
+    assert.ok(text.includes("mobile"));
+  }
+});
 
 test("uncached server status supports disabled, verified and unverified browsers", async () => {
   const original = globalThis.fetch;

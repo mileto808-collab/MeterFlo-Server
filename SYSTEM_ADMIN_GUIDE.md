@@ -234,7 +234,7 @@ Configures the GitHub Releases API URL the web app should check, runs an on-dema
 - Permission: `settings.webUpdate`
 
 #### Security Settings
-Toggles **Cloudflare Turnstile** pre-login bot protection and stores the Turnstile site key and secret. See [Cloudflare Turnstile (Login Protection)](#cloudflare-turnstile-login-protection) for the verification flow and emergency bypass.
+Toggles the **Cloudflare Turnstile** web-page verification gate and stores the Turnstile site key and secret. This does not enforce Turnstile on direct credential API requests. See [Cloudflare Turnstile (Login Protection)](#cloudflare-turnstile-login-protection) for the verification flow, security limitation, and emergency bypass.
 - Permission: `settings.security`
 
 #### File Import History
@@ -881,7 +881,9 @@ There is no admin configuration required — SSE is on by default.
 
 ## Cloudflare Turnstile (Login Protection)
 
-Optional pre-login bot protection. When enabled, users must complete a Turnstile challenge before reaching the login page. React Native mobile apps bypass the check and authenticate directly.
+Optional verification gate for the web login page. When enabled and verification is required, browser navigation requires a Turnstile challenge before displaying the login form. React Native mobile authentication remains unchanged and authenticates directly.
+
+**Security limitation:** the web pages check the server's verification status, but the shared `POST /api/auth/local/login` endpoint does **not** enforce Turnstile verification. Direct HTTP clients can submit credentials without completing the challenge. Valid account credentials are still required, but this page gate must not be treated as server-side protection against automated password attempts. Enforcing that protection requires a coordinated authentication change that can securely distinguish exempt mobile clients; the current mobile contract has deliberately been retained.
 
 - **Home first:** signed-out visitors to `/` see the public Home page without a login form or automatic security redirect. Feature links, Contact Us, and theme controls remain public.
 - **Log In:** select the Home page's **Log In** button. With verification required, the flow is **Home → Security verification (`/turnstile`) → Login (`/login`)**. With Turnstile disabled or the emergency bypass active, the button leads directly to Login. Browsers with a valid previous verification also proceed directly to Login.

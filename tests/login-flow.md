@@ -22,3 +22,9 @@ These tests do **not** prove real Cloudflare keys/domain configuration or
 Windows reverse-proxy cookie forwarding. Verify those separately with a
 disposable deployment or normal operator acceptance; never disable protection
 on a live deployment to run this fixture.
+
+The shared production `POST /api/auth/local/login` endpoint intentionally retains
+the existing native-mobile contract and does not require Turnstile proof.
+These tests prove the web navigation gate, not server-side challenge enforcement
+on direct credential requests. A secure mobile exemption and API enforcement
+require a separately approved, coordinated authentication change.
