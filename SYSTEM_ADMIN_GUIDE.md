@@ -458,6 +458,46 @@ If the wizard is reopened later, a new time-tracking session starts; the most re
 
 ---
 
+### Project reading precision
+
+In **Projects → Create/Edit Project → Reading Precision**, configure separate
+**System reading** and **Module reading** maximum decimal places. Administrators
+have **Configure reading precision** (`projects.readingPrecision`) by default.
+To delegate this setting, grant that permission in the normal access-level
+permission editor together with project create/edit access; non-admins must
+also be assigned to a project to change its limits. Users without the permission
+can see effective limits but cannot change them.
+
+Both selectors offer 0 through 6. New/existing unconfigured projects default to
+3 for each. For example, set system=0 and module=6 for whole-number system
+registers and six-digit module registers. Copy Project inherits both source
+limits, including an explicit 0.
+
+| Option | Use | Valid reading | Over-limit reading |
+|--------|-----|---------------|--------------------|
+| 0 | Whole numbers | `123` | `123.1` |
+| 1 | Tenths | `123.4` | `123.45` |
+| 2 | Hundredths | `123.45` | `123.456` |
+| 3 | Thousandths; default | `123.456` | `123.4567` |
+| 4 | Four fractional digits | `123.4567` | `123.45678` |
+| 5 | Five fractional digits | `123.45678` | `123.456789` |
+| 6 | Six fractional digits | `123.456789` | `123.4567890` |
+
+Limits apply to newly captured/changed old and new readings of the matching
+equipment type, in changeout, reading-only, and user-choice workflows. They do
+not pad readings; shorter fractions and whole numbers, including 0, remain
+valid. With a 0 limit, enter `123`, not `123.0`. Invalid entry is shown without
+silently rounding or removing digits. Existing/imported baseline and historical
+values are not rewritten merely because the limit changes; an unrelated edit
+can retain an unchanged historical reading.
+
+The server enforces current limits on web writes, mobile completion, and mobile
+batch uploads. An offline capture made under an older limit may be rejected
+after reconnection. Correct/reconfirm the reading or have an authorized operator
+correct the project setting; forcing a sync conflict overwrite does not bypass
+precision validation. The separate mobile app must consume the settings described
+in the mobile synchronization guide.
+
 ## Wizard Workflow Modes
 
 Configured per-project in the **Wizard Configuration** section. Stored on the `projects` table as `wizard_mode`.

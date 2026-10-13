@@ -4,6 +4,36 @@ This comprehensive guide walks you through deploying MeterFlo (or any Replit Nod
 
 ---
 
+## Reading precision upgrade
+
+After updating the server through your normal Git update script, rebuild and
+restart MeterFlo using this guide's existing commands. On startup, the server
+adds `system_reading_decimal_places` and `module_reading_decimal_places` to
+`public.projects` if missing. Both are NOT NULL integer settings, default 3,
+with a database constraint allowing only 0–6. The additive, repeatable startup
+migration does not modify project work-order readings or overwrite already
+configured limits (including 0).
+
+Take the normal database backup before upgrading. The application's PostgreSQL
+role must be allowed to alter `public.projects`; otherwise startup fails rather
+than running with a partially supported settings contract. Have the database
+owner run the following against the MeterFlo database if that role intentionally
+cannot alter tables, then restart:
+
+```sql
+ALTER TABLE public.projects
+  ADD COLUMN IF NOT EXISTS system_reading_decimal_places integer NOT NULL DEFAULT 3
+    CHECK (system_reading_decimal_places BETWEEN 0 AND 6),
+  ADD COLUMN IF NOT EXISTS module_reading_decimal_places integer NOT NULL DEFAULT 3
+    CHECK (module_reading_decimal_places BETWEEN 0 AND 6);
+```
+
+The regular startup permission-registry synchronization exposes **Configure
+reading precision** (`projects.readingPrecision`) in the access-level editor.
+Administrators have access by default; delegated users require an explicit
+grant and existing project permissions. See the System Administration Guide
+for all setting options and the mobile guides for client integration.
+
 ## Table of Contents
 
 1. [Prerequisites](#1-prerequisites)

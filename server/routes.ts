@@ -21,6 +21,11 @@ import bcrypt from "bcryptjs";
 import multer from "multer";
 import { createProjectSchema, deleteProjectSchema, getProjectWorkOrderStorage, sanitizeSchemaName, backupProjectDatabase, restoreProjectDatabase, getProjectDatabaseStats } from "./projectDb";
 import { pool } from "./db";
+import {
+  getReadingPrecision, hasReadingPrecisionSettings, readingPrecisionPatchSchema,
+  readingPrecisionPermission, validateCapturedReadings, readingValidationResponse,
+  type ReadingValidationError,
+} from "@shared/reading-precision";
 import { ensureProjectDirectory, renameProjectDirectory, saveWorkOrderFile, getWorkOrderFiles, deleteWorkOrderFile, deleteWorkOrderDirectory, getFilePath, getProjectFilesPath, setProjectFilesPath, deleteProjectDirectory, saveProjectFile, getProjectFiles, deleteProjectFile, getProjectFilePath, ensureProjectFtpDirectory, getProjectFtpFiles, deleteProjectFtpFile, getProjectFtpFilePath, saveProjectFtpFile, getProjectDirectoryName } from "./fileStorage";
 import { ExternalDatabaseService } from "./externalDbService";
 import { createBackupArchive, extractDatabaseBackupFromArchive, restoreFullSystem, restoreFilesFromArchive } from "./systemBackup";
@@ -1656,10 +1661,18 @@ export async function registerRoutes(
           !await storage.hasPermission(currentUser, permissionKeys.PROJECTS_EDIT)) {
         return res.status(403).json({ message: "Project-edit permission is required to configure push delivery." });
       }
+      if (hasReadingPrecisionSettings(req.body) &&
+          !await storage.hasPermission(currentUser, readingPrecisionPermission)) {
+        return res.status(403).json({ message: "Configure reading precision permission is required." });
+      }
       
       const pushValidation = validateProjectCustomerPush(req.body);
       if (!pushValidation.data) return res.status(400).json({ message: "Check the push delivery settings.", errors: pushValidation.errors });
-      const parsed = insertProjectSchema.safeParse(pushValidation.data);
+      const parsed = insertProjectSchema.safeParse({
+        ...pushValidation.data,
+        // The project form sends an empty optional email when left blank.
+        customerEmail: pushValidation.data.customerEmail === "" ? null : pushValidation.data.customerEmail,
+      });
       if (!parsed.success) {
         return res.status(400).json({ message: "Invalid project data", errors: parsed.error.errors });
       }
@@ -1667,6 +1680,7 @@ export async function registerRoutes(
       const project = customerPushFields.some(key => Object.hasOwn(req.body, key))
         ? await storage.createProjectWithFullData({
             name: parsed.data.name, description: parsed.data.description, customerEmail: parsed.data.customerEmail,
+            ...getReadingPrecision(parsed.data),
             ...customerPushSettings(parsed.data),
           })
         : await storage.createProject(parsed.data);
@@ -1744,6 +1758,7 @@ export async function registerRoutes(
         timezone: sourceProject.timezone ?? undefined,
         wizardMode,
         wizardGpsMode,
+        ...getReadingPrecision(sourceProject),
         wizardShowNotesStep: sourceProject.wizardShowNotesStep ?? true,
         wizardShowGpsStep: sourceProject.wizardShowGpsStep ?? true,
         wizardShowBeforePhotosStep: sourceProject.wizardShowBeforePhotosStep ?? true,
@@ -1795,6 +1810,24 @@ export async function registerRoutes(
       const existingProject = await storage.getProject(projectId);
       if (!existingProject) {
         return res.status(404).json({ message: "Project not found" });
+      }
+
+      if (hasReadingPrecisionSettings(req.body)) {
+        if (!await storage.hasPermission(currentUser, readingPrecisionPermission)) {
+          return res.status(403).json({ message: "Configure reading precision permission is required." });
+        }
+        if (!await storage.isAdminUser(currentUser) &&
+            !await storage.isUserAssignedToProject(currentUser.id, projectId)) {
+          return res.status(403).json({ message: "You are not assigned to this project." });
+        }
+        if (existingProject.isActive === false &&
+            !await storage.hasPermission(currentUser, permissionKeys.PROJECTS_VIEW_INACTIVE)) {
+          return res.status(403).json({ message: "Access to this inactive project is unavailable." });
+        }
+        const precisionValidation = readingPrecisionPatchSchema.safeParse(req.body);
+        if (!precisionValidation.success) {
+          return res.status(400).json({ message: "Reading decimal places must be integers from 0 to 6.", errors: precisionValidation.error.errors });
+        }
       }
 
       if (Object.keys(req.body).some(key => key.startsWith("customerApi")) &&
@@ -2623,6 +2656,8 @@ export async function registerRoutes(
       if (project.isActive === false) {
         return res.status(403).json({ message: "Cannot create work orders on inactive projects" });
       }
+      const readingErrors = validateCapturedReadings(req.body, project);
+      if (readingErrors.length) return res.status(400).json(readingValidationResponse(readingErrors));
       
       // Validate operational hours if scheduledAt is provided
       if (req.body.scheduledAt) {
@@ -2745,6 +2780,8 @@ export async function registerRoutes(
       if (!existingWorkOrder) {
         return res.status(404).json({ message: "Work order not found" });
       }
+      const readingErrors = validateCapturedReadings(req.body, project, existingWorkOrder);
+      if (readingErrors.length) return res.status(400).json(readingValidationResponse(readingErrors));
       
       // Check if status is being set to "Completed" and validate required fields
       const finalStatus = req.body.status || existingWorkOrder.status;
@@ -4149,6 +4186,8 @@ export async function registerRoutes(
       }
       
       // ========== ALL VALIDATION PASSED - Now save files ==========
+      const readingErrors = validateCapturedReadings(updateData, project, workOrder);
+      if (readingErrors.length) return res.status(400).json(readingValidationResponse(readingErrors));
       
       // Get existing files to determine next sequence numbers
       const existingFiles = await getWorkOrderFiles(project.name, project.id, folderName, workOrder.id);
@@ -9473,7 +9512,7 @@ export async function registerRoutes(
       const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
       const updatedByUsername = currentUser.username || currentUser.id;
       
-      const results: { id: number; status: string; conflict?: boolean; message?: string; serverUpdatedAt?: Date | null }[] = [];
+      const results: { id: number; status: string; conflict?: boolean; message?: string; serverUpdatedAt?: Date | null; code?: string; errors?: ReadingValidationError[] }[] = [];
       
       for (const woUpdate of workOrders) {
         try {
@@ -9484,6 +9523,11 @@ export async function registerRoutes(
           
           if (!serverWorkOrder) {
             results.push({ id, status: "error", message: "Work order not found" });
+            continue;
+          }
+          const readingErrors = validateCapturedReadings(updateData, project, serverWorkOrder);
+          if (readingErrors.length) {
+            results.push({ id, status: "error", ...readingValidationResponse(readingErrors) });
             continue;
           }
           
@@ -9801,6 +9845,10 @@ export async function registerRoutes(
       const updateData: any = {
         updatedAt: new Date().toISOString(),
       };
+      if (canChange) {
+        const readingErrors = validateCapturedReadings({ oldSystemReading, newSystemReading }, project, workOrder);
+        if (readingErrors.length) return res.status(400).json(readingValidationResponse(readingErrors));
+      }
       
       // Save photos if provided
       if (files && files.length > 0) {
@@ -9848,9 +9896,9 @@ export async function registerRoutes(
         }
         
         updateData.status = "Completed";
-        updateData.oldSystemReading = parseFloat(oldSystemReading.trim());
+        updateData.oldSystemReading = String(oldSystemReading).trim();
         updateData.newSystemId = newSystemId;
-        updateData.newSystemReading = parseFloat(newSystemReading.trim());
+        updateData.newSystemReading = String(newSystemReading).trim();
         updateData.newGps = gpsCoordinates;
         updateData.signatureName = signatureName;
         updateData.completedAt = clientCompletedAt || new Date().toISOString();
@@ -9978,6 +10026,9 @@ export async function registerRoutes(
       const updatedByUsername = currentUser.username || currentUser.id;
       
       // Save photos if provided (base64 encoded) - always rename to standard format
+      const readingErrors = validateCapturedReadings({ oldSystemReading }, project, workOrder);
+      if (readingErrors.length) return res.status(400).json(readingValidationResponse(readingErrors));
+
       if (photos && Array.isArray(photos) && photos.length > 0) {
         const projectFilesPath = await getProjectFilesPath();
         const projectDirName = getProjectDirectoryName(project.name, project.id);
@@ -10045,8 +10096,8 @@ export async function registerRoutes(
         ? `${workOrder.notes}\n\n${noteEntry}`
         : noteEntry;
       
-      if (oldSystemReading !== undefined && oldSystemReading !== null) {
-        updateData.oldSystemReading = parseInt(String(oldSystemReading), 10);
+      if (oldSystemReading !== undefined && oldSystemReading !== null && oldSystemReading !== "") {
+        updateData.oldSystemReading = String(oldSystemReading).trim();
       }
       
       // The trouble code is included in updateData.trouble, which triggers auto-generated trouble note in updateWorkOrder
@@ -10145,6 +10196,12 @@ export async function registerRoutes(
       const updatedByUsername = currentUser.username || currentUser.id;
       
       // Helper to save base64 photos - always rename to standard format with date and timestamp
+      const readingErrors = validateCapturedReadings({
+        newSystemReading, newModuleReading: effectiveNewModuleReading,
+        ...(!isReadingOnly ? { oldSystemReading, oldModuleReading: effectiveOldModuleReading } : {}),
+      }, project, workOrder);
+      if (readingErrors.length) return res.status(400).json(readingValidationResponse(readingErrors));
+
       const saveBase64Photos = async (photos: any[], photoType: string) => {
         if (!photos || !Array.isArray(photos) || photos.length === 0) return;
         
@@ -10282,10 +10339,10 @@ export async function registerRoutes(
       // System fields - only set if this is a system or both changeout
       if (needsSystem) {
         if (oldSystemReading !== undefined && oldSystemReading !== null) {
-          updateData.oldSystemReading = parseFloat(String(oldSystemReading));
+          updateData.oldSystemReading = String(oldSystemReading).trim();
         }
         if (newSystemReading !== undefined && newSystemReading !== null) {
-          updateData.newSystemReading = parseFloat(String(newSystemReading));
+          updateData.newSystemReading = String(newSystemReading).trim();
         }
         if (newSystemId) {
           updateData.newSystemId = newSystemId;
@@ -10304,10 +10361,10 @@ export async function registerRoutes(
       // Module fields - only set if this is a module or both changeout
       if (needsModule) {
         if (effectiveOldModuleReading !== undefined && effectiveOldModuleReading !== null) {
-          updateData.oldModuleRead = parseFloat(String(effectiveOldModuleReading));
+          updateData.oldModuleRead = String(effectiveOldModuleReading).trim();
         }
         if (effectiveNewModuleReading !== undefined && effectiveNewModuleReading !== null) {
-          updateData.newModuleRead = parseFloat(String(effectiveNewModuleReading));
+          updateData.newModuleRead = String(effectiveNewModuleReading).trim();
         }
         if (newModuleId) {
           updateData.newModuleId = newModuleId;
@@ -10430,6 +10487,12 @@ export async function registerRoutes(
       const updatedByUsername = currentUser.username || currentUser.id;
       
       // Save photos if provided (base64 encoded)
+      const readingErrors = validateCapturedReadings(
+        workOrder.oldSystemId || (workOrder as any).old_system_id ? { oldSystemReading } : {},
+        project, workOrder,
+      );
+      if (readingErrors.length) return res.status(400).json(readingValidationResponse(readingErrors));
+
       if (photos && Array.isArray(photos) && photos.length > 0) {
         const projectFilesPath = await getProjectFilesPath();
         const projectDirName = getProjectDirectoryName(project.name, project.id);
@@ -10496,8 +10559,8 @@ export async function registerRoutes(
       // Only set system reading if this work order has system data (not module-only)
       const woAny = workOrder as any;
       const needsSystem = !!workOrder.oldSystemId || !!woAny.old_system_id;
-      if (needsSystem && oldSystemReading !== undefined && oldSystemReading !== null) {
-        updateData.oldSystemReading = parseInt(String(oldSystemReading), 10);
+      if (needsSystem && oldSystemReading !== undefined && oldSystemReading !== null && oldSystemReading !== "") {
+        updateData.oldSystemReading = String(oldSystemReading).trim();
       }
       
       const updatedWorkOrder = await workOrderStorage.updateWorkOrder(
@@ -10591,6 +10654,11 @@ export async function registerRoutes(
       const isReadingOnly = requestIsReadingOnly !== undefined 
         ? requestIsReadingOnly 
         : (projectWizardMode === "reading_only");
+      const readingErrors = validateCapturedReadings({
+        newSystemReading, newModuleReading,
+        ...(!isReadingOnly ? { oldSystemReading, oldModuleReading } : {}),
+      }, project, workOrder);
+      if (readingErrors.length) return res.status(400).json(readingValidationResponse(readingErrors));
       
       // Helper to save base64 photos
       const saveBase64Photos = async (photos: any[], photoType: string) => {
@@ -10733,7 +10801,7 @@ export async function registerRoutes(
           // Reading Only mode: copy IDs and types from old, only update new reading
           // Don't overwrite old reading - it's already in the DB
           updateData.newSystemId = workOrder.oldSystemId || woAny.old_system_id;
-          updateData.newSystemReading = parseFloat(String(newSystemReading));
+          updateData.newSystemReading = String(newSystemReading).trim();
           // Copy type from old to new
           const existingOldType = woAny.oldSystemType || woAny.old_system_type;
           if (existingOldType) {
@@ -10742,10 +10810,10 @@ export async function registerRoutes(
         } else {
           // Changeout mode: use values from mobile request
           if (oldSystemReading !== undefined && oldSystemReading !== null) {
-            updateData.oldSystemReading = parseFloat(String(oldSystemReading));
+            updateData.oldSystemReading = String(oldSystemReading).trim();
           }
           if (newSystemReading !== undefined && newSystemReading !== null) {
-            updateData.newSystemReading = parseFloat(String(newSystemReading));
+            updateData.newSystemReading = String(newSystemReading).trim();
           }
           if (newSystemId) {
             updateData.newSystemId = newSystemId;
@@ -10762,7 +10830,7 @@ export async function registerRoutes(
           // Reading Only mode: copy IDs and types from old, only update new reading
           // Don't overwrite old reading - it's already in the DB
           updateData.newModuleId = workOrder.oldModuleId || woAny.old_module_id;
-          updateData.newModuleRead = parseFloat(String(newModuleReading));
+          updateData.newModuleRead = String(newModuleReading).trim();
           // Copy type from old to new
           const existingOldModType = woAny.oldModuleType || woAny.old_module_type;
           if (existingOldModType) {
@@ -10771,10 +10839,10 @@ export async function registerRoutes(
         } else {
           // Changeout mode: use values from mobile request
           if (oldModuleReading !== undefined && oldModuleReading !== null) {
-            updateData.oldModuleRead = parseFloat(String(oldModuleReading));
+            updateData.oldModuleRead = String(oldModuleReading).trim();
           }
           if (newModuleReading !== undefined && newModuleReading !== null) {
-            updateData.newModuleRead = parseFloat(String(newModuleReading));
+            updateData.newModuleRead = String(newModuleReading).trim();
           }
           if (newModuleId) {
             updateData.newModuleId = newModuleId;

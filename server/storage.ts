@@ -463,6 +463,8 @@ export class DatabaseStorage implements IStorage {
       name: project.name,
       description: project.description,
       customerEmail: project.customerEmail,
+      systemReadingDecimalPlaces: project.systemReadingDecimalPlaces ?? 3,
+      moduleReadingDecimalPlaces: project.moduleReadingDecimalPlaces ?? 3,
     }).returning();
     return newProject;
   }

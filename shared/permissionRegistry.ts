@@ -289,6 +289,13 @@ export const permissionRegistry: PermissionDefinition[] = [
     description: "Delete projects",
     defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
   },
+  {
+    key: "projects.readingPrecision",
+    label: "Configure reading precision",
+    category: "Project Actions",
+    description: "Set project system and module reading limits from 0 to 6 decimal places (also requires project create/edit access)",
+    defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
+  },
 
   // Work Order Action permissions - what users can do with work orders
   {

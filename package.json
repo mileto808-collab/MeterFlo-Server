@@ -16,6 +16,7 @@
     "test:api-import": "tsx --test tests/api-import.test.ts",
     "test:api-import-docs": "tsx --test tests/api-import-docs.test.ts",
     "test:log-maintenance": "tsx --test tests/log-maintenance.test.ts",
+    "test:reading-precision": "tsx --test tests/reading-precision.test.ts",
     "db:push": "drizzle-kit push"
   },
   "dependencies": {

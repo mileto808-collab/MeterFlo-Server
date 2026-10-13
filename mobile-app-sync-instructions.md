@@ -104,6 +104,71 @@ The project response (`GET /api/projects/:id`) includes these configuration fiel
 
 > **Important:** the manual GPS value is `"manual_step"` (not `"manual"`).
 
+### Reading precision settings
+
+The project configuration includes independent integer fields
+`systemReadingDecimalPlaces` and `moduleReadingDecimalPlaces`, each 0–6,
+default 3 when not configured. Apply the first to old/new system readings and
+the second to old/new module readings in all wizard modes and equipment scopes.
+For an example project with system=0 and module=6, capture `"123"` for the
+system and `"123.456789"` for the module; `"123.1"` is invalid for that system.
+
+| Selection | Usage | Valid example | Rejected example |
+|-----------|-------|---------------|------------------|
+| 0 | Whole-number registers only | `"123"` | `"123.1"` |
+| 1 | Tenths | `"123.4"` | `"123.45"` |
+| 2 | Hundredths | `"123.45"` | `"123.456"` |
+| 3 | Thousandths; default | `"123.456"` | `"123.4567"` |
+| 4 | Four fractional digits | `"123.4567"` | `"123.45678"` |
+| 5 | Five fractional digits | `"123.45678"` | `"123.456789"` |
+| 6 | Six fractional digits | `"123.456789"` | `"123.4567890"` |
+
+These are **maximum** limits: whole numbers and shorter fractional parts are
+valid; no padding is required. Zero readings and leading zeros are valid input.
+For new capture, `"123.0"` is not valid with 0 selected.
+
+Implement the following alongside the existing project wizard settings:
+
+1. Read the fields from the project response, not a hardcoded three-decimal
+   constant. Cache them under that project's ID; never reuse another project's
+   limits. Use `project.systemReadingDecimalPlaces ?? 3` and
+   `project.moduleReadingDecimalPlaces ?? 3`; `|| 3` breaks intentional 0.
+2. Refresh `GET /api/projects/:id` when selecting the project, before opening an
+   online wizard, and before uploading queued captures. The work-order
+   sync-download response is not the project-settings response.
+3. Store entry/queue values as strings. Normalize a decimal comma to a period
+   for entry, but do not truncate, round, convert to JavaScript numbers, or
+   discard leading zeros in the client. Count fractional digits and show a
+   field-specific error before advancing or confirming.
+4. When offline, use cached limits; default to 3 only when missing/null. When
+   reconnected, a stricter server configuration may reject queued readings.
+   Keep those records queued and show the server's error until the technician
+   corrects/reconfirms the reading or an authorized operator changes the limit.
+5. Handle HTTP 400 with `code: "READING_PRECISION"` and an `errors` array of
+   `{field, decimalPlaces, message}` on completion/edit/create or a trouble report
+   that captures an old reading. Batch sync-upload
+   returns HTTP 200 but puts the same details in each affected
+   `results[]` item with `status: "error"`; check `summary.errors`.
+   `forceOverwrite:true` cannot bypass reading validation.
+6. Existing/imported readings are not automatically rewritten when precision
+   changes. Echoing an unchanged historical reading on an unrelated edit/sync
+   does not recapture it; newly entered/changed readings use current limits.
+
+Only users with **Configure reading precision** (`projects.readingPrecision`)
+and the existing project-create/edit permissions can configure these fields.
+Administrators have the new permission by default; others require an explicit
+grant. Editing precision also requires project assignment for non-admins.
+For example, an authorized project PATCH can send
+`{"systemReadingDecimalPlaces":0,"moduleReadingDecimalPlaces":6}`.
+Omitted fields stay unchanged. Do not send null, strings, or fractional setting
+values. Without the permission, omit both keys from unrelated project saves.
+Reading the configuration to perform capture requires normal project access,
+not the setting-edit permission.
+
+This server repository publishes and validates the settings. The separate
+Expo client must implement the consumption/validation steps above; changing
+server settings alone does not update already-installed mobile client code.
+
 ### 2.2 Step Visibility Settings
 
 | Field | Type | Default | Description |

@@ -92,6 +92,7 @@ import { DateTimePicker } from "@/components/ui/datetime-picker";
 import { WorkOrderCalendar } from "@/components/work-order-calendar";
 import { WorkOrderFiltersDialog } from "@/components/work-order-filters-dialog";
 import { Calendar as CalendarIcon, List } from "lucide-react";
+import { getReadingPrecision, normalizeReadingInput, validateCapturedReadings } from "@shared/reading-precision";
 
 type Assignee = {
   type: "user" | "group";
@@ -108,6 +109,10 @@ type AssigneesResponse = {
 
 const workOrderFormSchema = insertProjectWorkOrderSchema.extend({
   email: z.string().optional().nullable().or(z.literal("")),
+  oldSystemReading: z.union([z.number(), z.string()]).optional().nullable(),
+  newSystemReading: z.union([z.number(), z.string()]).optional().nullable(),
+  oldModuleRead: z.union([z.number(), z.string()]).optional().nullable(),
+  newModuleRead: z.union([z.number(), z.string()]).optional().nullable(),
 });
 
 type WorkOrderFormData = z.infer<typeof workOrderFormSchema>;
@@ -740,9 +745,9 @@ export default function ProjectWorkOrders() {
         zone: editingWorkOrder.zone || "",
         serviceType: (editingWorkOrder.serviceType as any) || "",
         oldSystemId: editingWorkOrder.oldSystemId || "",
-        oldSystemReading: editingWorkOrder.oldSystemReading !== null ? Number(editingWorkOrder.oldSystemReading) : undefined,
+        oldSystemReading: editingWorkOrder.oldSystemReading != null ? String(editingWorkOrder.oldSystemReading) : undefined,
         newSystemId: editingWorkOrder.newSystemId || "",
-        newSystemReading: editingWorkOrder.newSystemReading !== null ? Number(editingWorkOrder.newSystemReading) : undefined,
+        newSystemReading: editingWorkOrder.newSystemReading != null ? String(editingWorkOrder.newSystemReading) : undefined,
         oldGps: editingWorkOrder.oldGps || "",
         newGps: editingWorkOrder.newGps || "",
         notes: editingWorkOrder.notes || "",
@@ -754,10 +759,10 @@ export default function ProjectWorkOrders() {
         oldSystemType: (editingWorkOrder as any).oldSystemType || "",
         newSystemType: (editingWorkOrder as any).newSystemType || "",
         oldModuleId: (editingWorkOrder as any).oldModuleId || "",
-        oldModuleRead: (editingWorkOrder as any).oldModuleRead != null ? Number((editingWorkOrder as any).oldModuleRead) : undefined,
+        oldModuleRead: (editingWorkOrder as any).oldModuleRead != null ? String((editingWorkOrder as any).oldModuleRead) : undefined,
         oldModuleType: (editingWorkOrder as any).oldModuleType || "",
         newModuleId: (editingWorkOrder as any).newModuleId || "",
-        newModuleRead: (editingWorkOrder as any).newModuleRead != null ? Number((editingWorkOrder as any).newModuleRead) : undefined,
+        newModuleRead: (editingWorkOrder as any).newModuleRead != null ? String((editingWorkOrder as any).newModuleRead) : undefined,
         newModuleType: (editingWorkOrder as any).newModuleType || "",
       });
       // Set signature data after a brief delay to ensure the ref is ready
@@ -819,7 +824,8 @@ export default function ProjectWorkOrders() {
     const getReadingValue = (formValue: any, existingValue: any) => {
       if (formValue === undefined) return existingValue ?? null;
       if (formValue === "") return null;
-      return formValue;
+      const normalized = typeof formValue === "string" ? normalizeReadingInput(formValue) : formValue;
+      return typeof normalized === "string" ? Number(normalized) : normalized;
     };
     
     // For string ID fields:
@@ -863,9 +869,29 @@ export default function ProjectWorkOrders() {
     };
   };
 
+  const getManualReadingErrors = (data: WorkOrderFormData, existingWo?: object) =>
+    validateCapturedReadings(data as Record<string, unknown>, project ?? {}, existingWo);
+
+  const showManualReadingErrors = (errors: ReturnType<typeof getManualReadingErrors>, formInstance: typeof form) => {
+    errors.forEach(({ field, message }) => {
+      formInstance.setError(field as any, { type: "validate", message });
+    });
+    if (errors.length) {
+      toast({
+        title: "Reading precision limit exceeded",
+        description: errors.map(({ message }) => message).join(" "),
+        variant: "destructive",
+      });
+      return true;
+    }
+    return false;
+  };
+
   const createMutation = useMutation({
     mutationFn: async (data: WorkOrderFormData) => {
       if (accessDenied) throw new Error("403: Access denied");
+      const readingErrors = getManualReadingErrors(data);
+      if (readingErrors.length) throw new Error(readingErrors.map(({ message }) => message).join(" "));
       const troubleStatus = workOrderStatuses.find(s => s.label === "Trouble")?.label || "Trouble";
       const defaultStatus = workOrderStatuses.find(s => s.isDefault)?.label || "Open";
       const status = (data as any).trouble ? troubleStatus : defaultStatus;
@@ -927,6 +953,8 @@ export default function ProjectWorkOrders() {
     mutationFn: async ({ id, ...data }: { id: number } & Partial<WorkOrderFormData>) => {
       if (accessDenied) throw new Error("403: Access denied");
       const existingWo = editingWorkOrder as any;
+      const readingErrors = getManualReadingErrors(data as WorkOrderFormData, existingWo);
+      if (readingErrors.length) throw new Error(readingErrors.map(({ message }) => message).join(" "));
       const normalizedData = normalizeOptionalFields(data as WorkOrderFormData, existingWo);
       const troubleStatus = workOrderStatuses.find(s => s.label === "Trouble")?.label || "Trouble";
       if ((data as any).trouble) {
@@ -1293,6 +1321,7 @@ export default function ProjectWorkOrders() {
   };
 
   const onSubmit = (data: WorkOrderFormData) => {
+    if (showManualReadingErrors(getManualReadingErrors(data), form)) return;
     createMutation.mutate(data);
   };
 
@@ -1302,6 +1331,7 @@ export default function ProjectWorkOrders() {
       return;
     }
     if (editingWorkOrder) {
+      if (showManualReadingErrors(getManualReadingErrors(data, editingWorkOrder), editForm)) return;
       if (editingWorkOrder.status === "Completed" && data.status === "Open") {
         setResetDialogOpen(true);
         return;
@@ -2537,6 +2567,8 @@ export default function ProjectWorkOrders() {
             showBeforePhotosStep: project?.wizardShowBeforePhotosStep ?? true,
             showAfterPhotosStep: project?.wizardShowAfterPhotosStep ?? true,
             showSignatureStep: project?.wizardShowSignatureStep ?? true,
+            systemReadingDecimalPlaces: project?.systemReadingDecimalPlaces ?? 3,
+            moduleReadingDecimalPlaces: project?.moduleReadingDecimalPlaces ?? 3,
           }}
           searchMethodSettings={{
             searchShowBarcodeScan: (project as any)?.searchShowBarcodeScan !== false,
@@ -2856,14 +2888,16 @@ export default function ProjectWorkOrders() {
                             <FormLabel>Reading</FormLabel>
                             <FormControl>
                               <Input 
-                                type="number" 
+                                type="text"
+                                inputMode="decimal"
                                 {...field} 
                                 value={field.value ?? ""} 
-                                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : "")}
+                                onChange={(e) => field.onChange(normalizeReadingInput(e.target.value))}
                                 placeholder="12345" 
                                 data-testid="input-create-old-system-reading" 
                               />
                             </FormControl>
+                            <p className="text-xs text-muted-foreground">Maximum {getReadingPrecision(project).systemReadingDecimalPlaces} fractional digits.</p>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -2958,14 +2992,16 @@ export default function ProjectWorkOrders() {
                             <FormLabel>Reading</FormLabel>
                             <FormControl>
                               <Input 
-                                type="number" 
+                                type="text"
+                                inputMode="decimal"
                                 {...field} 
                                 value={field.value ?? ""} 
-                                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : "")}
+                                onChange={(e) => field.onChange(normalizeReadingInput(e.target.value))}
                                 placeholder="67890" 
                                 data-testid="input-create-new-system-reading" 
                               />
                             </FormControl>
+                            <p className="text-xs text-muted-foreground">Maximum {getReadingPrecision(project).systemReadingDecimalPlaces} fractional digits.</p>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -3058,14 +3094,16 @@ export default function ProjectWorkOrders() {
                             <FormLabel>Reading</FormLabel>
                             <FormControl>
                               <Input 
-                                type="number" 
+                                type="text"
+                                inputMode="decimal"
                                 {...field} 
                                 value={field.value ?? ""} 
-                                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : "")}
+                                onChange={(e) => field.onChange(normalizeReadingInput(e.target.value))}
                                 placeholder="12345" 
                                 data-testid="input-create-old-module-read" 
                               />
                             </FormControl>
+                            <p className="text-xs text-muted-foreground">Maximum {getReadingPrecision(project).moduleReadingDecimalPlaces} fractional digits.</p>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -3127,14 +3165,16 @@ export default function ProjectWorkOrders() {
                             <FormLabel>Reading</FormLabel>
                             <FormControl>
                               <Input 
-                                type="number" 
+                                type="text"
+                                inputMode="decimal"
                                 {...field} 
                                 value={field.value ?? ""} 
-                                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : "")}
+                                onChange={(e) => field.onChange(normalizeReadingInput(e.target.value))}
                                 placeholder="67890" 
                                 data-testid="input-create-new-module-read" 
                               />
                             </FormControl>
+                            <p className="text-xs text-muted-foreground">Maximum {getReadingPrecision(project).moduleReadingDecimalPlaces} fractional digits.</p>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -3480,14 +3520,16 @@ export default function ProjectWorkOrders() {
             <FormLabel>Old System Reading</FormLabel>
             <FormControl>
               <Input 
-                type="number" 
+                type="text"
+                inputMode="decimal"
                 {...field} 
                 value={field.value ?? ""} 
-                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : "")}
+                onChange={(e) => field.onChange(normalizeReadingInput(e.target.value))}
                 placeholder="12345" 
                 data-testid="input-old-system-reading" 
               />
             </FormControl>
+            <p className="text-xs text-muted-foreground">Maximum {getReadingPrecision(project).systemReadingDecimalPlaces} fractional digits.</p>
             <FormMessage />
           </FormItem>
         )}
@@ -3513,14 +3555,60 @@ export default function ProjectWorkOrders() {
             <FormLabel>New System Reading</FormLabel>
             <FormControl>
               <Input 
-                type="number" 
+                type="text"
+                inputMode="decimal"
                 {...field} 
                 value={field.value ?? ""} 
-                onChange={(e) => field.onChange(e.target.value ? parseInt(e.target.value) : "")}
+                onChange={(e) => field.onChange(normalizeReadingInput(e.target.value))}
                 placeholder="67890" 
                 data-testid="input-new-system-reading" 
               />
             </FormControl>
+            <p className="text-xs text-muted-foreground">Maximum {getReadingPrecision(project).systemReadingDecimalPlaces} fractional digits.</p>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={formInstance.control}
+        name="oldModuleRead"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Old Module Reading</FormLabel>
+            <FormControl>
+              <Input
+                type="text"
+                inputMode="decimal"
+                {...field}
+                value={field.value ?? ""}
+                onChange={(e) => field.onChange(normalizeReadingInput(e.target.value))}
+                placeholder="12345"
+                data-testid="input-old-module-reading"
+              />
+            </FormControl>
+            <p className="text-xs text-muted-foreground">Maximum {getReadingPrecision(project).moduleReadingDecimalPlaces} fractional digits.</p>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={formInstance.control}
+        name="newModuleRead"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>New Module Reading</FormLabel>
+            <FormControl>
+              <Input
+                type="text"
+                inputMode="decimal"
+                {...field}
+                value={field.value ?? ""}
+                onChange={(e) => field.onChange(normalizeReadingInput(e.target.value))}
+                placeholder="67890"
+                data-testid="input-new-module-reading"
+              />
+            </FormControl>
+            <p className="text-xs text-muted-foreground">Maximum {getReadingPrecision(project).moduleReadingDecimalPlaces} fractional digits.</p>
             <FormMessage />
           </FormItem>
         )}

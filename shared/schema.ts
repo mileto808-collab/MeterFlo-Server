@@ -3,6 +3,7 @@ import { pgTable, text, varchar, timestamp, integer, serial, jsonb, index, uniqu
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
+import { readingDecimalPlacesSchema } from "./reading-precision";
 
 // Session storage table - mandatory for Replit Auth
 export const sessions = pgTable(
@@ -116,6 +117,8 @@ export const projects = pgTable("projects", {
   timezone: varchar("timezone", { length: 100 }),
   wizardMode: varchar("wizard_mode", { length: 20 }).default("changeout"),
   wizardGpsMode: varchar("wizard_gps_mode", { length: 20 }).default("automatic"),
+  systemReadingDecimalPlaces: integer("system_reading_decimal_places").notNull().default(3),
+  moduleReadingDecimalPlaces: integer("module_reading_decimal_places").notNull().default(3),
   wizardShowNotesStep: boolean("wizard_show_notes_step").default(true),
   wizardShowGpsStep: boolean("wizard_show_gps_step").default(true),
   wizardShowBeforePhotosStep: boolean("wizard_show_before_photos_step").default(true),
@@ -651,6 +654,8 @@ export const insertProjectSchema = z.object({
   timezone: z.string().max(100).optional().nullable(),
   wizardMode: z.enum(wizardModeEnum).optional().default("changeout"),
   wizardGpsMode: z.enum(gpsModeEnum).optional().default("automatic"),
+  systemReadingDecimalPlaces: readingDecimalPlacesSchema.optional().default(3),
+  moduleReadingDecimalPlaces: readingDecimalPlacesSchema.optional().default(3),
   wizardShowNotesStep: z.boolean().optional().default(true),
   wizardShowGpsStep: z.boolean().optional().default(true),
   wizardShowBeforePhotosStep: z.boolean().optional().default(true),
@@ -1128,6 +1133,7 @@ export const permissionKeys = {
   PROJECTS_VIEW_INACTIVE: "projects.viewInactive",
   PROJECTS_CREATE: "projects.create",
   PROJECTS_EDIT: "projects.edit",
+  PROJECTS_READING_PRECISION: "projects.readingPrecision",
   PROJECTS_DELETE: "projects.delete",
   // Work order actions
   WORK_ORDERS_VIEW: "workOrders.view",

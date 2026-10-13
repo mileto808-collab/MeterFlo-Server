@@ -20,6 +20,8 @@ import type { Project, User, ServiceTypeRecord } from "@shared/schema";
 import { ArrowLeft, Save, Loader2, Globe, Clock, Users, X, CalendarDays, Plus, Wand2, Zap, Check, Copy, Scan } from "lucide-react";
 import type { ProjectHoliday } from "@shared/schema";
 import { Checkbox } from "@/components/ui/checkbox";
+import { usePermissions } from "@/hooks/usePermissions";
+import { getReadingPrecision } from "@shared/reading-precision";
 
 const DAYS_OF_WEEK = [
   { value: 'monday', label: 'Mon' },
@@ -62,6 +64,8 @@ const projectFormSchema = z.object({
   searchShowQrCodeScan: z.boolean().optional().default(true),
   searchShowManualEntry: z.boolean().optional().default(true),
   searchShowHidScanner: z.boolean().optional().default(true),
+  systemReadingDecimalPlaces: z.number().int().min(0).max(6).default(3),
+  moduleReadingDecimalPlaces: z.number().int().min(0).max(6).default(3),
 }).refine((data) => {
   if (data.operationalHoursEnabled) {
     return data.operationalHoursStart && data.operationalHoursEnd;
@@ -81,6 +85,8 @@ export default function ProjectForm() {
   const isEditing = !!id;
 
   const { toast } = useToast();
+  const { hasPermission, isLoading: permissionsLoading } = usePermissions();
+  const canConfigureReadingPrecision = hasPermission("projects.readingPrecision");
 
   const { data: project, isLoading: projectLoading } = useQuery<Project>({
     queryKey: ["/api/projects", id],
@@ -116,6 +122,8 @@ export default function ProjectForm() {
       searchShowQrCodeScan: true,
       searchShowManualEntry: true,
       searchShowHidScanner: true,
+      systemReadingDecimalPlaces: 3,
+      moduleReadingDecimalPlaces: 3,
     },
   });
 
@@ -150,6 +158,8 @@ export default function ProjectForm() {
         searchShowQrCodeScan: (project as any).searchShowQrCodeScan !== false,
         searchShowManualEntry: (project as any).searchShowManualEntry !== false,
         searchShowHidScanner: (project as any).searchShowHidScanner !== false,
+        systemReadingDecimalPlaces: project.systemReadingDecimalPlaces ?? 3,
+        moduleReadingDecimalPlaces: project.moduleReadingDecimalPlaces ?? 3,
       });
     }
   }, [project, form]);
@@ -345,16 +355,20 @@ export default function ProjectForm() {
   };
 
   const onSubmit = (data: ProjectFormValues) => {
+    const { systemReadingDecimalPlaces, moduleReadingDecimalPlaces, ...projectData } = data;
+    const payload = canConfigureReadingPrecision
+      ? { ...projectData, systemReadingDecimalPlaces, moduleReadingDecimalPlaces }
+      : projectData;
     if (isEditing) {
-      updateMutation.mutate(data);
+      updateMutation.mutate(payload as ProjectFormValues);
     } else {
-      createMutation.mutate(data);
+      createMutation.mutate(payload as ProjectFormValues);
     }
   };
 
   const isPending = createMutation.isPending || updateMutation.isPending;
 
-  if (isEditing && projectLoading) {
+  if (permissionsLoading || (isEditing && projectLoading)) {
     return (
       <div className="p-6 max-w-3xl mx-auto">
         <Skeleton className="h-8 w-48 mb-6" />
@@ -533,6 +547,51 @@ export default function ProjectForm() {
                   </FormItem>
                 )}
               />
+
+              <div className="border-t pt-6 mt-6">
+                <h3 className="text-lg font-medium">Reading precision</h3>
+                <p className="text-sm text-muted-foreground mt-1 mb-4">
+                  Set the maximum number of fractional digits technicians may capture. Values are not rounded or padded.
+                </p>
+                {canConfigureReadingPrecision ? (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    {([
+                      ["systemReadingDecimalPlaces", "System reading"],
+                      ["moduleReadingDecimalPlaces", "Module reading"],
+                    ] as const).map(([name, label]) => (
+                      <FormField
+                        key={name}
+                        control={form.control}
+                        name={name}
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{label} decimal places</FormLabel>
+                            <Select value={String(field.value ?? 3)} onValueChange={(value) => field.onChange(Number(value))}>
+                              <FormControl>
+                                <SelectTrigger data-testid={`select-${name}`}>
+                                  <SelectValue>{field.value ?? 3}</SelectValue>
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {Array.from({ length: 7 }, (_, places) => (
+                                  <SelectItem key={places} value={String(places)}>{places}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormDescription>Maximum fractional digits: {field.value ?? 3}</FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="grid gap-3 rounded-md border bg-muted/30 p-4 sm:grid-cols-2">
+                    <p className="text-sm">System readings: <span className="font-medium">{getReadingPrecision(project).systemReadingDecimalPlaces} decimal places max</span></p>
+                    <p className="text-sm">Module readings: <span className="font-medium">{getReadingPrecision(project).moduleReadingDecimalPlaces} decimal places max</span></p>
+                  </div>
+                )}
+              </div>
 
               <div className="border-t pt-6 mt-6">
                 <div className="flex items-center gap-2 mb-2">

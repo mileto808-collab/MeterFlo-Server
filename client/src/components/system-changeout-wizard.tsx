@@ -25,6 +25,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useGpsCapture, type GpsCaptureSource } from "@/hooks/use-gps-capture";
+import { isValidReading, normalizeReadingInput, readingLimitMessage } from "@shared/reading-precision";
 import { GPSCapture } from "./gps-capture";
 import SignaturePad, { SignaturePadRef, SignatureType } from "./signature-pad";
 import {
@@ -87,6 +88,8 @@ export interface WizardConfig {
   showBeforePhotosStep: boolean;
   showAfterPhotosStep: boolean;
   showSignatureStep: boolean;
+  systemReadingDecimalPlaces?: number;
+  moduleReadingDecimalPlaces?: number;
 }
 
 export interface SearchMethodSettings {
@@ -261,6 +264,8 @@ export function SystemChangeoutWizard({
   
   // Derive effective GPS mode - use gpsMode if available, fall back to showGpsStep for backward compatibility
   const effectiveGpsMode: GpsCaptureMode = config.gpsMode ?? (config.showGpsStep ? "manual_step" : "disabled");
+  const systemReadingLimit = config.systemReadingDecimalPlaces ?? 3;
+  const moduleReadingLimit = config.moduleReadingDecimalPlaces ?? 3;
   
   // For user_choice mode, track which workflow the user selected
   const [selectedWorkflowMode, setSelectedWorkflowMode] = useState<"changeout" | "reading_only" | null>(null);
@@ -529,24 +534,10 @@ export function SystemChangeoutWizard({
   };
 
   // Validation helpers
-  const isValidSystemReading = (reading: string | undefined | null): boolean => {
-    // Must be numeric (allows decimals like "24001.011" and leading zeros like "0001")
-    if (!reading || typeof reading !== 'string') return false;
-    const trimmed = reading.trim();
-    return trimmed.length > 0 && /^\d+(\.\d+)?$/.test(trimmed);
+  const isValidSystemReading = (reading: string | undefined | null, limit: number): boolean => {
+    return isValidReading(reading, limit);
   };
   
-  // Normalize reading input: replace commas with periods and limit decimals to 3 places
-  const normalizeReadingInput = (value: string): string => {
-    let normalized = value.replace(/,/g, '.');
-    // Limit decimal places to 3
-    const dotIndex = normalized.indexOf('.');
-    if (dotIndex !== -1 && normalized.length > dotIndex + 4) {
-      normalized = normalized.substring(0, dotIndex + 4);
-    }
-    return normalized;
-  };
-
   const isValidGps = (gps: string | undefined | null): boolean => {
     // Validate GPS format: lat,lng where lat is -90 to 90 and lng is -180 to 180
     if (!gps || typeof gps !== 'string') return false;
@@ -562,19 +553,20 @@ export function SystemChangeoutWizard({
     return !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
   };
 
-  const getSystemReadingError = (reading: string | undefined | null): string | null => {
+  const getSystemReadingError = (reading: string | undefined | null, limit: number, label: string): string | null => {
     if (!reading || typeof reading !== 'string' || !reading.trim()) return "Reading is required";
     if (!/^\d+(\.\d+)?$/.test(reading.trim())) return "Reading must be a valid number (e.g., 12345 or 12345.67)";
+    if (!isValidReading(reading, limit)) return readingLimitMessage(label, limit);
     return null;
   };
   
   // Validate old reading - user can enter same or different value
   const getOldSystemReadingError = (): string | null => {
-    return getSystemReadingError(data.oldSystemReading);
+    return getSystemReadingError(data.oldSystemReading, systemReadingLimit, "Old system reading");
   };
   
   const getOldModuleReadingError = (): string | null => {
-    return getSystemReadingError(data.oldModuleReading);
+    return getSystemReadingError(data.oldModuleReading, moduleReadingLimit, "Old module reading");
   };
 
   const getGpsError = (gps: string | undefined | null): string | null => {
@@ -629,8 +621,8 @@ export function SystemChangeoutWizard({
         const needsNewSystemReading = (displayMode === "system" || displayMode === "both");
         const needsNewModuleReading = (displayMode === "module" || displayMode === "both");
         
-        const systemReadingValid = !needsNewSystemReading || isValidSystemReading(data.newSystemReading);
-        const moduleReadingValid = !needsNewModuleReading || isValidSystemReading(data.newModuleReading);
+        const systemReadingValid = !needsNewSystemReading || isValidSystemReading(data.newSystemReading, systemReadingLimit);
+        const moduleReadingValid = !needsNewModuleReading || isValidSystemReading(data.newModuleReading, moduleReadingLimit);
         
         return systemReadingValid && moduleReadingValid;
       }
@@ -664,8 +656,8 @@ export function SystemChangeoutWizard({
           const needsSystemData = (displayMode === "system" || displayMode === "both");
           const needsModuleData = (displayMode === "module" || displayMode === "both");
           
-          const newSystemReadingValid = !needsSystemData || isValidSystemReading(data.newSystemReading);
-          const newModuleReadingValid = !needsModuleData || isValidSystemReading(data.newModuleReading);
+          const newSystemReadingValid = !needsSystemData || isValidSystemReading(data.newSystemReading, systemReadingLimit);
+          const newModuleReadingValid = !needsModuleData || isValidSystemReading(data.newModuleReading, moduleReadingLimit);
           // Signature is valid if: signature step is disabled, OR (name is present AND signature was confirmed via drawn/typed)
           const signatureValid = !config.showSignatureStep || (!!data.signatureName.trim() && !!data.signatureType);
           
@@ -676,14 +668,14 @@ export function SystemChangeoutWizard({
           const needsModuleData = (displayMode === "module" || displayMode === "both");
           
           // System validations
-          const oldSystemReadingValid = !needsSystemData || isValidSystemReading(data.oldSystemReading);
+          const oldSystemReadingValid = !needsSystemData || (oldSystemReadingConfirmed && isValidSystemReading(data.oldSystemReading, systemReadingLimit));
           const newSystemIdValid = !needsSystemData || !!data.newSystemId.trim();
-          const newSystemReadingValid = !needsSystemData || isValidSystemReading(data.newSystemReading);
+          const newSystemReadingValid = !needsSystemData || isValidSystemReading(data.newSystemReading, systemReadingLimit);
           
           // Module validations
-          const oldModuleReadingValid = !needsModuleData || isValidSystemReading(data.oldModuleReading);
+          const oldModuleReadingValid = !needsModuleData || (oldModuleReadingConfirmed && isValidSystemReading(data.oldModuleReading, moduleReadingLimit));
           const newModuleIdValid = !needsModuleData || !!data.newModuleId.trim();
-          const newModuleReadingValid = !needsModuleData || isValidSystemReading(data.newModuleReading);
+          const newModuleReadingValid = !needsModuleData || isValidSystemReading(data.newModuleReading, moduleReadingLimit);
           
           // Photo validations based on config
           const beforePhotosValid = !config.showBeforePhotosStep || data.beforePhotos.length >= 1;
@@ -1478,7 +1470,7 @@ export function SystemChangeoutWizard({
                 {oldSystemReadingError && oldSystemReadingConfirmed && (
                   <p className="text-sm text-destructive">{oldSystemReadingError}</p>
                 )}
-                <p className="text-xs text-muted-foreground">Enter numbers. Decimals allowed (e.g., 0001 or 12345.67).</p>
+                <p className="text-xs text-muted-foreground">Up to {systemReadingLimit} fractional digits. Commas are accepted as decimal separators.</p>
               </div>
             )}
             
@@ -1517,7 +1509,7 @@ export function SystemChangeoutWizard({
                 {oldModuleReadingError && oldModuleReadingConfirmed && (
                   <p className="text-sm text-destructive">{oldModuleReadingError}</p>
                 )}
-                <p className="text-xs text-muted-foreground">Enter numbers. Decimals allowed (e.g., 0001 or 12345.67).</p>
+                <p className="text-xs text-muted-foreground">Up to {moduleReadingLimit} fractional digits. Commas are accepted as decimal separators.</p>
               </div>
             )}
 
@@ -2039,8 +2031,8 @@ export function SystemChangeoutWizard({
       case "newReading": {
         const showNewSystemReading = displayMode === "system" || displayMode === "both";
         const showNewModuleReading = displayMode === "module" || displayMode === "both";
-        const newSystemReadingError = getSystemReadingError(data.newSystemReading);
-        const newModuleReadingError = getSystemReadingError(data.newModuleReading || "");
+        const newSystemReadingError = getSystemReadingError(data.newSystemReading, systemReadingLimit, "New system reading");
+        const newModuleReadingError = getSystemReadingError(data.newModuleReading || "", moduleReadingLimit, "New module reading");
         
         // Mode-aware description for reading step
         const getNewReadingDescription = () => {
@@ -2097,13 +2089,13 @@ export function SystemChangeoutWizard({
                     }
                   }}
                   placeholder="Enter system reading (digits only)..."
-                  className={`text-lg text-center ${newSystemReadingError && data.newSystemReading ? "border-destructive" : ""}`}
+                  className={`text-lg text-center ${newSystemReadingError ? "border-destructive" : ""}`}
                   data-testid="input-new-system-reading"
                 />
-                {newSystemReadingError && data.newSystemReading && (
+                {newSystemReadingError && (
                   <p className="text-sm text-destructive">{newSystemReadingError}</p>
                 )}
-                <p className="text-xs text-muted-foreground">Enter numbers. Decimals allowed (e.g., 0001 or 12345.67).</p>
+                <p className="text-xs text-muted-foreground">Up to {systemReadingLimit} fractional digits. Commas are accepted as decimal separators.</p>
               </div>
             )}
             
@@ -2127,13 +2119,13 @@ export function SystemChangeoutWizard({
                     }
                   }}
                   placeholder="Enter module reading (digits only)..."
-                  className={`text-lg text-center ${newModuleReadingError && data.newModuleReading ? "border-destructive" : ""}`}
+                  className={`text-lg text-center ${newModuleReadingError ? "border-destructive" : ""}`}
                   data-testid="input-new-module-reading"
                 />
-                {newModuleReadingError && data.newModuleReading && (
+                {newModuleReadingError && (
                   <p className="text-sm text-destructive">{newModuleReadingError}</p>
                 )}
-                <p className="text-xs text-muted-foreground">Enter numbers. Decimals allowed (e.g., 0001 or 12345.67).</p>
+                <p className="text-xs text-muted-foreground">Up to {moduleReadingLimit} fractional digits. Commas are accepted as decimal separators.</p>
               </div>
             )}
 

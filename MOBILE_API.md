@@ -141,7 +141,9 @@ Use the `user.id` from login response. Returns all projects the user is assigned
       "description": "Meter replacement project for Springfield",
       "databaseName": "springfield_water_1",
       "isActive": true,
-      "wizardMode": "changeout"
+      "wizardMode": "changeout",
+      "systemReadingDecimalPlaces": 3,
+      "moduleReadingDecimalPlaces": 3
     }
   ],
   "mobileConfig": {
@@ -161,6 +163,98 @@ Use the `user.id` from login response. Returns all projects the user is assigned
 3. **User selects project** → store `projectId` for all subsequent API calls
 4. **Initial Sync:** `GET /api/projects/{projectId}/mobile/sync/download` (no lastSyncTimestamp)
 5. **Incremental Sync:** Use `serverTimestamp` from previous response as `lastSyncTimestamp`
+
+### Project reading precision
+
+`GET /api/projects`, `GET /api/projects/:id`, and the projects inside
+`GET /api/users/:userId/projects` include the following settings:
+
+| Field | Type | Allowed values | Default when unconfigured | Use |
+|-------|------|----------------|---------------------------|-----|
+| `systemReadingDecimalPlaces` | integer | 0–6 inclusive | 3 | Maximum fractional digits in captured old/new **system** readings |
+| `moduleReadingDecimalPlaces` | integer | 0–6 inclusive | 3 | Maximum fractional digits in captured old/new **module** readings |
+
+For example, a project's response may contain
+`"systemReadingDecimalPlaces": 0, "moduleReadingDecimalPlaces": 6`.
+That project allows a system reading of `"00123"` and a module reading of
+`"123.456789"`, but not a system reading of `"123.1"`.
+These are maximum limits, not required padding or display formatting.
+
+| Option | When to use | Valid example | Over-limit example |
+|--------|-------------|---------------|--------------------|
+| 0 | Whole-number registers | `"123"` | `"123.1"` |
+| 1 | Registers reporting tenths | `"123.4"` | `"123.45"` |
+| 2 | Registers reporting hundredths | `"123.45"` | `"123.456"` |
+| 3 | Default; registers reporting thousandths | `"123.456"` | `"123.4567"` |
+| 4 | Registers requiring four fractional digits | `"123.4567"` | `"123.45678"` |
+| 5 | Registers requiring five fractional digits | `"123.45678"` | `"123.456789"` |
+| 6 | Highest supported capture precision | `"123.456789"` | `"123.4567890"` |
+
+Whole numbers (including `"0"`) are valid with every option. A fractional zero
+still counts as a digit: `"123.0"` is not a new whole-number capture when the
+limit is 0. Negative values, exponent notation, and non-numeric strings are not
+valid readings. Send decimal strings with a period; do not use `parseFloat`,
+rounding, or truncation before upload. The web form normalizes a keyboard comma
+to a period without dropping digits.
+
+**Configuration authorization:** administrators have **Configure reading precision**
+(`projects.readingPrecision`) by default. Delegated operators need that explicit
+permission plus existing project-create/edit permissions and, for editing precision,
+project assignment. For example, an authorized
+`PATCH /api/projects/3` body is
+`{"systemReadingDecimalPlaces":0,"moduleReadingDecimalPlaces":6}`.
+Omit a field to retain its current value; do not send null to reset it.
+Invalid setting types, fractional settings, or settings outside 0–6 return 400.
+An unauthorized write of either protected key returns 403, even if its value is
+unchanged. Operators without this permission must omit both keys when saving
+unrelated project settings. Read access to the limits requires normal project
+access, not the configuration permission.
+
+**Mobile implementation:** load/cache both limits by project ID from the project
+response alongside existing wizard settings. Use a missing/null fallback:
+
+```typescript
+const systemLimit = project.systemReadingDecimalPlaces ?? 3;
+const moduleLimit = project.moduleReadingDecimalPlaces ?? 3;
+```
+
+Never use `value || 3`, which incorrectly replaces an intentional 0. Refresh
+`GET /api/projects/:id` at project selection, before opening an online capture
+wizard, and before uploading offline captures. Work-order sync-download does
+not replace this project configuration request. While offline, use the last
+cached settings for that project (or 3 when no setting was supplied), and retain
+the exact queued reading strings.
+
+The server always checks its current configuration. A limit changed since
+offline capture can cause rejection; retain the queued record, refresh project
+settings, and ask the technician to correct/reconfirm the reading or the
+administrator to correct the project's limit. Never silently round readings,
+discard a failed queue entry, or treat `forceOverwrite` as a validation bypass.
+
+Completion, trouble reports that include an old reading, and direct work-order
+writes reject changed over-limit readings with
+400 before saving the reading or completion files:
+
+```json
+{
+  "code": "READING_PRECISION",
+  "message": "New system reading must be a non-negative whole number (0 decimal places).",
+  "errors": [
+    {
+      "field": "newSystemReading",
+      "decimalPlaces": 0,
+      "message": "New system reading must be a non-negative whole number (0 decimal places)."
+    }
+  ]
+}
+```
+
+Batch sync-upload keeps its HTTP 200 envelope and reports each rejected record
+as `status: "error"` with the same `code`, `message`, and `errors`; check
+`results` and `summary.errors`, not only HTTP status or envelope `success`.
+Unchanged historical readings echoed in edit/sync requests are retained even
+when they exceed a newer limit. Imported customer baselines are not automatically
+rounded, rewritten, or restricted by technician capture precision.
 
 ---
 
