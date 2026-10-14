@@ -1,5 +1,7 @@
 import * as cron from "node-cron";
 import { storage } from "./storage";
+import { auditContext, serviceAuditContext, withAuditContext } from "./auditContext";
+import { auditedOperation } from "./auditService";
 import { ExternalDatabaseService } from "./externalDbService";
 import { getProjectWorkOrderStorage } from "./projectDb";
 import { insertProjectWorkOrderSchema } from "@shared/schema";
@@ -84,7 +86,7 @@ class ImportScheduler {
 
     const task = cron.schedule(cronExpression, async () => {
       console.log(`[ImportScheduler] Running scheduled import "${config.name}" (ID: ${config.id})`);
-      await this.runImport(config.id);
+      await withAuditContext(serviceAuditContext("scheduledDatabaseImport"),()=>this.runImport(config.id));
     });
 
     this.scheduledTasks.set(config.id, task);
@@ -99,7 +101,14 @@ class ImportScheduler {
     }
   }
 
-  async runImport(configId: number): Promise<{
+  async runImport(configId:number):Promise<Awaited<ReturnType<ImportScheduler["runImportData"]>>> {
+    const config=await storage.getImportConfig(configId);
+    const database=config ? await storage.getExternalDatabaseConfig(config.externalDbConfigId):undefined;
+    const project=database ? await storage.getProject(database.projectId):undefined;
+    const ctx=auditContext.getStore() || serviceAuditContext("scheduledDatabaseImport");
+    return withAuditContext(ctx,()=>auditedOperation("databaseImport",String(configId),()=>this.runImportData(configId),project?.id,project?.name));
+  }
+  private async runImportData(configId: number): Promise<{
     success: boolean;
     imported: number;
     failed: number;

@@ -1094,4 +1094,20 @@ Common HTTP status codes:
 
 ---
 
-*Last verified against server routes: October 11, 2026*
+## Server-side auditing
+
+Authenticated mobile work-order changes, normal/force sync and completion are
+audited on the server with the session's verified user identity. Do not submit an
+audit actor or generate duplicate client-side audit events. Committed changes
+share a transaction with their audit entries; a server audit failure must be
+treated as a failed write and handled by normal offline retry logic.
+
+Exact reading strings and their text companions preserve zeros in audit
+differences. Replaying an unchanged record does not create a false business
+change. Photos/signature content is not copied into audit entries.
+
+Audit administration remains permission-gated web functionality; mobile
+authentication is unchanged. See [Audit Logs](AUDIT_LOGS.md) for coverage and
+limitations, including external SQL changes and backup/restore behavior.
+
+*Last verified against server routes: October 2026*

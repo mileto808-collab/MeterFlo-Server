@@ -20,6 +20,8 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import multer from "multer";
 import { createProjectSchema, deleteProjectSchema, getProjectWorkOrderStorage, sanitizeSchemaName, backupProjectDatabase, restoreProjectDatabase, getProjectDatabaseStats } from "./projectDb";
+import { auditActorMiddleware, registerAuditRoutes } from "./auditRoutes";
+import { auditedOperation } from "./auditService";
 import { pool } from "./db";
 import { readingParameter, withExactReadings } from "../shared/exact-readings";
 import {
@@ -197,6 +199,8 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   await setupAuth(app);
+  app.use(auditActorMiddleware);
+  registerAuditRoutes(app);
   await initializeAdminUser();
   await storage.seedDefaultWorkOrderStatuses();
   await storage.syncPermissionsFromRegistry();
@@ -5013,6 +5017,9 @@ export async function registerRoutes(
       let filePath: string;
       
       switch (docType) {
+        case "audit":
+          filePath = path.join(process.cwd(), "AUDIT_LOGS.md");
+          break;
         case "system-overview":
           filePath = path.join(process.cwd(), "replit.md");
           break;
@@ -6799,6 +6806,7 @@ export async function registerRoutes(
         return res.status(404).json({ message: "No project files found to backup" });
       }
       
+      await auditedOperation("projectFilesBackup","files",async()=>{
       // Create ZIP archive
       const archive = archiver("zip", { zlib: { level: 9 } });
       
@@ -6816,6 +6824,7 @@ export async function registerRoutes(
       archive.pipe(res);
       archive.directory(projectDir, false);
       await archive.finalize();
+      },project.id,project.name);
       
     } catch (error) {
       console.error("Error creating files backup:", error);
@@ -6936,6 +6945,7 @@ export async function registerRoutes(
       const projectDirName = getProjectDirectoryName(project.name, project.id);
       const projectDir = path.join(projectFilesPath, projectDirName);
       
+      const restoreResult=await auditedOperation("projectFilesRestore","files",async()=>{
       // Clear existing files if requested
       if (clearExisting && existsSync(projectDir)) {
         rmSync(projectDir, { recursive: true, force: true });
@@ -6992,10 +7002,11 @@ export async function registerRoutes(
           .on("error", reject);
       });
       
+      return {filesRestored,errors};
+      },project.id,project.name);
       res.json({
         message: "Files restored successfully",
-        filesRestored,
-        errors,
+        ...restoreResult,
       });
     } catch (error) {
       console.error("Error restoring files backup:", error);

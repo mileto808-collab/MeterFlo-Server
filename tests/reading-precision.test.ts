@@ -287,8 +287,23 @@ test("live project permissions and all reading write APIs", { skip: !process.env
       assert.equal(saved.new_system_reading, "0");
       assert.equal(saved.new_module_read, "1.123456");
     });
+    await t.test("audit records mobile sync, force overwrite and completion with verified actor and exact strings",async()=>{
+      const {rows}=await pool.query(`SELECT actor_id,source,changes FROM meterflo_audit.events
+        WHERE project_id=$1 AND entity_type='work_orders' AND actor_id=$2 AND source='mobile'`,[project.id,operator.id]);
+      assert.ok(rows.length>=3,"normal/force sync and completion are audited");
+      assert.ok(rows.some(r=>r.changes.some((c:any)=>c.field==="new_system_reading"&&c.after==="00012")));
+      assert.ok(rows.some(r=>r.changes.some((c:any)=>c.field==="new_module_read"&&c.after==="00001.123456")));
+    });
   } finally {
     // Restrict cleanup to fixtures created in this test, never user projects.
+    const auditCleanup=await pool.connect();
+    try {
+      await auditCleanup.query("BEGIN");
+      await auditCleanup.query("SELECT set_config('meterflo.audit_retention','authorized',true)");
+      await auditCleanup.query("DELETE FROM meterflo_audit.events WHERE actor_id=ANY($1::text[]) OR project_id=ANY($2::int[])",[userIds,projectIds]);
+      await auditCleanup.query("DELETE FROM meterflo_audit.operations WHERE actor_id=ANY($1::text[]) OR project_id=ANY($2::int[])",[userIds,projectIds]);
+      await auditCleanup.query("COMMIT");
+    } finally {auditCleanup.release();}
     for (const id of projectIds.reverse()) {
       const project = await storage.getProject(id);
       if (project?.databaseName) await pool.query(`DROP SCHEMA IF EXISTS "${project.databaseName}" CASCADE`);

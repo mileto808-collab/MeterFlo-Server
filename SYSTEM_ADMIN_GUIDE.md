@@ -1446,4 +1446,22 @@ maintenance and external log rotation** section. Monitor these independently.
 allowlisted regular files with a single hard link are managed. Inspection stops
 at 10,000 directory entries rather than performing unbounded filesystem work.
 
+## Audit Logs
+
+MeterFlo records permission-gated application audit history, separate from
+diagnostic logs. Open **Audit Logs** in the sidebar. Grant `audit.view` through
+**Settings → Access Levels** for assigned-project history; `audit.viewAllProjects`
+adds global/all-project history. `audit.manageRetention` additionally permits
+global expiration with preview/confirmation and requires both view permissions.
+Automatic audit deletion defaults off.
+
+Events include verified actors, committed field changes and backup/restore/import
+outcomes. Reading differences preserve exact captured text. Sensitive content is
+redacted. Auditing starts with this deployment; it does not monitor external
+pgAdmin/SQL/scripts. Application restores preserve local audit history in the
+separate PostgreSQL `meterflo_audit` schema.
+
+See [MeterFlo Audit Logs](AUDIT_LOGS.md) for coverage, field examples, permissions,
+scope, retention, interrupted operations, privacy and standalone deployment.
+
 *Last updated: October 2026*

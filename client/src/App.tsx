@@ -39,6 +39,7 @@ import Maintenance from "@/pages/maintenance";
 import Users from "@/pages/users";
 import Settings from "@/pages/settings";
 import Documentation from "@/pages/documentation";
+import AuditLogs from "@/pages/audit-logs";
 import NotFound from "@/pages/not-found";
 
 function LoadingScreen() {
@@ -93,6 +94,10 @@ function AuthenticatedRouter() {
       
       {hasPermission("nav.maintenance") && (
         <Route path="/maintenance" component={Maintenance} />
+      )}
+
+      {hasPermission("audit.view") && (
+        <Route path="/audit-logs" component={AuditLogs} />
       )}
       
       {hasPermission("nav.settings") && (

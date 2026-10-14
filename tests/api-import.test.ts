@@ -7,6 +7,7 @@ import express from "express";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { pool } from "../server/db";
+import { initializeAudit } from "../server/auditMigration";
 import { storage } from "../server/storage";
 import { createProjectSchema } from "../server/projectDb";
 import { apiImportConfigSchema } from "../shared/customer-api-import";
@@ -22,6 +23,7 @@ import { getPermissionByKey } from "../shared/permissionRegistry";
 const mapping = { id: "customerWoId", customer: "customerId", name: "customerName", address: "address", service: "serviceType", reading: "oldSystemReading" } as const;
 test("customer API pull importer: durable runs, safe merges, pagination, and access controls", async t => {
   await initializeApiImports();
+  await initializeAudit(pool);
   const suffix = randomUUID().slice(0, 8);
   const { rows: [project] } = await pool.query(`INSERT INTO public.projects(name,customer_api_enabled) VALUES($1,true) RETURNING *`, [`API pull test ${suffix}`]);
   const { rows: [otherProject] } = await pool.query(`INSERT INTO public.projects(name) VALUES($1) RETURNING *`, [`Other API test ${suffix}`]);
@@ -279,12 +281,27 @@ test("customer API pull importer: durable runs, safe merges, pagination, and acc
       assert.ok((await listApiImportRuns(project.id, 100)).some(run => run.configId === null && run.configName === settings.name));
       assert.ok(Number((await pool.query(`SELECT count(*) FROM "${schema}".work_orders`)).rows[0].count) > 0);
     });
+    await t.test("customer API imports retain committed record batches and safe service attribution",async()=>{
+      const {rows}=await pool.query(`SELECT actor_kind,source,operation_id,changes FROM meterflo_audit.events
+        WHERE project_id=$1 AND entity_type='work_orders' AND source='customerApiImport'`,[project.id]);
+      assert.ok(rows.length>0);
+      assert.ok(rows.every(r=>r.actor_kind==="service"&&r.operation_id.startsWith("api_import_runs:")));
+      const lifecycle=await pool.query("SELECT action,outcome FROM meterflo_audit.events WHERE project_id=$1 AND entity_type='api_import_runs'",[project.id]);
+      assert.ok(lifecycle.rows.some(r=>r.action==="import.started"));
+      assert.ok(lifecycle.rows.some(r=>r.action==="import.finished"&&["succeeded","partial","failed","interrupted"].includes(r.outcome)));
+    });
   } finally {
     await new Promise<void>(resolve => source.close(() => resolve()));
     if (apiServer) await new Promise<void>(resolve => apiServer!.close(() => resolve()));
     await pool.query(`DROP SCHEMA "${schema}" CASCADE`);
     await fs.rm(filesRoot, { recursive: true, force: true });
     await pool.query(`DELETE FROM public.projects WHERE id=ANY($1::int[])`, [[project.id, otherProject.id]]);
+    const auditCleanup=await pool.connect();
+    try{
+      await auditCleanup.query("BEGIN");await auditCleanup.query("SELECT set_config('meterflo.audit_retention','authorized',true)");
+      await auditCleanup.query("DELETE FROM meterflo_audit.events WHERE project_id=ANY($1::int[]) OR actor_id=ANY($2::text[])",[[project.id,otherProject.id],[adminId,viewerId].filter(Boolean)]);
+      await auditCleanup.query("COMMIT");
+    } finally {auditCleanup.release();}
     if (adminId || viewerId) await pool.query(`DELETE FROM public.users WHERE id=ANY($1::text[])`, [[adminId, viewerId].filter(Boolean)]);
     if (subroleId) await pool.query(`DELETE FROM public.subroles WHERE id=$1`, [subroleId]);
     await pool.end();

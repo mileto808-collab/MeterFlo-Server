@@ -1,5 +1,7 @@
 import * as cron from "node-cron";
 import { storage } from "./storage";
+import { auditContext, serviceAuditContext, withAuditContext } from "./auditContext";
+import { auditedOperation } from "./auditService";
 import { getProjectWorkOrderStorage } from "./projectDb";
 import { insertProjectWorkOrderSchema } from "@shared/schema";
 import { getProjectFtpFiles, getProjectFtpFilePath } from "./fileStorage";
@@ -106,7 +108,7 @@ class FileImportScheduler {
 
     const task = cron.schedule(cronExpression, async () => {
       console.log(`[FileImportScheduler] Running scheduled file import "${config.name}" (ID: ${config.id})`);
-      await this.runImport(config.id);
+      await withAuditContext(serviceAuditContext("scheduledFileImport"),()=>this.runImport(config.id));
     });
 
     this.scheduledTasks.set(config.id, task);
@@ -121,7 +123,13 @@ class FileImportScheduler {
     }
   }
 
-  async runImport(configId: number): Promise<{
+  async runImport(configId:number):Promise<Awaited<ReturnType<FileImportScheduler["runImportData"]>>> {
+    const config=await storage.getFileImportConfig(configId);
+    const project=config ? await storage.getProject(config.projectId):undefined;
+    const ctx=auditContext.getStore() || serviceAuditContext("scheduledFileImport");
+    return withAuditContext(ctx,()=>auditedOperation("fileImport",String(configId),()=>this.runImportData(configId),project?.id,project?.name));
+  }
+  private async runImportData(configId: number): Promise<{
     success: boolean;
     imported: number;
     failed: number;

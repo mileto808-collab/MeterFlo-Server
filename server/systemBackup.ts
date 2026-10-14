@@ -4,6 +4,10 @@ import unzipper from "unzipper";
 import * as fs from "fs";
 import * as path from "path";
 import { storage } from "./storage";
+import { auditedOperation } from "./auditService";
+import { auditingEnabled } from "./auditContext";
+import { initializeAudit } from "./auditMigration";
+import { pool as applicationPool } from "./db";
 import { backupProjectDatabase, restoreProjectDatabase } from "./projectDb";
 import { getProjectFilesPath } from "./fileStorage";
 
@@ -141,7 +145,11 @@ function addDirectoryToArchive(
   }
 }
 
-export async function createBackupArchive(res: any): Promise<void> {
+export async function createBackupArchive(res:any):Promise<void> {
+  if(!auditingEnabled) return createBackupArchiveData(res);
+  return auditedOperation("systemBackup","legacy-json",()=>createBackupArchiveData(res));
+}
+async function createBackupArchiveData(res: any): Promise<void> {
   console.log("[Backup] Starting full system backup...");
   
   let backup: FullSystemBackup;
@@ -233,7 +241,14 @@ async function getExistingTables(client: any): Promise<string[]> {
   return result.rows.map((r: any) => r.tablename);
 }
 
-export async function restoreFullSystem(
+export async function restoreFullSystem(backup:FullSystemBackup,options:Parameters<typeof restoreFullSystemData>[1]={}) {
+  if (!auditingEnabled) return restoreFullSystemData(backup,options);
+  return auditedOperation("systemRestore","legacy-json",async()=>{
+    try {return await restoreFullSystemData(backup,options);}
+    finally {await initializeAudit(applicationPool);}
+  });
+}
+async function restoreFullSystemData(
   backupData: FullSystemBackup,
   options: { clearExisting?: boolean } = {}
 ): Promise<{ 
@@ -375,7 +390,11 @@ export async function restoreFullSystem(
   }
 }
 
-export async function restoreFilesFromArchive(
+export async function restoreFilesFromArchive(zipBuffer:Buffer,targetPath:string) {
+  if(!auditingEnabled) return restoreFilesFromArchiveData(zipBuffer,targetPath);
+  return auditedOperation("systemFilesRestore","legacy-project-files",()=>restoreFilesFromArchiveData(zipBuffer,targetPath));
+}
+async function restoreFilesFromArchiveData(
   zipBuffer: Buffer,
   targetPath: string
 ): Promise<{ filesRestored: number; errors: string[] }> {

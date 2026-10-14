@@ -4,6 +4,7 @@ import path from "path";
 import type { PoolClient } from "pg";
 import { exactReadingFields } from "../shared/exact-readings";
 import { pool } from "./db";
+import { auditingEnabled, serviceAuditContext, withAuditContext, type AuditContext } from "./auditContext";
 import { storage } from "./storage";
 import { getProjectFilesPath, getProjectDirectoryName } from "./fileStorage";
 import { API_IMPORT_SCHEMA_SQL } from "./apiImportSchema";
@@ -290,10 +291,17 @@ export async function runApiImportWorker(projectId?: number) {
         const { rows: [run] } = await client.query(`SELECT * FROM public.api_import_runs WHERE id=$1`, [candidate.id]);
         if (!run || !ACTIVE.includes(run.status)) continue;
         if (run.status !== "running" && new Date(run.next_attempt_at).getTime() > Date.now()) continue;
+        const ctx:AuditContext={...serviceAuditContext("customerApiImport"),operationId:`api_import_runs:${run.id}`};
+        if (auditingEnabled) {
+          const {rows:[started]}=await client.query(`SELECT actor_id,actor_label,actor_kind FROM meterflo_audit.events
+            WHERE operation_id=$1 AND action='import.started' ORDER BY sequence LIMIT 1`,[ctx.operationId]);
+          if (started) Object.assign(ctx,{actorId:started.actor_id,actorLabel:started.actor_label,actorKind:started.actor_kind});
+        }
+        await withAuditContext(ctx,async()=>{
         if (run.status === "running") {
           await client.query(`UPDATE public.api_import_runs SET status='interrupted',completed_at=now(),
             messages=messages || $2::jsonb WHERE id=$1`, [run.id, JSON.stringify([{ action: "interrupted", message: "Worker stopped before finishing this page. Committed pages remain; retry safely from the original checkpoint." }])]);
-          continue;
+          return;
         }
         try { await processImportPage(client, run); }
         catch (error) {
@@ -311,6 +319,7 @@ export async function runApiImportWorker(projectId?: number) {
             completed_at=CASE WHEN $2::text='failed' THEN now() ELSE NULL END,heartbeat_at=now() WHERE id=$1`,
             [run.id, transient ? "retrying" : "failed", attempts, new Date(Date.now() + delay), JSON.stringify(messages)]);
         }
+        });
       } finally { await client.query(`SELECT pg_advisory_unlock($1,$2)`, [LOCK_NAMESPACE, candidate.config_id]); }
     }
   } finally { client.release(); }

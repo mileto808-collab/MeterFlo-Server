@@ -41,6 +41,7 @@ export interface LogSummary {
   history: CleanupResult[];
   protectedBytes: number;
   warnings: string[];
+  auditInventory?: { count:number;bytes:number;oldest:string|null;newest:string|null };
 }
 export interface CleanupPreview {
   token: string;

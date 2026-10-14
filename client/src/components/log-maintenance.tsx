@@ -15,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { usePermissions } from "@/hooks/usePermissions";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Link } from "wouter";
 
 const categoryLabels: Record<LogCategory, string> = {
   errorArchives: "Archived error reports",
@@ -54,6 +55,7 @@ async function sendJson<T>(method: string, url: string, body: unknown): Promise<
 export function LogMaintenance() {
   const { hasPermission, isLoading: permissionsLoading } = usePermissions();
   const allowed = !permissionsLoading && hasPermission("maintenance.logManagement");
+  const canViewAudit = !permissionsLoading && hasPermission("audit.view");
   const { data: summary, isLoading, isError, error, refetch } = useQuery<LogSummary>({
     queryKey: ["/api/maintenance/logs"],
     queryFn: () => fetchJson<LogSummary>("/api/maintenance/logs"),
@@ -135,7 +137,14 @@ export function LogMaintenance() {
   };
 
   const inventory = summary?.inventory ?? [];
-  if (!allowed) return <div id="log-maintenance" />;
+  if (!allowed) return canViewAudit ? (
+    <div id="log-maintenance" className="mb-5 rounded-lg border border-border/80 bg-muted/20 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div><p className="font-medium">Audit activity</p><p className="text-sm text-muted-foreground">Review application changes in the audit ledger.</p></div>
+        <Link href="/audit-logs" className="inline-flex h-9 items-center rounded-md border bg-background px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground">Open audit logs</Link>
+      </div>
+    </div>
+  ) : <div id="log-maintenance" />;
 
   return (
     <section id="log-maintenance" className="scroll-mt-6 space-y-5" aria-labelledby="log-maintenance-title">
@@ -147,9 +156,12 @@ export function LogMaintenance() {
           </div>
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">Review operational log storage, set retention behavior, and selectively clean up old records.</p>
         </div>
-        <Button variant="outline" onClick={() => refetch()} disabled={isLoading} aria-label="Refresh log summary">
-          <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? "animate-spin" : ""}`} /> Refresh
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {canViewAudit && <Link href="/audit-logs" className="inline-flex h-9 items-center rounded-md border bg-background px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground">Audit logs</Link>}
+          <Button variant="outline" onClick={() => refetch()} disabled={isLoading} aria-label="Refresh log summary">
+            <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? "animate-spin" : ""}`} /> Refresh
+          </Button>
+        </div>
       </div>
 
       {summary?.warnings?.length ? (
@@ -163,6 +175,15 @@ export function LogMaintenance() {
           ))}
         </div>
       ) : null}
+      {summary?.auditInventory && <Card>
+        <CardHeader><CardTitle>Audit history inventory</CardTitle><CardDescription>Separately protected application history; operational cleanup does not remove these entries.</CardDescription></CardHeader>
+        <CardContent className="flex flex-wrap items-center gap-4 text-sm">
+          <span>{summary.auditInventory.count.toLocaleString()} events</span>
+          <span>{formatBytes(summary.auditInventory.bytes)} allocated</span>
+          <span>Oldest: {formatDate(summary.auditInventory.oldest)}</span>
+          <Link href="/audit-logs" className="text-primary underline">Manage audit retention</Link>
+        </CardContent>
+      </Card>}
       <Alert>
         <FileWarning className="h-4 w-4" />
         <AlertTitle>Managed log records only</AlertTitle>

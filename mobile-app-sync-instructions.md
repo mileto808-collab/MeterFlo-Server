@@ -1038,6 +1038,17 @@ Before release, verify the mobile app:
 
 ## Questions?
 
+### Audit behavior during synchronization
+
+The server records committed work-order differences with the authenticated user's
+identity for normal and force sync. Native clients must not supply audit identity
+or create their own duplicate audit records. Unchanged retries do not create
+false business changes. Preserve authoritative reading text so audit differences
+retain leading and fractional trailing zeros. A rejected/failed server write,
+including audit storage failure, must remain eligible for normal offline retry.
+Signatures, images, credentials and raw sync payloads are not copied into audit
+history. Authentication remains unchanged; see [Audit Logs](AUDIT_LOGS.md).
+
 If you need clarification on any API response format or behavior, check the web application's implementation in:
 - `client/src/components/system-changeout-wizard.tsx` — Wizard logic, step management, time tracking start/end
 - `client/src/components/start-system-changeout-dialog.tsx` — Work order selection and search methods

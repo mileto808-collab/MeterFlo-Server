@@ -35,6 +35,7 @@ import {
   Upload,
   FolderSync,
   HelpCircle,
+  ScrollText,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -186,6 +187,21 @@ export function AppSidebar() {
                     <NavLink href="/maintenance">
                       <Wrench className="h-4 w-4" />
                       <span>Maintenance</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
+
+              {hasPermission("audit.view") && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={location === "/audit-logs"}
+                    data-testid="nav-audit-logs"
+                  >
+                    <NavLink href="/audit-logs">
+                      <ScrollText className="h-4 w-4" />
+                      <span>Audit logs</span>
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

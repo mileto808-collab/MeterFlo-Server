@@ -1,6 +1,7 @@
 import * as fs from "fs/promises";
 import * as path from "path";
 import { storage } from "./storage";
+import { writeAuditedFile,deleteAuditedFile,auditFileIdentifier } from "./auditFiles";
 
 // Default project files root directory
 const DEFAULT_PROJECT_FILES_PATH = "Project Files";
@@ -252,7 +253,8 @@ export async function saveWorkOrderFile(
   const sanitizedFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
   const filePath = path.join(workOrderDir, sanitizedFilename);
   
-  await fs.writeFile(filePath, buffer);
+  await writeAuditedFile(filePath,buffer,"workOrderFileUpload",projectId,projectName,
+    `${legacyWorkOrderId ?? customerWoId}:${auditFileIdentifier(sanitizedFilename)}`);
   
   return filePath;
 }
@@ -326,12 +328,8 @@ export async function deleteWorkOrderFile(
   const workOrderDir = await ensureWorkOrderDirectory(projectName, projectId, customerWoId, legacyWorkOrderId);
   const filePath = path.join(workOrderDir, filename);
   
-  try {
-    await fs.unlink(filePath);
-    return true;
-  } catch (error) {
-    return false;
-  }
+  return deleteAuditedFile(filePath,"workOrderFileDelete",projectId,projectName,
+    `${legacyWorkOrderId ?? customerWoId}:${auditFileIdentifier(filename)}`);
 }
 
 // Delete entire work order directory (all files and subdirectories)
@@ -508,12 +506,7 @@ export async function deleteProjectFtpFile(
   const ftpDir = await ensureProjectFtpDirectory(projectName, projectId);
   const filePath = path.join(ftpDir, filename);
   
-  try {
-    await fs.unlink(filePath);
-    return true;
-  } catch (error) {
-    return false;
-  }
+  return deleteAuditedFile(filePath,"projectFtpDelete",projectId,projectName,auditFileIdentifier(filename));
 }
 
 // Get project FTP file path for download
@@ -544,7 +537,7 @@ export async function saveProjectFtpFile(
   const sanitizedFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
   const filePath = path.join(ftpDir, sanitizedFilename);
   
-  await fs.writeFile(filePath, buffer);
+  await writeAuditedFile(filePath,buffer,"projectFtpUpload",projectId,projectName,auditFileIdentifier(sanitizedFilename));
   
   return filePath;
 }
@@ -624,7 +617,7 @@ export async function saveProjectFile(
   const sanitizedFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
   const filePath = path.join(docsDir, sanitizedFilename);
   
-  await fs.writeFile(filePath, buffer);
+  await writeAuditedFile(filePath,buffer,"projectDocumentUpload",projectId,projectName,auditFileIdentifier(sanitizedFilename));
   
   return filePath;
 }
@@ -664,12 +657,7 @@ export async function deleteProjectFile(
   const docsDir = await ensureProjectDocumentsDirectory(projectName, projectId);
   const filePath = path.join(docsDir, filename);
   
-  try {
-    await fs.unlink(filePath);
-    return true;
-  } catch (error) {
-    return false;
-  }
+  return deleteAuditedFile(filePath,"projectDocumentDelete",projectId,projectName,auditFileIdentifier(filename));
 }
 
 // Get project file path for download

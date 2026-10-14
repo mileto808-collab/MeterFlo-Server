@@ -6,6 +6,7 @@ import { pool } from "./db";
 import { setLogRotationMiB } from "./logger";
 import { LogMaintenanceService, MaintenanceError } from "./logMaintenanceService";
 import { LogRepository } from "./logMaintenanceRepository";
+import { auditInventory } from "./auditService";
 
 export const logMaintenance = new LogMaintenanceService(new LogRepository(pool),undefined,setLogRotationMiB);
 export function registerLogMaintenanceRoutes(app: Express, service = logMaintenance) {
@@ -25,7 +26,15 @@ export function registerLogMaintenanceRoutes(app: Express, service = logMaintena
       res.status(500).json({ message:"Log maintenance unavailable. Check database availability, LOG_DIR permissions and directory limits." });
     }
   };
-  app.get(base,handle(() => service.summary()));
+  app.get(base,handle(async req => {
+    const summary=await service.summary(),user=await storage.getUser(req.user.claims.sub);
+    if (user && await storage.hasPermission(user,"audit.view") && await storage.hasPermission(user,"audit.viewAllProjects")
+      && await storage.hasPermission(user,"audit.manageRetention")) {
+      const audit=await auditInventory();
+      return {...summary,auditInventory:{count:audit.count,bytes:audit.bytes,oldest:audit.oldest,newest:audit.newest}};
+    }
+    return summary;
+  }));
   app.put(`${base}/policy`,handle(req => service.savePolicy(req.body,req.user.claims.sub)));
   app.post(`${base}/preview`,handle(req => service.preview(req.body,req.user.claims.sub)));
   app.post(`${base}/cleanup`,handle(req => {

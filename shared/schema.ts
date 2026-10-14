@@ -1148,6 +1148,9 @@ export type InsertWorkOrderTimeTracking = z.infer<typeof insertWorkOrderTimeTrac
 
 // Permission keys - granular permissions from the registry
 export const permissionKeys = {
+  AUDIT_VIEW: "audit.view",
+  AUDIT_ALL_PROJECTS: "audit.viewAllProjects",
+  AUDIT_MANAGE_RETENTION: "audit.manageRetention",
   // Navigation permissions
   NAV_DASHBOARD: "nav.dashboard",
   NAV_PROJECTS: "nav.projects",

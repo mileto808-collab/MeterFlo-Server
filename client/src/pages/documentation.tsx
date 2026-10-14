@@ -11,9 +11,14 @@ import { FileText, Server, Smartphone, ChevronLeft, Download, Globe, Shield, Ref
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 
-type DocType = "system-overview" | "windows-deployment" | "mobile-api" | "mobile-sync" | "customer-api" | "system-admin" | null;
+type DocType = "system-overview" | "windows-deployment" | "mobile-api" | "mobile-sync" | "customer-api" | "system-admin" | "audit" | null;
 
 const docOptions = [
+  {
+    id:"audit" as DocType,title:"Audit Logs Guide",
+    description:"Permissions, field changes, backup/import outcomes, privacy, restore continuity and retention.",
+    icon:Shield,
+  },
   {
     id: "system-overview" as DocType,
     title: "MeterFlo Work Order Management System",
@@ -211,6 +216,9 @@ export default function Documentation() {
                       remarkPlugins={[remarkGfm]}
                       rehypePlugins={[rehypeSlug]}
                       components={{
+                        a: ({ href,children,...props }) => href==="AUDIT_LOGS.md"
+                          ? <button type="button" className="text-primary underline" onClick={()=>setSelectedDoc("audit")}>{children}</button>
+                          : <a href={href} {...props}>{children}</a>,
                         table: ({ children, ...props }) => (
                           <div className="my-6 w-full overflow-x-auto" tabIndex={0} role="region" aria-label="Scrollable documentation table">
                             <table {...props}>{children}</table>

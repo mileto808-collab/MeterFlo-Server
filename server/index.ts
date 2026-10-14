@@ -23,6 +23,8 @@ import { startLogMaintenance } from "./logMaintenanceRoutes";
 import { initializeReadingPrecision } from "./readingPrecisionMigration";
 import { initializeProjectExactReadings } from "./exactReadingMigration";
 import { pool } from "./db";
+import { initializeAudit } from "./auditMigration";
+import { reconcileAuditOperations, startAuditRetention } from "./auditService";
 
 const app = express();
 
@@ -120,6 +122,8 @@ app.use((req, res, next) => {
   await initializeProjectExactReadings(pool);
   await initializeCustomerApi();
   await initializeApiImports();
+  await initializeAudit(pool);
+  await reconcileAuditOperations();
   
   await registerRoutes(httpServer, app);
 
@@ -165,6 +169,7 @@ app.use((req, res, next) => {
       startCustomerApiWorker();
       startApiImportWorker();
       startLogMaintenance();
+      startAuditRetention();
       // Ensure administrator subrole exists with all permissions
       storage.ensureAdministratorSubrole().then(() => {
         log("Administrator subrole initialized");

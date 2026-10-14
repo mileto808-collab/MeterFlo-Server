@@ -7,8 +7,19 @@ import archiver from "archiver";
 import unzipper from "unzipper";
 import { storage } from "./storage";
 import { getProjectFilesPath } from "./fileStorage";
+import { auditedOperation } from "./auditService";
+import { initializeAudit } from "./auditMigration";
+import { pool as applicationPool } from "./db";
+import { auditingEnabled } from "./auditContext";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+function stripApplicationAuditHooks(file:string) {
+  // A portable business backup must restore before MeterFlo has initialized its
+  // separate local audit schema. Reinstall these hooks on application startup /
+  // application-controlled restore, never carry older local audit data over.
+  const sql=fs.readFileSync(file,"utf8");
+  fs.writeFileSync(file,sql.replace(/^(?:CREATE|DROP) TRIGGER(?: IF EXISTS)? "?meterflo_business_audit"?[\s\S]*?;\r?\n/gm,""));
+}
 
 interface PgConnectionParams {
   host: string;
@@ -198,6 +209,7 @@ export async function pgDump(
     "--no-privileges",
     "--clean",
     "--if-exists",
+    "--exclude-schema=meterflo_audit",
   ];
   
   if (schemas && schemas.length > 0) {
@@ -213,6 +225,7 @@ export async function pgDump(
   if (!result.success) {
     return { success: false, error: result.stderr };
   }
+  stripApplicationAuditHooks(outputFile);
   
   return { success: true };
 }
@@ -515,6 +528,7 @@ export async function createCleanPgBackup(): Promise<PgBackupResult> {
   
   console.log("[Clean Backup] Step 1: Exporting full database schema...");
   const schemaResult = await runPgCommand("pg_dump", schemaArgs, env, schemaFile);
+  if (schemaResult.success) stripApplicationAuditHooks(schemaFile);
   
   if (!schemaResult.success) {
     return {
@@ -580,7 +594,7 @@ DECLARE
 BEGIN
     FOR schema_name IN 
         SELECT nspname FROM pg_namespace 
-        WHERE nspname NOT IN ('public', 'information_schema', 'pg_catalog', 'pg_toast')
+        WHERE nspname NOT IN ('public', 'information_schema', 'pg_catalog', 'pg_toast', 'meterflo_audit')
         AND nspname NOT LIKE 'pg_%'
     LOOP
         EXECUTE 'DROP SCHEMA IF EXISTS ' || quote_ident(schema_name) || ' CASCADE';
@@ -726,7 +740,11 @@ function escapeValue(value: any): string {
   return `'${escaped}'`;
 }
 
-export async function createPgBackupArchive(res: any, backupType: BackupType = "database"): Promise<void> {
+export async function createPgBackupArchive(res:any,backupType:BackupType="database"):Promise<void> {
+  if (!auditingEnabled) return createPgBackupArchiveData(res,backupType);
+  return auditedOperation("systemBackup",backupType,()=>createPgBackupArchiveData(res,backupType));
+}
+async function createPgBackupArchiveData(res: any, backupType: BackupType = "database"): Promise<void> {
   console.log(`[Backup] Starting backup (type: ${backupType})...`);
   
   // Backup types:
@@ -988,6 +1006,39 @@ export async function extractBackupFromArchive(zipBuffer: Buffer): Promise<{
 }
 
 export async function restorePgBackup(
+  sqlFile:string,options:{disableForeignKeys?:boolean;isCleanBackup?:boolean;clearExisting?:boolean}={}
+) {
+  if (!auditingEnabled) return restorePgBackupData(sqlFile,options);
+  return auditedOperation("systemRestore",options.isCleanBackup?"clean-database":"database",async()=>{
+    // Keep local audit history outside restored public/project schemas. Support
+    // older MeterFlo clean scripts while explicitly preserving the audit schema.
+    let sql=fs.readFileSync(sqlFile,"utf8");
+    sql=sql.replace(/nspname NOT IN \('public', 'information_schema', 'pg_catalog', 'pg_toast'\)/g,
+      "nspname NOT IN ('public', 'information_schema', 'pg_catalog', 'pg_toast', 'meterflo_audit')");
+    if (/(?:DROP|CREATE)\s+SCHEMA\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?["']?meterflo_audit\b/i.test(sql) ||
+        /\b(?:DROP|ALTER|CREATE|TRUNCATE)\s+(?:(?:TABLE|FUNCTION|PROCEDURE|SEQUENCE|INDEX|VIEW|TYPE)\s+)?(?:IF\s+(?:NOT\s+)?EXISTS\s+)?"?meterflo_audit"?\s*\./i.test(sql) ||
+        /\bSET\s+(?:LOCAL\s+)?search_path\s*(?:TO|=)[^;\n]*meterflo_audit/i.test(sql) ||
+        /(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM|TRUNCATE|COPY)\s+"?meterflo_audit"?\s*\./i.test(sql) ||
+        /\bDROP\s+(?:DATABASE|OWNED)\b/i.test(sql)) {
+      return {success:false,warnings:[],error:"Restore refused: the archive attempts to replace local audit history."};
+    }
+    // Unknown procedural SQL could dynamically erase the protected schema.
+    // Known clean-script loop is supported; application auditing is not a SQL sandbox.
+    if (/EXECUTE\s+['"]DROP SCHEMA/i.test(sql) && !sql.includes("'pg_toast', 'meterflo_audit'")) {
+      return {success:false,warnings:[],error:"Restore refused: dynamic schema cleanup does not protect audit history."};
+    }
+    const safeSql=path.join(os.tmpdir(),`meterflo_audit_restore_${Date.now()}.sql`);
+    fs.writeFileSync(safeSql,sql);
+    try {
+      const result=await restorePgBackupData(safeSql,options);
+      // Reinstall transactional business hooks even after a partially failed
+      // restore. New snapshot rows are not invented historical user changes.
+      await initializeAudit(applicationPool);
+      return result;
+    } finally {fs.rmSync(safeSql,{force:true});}
+  });
+}
+async function restorePgBackupData(
   sqlFile: string,
   options: { disableForeignKeys?: boolean; isCleanBackup?: boolean; clearExisting?: boolean } = {}
 ): Promise<{
@@ -1245,7 +1296,11 @@ ${postRestoreStatements}`;
   return { ...result, tablesRestored };
 }
 
-export async function restoreFilesFromPgArchive(
+export async function restoreFilesFromPgArchive(zipBuffer:Buffer,targetPath:string) {
+  if(!auditingEnabled) return restoreFilesFromPgArchiveData(zipBuffer,targetPath);
+  return auditedOperation("systemFilesRestore","project-files",()=>restoreFilesFromPgArchiveData(zipBuffer,targetPath));
+}
+async function restoreFilesFromPgArchiveData(
   zipBuffer: Buffer,
   targetPath: string
 ): Promise<{ filesRestored: number; errors: string[] }> {
@@ -1286,7 +1341,11 @@ export async function restoreFilesFromPgArchive(
   }
 }
 
-export async function restoreWebAppFilesFromArchive(
+export async function restoreWebAppFilesFromArchive(zipBuffer:Buffer,targetPath:string) {
+  if(!auditingEnabled) return restoreWebAppFilesFromArchiveData(zipBuffer,targetPath);
+  return auditedOperation("systemFilesRestore","webapp-files",()=>restoreWebAppFilesFromArchiveData(zipBuffer,targetPath));
+}
+async function restoreWebAppFilesFromArchiveData(
   zipBuffer: Buffer,
   targetPath: string
 ): Promise<{ filesRestored: number; errors: string[] }> {

@@ -6,6 +6,9 @@ import { storage } from "./storage";
 import { appendResetNote, resetAssignment, WorkOrderResetError, type ResetWorkOrderOptions } from "../shared/work-order-reset";
 import { enqueueCustomerDelivery } from "./customerApiService";
 import { initializeExactReadings } from "./exactReadingMigration";
+import { installProjectAudit } from "./auditMigration";
+import { auditedOperation, insertAuditEvent } from "./auditService";
+import { auditingEnabled } from "./auditContext";
 import { exactReadingDto, exactReadingFields, capturedReadingText, readingParameter, withExactReadings } from "../shared/exact-readings";
 
 function readingSetClauses(column: string, valueIndex: number, textIndex: number) {
@@ -186,6 +189,11 @@ export async function createProjectSchema(projectName: string, projectId: number
     `);
     
     await initializeExactReadings(client,schemaName);
+    if (auditingEnabled) {
+      await client.query(`INSERT INTO meterflo_audit.project_scopes(schema_name,project_id,project_label) VALUES($1,$2,$3)
+        ON CONFLICT(schema_name) DO UPDATE SET project_id=EXCLUDED.project_id,project_label=EXCLUDED.project_label`,[schemaName,projectId,projectName]);
+      await installProjectAudit(client,schemaName);
+    }
     console.log(`Created project schema with unique ID indexes: ${schemaName}`);
     return schemaName;
   } finally {
@@ -197,8 +205,18 @@ export async function createProjectSchema(projectName: string, projectId: number
 export async function deleteProjectSchema(schemaName: string): Promise<void> {
   const client = await pool.connect();
   try {
+    await client.query("BEGIN");
     await client.query(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`);
+    if (auditingEnabled) {
+      const {rows:[scope]}=await client.query("SELECT project_id,project_label FROM meterflo_audit.project_scopes WHERE schema_name=$1",[schemaName]);
+      await insertAuditEvent(client,{action:"schema.deleted",entityType:"projectSchema",entityId:String(scope?.project_id || ""),
+        projectId:scope?.project_id,projectLabel:scope?.project_label});
+    }
+    await client.query("COMMIT");
     console.log(`Deleted project schema: ${schemaName}`);
+  } catch(e) {
+    await client.query("ROLLBACK");
+    throw e;
   } finally {
     client.release();
   }
@@ -357,6 +375,7 @@ export async function migrateProjectSchema(schemaName: string): Promise<void> {
     }
     
     await initializeExactReadings(client,schemaName);
+    if (auditingEnabled) await installProjectAudit(client,schemaName);
 
     // Step 5: Drop deprecated _id suffix columns (consolidate to text-based references)
     const deprecatedColumns = [
@@ -1672,7 +1691,12 @@ export function getProjectWorkOrderStorage(schemaName: string): ProjectWorkOrder
 }
 
 // Backup project database to JSON format
-export async function backupProjectDatabase(schemaName: string): Promise<{
+export async function backupProjectDatabase(schemaName:string) {
+  if (!auditingEnabled) return backupProjectDatabaseData(schemaName);
+  const {rows:[scope]}=await pool.query("SELECT project_id,project_label FROM meterflo_audit.project_scopes WHERE schema_name=$1",[schemaName]);
+  return auditedOperation("projectBackup","project-database",()=>backupProjectDatabaseData(schemaName),scope?.project_id,scope?.project_label);
+}
+async function backupProjectDatabaseData(schemaName: string): Promise<{
   schemaName: string;
   backupDate: string;
   workOrders: ProjectWorkOrder[];
@@ -1745,6 +1769,13 @@ export async function backupProjectDatabase(schemaName: string): Promise<{
 
 // Restore project database from backup JSON
 export async function restoreProjectDatabase(
+  schemaName:string,backup:{workOrders:Array<Omit<ProjectWorkOrder,"id"|"createdAt"|"updatedAt">>},options:{clearExisting?:boolean}={}
+) {
+  if (!auditingEnabled) return restoreProjectDatabaseData(schemaName,backup,options);
+  const {rows:[scope]}=await pool.query("SELECT project_id,project_label FROM meterflo_audit.project_scopes WHERE schema_name=$1",[schemaName]);
+  return auditedOperation("projectRestore","project-database",()=>restoreProjectDatabaseData(schemaName,backup,options),scope?.project_id,scope?.project_label);
+}
+async function restoreProjectDatabaseData(
   schemaName: string,
   backup: { workOrders: Array<Omit<ProjectWorkOrder, "id" | "createdAt" | "updatedAt">> },
   options: { clearExisting?: boolean } = {}
