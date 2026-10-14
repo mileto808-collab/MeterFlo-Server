@@ -1,6 +1,7 @@
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
 import { rm, readFile } from "fs/promises";
+import { execFileSync } from "node:child_process";
 
 // server deps to bundle to reduce openat(2) syscalls
 // which helps cold start times
@@ -33,6 +34,9 @@ const allowlist = [
 ];
 
 async function buildAll() {
+  // Works in a Git checkout or ZIP distribution, without installed checker dependencies.
+  // Fail before deleting a prior build if internal-only package URLs have reappeared.
+  execFileSync(process.execPath, ["script/check-dependency-portability.mjs", "--files"], {stdio:"inherit"});
   await rm("dist", { recursive: true, force: true });
 
   console.log("building client...");

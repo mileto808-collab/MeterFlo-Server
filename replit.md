@@ -30,6 +30,7 @@ Preferred communication style: Simple, everyday language.
 - **State Management**: TanStack React Query for server state.
 - **Form Handling**: React Hook Form with Zod validation.
 - **Build Tool**: Vite for frontend, esbuild for backend.
+- **Standalone dependency portability**: Keep locked package downloads on verified public addresses while preserving versions/integrity. Internal package-firewall URLs cannot resolve on standalone Windows/Linux; changing npm's registry alone does not repair embedded lockfile URLs. Run `npm run check:dependency-portability` and its staged variant after dependency changes. The build checks distribution files before deleting old output; this does not disable managed install protections. Use `npm ci --include=dev --registry=https://registry.npmjs.org` on standalone servers, and follow the Windows guide's maintenance/recovery procedure.
 - **Database**: PostgreSQL with Drizzle ORM.
 - **Schema**: Shared `drizzle-zod` schema between client and server.
 

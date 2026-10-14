@@ -97,7 +97,7 @@ Before starting, ensure you have administrator access to your Windows server.
 **Required Software:**
 | Software | Minimum Version | Purpose |
 |----------|-----------------|---------|
-| Node.js | 18.x or higher | JavaScript runtime |
+| Node.js | 20.19 or higher (supported LTS recommended) | JavaScript runtime; locked dependencies require Node 20+ |
 | PostgreSQL | 14.x or higher | Database server |
 | Git for Windows | 2.x or higher | Version control + Git Bash shell |
 | XAMPP | 8.x or higher | Apache web server |
@@ -272,8 +272,17 @@ If git clone doesn't work:
 
 ```cmd
 cd C:\xampp\htdocs
-npm install
+node script/check-dependency-portability.mjs --files
+npm ci --include=dev --registry=https://registry.npmjs.org
 ```
+
+Run each command separately and continue only after success. Use the actual checkout
+directory (for example `C:\xampp\htdocs\meterflo` for a subfolder installation).
+The public registry flag selects package metadata; the committed lockfile also
+needs portable download URLs. **Do not delete the lockfile to work around an
+installation failure.** `npm ci` installs the locked versions and recreates
+`node_modules`; it does not remove your database, `.env`, local PM2 configuration
+or uploads. Build dependencies are required even when the runtime uses production mode.
 
 ---
 
@@ -563,7 +572,8 @@ cd C:\xampp\htdocs
 mkdir meterflo
 git clone https://replit.com/@YourUsername/YourProject.git meterflo
 cd meterflo
-npm install
+node script/check-dependency-portability.mjs --files
+npm ci --include=dev --registry=https://registry.npmjs.org
 ```
 
 ### 8a.2 Configure Vite Base Path
@@ -1177,23 +1187,47 @@ git remote set-url origin https://github.com/your-username/meterflo-server.git
 ### 10.2 Pull Latest Changes
 
 ```cmd
-cd C:\xampp\htdocs
-git pull origin main
+cd /d C:\xampp\htdocs\meterflo
+git status --short
+git pull --ff-only origin main
+node script/check-dependency-portability.mjs --files
 ```
 
-If you downloaded manually without Git, re-download and extract the files.
+These update examples use a subfolder checkout. If your application is installed
+directly in `htdocs`, use `C:\xampp\htdocs` instead. Confirm this is the directory
+containing `package.json`, `package-lock.json` and your existing private `.env`.
+Inspect local changes before pulling; do not discard them or reset Git for an npm error.
+Run each command separately and **stop on any failure**. This preflight does not
+stop the current application. Back up the database and protected local files
+through your normal procedure before the maintenance window.
+
+If you downloaded manually without Git, extract the release separately and preserve
+your private `.env`, local PM2 copy and uploaded files. The `--files` check also
+works without Git metadata.
 
 ### 10.3 Install Any New Dependencies
 
 ```cmd
-npm install
+pm2 stop meterflo
+npm ci --include=dev --registry=https://registry.npmjs.org
 ```
+
+Schedule a maintenance window: `npm ci` removes and recreates `node_modules`, so
+do not run it against the active installation while the process is serving users.
+It installs the exact lockfile graph rather than choosing new package versions.
+The `--include=dev` flag retains TypeScript/Vite/esbuild needed for the build.
+**If installation fails, stop here** and follow the dependency-failure recovery
+below. A partially changed dependency directory may not run the previous build.
 
 ### 10.4 Rebuild the Application
 
 ```cmd
-npx tsx script/build.ts
+npm run check
+npm run build
 ```
+
+Continue only after both succeed. The build's portability guard runs before it
+removes old output, but other build failures can leave incomplete `dist` output.
 
 ### 10.5 Apply Database Schema Changes (when required)
 
@@ -1209,15 +1243,63 @@ against the production database before restarting PM2. If a release does not men
 
 ```cmd
 pm2 restart meterflo
+pm2 list
+pm2 logs meterflo --lines 50 --nostream
+curl -I http://127.0.0.1:3000/
 ```
+
+Use the port configured in your private service environment, not necessarily
+3000. Then open the normal HTTPS URL, sign in and check a project/work-order page.
+PM2 saying **started** or briefly **online** is not proof of application health
+or of a successful build. Review logs privately; redact credentials before sharing them.
 
 ### 10.7 Quick Update Command (All-in-One)
 
 ```cmd
-cd C:\xampp\htdocs && git pull origin main && npm install && npx tsx script/build.ts && pm2 restart meterflo
+cd /d C:\xampp\htdocs\meterflo && git pull --ff-only origin main && node script/check-dependency-portability.mjs --files && pm2 stop meterflo && npm ci --include=dev --registry=https://registry.npmjs.org && npm run check && npm run build && pm2 restart meterflo
 ```
 
 > Add `&& npm run db:push` before `&& pm2 restart meterflo` only when the release notes call for a schema change.
+
+Use this only after the manual preflight/backups above. With `&&`, a failing step
+skips everything after it, including the restart; PM2 can remain stopped. Prefer
+the individual commands while troubleshooting, and perform the health checks in
+Section 10.6 afterward. This command does not implement automatic rollback.
+
+#### Dependency failure: internal download hostname / Exit handler never called
+
+Repeated `ENOTFOUND` requests to `package-firewall.replit.internal` mean the
+lockfile contains download addresses reachable only in its managed environment.
+The final npm **Exit handler never called!** message can obscure these preceding
+network failures. Successful public metadata requests do not make those locked
+tarball addresses portable, and `--registry` alone does not rewrite them.
+
+1. Do not reset Git, restore the database, delete `package-lock.json`, run
+   `npm audit fix`, or change Node/npm versions merely to address this hostname.
+   Pull the release containing the corrected, integrity-verified public URLs.
+   Run `node script/check-dependency-portability.mjs --files` from the actual
+   application directory. If it fails, do not continue installing.
+2. If the app is still serving the old installation, leave it running until
+   preflight succeeds and the maintenance window starts. If an earlier install
+   failed after replacing dependencies, do not assume `pm2 start meterflo` will
+   recover it. Keep it stopped while repairing the installation.
+3. Retry the exact `npm ci --include=dev --registry=https://registry.npmjs.org`
+   command. If it fails again, read the failing command's log under
+   `%LOCALAPPDATA%\npm-cache\_logs`; report the first substantive error along with
+   `node -v` / `npm -v`, removing credentials/tokens. Separate DNS, proxy, integrity,
+   unsupported-engine and native-addon build errors rather than repeatedly resetting Git.
+4. Only after a successful install, run `npm run check`, `npm run build`,
+   `pm2 restart meterflo` and the health checks above. If repair cannot complete,
+   restore a **verified complete prior application/dependency build** using your
+   backup procedure, while preserving the private environment and data. Restoring
+   only old `dist` files beside partially installed modules is not a reliable rollback.
+
+For maintainers: run `npm run check:dependency-portability` after dependency
+changes and `npm run check:dependency-portability:staged` after staging them.
+The checks report filenames/rules, not credentials or source values. Managed
+install tooling can reintroduce internal URLs; verify equivalent public artifacts
+against their existing integrity hashes instead of replacing versions or hashes.
+These checks do not disable the managed package firewall.
 
 ### 10.8 Troubleshooting Git Issues
 
@@ -1266,7 +1348,8 @@ robocopy C:\xampp\meterflo-backups\htdocs-backup\deploy deploy /E
 robocopy C:\xampp\meterflo-backups\htdocs-backup\"Project Files" "Project Files" /E
 
 # STEP 4: Reinstall and restart
-npm install
+node script/check-dependency-portability.mjs --files
+npm ci --include=dev --registry=https://registry.npmjs.org
 npx tsx script/build.ts
 pm2 restart meterflo
 ```
@@ -1293,7 +1376,8 @@ robocopy htdocs_backup\"Project Files" htdocs\"Project Files" /E
 
 # STEP 5: Install dependencies and rebuild
 cd htdocs
-npm install
+node script/check-dependency-portability.mjs --files
+npm ci --include=dev --registry=https://registry.npmjs.org
 npx tsx script/build.ts
 
 # STEP 6: Start application
@@ -1352,8 +1436,8 @@ This usually means authentication failed. Ensure:
 | Command | Description |
 |---------|-------------|
 | `npx tsx script/build.ts` | Build the application |
-| `npm install` | Install dependencies |
-| `npm ci` | Clean install dependencies |
+| `npm ci --include=dev --registry=https://registry.npmjs.org` | Recreate exact locked dependencies during stopped-service maintenance, including build tools |
+| `node script/check-dependency-portability.mjs --files` | Check portable dependency addresses before installation (also works for ZIP releases) |
 
 ---
 
@@ -1428,7 +1512,7 @@ pm2 logs meterflo --lines 50
    - Kill the process or change the PORT environment variable
 
 3. **Missing node_modules:**
-   - Run: `npm install`
+   - Follow Section 10's stopped-service maintenance procedure and run `npm ci --include=dev --registry=https://registry.npmjs.org`; do not reinstall against a running instance.
 
 ### Cannot Access via Apache (http://localhost)
 
@@ -1515,7 +1599,7 @@ pm2 logs meterflo --lines 50
    - Run: `npx tsc --noEmit` to see TypeScript errors
 
 2. **Missing dependencies:**
-   - Run: `npm install`
+   - Follow Section 10's stopped-service maintenance procedure and run `npm ci --include=dev --registry=https://registry.npmjs.org`, then rebuild before restarting.
 
 3. **Disk space:**
    - Ensure sufficient disk space for the build
@@ -1581,7 +1665,7 @@ Automated verification uses isolated Linux processes, temporary Git repositories
 2.  npm install -g pm2 pm2-windows-startup
 3.  Create PostgreSQL database and user
 4.  git clone <repo-url> C:\xampp\htdocs
-5.  cd C:\xampp\htdocs && npm install
+5.  cd C:\xampp\htdocs && node script/check-dependency-portability.mjs --files && npm ci --include=dev --registry=https://registry.npmjs.org
 6.  copy .env.example .env  REM then edit .env and fill in real values (Section 5)
 7.  npx tsx script/build.ts
 8.  npm run db:push          REM initialize the database schema (Section 6a)
@@ -1597,13 +1681,21 @@ Automated verification uses isolated Linux processes, temporary Git repositories
 
 ### After Code Updates
 ```cmd
-cd C:\xampp\htdocs
-git pull origin main
-npm install
-npx tsx script/build.ts
+REM Example: subfolder checkout. Use your actual install root.
+cd /d C:\xampp\htdocs\meterflo
+git pull --ff-only origin main
+node script/check-dependency-portability.mjs --files
+pm2 stop meterflo
+npm ci --include=dev --registry=https://registry.npmjs.org
+npm run check
+npm run build
 REM npm run db:push        (only if release notes mention a schema change)
 pm2 restart meterflo
+pm2 logs meterflo --lines 50 --nostream
 ```
+
+Run these separately, stopping on each failure. See Section 10 for preflight,
+backups, recovery and health checks; do not restart a partially installed/built release.
 
 ### Daily Operations
 ```cmd
