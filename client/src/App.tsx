@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
+import CustomerExtension from "@/pages/customer-extension";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useAuth } from "@/hooks/useAuth";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -68,6 +69,7 @@ function AuthenticatedRouter() {
 
   return (
     <Switch>
+      <Route path="/extensions/:extensionId/:screenId" component={CustomerExtension} />
       <Route path="/" component={Dashboard} />
       
       {role === "customer" && (

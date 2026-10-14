@@ -12,6 +12,11 @@ Project Files/
 !.env.example
 /generated-artifacts/
 logs/
+meterflo.instance.json
+customer-packages/
+meterflo.activation.json
+meterflo.activation.json.*.pending
+meterflo-stage-receipt.json
 dump.pm2
 dump.pm2.bak
 *.apk

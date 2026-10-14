@@ -11,9 +11,14 @@ import { FileText, Server, Smartphone, ChevronLeft, Download, Globe, Shield, Ref
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 
-type DocType = "system-overview" | "windows-deployment" | "mobile-api" | "mobile-sync" | "customer-api" | "system-admin" | "audit" | null;
+type DocType = "system-overview" | "windows-deployment" | "mobile-api" | "mobile-sync" | "customer-api" | "system-admin" | "audit" | "core-updates" | null;
 
 const docOptions = [
+  {
+    id:"core-updates" as DocType,title:"Customer Core Updates & Extensions",
+    description:"Preserve customer customizations with versioned packages, compatibility checks, staged updates and publishing guidance.",
+    icon:RefreshCw,
+  },
   {
     id:"audit" as DocType,title:"Audit Logs Guide",
     description:"Permissions, field changes, backup/import outcomes, privacy, restore continuity and retention.",

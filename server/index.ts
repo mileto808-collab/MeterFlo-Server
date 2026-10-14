@@ -16,6 +16,8 @@ import { createServer } from "http";
 import { importScheduler } from "./importScheduler";
 import { fileImportScheduler } from "./fileImportScheduler";
 import { storage } from "./storage";
+import { registerCustomerExtensions } from "./customerExtensions";
+import { isAuthenticated } from "./replitAuth";
 import { initializeLogger, logger } from "./logger";
 import { initializeCustomerApi, startCustomerApiWorker } from "./customerApiService";
 import { initializeApiImports, startApiImportWorker } from "./apiImportService";
@@ -126,6 +128,7 @@ app.use((req, res, next) => {
   await reconcileAuditOperations();
   
   await registerRoutes(httpServer, app);
+  await registerCustomerExtensions(app, {auth:isAuthenticated, storage});
 
   app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

@@ -8,7 +8,7 @@ const dependencyNames = new Set([
   "pnpm-lock.yaml", "pnpm-workspace.yaml", "yarn.lock", ".yarnrc", ".yarnrc.yml", "bun.lock",
 ]);
 const excludedDirectories = new Set([
-  ".git", "node_modules", "dist", ".local", ".agents", "logs", "generated-artifacts",
+  ".git", "node_modules", "dist", ".cache", ".local", ".agents", "logs", "generated-artifacts",
   "Project Files", "Mobile APK Releases", "attached_assets",
 ]);
 export function isDependencyConfiguration(file) {

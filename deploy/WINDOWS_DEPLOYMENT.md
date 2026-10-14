@@ -1303,11 +1303,11 @@ These checks do not disable the managed package firewall.
 
 ### 10.8 Troubleshooting Git Issues
 
-> **Important**: Before running any `git reset --hard` command, always back up your entire htdocs folder. This command will overwrite ALL files.
+> **Important**: Never use a hard reset as the default update/failure recovery for a customer instance. It can discard tracked changes and customer-only commits. Back up and reconcile customer work in a separate workspace instead.
 
-#### Complete Backup Before Git Reset
+#### Complete Backup Before Update Reconciliation
 
-Always create a full backup before destructive git commands. This protects:
+Create a verified backup before reviewing update conflicts. This protects:
 - `.env` - Private application settings and credentials. An untracked, ignored file is preserved by a normal Git reset, but a previously tracked file is not protected by ignore rules; deletion/mirror commands can remove it.
 - `deploy\ecosystem.config.cjs` - Ignored local copy of the secret-free template (automatic install-root paths and production launch mode only). Legacy copies must be reviewed before backing up or restoring.
 - `Project Files\` folder - Work order attachments and uploads
@@ -1341,18 +1341,23 @@ cd htdocs
 git init
 git remote add origin https://github.com/mileto808-collab/meterflo-server.git
 git fetch origin
-git reset --hard origin/main
+git status --short
+git log --oneline --left-right HEAD...origin/main
 
-# STEP 3: Restore all local data from backup
-robocopy C:\xampp\meterflo-backups\htdocs-backup\deploy deploy /E
-robocopy C:\xampp\meterflo-backups\htdocs-backup\"Project Files" "Project Files" /E
+# STEP 3: Stop here and reconcile customer changes in a separate workspace.
+# Do not reset or overwrite the existing installation.
+# See CUSTOMER_CORE_UPDATES.md for versioned packages and staged releases.
 
-# STEP 4: Reinstall and restart
+# STEP 4: Only after reconciliation and verification, follow Section 10 maintenance.
 node script/check-dependency-portability.mjs --files
 npm ci --include=dev --registry=https://registry.npmjs.org
 npx tsx script/build.ts
 pm2 restart meterflo
 ```
+
+For independently customized instances, prefer the staged candidate and explicit
+activation procedure in **Documentation → Customer Core Updates & Extensions**.
+Do not run the install/restart lines after unresolved conflicts.
 
 #### Problem: "destination path 'htdocs' already exists and is not an empty directory"
 

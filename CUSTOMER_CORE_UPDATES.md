@@ -1,0 +1,127 @@
+# Customer-Owned MeterFlo Updates
+
+## Supported model
+
+Customer-owned Replit and standalone Windows/Linux instances keep three owners separate:
+
+| Owner | Examples | Update behavior |
+|---|---|---|
+| Core release | Standard application code, core package/lockfile, versioned extension interface | Select a numbered core tag and build a candidate |
+| Customer package | Customer report screens, server report handlers, separately pinned dependencies | Copy the customer's package source unchanged into the candidate and check compatibility |
+| Instance data/configuration | Database, project settings, accounts, audit history, attachments/APKs, private environment and PM2 configuration | Remain with the customer; never copy the core server's database over them |
+
+This foundation supports **trusted, permission-scoped, read-only report screens and server handlers**. It is not an arbitrary-code upload feature, a sandbox, or a promise that every existing core modification can be automatically converted. More complex custom forms and workflow hooks need additional versioned interfaces.
+
+The curated helper API does not sandbox arbitrary JavaScript: a trusted extension
+still runs with the Node process's capabilities. Review its source/dependencies
+before enabling it; the read-only contract is not permission to load untrusted code.
+
+## Configure a customer workspace
+
+1. Back up the instance and inspect any existing direct edits to core files.
+2. Copy `deploy/meterflo.instance.example.json` to root `meterflo.instance.json`.
+3. Set `coreSource` to the approved core Git repository, for example `https://github.com/your-company/MeterFlo-Core.git`. Embedded credentials, query tokens and non-HTTPS sources are rejected; use the host's normal protected Git authentication.
+4. Verify `installedSchemaVersion` with the release/database maintainer. The initial foundation uses revision `1`; this declaration is an operator assertion, not an automatic database inspection.
+5. Maintain custom packages in a separate customer repository and place its checked-out package in `customer-packages/project-report`. To try the working example in a **test workspace**, copy `examples/customer-report` there and list that directory in the instance manifest.
+6. Build and test using `npm ci --include=dev --registry=https://registry.npmjs.org`, `npm run check`, `npm run build`, and `npm run test:customer-updates`.
+
+Older instances must first adopt and verify this foundation through a reviewed
+merge/release. Standalone activation requires a compiled baseline whose
+release-health response can be verified; it does not assume legacy binaries
+without that endpoint can provide verified recovery.
+
+Instance manifests and `customer-packages/` are ignored by the core Git repository. Keep independent backups/source control for them: ignoring a directory is not a backup. The example is not enabled or populated in normal installations.
+
+Do not put secrets or executable installation options in the instance manifest. Its fields are:
+
+| Field | Example | Use |
+|---|---|---|
+| `coreSource` | `https://github.com/your-company/MeterFlo-Core.git` | Approved core source, independent of the customer's `origin` repository |
+| `extensions` | `[{"directory":"customer-packages/project-report"}]` | Relative package directories owned by the customer; paths cannot escape the instance |
+| `installedSchemaVersion` | `1` | DBA-reviewed installed schema revision; unknown/incompatible readiness blocks upgrades |
+| `approvedMigrations` | `[{"id":"core.example","sha256":"<actual 64-character file checksum>"}]` | Record only after reviewing/applying the precise SQL through the customer's controlled process |
+
+## Develop an extension
+
+The example package has its own `package.json` and npm lockfile. Its `meterfloExtension` declaration defines:
+
+- `id`: stable lowercase identifier such as `project-report`.
+- `extensionApiVersion`: `1` for this contract.
+- `minCoreVersion` / `maxCoreVersionExclusive`: inclusive lower and exclusive upper numbered versions, for example `2.1.1` and `3.0.0`.
+- `permission`: an existing permission available through normal MeterFlo role management, such as `projects.view`. Unknown keys are rejected; do not seed unmanageable custom permissions.
+- `serverEntry`: package-owned `.mjs`, `.js`, or `.ts` entry exporting `reports`.
+- `screens`: declared IDs/titles and the associated report export; for example `projects` → `reports.projects`.
+- `migrations`: owned, checksum-verified SQL declarations; use `ownership: "extension:project-report"` for this example.
+
+A handler receives `{apiVersion, actor, getProjects}`. `actor` contains identity only, not password hashes or session secrets. `getProjects()` enforces `projects.view`, respects associated projects, and returns only project ID/name/active status. Return `{title, columns, rows}` with primitive cells; rows are limited to 1,000 and text is rendered safely, not as HTML.
+
+Visible screens appear under **Customer Extensions** and use `/extensions/<id>/<screen>`. The server catalog and `/api/customer-extensions/<id>/reports/<report>` enforce authentication and permissions on every request, including after revocation.
+
+Customer package dependencies are installed from their own lockfiles and JavaScript handlers are bundled separately. Pure JavaScript and Node built-in dependencies are the initial supported packaging path; native addons or additional runtime assets need explicit packaging/testing, not an assumption that a compiler automatically copies them. Generated `.cache/` directories are not release source or customer data and are not packaged; store durable files under protected instance storage. No customer changes to the core dependency graph are required for the example.
+
+## Publish a core release
+
+Maintain core code separately. Increment the core package version (and matching lockfile metadata), declare extension interface/schema compatibility in `meterflo.release.json`, pass checks/build/tests, and create a matching immutable numbered tag, such as `v2.2.0`. The package version must match the tag.
+
+For public GitHub sources, publish a GitHub Release at that tag so published instances without Git can receive a release notice. Their notices do not authorize an in-place update: preparation still happens in the workspace. Private/non-GitHub sources require authenticated workspace access.
+
+## Preview Changes
+
+**Settings → Web Application Updates → Preview Changes** displays installed/candidate core versions, the approved source, extension compatibility, local tracked/staged/untracked changes and blocking reasons. Git-backed previews fetch references only; they do not check out code, install packages, stop PM2, apply SQL or publish.
+
+Dirty core files, divergent branches, direct committed core modifications, missing baseline/tag/metadata, inaccessible sources and incompatible extensions are blockers. An unavailable source is **not** “already up to date.” A published runtime without Git can check a public approved GitHub release feed but cannot prepare its own replacement.
+
+The legacy GitHub Releases URL in Settings does not override the approved `coreSource`. There is no hard-reset fallback or instruction to discard custom work.
+
+## Standalone staging and activation
+
+From the protected existing application root, prepare an **outside, new** directory. Examples:
+
+```cmd
+npm run stage:customer-release -- --tag v2.2.0 --target C:\meterflo-releases\v2.2.0
+```
+
+```sh
+npm run stage:customer-release -- --tag v2.2.0 --target /srv/meterflo-releases/v2.2.0
+```
+
+Staging verifies the selected core tag/commit and package compatibility, copies customer package source, installs separate locked graphs with build dependencies, type-checks/builds/tests and writes a receipt. It never copies `.env`, the customer database, or uploaded files; failed staging never invokes PM2. Keep the failed directory for private troubleshooting or choose a new target on retry. No pre-existing candidate directory is overwritten or deleted automatically.
+
+Review the candidate in an isolated test environment, especially customer integrations and custom behavior. Confirm a current database/files/private-configuration backup. For same-schema standalone activation:
+
+```cmd
+npm run activate:customer-release -- --candidate C:\meterflo-releases\v2.2.0 --health-url http://127.0.0.1:3000/api/system/release-health --confirm-backup
+```
+
+Use the actual local port (Linux uses the same options with Linux paths). The private, policy-validated `deploy/ecosystem.config.cjs` must exist. Activation preserves its name/process settings, protected working directory and environment-loading behavior while selecting the candidate's compiled script. Customer storage paths remain rooted at the existing instance, not the new release directory.
+
+The candidate must have an unchanged receipt/build/lockfile/core manifest. Customer package/source configuration must still match the staged snapshot. The existing compiled baseline's health is verified before changing PM2. Candidate health must match its core version and customer package content hashes; the check waits through old workers during PM2 reload. Failed activation reloads the prior application and verifies its health. If recovery also fails, the command explicitly reports that the service may be unavailable. Database/data restores are never automatic.
+
+A successful activation is recorded in the ignored `meterflo.activation.json`; retain the prior complete application/dependencies. For a later operator-managed recovery, the secret-free prior PM2 configuration and prior release metadata are in `generated-artifacts/customer-activation/`. Review schema compatibility, reload `prior.pm2.json`, verify the prior health result, and restore the prior pointer from `prior-release.json` (or remove the pointer only when returning to the original baseline). Do not blindly roll back application code after incompatible database changes.
+
+## Customer-owned Replit publishing
+
+1. Retrieve the selected core tag in the **customer's workspace**, keeping customer packages/configuration separate. Use a reviewed merge for an existing fork; never force the workspace to match the core.
+2. Prepare/test the composed candidate and review migrations. Then reconcile that exact core release into the workspace that will be published, retaining the customer package directories and instance manifest needed by the build.
+3. Run the checks/build/tests again in that workspace. Confirm the build's `dist/customer-release.json` and compiled customer reports match the tested core/package versions.
+4. Review the files actually included in the publishing build; do not assume Git-ignore behavior alone controls a deployment snapshot. Preserve production database/storage connections and protected secrets; do not ship `.env`, staging receipts or local activation records.
+5. The customer/operator explicitly republishes the existing app. Changing this core app, committing Git changes or preparing a candidate does not update the customer's published snapshot.
+6. Verify the published release-health response and sign in to test the actual customer screens, permissions and integrations. Do not claim workspace/Linux tests prove the customer deployment worked.
+
+PM2 activation is **only** for standalone installations. The published app does not mutate its code or publish itself. Official publishing reference: https://docs.replit.com/features/publishing/after-you-publish
+
+## Database ownership and migrations
+
+Core migrations declare `ownership: "core"`; extension migrations declare their extension owner. Files must remain within the owner's directory, match SHA-256 and have unique IDs. Maintain customer tables under a clear extension namespace; never use a generic schema push or core database restore to erase unknown customer tables/columns.
+
+No migration SQL is executed by these tools. Approval is a human attestation after DBA review/application, not evidence that the tool inspected a database. Schema-changing updates require a separate controlled maintenance procedure. Automated PM2 activation/recovery is restricted to the same schema revision, and irreversible migration declarations must not be represented as safe code-only rollbacks.
+
+## Existing forks with direct core edits
+
+Back up and commit customer work, fetch the reviewed core release and perform a manual merge in a separate workspace. Resolve conflicts, review non-conflicting semantic changes, move suitable reports into owned packages, and test before promotion. A clean merge is not a compatibility guarantee. Missing history or unrelated forks require maintainer reconciliation, not resetting or overwriting the instance.
+
+## Verification coverage
+
+`npm run test:customer-updates` covers real local Git tags/previews, simulated staged installs/build failures, content preservation, incompatible metadata/migrations, authenticated report permissions/project scopes, and injected PM2/health activation/recovery. Actual build checks compile the composed application and report packages.
+
+The automated PM2 tests use a controlled runner, not a live Windows service. Native Windows, the customer's real extensions/database migration and a customer-owned Replit publish require those environments and explicit operator access. Report their results separately from local tests.

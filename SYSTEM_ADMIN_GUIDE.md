@@ -1,5 +1,13 @@
 # System Administration Guide
 
+## Customer-owned core updates
+
+See **Documentation → Customer Core Updates & Extensions** (`CUSTOMER_CORE_UPDATES.md`)
+for ownership boundaries, instance manifest fields, the report SDK example,
+permissions, staged standalone activation and customer-owned Replit publishing.
+Update previews do not offer a hard-reset fallback. Preserve customer data/configuration;
+unavailable or incompatible releases are blockers, not proof that an instance is current.
+
 This guide covers the operational requirements, business logic, and configuration guidelines for MeterFlo administrators. It also walks through how to set up a new project and how a field technician processes a work order from start to finish.
 
 ---
@@ -328,7 +336,7 @@ options, or the `mobileConfig` returned by `/api/users/:id/projects`. An Expo ap
 does not automatically discover these uploads without a separate native-app update.
 
 #### Web Application Updates
-Configures the GitHub Releases API URL the web app should check, runs an on-demand update check, and previews the exact shell command to run on the server to apply an update (with a fallback hard-reset command). The card itself does not run the update — the displayed command must be executed on the server. See [Web Application Updates](#web-application-updates).
+Checks the approved core source configured in the customer workspace instance manifest. The legacy GitHub Releases API URL remains saved but does not override that source. Preview displays compatibility/local-change blockers and, when safe, a candidate-staging command; there is no destructive fallback. The card does not activate or publish updates. See [Web Application Updates](#web-application-updates).
 - Permission: `settings.webUpdate`
 
 #### Security Settings
@@ -1188,16 +1196,22 @@ Four backup types are available, exposed via `GET /api/system/backup?type=<type>
 
 ## Web Application Updates
 
-MeterFlo includes a built-in update checker that integrates with GitHub releases. It lets administrators see whether a newer version is available and apply updates to a production server.
+MeterFlo checks numbered releases from the approved MeterFlo core source, independent
+of the customer's Git origin. Git-backed instances verify tags and compatibility;
+published instances without Git can receive notices from a public approved GitHub
+release feed. Private/non-GitHub sources require workspace access.
 
 ### Configuration
 
 1. Navigate to **Settings** → **Web Application Updates**.
-2. Enter the GitHub releases API URL for your MeterFlo repository:
+2. Configure `meterflo.instance.json` in the customer's workspace with the approved
+   HTTPS `coreSource`, verified schema revision and separately owned extension packages.
+   See `CUSTOMER_CORE_UPDATES.md` for field examples. The legacy Releases API URL remains:
    ```
    https://api.github.com/repos/YOUR-ORG/YOUR-REPO/releases/latest
    ```
-3. Click **Save**.
+3. Saving the legacy URL does not configure or replace the approved core source.
+   Prepare/build the customer-composed workspace before publishing it.
 
 ### Release process
 
@@ -1220,23 +1234,17 @@ On GitHub:
 On a production server:
 1. **Settings** → **Web Application Updates**.
 2. Click **Check for Updates**.
-3. If an update is available, you will see the new version number and release notes.
-4. Click **Preview Changes** to see which files will be modified.
+3. If an approved update is available, the checker shows its candidate version.
+4. Click **Preview Changes** to review changed filenames and compatibility blockers.
+   Git-backed previews fetch references only and do not modify the working tree.
 
 ### Applying an update
 
-1. SSH into the server (or open a terminal on it).
-2. `cd` into the MeterFlo application directory:
-   - Windows (XAMPP): `cd c:/xampp/htdocs/meterflo`
-   - Linux: `cd /var/www/meterflo`
-   - macOS: `cd /Applications/XAMPP/htdocs/meterflo`
-3. Pull the latest code:
-   ```bash
-   git pull origin main
-   ```
-4. Restart the application (Node.js process or service).
-
-> Run `git pull` from the application directory only — running it from the wrong directory will fail or update the wrong project.
+Follow `CUSTOMER_CORE_UPDATES.md`: reconcile direct core edits first, prepare a
+separate pinned candidate, test the customer-composed build, review schema readiness
+and confirm backups. Use explicit same-schema PM2 activation on standalone instances,
+or update/test the customer-owned workspace and explicitly republish on Replit.
+The checker never applies SQL, resets the workspace, stops the service or publishes.
 
 ### Version numbering
 

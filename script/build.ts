@@ -1,7 +1,10 @@
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
-import { rm, readFile } from "fs/promises";
+import { rm, readFile, mkdir, writeFile } from "fs/promises";
 import { execFileSync } from "node:child_process";
+import path from "node:path";
+import { loadCustomerRelease, ownedPath } from "../shared/customer-release";
+import { permissionKeys } from "../shared/schema";
 
 // server deps to bundle to reduce openat(2) syscalls
 // which helps cold start times
@@ -37,7 +40,19 @@ async function buildAll() {
   // Works in a Git checkout or ZIP distribution, without installed checker dependencies.
   // Fail before deleting a prior build if internal-only package URLs have reappeared.
   execFileSync(process.execPath, ["script/check-dependency-portability.mjs", "--files"], {stdio:"inherit"});
+  const customerRelease = loadCustomerRelease();
+  if (customerRelease.blockers.length) throw new Error(customerRelease.blockers.join("; "));
+  if(customerRelease.installedSchemaVersion!==null && customerRelease.installedSchemaVersion!==customerRelease.schemaVersion)
+    throw new Error("Declared database schema is incompatible with this composed release");
+  if(customerRelease.extensions.some(x=>!(Object.values(permissionKeys) as string[]).includes(x.permission)))
+    throw new Error("Customer extension permission is not available through normal MeterFlo role management");
   await rm("dist", { recursive: true, force: true });
+  await mkdir("dist/extensions", {recursive:true});
+  await writeFile("dist/customer-release.json",JSON.stringify(customerRelease,null,2));
+  for (const extension of customerRelease.extensions) {
+    await esbuild({entryPoints:[ownedPath(ownedPath(process.cwd(),extension.directory),extension.serverEntry)],
+      platform:"node",bundle:true,format:"cjs",outfile:path.join("dist/extensions",`${extension.id}.cjs`)});
+  }
 
   console.log("building client...");
   await viteBuild();

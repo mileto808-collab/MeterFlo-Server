@@ -518,7 +518,12 @@ export default function Settings() {
     filesChanged: string[];
     diff: string;
     updateCommand: string;
-    fallbackCommand?: string;
+    blockers?: string[];
+    commitsAhead?: number | null;
+    installed?: {version:string;coreSource:string|null;extensionApiVersion:number;schemaVersion:number;extensions:{id:string;version:string}[]};
+    candidateVersion?: string | null;
+    extensionCompatibility?: {id:string;version:string;compatible:boolean}[];
+    changes?: {status:string;file:string}[];
     message?: string;
   }
 
@@ -557,7 +562,9 @@ export default function Settings() {
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/settings/web-update-config"] });
-      if (data.hasGitUpdates) {
+      if (!data.latestVersion) {
+        toast({ title: "Core update status could not be verified", description: data.message || "Review Preview Changes for missing source/access settings.", variant: "destructive" });
+      } else if (data.hasGitUpdates) {
         toast({ title: `${data.commitsBehind} commit${data.commitsBehind === 1 ? '' : 's'} behind origin/${data.remoteBranch}` });
       } else if (data.updateAvailable && data.latestVersion) {
         toast({ title: `Update available: v${data.latestVersion}` });
@@ -2300,7 +2307,7 @@ export default function Settings() {
                         {webUpdateConfigData.cachedRelease.commitsBehind} commit{webUpdateConfigData.cachedRelease.commitsBehind === 1 ? '' : 's'} behind
                       </Badge>
                       <div className="text-xs text-muted-foreground">
-                        origin/{webUpdateConfigData.cachedRelease.remoteBranch}
+                        Core release: {webUpdateConfigData.cachedRelease.remoteBranch}
                       </div>
                     </div>
                   )}
@@ -2321,7 +2328,7 @@ export default function Settings() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="webUpdateUrl">GitHub Releases API URL</Label>
+                  <Label htmlFor="webUpdateUrl">Legacy GitHub Releases API URL</Label>
                   <Input
                     id="webUpdateUrl"
                     placeholder="https://api.github.com/repos/yourorg/meterflo/releases/latest"
@@ -2330,7 +2337,9 @@ export default function Settings() {
                     data-testid="input-web-update-url"
                   />
                   <p className="text-xs text-muted-foreground">
-                    Enter the GitHub releases API URL to enable web app update checks.
+                    Retained for legacy configuration. Core update checks require the approved coreSource in the workspace instance manifest.
+                    <br />
+                    Core safety checks use the approved coreSource in meterflo.instance.json. This URL is retained for legacy configuration; it does not override the approved source.
                     <br />
                     Format: https://api.github.com/repos/ORG/REPO/releases/latest
                   </p>
@@ -2382,14 +2391,14 @@ export default function Settings() {
                   <div className="border rounded-md p-4 space-y-3">
                     <div className="flex items-center justify-between gap-2 flex-wrap">
                       <h4 className="font-medium">{webUpdateConfigData.cachedRelease.releaseName}</h4>
-                      <a 
+                      {webUpdateConfigData.cachedRelease.releaseUrl && <a
                         href={webUpdateConfigData.cachedRelease.releaseUrl} 
                         target="_blank" 
                         rel="noopener noreferrer"
                         className="text-sm text-primary hover:underline"
                       >
                         View on GitHub
-                      </a>
+                      </a>}
                     </div>
                     {webUpdateConfigData.cachedRelease.releaseNotes && (
                       <div className="text-sm text-muted-foreground max-h-40 overflow-y-auto">
@@ -2418,11 +2427,26 @@ export default function Settings() {
             
             {updatePreviewData && (
               <div className="space-y-4">
+                {updatePreviewData.installed && <div className="p-3 border rounded-md space-y-1 text-sm">
+                  <p>Installed core: {updatePreviewData.installed.version} · Extension API: {updatePreviewData.installed.extensionApiVersion}</p>
+                  <p className="break-all">Approved core source: {updatePreviewData.installed.coreSource ?? "Not configured in the workspace instance manifest"}</p>
+                  <p>Candidate: {updatePreviewData.candidateVersion ?? "Not verified"} · Customer commits ahead: {updatePreviewData.commitsAhead ?? "Unknown"}</p>
+                  {updatePreviewData.extensionCompatibility?.map(x=><p key={x.id}>{x.id} {x.version}: {x.compatible ? "Compatible" : "Incompatible"}</p>)}
+                </div>}
+                {!!updatePreviewData.blockers?.length && <div role="alert" className="p-3 border border-destructive rounded-md space-y-2">
+                  <p className="font-medium">Do not overwrite this installation</p>
+                  <ul className="list-disc pl-5 text-sm">{updatePreviewData.blockers.map((b,i)=><li key={i}>{b}</li>)}</ul>
+                  <p className="text-sm">Preserve customer work, back up data and resolve conflicts in a separate workspace. A hard reset is not an update recovery procedure.</p>
+                </div>}
+                {!!updatePreviewData.changes?.length && <div className="text-sm">
+                  <p className="font-medium">Local tracked, staged or untracked changes</p>
+                  <ul>{updatePreviewData.changes.map((c,i)=><li key={i} className="font-mono break-all">{c.status}: {c.file}</li>)}</ul>
+                </div>}
                 {!updatePreviewData.isGitRepo ? (
                   <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-md">
                     <p className="text-destructive font-medium">Not a Git Repository</p>
                     <p className="text-sm text-muted-foreground mt-1">
-                      This installation is not a git repository. You'll need to update manually by downloading the latest release.
+                      Prepare and test the composed release in the customer's workspace. Preserve customer packages and configuration, then explicitly publish or activate it; do not overwrite this running installation.
                     </p>
                   </div>
                 ) : (
@@ -2433,8 +2457,8 @@ export default function Settings() {
                         <div className="font-medium">{updatePreviewData.currentBranch}</div>
                       </div>
                       <div className="p-3 bg-muted/50 rounded-md">
-                        <div className="text-sm text-muted-foreground">Commits Behind</div>
-                        <div className="font-medium">{updatePreviewData.commitsBehind}</div>
+                        <div className="text-sm text-muted-foreground">Customer Commits Behind</div>
+                        <div className="font-medium">{updatePreviewData.commitsBehind ?? "Unknown"}</div>
                       </div>
                     </div>
 
@@ -2476,8 +2500,8 @@ export default function Settings() {
                       </div>
                     )}
 
-                    <div className="space-y-3">
-                      <Label>Update Command</Label>
+                    {updatePreviewData.updateCommand && <div className="space-y-3">
+                      <Label>Prepare a separate candidate release</Label>
                       <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md">
                         <p className="text-xs text-amber-800 dark:text-amber-200 font-medium mb-1">
                           Important: First navigate to your application directory
@@ -2490,7 +2514,7 @@ export default function Settings() {
                         </p>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        Then copy and run this command to update:
+                        Replace the target placeholder with a new directory outside the live installation. This stages a candidate; it does not activate or publish it.
                       </p>
                       <div className="flex items-center gap-2">
                         <code className="flex-1 p-3 bg-muted rounded-md text-xs font-mono break-all">
@@ -2506,30 +2530,7 @@ export default function Settings() {
                         </Button>
                       </div>
                       
-                      {updatePreviewData.fallbackCommand && (
-                        <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-md">
-                          <p className="text-xs text-blue-800 dark:text-blue-200 font-medium mb-2">
-                            If the above command fails, try this alternative:
-                          </p>
-                          <p className="text-xs text-blue-600 dark:text-blue-400 mb-2">
-                            This command does a hard reset to match the remote exactly (local changes will be lost):
-                          </p>
-                          <div className="flex items-center gap-2">
-                            <code className="flex-1 p-2 bg-blue-100 dark:bg-blue-900/50 rounded text-xs font-mono break-all text-blue-800 dark:text-blue-200">
-                              {updatePreviewData.fallbackCommand}
-                            </code>
-                            <Button 
-                              size="icon" 
-                              variant="outline"
-                              onClick={() => copyToClipboard(updatePreviewData.fallbackCommand!)}
-                              data-testid="button-copy-fallback-command"
-                            >
-                              <Clipboard className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                    </div>}
                   </>
                 )}
               </div>

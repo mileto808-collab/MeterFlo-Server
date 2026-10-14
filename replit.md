@@ -18,6 +18,8 @@ Preferred communication style: Simple, everyday language.
 
 ## System Architecture
 
+Customer-owned updates use a numbered core source independent of the customer's Git origin, separately versioned trusted report packages and protected instance data/configuration. See `CUSTOMER_CORE_UPDATES.md`; the initial extension contract supports authenticated, permission-scoped read-only report screens, not arbitrary plugin uploads. Staging never stops the live app or copies its `.env`/database/uploads. Same-schema standalone activation changes the compiled script while retaining the original protected working directory; Replit publishing remains an explicit workspace/operator action.
+
 ### UI/UX Decisions
 - **Frontend Framework**: React 18 with TypeScript
 - **UI Components**: Shadcn/ui (built on Radix UI)

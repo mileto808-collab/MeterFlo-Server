@@ -22,6 +22,8 @@ import multer from "multer";
 import { createProjectSchema, deleteProjectSchema, getProjectWorkOrderStorage, sanitizeSchemaName, backupProjectDatabase, restoreProjectDatabase, getProjectDatabaseStats } from "./projectDb";
 import { auditActorMiddleware, registerAuditRoutes } from "./auditRoutes";
 import { auditedOperation } from "./auditService";
+import { coreUpdatePreview, gitReader } from "./coreUpdatePreview";
+import { runtimeCustomerRelease } from "./customerExtensions";
 import { pool } from "./db";
 import { readingParameter, withExactReadings } from "../shared/exact-readings";
 import {
@@ -5015,28 +5017,32 @@ export async function registerRoutes(
       
       const { docType } = req.params;
       let filePath: string;
+      const coreRoot=process.env.NODE_ENV==="production" ? path.resolve(__dirname,"..") : process.cwd();
       
       switch (docType) {
+        case "core-updates":
+          filePath = path.join(coreRoot, "CUSTOMER_CORE_UPDATES.md");
+          break;
         case "audit":
-          filePath = path.join(process.cwd(), "AUDIT_LOGS.md");
+          filePath = path.join(coreRoot, "AUDIT_LOGS.md");
           break;
         case "system-overview":
-          filePath = path.join(process.cwd(), "replit.md");
+          filePath = path.join(coreRoot, "replit.md");
           break;
         case "system-admin":
-          filePath = path.join(process.cwd(), "SYSTEM_ADMIN_GUIDE.md");
+          filePath = path.join(coreRoot, "SYSTEM_ADMIN_GUIDE.md");
           break;
         case "windows-deployment":
-          filePath = path.join(process.cwd(), "deploy", "WINDOWS_DEPLOYMENT.md");
+          filePath = path.join(coreRoot, "deploy", "WINDOWS_DEPLOYMENT.md");
           break;
         case "mobile-api":
-          filePath = path.join(process.cwd(), "MOBILE_API.md");
+          filePath = path.join(coreRoot, "MOBILE_API.md");
           break;
         case "mobile-sync":
-          filePath = path.join(process.cwd(), "mobile-app-sync-instructions.md");
+          filePath = path.join(coreRoot, "mobile-app-sync-instructions.md");
           break;
         case "customer-api":
-          filePath = path.join(process.cwd(), "CUSTOMER_API_INTEGRATION.md");
+          filePath = path.join(coreRoot, "CUSTOMER_API_INTEGRATION.md");
           break;
         default:
           return res.status(404).json({ message: "Documentation not found" });
@@ -5311,10 +5317,8 @@ export async function registerRoutes(
         return res.status(401).json({ message: "Unauthorized" });
       }
       
-      // Read version from package.json
-      const packageJsonPath = path.join(process.cwd(), "package.json");
-      const packageJson = JSON.parse(await fs.readFile(packageJsonPath, "utf-8"));
-      const version = packageJson.version || "1.0.0";
+      // A staged production script can run with the original protected instance cwd.
+      const version = runtimeCustomerRelease().version;
       
       res.json({ version });
     } catch (error) {
@@ -5941,131 +5945,12 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Forbidden: You don't have permission to check for updates" });
       }
       
-      const webUpdateUrl = await storage.getSetting("webUpdateUrl");
-      const workDir = process.cwd();
-      
-      // Check git status first (this is the reliable way to detect updates)
-      let gitStatus = {
-        isGitRepo: false,
-        commitsBehind: 0,
-        remoteBranch: "main",
-        localCommit: "",
-        remoteCommit: "",
-        hasGitUpdates: false
-      };
-      
-      const gitDir = path.join(workDir, ".git");
-      if (existsSync(gitDir)) {
-        gitStatus.isGitRepo = true;
-        
-        try {
-          // Fetch from origin
-          await execAsync("git fetch origin", { cwd: workDir, timeout: 30000 });
-          
-          // Detect remote's default branch
-          let remoteBranch = "main";
-          try {
-            const { stdout: headRef } = await execAsync("git symbolic-ref refs/remotes/origin/HEAD", { cwd: workDir });
-            const match = headRef.trim().match(/refs\/remotes\/origin\/(.+)$/);
-            if (match) {
-              remoteBranch = match[1];
-            }
-          } catch {
-            // Fallback: parse git branch -r for exact matches
-            try {
-              const { stdout: remoteBranchesOutput } = await execAsync("git branch -r", { cwd: workDir });
-              const branchLines = remoteBranchesOutput.split("\n").map(line => line.trim());
-              const exactBranches = branchLines.map(line => {
-                const match = line.match(/^origin\/(.+)$/);
-                return match ? match[1] : null;
-              }).filter(Boolean);
-              
-              if (exactBranches.includes("main")) {
-                remoteBranch = "main";
-              } else if (exactBranches.includes("master")) {
-                remoteBranch = "master";
-              }
-            } catch {
-              // Keep default
-            }
-          }
-          gitStatus.remoteBranch = remoteBranch;
-          
-          // Get local and remote commit SHAs
-          try {
-            const { stdout: localSha } = await execAsync("git rev-parse HEAD", { cwd: workDir });
-            gitStatus.localCommit = localSha.trim().substring(0, 7);
-            
-            const { stdout: remoteSha } = await execAsync(`git rev-parse origin/${remoteBranch}`, { cwd: workDir });
-            gitStatus.remoteCommit = remoteSha.trim().substring(0, 7);
-            
-            // Count commits behind
-            const { stdout: countOutput } = await execAsync(
-              `git rev-list --count HEAD..origin/${remoteBranch}`,
-              { cwd: workDir }
-            );
-            gitStatus.commitsBehind = parseInt(countOutput.trim()) || 0;
-            gitStatus.hasGitUpdates = gitStatus.commitsBehind > 0;
-          } catch {
-            // Remote branch may not exist
-          }
-        } catch (fetchError: any) {
-          console.error("Git fetch error during update check:", fetchError.message);
-        }
-      }
-      
-      // Also check GitHub releases API if configured
-      let releaseInfo: any = null;
-      if (webUpdateUrl) {
-        try {
-          const url = new URL(webUpdateUrl);
-          if (url.hostname === "api.github.com") {
-            const response = await fetch(webUpdateUrl, {
-              headers: {
-                "Accept": "application/vnd.github.v3+json",
-                "User-Agent": "MeterFlo-WebApp"
-              }
-            });
-            
-            if (response.ok) {
-              const release = await response.json() as {
-                tag_name: string;
-                name: string;
-                body: string;
-                html_url: string;
-                published_at: string;
-              };
-              
-              const packageJsonPath = path.join(workDir, "package.json");
-              const packageJson = JSON.parse(await fs.readFile(packageJsonPath, "utf-8"));
-              const currentVersion = packageJson.version || "1.0.0";
-              const latestVersion = release.tag_name.replace(/^v/, "");
-              const compareResult = compareVersions(currentVersion, latestVersion);
-              
-              releaseInfo = {
-                latestVersion,
-                currentVersion,
-                updateAvailable: compareResult < 0,
-                releaseName: release.name,
-                releaseNotes: release.body,
-                releaseUrl: release.html_url,
-                publishedAt: release.published_at
-              };
-            }
-          }
-        } catch (releaseError) {
-          console.error("Error fetching release info:", releaseError);
-        }
-      }
-      
-      // Combine git status with release info
+      const preview=await coreUpdatePreview(runtimeCustomerRelease(),gitReader(process.cwd()));
       const result = {
-        // Git-based update detection (primary)
-        ...gitStatus,
-        // Release-based info (secondary/informational)
-        ...(releaseInfo || {}),
-        // Overall update available flag: either git commits behind OR version update
-        updateAvailable: gitStatus.hasGitUpdates || (releaseInfo?.updateAvailable ?? false)
+        isGitRepo:preview.isGitRepo,commitsBehind:preview.commitsBehind,remoteBranch:preview.remoteBranch,
+        hasGitUpdates:false,updateAvailable:preview.updateAvailable,currentVersion:preview.installed.version,
+        latestVersion:preview.candidateVersion,releaseName:preview.candidateVersion ? `MeterFlo core ${preview.candidateVersion}` : "Unverified core source",
+        blockers:preview.blockers,coreSource:preview.installed.coreSource,message:preview.message,
       };
       
       // Cache the result
@@ -6091,139 +5976,10 @@ export async function registerRoutes(
       if (!hasWebUpdatePermission) {
         return res.status(403).json({ message: "Forbidden: You don't have permission to preview updates" });
       }
-      
-      const workDir = process.cwd();
-      
-      // Check if this is a git repository
-      const gitDir = path.join(workDir, ".git");
-      if (!existsSync(gitDir)) {
-        return res.status(400).json({ 
-          message: "Not a git repository. Manual update required.",
-          isGitRepo: false
-        });
-      }
-      
-      // Run git fetch origin
-      try {
-        await execAsync("git fetch origin", { cwd: workDir, timeout: 30000 });
-      } catch (fetchError: any) {
-        return res.status(500).json({ 
-          message: `Git fetch failed: ${fetchError.message}`,
-          isGitRepo: true
-        });
-      }
-      
-      // Get the current local branch
-      let currentBranch = "main";
-      try {
-        const { stdout } = await execAsync("git rev-parse --abbrev-ref HEAD", { cwd: workDir });
-        currentBranch = stdout.trim() || "main";
-      } catch {
-        // Default to main if we can't determine the branch
-      }
-      
-      // Detect the remote's default branch (main vs master)
-      // This handles the case where local branch differs from remote
-      let remoteBranch = currentBranch;
-      try {
-        // Try to get remote HEAD reference first (most reliable)
-        try {
-          const { stdout: headRef } = await execAsync("git symbolic-ref refs/remotes/origin/HEAD", { cwd: workDir });
-          // Output is like "refs/remotes/origin/main"
-          const match = headRef.trim().match(/refs\/remotes\/origin\/(.+)$/);
-          if (match) {
-            remoteBranch = match[1];
-          }
-        } catch {
-          // If symbolic-ref fails, parse git branch -r for exact matches
-          const { stdout: remoteBranchesOutput } = await execAsync("git branch -r", { cwd: workDir });
-          // Parse line by line for exact branch names
-          const branchLines = remoteBranchesOutput.split("\n").map(line => line.trim());
-          const exactBranches = branchLines.map(line => {
-            // Remove "origin/" prefix and any trailing whitespace
-            const match = line.match(/^origin\/(.+)$/);
-            return match ? match[1] : null;
-          }).filter(Boolean);
-          
-          // Check for exact "main" or "master" branches
-          if (exactBranches.includes("main")) {
-            remoteBranch = "main";
-          } else if (exactBranches.includes("master")) {
-            remoteBranch = "master";
-          }
-        }
-      } catch {
-        // Fallback to current branch if we can't determine remote branches
-      }
-      
-      // Get the diff between current and origin
-      let diff = "";
-      let filesChanged: string[] = [];
-      let commitsBehind = 0;
-      
-      try {
-        // Get number of commits behind
-        const { stdout: countOutput } = await execAsync(
-          `git rev-list --count HEAD..origin/${remoteBranch}`,
-          { cwd: workDir }
-        );
-        commitsBehind = parseInt(countOutput.trim()) || 0;
-        
-        // Get changed files summary
-        const { stdout: filesOutput } = await execAsync(
-          `git diff --name-status HEAD..origin/${remoteBranch}`,
-          { cwd: workDir }
-        );
-        filesChanged = filesOutput.trim().split("\n").filter(Boolean);
-        
-        // Get actual diff (limited to prevent huge responses)
-        const { stdout: diffOutput } = await execAsync(
-          `git diff --stat HEAD..origin/${remoteBranch}`,
-          { cwd: workDir, maxBuffer: 1024 * 1024 }
-        );
-        diff = diffOutput;
-        
-      } catch (diffError: any) {
-        // If remote branch doesn't exist, it's okay
-        if (diffError.message.includes("unknown revision")) {
-          return res.json({
-            isGitRepo: true,
-            currentBranch,
-            remoteBranch,
-            commitsBehind: 0,
-            filesChanged: [],
-            diff: "",
-            updateCommand: `pm2 stop meterflo && git pull origin ${remoteBranch} && npm install && npx tsx script/build.ts && pm2 restart meterflo`,
-            fallbackCommand: `pm2 stop meterflo && git reset --hard origin/${remoteBranch} && npm install && npx tsx script/build.ts && pm2 restart meterflo`,
-            message: "No remote branch found or already up to date"
-          });
-        }
-        throw diffError;
-      }
-      
-      // Add appropriate message based on status
-      let message = "";
-      if (commitsBehind === 0) {
-        message = "Already up to date with origin/" + remoteBranch;
-      } else {
-        message = `${commitsBehind} commit${commitsBehind === 1 ? '' : 's'} behind origin/${remoteBranch}`;
-      }
-      
-      res.json({
-        isGitRepo: true,
-        currentBranch,
-        remoteBranch,
-        commitsBehind,
-        filesChanged,
-        diff,
-        updateCommand: `pm2 stop meterflo && git pull origin ${remoteBranch} && npm install && npx tsx script/build.ts && pm2 restart meterflo`,
-        fallbackCommand: `pm2 stop meterflo && git reset --hard origin/${remoteBranch} && npm install && npx tsx script/build.ts && pm2 restart meterflo`,
-        message
-      });
+      res.json(await coreUpdatePreview(runtimeCustomerRelease(),gitReader(process.cwd())));
       
     } catch (error: any) {
-      console.error("Error previewing update:", error);
-      res.status(500).json({ message: `Failed to preview update: ${error.message}` });
+      res.status(500).json({ message: "Update preview could not complete; verify release configuration and source access in the workspace" });
     }
   });
 

@@ -1,0 +1,8 @@
+{
+  "coreSource": "https://github.com/your-company/MeterFlo-Core.git",
+  "installedSchemaVersion": 1,
+  "approvedMigrations": [],
+  "extensions": [
+    { "directory": "customer-packages/project-report" }
+  ]
+}

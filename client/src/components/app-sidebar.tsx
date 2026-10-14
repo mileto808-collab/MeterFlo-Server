@@ -42,10 +42,12 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { useState, useEffect } from "react";
 import type { Project } from "@shared/schema";
 import { SupportFormDialog } from "@/components/support-form-dialog";
+import { useCustomerExtensions } from "@/pages/customer-extension";
 
 export function AppSidebar() {
   const [location] = useLocation();
   const { user, hasPermission } = usePermissions();
+  const customerExtensions = useCustomerExtensions();
   const role = user?.role || "user";
   const [openProjects, setOpenProjects] = useState<number[]>([]);
   const [supportDialogOpen, setSupportDialogOpen] = useState(false);
@@ -113,6 +115,17 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent>
+        {!!customerExtensions.data?.length && <SidebarGroup>
+          <SidebarGroupLabel>Customer Extensions</SidebarGroupLabel>
+          <SidebarGroupContent><SidebarMenu>
+            {customerExtensions.data.flatMap(extension=>extension.screens.map(screen=>
+              <SidebarMenuItem key={`${extension.id}/${screen.id}`}>
+                <SidebarMenuButton asChild isActive={location===`/extensions/${extension.id}/${screen.id}`}>
+                  <NavLink href={`/extensions/${extension.id}/${screen.id}`}><FileText /><span>{screen.title}</span></NavLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>))}
+          </SidebarMenu></SidebarGroupContent>
+        </SidebarGroup>}
         <SidebarGroup>
           <SidebarGroupLabel>
             {role === "admin" ? "Administration" : role === "customer" ? "Customer Portal" : "Navigation"}

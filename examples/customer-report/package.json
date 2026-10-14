@@ -1,0 +1,17 @@
+{
+  "name": "@customer/meterflo-project-report",
+  "version": "1.0.0",
+  "type": "module",
+  "meterfloExtension": {
+    "id": "project-report",
+    "extensionApiVersion": 1,
+    "minCoreVersion": "2.1.1",
+    "maxCoreVersionExclusive": "3.0.0",
+    "permission": "projects.view",
+    "serverEntry": "server.mjs",
+    "screens": [
+      { "id": "projects", "title": "Customer Project Report", "report": "projects" }
+    ],
+    "migrations": []
+  }
+}
