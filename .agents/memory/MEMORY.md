@@ -13,3 +13,4 @@
 - [Exact reading compatibility](exact-reading-compatibility.md) — preserve original text without breaking legacy numeric consumers; coordinate native changes and never invent historical padding.
 - [Audit backup boundary](audit-backup-boundary.md) — business restores must preserve newer local audit history and authenticated initiation, while remaining portable to fresh standalone servers.
 - [Audit capability metadata](audit-capability-metadata.md) — supported choices are capabilities, not proof of activity; historical custom values still require authorized history.
+- [Portable npm lockfiles](portable-npm-lockfiles.md) — internal tarball URLs can break standalone installs despite a public registry setting; inspect locked addresses before changing Node/npm.
