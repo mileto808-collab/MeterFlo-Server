@@ -44,7 +44,7 @@ import {
 } from "@shared/reading-precision";
 import { ensureProjectDirectory, renameProjectDirectory, saveWorkOrderFile, getWorkOrderFiles, deleteWorkOrderFile, deleteWorkOrderDirectory, getFilePath, getProjectFilesPath, setProjectFilesPath, deleteProjectDirectory, saveProjectFile, getProjectFiles, deleteProjectFile, getProjectFilePath, ensureProjectFtpDirectory, getProjectFtpFiles, deleteProjectFtpFile, getProjectFtpFilePath, saveProjectFtpFile, getProjectDirectoryName } from "./fileStorage";
 import { ExternalDatabaseService } from "./externalDbService";
-import { createBackupArchive, extractDatabaseBackupFromArchive, restoreFullSystem, restoreFilesFromArchive } from "./systemBackup";
+import { createBackupArchive, extractDatabaseBackupFromArchive, restoreFullSystem, restoreFilesFromArchive, SystemRestoreError } from "./systemBackup";
 import { createPgBackupArchive, extractBackupFromArchive, restorePgBackup, restoreFilesFromPgArchive, restoreWebAppFilesFromArchive, BackupType } from "./pgBackup";
 import { projectEventEmitter, emitWorkOrderCreated, emitWorkOrderUpdated, emitWorkOrderDeleted, emitFileAdded, emitFileDeleted, type ProjectEvent } from "./eventEmitter";
 import { retryCustomerDelivery, retryLegacyCustomerLog } from "./customerApiService";
@@ -8449,7 +8449,9 @@ export async function registerRoutes(
         }
         
         res.json({
-          message: "Full system restore completed (legacy JSON format)",
+          message: filesResult.errors.length ? "Database restored; file restore incomplete" : "Full system restore completed (legacy JSON format)",
+          success: dbResult.success && filesResult.errors.length === 0,
+          databaseCommitted: dbResult.databaseCommitted,
           format: "legacy_json",
           mainTablesRestored: dbResult.mainTablesRestored,
           projectsRestored: dbResult.projectsRestored,
@@ -8466,6 +8468,10 @@ export async function registerRoutes(
       }
     } catch (error) {
       console.error("Error restoring full system backup:", error);
+      if (error instanceof SystemRestoreError) return res.status(500).json({
+        message: error.databaseCommitted ? "Database restored, but audit verification failed. Restore incomplete; contact your administrator before resuming work." : "System database restore failed. No restored database rows were committed; review the server logs before retrying.",
+        success: false, databaseCommitted: error.databaseCommitted,
+      });
       res.status(500).json({ message: "Failed to restore full system backup" });
     }
   });
@@ -9048,17 +9054,19 @@ export async function registerRoutes(
         console.log(`Restoring legacy JSON backup from ${legacyJson.backupDate || "unknown date"}`);
         const filesPath = await getProjectFilesPath();
         
-        const result = await restoreFullSystem(legacyJson, { clearExisting: false });
+        const result = await restoreFullSystem(legacyJson, { clearExisting: session.clearExisting });
         const filesResult = await restoreFilesFromArchive(fileBuffer, filesPath);
         
         return res.json({
-          message: "System restore completed (legacy format)",
+          message: filesResult.errors.length ? "Database restored; file restore incomplete" : "System restore completed (legacy format)",
+          success: result.success && filesResult.errors.length === 0,
+          databaseCommitted: result.databaseCommitted,
           format: "legacy_json",
           backupDate: legacyJson.backupDate,
           mainTablesRestored: result.mainTablesRestored,
           projectsRestored: result.projectsRestored,
           filesRestored: filesResult.filesRestored,
-          errors: [...result.errors, ...filesResult.errors],
+          errors: [...result.errors, ...result.projectErrors, ...filesResult.errors],
           warnings: result.warnings,
         });
       }
@@ -9071,6 +9079,10 @@ export async function registerRoutes(
       });
     } catch (error) {
       console.error("Error finalizing chunked upload:", error);
+      if (error instanceof SystemRestoreError) return res.status(500).json({
+        message: error.databaseCommitted ? "Database restored, but audit verification failed. Restore incomplete; contact your administrator before resuming work." : "System database restore failed. No restored database rows were committed; review the server logs before retrying.",
+        success: false, databaseCommitted: error.databaseCommitted,
+      });
       res.status(500).json({ message: "Failed to finalize restore" });
     }
   });

@@ -2,6 +2,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { pgTable, text, varchar, timestamp, integer, numeric } from "drizzle-orm/pg-core";
 import { pool } from "./db";
 import { sql } from "drizzle-orm";
+import type { Pool, PoolClient } from "pg";
 import { storage } from "./storage";
 import { appendResetNote, resetAssignment, WorkOrderResetError, type ResetWorkOrderOptions } from "../shared/work-order-reset";
 import { enqueueCustomerDelivery } from "./customerApiService";
@@ -97,10 +98,10 @@ export function sanitizeSchemaName(projectName: string, projectId: number): stri
 }
 
 // Create project schema and tables
-export async function createProjectSchema(projectName: string, projectId: number): Promise<string> {
-  const schemaName = sanitizeSchemaName(projectName, projectId);
+export async function createProjectSchema(projectName: string, projectId: number, schemaName = sanitizeSchemaName(projectName, projectId), connectionPool: Pick<Pool, "connect"> = pool): Promise<string> {
+  if (!/^project_[a-z0-9_]+$/.test(schemaName)) throw new Error("Invalid project schema name.");
   
-  const client = await pool.connect();
+  const client = await connectionPool.connect();
   try {
     // Create schema
     await client.query(`CREATE SCHEMA IF NOT EXISTS "${schemaName}"`);
@@ -225,8 +226,8 @@ export async function deleteProjectSchema(schemaName: string): Promise<void> {
 }
 
 // Migrate existing project schema to canonical Aurora structure (36 columns)
-export async function migrateProjectSchema(schemaName: string): Promise<void> {
-  const client = await pool.connect();
+export async function migrateProjectSchema(schemaName: string, connectionPool: Pick<Pool, "connect"> = pool): Promise<void> {
+  const client = await connectionPool.connect();
   try {
     console.log(`Starting migration of ${schemaName} to canonical Aurora schema...`);
     
@@ -467,7 +468,7 @@ export async function migrateProjectSchema(schemaName: string): Promise<void> {
   
   // Step 8: Add unique partial indexes for system and module IDs (separate connection)
   // These ensure no duplicate meters/modules are created within a project
-  const indexClient = await pool.connect();
+  const indexClient = await connectionPool.connect();
   try {
     await indexClient.query(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_old_system_id 
@@ -1800,23 +1801,35 @@ export async function restoreProjectDatabase(
   const {rows:[scope]}=await pool.query("SELECT project_id,project_label FROM meterflo_audit.project_scopes WHERE schema_name=$1",[schemaName]);
   return auditedOperation("projectRestore","project-database",()=>restoreProjectDatabaseData(schemaName,backup,options),scope?.project_id,scope?.project_label);
 }
+// The full-system restore owns the transaction and prepares schemas before calling this.
+export async function restoreProjectDatabaseInTransaction(
+  client: PoolClient,
+  schemaName: string,
+  backup: Parameters<typeof restoreProjectDatabase>[1],
+  options: { clearExisting?: boolean } = {}
+) {
+  return restoreProjectDatabaseData(schemaName, backup, options, client);
+}
+
 async function restoreProjectDatabaseData(
   schemaName: string,
   backup: { workOrders: Array<Omit<ProjectWorkOrder, "id" | "createdAt" | "updatedAt">>; inventory?: InventoryBackup },
-  options: { clearExisting?: boolean } = {}
+  options: { clearExisting?: boolean } = {},
+  transactionClient?: PoolClient
 ): Promise<{ restored: number; errors: string[] }> {
-  await migrateProjectSchema(schemaName);
-  const client = await pool.connect();
+  if (!transactionClient) await migrateProjectSchema(schemaName);
+  const client = transactionClient ?? await pool.connect();
   const errors: string[] = [];
   let restored = 0;
   
   try {
     if (backup.inventory) {
       validateInventoryBackup(backup.inventory, backup.workOrders.map((wo: any) => zInventoryId(wo.id)));
+      if (!transactionClient) await client.query("BEGIN");
+      await lockInventoryForSchema(client, schemaName);
+      await client.query(`LOCK TABLE "${schemaName}".work_orders IN SHARE ROW EXCLUSIVE MODE`);
       const { rows: [r] } = await client.query(`SELECT count(*)::int n FROM "${schemaName}".work_orders`);
       if (r.n && !options.clearExisting) throw new Error("Inventory backups require explicit replacement of existing project data; inventory cannot be merged safely.");
-      await client.query("BEGIN");
-      await lockInventoryForSchema(client, schemaName);
     } else {
       const existingInventory = await exportInventory(client, schemaName);
       if (existingInventory && (existingInventory.enabled || existingInventory.state.allocations.length))
@@ -1829,10 +1842,11 @@ async function restoreProjectDatabaseData(
     for (let i = 0; i < backup.workOrders.length; i++) {
       const wo = withExactReadings(backup.workOrders[i]) as any;
       try {
-        const inserted = await client.query(
+        await client.query(
           `INSERT INTO "${schemaName}".work_orders 
-           (status, created_by, completed_at, notes, attachments, customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_system_id, new_system_id, old_gps, new_gps, old_system_reading, new_system_reading, scheduled_at, updated_by, trouble, old_system_type, new_system_type, old_module_id, new_module_id, old_module_read, new_module_read, old_module_type, new_module_type, signature_data, signature_name, assigned_user_id, assigned_group_id, completed_by, scheduled_by,old_system_reading_text,new_system_reading_text,old_module_read_text,new_module_read_text)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,$41,$42,$43,$44) RETURNING id`,
+           (${backup.inventory ? "id, " : ""}status, created_by, completed_at, notes, attachments, customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_system_id, new_system_id, old_gps, new_gps, old_system_reading, new_system_reading, scheduled_at, updated_by, trouble, old_system_type, new_system_type, old_module_id, new_module_id, old_module_read, new_module_read, old_module_type, new_module_type, signature_data, signature_name, assigned_user_id, assigned_group_id, completed_by, scheduled_by,old_system_reading_text,new_system_reading_text,old_module_read_text,new_module_read_text)
+           ${backup.inventory ? "OVERRIDING SYSTEM VALUE" : ""}
+           VALUES (${backup.inventory ? "$45, " : ""}$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,$41,$42,$43,$44)`,
           [
             wo.status || "Open",
             wo.createdBy || null,
@@ -1875,31 +1889,27 @@ async function restoreProjectDatabaseData(
             wo.completedBy || null,
             wo.scheduledBy || null,
             ...exactReadingFields.map(({key}) => capturedReadingText(wo[key])),
+            ...(backup.inventory ? [zInventoryId(wo.id)] : []),
           ]
         );
-        if (backup.inventory) {
-          // The legacy writer allocates a new ID. Preserve the original identity
-          // immediately, before rebuilding any inventory references.
-          await client.query(`UPDATE "${schemaName}".work_orders SET id=$1 WHERE id=$2`, [(wo as any).id, inserted.rows[0].id]);
-        }
         restored++;
       } catch (error) {
-        if (backup.inventory) throw error;
+        if (backup.inventory || transactionClient) throw error;
         errors.push(`Row ${i + 1}: ${error instanceof Error ? error.message : "Unknown error"}`);
       }
     }
     
     if (backup.inventory) {
       await restoreInventory(client, schemaName, backup.inventory);
-      await client.query(`SELECT setval(pg_get_serial_sequence('"${schemaName}".work_orders','id'), greatest(1,(SELECT coalesce(max(id),1) FROM "${schemaName}".work_orders)),true)`);
-      await client.query("COMMIT");
+      await client.query(`SELECT setval(pg_get_serial_sequence('"${schemaName}".work_orders','id'), greatest(1,(SELECT coalesce(max(id),1) FROM "${schemaName}".work_orders)),EXISTS(SELECT 1 FROM "${schemaName}".work_orders))`);
+      if (!transactionClient) await client.query("COMMIT");
     }
     return { restored, errors };
   } catch (error) {
-    if (backup.inventory) await client.query("ROLLBACK");
+    if (backup.inventory && !transactionClient) await client.query("ROLLBACK");
     throw error;
   } finally {
-    client.release();
+    if (!transactionClient) client.release();
   }
 }
 

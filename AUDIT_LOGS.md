@@ -104,6 +104,12 @@ retention policy and the restore's own lifecycle survive application restores.
 Supported older MeterFlo clean scripts are adjusted to preserve the audit schema;
 SQL explicitly replacing audit storage or unsafe dynamic cleanup is refused.
 After SQL restore, business audit triggers are reinstalled before reporting completion.
+Legacy JSON system restores use the verified application audit context and commit
+public/project/inventory rows together, or roll them all back on database failure.
+The initiation and failed terminal event remain in local audit history after rollback.
+File restoration is separate; a committed database with file errors is reported as
+incomplete. An audit-hook verification failure after commit is explicitly reported
+as a committed but incomplete restore, not a database rollback.
 
 Use database-owner backup procedures for independent disaster-recovery archival
 of audit history. External restores are outside the application audit guarantee.

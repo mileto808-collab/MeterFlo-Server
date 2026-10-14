@@ -1186,6 +1186,12 @@ Four backup types are available, exposed via `GET /api/system/backup?type=<type>
 
 ### What restore does NOT do
 
+Legacy JSON full-system database restores apply public tables, project work orders and inventory in one transaction. A failed project or database row rolls back the database changes; incomplete snapshots are rejected before data replacement. Fresh project schemas are prepared first, so empty schemas/schema migrations and advanced sequence counters can remain after a failure. Inventory backups preserve original work-order IDs (including deleted-ID gaps) and require **Clear existing data** when replacing nonempty projects.
+
+New JSON system backups include service/system/module catalogs and their project assignments. Older archives that omitted these tables can restore only if the referenced status, trouble, service and equipment codes already exist on the destination; missing prerequisites are rejected before replacement. Omitted lookup catalogs are retained, rather than cleared.
+
+Files are not part of that database transaction. If database restoration succeeds but files fail, Maintenance reports **System Restore Incomplete**. Review server logs and restore the missing files before resuming work; do not assume the database was rolled back. Direct and chunked uploads use the same replacement choice and outcome reporting. Local audit history and the authenticated initiating operator survive the database restore. If audit hook verification fails after the database commits, the response explicitly reports the committed database and incomplete restore; repair auditing before resuming work.
+
 - It does not merge data — it is a full replacement.
 - It does not migrate between schema versions; restore the same MeterFlo version that produced the backup.
 - A `files` or `project` restore does not touch the database, and a `database` or `clean` restore does not touch on-disk files.

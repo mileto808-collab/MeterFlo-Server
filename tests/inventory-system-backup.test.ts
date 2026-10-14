@@ -2,17 +2,35 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { pool } from "../server/db";
-import { restoreFullSystemData, type FullSystemBackup } from "../server/systemBackup";
+import { restoreFullSystem, restoreFullSystemData, type FullSystemBackup } from "../server/systemBackup";
 import { emptyInventory } from "../shared/inventory";
-import { applyInventoryCommand } from "../shared/inventory-engine";
+import { applyInventoryCommand, completeInventoryWorkOrder } from "../shared/inventory-engine";
+import { createProjectSchema } from "../server/projectDb";
+import { initializeAudit } from "../server/auditMigration";
+import { withAuditContext } from "../server/auditContext";
 
 test("full-system inventory restore preserves identity IDs, JSON serials, sequences and merge safety", async () => {
+  await initializeAudit(pool);
+  const actor = randomUUID();
+  const scope = () => ({ actorId: actor, actorLabel: "Full restore fixture", actorKind: "user" as const, source: "restore-test", operationId: randomUUID() });
   const schema = `inventory_backup_fixture_${randomUUID().replaceAll("-", "")}`;
   const client = await pool.connect();
   const tables = ["inventory_state", "inventory_items", "inventory_quantities", "inventory_movements"];
+  const catalogs = ["service_types", "system_types", "module_types", "project_service_types", "system_type_projects", "module_type_projects"];
+  const projectSchemas: string[] = [];
   try {
     await client.query(`CREATE SCHEMA "${schema}"`);
     for (const table of tables) await client.query(`CREATE TABLE "${schema}"."${table}" (LIKE public."${table}" INCLUDING ALL)`);
+    await client.query(`CREATE TABLE "${schema}".projects (LIKE public.projects INCLUDING ALL)`);
+    for (const table of catalogs) await client.query(`CREATE TABLE "${schema}"."${table}" (LIKE public."${table}" INCLUDING ALL)`);
+    for (const [table, field, parent] of [
+      ["project_service_types", "service_type_id", "service_types"],
+      ["system_type_projects", "system_type_id", "system_types"],
+      ["module_type_projects", "module_type_id", "module_types"],
+    ]) {
+      await client.query(`ALTER TABLE "${schema}"."${table}" ADD FOREIGN KEY(project_id) REFERENCES "${schema}".projects(id),
+        ADD FOREIGN KEY("${field}") REFERENCES "${schema}"."${parent}"(id)`);
+    }
     await client.query(`SET search_path TO "${schema}"`);
     let state = emptyInventory();
     const post = (action: any, data: any) => {
@@ -31,6 +49,7 @@ test("full-system inventory restore preserves identity IDs, JSON serials, sequen
       [randomUUID(), { stock: state.stock, entities: [] }]);
     const mainDatabase: Record<string, any[]> = {};
     for (const table of tables) mainDatabase[table] = (await client.query(`SELECT * FROM "${table}"`)).rows;
+    mainDatabase.projects = [{ id: 42, name: "Inventory backup fixture", database_name: null, inventory_enabled: false }];
     const backup: FullSystemBackup = JSON.parse(JSON.stringify({ version: "1", backupDate: new Date().toISOString(), mainDatabase, projectDatabases: [] }));
     // Exercise the actual full-system restore without touching public/customer tables.
     // Its unqualified inserts resolve only to this isolated lookalike schema.
@@ -53,9 +72,107 @@ test("full-system inventory restore preserves identity IDs, JSON serials, sequen
     broken.mainDatabase.inventory_quantities[0].quantity = -1;
     await assert.rejects(restoreFullSystemData(broken, { clearExisting: true }, isolated), /Critical restore errors/);
     assert.equal((await client.query("SELECT count(*) FROM inventory_movements")).rows[0].count, "2");
+
+    // The real project restore shares this same isolated public-data transaction.
+    // Rewrite every explicit public business-table reference, never audit references.
+    const transactional = { connect: async () => ({
+      query: (sql: string, values?: any[]) => client.query(
+        sql.replace("schemaname = 'public'", `schemaname = '${schema}'`)
+          .replace(/public\.(projects|inventory_state|inventory_items|inventory_quantities|inventory_movements|service_types|system_types|module_types|project_service_types|system_type_projects|module_type_projects)\b/g, `"${schema}".$1`), values),
+      release: () => {},
+    }) } as any;
+    const workSchema = await createProjectSchema(`Full backup ${schema}`, 42);
+    projectSchemas.push(workSchema);
+    post("assign", { workOrderId: 2, lines: [{ itemId: "m", warehouseId: "w", quantity: 1, serials: ["00001"] }] });
+    post("prepareUse", { workOrderId: 2, revision: 1, mode: "changeout", used: [{ itemId: "m", warehouseId: "w", quantity: 1, serials: ["00001"] }], dispositions: [] });
+    state = completeInventoryWorkOrder(state, 2, false);
+    state = JSON.parse(JSON.stringify(state));
+    const full = structuredClone(backup);
+    full.mainDatabase.projects = [{ id: 42, name: "Fresh full-system fixture", database_name: workSchema, inventory_enabled: true }];
+    full.mainDatabase.inventory_state[0].state = state;
+    full.mainDatabase.inventory_quantities[0] = { ...full.mainDatabase.inventory_quantities[0], quantity: 1, serials: ["00002"] };
+    const service = `svc_${actor.slice(0, 8)}`, systemType = `sys_${actor}`, moduleType = `mod_${actor}`;
+    full.mainDatabase.service_types = [{ id: 601, code: service, label: "Source-only service" }];
+    full.mainDatabase.system_types = [{ id: 602, product_id: systemType, product_label: "Source-only meter" }];
+    full.mainDatabase.module_types = [{ id: 603, product_id: moduleType, product_label: "Source-only module" }];
+    full.mainDatabase.project_service_types = [{ id: 604, project_id: 42, service_type_id: 601 }];
+    full.mainDatabase.system_type_projects = [{ id: 605, project_id: 42, system_type_id: 602 }];
+    full.mainDatabase.module_type_projects = [{ id: 606, project_id: 42, module_type_id: 603 }];
+    full.projectDatabases = [{
+      projectId: 42, projectName: "Fresh full-system fixture", schemaName: workSchema,
+      workOrders: [{ id: 2, status: "Completed", customerWoId: "posted", newSystemId: "00001",
+        serviceType: service, oldSystemType: systemType, newSystemType: systemType, oldModuleType: moduleType, newModuleType: moduleType }, { id: 3, customerWoId: "open" }],
+      inventory: { enabled: true, state, movements: full.mainDatabase.inventory_movements },
+    }];
+    for (const table of catalogs) assert.equal((await client.query(`SELECT count(*) FROM "${table}"`)).rows[0].count, "0", "source configuration is absent from fresh destination");
+    const legacyMissingLookups = structuredClone(full);
+    for (const table of catalogs) delete legacyMissingLookups.mainDatabase[table];
+    await assert.rejects(restoreFullSystemData(legacyMissingLookups, { clearExisting: true }, transactional), /Missing service_types configuration/);
+    const restoredFull = await withAuditContext(scope(), () => restoreFullSystem(full, { clearExisting: true }, transactional));
+    assert.equal(restoredFull.success, true);
+    assert.equal(restoredFull.databaseCommitted, true);
+    assert.equal(restoredFull.projectsRestored, 1);
+    const { rows: [typedOrder] } = await client.query(`SELECT service_type,old_system_type,new_system_type,old_module_type,new_module_type FROM "${workSchema}".work_orders WHERE id=2`);
+    assert.deepEqual(typedOrder, { service_type: service, old_system_type: systemType, new_system_type: systemType, old_module_type: moduleType, new_module_type: moduleType });
+    for (const table of catalogs) assert.equal((await client.query(`SELECT count(*) FROM "${table}"`)).rows[0].count, "1", "catalog and project relationships are restored");
+    const { rows: priorAudit } = await pool.query("SELECT id,outcome,actor_id FROM meterflo_audit.events WHERE actor_id=$1 AND entity_type='systemRestore'", [actor]);
+    assert.ok(priorAudit.some(e => e.outcome === "started"));
+    assert.ok(priorAudit.some(e => e.outcome === "success"), "authenticated identity is retained even though it is absent from the snapshot");
+    assert.deepEqual((await client.query(`SELECT id FROM "${workSchema}".work_orders ORDER BY id`)).rows.map(r => r.id), [2, 3]);
+    assert.deepEqual((await client.query("SELECT state FROM inventory_state WHERE project_id=42")).rows[0].state, state);
+    assert.deepEqual((await client.query("SELECT serials FROM inventory_quantities WHERE project_id=42")).rows[0].serials, ["00002"]);
+    assert.equal((await client.query(`INSERT INTO "${workSchema}".work_orders(customer_wo_id,created_by) VALUES('after-full',NULL) RETURNING id`)).rows[0].id, 4);
+    const savedRows = (await client.query(`SELECT * FROM "${workSchema}".work_orders ORDER BY id`)).rows;
+    const savedInventory: Record<string, any[]> = {};
+    for (const table of tables) savedInventory[table] = (await client.query(`SELECT * FROM "${table}" ORDER BY 1`)).rows;
+
+    // Fail a later project after the first project's work orders and inventory
+    // have already been replaced. Neither public data nor project data may commit.
+    const laterSchema = await createProjectSchema(`Later backup ${schema}`, 43);
+    projectSchemas.push(laterSchema);
+    const incomplete = structuredClone(full);
+    incomplete.mainDatabase.projects.push({ id: 43, name: "Later fixture", database_name: laterSchema, inventory_enabled: false });
+    incomplete.projectDatabases.push({ projectId: 43, projectName: "Later fixture", schemaName: laterSchema,
+      workOrders: [{ customerWoId: "duplicate" }, { customerWoId: "duplicate" }] });
+    await assert.rejects(withAuditContext(scope(), () => restoreFullSystem(incomplete, { clearExisting: true }, transactional)), /Later fixture/);
+    const { rows: afterAudit } = await pool.query("SELECT id,outcome FROM meterflo_audit.events WHERE actor_id=$1 AND entity_type='systemRestore'", [actor]);
+    assert.ok(priorAudit.every(e => afterAudit.some(a => a.id === e.id)), "newer local history survives failed restore");
+    assert.ok(afterAudit.some(e => e.outcome === "failed"), "rolled-back restore has a failed terminal outcome");
+    assert.deepEqual((await client.query(`SELECT * FROM "${workSchema}".work_orders ORDER BY id`)).rows, savedRows);
+    assert.equal((await client.query(`SELECT count(*) FROM "${laterSchema}".work_orders`)).rows[0].count, "0");
+    for (const table of tables) assert.deepEqual((await client.query(`SELECT * FROM "${table}" ORDER BY 1`)).rows, savedInventory[table]);
+    assert.equal((await client.query("SELECT count(*) FROM projects")).rows[0].count, "1");
+
+    const missingProject = structuredClone(full);
+    missingProject.projectDatabases = [];
+    await assert.rejects(restoreFullSystemData(missingProject, { clearExisting: true }, transactional), /work-order snapshot is missing/);
+    const invalidLink = structuredClone(full);
+    invalidLink.projectDatabases[0].inventory!.state.allocations[0].workOrderId = 999;
+    await assert.rejects(restoreFullSystemData(invalidLink, { clearExisting: true }, transactional), /missing work order/);
+    await assert.rejects(restoreFullSystemData(full, {}, transactional), /explicit replacement/);
+    assert.deepEqual((await client.query(`SELECT * FROM "${workSchema}".work_orders ORDER BY id`)).rows, savedRows);
+    for (const table of tables) assert.deepEqual((await client.query(`SELECT * FROM "${table}" ORDER BY 1`)).rows, savedInventory[table]);
+
+    const fresh = structuredClone(full);
+    const freshSchema = `project_fresh_full_${randomUUID().replaceAll("-", "")}_44`;
+    projectSchemas.push(freshSchema);
+    fresh.mainDatabase.projects = [{ id: 44, name: "New server fixture", database_name: freshSchema, inventory_enabled: true }];
+    for (const table of tables) fresh.mainDatabase[table] = fresh.mainDatabase[table].map(row => ({ ...row, project_id: 44 }));
+    for (const table of ["project_service_types", "system_type_projects", "module_type_projects"]) fresh.mainDatabase[table] = fresh.mainDatabase[table].map(row => ({ ...row, project_id: 44 }));
+    fresh.projectDatabases[0] = { ...fresh.projectDatabases[0], projectId: 44, schemaName: freshSchema };
+    assert.equal((await client.query("SELECT to_regclass($1) AS table_name", [`"${freshSchema}".work_orders`])).rows[0].table_name, null);
+    assert.equal((await restoreFullSystemData(fresh, { clearExisting: true }, transactional)).success, true, "missing destination schemas are prepared on fresh servers");
+    assert.deepEqual((await client.query(`SELECT id FROM "${freshSchema}".work_orders ORDER BY id`)).rows.map(r => r.id), [2, 3]);
+    assert.equal((await client.query(`INSERT INTO "${freshSchema}".work_orders(customer_wo_id,created_by) VALUES('fresh-next',NULL) RETURNING id`)).rows[0].id, 4);
+    const savedCatalogs: Record<string, any[]> = {};
+    for (const table of ["service_types", "system_types", "module_types"]) savedCatalogs[table] = (await client.query(`SELECT * FROM "${table}"`)).rows;
+    assert.equal((await restoreFullSystemData(legacyMissingLookups, { clearExisting: true }, transactional)).success, true,
+      "older archives work only once their lookup prerequisites are installed");
+    for (const table of ["service_types", "system_types", "module_types"]) assert.deepEqual((await client.query(`SELECT * FROM "${table}"`)).rows, savedCatalogs[table], "omitted catalogs are retained");
   } finally {
     await client.query("ROLLBACK");
     await client.query("RESET search_path");
+    for (const projectSchema of projectSchemas) await client.query(`DROP SCHEMA IF EXISTS "${projectSchema}" CASCADE`);
     await client.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
     client.release();
     await pool.end();

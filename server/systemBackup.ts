@@ -1,4 +1,4 @@
-import { Pool } from "pg";
+import type { Pool } from "pg";
 import archiver from "archiver";
 import unzipper from "unzipper";
 import * as fs from "fs";
@@ -8,11 +8,18 @@ import { auditedOperation } from "./auditService";
 import { auditingEnabled } from "./auditContext";
 import { initializeAudit } from "./auditMigration";
 import { pool as applicationPool } from "./db";
-import { backupProjectDatabase, restoreProjectDatabase } from "./projectDb";
+import { backupProjectDatabase, createProjectSchema, migrateProjectSchema, restoreProjectDatabaseInTransaction } from "./projectDb";
 import { getProjectFilesPath } from "./fileStorage";
-import type { InventoryBackup } from "./inventoryBackup";
+import { exportInventory, validateInventoryBackup, type InventoryBackup } from "./inventoryBackup";
+import { lockInventoryForSchema } from "./inventoryService";
 
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = applicationPool;
+
+export class SystemRestoreError extends Error {
+  constructor(message: string, public databaseCommitted: boolean, options?: ErrorOptions) {
+    super(message, options);
+  }
+}
 
 const TABLE_PRIMARY_KEYS: Record<string, string[]> = {
   users: ["id"],
@@ -26,6 +33,12 @@ const TABLE_PRIMARY_KEYS: Record<string, string[]> = {
   system_settings: ["key"],
   work_order_statuses: ["id"],
   trouble_codes: ["id"],
+  service_types: ["id"],
+  system_types: ["id"],
+  module_types: ["id"],
+  project_service_types: ["id"],
+  system_type_projects: ["id"],
+  module_type_projects: ["id"],
   import_configs: ["id"],
   import_history: ["id"],
   file_import_configs: ["id"],
@@ -51,6 +64,12 @@ const TABLE_RESTORE_ORDER = [
   "system_settings",
   "work_order_statuses",
   "trouble_codes",
+  "service_types",
+  "system_types",
+  "module_types",
+  "project_service_types",
+  "system_type_projects",
+  "module_type_projects",
   "import_configs",
   "import_history",
   "file_import_configs",
@@ -252,11 +271,15 @@ async function getExistingTables(client: any): Promise<string[]> {
   return result.rows.map((r: any) => r.tablename);
 }
 
-export async function restoreFullSystem(backup:FullSystemBackup,options:Parameters<typeof restoreFullSystemData>[1]={}) {
-  if (!auditingEnabled) return restoreFullSystemData(backup,options);
+export async function restoreFullSystem(backup:FullSystemBackup,options:Parameters<typeof restoreFullSystemData>[1]={},connectionPool:Pick<Pool,"connect">=pool) {
+  if (!auditingEnabled) return restoreFullSystemData(backup,options,connectionPool);
   return auditedOperation("systemRestore","legacy-json",async()=>{
-    try {return await restoreFullSystemData(backup,options);}
-    finally {await initializeAudit(applicationPool);}
+    const result = await restoreFullSystemData(backup,options,connectionPool);
+    try { await initializeAudit(applicationPool); }
+    catch (cause) {
+      throw new SystemRestoreError("Database restored, but audit hook verification failed. Restore is incomplete; an administrator must repair auditing before resuming work.", true, { cause });
+    }
+    return result;
   });
 }
 export async function restoreFullSystemData(
@@ -269,6 +292,8 @@ export async function restoreFullSystemData(
   projectErrors: string[];
   errors: string[];
   warnings: string[];
+  success: boolean;
+  databaseCommitted: boolean;
 }> {
   const client = await connectionPool.connect();
   const errors: string[] = [];
@@ -278,6 +303,64 @@ export async function restoreFullSystemData(
   let projectsRestored = 0;
   
   try {
+    // Reject incomplete snapshots before clearing or changing any business data.
+    const schemas = new Set<string>();
+    for (const projectBackup of backupData.projectDatabases) {
+      if (!/^project_[a-z0-9_]+$/.test(projectBackup.schemaName) || schemas.has(projectBackup.schemaName))
+        throw new Error("Invalid or duplicate project schema in backup.");
+      schemas.add(projectBackup.schemaName);
+      const project = backupData.mainDatabase.projects?.find(p => p.id === projectBackup.projectId);
+      if (!project || project.database_name !== projectBackup.schemaName)
+        throw new Error(`Project ${projectBackup.projectName}: matching project configuration is missing.`);
+      if (projectBackup.inventory) {
+        const ids = projectBackup.workOrders.map(wo => wo.id);
+        if (ids.some(id => !Number.isSafeInteger(id) || id < 1) || new Set(ids).size !== ids.length)
+          throw new Error(`Project ${projectBackup.projectName}: invalid or duplicate work-order IDs.`);
+        validateInventoryBackup(projectBackup.inventory, ids);
+      } else if (project.inventory_enabled || backupData.mainDatabase.inventory_state?.some(s => s.project_id === project.id)) {
+        throw new Error(`Project ${projectBackup.projectName}: inventory snapshot is missing.`);
+      }
+    }
+    for (const project of backupData.mainDatabase.projects ?? []) {
+      if (project.database_name && !schemas.has(project.database_name))
+        throw new Error(`Project ${project.name}: work-order snapshot is missing.`);
+    }
+    for (const table of ["inventory_state", "inventory_items", "inventory_quantities", "inventory_movements"]) {
+      for (const row of backupData.mainDatabase[table] ?? []) {
+        const project = backupData.mainDatabase.projects?.find(p => p.id === row.project_id);
+        if (!project) throw new Error(`Inventory backup has no project configuration for project ${row.project_id}.`);
+        if (table === "inventory_state" && row.state?.allocations?.length &&
+          !backupData.projectDatabases.some(p => p.projectId === project.id && p.inventory))
+          throw new Error(`Project ${project.name}: allocated inventory has no work-order snapshot.`);
+      }
+    }
+    const lookupReferences = [
+      { table: "work_order_statuses", key: "code", fields: ["status"] },
+      { table: "trouble_codes", key: "code", fields: ["trouble"] },
+      { table: "service_types", key: "code", fields: ["serviceType"] },
+      { table: "system_types", key: "product_id", fields: ["oldSystemType", "newSystemType"] },
+      { table: "module_types", key: "product_id", fields: ["oldModuleType", "newModuleType"] },
+    ];
+    for (const { table, key, fields } of lookupReferences) {
+      const required = new Set(backupData.projectDatabases.flatMap(p => p.workOrders.flatMap(wo =>
+        fields.map(field => field === "status" ? wo[field] || "Open" : wo[field]).filter(value => value != null && value !== ""))));
+      if (!required.size) continue;
+      // Older archives omitted equipment/service catalogs. Allow them only if
+      // matching configuration is already installed, and preserve that catalog.
+      const rows = backupData.mainDatabase[table] ??
+        (await client.query(`SELECT "${key}" FROM public.${table} WHERE "${key}" = ANY($1::text[])`, [[...required]])).rows;
+      const available = new Set(rows.map(row => row[key]));
+      const missing = [...required].filter(value => !available.has(value));
+      if (missing.length) throw new Error(`Missing ${table} configuration: ${missing.join(", ")}. Restore matching lookup configuration or use a newer complete JSON backup.`);
+    }
+
+    // DDL/migrations use their own connections; finish them before taking data locks.
+    // Empty schemas may remain on failure, but no restored business rows are committed.
+    for (const projectBackup of backupData.projectDatabases) {
+      const { rows: [r] } = await client.query("SELECT to_regclass($1) AS table_name", [`"${projectBackup.schemaName}".work_orders`]);
+      if (!r.table_name) await createProjectSchema(projectBackup.projectName, projectBackup.projectId, projectBackup.schemaName, connectionPool);
+      await migrateProjectSchema(projectBackup.schemaName, connectionPool);
+    }
     const existingTables = await getExistingTables(client);
     const backupTables = Object.keys(backupData.mainDatabase);
     
@@ -287,25 +370,36 @@ export async function restoreFullSystemData(
       }
     }
     for (const table of backupTables) {
+      if (!TABLE_RESTORE_ORDER.includes(table) && backupData.mainDatabase[table]?.length)
+        throw new Error(`Cannot restore nonempty table "${table}": unsupported legacy JSON table.`);
       if (!existingTables.includes(table)) {
+        if (backupData.mainDatabase[table]?.length)
+          throw new Error(`Cannot restore nonempty table "${table}": table is missing on this server.`);
         warnings.push(`Table "${table}" exists in backup but not in database`);
       }
     }
     
     await client.query("BEGIN");
-    
+    // Check the destination before restoring public inventory/configuration.
+    // Otherwise those rows could mask an unsafe merge or a legacy downgrade.
+    for (const projectBackup of backupData.projectDatabases) {
+      await lockInventoryForSchema(client, projectBackup.schemaName);
+      await client.query(`LOCK TABLE "${projectBackup.schemaName}".work_orders IN SHARE ROW EXCLUSIVE MODE`);
+      if (projectBackup.inventory && !options.clearExisting) {
+        const { rows: [r] } = await client.query(`SELECT count(*)::int n FROM "${projectBackup.schemaName}".work_orders`);
+        if (r.n) throw new Error(`Project ${projectBackup.projectName}: inventory backups require explicit replacement of existing project data.`);
+      }
+      if (!projectBackup.inventory) {
+        const existing = await exportInventory(client, projectBackup.schemaName);
+        if (existing && (existing.enabled || existing.state.allocations.length))
+          throw new Error(`Project ${projectBackup.projectName}: this backup has no inventory snapshot for the destination inventory.`);
+      }
+    }
+
     if (options.clearExisting) {
       for (const tableName of TABLE_DELETE_ORDER) {
-        if (existingTables.includes(tableName)) {
-          try {
-            await client.query(`TRUNCATE TABLE "${tableName}" CASCADE`);
-          } catch (error: any) {
-            try {
-              await client.query(`DELETE FROM "${tableName}"`);
-            } catch (deleteError) {
-              warnings.push(`Could not clear table ${tableName}`);
-            }
-          }
+        if (existingTables.includes(tableName) && backupTables.includes(tableName)) {
+          await client.query(`TRUNCATE TABLE "${tableName}" CASCADE`);
         }
       }
     }
@@ -327,7 +421,9 @@ export async function restoreFullSystemData(
           const columns = Object.keys(row);
           const values = columns.map(c => tableName === "inventory_quantities" && c === "serials" && row[c] != null
             ? JSON.stringify(row[c]) : row[c]);
-          const identityOverride = tableName === "inventory_movements" ? " OVERRIDING SYSTEM VALUE" : "";
+          // Valid for serial/default columns too; fresh installations may use
+          // GENERATED ALWAYS identities on any public table, not only movements.
+          const identityOverride = " OVERRIDING SYSTEM VALUE";
           const placeholders = columns.map((_, i) => `$${i + 1}`).join(", ");
           const columnList = columns.map((c) => `"${c}"`).join(", ");
           
@@ -360,51 +456,50 @@ export async function restoreFullSystemData(
           }
           restoredCount++;
         } catch (error: any) {
-          errors.push(`${tableName}: ${error.message}`);
+          throw new Error(`Critical restore errors: ${tableName}: ${error.message}`);
         }
       }
       
       mainTablesRestored[tableName] = restoredCount;
     }
     
-    const criticalErrors = errors.filter(e =>
-      e.includes("users:") || e.includes("projects:") || e.includes("subroles:") || e.startsWith("inventory_")
-    );
-    if (criticalErrors.length > 0) {
-      await client.query("ROLLBACK");
-      throw new Error(`Critical restore errors: ${criticalErrors.join("; ")}`);
+    for (const tableName of TABLE_RESTORE_ORDER) {
+      if (!existingTables.includes(tableName)) continue;
+      for (const key of await getPrimaryKeyColumns(client, tableName)) {
+        const { rows: [r] } = await client.query("SELECT pg_get_serial_sequence($1,$2) AS sequence", [tableName, key]);
+        if (!r.sequence) continue;
+        await client.query(`LOCK TABLE "${tableName}" IN SHARE ROW EXCLUSIVE MODE`);
+        await client.query(`SELECT setval($1::regclass,
+          GREATEST(coalesce((SELECT max("${key}") FROM "${tableName}"),0),1),
+          EXISTS(SELECT 1 FROM "${tableName}"))`, [r.sequence]);
+      }
     }
-    if (existingTables.includes("inventory_movements")) {
-      await client.query('LOCK TABLE inventory_movements IN SHARE ROW EXCLUSIVE MODE');
-      await client.query(`SELECT setval(pg_get_serial_sequence('inventory_movements','id'),
-        GREATEST(coalesce((SELECT max(id) FROM inventory_movements),0),1),
-        EXISTS(SELECT 1 FROM inventory_movements))`);
-    }
-    
-    await client.query("COMMIT");
     
     for (const projectBackup of backupData.projectDatabases) {
       try {
-        const result = await restoreProjectDatabase(
+        const result = await restoreProjectDatabaseInTransaction(
+          client,
           projectBackup.schemaName,
           { workOrders: projectBackup.workOrders, inventory: projectBackup.inventory },
           { clearExisting: options.clearExisting }
         );
-        projectsRestored++;
         if (result.errors.length > 0) {
           projectErrors.push(...result.errors.map((e) => `${projectBackup.projectName}: ${e}`));
         }
+        projectsRestored++;
       } catch (error: any) {
         projectErrors.push(`Project ${projectBackup.projectName}: ${error.message}`);
+        throw new Error(`System database restore rolled back: ${projectErrors.join("; ")}`);
       }
     }
-    
-    return { mainTablesRestored, projectsRestored, projectErrors, errors, warnings };
+    if (projectErrors.length) throw new Error(`System database restore rolled back: ${projectErrors.join("; ")}`);
+    await client.query("COMMIT");
+    return { mainTablesRestored, projectsRestored, projectErrors, errors, warnings, success: true, databaseCommitted: true };
   } catch (error: any) {
     try {
       await client.query("ROLLBACK");
     } catch {}
-    throw error;
+    throw new SystemRestoreError(`System database restore rolled back: ${error.message}`, false, { cause: error });
   } finally {
     client.release();
   }

@@ -10,9 +10,11 @@ import { createProjectSchema, getProjectWorkOrderStorage, backupProjectDatabase,
 import { inventoryState, postInventory } from "../server/inventoryService";
 import { withAuditContext } from "../server/auditContext";
 import type { InventoryCommand } from "../shared/inventory";
+import { initializeAudit } from "../server/auditMigration";
 
 test("transactional completion, mobile usage, concurrency, import rollback, and inventory-aware restore", async () => {
   await initializeInventory(pool);
+  await initializeAudit(pool);
   const suffix = randomUUID().slice(0, 8);
   const administrator = await storage.ensureAdministratorSubrole();
   const user = await storage.createLocalUser(`inventory-fixture-${suffix}`, await bcrypt.hash(randomUUID(), 4), "admin", "Inventory", "Fixture", null, administrator.id);
@@ -23,6 +25,7 @@ test("transactional completion, mobile usage, concurrency, import rollback, and 
   const command = (action: InventoryCommand["action"], data: Record<string, unknown>, id = randomUUID()) =>
     withAuditContext(scope(), () => postInventory(project.id, { action, data, operationId: id }, user.id, true));
   const work = getProjectWorkOrderStorage(schema);
+  const targets: Array<{ id: number; schema: string }> = [];
   try {
     await command("warehouse", { id: "w", code: "w", name: "Main", type: "physical", address: "Test location" });
     await command("vendor", { id: "v", name: "Vendor" });
@@ -33,6 +36,8 @@ test("transactional completion, mobile usage, concurrency, import rollback, and 
     await command("receive", { orderId: "po", lines: [{ itemId: "meter", quantity: 2, serials: ["0001", "0002"] }] }, receiveId);
     await command("receive", { orderId: "po", lines: [{ itemId: "meter", quantity: 2, serials: ["0001", "0002"] }] }, receiveId);
     assert.equal((await inventoryState(project.id)).stock[0].quantity, 2);
+    const deleted = await work.createWorkOrder({ customerWoId: "deleted-gap" } as any);
+    await pool.query(`DELETE FROM "${schema}".work_orders WHERE id=$1`, [deleted.id]);
     const wo = await withAuditContext(scope(), () => work.createWorkOrder({ customerWoId: "fixture-wo", customerName: "Fixture", serviceType: "Electric", oldSystemId: "OLD1" } as any));
     const competitor = await work.createWorkOrder({ customerWoId: "competitor" } as any);
     const results = await Promise.allSettled([wo.id, competitor.id].map(id => command("assign", { workOrderId: id, lines: [{ itemId: "meter", warehouseId: "w", quantity: 1, serials: ["0001"] }] })));
@@ -52,6 +57,33 @@ test("transactional completion, mobile usage, concurrency, import rollback, and 
     assert.equal(await work.getWorkOrderByCustomerWoId("bad-import"), undefined);
     const before = await inventoryState(project.id), backup = await backupProjectDatabase(schema);
     assert.ok(backup.inventory);
+    assert.deepEqual(backup.workOrders.map(w => w.id), [2, 3], "ordered IDs expose the fresh-sequence collision");
+    for (const identity of [false, true]) {
+      const { rows: [target] } = await pool.query("INSERT INTO public.projects(name,inventory_enabled) VALUES($1,true) RETURNING id,name", [`Fresh restore ${suffix} ${identity}`]);
+      const targetSchema = await createProjectSchema(target.name, target.id);
+      targets.push({ id: target.id, schema: targetSchema });
+      await pool.query("UPDATE public.projects SET database_name=$2 WHERE id=$1", [target.id, targetSchema]);
+      if (identity) {
+        await pool.query(`ALTER TABLE "${targetSchema}".work_orders ALTER COLUMN id DROP DEFAULT`);
+        await pool.query(`DROP SEQUENCE "${targetSchema}".work_orders_id_seq`);
+        await pool.query(`ALTER TABLE "${targetSchema}".work_orders ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY`);
+      }
+      const restored = await withAuditContext(scope(), () => restoreProjectDatabase(targetSchema, backup, { clearExisting: true }));
+      assert.equal(restored.restored, 2);
+      assert.deepEqual(await inventoryState(target.id), before, "posted serialized allocations, balances and operations survive");
+      const targetWork = getProjectWorkOrderStorage(targetSchema);
+      assert.equal((await targetWork.getWorkOrder(allocatedId))?.newSystemId, "0001");
+      const next = await targetWork.createWorkOrder({ customerWoId: "after-restore" } as any);
+      assert.equal(next.id, 4, "new work-order sequence starts above the restored maximum");
+      const invalid = structuredClone(backup);
+      invalid.workOrders[1].customerWoId = invalid.workOrders[0].customerWoId;
+      await assert.rejects(withAuditContext(scope(), () => restoreProjectDatabase(targetSchema, invalid, { clearExisting: true })), /duplicate key/);
+      assert.ok(await targetWork.getWorkOrder(next.id), "failed replacement rolls back prior work orders");
+      assert.deepEqual(await inventoryState(target.id), before);
+      const { rows: events } = await pool.query("SELECT actor_id,outcome FROM meterflo_audit.events WHERE entity_type='projectRestore' AND project_id=$1", [target.id]);
+      assert.ok(events.some(e => e.actor_id === user.id && e.outcome === "success"), "restore records authenticated initiation");
+      assert.ok(events.some(e => e.actor_id === user.id && e.outcome === "failed"), "failure preserves prior audit evidence");
+    }
     await assert.rejects(restoreProjectDatabase(schema, { workOrders: backup.workOrders }), /no inventory snapshot/);
     await restoreProjectDatabase(schema, backup, { clearExisting: true });
     assert.deepEqual(await inventoryState(project.id), before);
@@ -60,6 +92,11 @@ test("transactional completion, mobile usage, concurrency, import rollback, and 
     assert.equal((await inventoryState(project.id)).stock[0].quantity, 2);
     await work.updateWorkOrder(allocatedId, { status: "Open" } as any);
   } finally {
+    for (const target of targets) {
+      await pool.query(`DROP SCHEMA IF EXISTS "${target.schema}" CASCADE`);
+      for (const table of ["inventory_movements", "inventory_quantities", "inventory_items", "inventory_state"]) await pool.query(`DELETE FROM public.${table} WHERE project_id=$1`, [target.id]);
+      await pool.query("DELETE FROM public.projects WHERE id=$1", [target.id]);
+    }
     await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
     for (const table of ["inventory_movements", "inventory_quantities", "inventory_items", "inventory_state"]) await pool.query(`DELETE FROM public.${table} WHERE project_id=$1`, [project.id]);
     await pool.query("DELETE FROM public.projects WHERE id=$1", [project.id]);

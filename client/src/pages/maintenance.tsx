@@ -358,7 +358,8 @@ export default function Maintenance() {
           throw new Error(result.message || "Failed to finalize restore");
         }
         
-        setUploadProgress({ stage: "processing", percent: 100, message: "Complete!" });
+        const incomplete = result.success === false || result.errors?.length > 0;
+        setUploadProgress({ stage: "processing", percent: 100, message: incomplete ? "Restore incomplete" : "Complete!" });
         
         // Build success message
         let description: string;
@@ -377,8 +378,9 @@ export default function Maintenance() {
         }
         
         toast({
-          title: "System Restore Completed",
-          description,
+          title: incomplete ? "System Restore Incomplete" : "System Restore Completed",
+          description: incomplete ? `${result.message || "Some data or files could not be restored."} ${description} Review server logs before resuming work.` : description,
+          variant: incomplete ? "destructive" : "default",
         });
 
         if (result.errors?.length > 0) {
@@ -406,7 +408,8 @@ export default function Maintenance() {
           throw new Error(result.message || "Failed to restore system backup");
         }
 
-        setUploadProgress({ stage: "processing", percent: 100, message: "Complete!" });
+        const incomplete = result.success === false || result.errors?.length > 0;
+        setUploadProgress({ stage: "processing", percent: 100, message: incomplete ? "Restore incomplete" : "Complete!" });
 
         // Handle both new SQL format and legacy JSON format responses
         let description: string;
@@ -425,8 +428,9 @@ export default function Maintenance() {
         }
         
         toast({
-          title: "System Restore Completed",
-          description,
+          title: incomplete ? "System Restore Incomplete" : "System Restore Completed",
+          description: incomplete ? `${result.message || "Some data or files could not be restored."} ${description} Review server logs before resuming work.` : description,
+          variant: incomplete ? "destructive" : "default",
         });
 
         if (result.errors?.length > 0) {
@@ -1071,6 +1075,8 @@ export default function Maintenance() {
                 This will restore database tables from the backup file.
                 For full backups, this includes all users, projects, and work orders.
                 For clean backups, this clears projects, users (except admin and file_import), user groups, system types, module types, and disables Cloudflare Turnstile.
+                Legacy JSON database restores roll back public and project data together if any project fails.
+                Files are restored separately; an incomplete file restore does not undo the database restore.
               </p>
             </div>
 
