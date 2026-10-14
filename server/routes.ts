@@ -8405,23 +8405,33 @@ export async function registerRoutes(
         
         try {
           const dbResult = await restorePgBackup(sqlFile, { disableForeignKeys: true, isCleanBackup, clearExisting });
-          
-          if (restoreFiles) {
-            const filesPath = await getProjectFilesPath();
-            filesResult = await restoreFilesFromPgArchive(req.file.buffer, filesPath);
-          }
-          
+
           if (!dbResult.success) {
             return res.status(500).json({
               message: "Database restore failed",
+              success: false,
               error: dbResult.error,
               warnings: dbResult.warnings,
-              filesRestored: filesResult.filesRestored,
+              filesRestored: 0,
             });
           }
-          
+
+          // File failures cannot undo a successful SQL restore. Preserve that
+          // distinction even when path resolution or the file helper throws.
+          if (restoreFiles) {
+            try {
+              const filesPath = await getProjectFilesPath();
+              filesResult = await restoreFilesFromPgArchive(req.file.buffer, filesPath);
+            } catch (error) {
+              console.error("File restore failed after SQL database restore:", error);
+              filesResult.errors.push("File restoration failed after the database was restored. Review the server logs before retrying.");
+            }
+          }
+
           return res.json({
-            message: isCleanBackup ? "Clean database restore completed" : "Full system restore completed (SQL format)",
+            message: filesResult.errors.length ? "Database restored; file restore incomplete" : isCleanBackup ? "Clean database restore completed" : "Full system restore completed (SQL format)",
+            success: filesResult.errors.length === 0,
+            databaseCommitted: true,
             format: metadata.format,
             backupDate: metadata.backupDate,
             schemas: metadata.schemas,
@@ -9019,22 +9029,29 @@ export async function registerRoutes(
         
         try {
           const dbResult = await restorePgBackup(sqlFile, { disableForeignKeys: true, isCleanBackup, clearExisting });
-          
-          // Always try to restore files
-          const filesPath = await getProjectFilesPath();
-          filesResult = await restoreFilesFromPgArchive(fileBuffer, filesPath);
-          
+
           if (!dbResult.success) {
             return res.status(500).json({
               message: "Database restore failed",
+              success: false,
               error: dbResult.error,
               warnings: dbResult.warnings,
-              filesRestored: filesResult.filesRestored,
+              filesRestored: 0,
             });
           }
-          
+
+          try {
+            const filesPath = await getProjectFilesPath();
+            filesResult = await restoreFilesFromPgArchive(fileBuffer, filesPath);
+          } catch (error) {
+            console.error("File restore failed after SQL database restore:", error);
+            filesResult.errors.push("File restoration failed after the database was restored. Review the server logs before retrying.");
+          }
+
           return res.json({
-            message: isCleanBackup ? "Clean database restore completed" : "Full system restore completed (SQL format)",
+            message: filesResult.errors.length ? "Database restored; file restore incomplete" : isCleanBackup ? "Clean database restore completed" : "Full system restore completed (SQL format)",
+            success: filesResult.errors.length === 0,
+            databaseCommitted: true,
             format: metadata.format,
             backupDate: metadata.backupDate,
             schemas: metadata.schemas,

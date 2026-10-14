@@ -8,3 +8,9 @@ Treat a business backup as a data snapshot, not permission to roll back the inst
 **Why:** MeterFlo must run on independent Windows/Linux servers. Older snapshots can erase evidence of later actions; external PostgreSQL tools do not inherit authenticated application context. Business backups must also restore on a fresh server before local audit storage exists.
 
 **How to apply:** Review every new backup/restore mode for local-history preservation, portable database dependencies, and truthful initiation/outcome recording. Never infer the restoring operator from actor fields inside the uploaded snapshot or claim that external pgAdmin operations were audited.
+
+Do not equate an unsuccessful SQL restore with a fully rolled-back database. Keep file restoration gated on database success, and distinguish a successful database restore followed by file failures from a database failure.
+
+**Why:** PostgreSQL archive restores and their optional cleanup are not one cross-resource transaction. SQL failures can leave partial database changes, while later file failures cannot undo a successful database restore.
+
+**How to apply:** Do not claim `databaseCommitted: false` for a generic SQL failure unless rollback is proven. Report committed database success explicitly when later file work fails, including unexpected file-helper or path-resolution exceptions.

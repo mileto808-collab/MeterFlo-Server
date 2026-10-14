@@ -22,6 +22,7 @@
     "test:audit:api": "tsx --test tests/audit-api.test.ts",
     "test:audit:browser": "tsx tests/audit-api.test.ts --browser",
     "test:audit:restore": "tsx --test tests/audit-restore.test.ts",
+    "test:sql-archive-restore": "tsx --test tests/sql-archive-restore.test.ts",
     "check:deployment-secrets": "node script/check-deployment-secrets.mjs",
     "check:deployment-secrets:staged": "node script/check-deployment-secrets.mjs --staged",
     "audit:secrets:history": "node script/audit-secret-history.mjs",
