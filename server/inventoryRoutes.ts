@@ -13,6 +13,7 @@ import { isAuthenticated } from "./replitAuth";
 import { getProjectFilesPath } from "./fileStorage";
 import { insertAuditEvent } from "./auditService";
 import { auditingEnabled } from "./auditContext";
+import { inventoryCountReference } from "../shared/inventory-count-reference";
 
 export function inventoryVisibleState(state: InventoryState, actor: string, admin: boolean) {
   // Project-level view permits finding stock at other locations and requesting
@@ -23,10 +24,11 @@ const escape = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": 
 export function inventoryPrint(kind: string, record: any, state: InventoryState, project: string) {
   const lineList = record.lines || record.snapshot?.map((b: any) => ({ ...b, quantity: b.quantity })) || [];
   const warehouse = (id: string) => state.warehouses.find(w => w.id === id)?.name || id || "";
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${escape(kind)} ${escape(record.id)}</title><style>
+  const reference = kind === "count" ? inventoryCountReference(state.counts, record.id) : record.id;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${escape(kind)} ${escape(reference)}</title><style>
     body{font:14px Arial;margin:30px;color:#111}table{border-collapse:collapse;width:100%;margin-top:20px}th,td{border:1px solid #bbb;padding:8px;text-align:left}button{padding:10px}@media print{button{display:none}}</style></head>
     <body><button onclick="window.print()">Print / Save PDF</button><h1>${escape(project)} — ${escape(kind)}</h1>
-    <p>Reference: ${escape(record.id)} · Status: ${escape(record.status || record.action)}</p>
+    <p>Reference: ${escape(reference)} · Status: ${escape(record.status || record.action)}</p>
     <p>Date: ${escape(record.createdAt || record.occurredAt)} · Actor: ${escape(record.actor)}</p>
     <p>From: ${escape(warehouse(record.sourceId))} · To: ${escape(warehouse(record.destinationId || record.warehouseId))}</p>
     <p>Vendor: ${escape(state.vendors.find(v => v.id === record.vendorId)?.name)} · ${escape(record.reason || record.notes)}</p>

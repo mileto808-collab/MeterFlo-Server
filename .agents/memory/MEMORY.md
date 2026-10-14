@@ -17,3 +17,4 @@
 - [Customer instance updates](customer-instance-updates.md) — customer-owned Replit or Windows/Linux instances need core updates that preserve custom work.
 - [Inventory scope](inventory-scope.md) — inventory is optional per project; reading-only work is not a changeout, and disabled projects retain current behavior.
 - [Inventory backup types](inventory-backup-types.md) — test full-system and project restores separately with posted serialized stock; JSON arrays and generated identities need type-aware handling.
+- [Audited test fixtures](audited-test-fixtures.md) — CLI fixture creation must match the app's audit initialization; persistent triggers alone do not supply project scope metadata.

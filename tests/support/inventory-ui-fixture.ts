@@ -6,10 +6,14 @@ import { pool } from "../../server/db";
 import { storage } from "../../server/storage";
 import { createProjectSchema } from "../../server/projectDb";
 import { initializeInventory } from "../../server/inventoryMigration";
+import { getProjectFilesPath } from "../../server/fileStorage";
+import path from "node:path";
+import { enableAuditing } from "../../server/auditContext";
 const file = "/tmp/meterflo-inventory-ui-fixture.json";
 async function main() {
   if (process.argv[2] === "cleanup") {
     const fixture = JSON.parse(await fs.readFile(file, "utf8"));
+    await fs.rm(path.join(await getProjectFilesPath(), `inventory-${fixture.projectId}`), { recursive: true, force: true });
     await pool.query(`DROP SCHEMA "${fixture.schema}" CASCADE`);
     for (const table of ["inventory_movements", "inventory_quantities", "inventory_items", "inventory_state"]) await pool.query(`DELETE FROM public.${table} WHERE project_id=$1`, [fixture.projectId]);
     await pool.query("DELETE FROM public.projects WHERE id=$1", [fixture.projectId]);
@@ -23,6 +27,9 @@ async function main() {
     }
     await fs.unlink(file); return;
   }
+  // Match the running server: audited schemas need their project scope mapping
+  // registered at creation, not only during the server's startup scan.
+  enableAuditing();
   await initializeInventory(pool);
   const suffix = randomUUID().slice(0, 8), password = `Fixture-${randomUUID()}!`;
   const admin = await storage.ensureAdministratorSubrole();

@@ -161,7 +161,7 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
 
       {data.allocation?.status === "reserved" && <div className="border-t pt-4">
         {!reviewing ? <Button type="button" variant="outline" disabled={!canAssign} onClick={() => { setMode(readingOnly ? "reading_only" : "changeout"); setReviewing(true); }}>
-          Review use & removed meter
+          Review use & removed equipment
         </Button> : <div className="space-y-4">
           <div><Label>Work type</Label><Select value={mode} disabled={readingOnly} onValueChange={value => setMode(value as "changeout" | "reading_only")}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="changeout">Meter changeout</SelectItem><SelectItem value="reading_only">Reading only</SelectItem></SelectContent></Select></div>
           {mode === "reading_only" ? <p className="text-sm text-muted-foreground">Reading-only visits use no replacement stock and have no removed-meter disposition.</p> : <>

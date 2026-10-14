@@ -165,7 +165,7 @@ const stepLabels: Record<WizardStep, string> = {
   newSystemId: "New System ID",
   newReading: "Capture New Reading",
   afterPhotos: "After Photos",
-  inventoryReview: "Inventory use & removed meter review",
+  inventoryReview: "Inventory use & removed equipment review",
   gps: "Capture GPS",
   notes: "Notes",
   signature: "Capture Signature",
@@ -2352,8 +2352,8 @@ export function SystemChangeoutWizard({
           <div className="space-y-4">
             <div className="text-center">
               <ClipboardCheck className="mx-auto mb-2 h-10 w-10 text-primary" />
-              <h3 className="text-lg font-semibold">Inventory use & removed meter review</h3>
-              <p className="mt-1 text-sm text-muted-foreground">Confirm what was installed and how each removed meter was handled before submitting this changeout.</p>
+              <h3 className="text-lg font-semibold">Inventory use & removed equipment review</h3>
+              <p className="mt-1 text-sm text-muted-foreground">Confirm what was installed and how each removed system or module was handled before submitting this changeout.</p>
             </div>
             {!hasPermission("inventory.assign") ? (
               <Card className="border-destructive/40"><CardContent className="pt-4 text-sm text-destructive">Inventory assignment permission is required to complete this work order.</CardContent></Card>
@@ -2384,7 +2384,7 @@ export function SystemChangeoutWizard({
             )}
             {(oldSystemId || oldModuleId) && (
               <Card>
-                <CardHeader className="pb-3"><CardTitle className="text-base">Removed meters</CardTitle></CardHeader>
+                <CardHeader className="pb-3"><CardTitle className="text-base">Removed Equipment</CardTitle></CardHeader>
                 <CardContent className="space-y-3">
                   {[
                     ...(oldSystemId ? [{ equipment: "system" as const, serial: oldSystemId }] : []),
