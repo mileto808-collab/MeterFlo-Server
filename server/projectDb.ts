@@ -5,6 +5,21 @@ import { sql } from "drizzle-orm";
 import { storage } from "./storage";
 import { appendResetNote, resetAssignment, WorkOrderResetError, type ResetWorkOrderOptions } from "../shared/work-order-reset";
 import { enqueueCustomerDelivery } from "./customerApiService";
+import { initializeExactReadings } from "./exactReadingMigration";
+import { exactReadingDto, exactReadingFields, capturedReadingText, readingParameter, withExactReadings } from "../shared/exact-readings";
+
+function readingSetClauses(column: string, valueIndex: number, textIndex: number) {
+  // Old clients may echo a rounded numeric compatibility field. Preserve the
+  // underlying exact value/text when that echo matches its legacy float view.
+  const legacyEcho = `CASE WHEN $${textIndex}::text IS NULL AND $${valueIndex}::numeric IS NOT NULL THEN
+    CASE WHEN abs(${column}::numeric)<=1e308 AND abs($${valueIndex}::numeric)<=1e308
+      THEN ${column}::double precision IS NOT DISTINCT FROM $${valueIndex}::double precision
+      ELSE false END ELSE false END`;
+  return [
+    `${column}=CASE WHEN ${legacyEcho} THEN ${column}::numeric ELSE $${valueIndex}::numeric END`,
+    `${column}_text=CASE WHEN ${legacyEcho} THEN ${column}_text ELSE $${textIndex}::text END`,
+  ];
+}
 
 // Service type enum for work orders
 export const serviceTypeEnum = ["Water", "Electric", "Gas"] as const;
@@ -48,6 +63,10 @@ export const projectWorkOrders = pgTable("work_orders", {
   newModuleId: varchar("new_module_id", { length: 100 }),
   oldModuleRead: numeric("old_module_read"),
   newModuleRead: numeric("new_module_read"),
+  oldSystemReadingText: text("old_system_reading_text"),
+  newSystemReadingText: text("new_system_reading_text"),
+  oldModuleReadText: text("old_module_read_text"),
+  newModuleReadText: text("new_module_read_text"),
   oldModuleType: varchar("old_module_type", { length: 100 }),
   newModuleType: varchar("new_module_type", { length: 100 }),
   signatureData: text("signature_data"),
@@ -166,6 +185,7 @@ export async function createProjectSchema(projectName: string, projectId: number
       WHERE new_module_id IS NOT NULL
     `);
     
+    await initializeExactReadings(client,schemaName);
     console.log(`Created project schema with unique ID indexes: ${schemaName}`);
     return schemaName;
   } finally {
@@ -336,6 +356,8 @@ export async function migrateProjectSchema(schemaName: string): Promise<void> {
       }
     }
     
+    await initializeExactReadings(client,schemaName);
+
     // Step 5: Drop deprecated _id suffix columns (consolidate to text-based references)
     const deprecatedColumns = [
       'service_type_id', 'status_id', 'created_by_id', 'updated_by_id', 
@@ -679,8 +701,8 @@ export class ProjectWorkOrderStorage {
       
       const result = await client.query(
         `INSERT INTO "${this.schemaName}".work_orders 
-         (status, created_by, completed_at, notes, attachments, customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_system_id, new_system_id, old_gps, new_gps, old_system_reading, new_system_reading, scheduled_at, updated_by, trouble, old_system_type, new_system_type, old_module_id, new_module_id, old_module_read, new_module_read, old_module_type, new_module_type, signature_data, signature_name, assigned_user_id, assigned_group_id, completed_by, scheduled_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40)
+         (status, created_by, completed_at, notes, attachments, customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_system_id, new_system_id, old_gps, new_gps, old_system_reading, new_system_reading, scheduled_at, updated_by, trouble, old_system_type, new_system_type, old_module_id, new_module_id, old_module_read, new_module_read, old_module_type, new_module_type, signature_data, signature_name, assigned_user_id, assigned_group_id, completed_by, scheduled_by,old_system_reading_text,new_system_reading_text,old_module_read_text,new_module_read_text)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,$41,$42,$43,$44)
          RETURNING id`,
         [
           status,
@@ -704,8 +726,8 @@ export class ProjectWorkOrderStorage {
           workOrder.newSystemId || null,
           workOrder.oldGps || null,
           workOrder.newGps || null,
-          workOrder.oldSystemReading ?? null,
-          workOrder.newSystemReading ?? null,
+          readingParameter(workOrder.oldSystemReading),
+          readingParameter(workOrder.newSystemReading),
           workOrder.scheduledAt || null,
           createdByValue,
           troubleCode || null,
@@ -713,8 +735,8 @@ export class ProjectWorkOrderStorage {
           workOrder.newSystemType ?? null,
           (workOrder as any).oldModuleId || null,
           (workOrder as any).newModuleId || null,
-          (workOrder as any).oldModuleRead ?? null,
-          (workOrder as any).newModuleRead ?? null,
+          readingParameter(workOrder.oldModuleRead),
+          readingParameter(workOrder.newModuleRead),
           (workOrder as any).oldModuleType || null,
           (workOrder as any).newModuleType || null,
           (workOrder as any).signatureData || null,
@@ -723,6 +745,7 @@ export class ProjectWorkOrderStorage {
           assignedGroupId,
           completedBy,
           scheduledBy,
+          ...exactReadingFields.map(({key}) => capturedReadingText(workOrder[key])),
         ]
       );
       
@@ -967,10 +990,10 @@ export class ProjectWorkOrderStorage {
       }, options);
       const notes = appendResetNote(current.notes, await this.getTimezoneFormattedTimestamp(), actor, options, {
         newSystemId: row.new_system_id,
-        newSystemReading: row.new_system_reading,
+        newSystemReading: row.new_system_reading_text ?? row.new_system_reading,
         newSystemType: row.new_system_type,
         newModuleId: row.new_module_id,
-        newModuleRead: row.new_module_read,
+        newModuleRead: row.new_module_read_text ?? row.new_module_read,
         newModuleType: row.new_module_type,
         newGps: row.new_gps,
       });
@@ -1091,16 +1114,20 @@ export class ProjectWorkOrderStorage {
         values.push(updates.oldSystemId);
       }
       if (updates.oldSystemReading !== undefined) {
-        setClauses.push(`old_system_reading = $${paramCount++}`);
-        values.push(updates.oldSystemReading);
+        setClauses.push(...readingSetClauses("old_system_reading",paramCount,paramCount+1));
+        paramCount++;
+        values.push(readingParameter(updates.oldSystemReading));
+        values.push(capturedReadingText(updates.oldSystemReading)); paramCount++;
       }
       if (updates.newSystemId !== undefined) {
         setClauses.push(`new_system_id = $${paramCount++}`);
         values.push(updates.newSystemId);
       }
       if (updates.newSystemReading !== undefined) {
-        setClauses.push(`new_system_reading = $${paramCount++}`);
-        values.push(updates.newSystemReading);
+        setClauses.push(...readingSetClauses("new_system_reading",paramCount,paramCount+1));
+        paramCount++;
+        values.push(readingParameter(updates.newSystemReading));
+        values.push(capturedReadingText(updates.newSystemReading)); paramCount++;
       }
       if (updates.oldGps !== undefined) {
         setClauses.push(`old_gps = $${paramCount++}`);
@@ -1369,12 +1396,16 @@ export class ProjectWorkOrderStorage {
         values.push((updates as any).newModuleId || null);
       }
       if ((updates as any).oldModuleRead !== undefined) {
-        setClauses.push(`old_module_read = $${paramCount++}`);
-        values.push((updates as any).oldModuleRead ?? null);
+        setClauses.push(...readingSetClauses("old_module_read",paramCount,paramCount+1));
+        paramCount++;
+        values.push(readingParameter(updates.oldModuleRead));
+        values.push(capturedReadingText(updates.oldModuleRead)); paramCount++;
       }
       if ((updates as any).newModuleRead !== undefined) {
-        setClauses.push(`new_module_read = $${paramCount++}`);
-        values.push((updates as any).newModuleRead ?? null);
+        setClauses.push(...readingSetClauses("new_module_read",paramCount,paramCount+1));
+        paramCount++;
+        values.push(readingParameter(updates.newModuleRead));
+        values.push(capturedReadingText(updates.newModuleRead)); paramCount++;
       }
       if ((updates as any).oldModuleType !== undefined) {
         setClauses.push(`old_module_type = $${paramCount++}`);
@@ -1566,6 +1597,7 @@ export class ProjectWorkOrderStorage {
   
   private mapRowToWorkOrder(row: any): ProjectWorkOrder {
     const result: any = {
+      ...exactReadingDto(row),
       id: row.id,
       status: row.status,
       createdBy: row.created_by,
@@ -1646,6 +1678,7 @@ export async function backupProjectDatabase(schemaName: string): Promise<{
   workOrders: ProjectWorkOrder[];
   version: string;
 }> {
+  await migrateProjectSchema(schemaName);
   const client = await pool.connect();
   try {
     const result = await client.query(
@@ -1653,6 +1686,7 @@ export async function backupProjectDatabase(schemaName: string): Promise<{
     );
     
     const workOrders = result.rows.map((row) => ({
+      ...exactReadingDto(row),
       id: row.id,
       status: row.status,
       createdBy: row.created_by,
@@ -1677,8 +1711,8 @@ export async function backupProjectDatabase(schemaName: string): Promise<{
       newSystemId: row.new_system_id,
       oldGps: row.old_gps,
       newGps: row.new_gps,
-      oldSystemReading: parseNumericReading(row.old_system_reading),
-      newSystemReading: parseNumericReading(row.new_system_reading),
+      oldSystemReading: row.old_system_reading_text ?? row.old_system_reading,
+      newSystemReading: row.new_system_reading_text ?? row.new_system_reading,
       scheduledAt: row.scheduled_at,
       updatedBy: row.updated_by,
       trouble: row.trouble,
@@ -1686,8 +1720,8 @@ export async function backupProjectDatabase(schemaName: string): Promise<{
       newSystemType: row.new_system_type,
       oldModuleId: row.old_module_id,
       newModuleId: row.new_module_id,
-      oldModuleRead: parseNumericReading(row.old_module_read),
-      newModuleRead: parseNumericReading(row.new_module_read),
+      oldModuleRead: row.old_module_read_text ?? row.old_module_read,
+      newModuleRead: row.new_module_read_text ?? row.new_module_read,
       oldModuleType: row.old_module_type,
       newModuleType: row.new_module_type,
       signatureData: row.signature_data,
@@ -1702,7 +1736,7 @@ export async function backupProjectDatabase(schemaName: string): Promise<{
       schemaName,
       backupDate: new Date().toISOString(),
       workOrders,
-      version: "2.4",
+      version: "2.5",
     };
   } finally {
     client.release();
@@ -1715,6 +1749,7 @@ export async function restoreProjectDatabase(
   backup: { workOrders: Array<Omit<ProjectWorkOrder, "id" | "createdAt" | "updatedAt">> },
   options: { clearExisting?: boolean } = {}
 ): Promise<{ restored: number; errors: string[] }> {
+  await migrateProjectSchema(schemaName);
   const client = await pool.connect();
   const errors: string[] = [];
   let restored = 0;
@@ -1725,12 +1760,12 @@ export async function restoreProjectDatabase(
     }
     
     for (let i = 0; i < backup.workOrders.length; i++) {
-      const wo = backup.workOrders[i] as any;
+      const wo = withExactReadings(backup.workOrders[i]) as any;
       try {
         await client.query(
           `INSERT INTO "${schemaName}".work_orders 
-           (status, created_by, completed_at, notes, attachments, customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_system_id, new_system_id, old_gps, new_gps, old_system_reading, new_system_reading, scheduled_at, updated_by, trouble, old_system_type, new_system_type, old_module_id, new_module_id, old_module_read, new_module_read, old_module_type, new_module_type, signature_data, signature_name, assigned_user_id, assigned_group_id, completed_by, scheduled_by)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40)`,
+           (status, created_by, completed_at, notes, attachments, customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_system_id, new_system_id, old_gps, new_gps, old_system_reading, new_system_reading, scheduled_at, updated_by, trouble, old_system_type, new_system_type, old_module_id, new_module_id, old_module_read, new_module_read, old_module_type, new_module_type, signature_data, signature_name, assigned_user_id, assigned_group_id, completed_by, scheduled_by,old_system_reading_text,new_system_reading_text,old_module_read_text,new_module_read_text)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,$41,$42,$43,$44)`,
           [
             wo.status || "Open",
             wo.createdBy || null,
@@ -1772,6 +1807,7 @@ export async function restoreProjectDatabase(
             wo.assignedGroupId || null,
             wo.completedBy || null,
             wo.scheduledBy || null,
+            ...exactReadingFields.map(({key}) => capturedReadingText(wo[key])),
           ]
         );
         restored++;

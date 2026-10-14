@@ -21,6 +21,7 @@ import bcrypt from "bcryptjs";
 import multer from "multer";
 import { createProjectSchema, deleteProjectSchema, getProjectWorkOrderStorage, sanitizeSchemaName, backupProjectDatabase, restoreProjectDatabase, getProjectDatabaseStats } from "./projectDb";
 import { pool } from "./db";
+import { readingParameter, withExactReadings } from "../shared/exact-readings";
 import {
   getReadingPrecision, hasReadingPrecisionSettings, readingPrecisionPatchSchema,
   readingPrecisionPermission, validateCapturedReadings, readingValidationResponse,
@@ -3536,9 +3537,9 @@ export async function registerRoutes(
           zone: wo.zone || null,
           serviceType,
           oldSystemId: wo.oldSystemId || wo.old_system_id || null,
-          oldSystemReading: (wo.oldSystemReading ?? wo.old_system_reading) != null ? (Number.isNaN(parseFloat(String(wo.oldSystemReading ?? wo.old_system_reading))) ? null : parseFloat(String(wo.oldSystemReading ?? wo.old_system_reading))) : null,
+          oldSystemReading: readingParameter(wo.oldSystemReadingText ?? wo.old_system_reading_text ?? wo.oldSystemReading ?? wo.old_system_reading),
           newSystemId: wo.newSystemId || wo.new_system_id || null,
-          newSystemReading: (wo.newSystemReading ?? wo.new_system_reading) != null ? (Number.isNaN(parseFloat(String(wo.newSystemReading ?? wo.new_system_reading))) ? null : parseFloat(String(wo.newSystemReading ?? wo.new_system_reading))) : null,
+          newSystemReading: readingParameter(wo.newSystemReadingText ?? wo.new_system_reading_text ?? wo.newSystemReading ?? wo.new_system_reading),
           oldGps: wo.oldGps || wo.old_gps || null,
           newGps: wo.newGps || wo.new_gps || null,
           status: wo.status || "Open",
@@ -3553,8 +3554,8 @@ export async function registerRoutes(
           newSystemType: wo.newSystemType || wo.new_system_type || null,
           oldModuleId: wo.oldModuleId || wo.old_module_id || null,
           newModuleId: wo.newModuleId || wo.new_module_id || null,
-          oldModuleRead: (wo.oldModuleRead ?? wo.old_module_read) != null ? (Number.isNaN(parseFloat(String(wo.oldModuleRead ?? wo.old_module_read))) ? null : parseFloat(String(wo.oldModuleRead ?? wo.old_module_read))) : null,
-          newModuleRead: (wo.newModuleRead ?? wo.new_module_read) != null ? (Number.isNaN(parseFloat(String(wo.newModuleRead ?? wo.new_module_read))) ? null : parseFloat(String(wo.newModuleRead ?? wo.new_module_read))) : null,
+          oldModuleRead: readingParameter(wo.oldModuleReadText ?? wo.old_module_read_text ?? wo.oldModuleRead ?? wo.old_module_read),
+          newModuleRead: readingParameter(wo.newModuleReadText ?? wo.new_module_read_text ?? wo.newModuleRead ?? wo.new_module_read),
           oldModuleType: wo.oldModuleType || wo.old_module_type || null,
           newModuleType: wo.newModuleType || wo.new_module_type || null,
         });
@@ -7442,12 +7443,10 @@ export async function registerRoutes(
             }
             
             if (mappedData.oldSystemReading !== undefined && mappedData.oldSystemReading !== null && mappedData.oldSystemReading !== "") {
-              const parsed = parseInt(String(mappedData.oldSystemReading));
-              mappedData.oldSystemReading = isNaN(parsed) ? null : parsed;
+              mappedData.oldSystemReading = readingParameter(mappedData.oldSystemReading);
             }
             if (mappedData.newSystemReading !== undefined && mappedData.newSystemReading !== null && mappedData.newSystemReading !== "") {
-              const parsed = parseInt(String(mappedData.newSystemReading));
-              mappedData.newSystemReading = isNaN(parsed) ? null : parsed;
+              mappedData.newSystemReading = readingParameter(mappedData.newSystemReading);
             }
             
             mappedData.status = String(mappedData.status || "pending");
@@ -9479,7 +9478,7 @@ export async function registerRoutes(
         res.json({
           success: true,
           serverTimestamp,
-          workOrders: result.rows,
+          workOrders: withExactReadings(result.rows),
           referenceData: {
             workOrderStatuses,
             troubleCodes,

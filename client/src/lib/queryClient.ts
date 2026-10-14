@@ -1,4 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { withExactReadings } from "@shared/exact-readings";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -20,6 +21,8 @@ export async function apiRequest(
   });
 
   await throwIfResNotOk(res);
+  const json = res.json.bind(res);
+  res.json = async () => withExactReadings(await json());
   return res;
 }
 
@@ -38,7 +41,7 @@ export const getQueryFn: <T>(options: {
     }
 
     await throwIfResNotOk(res);
-    return await res.json();
+    return withExactReadings(await res.json());
   };
 
 export const queryClient = new QueryClient({

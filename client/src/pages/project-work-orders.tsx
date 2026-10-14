@@ -1,6 +1,7 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, Link, useLocation } from "wouter";
 import { useState, useEffect, useMemo, useRef, useCallback, useLayoutEffect } from "react";
+import { withExactReadings } from "@shared/exact-readings";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -139,7 +140,7 @@ export default function ProjectWorkOrders() {
         const camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
         result[camelKey] = snakeToCamelCase(data[key]);
       }
-      return result;
+      return withExactReadings(result);
     }
     return data;
   };
@@ -827,7 +828,7 @@ export default function ProjectWorkOrders() {
       if (formValue === undefined) return existingValue ?? null;
       if (formValue === "") return null;
       const normalized = typeof formValue === "string" ? normalizeReadingInput(formValue) : formValue;
-      return typeof normalized === "string" ? Number(normalized) : normalized;
+      return normalized;
     };
     
     // For string ID fields:

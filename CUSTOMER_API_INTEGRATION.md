@@ -69,6 +69,18 @@ Service codes must match the project's configured service types (or global types
 
 Send identifiers and readings as **JSON strings** to retain leading zeros and exact decimal precision. Finite, safely representable JSON numbers are accepted, but precision already lost in a customer's JSON number cannot be recovered. Use numeric strings for large or high-precision values.
 
+Captured reading text is also preserved in outbound delivery. For example,
+`oldSystemReading: "00001.0012"`, `newSystemReading: "00000"`, and
+`oldModuleReading: "00900719925474099312345.123456"` remain strings with exactly
+those digits. The meter-named compatibility fields `oldMeterReading` and
+`newMeterReading` use the same exact values as their system counterparts.
+Store these fields in text columns in the customer's backend; convert a
+separate copy only if calculations are required. Do not overwrite the original
+with `parseFloat`, numeric database types, or padded/rounded formatting.
+Historical readings without original text use the database numeric string;
+previously lost zeros and previously generated delivery snapshots cannot be
+reconstructed.
+
 ### API Import field reference
 
 These labels match **Add customer API source** and **Edit API source**. Parenthesized keys are the stored configuration names, used by the complete JSON examples below. A placeholder is not a default: Source name, Endpoint URL, and Records path start blank. Hidden fields retain their settings when you change options and still undergo configuration validation; use the documented defaults for inactive options.

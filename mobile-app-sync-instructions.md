@@ -116,6 +116,35 @@ The project response (`GET /api/projects/:id`) includes these configuration fiel
 
 > **Important:** the manual GPS value is `"manual_step"` (not `"manual"`).
 
+### Exact reading values
+
+Keep all four readings as strings in the form and offline store. When reading
+a camel-case work-order response, prefer `oldSystemReadingText`,
+`newSystemReadingText`, `oldModuleReadText`, and `newModuleReadText`, then fall
+back to the corresponding legacy value if the companion is absent.
+
+```ts
+const oldSystemReading = String(
+  row.oldSystemReadingText ?? row.old_system_reading_text ??
+  row.oldSystemReading ?? row.old_system_reading ?? ""
+);
+// Send canonical fields as strings. The *Text response fields are read-only.
+const update = { oldSystemReading: oldSystemReading === "" ? null : oldSystemReading };
+```
+
+Apply the same rule to all old/new system and module readings. For example,
+`"00001.0012"` and `"00023.000000"` must remain exactly those strings after save,
+sync download, offline editing, and re-upload, including force-overwrite sync.
+Never use numeric conversion or `toFixed` for storage or display.
+
+Snake-case sync download now returns exact strings in its existing
+`old_system_reading`, `new_system_reading`, `old_module_read`, and
+`new_module_read` fields. Numeric-only historical records use the exact database
+string as fallback; missing leading zeros cannot be recovered or fabricated.
+Legacy camel-case numeric fields remain for compatibility, but cannot accurately
+represent all reading digits. A numeric-only unchanged echo does not overwrite
+the stored exact capture.
+
 ### Reading precision settings
 
 The project configuration includes independent integer fields

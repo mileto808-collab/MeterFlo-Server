@@ -203,6 +203,36 @@ Use the `user.id` from login response. Returns all projects the user is assigned
 4. **Initial Sync:** `GET /api/projects/{projectId}/mobile/sync/download` (no lastSyncTimestamp)
 5. **Incremental Sync:** Use `serverTimestamp` from previous response as `lastSyncTimestamp`
 
+### Exact reading text
+
+Reading inputs must be sent as strings, for example `"00001.0012"`, not
+`1.0012`. This preserves leading zeros, fractional trailing zeros and digits
+beyond JavaScript's safe numeric precision. Use `null` to clear a reading.
+
+Camel-case work-order responses retain their legacy numeric reading fields for
+older clients and add these authoritative string-or-null fields:
+
+| Canonical write field | Authoritative response field | Example |
+| --- | --- | --- |
+| `oldSystemReading` | `oldSystemReadingText` | `"00001.0012"` |
+| `newSystemReading` | `newSystemReadingText` | `"00000"` |
+| `oldModuleRead` (workflow alias `oldModuleReading`) | `oldModuleReadText` | `"00900719925474099312345.123456"` |
+| `newModuleRead` (workflow alias `newModuleReading`) | `newModuleReadText` | `"00023.000000"` |
+
+Prefer the text companion when caching or displaying camel-case records. Do not
+run readings through `Number`, `parseFloat`, `parseInt`, or `toFixed`. Store them
+as text offline and submit that text in the **canonical write field**, not in the
+read-only `*Text` companion. A legacy numeric-only echo of an unchanged value
+retains the stored exact value; genuinely new numeric input cannot convey its
+original leading zeros.
+
+The snake-case sync download keeps its existing string reading keys
+(`old_system_reading`, `new_system_reading`, `old_module_read`, `new_module_read`)
+and returns their exact text when available. It also includes their nullable
+`*_text` database companions. Older records without captured text fall back to
+the database's numeric string, without rounding its digits or inventing zeros.
+Zeros discarded before this change cannot be reconstructed.
+
 ### Project reading precision
 
 `GET /api/projects`, `GET /api/projects/:id`, and the projects inside

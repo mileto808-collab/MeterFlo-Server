@@ -1,5 +1,6 @@
 import { promises as fs } from "fs";
 import path from "path";
+import { withExactReadings } from "../shared/exact-readings";
 
 const get = (row: Record<string, any>, camel: string, snake: string = camel) =>
   row[camel] ?? row[snake] ?? null;
@@ -8,6 +9,7 @@ const iso = (value: any) => value instanceof Date ? value.toISOString() : value 
 
 /** Additive contract: retain the original meter-named keys for existing receivers. */
 export function buildCustomerPayload(row: Record<string, any>, project: { id: number; name: string }, deliveryId: string) {
+  row = withExactReadings(row);
   const oldSystemId = get(row, "oldSystemId", "old_system_id");
   const newSystemId = get(row, "newSystemId", "new_system_id");
   const oldReading = reading(get(row, "oldSystemReading", "old_system_reading"));

@@ -10,3 +10,4 @@
 - [Equipment-scope preservation](equipment-scope-preservation.md) — hiding inapplicable project equipment is not permission to delete historical values or saved limits.
 - [Browser attachment authentication](browser-attachment-authentication.md) — native downloads may omit automation’s extra headers; use cookies for download acceptance fixtures.
 - [Reading capture entry policy](reading-capture-entry-policy.md) — reject excess fractional digits during typing/paste; retain the previous reading without truncation or a precision error.
+- [Exact reading compatibility](exact-reading-compatibility.md) — preserve original text without breaking legacy numeric consumers; coordinate native changes and never invent historical padding.

@@ -191,9 +191,11 @@ test("live project permissions and all reading write APIs", { skip: !process.env
       const result = await request(admin.cookie, `${root}/work-orders`, "POST", {
         customerWoId: `fixture-${counter}`, customerId: `customer-${counter}`, customerName: "Fixture",
         address: "Fixture address", serviceType, oldSystemId: `old-s-${counter}`, oldModuleId: `old-m-${counter}`,
-        oldSystemReading: "123", oldModuleRead: "123.123456",
+        oldSystemReading: "00123", oldModuleRead: "00123.123456",
       });
       assert.equal(result.status, 201);
+      assert.equal(result.data.oldSystemReadingText,"00123");
+      assert.equal(result.data.oldModuleReadText,"00123.123456");
       return result.data;
     };
     await t.test("manual capture, historical baselines, sync including force overwrite", async () => {
@@ -215,6 +217,23 @@ test("live project permissions and all reading write APIs", { skip: !process.env
       }
       assert.equal((await pool.query(`SELECT new_system_reading FROM "${project.databaseName}".work_orders WHERE id=$1`,
         [wo.id])).rows[0].new_system_reading, null);
+      for (const forceOverwrite of [false,true]) {
+        const fresh = await createWorkOrder();
+        const sync = await request(operator.cookie, `${root}/mobile/sync/upload`, "POST", {
+          workOrders:[{id:fresh.id,clientUpdatedAt:new Date().toISOString(),forceOverwrite,
+            newSystemReading:"00012",newModuleRead:"00000.123456"}],
+        });
+        assert.equal(sync.status,200);
+        assert.notEqual(sync.data.results[0].status,"error");
+        const raw = (await pool.query(`SELECT * FROM "${project.databaseName}".work_orders WHERE id=$1`,[fresh.id])).rows[0];
+        assert.equal(raw.new_system_reading_text,"00012");
+        assert.equal(raw.new_module_read_text,"00000.123456");
+        const download = await request(operator.cookie,`${root}/mobile/sync/download`);
+        assert.equal(download.status,200);
+        const record = download.data.workOrders.find((record:any) => record.id===fresh.id);
+        assert.equal(record.new_system_reading,"00012");
+        assert.equal(record.new_module_read,"00000.123456");
+      }
     });
     await t.test("both mobile trouble captures validate before saving and do not truncate fractions", async () => {
       const wo = await createWorkOrder();
@@ -229,7 +248,7 @@ test("live project permissions and all reading write APIs", { skip: !process.env
         assert.equal(invalid.data.code, "READING_PRECISION");
         assert.equal((await request(admin.cookie, root, "PATCH", { systemReadingDecimalPlaces: 3 })).status, 200);
         assert.equal((await request(operator.cookie, route, "POST",
-          { projectId: project.id, troubleCode, oldSystemReading: "12.123" })).status, 200);
+          { projectId: project.id, troubleCode, oldSystemReading: "00012.123" })).status, 200);
         assert.equal((await pool.query(`SELECT old_system_reading FROM "${project.databaseName}".work_orders WHERE id=$1`,
           [wo.id])).rows[0].old_system_reading, "12.123");
         assert.equal((await request(admin.cookie, root, "PATCH", { systemReadingDecimalPlaces: 0 })).status, 200);
@@ -261,7 +280,7 @@ test("live project permissions and all reading write APIs", { skip: !process.env
       }
       const completed = await request(operator.cookie,
         `/api/mobile/projects/${project.id}/work-orders/${wo.id}/complete`, "POST",
-        { ...invalid, newSystemReading: "0", newModuleReading: "1.123456" });
+        { ...invalid, newSystemReading: "00000", newModuleReading: "00001.123456" });
       assert.equal(completed.status, 200);
       const { rows: [saved] } = await pool.query(
         `SELECT new_system_reading,new_module_read FROM "${project.databaseName}".work_orders WHERE id=$1`, [wo.id]);

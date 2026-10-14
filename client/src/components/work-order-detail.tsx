@@ -1376,7 +1376,7 @@ export function WorkOrderDetail({
                                 type="number" 
                                 {...field} 
                                 value={field.value ?? ""} 
-                                onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : "")}
+                                onChange={(e) => field.onChange(e.target.value)}
                                 placeholder="12345" 
                                 data-testid="input-mobile-old-system-reading" 
                               />
@@ -1445,7 +1445,7 @@ export function WorkOrderDetail({
                                 type="number" 
                                 {...field} 
                                 value={field.value ?? ""} 
-                                onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : "")}
+                                onChange={(e) => field.onChange(e.target.value)}
                                 placeholder="12345" 
                                 data-testid="input-mobile-old-module-reading" 
                               />
@@ -1514,7 +1514,7 @@ export function WorkOrderDetail({
                                 type="number" 
                                 {...field} 
                                 value={field.value ?? ""} 
-                                onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : "")}
+                                onChange={(e) => field.onChange(e.target.value)}
                                 placeholder="12345" 
                                 data-testid="input-mobile-new-system-reading" 
                               />
@@ -1583,7 +1583,7 @@ export function WorkOrderDetail({
                                 type="number" 
                                 {...field} 
                                 value={field.value ?? ""} 
-                                onChange={(e) => field.onChange(e.target.value ? parseFloat(e.target.value) : "")}
+                                onChange={(e) => field.onChange(e.target.value)}
                                 placeholder="12345" 
                                 data-testid="input-mobile-new-module-reading" 
                               />

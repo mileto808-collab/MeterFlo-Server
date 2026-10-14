@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { withExactReadings } from "./exact-readings";
 
 export const readingDecimalPlacesSchema = z.number().int().min(0).max(6);
 export const readingPrecisionKeys = ["systemReadingDecimalPlaces", "moduleReadingDecimalPlaces"] as const;
@@ -75,7 +76,7 @@ export function validateCapturedReadings(
   existing?: object | null,
 ): ReadingValidationError[] {
   const precision = getReadingPrecision(project);
-  const baseline = existing as Record<string, unknown> | undefined;
+  const baseline = withExactReadings(existing) as Record<string, unknown> | undefined;
   const errors: ReadingValidationError[] = [];
   for (const { keys, label, kind } of readingFields) {
     const limit = kind === "system" ? precision.systemReadingDecimalPlaces : precision.moduleReadingDecimalPlaces;
@@ -84,6 +85,11 @@ export function validateCapturedReadings(
       if (!Object.hasOwn(payload, field)) continue;
       const value = payload[field];
       if (value === null || value === undefined || value === "") continue;
+      if (typeof value === "number" && existing &&
+          keys.some(key => {
+            const prior = (existing as Record<string,unknown>)[key];
+            return prior != null && Number(prior) === value;
+          })) continue;
       if (original !== undefined && String(value).trim() === String(original).trim()) continue;
       if (!isValidReading(value, limit)) {
         errors.push({ field, decimalPlaces: limit, message: readingLimitMessage(label, limit) });

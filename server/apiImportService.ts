@@ -2,6 +2,7 @@ import { randomUUID, createHash } from "crypto";
 import { promises as fs } from "fs";
 import path from "path";
 import type { PoolClient } from "pg";
+import { exactReadingFields } from "../shared/exact-readings";
 import { pool } from "./db";
 import { storage } from "./storage";
 import { getProjectFilesPath, getProjectDirectoryName } from "./fileStorage";
@@ -168,18 +169,28 @@ async function writeImportRecord(client: PoolClient, project: any, config: ApiIm
     if (capturedWorkOrder(existing, rules.openStatus) || tracking.rows.length || await hasFiles(project, existing)) {
       return { action: "skipped", message: "Existing work order has field work, notes, assignment, files, scheduling, timing, or a non-Open outcome; protected" };
     }
-    const fields = config.updateFields.filter(field => Object.hasOwn(mapped, field) && String(existing[column(field)] ?? "") !== String(mapped[field] ?? ""));
+    const fields = config.updateFields.filter(field => Object.hasOwn(mapped, field) && String(existing[`${column(field)}_text`] ?? existing[column(field)] ?? "") !== String(mapped[field] ?? ""));
     if (!fields.length) return { action: "skipped", message: "Selected baseline fields are unchanged" };
-    const result = await client.query(`UPDATE ${table} SET ${fields.map((field, index) => `"${column(field)}"=$${index + 2}`).join(",")},updated_at=now() WHERE id=$1 RETURNING updated_at::text row_version`,
-      [existing.id, ...fields.map(field => mapped[field])]);
+    const writeColumns = fields.map(column);
+    const writeValues = fields.map(field => mapped[field]);
+    for (const {key,column:c} of exactReadingFields) if (fields.includes(key as any)) {
+      writeColumns.push(`${c}_text`); writeValues.push(mapped[key]);
+    }
+    const result = await client.query(`UPDATE ${table} SET ${writeColumns.map((c,index) => `"${c}"=$${index+2}`).join(",")},updated_at=now() WHERE id=$1 RETURNING updated_at::text row_version`,
+      [existing.id,...writeValues]);
     await client.query(`UPDATE public.api_import_versions SET row_version=$3 WHERE project_id=$1 AND work_order_id=$2`,
       [project.id, existing.id, result.rows[0].row_version]);
     return { action: "updated", id: existing.id as number, message: "Updated selected baseline fields on an untouched Open work order" };
   }
   const fields = Object.keys(mapped);
-  const result = await client.query(`INSERT INTO ${table} (${fields.map(field => `"${column(field)}"`).join(",")},created_by)
-    VALUES (${fields.map((_, index) => `$${index + 1}`).join(",")},NULL) ON CONFLICT(customer_wo_id) DO NOTHING RETURNING id,updated_at::text row_version`,
-    fields.map(field => mapped[field]));
+  const writeColumns = fields.map(column);
+  const writeValues = fields.map(field => mapped[field]);
+  for (const {key,column:c} of exactReadingFields) if (fields.includes(key)) {
+    writeColumns.push(`${c}_text`); writeValues.push(mapped[key]);
+  }
+  const result = await client.query(`INSERT INTO ${table} (${writeColumns.map(c => `"${c}"`).join(",")},created_by)
+    VALUES (${writeColumns.map((_,index) => `$${index+1}`).join(",")},NULL) ON CONFLICT(customer_wo_id) DO NOTHING RETURNING id,updated_at::text row_version`,
+    writeValues);
   if (result.rows.length) await client.query(`INSERT INTO public.api_import_versions(project_id,work_order_id,customer_wo_id,row_version)
     VALUES($1,$2,$3,$4) ON CONFLICT(project_id,work_order_id) DO UPDATE SET customer_wo_id=EXCLUDED.customer_wo_id,row_version=EXCLUDED.row_version`,
     [project.id, result.rows[0].id, mapped.customerWoId, result.rows[0].row_version]);

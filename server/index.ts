@@ -21,6 +21,7 @@ import { initializeCustomerApi, startCustomerApiWorker } from "./customerApiServ
 import { initializeApiImports, startApiImportWorker } from "./apiImportService";
 import { startLogMaintenance } from "./logMaintenanceRoutes";
 import { initializeReadingPrecision } from "./readingPrecisionMigration";
+import { initializeProjectExactReadings } from "./exactReadingMigration";
 import { pool } from "./db";
 
 const app = express();
@@ -116,6 +117,7 @@ app.use((req, res, next) => {
   // Initialize persistent file logging
   initializeLogger();
   await initializeReadingPrecision(pool);
+  await initializeProjectExactReadings(pool);
   await initializeCustomerApi();
   await initializeApiImports();
   

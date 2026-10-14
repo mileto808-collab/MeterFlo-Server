@@ -346,17 +346,17 @@ class FileImportScheduler {
             }
 
             if (mappedData.oldSystemReading) {
-              mappedData.oldSystemReading = parseInt(String(mappedData.oldSystemReading)) || null;
+              mappedData.oldSystemReading = String(mappedData.oldSystemReading).trim() || null;
             }
             if (mappedData.oldMeterReading) {
-              mappedData.oldSystemReading = parseInt(String(mappedData.oldMeterReading)) || null;
+              mappedData.oldSystemReading = String(mappedData.oldMeterReading).trim() || null;
               delete mappedData.oldMeterReading;
             }
             if (mappedData.newSystemReading) {
-              mappedData.newSystemReading = parseInt(String(mappedData.newSystemReading)) || null;
+              mappedData.newSystemReading = String(mappedData.newSystemReading).trim() || null;
             }
             if (mappedData.newMeterReading) {
-              mappedData.newSystemReading = parseInt(String(mappedData.newMeterReading)) || null;
+              mappedData.newSystemReading = String(mappedData.newMeterReading).trim() || null;
               delete mappedData.newMeterReading;
             }
             if (mappedData.oldMeterId) {
@@ -369,10 +369,10 @@ class FileImportScheduler {
             }
 
             if (mappedData.oldModuleRead) {
-              mappedData.oldModuleRead = parseInt(String(mappedData.oldModuleRead)) || null;
+              mappedData.oldModuleRead = String(mappedData.oldModuleRead).trim() || null;
             }
             if (mappedData.newModuleRead) {
-              mappedData.newModuleRead = parseInt(String(mappedData.newModuleRead)) || null;
+              mappedData.newModuleRead = String(mappedData.newModuleRead).trim() || null;
             }
 
             // Set default status and createdBy

@@ -556,6 +556,28 @@ If the wizard is reopened later, a new time-tracking session starts; the most re
 
 ---
 
+### Exact reading text and leading zeros
+
+Web reading forms preserve the entered text for all old/new system and module
+readings. For example, `00001.0012`, `00000`, and `00023.000000` retain their
+leading and trailing zeros when saved and reopened. The numeric database
+columns remain available for compatibility; separate original-text values are
+added automatically when the server starts on Replit, Windows, or Linux.
+The application's database role needs permission to migrate its project
+tables; migration failures are reported rather than silently losing formatting.
+
+Work-order displays, edits, wizard prefill, print reports, customer deliveries,
+and exports use the exact text. Resetting with **Clear captured data** clears
+both forms of the new readings and logs the prior exact values in Notes.
+**Keep captured data** retains them; old-equipment baseline readings remain.
+Project JSON backups retain the text and restore it with the numeric data.
+
+Records saved before this change use the database's numeric string as fallback.
+Zeros already discarded cannot be recovered, so the app does not add guessed
+padding. For imports, supply readings as text. XLSX exports use string cells;
+CSV contains the exact strings, but spreadsheet programs may auto-convert
+them on opening—import reading columns as **Text**, or use the XLSX export.
+
 ### Project reading precision
 
 In **Projects → Create/Edit Project → Wizard Configuration → Reading Precision**, configure separate

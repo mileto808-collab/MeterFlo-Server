@@ -50,7 +50,10 @@ try {
       wizardShowSignatureStep:false,wizardShowNotesStep:false};
     const order = {id:1,customerWoId:"FIXTURE",customerName:"Input fixture",address:"Fixture address",
       status:"Open",serviceType:"Electric",oldSystemId:"OLD-S",oldModuleId:"OLD-M",
-      oldSystemReading:null,oldModuleRead:null,attachments:null,notes:null};
+      oldSystemReading:1.0012,oldSystemReadingText:"00001.0012",
+      oldModuleRead:23,oldModuleReadText:"00023.000000",
+      newSystemReading:12.01,newSystemReadingText:"00012.0100",
+      newModuleRead:0,newModuleReadText:"00000",attachments:null,notes:null};
     await page.route("**/api/**",async route => {
       const path = new URL(route.request().url()).pathname;
       assert.ok(route.request().method()==="GET" || path.includes("time-tracking") || path.endsWith("/claim"),
@@ -60,6 +63,7 @@ try {
       else if (path === "/api/projects") data = [project];
       else if (path === "/api/projects/3") data = project;
       else if (path === "/api/projects/3/work-orders") data = [order];
+      else if (path === "/api/projects/3/work-orders/1") data = order;
       else if (path.endsWith("/claim")) data = {success:true};
       else if (path.endsWith("/stats")) data = {statusCounts:{Open:1},total:1};
       else if (path === "/api/work-order-statuses") data = [{id:1,name:"Open",color:"#009966"}];
@@ -71,6 +75,8 @@ try {
     await page.getByTestId("header-button-start-system-changeout").click();
     await page.getByTestId("button-system-can-change").click();
     const prefix = mode === "reading_only" ? "new" : "old";
+    await expect(page.getByTestId(`input-${prefix}-system-reading`)).toHaveValue(mode === "reading_only" ? "00012.0100" : "00001.0012");
+    await expect(page.getByTestId(`input-${prefix}-module-reading`)).toHaveValue(mode === "reading_only" ? "00000" : "00023.000000");
     await checkInput(page.getByTestId(`input-${prefix}-system-reading`),systemLimit);
     await checkInput(page.getByTestId(`input-${prefix}-module-reading`),moduleLimit);
     await expect(page.getByText(/must be a non-negative.*decimal places|must be a non-negative whole number/)).toHaveCount(0);
