@@ -5,7 +5,7 @@ export const APK_MAX_SIZE = 512 * 1024 * 1024;
 export const apkMetadataSchema = z.object({
   version: z.string().trim().min(1).max(64).regex(/^[^\x00-\x1f\x7f]+$/, "Version cannot contain control characters"),
   buildCode: z.number().int().min(1).max(2100000000).nullable().optional().default(null),
-  notes: z.string().trim().max(5000).optional().default(""),
+  notes: z.string().trim().max(5000).regex(/^[^\x00]*$/, "Notes cannot contain null characters").optional().default(""),
 }).strict();
 export const apkUploadSchema = z.object({
   fileName: z.string().min(5).max(180).regex(/^[a-zA-Z0-9][a-zA-Z0-9._ ()-]*\.apk$/i, "Use an APK filename without path separators or special characters"),
@@ -31,5 +31,6 @@ export interface MobileReleaseList {
   releases: MobileRelease[];
   latestId: string | null;
   pendingCleanup: number;
+  pendingUploadCleanup: number;
   storage: { provider: string; available: boolean; message: string; maxSizeMB: number };
 }

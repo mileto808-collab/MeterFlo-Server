@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 import express from "express";
 import session from "express-session";
 import { Passport } from "passport";
@@ -10,7 +11,7 @@ test("logout finishes the real Passport session operation before returning Home"
   const auth = new Passport();
   auth.serializeUser((user, done) => done(null, user));
   auth.deserializeUser((user: Express.User, done) => done(null, user));
-  app.use(session({ secret: "public-test-only-session-secret", resave: false, saveUninitialized: false }));
+  app.use(session({ secret: randomBytes(32).toString("hex"), resave: false, saveUninitialized: false }));
   app.use(auth.initialize());
   app.use(auth.session());
   app.post("/fixture-session", (req, res, next) => req.login({ fixture: true }, error => {

@@ -97,6 +97,9 @@ export async function validateApk(filename: string) {
   // Check EOCD before unzipper allocates an array from an untrusted record count.
   const handle = await fs.open(filename, "r");
   try {
+    const signature = Buffer.alloc(4);
+    await handle.read(signature, 0, 4, 0);
+    if (signature.readUInt32LE(0) !== 0x04034b50) invalid("not an APK ZIP file.");
     const tail = Buffer.alloc(Math.min(stat.size, 65557));
     await handle.read(tail, 0, tail.length, stat.size - tail.length);
     let end = -1;
@@ -118,7 +121,7 @@ export async function validateApk(filename: string) {
   for (const file of archive!.files) {
     const f = file as typeof file & { flags: number; crc32: number; compressionMethod: number };
     const name = file.path;
-    if (names.has(name) || name.includes("\\") || name.startsWith("/") || name.split("/").some(p => p === ".." || p === ".") ||
+    if (names.has(name) || name.includes("\\") || name.startsWith("/") || /^[a-z]:/i.test(name) || name.split("/").some(p => p === ".." || p === ".") ||
         /[\x00-\x1f\x7f]/.test(name)) invalid("unsafe or duplicate archive entry.");
     names.add(name);
     if ((f.flags & 1) || ![0, 8].includes(f.compressionMethod)) invalid("encrypted or unsupported archive entry.");
@@ -137,7 +140,7 @@ export async function validateApk(filename: string) {
         if (bytes > file.uncompressedSize) invalid("entry expands beyond its declared size.");
         crc = crcUpdate(crc, chunk);
         if (name === "AndroidManifest.xml") parts.push(chunk);
-        if (name === "classes.dex" && prefix.length < 112) prefix = Buffer.concat([prefix, chunk.subarray(0, 112 - prefix.length)]);
+        if (name === "classes.dex" && prefix.length < 120) prefix = Buffer.concat([prefix, chunk.subarray(0, 120 - prefix.length)]);
       }
     } catch (error) {
       if (error instanceof ReleaseError) throw error;
@@ -146,8 +149,11 @@ export async function validateApk(filename: string) {
     if (bytes !== file.uncompressedSize || ((crc ^ 0xffffffff) >>> 0) !== f.crc32) invalid("entry size or CRC integrity check failed.");
     if (name === "AndroidManifest.xml") manifest = Buffer.concat(parts);
     if (name === "classes.dex") {
-      if (prefix.length !== 112 || !/^dex\n0(?:3[5-9]|4[01])\0$/.test(prefix.subarray(0, 8).toString("ascii")) ||
-          prefix.readUInt32LE(32) !== bytes || prefix.readUInt32LE(36) !== 112 ||
+      const container = prefix.subarray(4,7).toString("ascii") === "041";
+      if (prefix.length < (container ? 120 : 112) || !/^dex\n0(?:3[5-9]|4[01])\0$/.test(prefix.subarray(0, 8).toString("ascii")) ||
+          (container ? prefix.readUInt32LE(112) !== bytes || prefix.readUInt32LE(116) !== 0 ||
+            prefix.readUInt32LE(32) < 120 || prefix.readUInt32LE(32) > bytes : prefix.readUInt32LE(32) !== bytes) ||
+          prefix.readUInt32LE(36) !== (container ? 120 : 112) ||
           prefix.readUInt32LE(40) !== 0x12345678) invalid("invalid Android bytecode header.");
       dexSeen = true;
     }

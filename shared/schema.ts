@@ -313,6 +313,7 @@ export const mobileApkReleases = pgTable("mobile_apk_releases", {
   publishedAt: timestamp("published_at", { withTimezone: true }),
   deleted: boolean("deleted").notNull().default(false),
   ready: boolean("ready").notNull().default(false),
+  originUploadId: text("origin_upload_id"),
 });
 export const mobileApkPublication = pgTable("mobile_apk_publication", {
   id: integer("id").primaryKey(),

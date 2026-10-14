@@ -291,6 +291,8 @@ unknown-app permission after installation if required.
   bucket exists, Settings reports storage unavailable and disables uploads rather
   than pretending the filesystem is durable. Restart after changing service
   configuration. Local storage is rejected on published Replit deployments.
+  If no bucket ID is pinned, releases use the app's default bucket; keep that
+  default unchanged across restores, or perform an explicit storage migration.
 - **Standalone Windows:** set `MOBILE_APK_STORAGE=local` and, for example,
   `MOBILE_APK_LOCAL_DIR=C:\MeterFloData\Mobile APK Releases` in the private `.env`
   or approved service environment. Grant the Node/PM2 service account read/write

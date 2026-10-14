@@ -15,4 +15,5 @@ logs/
 dump.pm2
 dump.pm2.bak
 *.apk
+*.part
 Mobile APK Releases/

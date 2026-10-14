@@ -49,7 +49,7 @@ export class MobileReleaseRepository {
           sha256 varchar(64) NOT NULL, provider text NOT NULL CHECK(provider IN ('local','app_storage')),
           location text NOT NULL, uploaded_at timestamptz NOT NULL DEFAULT now(),
           published_at timestamptz, deleted boolean NOT NULL DEFAULT false,
-          ready boolean NOT NULL DEFAULT false
+          ready boolean NOT NULL DEFAULT false, origin_upload_id text
         );
         CREATE TABLE IF NOT EXISTS ${this.table("publication")} (
           id integer PRIMARY KEY CHECK(id=1),
@@ -64,6 +64,7 @@ export class MobileReleaseRepository {
           expires_at timestamptz NOT NULL DEFAULT now() + interval '1 hour'
         );
         CREATE INDEX IF NOT EXISTS mobile_apk_upload_expiry ON ${this.table("uploads")}(expires_at);
+        ALTER TABLE ${this.table("releases")} ADD COLUMN IF NOT EXISTS origin_upload_id text;
       `);
     });
   }
@@ -81,8 +82,10 @@ export class MobileReleaseRepository {
         WHERE NOT deleted AND ready ORDER BY uploaded_at DESC, id`);
       const latest = await client.query(`SELECT release_id FROM ${this.table("publication")} WHERE id=1`);
       const pending = await client.query(`SELECT count(*)::int AS count FROM ${this.table("releases")} WHERE deleted`);
+      const uploads = await client.query(`SELECT count(*)::int AS count FROM ${this.table("uploads")} WHERE expires_at<=now()`);
       return { releases: result.rows.map(row => this.release(row)), latestId: latest.rows[0]?.release_id || null,
-        pendingCleanup: pending.rows[0].count };
+        pendingCleanup: pending.rows[0].count + uploads.rows[0].count,
+        pendingUploadCleanup: uploads.rows[0].count };
     });
   }
   async get(id: string, client: Pool | PoolClient = this.pool) {
@@ -97,12 +100,12 @@ export class MobileReleaseRepository {
       JOIN ${this.table("publication")} p ON p.release_id=r.id WHERE p.id=1 AND NOT r.deleted AND r.ready`);
     return result.rows[0] ? this.release(result.rows[0]) : null;
   }
-  async insert(client: Pool | PoolClient, release: StoredRelease) {
+  async insert(client: Pool | PoolClient, release: StoredRelease, uploadId?: string) {
     await client.query(`INSERT INTO ${this.table("releases")}
-      (id,version,build_code,notes,file_name,size,sha256,provider,location)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      (id,version,build_code,notes,file_name,size,sha256,provider,location,origin_upload_id)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
       [release.id, release.version, release.buildCode, release.notes, release.fileName, release.size,
-        release.sha256, release.ref.provider, release.ref.location]);
+        release.sha256, release.ref.provider, release.ref.location,uploadId || null]);
   }
   async publish(id: string, check: (release: StoredRelease) => Promise<void>) {
     return this.transaction(async client => {
@@ -130,7 +133,9 @@ export class MobileReleaseRepository {
     });
   }
   async pendingDeletes() {
-    await this.pool.query(`UPDATE ${this.table("releases")} SET deleted=true WHERE NOT ready AND uploaded_at < now()-interval '1 hour'`);
+    await this.pool.query(`UPDATE ${this.table("releases")} r SET deleted=true
+      WHERE NOT ready AND uploaded_at < now()-interval '1 hour'
+      AND NOT EXISTS (SELECT 1 FROM ${this.table("uploads")} u WHERE u.id=r.origin_upload_id)`);
     return (await this.pool.query(`SELECT * FROM ${this.table("releases")} WHERE deleted LIMIT 100`)).rows.map(row => this.release(row));
   }
   async abandon(id: string) { await this.pool.query(`UPDATE ${this.table("releases")} SET deleted=true WHERE id=$1 AND NOT ready`, [id]); }

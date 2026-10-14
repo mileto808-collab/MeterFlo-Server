@@ -70,9 +70,9 @@ function ErrorNotice({ error, retry }: { error: unknown; retry?: () => void }) {
   const typed = error as ApiError;
   const status = typed?.status ?? Number(typed?.message?.match(/^(\d{3}):/)?.[1]);
   const message = status === 401
-    ? "Your session has expired. Sign in again to manage APK releases."
+    ? "Your session has expired. Sign in again to access APK releases."
     : status === 403
-      ? "Your account is not permitted to manage APK releases."
+      ? "Your account does not have permission for this APK release action."
       : typed?.message || "The release service could not be reached.";
   return (
     <div role="alert" className="flex flex-col gap-3 rounded-md border border-destructive/30 bg-destructive/5 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -177,8 +177,8 @@ export function MobileReleaseManager() {
     },
     onSuccess: async (result) => {
       setNotice(result.pendingCleanup > 0
-        ? `Storage cleanup ran. ${result.pendingCleanup} release file${result.pendingCleanup === 1 ? "" : "s"} still pending.`
-        : "Storage cleanup complete. No APK files are pending removal.");
+        ? `Storage cleanup ran. ${result.pendingCleanup} cleanup job${result.pendingCleanup === 1 ? "" : "s"} still pending.`
+        : "Storage cleanup complete. No APK cleanup jobs are pending.");
       await refreshReleaseQueries();
     },
   });
@@ -221,10 +221,14 @@ export function MobileReleaseManager() {
               Upload a trusted build first, then publish it separately when technicians should receive it.
               Version and build code are entered by an administrator; they are not read from the APK.
             </CardDescription>
+             <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+               Windows/Linux installations store APKs in a protected local directory, without a Replit account or bucket.
+               Replit-hosted installations use private App Storage instead.
+             </p>
           </div>
           {releaseData?.storage && (
             <Badge variant={releaseData.storage.available ? "secondary" : "destructive"}>
-              {releaseData.storage.available ? `${releaseData.storage.provider} storage` : "Storage unavailable"}
+              {releaseData.storage.available ? releaseData.storage.provider === "local" ? "Local file storage" : "Replit App Storage" : "Storage unavailable"}
             </Badge>
           )}
         </div>
@@ -248,8 +252,8 @@ export function MobileReleaseManager() {
             {pendingCleanup > 0 && (
               <div role="status" className="flex flex-col gap-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="text-sm">
-                  <p className="font-medium">{pendingCleanup} APK {pendingCleanup === 1 ? "file is" : "files are"} awaiting storage cleanup</p>
-                  <p className="mt-1 text-muted-foreground">Removed release records may still have bytes pending deletion.</p>
+                   <p className="font-medium">{pendingCleanup} APK cleanup {pendingCleanup === 1 ? "job is" : "jobs are"} pending</p>
+                   <p className="mt-1 text-muted-foreground">Removed releases or expired uploads may still have bytes pending deletion.</p>
                 </div>
                 <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => cleanupMutation.mutate()}>
                   <RefreshCw className={`mr-2 h-4 w-4 ${cleanupMutation.isPending ? "animate-spin" : ""}`} />
@@ -294,7 +298,7 @@ export function MobileReleaseManager() {
                 <div className="space-y-2">
                   <Label htmlFor="apk-version">Version *</Label>
                   <Input id="apk-version" maxLength={64} placeholder="Example: 2.8.1" value={version} onChange={(event) => setVersion(event.target.value)} disabled={busy} required />
-                  <p className="text-xs text-muted-foreground">Enter the version shown to technicians, up to 64 characters.</p>
+                   <p className="text-xs text-muted-foreground">Enter the version shown to Dashboard users, up to 64 characters.</p>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="apk-build-code">Build code (optional)</Label>
@@ -305,7 +309,7 @@ export function MobileReleaseManager() {
                 <div className="space-y-2 md:col-span-2">
                   <Label htmlFor="apk-notes">Release notes (optional)</Label>
                   <Textarea id="apk-notes" maxLength={5000} placeholder="Example: Fixes intermittent work-order sync in low-connectivity areas." value={notes} onChange={(event) => setNotes(event.target.value)} disabled={busy} rows={3} />
-                  <p className="text-xs text-muted-foreground">{notes.length}/5000 characters · Shared with technicians alongside this release.</p>
+                   <p className="text-xs text-muted-foreground">{notes.length}/5000 characters · Shared with all Dashboard users alongside this release.</p>
                 </div>
               </div>
               {progress && (
@@ -341,12 +345,12 @@ export function MobileReleaseManager() {
                       <article key={release.id} className="flex flex-col gap-4 p-4 lg:flex-row lg:items-start lg:justify-between" data-testid={`mobile-release-${release.id}`}>
                         <div className="min-w-0 space-y-2">
                           <div className="flex flex-wrap items-center gap-2">
-                            <h4 className="font-semibold">Version {release.version}</h4>
+                             <h4 className="break-all font-semibold">Version {release.version}</h4>
                             {isLatest ? <Badge><Check className="mr-1 h-3 w-3" />Latest</Badge> : release.publishedAt ? <Badge variant="secondary">Published previously</Badge> : <Badge variant="outline">Uploaded · unpublished</Badge>}
                             {release.buildCode != null && <span className="text-xs text-muted-foreground">Build {release.buildCode}</span>}
                           </div>
                           <p className="break-all text-sm text-muted-foreground">{release.fileName} · {formatBytes(release.size)}</p>
-                          {release.notes && <p className="whitespace-pre-wrap text-sm">{release.notes}</p>}
+                           {release.notes && <p className="whitespace-pre-wrap break-words text-sm [overflow-wrap:anywhere]">{release.notes}</p>}
                           <p className="text-xs text-muted-foreground">Uploaded {formatDate(release.uploadedAt)}{release.publishedAt ? ` · Published ${formatDate(release.publishedAt)}` : ""}</p>
                         </div>
                         <div className="flex shrink-0 flex-wrap gap-2">
@@ -460,12 +464,12 @@ export function DashboardMobileRelease() {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <p className="text-lg font-semibold">Version {release.version}</p>
+                <p className="break-all text-lg font-semibold">Version {release.version}</p>
                 <Badge variant="secondary">Latest</Badge>
                 {release.buildCode != null && <span className="text-xs text-muted-foreground">Build {release.buildCode}</span>}
               </div>
               <p className="mt-1 break-all text-sm text-muted-foreground">{release.fileName} · {formatBytes(release.size)}</p>
-              {release.notes && <p className="mt-2 whitespace-pre-wrap text-sm">{release.notes}</p>}
+              {release.notes && <p className="mt-2 whitespace-pre-wrap break-words text-sm [overflow-wrap:anywhere]">{release.notes}</p>}
               <p className="mt-2 text-xs text-muted-foreground">Published {formatDate(release.publishedAt)}</p>
             </div>
             <Button type="button" className="shrink-0" onClick={() => void downloadLatest()} data-testid="button-download-latest-apk">

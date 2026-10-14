@@ -1,7 +1,7 @@
 import "dotenv/config";
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { randomUUID, randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import path from "node:path";
 import { promises as fs } from "node:fs";
@@ -75,7 +75,7 @@ test("live project permissions and all reading write APIs", { skip: !process.env
   const base = `https://${process.env.REPLIT_DEV_DOMAIN}`;
   const suffix = randomUUID().slice(0, 8);
   const prefix = `Precision test ${suffix}`;
-  const password = "PrecisionFixture1!";
+  const password = `${randomBytes(24).toString("hex")}!Aa1`;
   const userIds: string[] = [];
   const sessions: string[] = [];
   const projectIds: number[] = [];

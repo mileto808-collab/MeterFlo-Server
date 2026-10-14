@@ -11,6 +11,7 @@ import { apkFileStore, configuredApkStorage, type ApkFileStore, type ApkStorageR
 export const releaseKey = (id: string) => `releases/${id}.apk`;
 const chunkKey = (id: string, index: number) => `uploads/${id}/${index}.part`;
 export class MobileReleaseService {
+  private finalizationQueue: Promise<void> = Promise.resolve();
   constructor(readonly repo: MobileReleaseRepository, readonly files: ApkFileStore = apkFileStore,
     readonly configure: () => Promise<ApkStorageRef> = configuredApkStorage) {}
   async init(userId: string, data: unknown) {
@@ -51,6 +52,11 @@ export class MobileReleaseService {
   }
   async cancel(id: string, userId: string | null) {
     try {
+      // Persist the cancellation before byte cleanup. If the provider is down,
+      // leave an expired, visible cleanup job rather than a hidden hour-long lease.
+      await this.repo.withUpload(id,userId,async (_session,client) => {
+        await client.query(`UPDATE ${this.repo.table("uploads")} SET expires_at=now() WHERE id=$1`,[id]);
+      },true);
       await this.repo.withUpload(id, userId, async (session, client) => {
         await this.removeChunks(session);
         await client.query(`DELETE FROM ${this.repo.table("uploads")} WHERE id=$1`, [id]);
@@ -61,6 +67,17 @@ export class MobileReleaseService {
     }
   }
   async finalize(id: string, userId: string, recheckPermission: () => Promise<void>) {
+    // Each finalizer holds an upload-row transaction and needs a second connection
+    // for a durable draft/permission check. Bound finalization to avoid starving the
+    // shared pool when many administrators finish large APKs concurrently.
+    const previous = this.finalizationQueue;
+    let unlock!: () => void;
+    this.finalizationQueue = new Promise<void>(resolve => { unlock = resolve; });
+    await previous;
+    try { return await this.finishUpload(id,userId,recheckPermission); }
+    finally { unlock(); }
+  }
+  private async finishUpload(id: string, userId: string, recheckPermission: () => Promise<void>) {
     let staged: StoredRelease | null = null;
     try {
       const release = await this.repo.withUpload(id, userId, async (session, client) => {
@@ -82,7 +99,7 @@ export class MobileReleaseService {
             uploadedAt: new Date().toISOString(), publishedAt: null };
           // Commit the invisible draft independently before storing bytes. Crashes/put failures
           // leave a durable cleanup record, never an untracked binary or a publishable half-upload.
-          await this.repo.insert(this.repo.pool, staged);
+          await this.repo.insert(this.repo.pool, staged, id);
           await this.files.put(staged.ref, releaseKey(staged.id), file);
           await recheckPermission();
           const ready = await client.query(`UPDATE ${this.repo.table("releases")} SET ready=true WHERE id=$1 AND NOT deleted`, [staged.id]);
@@ -103,9 +120,11 @@ export class MobileReleaseService {
     }
   }
   async publish(id: string, recheckPermission: () => Promise<void>) {
+    // Do not acquire another pooled connection while holding the singleton
+    // publication lock: concurrent publishers can otherwise exhaust the pool.
+    await recheckPermission();
     return this.repo.publish(id, async release => {
       if (!await this.files.exists(release.ref, releaseKey(id))) throw new ReleaseError("APK bytes are missing. Upload the release again.", 503);
-      await recheckPermission();
     });
   }
   async remove(id: string, withdrawLatest: boolean) {

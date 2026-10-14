@@ -13,23 +13,35 @@ export interface ApkFileStore {
 export class ApkStorageError extends Error {
   status = 503;
 }
+export function assertPrivateApkDirectory(location: string) {
+  for (const folder of ["dist", "public", "client/public", "server/public", "node_modules", "generated-artifacts"]) {
+    const relative = path.relative(path.resolve(folder), path.resolve(location));
+    if (relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))) {
+      throw new ApkStorageError("Choose a protected APK data directory outside public, build, dependency and generated-output folders.");
+    }
+  }
+}
 function safeKey(key: string) {
   if (!/^(releases\/[a-f0-9-]+\.apk|uploads\/[a-f0-9-]+\/\d+\.part)$/.test(key)) {
     throw new Error("Invalid internal APK storage key");
   }
   return key;
 }
-export async function configuredApkStorage(): Promise<ApkStorageRef> {
-  const provider = process.env.MOBILE_APK_STORAGE || (process.env.REPL_ID ? "app_storage" : "local");
+export function apkStorageProvider(env: NodeJS.ProcessEnv = process.env) {
+  return env.MOBILE_APK_STORAGE || ((env.REPL_ID || env.REPLIT_DEPLOYMENT) ? "app_storage" : "local");
+}
+export async function configuredApkStorage(env: NodeJS.ProcessEnv = process.env): Promise<ApkStorageRef> {
+  const provider = apkStorageProvider(env);
   if (provider === "app_storage") {
-    return { provider, location: process.env.MOBILE_APK_BUCKET_ID || "" };
+    return { provider, location: env.MOBILE_APK_BUCKET_ID || "" };
   }
   if (provider !== "local") throw new ApkStorageError("MOBILE_APK_STORAGE must be local or app_storage.");
-  if (process.env.REPLIT_DEPLOYMENT) {
+  if (env.REPLIT_DEPLOYMENT) {
     throw new ApkStorageError("Published Replit APK releases require App Storage, not the deployment filesystem.");
   }
-  const location = process.env.MOBILE_APK_LOCAL_DIR || path.resolve(await getProjectFilesPath(), "Mobile APK Releases");
+  const location = env.MOBILE_APK_LOCAL_DIR || path.resolve(await getProjectFilesPath(), "Mobile APK Releases");
   if (!path.isAbsolute(location)) throw new ApkStorageError("MOBILE_APK_LOCAL_DIR must be an absolute path.");
+  assertPrivateApkDirectory(location);
   return { provider, location };
 }
 async function client(ref: ApkStorageRef) {
@@ -98,8 +110,10 @@ export async function apkStorageStatus() {
     return { provider: ref.provider, available: true, message: ref.provider === "local"
       ? "Persistent local storage. Back up the release directory together with the database."
       : "Durable App Storage. Back up this bucket together with the database.", maxSizeMB: 512 };
-  } catch {
-    return { provider: process.env.MOBILE_APK_STORAGE || (process.env.REPL_ID ? "app_storage" : "local"),
-      available: false, message: "APK storage is unavailable. Configure App Storage on Replit, or an absolute MOBILE_APK_LOCAL_DIR on a standalone server. Check service access and restart after configuration changes.", maxSizeMB: 512 };
+  } catch (error) {
+    const provider = apkStorageProvider();
+    return { provider, available: false, message: provider === "local"
+      ? `${error instanceof ApkStorageError ? error.message : "Local APK storage is unavailable."} Set an absolute MOBILE_APK_LOCAL_DIR and grant the Windows/Linux service account read/write access. Restart after configuration changes. No Replit account or bucket is required.`
+      : "Replit-hosted APK storage is unavailable. Create/attach a private App Storage bucket and check its service access. Standalone Windows/Linux installations instead use local storage, without a Replit bucket.", maxSizeMB: 512 };
   }
 }

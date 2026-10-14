@@ -4,6 +4,45 @@ Complete REST API reference for building the MeterFlo mobile application.
 
 This reference documents the HTTP contract. For workflow configuration, wizard behavior, offline retry strategy, and upload decision rules, see the separate **MeterFlo Mobile App Synchronization Guide** on the Documentation page.
 
+### Dashboard APK distribution (separate from native updates)
+
+Authorized administrators can now upload/publish APKs in **Settings → Mobile
+Application Updates → Android APK Releases**. All authenticated Dashboard roles
+can download the current release. This does **not** change mobile login, the
+`mobileConfig` fields from `/api/users/:id/projects`, GitHub Android release polling,
+or existing iOS options. Native clients do not automatically switch to these files.
+Windows/Linux servers use protected local storage without Replit; hosted Replit
+deployments use private App Storage. See the administrator guide for configuration,
+field examples, backups, publication/withdrawal and Android installation.
+
+These instance-wide endpoints use the existing MeterFlo session. All metadata
+responses are `Cache-Control: no-store`; internal storage paths/bucket locations
+are not exposed.
+
+| Endpoint | Access / behavior |
+| --- | --- |
+| `GET /api/mobile-releases/latest` | Any authenticated user. Returns `{"release":null}` if unpublished, otherwise `{"release":{...}}`. A missing/inaccessible published binary is a `503` error, not a successful empty list. |
+| `GET` or `HEAD /api/mobile-releases/:id/download` | Authenticated binary download/preflight. Ordinary users can download only the current latest (`410` if replaced); managers can inspect any completed build. Withdrawn/missing release metadata returns `404`. Attachment content type is `application/vnd.android.package-archive`; GET streams exact bytes. |
+| `GET /api/mobile-releases` | Requires `settings.mobileConfig`. Returns `releases`, `latestId`, `pendingCleanup` (removed-release plus expired-upload jobs), `pendingUploadCleanup`, and current provider availability/limits. |
+| `POST /api/mobile-releases/uploads/init` | Requires management permission. JSON: `{"fileName":"MeterFlo-2.4.0.apk","totalSize":6521217,"totalChunks":2,"metadata":{"version":"2.4.0","buildCode":240,"notes":"Offline sync fixes"}}`. Returns `201 {"uploadId":"uuid"}`. Size limit 512 MiB; chunks 5 MiB except the final remainder. |
+| `POST /api/mobile-releases/uploads/chunk` | Owner plus management permission. Multipart fields `uploadId`, integer `chunkIndex` (zero-based), file `chunk`; exact expected chunk size required. |
+| `POST /api/mobile-releases/uploads/finalize` | Owner plus management permission. JSON `{"uploadId":"uuid"}`. Requires all chunks and valid base APK structure; returns `201` with unpublished release metadata. |
+| `DELETE /api/mobile-releases/uploads/:id` | Owner plus management permission. Cancels/stages cleanup; expired sessions are cleaned automatically. |
+| `POST /api/mobile-releases/:id/publish` | Management permission. Explicitly sets this completed release latest; returns its metadata. |
+| `DELETE /api/mobile-releases/:id` | Management permission. Current latest additionally requires JSON `{"withdrawLatest":true}`, otherwise `409`. No automatic older-release fallback. Returns message and pending cleanup count. |
+| `POST /api/mobile-releases/cleanup` | Management permission. Retries removed binaries and expired uploads; returns `{"pendingCleanup":0}` on complete release cleanup. |
+
+Release metadata contains `id`, `version`, nullable `buildCode`, `notes`, `fileName`,
+`size` (bytes), `sha256`, `uploadedAt` (UTC ISO timestamp), and nullable `publishedAt`.
+Version/build fields are **administrator-supplied**, not extracted or verified.
+Errors are JSON `{"message":"..."}` with `400` validation, `401` authentication,
+`403` permission/ownership, `404` missing session/release, `409` withdrawal conflict,
+`410` expired upload/replaced download, `429` too many pending uploads, or `503`
+storage/database unavailability. A HEAD response has no body; do not try to parse
+its error JSON. A stream failure after headers aborts the transfer; retry it rather
+than accepting a partial file. Downloads do not require buffering the whole APK
+inside browser JavaScript.
+
 ---
 
 ## Table of Contents

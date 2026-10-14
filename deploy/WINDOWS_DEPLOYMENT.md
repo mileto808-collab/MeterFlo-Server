@@ -2,6 +2,43 @@
 
 This comprehensive guide walks you through deploying MeterFlo (or any Replit Node.js/Express/React web application) on a Windows server with XAMPP/Apache, PostgreSQL, Git, and Node.js.
 
+## Android APK release storage
+
+**Settings → Mobile Application Updates → Android APK Releases** allows authorized
+administrators to upload Android builds and then explicitly publish the latest
+Dashboard download. It is independent of the native app's existing GitHub/iOS update
+sources. See the administrator guide's **Android APK Releases and dashboard downloads**
+section for every field, examples, upload limits, permissions, withdrawal/deletion,
+and installation instructions.
+
+Windows/Linux instances do **not** require Replit, an App Storage bucket, Replit
+authentication, or GitHub hosting for these uploads and downloads. On Windows,
+put the following non-secret configuration in the private `.env` or service
+environment, **never** the committed PM2 template:
+
+```dotenv
+MOBILE_APK_STORAGE=local
+MOBILE_APK_LOCAL_DIR=C:\MeterFloData\Mobile APK Releases
+```
+
+Create/protect the directory and grant the Node/PM2 service account read/write access.
+Keep it **outside the Git checkout** and Apache document root so the normal Git
+update/clean script cannot delete it or expose unauthenticated downloads. On Linux,
+use an absolute protected directory such as `/var/lib/meterflo/mobile-apks`.
+Without an override, standalone releases use the configured Project Files Directory
+under `Mobile APK Releases`. Restart after changing configuration.
+
+PostgreSQL release tables initialize additively on startup; no destructive rebuild
+is needed. Back up **both** the database and release directory. Database-only
+backups do not contain APKs. Individual release records retain their original
+storage location; changing the directory does not migrate earlier files. Restoring
+between hosts/platforms requires preserving/migrating those bytes and their
+locations or uploading new releases. A database restored from Replit also needs
+its hosted release bytes/access or new local uploads.
+
+Only Replit-hosted deployments use the private App Storage provider. Do not choose
+that provider on a standalone server expecting a Replit bucket to be required.
+
 ---
 
 ## Reading precision upgrade

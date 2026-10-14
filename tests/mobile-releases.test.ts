@@ -1,7 +1,7 @@
 import "dotenv/config";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { promises as fs } from "node:fs";
+import { promises as fs, createWriteStream } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { createHash, randomUUID } from "node:crypto";
@@ -12,7 +12,7 @@ import { storage } from "../server/storage";
 import { registerRoutes } from "../server/routes";
 import { MobileReleaseRepository } from "../server/mobileReleaseRepository";
 import { MobileReleaseService } from "../server/mobileReleaseService";
-import { apkFileStore } from "../server/mobileReleaseStorage";
+import { apkFileStore, assertPrivateApkDirectory, apkStorageProvider, configuredApkStorage } from "../server/mobileReleaseStorage";
 import { registerMobileReleaseRoutes } from "../server/mobileReleaseRoutes";
 import { validateApk } from "../server/apkValidation";
 import { APK_CHUNK_SIZE } from "../shared/mobile-releases";
@@ -53,7 +53,7 @@ export async function releaseFixture() {
   app.use(express.json());
   // Test-server-only principal injection; real application's auth is not changed.
   app.use((req: any,_res,next) => {
-    const id = req.headers["x-apk-fixture-actor"];
+    const id = req.headers["x-apk-fixture-actor"] || req.headers.cookie?.match(/(?:^|;\s*)apk_fixture_actor=([^;]+)/)?.[1];
     const actor = actors.find(a => a.id === id);
     req.user = actor ? { claims: { sub: actor.id }, expires_at: Math.floor(Date.now()/1000)+3600 } : undefined;
     req.isAuthenticated = () => !!actor;
@@ -129,17 +129,122 @@ export async function releaseFixture() {
   }};
 }
 
+async function checkReleaseBrowser(fixture: Awaited<ReturnType<typeof releaseFixture>>, fixtureFile: string, bytes: Buffer, delegatedRole: number) {
+  const { chromium, expect } = await import("@playwright/test");
+  let executablePath: string | undefined;
+  if (process.platform === "linux") {
+    try { await fs.access("/repl/tools/bin/chromium"); executablePath = "/repl/tools/bin/chromium"; } catch {}
+  }
+  const browser = await chromium.launch({executablePath,args:["--no-sandbox"]});
+  const output = path.resolve("generated-artifacts/mobile-releases");
+  await fs.mkdir(output,{recursive:true});
+  try {
+    const context = await browser.newContext({viewport:{width:1280,height:900},acceptDownloads:true});
+    await context.addCookies([{name:"apk_fixture_actor",value:fixture.admin.id,url:fixture.base}]);
+    const page = await context.newPage();
+    await page.goto(fixture.base);
+    const dashboardCard = page.getByTestId("card-latest-android-release");
+    await expect(dashboardCard).toContainText("Version 2.4.0");
+    const downloadEvent = page.waitForEvent("download");
+    await dashboardCard.getByTestId("button-download-latest-apk").click();
+    const download = await downloadEvent;
+    assert.equal(download.suggestedFilename(),"meterflo-test.apk");
+    const downloaded = path.join(output,"downloaded.apk");
+    await download.saveAs(downloaded);
+    assert.deepEqual(await fs.readFile(downloaded),bytes,"browser attachment bytes");
+    await fs.rm(downloaded);
+    await page.goto(fixture.base+"/settings");
+    const manager = page.getByTestId("card-android-apk-releases");
+    await expect(manager).toBeVisible();
+    await expect(manager).toContainText("Local file storage");
+    await expect(manager).toContainText("without a Replit account or bucket");
+    await manager.getByTestId("input-apk-file").setInputFiles(fixtureFile);
+    await page.locator("#apk-version").fill("2.6.0");
+    await page.locator("#apk-build-code").fill("260");
+    await page.locator("#apk-notes").fill("Browser-tested release");
+    await manager.getByTestId("button-upload-apk").click();
+    await expect(manager).toContainText("Version 2.6.0 uploaded.",{timeout:30000});
+    const row = manager.locator("article").filter({hasText:"Version 2.6.0"});
+    await expect(row).toContainText("Uploaded · unpublished");
+    await row.getByRole("button",{name:"Set as latest"}).click();
+    await expect(row).toContainText("Latest");
+    await manager.scrollIntoViewIfNeeded();
+    await page.screenshot({path:path.join(output,"settings-desktop.jpg")});
+    await row.getByRole("button",{name:"Delete",exact:true}).click();
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog).toContainText("Withdraw and delete this release?");
+    await expect(dialog).toContainText("There is no automatic fallback");
+    await dialog.getByRole("button",{name:/delete/i}).click();
+    await expect(row).toHaveCount(0);
+    await page.goto(fixture.base);
+    await expect(dashboardCard).toContainText("No Android release is currently published");
+    await expect(dashboardCard.getByTestId("button-download-latest-apk")).toHaveCount(0);
+    const existing = (await fixture.repo.list()).releases[0];
+    await fixture.service.publish(existing.id,async () => {});
+    // Desktop and phone dashboards for every signed-in base role.
+    for (const actor of [fixture.admin,fixture.tech,fixture.customer]) {
+      const roleContext = await browser.newContext({viewport:{width:402,height:874},acceptDownloads:true});
+      await roleContext.addCookies([{name:"apk_fixture_actor",value:actor.id,url:fixture.base}]);
+      const rolePage = await roleContext.newPage();
+      await rolePage.goto(fixture.base);
+      const card = rolePage.getByTestId("card-latest-android-release");
+      await expect(card).toContainText("Version 2.4.0");
+      await expect(card.getByTestId("button-download-latest-apk")).toBeVisible();
+      const dimensions = await card.evaluate(el => ({content:el.scrollWidth,width:el.clientWidth}));
+      assert.ok(dimensions.content<=dimensions.width+1,`${actor.role} mobile card must not clip content`);
+      await rolePage.screenshot({path:path.join(output,`dashboard-${actor.role}-phone.jpg`)});
+      if (actor.id === fixture.tech.id) {
+        await fixture.request(`/api/subroles/${delegatedRole}/permissions`,fixture.admin.id,"PUT",
+          {permissions:["nav.dashboard","nav.settings"]});
+        await rolePage.goto(fixture.base+"/settings");
+        await expect(rolePage.getByTestId("card-android-apk-releases")).toHaveCount(0);
+        await fixture.request(`/api/subroles/${delegatedRole}/permissions`,fixture.admin.id,"PUT",
+          {permissions:["nav.dashboard","nav.settings","settings.mobileConfig"]});
+        await rolePage.reload();
+        const mobileManager = rolePage.getByTestId("card-android-apk-releases");
+        await expect(mobileManager).toBeVisible();
+        await mobileManager.scrollIntoViewIfNeeded();
+        const box = await mobileManager.evaluate(el => ({content:el.scrollWidth,width:el.clientWidth}));
+        assert.ok(box.content<=box.width+1,"mobile management card must not clip content");
+        await rolePage.screenshot({path:path.join(output,"settings-delegated-phone.jpg")});
+      }
+      await roleContext.close();
+    }
+    // Transient metadata failure must not appear as "no published release".
+    await page.route("**/api/mobile-releases/latest", route => route.fulfill({
+      status:503,contentType:"application/json",body:JSON.stringify({message:"Fixture temporary storage failure"}),
+    }));
+    await page.goto(fixture.base);
+    await expect(dashboardCard).toContainText("Fixture temporary storage failure",{timeout:30000});
+    await expect(dashboardCard).not.toContainText("No Android release is currently published");
+    await page.unroute("**/api/mobile-releases/latest");
+    await dashboardCard.getByRole("button",{name:"Retry",exact:true}).click();
+    await expect(dashboardCard).toContainText("Version 2.4.0");
+    await context.close();
+  } finally { await browser.close(); }
+}
+
 test("Android release workflow, real role grants, bounded ownership, persistence and recovery", async t => {
   const fixture = await releaseFixture();
   const { request, repo, service, files, admin,tech,other,customer } = fixture;
   try {
-    const { bytes } = await validApkFixture();
+    const { file, bytes } = await validApkFixture();
+    assert.equal(apkStorageProvider({}),"local","standalone has no Replit dependency");
+    assert.equal(apkStorageProvider({REPLIT_DEPLOYMENT:"1"}),"app_storage","deployment without REPL_ID still selects durable App Storage");
+    assert.deepEqual(await configuredApkStorage({MOBILE_APK_LOCAL_DIR:fixture.ref.location}),fixture.ref);
+    await assert.rejects(configuredApkStorage({REPLIT_DEPLOYMENT:"1",MOBILE_APK_STORAGE:"local",MOBILE_APK_LOCAL_DIR:fixture.ref.location}));
+    for (const folder of ["dist/apks","public/apks","client/public/apks","server/public/apks","node_modules/apks","generated-artifacts/apks"]) {
+      assert.throws(() => assertPrivateApkDirectory(path.resolve(folder)));
+    }
+    assert.doesNotThrow(() => assertPrivateApkDirectory(fixture.ref.location));
     assert.ok(bytes.length > APK_CHUNK_SIZE,"real large-file chunk path");
     assert.equal((await request("/api/mobile-releases/latest","")).status,401);
     assert.equal((await request("/api/mobile-releases",tech.id)).status,403);
     assert.deepEqual(await (await request("/api/mobile-releases/latest",tech.id)).json(),{release:null});
     const permissions = await (await request("/api/permissions")).json();
     assert.ok(permissions.some((p:any) => p.key === "settings.mobileConfig"));
+    const nativeConfig = await (await request(`/api/users/${admin.id}/projects`)).json();
+    assert.deepEqual(Object.keys(nativeConfig.mobileConfig).sort(),["appStoreId","iosUpdateSource","updateUrl"]);
     const role = await fixture.grant(tech.id,["nav.settings","nav.dashboard","settings.mobileConfig"]);
     const effective = await (await request(`/api/users/${tech.id}/permissions`,tech.id)).json();
     assert.ok(effective.includes("settings.mobileConfig"));
@@ -148,6 +253,12 @@ test("Android release workflow, real role grants, bounded ownership, persistence
     await fixture.grant(other.id,["settings.mobileConfig"]);
     assert.equal((await request("/api/mobile-releases/uploads/finalize",other.id,"POST",{uploadId:firstUpload.uploadId})).status,403);
     assert.equal((await request(`/api/mobile-releases/uploads/${firstUpload.uploadId}`,other.id,"DELETE")).status,403);
+    const wrongOwnerChunk = new FormData();
+    wrongOwnerChunk.append("uploadId",firstUpload.uploadId); wrongOwnerChunk.append("chunkIndex","0");
+    wrongOwnerChunk.append("chunk",new Blob(["wrong owner's data"]),"part");
+    assert.equal((await fetch(fixture.base+"/api/mobile-releases/uploads/chunk",{
+      method:"POST",headers:{"x-apk-fixture-actor":other.id},body:wrongOwnerChunk,
+    })).status,403);
     const firstResponse = await firstUpload.finalize();
     assert.equal(firstResponse.status,201,await firstResponse.clone().text());
     const first = await firstResponse.json();
@@ -174,6 +285,9 @@ test("Android release workflow, real role grants, bounded ownership, persistence
     const second = await (await secondUpload.finalize()).json();
     await Promise.all([first.id,second.id].map(id => service.publish(id,async () => {})));
     assert.ok([first.id,second.id].includes((await repo.latest())!.id),"one consistent publication");
+    await Promise.all(Array.from({length:20},(_,i) => service.publish(i%2 ? first.id : second.id,async () => {
+      assert.ok(await storage.getUser(admin.id));
+    })));
     await service.publish(second.id,async () => {});
     assert.equal((await request(`/api/mobile-releases/${first.id}/download`,customer.id)).status,410);
     assert.equal((await request(`/api/mobile-releases/${second.id}`,admin.id,"DELETE")).status,409);
@@ -194,7 +308,7 @@ test("Android release workflow, real role grants, bounded ownership, persistence
     assert.equal((await malformed.finalize()).status,400);
     assert.equal((await repo.latest())?.id,first.id);
     for (const patch of [{fileName:"../x.apk"},{totalSize:0},{totalSize:536870913},{metadata:{version:"",buildCode:1}},
-      {metadata:{version:"ok",buildCode:-1}},{totalChunks:10000}]) {
+      {metadata:{version:"ok",buildCode:-1}},{metadata:{version:"ok",notes:"null\u0000character"}},{totalChunks:10000}]) {
       const response = await request("/api/mobile-releases/uploads/init",admin.id,"POST",{
         fileName:"test.apk",totalSize:1,totalChunks:1,metadata:{version:"ok"},...patch,
       });
@@ -203,13 +317,43 @@ test("Android release workflow, real role grants, bounded ownership, persistence
     const corrupt = Buffer.from(bytes); corrupt[200] ^= 0xff;
     const corrupted = await fixture.upload(admin.id,corrupt);
     assert.equal((await corrupted.finalize()).status,400);
+    const renamedZip = path.join(fixture.ref.location,"renamed-zip.apk");
+    const archiver = (await import("archiver")).default;
+    await new Promise<void>((resolve,reject) => {
+      const out = createWriteStream(renamedZip);
+      const archive = archiver("zip");
+      out.on("close",resolve).on("error",reject); archive.on("error",reject);
+      archive.pipe(out); archive.append("just an ordinary ZIP file",{name:"readme.txt"});
+      void archive.finalize();
+    });
+    const zipUpload = await fixture.upload(admin.id,await fs.readFile(renamedZip));
+    assert.equal((await zipUpload.finalize()).status,400,"renamed valid ZIP is not an APK");
+    const truncated = await fixture.upload(admin.id,bytes.subarray(0,bytes.length-100));
+    assert.equal((await truncated.finalize()).status,400);
     // Permission revoked after initialization: chunks/finalize must be denied too.
     const revoked = await fixture.upload(tech.id,bytes);
     await request(`/api/subroles/${role}/permissions`,admin.id,"PUT",{permissions:["nav.dashboard"]});
     assert.equal((await revoked.finalize()).status,403);
+    assert.equal((await fetch(fixture.base+"/api/mobile-releases/uploads/chunk",{
+      method:"POST",headers:{"x-apk-fixture-actor":tech.id},body:new FormData(),
+    })).status,403,"revocation is checked before multipart data is accepted");
     await pool.query(`UPDATE ${repo.table("uploads")} SET expires_at=now()-interval '1 minute' WHERE id=$1`,[revoked.uploadId]);
     await service.cleanup();
     assert.equal((await pool.query(`SELECT * FROM ${repo.table("uploads")} WHERE id=$1`,[revoked.uploadId])).rowCount,0);
+    const incomplete = await service.init(admin.id,{fileName:"incomplete.apk",totalSize:10,totalChunks:1,metadata:{version:"incomplete"}});
+    assert.equal((await request("/api/mobile-releases/uploads/finalize",admin.id,"POST",incomplete)).status,400);
+    const expired = await service.init(admin.id,{fileName:"expired.apk",totalSize:1,totalChunks:1,metadata:{version:"expired"}});
+    await pool.query(`UPDATE ${repo.table("uploads")} SET expires_at=now()-interval '1 minute' WHERE id=$1`,[expired.uploadId]);
+    assert.equal((await request("/api/mobile-releases/uploads/finalize",admin.id,"POST",expired)).status,410);
+    const cancelled = await fixture.upload(admin.id,bytes);
+    assert.equal((await request(`/api/mobile-releases/uploads/${cancelled.uploadId}`,admin.id,"DELETE")).status,204);
+    assert.equal(await files.exists(fixture.ref,`uploads/${cancelled.uploadId}/0.part`),false);
+    const pendingUpload = await fixture.upload(admin.id,bytes);
+    files.remove = async () => { throw new Error("fixture cleanup permission denial"); };
+    assert.equal((await request(`/api/mobile-releases/uploads/${pendingUpload.uploadId}`,admin.id,"DELETE")).status,503);
+    assert.equal((await repo.list()).pendingUploadCleanup,1,"failed cancellation remains visible and retryable");
+    files.remove = remove;
+    assert.equal((await (await request("/api/mobile-releases/cleanup",admin.id,"POST")).json()).pendingCleanup,0);
     const put = files.put;
     files.put = async () => { throw new Error("fixture storage full"); };
     const failedInit = await request("/api/mobile-releases/uploads/init",admin.id,"POST", {
@@ -220,6 +364,15 @@ test("Android release workflow, real role grants, bounded ownership, persistence
     files.put = put;
     await service.cancel(uploadId,admin.id);
     assert.equal((await repo.latest())?.id,first.id);
+    const exists = files.exists;
+    files.exists = async () => { throw new Error("fixture unavailable provider"); };
+    assert.equal((await request(`/api/mobile-releases/${first.id}/publish`,admin.id,"POST")).status,503);
+    assert.equal((await repo.latest())?.id,first.id);
+    files.exists = exists;
+    if (process.argv.includes("--browser")) {
+      await checkReleaseBrowser(fixture,file,bytes,role);
+      t.diagnostic("Production-built browser UI verified: admin upload/publish/withdraw, streamed attachment, empty/error/retry, role gating, and phone dashboards.");
+    }
     t.diagnostic("Verified actual role-management grants, two-chunk valid APK, byte equality, corrupt packages, withdrawal cleanup, and recreated repository/service persistence.");
   } finally { await fixture.close(); await pool.end(); }
 });

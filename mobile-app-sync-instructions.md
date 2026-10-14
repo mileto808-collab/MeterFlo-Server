@@ -4,6 +4,18 @@ This document provides comprehensive instructions for updating the mobile applic
 
 This guide explains client behavior and implementation decisions. For the endpoint-by-endpoint HTTP contract, use the separate **MeterFlo Mobile API Documentation** on the Documentation page.
 
+**APK distribution is separate from sync and native update polling.** The web
+Dashboard offers the latest Android build explicitly published in Settings.
+Administrators upload a trusted APK with a manually entered version/build code,
+then publish it; authenticated users download and install it manually. The feature
+uses local storage on standalone Windows/Linux servers without Replit, and private
+App Storage only on hosted Replit deployments. It does not alter mobile
+authentication, work-order sync, the existing `/api/users/:id/projects` `mobileConfig`
+fields, GitHub Android update checks, or iOS update options. Do not redirect native
+update checks to Dashboard APKs without a separately implemented native-client
+change. The administrator guide documents fields, storage, backups and installation;
+the Mobile API reference lists the optional distribution endpoints.
+
 ---
 
 ## Table of Contents

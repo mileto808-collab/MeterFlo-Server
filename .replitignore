@@ -1,4 +1,5 @@
 /generated-artifacts/
 *.apk
+*.part
 Project Files/
 Mobile APK Releases/

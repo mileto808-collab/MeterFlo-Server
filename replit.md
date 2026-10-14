@@ -1,6 +1,16 @@
 # MeterFlo - Utility Meter Work Order Management System
 
 ## Overview
+Android APK distribution is independent of the native update source and of Replit:
+authorized administrators upload and explicitly publish builds for authenticated
+Dashboard users. Standalone Windows/Linux installations use protected local storage
+(`MOBILE_APK_STORAGE=local`, absolute `MOBILE_APK_LOCAL_DIR`) and existing PostgreSQL
+metadata, with no Replit bucket or identity dependency. Only Replit-hosted
+deployments use private App Storage for durable binaries; never use their ephemeral
+deployment filesystem or silently fall back to it. Keep binary/staging files outside
+Git/deployment bundles and back up both the metadata database and selected byte store.
+The existing GitHub/iOS mobile update settings and mobile authentication remain unchanged.
+
 MeterFlo is a full-stack utility meter work order management system designed for field operations, offering role-based access control (RBAC) to create, assign, track, and manage meter work orders across projects. It features a modern React frontend, a Node.js/Express backend, PostgreSQL for data persistence, and application-managed username/password authentication. Authentication and session storage are managed by the application and do not depend on Replit or an external identity provider. The system supports multi-tenancy with per-project database schemas, customizable work order statuses, advanced search and reporting capabilities, and robust file management, aiming to streamline field service operations for businesses.
 
 ## User Preferences
