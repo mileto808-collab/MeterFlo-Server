@@ -28,6 +28,7 @@ import { Wrench } from "lucide-react";
 import { AlertTriangle } from "lucide-react";
 import { CustomerApiDeliveries } from "@/components/customer-api-deliveries";
 import { MobileReleaseManager } from "@/components/mobile-release-manager";
+import { CoreUpdatePreview, type UpdatePreview } from "@/components/core-update-preview";
 
 interface FileSettings {
   maxFileSizeMB: number;
@@ -508,23 +509,6 @@ export default function Settings() {
       remoteCommit?: string;
       hasGitUpdates?: boolean;
     } | null;
-  }
-
-  interface UpdatePreview {
-    isGitRepo: boolean;
-    currentBranch: string;
-    remoteBranch?: string;
-    commitsBehind: number;
-    filesChanged: string[];
-    diff: string;
-    updateCommand: string;
-    blockers?: string[];
-    commitsAhead?: number | null;
-    installed?: {version:string;coreSource:string|null;extensionApiVersion:number;schemaVersion:number;extensions:{id:string;version:string}[]};
-    candidateVersion?: string | null;
-    extensionCompatibility?: {id:string;version:string;compatible:boolean}[];
-    changes?: {status:string;file:string}[];
-    message?: string;
   }
 
   const { data: webUpdateConfigData } = useQuery<WebUpdateConfig>({
@@ -2413,136 +2397,8 @@ export default function Settings() {
             </Card>
         )}
 
-        <Dialog open={showUpdatePreview} onOpenChange={setShowUpdatePreview}>
-          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <GitBranch className="h-5 w-5" />
-                Update Preview
-              </DialogTitle>
-              <DialogDescription>
-                Review the changes before updating. This shows what would change if you run the update command.
-              </DialogDescription>
-            </DialogHeader>
-            
-            {updatePreviewData && (
-              <div className="space-y-4">
-                {updatePreviewData.installed && <div className="p-3 border rounded-md space-y-1 text-sm">
-                  <p>Installed core: {updatePreviewData.installed.version} · Extension API: {updatePreviewData.installed.extensionApiVersion}</p>
-                  <p className="break-all">Approved core source: {updatePreviewData.installed.coreSource ?? "Not configured in the workspace instance manifest"}</p>
-                  <p>Candidate: {updatePreviewData.candidateVersion ?? "Not verified"} · Customer commits ahead: {updatePreviewData.commitsAhead ?? "Unknown"}</p>
-                  {updatePreviewData.extensionCompatibility?.map(x=><p key={x.id}>{x.id} {x.version}: {x.compatible ? "Compatible" : "Incompatible"}</p>)}
-                </div>}
-                {!!updatePreviewData.blockers?.length && <div role="alert" className="p-3 border border-destructive rounded-md space-y-2">
-                  <p className="font-medium">Do not overwrite this installation</p>
-                  <ul className="list-disc pl-5 text-sm">{updatePreviewData.blockers.map((b,i)=><li key={i}>{b}</li>)}</ul>
-                  <p className="text-sm">Preserve customer work, back up data and resolve conflicts in a separate workspace. A hard reset is not an update recovery procedure.</p>
-                </div>}
-                {!!updatePreviewData.changes?.length && <div className="text-sm">
-                  <p className="font-medium">Local tracked, staged or untracked changes</p>
-                  <ul>{updatePreviewData.changes.map((c,i)=><li key={i} className="font-mono break-all">{c.status}: {c.file}</li>)}</ul>
-                </div>}
-                {!updatePreviewData.isGitRepo ? (
-                  <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-md">
-                    <p className="text-destructive font-medium">Not a Git Repository</p>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Prepare and test the composed release in the customer's workspace. Preserve customer packages and configuration, then explicitly publish or activate it; do not overwrite this running installation.
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="p-3 bg-muted/50 rounded-md">
-                        <div className="text-sm text-muted-foreground">Current Branch</div>
-                        <div className="font-medium">{updatePreviewData.currentBranch}</div>
-                      </div>
-                      <div className="p-3 bg-muted/50 rounded-md">
-                        <div className="text-sm text-muted-foreground">Customer Commits Behind</div>
-                        <div className="font-medium">{updatePreviewData.commitsBehind ?? "Unknown"}</div>
-                      </div>
-                    </div>
-
-                    {updatePreviewData.message && (
-                      <div className="p-3 bg-muted rounded-md">
-                        <p className="text-sm">{updatePreviewData.message}</p>
-                      </div>
-                    )}
-
-                    {updatePreviewData.filesChanged.length > 0 && (
-                      <div className="space-y-2">
-                        <Label>Files Changed ({updatePreviewData.filesChanged.length})</Label>
-                        <ScrollArea className="h-40 border rounded-md">
-                          <div className="p-3 space-y-1">
-                            {updatePreviewData.filesChanged.map((file, i) => {
-                              const [status, ...pathParts] = file.split("\t");
-                              const filePath = pathParts.join("\t");
-                              const statusColor = status === "M" ? "text-yellow-600" : 
-                                                  status === "A" ? "text-green-600" : 
-                                                  status === "D" ? "text-red-600" : "text-muted-foreground";
-                              return (
-                                <div key={i} className="flex items-center gap-2 text-sm font-mono">
-                                  <span className={`w-4 ${statusColor}`}>{status}</span>
-                                  <span>{filePath}</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </ScrollArea>
-                      </div>
-                    )}
-
-                    {updatePreviewData.diff && (
-                      <div className="space-y-2">
-                        <Label>Change Summary</Label>
-                        <pre className="p-3 bg-muted rounded-md text-xs font-mono overflow-x-auto max-h-40 overflow-y-auto">
-                          {updatePreviewData.diff}
-                        </pre>
-                      </div>
-                    )}
-
-                    {updatePreviewData.updateCommand && <div className="space-y-3">
-                      <Label>Prepare a separate candidate release</Label>
-                      <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-md">
-                        <p className="text-xs text-amber-800 dark:text-amber-200 font-medium mb-1">
-                          Important: First navigate to your application directory
-                        </p>
-                        <code className="text-xs font-mono text-amber-700 dark:text-amber-300">
-                          cd /path/to/your/meterflo
-                        </code>
-                        <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
-                          Example: cd c:/xampp/htdocs/meterflo
-                        </p>
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Replace the target placeholder with a new directory outside the live installation. This stages a candidate; it does not activate or publish it.
-                      </p>
-                      <div className="flex items-center gap-2">
-                        <code className="flex-1 p-3 bg-muted rounded-md text-xs font-mono break-all">
-                          {updatePreviewData.updateCommand}
-                        </code>
-                        <Button 
-                          size="icon" 
-                          variant="outline"
-                          onClick={() => copyToClipboard(updatePreviewData.updateCommand)}
-                          data-testid="button-copy-update-command"
-                        >
-                          <Clipboard className="h-4 w-4" />
-                        </Button>
-                      </div>
-                      
-                    </div>}
-                  </>
-                )}
-              </div>
-            )}
-
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setShowUpdatePreview(false)}>
-                Close
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <CoreUpdatePreview open={showUpdatePreview} onOpenChange={setShowUpdatePreview}
+          preview={updatePreviewData} copy={copyToClipboard} />
 
         {hasPermission("settings.security") && (
             <Card>

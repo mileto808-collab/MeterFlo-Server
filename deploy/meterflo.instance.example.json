@@ -1,5 +1,9 @@
 {
   "coreSource": "https://github.com/your-company/MeterFlo-Core.git",
+  "coreBaseline": {
+    "version": "2.1.1",
+    "commit": "REPLACE_WITH_THE_VERIFIED_FULL_CORE_TAG_COMMIT"
+  },
   "installedSchemaVersion": 1,
   "approvedMigrations": [],
   "extensions": [

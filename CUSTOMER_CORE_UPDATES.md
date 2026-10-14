@@ -22,6 +22,12 @@ before enabling it; the read-only contract is not permission to load untrusted c
 2. Copy `deploy/meterflo.instance.example.json` to root `meterflo.instance.json`.
 3. Set `coreSource` to the approved core Git repository, for example `https://github.com/your-company/MeterFlo-Core.git`. Embedded credentials, query tokens and non-HTTPS sources are rejected; use the host's normal protected Git authentication.
 4. Verify `installedSchemaVersion` with the release/database maintainer. The initial foundation uses revision `1`; this declaration is an operator assertion, not an automatic database inspection.
+   Record `coreBaseline` with the numbered version and full 40-character commit
+   of the approved core tag underlying the customer checkout. Verify it against
+   the trusted source, not the customer's branch HEAD. Preview rejects a moved
+   baseline tag or unrelated history. After standalone activation the original
+   checkout baseline remains unchanged; the activation receipt identifies the
+   newer running release. Never change this baseline merely to conceal local edits.
 5. Maintain custom packages in a separate customer repository and place its checked-out package in `customer-packages/project-report`. To try the working example in a **test workspace**, copy `examples/customer-report` there and list that directory in the instance manifest.
 6. Build and test using `npm ci --include=dev --registry=https://registry.npmjs.org`, `npm run check`, `npm run build`, and `npm run test:customer-updates`.
 
@@ -37,6 +43,7 @@ Do not put secrets or executable installation options in the instance manifest. 
 | Field | Example | Use |
 |---|---|---|
 | `coreSource` | `https://github.com/your-company/MeterFlo-Core.git` | Approved core source, independent of the customer's `origin` repository |
+| `coreBaseline` | `{"version":"2.1.1","commit":"<verified full 40-character Git commit>"}` | Known source-ownership baseline; missing or moved identities block preparation |
 | `extensions` | `[{"directory":"customer-packages/project-report"}]` | Relative package directories owned by the customer; paths cannot escape the instance |
 | `installedSchemaVersion` | `1` | DBA-reviewed installed schema revision; unknown/incompatible readiness blocks upgrades |
 | `approvedMigrations` | `[{"id":"core.example","sha256":"<actual 64-character file checksum>"}]` | Record only after reviewing/applying the precise SQL through the customer's controlled process |
@@ -120,8 +127,45 @@ No migration SQL is executed by these tools. Approval is a human attestation aft
 
 Back up and commit customer work, fetch the reviewed core release and perform a manual merge in a separate workspace. Resolve conflicts, review non-conflicting semantic changes, move suitable reports into owned packages, and test before promotion. A clean merge is not a compatibility guarantee. Missing history or unrelated forks require maintainer reconciliation, not resetting or overwriting the instance.
 
+For example, after committing reviewed work in the customer repository:
+```sh
+git clone /path/to/customer-repository /path/to/new-review-workspace
+cd /path/to/new-review-workspace
+git fetch https://github.com/your-company/MeterFlo-Core.git refs/tags/v2.2.0:refs/meterflo/review/v2.2.0
+git merge --no-commit refs/meterflo/review/v2.2.0
+git status --porcelain
+```
+Use the approved source/tag, not the placeholders. A failed merge stays in this
+review workspace. Do not copy its code to the live instance or run activation.
+Resolve and review conflicts there, independently restore customer package/config
+backups into the review workspace, and test. Remaining direct core modifications
+continue to block the unmodified-core staging path; use a maintainer-reviewed
+customer-composed release until they have been reconciled or moved into extensions.
+
 ## Verification coverage
 
 `npm run test:customer-updates` covers real local Git tags/previews, simulated staged installs/build failures, content preservation, incompatible metadata/migrations, authenticated report permissions/project scopes, and injected PM2/health activation/recovery. Actual build checks compile the composed application and report packages.
 
 The automated PM2 tests use a controlled runner, not a live Windows service. Native Windows, the customer's real extensions/database migration and a customer-owned Replit publish require those environments and explicit operator access. Report their results separately from local tests.
+
+`npm run build && npm run test:customer-updates-integration` checks the composed
+example screen in Chromium against real development local authentication, role
+grant/revocation APIs, project assignments, a customer-owned table/column and
+existing audit event identities. The example is exposed only by an isolated test
+server, never enabled in the running installation. It creates disposable users,
+roles and projects and removes them; their application audit events remain as
+evidence of the acceptance run.
+
+Native Windows acceptance (run in a disposable customer test instance, not live):
+1. Run `npm run check`, `npm run test:customer-updates` and `npm run build`.
+2. Install/configure the test instance's PM2 service using the Windows guide, and
+   verify its local `/api/system/release-health` endpoint.
+3. Run the staging command above, including a target path containing spaces.
+   Record hashes of the test instance's private configuration, photos/APKs and
+   customer package source before and after.
+4. Activate with the test loopback port and confirmed test backups. Confirm the
+   new core and unchanged extension hashes in health, normal login and reports.
+5. Make a second test candidate unable to bind the test port; confirm failed
+   activation restores the prior health response and all protected hashes.
+6. Reject an incompatible extension/core version before PM2 invocation. A passing
+   Linux runner test is not evidence that these Windows service/path steps passed.

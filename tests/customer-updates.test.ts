@@ -35,6 +35,7 @@ function fixture(){
   git(root,"config","user.email","fixture@example.invalid");git(root,"config","user.name","Fixture");
   fs.cpSync(path.resolve("examples/customer-report"),path.join(root,"customer-packages/project-report"),{recursive:true});
   write(root,"meterflo.instance.json",{coreSource:source,installedSchemaVersion:1,approvedMigrations:[],
+    coreBaseline:{version:"2.1.1",commit:git(core,"rev-parse","v2.1.1^{commit}")},
     extensions:[{directory:"customer-packages/project-report"}]});
   write(root,".env","PRIVATE_CONFIGURATION_FIXTURE");
   write(root,"Project Files/customer.txt","CUSTOMER_BYTE_FIXTURE");
@@ -95,6 +96,67 @@ test("preparation excludes runtime secrets without discarding package authentica
   assert.equal(isolated.DATABASE_URL,undefined);assert.equal(isolated.SESSION_SECRET,undefined);assert.equal(isolated.SMTP_PASSWORD,undefined);
   assert.equal(isolated.NPM_TOKEN,"fixture-package-auth");assert.equal(isolated.HTTPS_PROXY,"fixture-proxy");
 });
+test("preview blocks missing/moved baselines, conflicts, divergent history and invalid candidate metadata",async()=>{
+  const f=fixture();
+  try {
+    const release=loadCustomerRelease(f.root);
+    assert.equal((await coreUpdatePreview({...release,coreBaseline:null},f.reader)).canPrepare,false);
+    const moved=await coreUpdatePreview({...release,coreBaseline:{version:"2.1.1",commit:"0".repeat(40)}},f.reader);
+    assert.equal(moved.candidateVersion,null);
+    const statuses=await coreUpdatePreview(release,async args=>args[0]==="status"
+      ? "M  staged.txt\0 M unstaged.txt\0?? untracked.txt\0UU conflict.txt\0" : f.reader(args));
+    assert.deepEqual(statuses.changes.map(x=>x.status),["M "," M","??","UU"]);
+    assert.equal(statuses.canPrepare,false);
+    const divergent=await coreUpdatePreview(release,async args=>args[0]==="rev-list" ? "1\t2\n" : f.reader(args));
+    assert.ok(divergent.blockers.some(b=>b.includes("diverged")));
+    const malformed=await coreUpdatePreview(release,async args=>args[0]==="show" && args[1]?.endsWith(":meterflo.release.json")
+      ? JSON.stringify({schemaVersion:1,extensionApiVersion:1,migrations:[{id:"FAKE_PRIVATE_DIAGNOSTIC"}]}) : f.reader(args));
+    assert.equal(malformed.candidateVersion,null);
+    assert.ok(!JSON.stringify(malformed).includes("FAKE_PRIVATE_DIAGNOSTIC"));
+    f.git(f.root,"checkout","-q","-b","current-core","--track","origin/"+f.git(f.core,"branch","--show-current"));
+    f.write(f.root,"meterflo.instance.json",{coreSource:source,installedSchemaVersion:1,approvedMigrations:[],
+      coreBaseline:{version:"2.2.0",commit:f.git(f.core,"rev-parse","v2.2.0^{commit}")},extensions:[]});
+    const upToDate=await coreUpdatePreview(loadCustomerRelease(f.root),f.reader);
+    assert.equal(upToDate.updateAvailable,false);
+    assert.equal(upToDate.blockers.length,0);
+    assert.match(upToDate.message,/Verified core release is up to date/);
+  }finally{f.cleanup();}
+});
+test("incompatible candidate is rejected before installing dependencies or touching a live process",async()=>{
+  const f=fixture();
+  try {
+    const file=path.join(f.root,"customer-packages/project-report/package.json");
+    const pkg=JSON.parse(fs.readFileSync(file,"utf8"));
+    pkg.meterfloExtension.maxCoreVersionExclusive="2.2.0";
+    f.write(f.root,"customer-packages/project-report/package.json",pkg);
+    await assert.rejects(stageCustomerRelease({root:f.root,target:path.join(f.temp,"incompatible"),
+      tag:"v2.2.0",git:f.reader,run:f.run}),/does not support/);
+    assert.equal(f.calls.length,0);
+  }finally{f.cleanup();}
+});
+test("legacy fork reconciliation conflicts remain in a separate review checkout and cannot activate",async()=>{
+  const f=fixture();
+  try {
+    f.write(f.root,"core-feature.txt","Customer-specific conflicting behavior");
+    f.git(f.root,"add","core-feature.txt");f.git(f.root,"commit","-qm","Customer direct core modification");
+    const originalHead=f.git(f.root,"rev-parse","HEAD");
+    const review=path.join(f.temp,"manual-review");
+    f.git(f.temp,"clone","-q",f.root,review);
+    f.git(review,"config","user.email","fixture@example.invalid");f.git(review,"config","user.name","Fixture");
+    f.git(review,"fetch",f.core,"refs/tags/v2.2.0:refs/meterflo/review/v2.2.0");
+    assert.throws(()=>f.git(review,"merge","--no-commit","refs/meterflo/review/v2.2.0"));
+    assert.match(f.git(review,"status","--porcelain"),/UU core-feature.txt/);
+    fs.copyFileSync(path.join(f.root,"meterflo.instance.json"),path.join(review,"meterflo.instance.json"));
+    fs.cpSync(path.join(f.root,"customer-packages"),path.join(review,"customer-packages"),{recursive:true});
+    const preview=await coreUpdatePreview(loadCustomerRelease(review),async args=>gitReader(review)(args.map(a=>a===source?f.core:a)));
+    assert.equal(preview.canPrepare,false);
+    assert.ok(preview.changes.some(x=>x.status==="UU"));
+    assert.equal(preview.updateCommand,"");
+    assert.equal(f.git(f.root,"rev-parse","HEAD"),originalHead);
+    assert.equal(fs.readFileSync(path.join(f.root,".env"),"utf8"),"PRIVATE_CONFIGURATION_FIXTURE");
+    assert.equal(f.calls.length,0);
+  }finally{f.cleanup();}
+});
 test("staging compatible core retains customer packages and never copies/modifies private data; install failure never invokes PM2",async()=>{
   const f=fixture();
   try{
@@ -127,7 +189,7 @@ test("incompatible versions, API, paths and unapproved/customer-owned migrations
     pkg.meterfloExtension.maxCoreVersionExclusive="3.0.0";pkg.meterfloExtension.extensionApiVersion=2;
     f.write(f.root,"customer-packages/project-report/package.json",pkg);assert.ok(loadCustomerRelease(f.root).blockers.length);
     f.write(f.root,"meterflo.instance.json",{extensions:[{directory:"../core"}]});
-    assert.throws(()=>loadCustomerRelease(f.root),/within/);
+    assert.throws(()=>loadCustomerRelease(f.root),/ownership boundary/);
     f.write(f.root,"meterflo.instance.json",{extensions:[],coreSource:"https://example.invalid/core.git?token=FAKE_QUERY"});
     assert.throws(()=>loadCustomerRelease(f.root),/without embedded/);
     f.write(f.root,"meterflo.instance.json",{extensions:[],installedSchemaVersion:1});

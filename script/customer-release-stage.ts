@@ -89,6 +89,8 @@ export async function stageCustomerRelease(options:{root:string;target:string;ta
   fs.mkdirSync(path.dirname(target),{recursive:true});
   await run("git",["clone","--no-checkout","--",current.coreSource,target],root);
   await run("git",["checkout","--detach",preview.coreCommit],target);
+  if ((await gitReader(target)(["rev-parse","HEAD"])).trim() !== preview.coreCommit)
+    throw new Error("Candidate checkout does not match the verified pinned core commit");
   for(const extension of current.extensions){
     const source=path.resolve(root,extension.directory),destination=path.resolve(target,extension.directory);
     checkCustomerSource(source);
@@ -99,6 +101,7 @@ export async function stageCustomerRelease(options:{root:string;target:string;ta
   }
   fs.writeFileSync(path.join(target,"meterflo.instance.json"),JSON.stringify({
     coreSource:current.coreSource,installedSchemaVersion:current.installedSchemaVersion,approvedMigrations:current.approvedMigrations,
+    coreBaseline:current.coreBaseline,
     extensions:current.extensions.map(x=>({directory:x.directory})),
   },null,2));
   const candidate=loadCustomerRelease(target);

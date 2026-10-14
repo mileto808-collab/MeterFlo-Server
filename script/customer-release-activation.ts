@@ -34,6 +34,8 @@ export async function activateCustomerRelease(options:{root:string;candidate:str
   const installed=installedCustomerRelease(root);
   const prepared=JSON.parse(fs.readFileSync(path.join(candidate,"dist/customer-release.json"),"utf8"));
   if(installed.coreSource!==prepared.coreSource ||
+    JSON.stringify(installed.coreBaseline)!==JSON.stringify(prepared.coreBaseline) ||
+    JSON.stringify(installed.approvedMigrations)!==JSON.stringify(prepared.approvedMigrations) ||
     JSON.stringify(installed.extensions.map(({id,version,contentHash})=>({id,version,contentHash})))!==JSON.stringify(receipt.extensions))
     throw new Error("Customer package/source configuration changed after staging; prepare a new candidate");
   if(installed.installedSchemaVersion!==receipt.schemaVersion || installed.schemaVersion!==receipt.schemaVersion)

@@ -12,6 +12,7 @@ export type CustomerExtension = {
 };
 export type CustomerRelease = {
   version: string; extensionApiVersion: number; schemaVersion: number; coreSource: string | null;
+  coreBaseline: {version: string; commit: string} | null;
   extensions: CustomerExtension[]; migrations: Migration[]; blockers: string[];
   approvedMigrations: {id: string; sha256: string}[]; installedSchemaVersion: number | null;
 };
@@ -79,8 +80,13 @@ export function loadCustomerRelease(root = process.cwd(), instanceFile = path.jo
   if (core.extensionApiVersion !== EXTENSION_API_VERSION || !Number.isSafeInteger(core.schemaVersion) || core.schemaVersion < 1)
     throw new Error("Unsupported core release metadata");
   const instance = fs.existsSync(instanceFile) ? readJson(instanceFile) : {extensions:[]};
-  if(Object.keys(instance).some(key=>!["coreSource","extensions","approvedMigrations","installedSchemaVersion"].includes(key)))
+  if(Object.keys(instance).some(key=>!["coreSource","coreBaseline","extensions","approvedMigrations","installedSchemaVersion"].includes(key)))
     throw new Error("Instance manifest supports release configuration only; keep credentials in the protected environment and business settings in the database");
+  const baseline = instance.coreBaseline ?? null;
+  if (baseline) {
+    compareReleaseVersions(baseline.version, baseline.version);
+    if (!/^[a-f0-9]{40}$/.test(baseline.commit)) throw new Error("Core baseline requires a verified full Git commit");
+  }
   if(instance.installedSchemaVersion!==undefined && (!Number.isSafeInteger(instance.installedSchemaVersion) || instance.installedSchemaVersion<1))
     throw new Error("Invalid declared schema version");
   if (!Array.isArray(instance.extensions)) throw new Error("Customer extension declarations must be an array");
@@ -89,6 +95,8 @@ export function loadCustomerRelease(root = process.cwd(), instanceFile = path.jo
     throw new Error("Invalid migration approvals");
   const blockers: string[] = [], ids = new Set<string>();
   const extensions: CustomerExtension[] = instance.extensions.map((item:any) => {
+    if (typeof item?.directory !== "string" || !/^customer-packages\/[a-zA-Z0-9._/-]+$/.test(item.directory))
+      throw new Error("Extensions must be maintained under the customer-packages ownership boundary");
     const dir = ownedPath(root,item.directory), extensionPackage = readJson(path.join(dir,"package.json"));
     const x = extensionPackage.meterfloExtension;
     if (!x || !/^[a-z][a-z0-9-]{1,47}$/.test(x.id) || ids.has(x.id)) throw new Error("Invalid or duplicate extension identifier");
@@ -112,11 +120,13 @@ export function loadCustomerRelease(root = process.cwd(), instanceFile = path.jo
   for (const m of migrations) if (!approvals.some((a:any)=>a.id === m.id && a.sha256 === m.sha256))
     blockers.push(`Migration ${m.id} requires reviewed application and checksum approval; no SQL will be applied automatically`);
   return {version:pkg.version,extensionApiVersion:core.extensionApiVersion,schemaVersion:core.schemaVersion,
+    coreBaseline:baseline,
     coreSource:validateCoreSource(instance.coreSource),extensions,migrations,blockers,approvedMigrations:approvals,
     installedSchemaVersion:instance.installedSchemaVersion ?? null};
 }
 export function publicRelease(release: CustomerRelease) {
   return {version:release.version,extensionApiVersion:release.extensionApiVersion,schemaVersion:release.schemaVersion,
+    coreBaseline:release.coreBaseline,
     coreSource:release.coreSource,extensions:release.extensions.map(({directory,serverEntry,migrations,...x})=>x),
     migrations:release.migrations.map(({file,...m})=>m),blockers:release.blockers,
     installedSchemaVersion:release.installedSchemaVersion};

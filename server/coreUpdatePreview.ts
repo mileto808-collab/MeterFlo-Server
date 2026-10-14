@@ -30,11 +30,14 @@ export async function coreUpdatePreview(release: CustomerRelease, git: GitRead, 
     try {
       await git(["fetch","--no-tags","origin"]);
       const counts=(await git(["rev-list","--left-right","--count","HEAD...@{upstream}"])).trim().split(/\s+/).map(Number);
+      if (counts.length !== 2 || counts.some(n=>!Number.isSafeInteger(n) || n < 0))
+        throw new Error("Unknown tracking revision");
       [commitsAhead,commitsBehind]=counts;
       if(commitsAhead && commitsBehind)blockers.push("Customer branch has diverged from its tracking branch; manual reconciliation is required");
     }catch{blockers.push("Customer branch tracking state is unknown; review the repository before updating");}
   }catch{blockers.push("Prepare and test the update in the customer workspace; this runtime has no usable Git checkout");}
   if(!release.coreSource)blockers.push("Configure an approved HTTPS coreSource in the customer workspace instance manifest");
+  if(!release.coreBaseline)blockers.push("Record the verified numbered coreBaseline version and full commit before preparing an update");
   if(release.installedSchemaVersion===null)blockers.push("Declare and verify installedSchemaVersion before preparing a core update");
   if(!isGitRepo && release.coreSource){
     try{
@@ -60,6 +63,12 @@ export async function coreUpdatePreview(release: CustomerRelease, git: GitRead, 
       candidateVersion=pkg.version;
       if(candidateVersion!==tag.slice(1))throw new Error("Tag/version mismatch");
       candidateMetadata=JSON.parse(await git(["show",`${candidateRef}:meterflo.release.json`]));
+      if (!Number.isSafeInteger(candidateMetadata.schemaVersion) || candidateMetadata.schemaVersion < 1 ||
+          !Number.isSafeInteger(candidateMetadata.extensionApiVersion) || !Array.isArray(candidateMetadata.migrations) ||
+          candidateMetadata.migrations.some((m:any)=>!m || typeof m.id!=="string" ||
+            !/^[a-z0-9][a-z0-9._-]{0,95}$/.test(m.id) || !/^[a-f0-9]{64}$/.test(m.sha256) ||
+            m.ownership!=="core" || typeof m.reversible!=="boolean"))
+        throw new Error("Invalid candidate metadata");
       if(candidateMetadata.extensionApiVersion!==release.extensionApiVersion)blockers.push("Candidate extension API is incompatible");
       if(candidateMetadata.schemaVersion!==release.installedSchemaVersion)blockers.push("Candidate database schema requires reviewed migration readiness");
       if(!Array.isArray(candidateMetadata.migrations))throw new Error("Missing migration metadata");
@@ -73,9 +82,13 @@ export async function coreUpdatePreview(release: CustomerRelease, git: GitRead, 
       }
       // The protected instance checkout can remain at an older core after PM2 activates a staged release.
       // Compare its source ownership against its own core baseline, not the active compiled version.
-      const checkoutVersion=JSON.parse(await git(["show","HEAD:package.json"])).version;
+      if (!release.coreBaseline) throw new Error("Unknown source baseline");
+      const checkoutVersion=release.coreBaseline.version;
       compareReleaseVersions(checkoutVersion,checkoutVersion);
       const baselineRef=await fetchTag(`v${checkoutVersion}`);
+      if ((await git(["rev-parse",`${baselineRef}^{commit}`])).trim() !== release.coreBaseline.commit)
+        throw new Error("Core baseline tag no longer matches the approved commit");
+      await git(["merge-base","HEAD",release.coreBaseline.commit]);
       const directEdits=(await git(["diff","--name-only",`${baselineRef}^{commit}`,"HEAD"])).trim().split("\n").filter(Boolean);
       if(directEdits.some(file=>!release.extensions.some(x=>file.startsWith(x.directory.replaceAll("\\","/")+"/"))))
         blockers.push("This customer fork contains direct core modifications; merge/review them separately before adopting an unmodified core release");
