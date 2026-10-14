@@ -13,13 +13,19 @@ export async function initializeCustomerApi() {
 /** The caller's transaction includes both the work-order update and the outbox insert. */
 export async function enqueueCustomerDelivery(client: PoolClient, schemaName: string, row: Record<string, any>, versionKey?: string) {
   const { rows: [project] } = await client.query(
-    `SELECT id, customer_api_enabled FROM public.projects WHERE database_name = $1`, [schemaName]);
+    `SELECT id, customer_api_enabled, inventory_enabled FROM public.projects WHERE database_name = $1`, [schemaName]);
   if (!project?.customer_api_enabled) return;
   const { rows: statuses } = await client.query(
     `SELECT code, label FROM public.work_order_statuses WHERE lower(code) = lower($1)`, [row.status]);
   const status = `${row.status} ${statuses[0]?.label ?? ""}`.toLowerCase();
   if (!/\bcompleted\b|\btrouble\b|\bunable\b/.test(status)) return;
   const version = versionKey ?? String(row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at);
+  if (project.inventory_enabled) {
+    const { rows: [inventory] } = await client.query("SELECT state FROM public.inventory_state WHERE project_id=$1", [project.id]);
+    const allocation = inventory?.state.allocations.find((a: any) => a.workOrderId === row.id);
+    row = { ...row, inventory: { contractVersion: 1, allocation: allocation || null,
+      items: inventory?.state.items.filter((i: any) => [...(allocation?.lines || []), ...(allocation?.used || [])].some((l: any) => l.itemId === i.id)) || [] } };
+  }
   await client.query(
     `INSERT INTO public.customer_api_deliveries
      (id, project_id, work_order_id, customer_wo_id, version_key, snapshot, next_attempt_at)

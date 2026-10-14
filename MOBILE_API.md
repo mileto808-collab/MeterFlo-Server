@@ -1,5 +1,15 @@
 # MeterFlo Mobile API Documentation
 
+Inventory-enabled sync downloads additionally require `inventory.view`; missing permission returns 403 without inventory or work-order data. Grant this permission to inventory technicians through role management. See `INVENTORY.md` for reservations, actual-use payloads and removal/return handling.
+
+## Project inventory (additive contract)
+
+Project responses include `inventoryEnabled`, default false. Enabled sync downloads add each work order's `inventoryAllocation` and top-level `inventory:{contractVersion:1,enabled,items,warehouses}`. Preserve item/warehouse IDs, exact serial strings and allocation revision.
+
+Completion uploads can include `inventoryUsage:{operationId:UUID,revision,mode,used,dispositions}` inside the work-order object. `used` contains `{warehouseId,itemId,quantity,serials}`; `dispositions` contains `{equipment:"system"|"module",serial,disposition:"returned"|"scrapped"|"left_onsite",warehouseId}`. Reading-only uses empty arrays and `mode:"reading_only"`. Reuse the UUID on retry. Do not allocate offline or bypass stock conflicts with force-overwrite. Completion and stock consumption commit together; repeated completion is not deducted twice.
+
+See **Project Inventory Control** in Documentation, or [INVENTORY.md](INVENTORY.md), for complete examples, permissions, receiving/transfer commands, imports and backup rules. The separate Expo app must implement this contract; adding server fields alone does not add native inventory UI.
+
 Complete REST API reference for building the MeterFlo mobile application.
 
 This reference documents the HTTP contract. For workflow configuration, wizard behavior, offline retry strategy, and upload decision rules, see the separate **MeterFlo Mobile App Synchronization Guide** on the Documentation page.

@@ -36,6 +36,7 @@ import {
   FolderSync,
   HelpCircle,
   ScrollText,
+  Package,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -269,7 +270,7 @@ export function AppSidebar() {
         </SidebarGroup>
 
         {role !== "customer" && projects.length > 0 &&
-          (hasPermission("project.workOrders") || hasPermission("projects.edit") || hasPermission("project.apiImport") || hasPermission("settings.customerApiLogs")) && (
+          (hasPermission("project.workOrders") || hasPermission("projects.edit") || hasPermission("project.apiImport") || hasPermission("settings.customerApiLogs") || hasPermission("inventory.view")) && (
           <SidebarGroup>
             <SidebarGroupLabel>Projects</SidebarGroupLabel>
             <SidebarGroupContent>
@@ -324,6 +325,20 @@ export function AppSidebar() {
                                   <NavLink href={`/projects/${project.id}/work-orders`}>
                                     <ClipboardList className="h-3 w-3" />
                                     <span>Work Orders</span>
+                                  </NavLink>
+                                </SidebarMenuSubButton>
+                              </SidebarMenuSubItem>
+                            )}
+                            {(project as any).inventoryEnabled && hasPermission("inventory.view") && (
+                              <SidebarMenuSubItem>
+                                <SidebarMenuSubButton
+                                  asChild
+                                  isActive={location.startsWith(`/projects/${project.id}/inventory`)}
+                                  data-testid={`nav-project-${project.id}-inventory`}
+                                >
+                                  <NavLink href={`/projects/${project.id}/inventory`}>
+                                    <Package className="h-3 w-3" />
+                                    <span>Inventory</span>
                                   </NavLink>
                                 </SidebarMenuSubButton>
                               </SidebarMenuSubItem>

@@ -27,6 +27,7 @@ import { initializeProjectExactReadings } from "./exactReadingMigration";
 import { pool } from "./db";
 import { initializeAudit } from "./auditMigration";
 import { reconcileAuditOperations, startAuditRetention } from "./auditService";
+import { initializeInventory } from "./inventoryMigration";
 
 const app = express();
 
@@ -127,6 +128,7 @@ app.use((req, res, next) => {
   await initializeAudit(pool);
   await reconcileAuditOperations();
   
+  await initializeInventory(pool);
   await registerRoutes(httpServer, app);
   await registerCustomerExtensions(app, {auth:isAuthenticated, storage});
 

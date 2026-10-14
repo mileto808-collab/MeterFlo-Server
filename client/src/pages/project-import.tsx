@@ -70,6 +70,7 @@ type ParsedWorkOrder = {
   oldGps?: string;
   oldSystemType?: string;
   newSystemType?: string;
+  inventoryItems?: string | Array<{ warehouseId: string; itemId: string; quantity: number; serials?: string[] }>;
   oldModuleId?: string;
   newModuleId?: string;
   oldModuleRead?: number;
@@ -112,6 +113,7 @@ type ColumnMapping = {
   newModuleRead: string;
   oldModuleType: string;
   newModuleType: string;
+  inventoryItems: string;
   status: string;
   scheduledAt: string;
   scheduledBy: string;
@@ -148,6 +150,7 @@ const defaultColumnMapping: ColumnMapping = {
   newModuleRead: "",
   oldModuleType: "",
   newModuleType: "",
+  inventoryItems: "",
   status: "",
   scheduledAt: "",
   scheduledBy: "",
@@ -209,6 +212,7 @@ export default function ProjectImport() {
     enabled: !!projectId,
     retry: false,
   });
+  const inventoryEnabled = Boolean((project as any)?.inventoryEnabled);
 
   // Fetch all service types and project-specific assignments
   const { data: allServiceTypes = [] } = useQuery<ServiceTypeRecord[]>({
@@ -410,6 +414,15 @@ export default function ProjectImport() {
   };
 
   const openEditConfig = (config: FileImportConfig) => {
+    const savedMapping: Record<string, string> = { ...defaultColumnMapping, ...(config.columnMapping as Record<string, string>) };
+    if (inventoryEnabled) {
+      delete savedMapping.oldSystemType;
+      delete savedMapping.newSystemType;
+      delete savedMapping.oldModuleType;
+      delete savedMapping.newModuleType;
+    } else {
+      delete savedMapping.inventoryItems;
+    }
     setEditingConfig(config);
     setScheduleForm({
       name: config.name,
@@ -418,7 +431,7 @@ export default function ProjectImport() {
       scheduleFrequency: config.scheduleFrequency || "daily",
       customCronExpression: config.customCronExpression || "",
       isEnabled: config.isEnabled !== false,
-      columnMapping: { ...defaultColumnMapping, ...(config.columnMapping as Record<string, string>) },
+      columnMapping: savedMapping,
       processedFilePattern: config.processedFilePattern || "",
     });
     setScheduleDialogOpen(true);
@@ -429,10 +442,20 @@ export default function ProjectImport() {
       toast({ title: "Name is required", variant: "destructive" });
       return;
     }
-    if (editingConfig) {
-      updateConfigMutation.mutate({ id: editingConfig.id, data: scheduleForm });
+    const columnMapping = { ...scheduleForm.columnMapping };
+    if (inventoryEnabled) {
+      delete columnMapping.oldSystemType;
+      delete columnMapping.newSystemType;
+      delete columnMapping.oldModuleType;
+      delete columnMapping.newModuleType;
     } else {
-      createConfigMutation.mutate(scheduleForm);
+      delete columnMapping.inventoryItems;
+    }
+    const data = { ...scheduleForm, columnMapping };
+    if (editingConfig) {
+      updateConfigMutation.mutate({ id: editingConfig.id, data });
+    } else {
+      createConfigMutation.mutate(data);
     }
   };
 
@@ -589,9 +612,22 @@ export default function ProjectImport() {
       { field: "completedAt", variants: ["completed at", "completed_at", "completedat", "completion date", "completion_date", "completed date", "completed_date"] },
     ];
 
+    const hiddenInventoryModeFields: (keyof ColumnMapping)[] = [
+      "oldSystemType", "newSystemType", "oldModuleType", "newModuleType",
+    ];
+    const activeMappings = mappings.filter(mapping =>
+      !inventoryEnabled || !hiddenInventoryModeFields.includes(mapping.field),
+    );
+    if (inventoryEnabled) {
+      activeMappings.push({
+        field: "inventoryItems",
+        variants: ["inventory items", "inventory_items", "inventoryitems", "inventory assignments"],
+      });
+    }
+
     headerRow.forEach((header) => {
       const lower = header.toLowerCase().trim();
-      for (const mapping of mappings) {
+      for (const mapping of activeMappings) {
         if (mapping.variants.some(v => lower === v || lower.includes(v)) && !newMapping[mapping.field]) {
           newMapping[mapping.field] = header;
           break;
@@ -635,14 +671,19 @@ export default function ProjectImport() {
         oldSystemId: getValueByHeader(columnMapping.oldSystemId) || undefined,
         oldSystemReading: columnMapping.oldSystemReading ? parseIntOrUndefined(getValueByHeader(columnMapping.oldSystemReading)) : undefined,
         oldGps: getValueByHeader(columnMapping.oldGps) || undefined,
-        oldSystemType: getValueByHeader(columnMapping.oldSystemType) || undefined,
-        newSystemType: getValueByHeader(columnMapping.newSystemType) || undefined,
+        ...(!inventoryEnabled ? {
+          oldSystemType: getValueByHeader(columnMapping.oldSystemType) || undefined,
+          newSystemType: getValueByHeader(columnMapping.newSystemType) || undefined,
+          oldModuleType: getValueByHeader(columnMapping.oldModuleType) || undefined,
+          newModuleType: getValueByHeader(columnMapping.newModuleType) || undefined,
+        } : {}),
+        ...(inventoryEnabled && getValueByHeader(columnMapping.inventoryItems)
+          ? { inventoryItems: getValueByHeader(columnMapping.inventoryItems) }
+          : {}),
         oldModuleId: getValueByHeader(columnMapping.oldModuleId) || undefined,
         newModuleId: getValueByHeader(columnMapping.newModuleId) || undefined,
         oldModuleRead: columnMapping.oldModuleRead ? parseIntOrUndefined(getValueByHeader(columnMapping.oldModuleRead)) : undefined,
         newModuleRead: columnMapping.newModuleRead ? parseIntOrUndefined(getValueByHeader(columnMapping.newModuleRead)) : undefined,
-        oldModuleType: getValueByHeader(columnMapping.oldModuleType) || undefined,
-        newModuleType: getValueByHeader(columnMapping.newModuleType) || undefined,
         status: getValueByHeader(columnMapping.status) || undefined,
         scheduledAt: getValueByHeader(columnMapping.scheduledAt) || undefined,
         scheduledBy: getValueByHeader(columnMapping.scheduledBy) || undefined,
@@ -659,7 +700,7 @@ export default function ProjectImport() {
     });
 
     setPreviewData(mapped);
-  }, [rawData, headers, columnMapping, hasHeader, resolveServiceType]);
+  }, [rawData, headers, columnMapping, hasHeader, resolveServiceType, inventoryEnabled]);
 
   const handleJsonImport = () => {
     try {
@@ -668,7 +709,11 @@ export default function ProjectImport() {
         toast({ title: "Invalid format: expected an array of work orders", variant: "destructive" });
         return;
       }
-      importMutation.mutate({ workOrders, fileName: "json_text_input", importSource: "json_text" });
+      const normalized = inventoryEnabled ? workOrders.map((workOrder: Record<string, unknown>) => {
+        const { oldSystemType, newSystemType, oldModuleType, newModuleType, ...rest } = workOrder;
+        return rest;
+      }) : workOrders;
+      importMutation.mutate({ workOrders: normalized, fileName: "json_text_input", importSource: "json_text" });
     } catch (error) {
       toast({ title: "Invalid JSON format", variant: "destructive" });
     }
@@ -721,14 +766,19 @@ export default function ProjectImport() {
         oldSystemId: getValueByHeader(columnMapping.oldSystemId) || undefined,
         oldSystemReading: columnMapping.oldSystemReading ? parseIntOrUndefined(getValueByHeader(columnMapping.oldSystemReading)) : undefined,
         oldGps: getValueByHeader(columnMapping.oldGps) || undefined,
-        oldSystemType: getValueByHeader(columnMapping.oldSystemType) || undefined,
-        newSystemType: getValueByHeader(columnMapping.newSystemType) || undefined,
+        ...(!inventoryEnabled ? {
+          oldSystemType: getValueByHeader(columnMapping.oldSystemType) || undefined,
+          newSystemType: getValueByHeader(columnMapping.newSystemType) || undefined,
+          oldModuleType: getValueByHeader(columnMapping.oldModuleType) || undefined,
+          newModuleType: getValueByHeader(columnMapping.newModuleType) || undefined,
+        } : {}),
+        ...(inventoryEnabled && getValueByHeader(columnMapping.inventoryItems)
+          ? { inventoryItems: getValueByHeader(columnMapping.inventoryItems) }
+          : {}),
         oldModuleId: getValueByHeader(columnMapping.oldModuleId) || undefined,
         newModuleId: getValueByHeader(columnMapping.newModuleId) || undefined,
         oldModuleRead: columnMapping.oldModuleRead ? parseIntOrUndefined(getValueByHeader(columnMapping.oldModuleRead)) : undefined,
         newModuleRead: columnMapping.newModuleRead ? parseIntOrUndefined(getValueByHeader(columnMapping.newModuleRead)) : undefined,
-        oldModuleType: getValueByHeader(columnMapping.oldModuleType) || undefined,
-        newModuleType: getValueByHeader(columnMapping.newModuleType) || undefined,
         status: status || undefined,
         scheduledAt: getValueByHeader(columnMapping.scheduledAt) || undefined,
         scheduledBy: getValueByHeader(columnMapping.scheduledBy) || undefined,
@@ -958,10 +1008,11 @@ export default function ProjectImport() {
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">route, zone</span> - Service routing</div>
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">old_system_id, old_system_reading</span> - Old system info</div>
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">old_gps</span> - GPS coordinates</div>
-                    <div><span className="font-mono bg-muted px-2 py-1 rounded">old_system_type, new_system_type</span> - System types</div>
+                    {!inventoryEnabled && <div><span className="font-mono bg-muted px-2 py-1 rounded">old_system_type, new_system_type</span> - System types</div>}
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">old_module_id, new_module_id</span> - Module identifiers</div>
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">old_module_read, new_module_read</span> - Module readings</div>
-                    <div><span className="font-mono bg-muted px-2 py-1 rounded">old_module_type, new_module_type</span> - Module types</div>
+                    {!inventoryEnabled && <div><span className="font-mono bg-muted px-2 py-1 rounded">old_module_type, new_module_type</span> - Module types</div>}
+                    {inventoryEnabled && <div><span className="font-mono bg-muted px-2 py-1 rounded">inventoryItems</span> - JSON array of warehouse/item assignments, quantity, and optional serials</div>}
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">status, scheduled_at, scheduled_by, trouble, notes</span> - Work order details</div>
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">assigned_user_id, assigned_group_id, created_by, completed_at</span> - Assignment and tracking</div>
                   </div>
@@ -975,6 +1026,13 @@ WO-001,CUST-123,John Smith,123 Main St,Springfield,IL,62701,Water,Route A,Zone 1
 WO-002,CUST-456,Jane Doe,456 Oak Ave,Springfield,IL,62702,Electric,Route B,Zone 2,SYS-OLD-002
 WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,SYS-OLD-003`}
                   </pre>
+                  {inventoryEnabled && (
+                    <div className="mt-3 rounded-md border border-primary/20 bg-primary/5 p-3 text-xs">
+                      <p className="font-medium text-foreground">Inventory assignment column</p>
+                      <p className="mt-1 text-muted-foreground">Map a column containing a JSON array. Each row reserves its assignments atomically with the work order. Use item IDs and warehouse IDs from this project.</p>
+                      <code className="mt-2 block overflow-x-auto rounded bg-background p-2">[{"{\"warehouseId\":\"warehouse-id\",\"itemId\":\"item-id\",\"quantity\":2,\"serials\":[]}"}]</code>
+                    </div>
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -1005,14 +1063,15 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
                   <MappingSelect field="oldSystemId" label="Old System ID" />
                   <MappingSelect field="oldSystemReading" label="Old System Reading" />
                   <MappingSelect field="oldGps" label="Old GPS" />
-                  <MappingSelect field="oldSystemType" label="Old System Type" />
-                  <MappingSelect field="newSystemType" label="New System Type" />
+                  {!inventoryEnabled && <MappingSelect field="oldSystemType" label="Old System Type" />}
+                  {!inventoryEnabled && <MappingSelect field="newSystemType" label="New System Type" />}
                   <MappingSelect field="oldModuleId" label="Old Module ID" />
                   <MappingSelect field="newModuleId" label="New Module ID" />
                   <MappingSelect field="oldModuleRead" label="Old Module Reading" />
                   <MappingSelect field="newModuleRead" label="New Module Reading" />
-                  <MappingSelect field="oldModuleType" label="Old Module Type" />
-                  <MappingSelect field="newModuleType" label="New Module Type" />
+                  {!inventoryEnabled && <MappingSelect field="oldModuleType" label="Old Module Type" />}
+                  {!inventoryEnabled && <MappingSelect field="newModuleType" label="New Module Type" />}
+                  {inventoryEnabled && <MappingSelect field="inventoryItems" label="Inventory items (JSON array)" />}
                   <MappingSelect field="status" label="Status" />
                   <MappingSelect field="scheduledAt" label="Scheduled At" />
                   <MappingSelect field="scheduledBy" label="Scheduled By" />
@@ -1024,6 +1083,12 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
                   <MappingSelect field="completedBy" label="Completed By" />
                   <MappingSelect field="completedAt" label="Completed At" />
                 </div>
+                {inventoryEnabled && (
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    Example value: <code className="rounded bg-muted px-1 py-0.5">[{"{\"warehouseId\":\"warehouse-id\",\"itemId\":\"item-id\",\"quantity\":2,\"serials\":[]}"}]</code>.
+                    A serialized serials array is also accepted.
+                  </p>
+                )}
               </CardContent>
             </Card>
           )}
@@ -1048,6 +1113,7 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
                         <TableHead>Route</TableHead>
                         <TableHead>Zone</TableHead>
                         <TableHead>Old System</TableHead>
+                        {inventoryEnabled && <TableHead>Inventory items</TableHead>}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1060,6 +1126,7 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
                           <TableCell>{wo.route || "-"}</TableCell>
                           <TableCell>{wo.zone || "-"}</TableCell>
                           <TableCell>{wo.oldSystemId || "-"}</TableCell>
+                          {inventoryEnabled && <TableCell className="max-w-[240px] truncate font-mono text-xs">{typeof wo.inventoryItems === "string" ? wo.inventoryItems : JSON.stringify(wo.inventoryItems || [])}</TableCell>}
                         </TableRow>
                       ))}
                     </TableBody>
@@ -1092,6 +1159,13 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              {inventoryEnabled && (
+                <p className="text-sm text-muted-foreground">
+                  Include <code className="rounded bg-muted px-1">inventoryItems</code> as an array of assignments, for example{" "}
+                  <code className="rounded bg-muted px-1">[{"{\"warehouseId\":\"warehouse-id\",\"itemId\":\"item-id\",\"quantity\":2,\"serials\":[]}"}]</code>.
+                  Assignments are reserved atomically with each imported work order.
+                </p>
+              )}
               <div>
                 <Label>JSON Data</Label>
                 <Textarea
@@ -1582,10 +1656,15 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
               <p className="text-xs text-muted-foreground mb-2">
                 Enter the column names from your CSV/Excel files that map to each field
               </p>
+              {inventoryEnabled && <p className="mb-2 text-xs text-muted-foreground">For inventoryItems, use the source column containing a JSON array such as [{"{\"warehouseId\":\"warehouse-id\",\"itemId\":\"item-id\",\"quantity\":2,\"serials\":[]}"}].</p>}
               <div className="grid grid-cols-2 gap-2 max-h-[300px] overflow-y-auto">
-                {Object.keys(defaultColumnMapping).map((field) => (
+                {Object.keys(defaultColumnMapping).filter(field =>
+                  !inventoryEnabled || !["oldSystemType", "newSystemType", "oldModuleType", "newModuleType"].includes(field),
+                ).map((field) => (
                   <div key={field} className="flex items-center gap-2">
-                    <Label className="min-w-[120px] text-sm">{field}</Label>
+                    <Label className="min-w-[120px] text-sm" title={field === "inventoryItems" ? "JSON array of warehouseId, itemId, quantity, and optional serials." : undefined}>
+                      {field === "inventoryItems" ? "Inventory items (JSON)" : field}
+                    </Label>
                     <Input
                       value={scheduleForm.columnMapping[field] || ""}
                       onChange={(e) => setScheduleForm(prev => ({

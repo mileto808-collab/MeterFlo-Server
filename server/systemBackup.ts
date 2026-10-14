@@ -10,6 +10,7 @@ import { initializeAudit } from "./auditMigration";
 import { pool as applicationPool } from "./db";
 import { backupProjectDatabase, restoreProjectDatabase } from "./projectDb";
 import { getProjectFilesPath } from "./fileStorage";
+import type { InventoryBackup } from "./inventoryBackup";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -30,6 +31,10 @@ const TABLE_PRIMARY_KEYS: Record<string, string[]> = {
   file_import_configs: ["id"],
   file_import_history: ["id"],
   external_database_configs: ["id"],
+  inventory_state: ["project_id"],
+  inventory_items: ["project_id", "id"],
+  inventory_quantities: ["project_id", "warehouse_id", "item_id"],
+  inventory_movements: ["id"],
 };
 
 const MAIN_TABLES = Object.keys(TABLE_PRIMARY_KEYS);
@@ -51,6 +56,10 @@ const TABLE_RESTORE_ORDER = [
   "file_import_configs",
   "file_import_history",
   "external_database_configs",
+  "inventory_state",
+  "inventory_items",
+  "inventory_quantities",
+  "inventory_movements",
 ];
 
 const TABLE_DELETE_ORDER = [...TABLE_RESTORE_ORDER].reverse();
@@ -64,6 +73,7 @@ export interface FullSystemBackup {
     projectName: string;
     schemaName: string;
     workOrders: any[];
+    inventory?: InventoryBackup;
   }>;
 }
 
@@ -95,6 +105,7 @@ export async function createFullSystemBackup(): Promise<{ backup: FullSystemBack
             projectName: project.name,
             schemaName: project.databaseName,
             workOrders: backup.workOrders,
+            inventory: backup.inventory,
           });
         } catch (error) {
           console.warn(`Failed to backup project database ${project.databaseName}:`, error);
@@ -248,9 +259,10 @@ export async function restoreFullSystem(backup:FullSystemBackup,options:Paramete
     finally {await initializeAudit(applicationPool);}
   });
 }
-async function restoreFullSystemData(
+export async function restoreFullSystemData(
   backupData: FullSystemBackup,
-  options: { clearExisting?: boolean } = {}
+  options: { clearExisting?: boolean } = {},
+  connectionPool: Pick<Pool, "connect"> = pool
 ): Promise<{ 
   mainTablesRestored: Record<string, number>;
   projectsRestored: number;
@@ -258,7 +270,7 @@ async function restoreFullSystemData(
   errors: string[];
   warnings: string[];
 }> {
-  const client = await pool.connect();
+  const client = await connectionPool.connect();
   const errors: string[] = [];
   const warnings: string[] = [];
   const projectErrors: string[] = [];
@@ -313,13 +325,15 @@ async function restoreFullSystemData(
       for (const row of rows) {
         try {
           const columns = Object.keys(row);
-          const values = Object.values(row);
+          const values = columns.map(c => tableName === "inventory_quantities" && c === "serials" && row[c] != null
+            ? JSON.stringify(row[c]) : row[c]);
+          const identityOverride = tableName === "inventory_movements" ? " OVERRIDING SYSTEM VALUE" : "";
           const placeholders = columns.map((_, i) => `$${i + 1}`).join(", ");
           const columnList = columns.map((c) => `"${c}"`).join(", ");
           
           if (options.clearExisting) {
             await client.query(
-              `INSERT INTO "${tableName}" (${columnList}) VALUES (${placeholders})`,
+              `INSERT INTO "${tableName}" (${columnList})${identityOverride} VALUES (${placeholders})`,
               values
             );
           } else {
@@ -332,13 +346,13 @@ async function restoreFullSystemData(
                 .join(", ");
               
               await client.query(
-                `INSERT INTO "${tableName}" (${columnList}) VALUES (${placeholders})
+                `INSERT INTO "${tableName}" (${columnList})${identityOverride} VALUES (${placeholders})
                  ON CONFLICT (${pkColumns}) DO UPDATE SET ${updateSet}`,
                 values
               );
             } else {
               await client.query(
-                `INSERT INTO "${tableName}" (${columnList}) VALUES (${placeholders})
+                `INSERT INTO "${tableName}" (${columnList})${identityOverride} VALUES (${placeholders})
                  ON CONFLICT (${pkColumns}) DO NOTHING`,
                 values
               );
@@ -353,12 +367,18 @@ async function restoreFullSystemData(
       mainTablesRestored[tableName] = restoredCount;
     }
     
-    const criticalErrors = errors.filter(e => 
-      e.includes("users:") || e.includes("projects:") || e.includes("subroles:")
+    const criticalErrors = errors.filter(e =>
+      e.includes("users:") || e.includes("projects:") || e.includes("subroles:") || e.startsWith("inventory_")
     );
     if (criticalErrors.length > 0) {
       await client.query("ROLLBACK");
       throw new Error(`Critical restore errors: ${criticalErrors.join("; ")}`);
+    }
+    if (existingTables.includes("inventory_movements")) {
+      await client.query('LOCK TABLE inventory_movements IN SHARE ROW EXCLUSIVE MODE');
+      await client.query(`SELECT setval(pg_get_serial_sequence('inventory_movements','id'),
+        GREATEST(coalesce((SELECT max(id) FROM inventory_movements),0),1),
+        EXISTS(SELECT 1 FROM inventory_movements))`);
     }
     
     await client.query("COMMIT");
@@ -367,7 +387,7 @@ async function restoreFullSystemData(
       try {
         const result = await restoreProjectDatabase(
           projectBackup.schemaName,
-          { workOrders: projectBackup.workOrders },
+          { workOrders: projectBackup.workOrders, inventory: projectBackup.inventory },
           { clearExisting: options.clearExisting }
         );
         projectsRestored++;

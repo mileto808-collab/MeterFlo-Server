@@ -6,10 +6,11 @@ export const importFields = {
   serviceType: 50, oldSystemId: 100, oldSystemReading: 100, oldGps: 100,
   oldSystemType: 100, oldModuleId: 100, oldModuleRead: 100, oldModuleType: 100,
   status: 50, notes: 10000,
+  inventoryItems: 100000,
 } as const;
 export type ImportField = keyof typeof importFields;
 export const safeUpdateFields = Object.keys(importFields).filter(
-  field => !["customerWoId", "status", "notes"].includes(field),
+  field => !["customerWoId", "status", "notes", "inventoryItems"].includes(field),
 ) as ImportField[];
 const path = z.string().max(200).regex(/^(?:[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*)?$/, "Use dot-separated property names");
 const parameter = z.string().min(1).max(100).regex(/^[A-Za-z0-9_-]+$/);

@@ -1,4 +1,5 @@
 import { importFields, type ApiImportSettings, type ImportField } from "../shared/customer-api-import";
+import { inventoryImportSchema } from "../shared/inventory";
 import { customerAuthHeaders } from "./customerApiPayload";
 
 export class ImportFetchError extends Error {
@@ -106,12 +107,19 @@ export function nextImportPage(config: ApiImportSettings, body: unknown, records
 
 export type ImportRules = { services: string[]; statuses: string[]; systems: string[]; modules: string[]; openStatus: string };
 export function mapImportRecord(record: unknown, config: ApiImportSettings, rules: ImportRules) {
-  const mapped: Record<string, string | null> = {};
+  const mapped: Record<string, any> = {};
   const errors: string[] = [];
   if (!record || typeof record !== "object" || Array.isArray(record)) return { mapped, errors: ["Record must be a JSON object"] };
   for (const [source, field] of Object.entries(config.fieldMapping)) {
     const raw = property(record, source);
     if (raw === undefined) continue;
+    if (field === "inventoryItems") {
+      if (JSON.stringify(raw).length > importFields.inventoryItems) { errors.push("inventoryItems: value exceeds the field length"); continue; }
+      const parsed = inventoryImportSchema.safeParse(raw === null || raw === "" ? [] : raw);
+      if (!parsed.success) errors.push("inventoryItems: expected item, warehouse, quantity and matching serial assignments");
+      else mapped[field] = parsed.data;
+      continue;
+    }
     if (raw === null || raw === "") { mapped[field] = null; continue; }
     if (typeof raw !== "string" && typeof raw !== "number") { errors.push(`${field}: expected text or a number`); continue; }
     if (typeof raw === "number" && (!Number.isFinite(raw) || Math.abs(raw) > Number.MAX_SAFE_INTEGER || (!["oldSystemReading", "oldModuleRead"].includes(field) && !Number.isSafeInteger(raw)))) {
@@ -133,7 +141,7 @@ export function mapImportRecord(record: unknown, config: ApiImportSettings, rule
   if (mapped.oldModuleType && !rules.modules.includes(mapped.oldModuleType)) errors.push("oldModuleType: not configured for this project");
   if (mapped.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mapped.email)) errors.push("email: invalid email address");
   if (mapped.oldGps) {
-    const parts = mapped.oldGps.split(",").map(value => value.trim());
+    const parts = String(mapped.oldGps).split(",").map(value => value.trim());
     const [lat, lng] = parts.map(Number);
     if (parts.length !== 2 || parts.some(part => !part) || !Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) errors.push("oldGps: expected latitude,longitude");
   }

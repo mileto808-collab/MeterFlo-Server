@@ -40,7 +40,7 @@ test("target reference covers all fields, exact lengths, and safe-update checkbo
     assert.equal(cells[3], safeUpdateFields.includes(field as any) ? "Yes" : "No");
   }
   assert.equal(safeUpdateFields.length, 18);
-  assert.equal(Object.keys(importFields).length, 21);
+  assert.equal(Object.keys(importFields).length, 22);
 });
 
 test("all JSON blocks parse and four complete settings objects validate without network/database access", () => {

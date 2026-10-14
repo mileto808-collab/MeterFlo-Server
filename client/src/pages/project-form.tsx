@@ -38,6 +38,7 @@ const projectFormSchema = z.object({
   name: z.string().min(1, "Name is required").max(255),
   description: z.string().optional(),
   isActive: z.boolean().optional().default(true),
+  inventoryEnabled: z.boolean().optional().default(false),
   customerEmail: z.string().email("Invalid email").optional().or(z.literal("")),
   phone: z.string().max(50).optional().or(z.literal("")),
   address: z.string().max(255).optional().or(z.literal("")),
@@ -100,6 +101,7 @@ export default function ProjectForm() {
       name: "", 
       description: "", 
       isActive: true,
+       inventoryEnabled: false,
       customerEmail: "", 
       phone: "", 
       address: "", 
@@ -142,6 +144,7 @@ export default function ProjectForm() {
         name: project.name,
         description: project.description || "",
         isActive: project.isActive !== false,
+        inventoryEnabled: (project as any).inventoryEnabled === true,
         customerEmail: project.customerEmail || "",
         phone: project.phone || "",
         address: project.address || "",
@@ -444,6 +447,30 @@ export default function ProjectForm() {
                   </FormItem>
                 )}
               />
+              {hasPermission("inventory.configure") && (
+                <FormField
+                  control={form.control}
+                  name="inventoryEnabled"
+                  render={({ field }) => (
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border border-l-4 border-l-primary/60 p-4">
+                      <div className="space-y-0.5">
+                        <FormLabel className="text-base">Project inventory</FormLabel>
+                        <FormDescription>
+                          Enable project stock locations, meter serial tracking, receiving, transfers, and work-order reservations.
+                        </FormDescription>
+                      </div>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                          aria-label="Enable project inventory"
+                          data-testid="switch-inventory-enabled"
+                        />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+              )}
               {isEditing && (
                 <FormField
                   control={form.control}

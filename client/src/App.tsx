@@ -28,6 +28,7 @@ import WorkOrderDetail from "@/pages/work-order-detail";
 import Projects from "@/pages/projects";
 import ProjectForm from "@/pages/project-form";
 import ProjectWorkOrders from "@/pages/project-work-orders";
+import ProjectInventory from "@/pages/project-inventory";
 import ProjectImport from "@/pages/project-import";
 import ProjectDbImport from "@/pages/project-db-import";
 import ProjectApiImport from "@/pages/project-api-import";
@@ -112,6 +113,7 @@ function AuthenticatedRouter() {
       
       {(role === "admin" || role === "user") && (
         <>
+          {hasPermission("inventory.view") && <Route path="/projects/:projectId/inventory" component={ProjectInventory} />}
           <Route path="/projects/:projectId/work-orders" component={ProjectWorkOrders} />
           <Route path="/projects/:projectId/files" component={ProjectFiles} />
           <Route path="/projects/:projectId/ftp-files" component={ProjectFtpFiles} />

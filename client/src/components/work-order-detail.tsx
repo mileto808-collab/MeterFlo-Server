@@ -81,6 +81,7 @@ import { SystemChangeoutWizard, type WizardConfig } from "@/components/system-ch
 import { DateTimePicker } from "@/components/ui/datetime-picker";
 import { WorkOrderPdf } from "@/components/work-order-pdf";
 import type { EquipmentVisibility } from "@shared/project-equipment-scope";
+import { InventoryWorkOrderPanel } from "@/components/inventory/inventory-work-order-panel";
 
 interface OperationalHoursConfig {
   enabled: boolean;
@@ -128,6 +129,7 @@ interface WorkOrderDetailProps {
     searchShowHidScanner: boolean;
   };
   equipmentVisibility?: EquipmentVisibility;
+  inventoryEnabled?: boolean;
 }
 
 export function WorkOrderDetail({
@@ -165,6 +167,7 @@ export function WorkOrderDetail({
   wizardConfig,
   searchMethodSettings,
   equipmentVisibility = { showSystem: true, showModule: true },
+  inventoryEnabled = false,
 }: WorkOrderDetailProps) {
   const equipmentDetailsLabel = equipmentVisibility.showSystem && equipmentVisibility.showModule
     ? "System | Module Details" : equipmentVisibility.showSystem ? "System Details" : "Module Details";
@@ -485,6 +488,7 @@ export function WorkOrderDetail({
               troubleCodes={troubleCodes}
               equipmentVisibility={equipmentVisibility}
               timeTracking={timeTracking}
+              inventoryEnabled={inventoryEnabled}
               variant="outline"
               size="sm"
               testId="header-button-print-pdf"
@@ -505,6 +509,7 @@ export function WorkOrderDetail({
 
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-5xl mx-auto">
+      {inventoryEnabled && <InventoryWorkOrderPanel projectId={projectId} workOrderId={workOrder.id} readingOnly={wizardConfig?.wizardMode === "reading_only"} />}
       {/* Read-Only Banner */}
       {!canEdit && (
         <div className="flex items-center gap-2 p-3 bg-muted border rounded-md" data-testid="banner-read-only">
@@ -1329,7 +1334,7 @@ export function WorkOrderDetail({
                           <FormLabel>Service Type *</FormLabel>
                           <Select value={field.value} onValueChange={field.onChange}>
                             <FormControl>
-                              <SelectTrigger data-testid="select-mobile-service-type">
+                              <SelectTrigger data-testid="select-mobile-service-type" disabled={!canEdit}>
                                 <SelectValue />
                               </SelectTrigger>
                             </FormControl>
@@ -1396,7 +1401,7 @@ export function WorkOrderDetail({
                               onValueChange={(val) => field.onChange(val === "__none__" ? null : val)}
                             >
                               <FormControl>
-                                <SelectTrigger data-testid="select-mobile-old-system-type">
+                                <SelectTrigger data-testid="select-mobile-old-system-type" disabled={!canEdit || inventoryEnabled}>
                                   <SelectValue placeholder="Select type..." />
                                 </SelectTrigger>
                               </FormControl>
@@ -1465,7 +1470,7 @@ export function WorkOrderDetail({
                               onValueChange={(val) => field.onChange(val === "__none__" ? null : val)}
                             >
                               <FormControl>
-                                <SelectTrigger data-testid="select-mobile-old-module-type">
+                                <SelectTrigger data-testid="select-mobile-old-module-type" disabled={!canEdit || inventoryEnabled}>
                                   <SelectValue placeholder="Select type..." />
                                 </SelectTrigger>
                               </FormControl>
@@ -1534,7 +1539,7 @@ export function WorkOrderDetail({
                               onValueChange={(val) => field.onChange(val === "__none__" ? null : val)}
                             >
                               <FormControl>
-                                <SelectTrigger data-testid="select-mobile-new-system-type">
+                                <SelectTrigger data-testid="select-mobile-new-system-type" disabled={!canEdit || inventoryEnabled}>
                                   <SelectValue placeholder="Select type..." />
                                 </SelectTrigger>
                               </FormControl>
@@ -1603,7 +1608,7 @@ export function WorkOrderDetail({
                               onValueChange={(val) => field.onChange(val === "__none__" ? null : val)}
                             >
                               <FormControl>
-                                <SelectTrigger data-testid="select-mobile-new-module-type">
+                                <SelectTrigger data-testid="select-mobile-new-module-type" disabled={!canEdit || inventoryEnabled}>
                                   <SelectValue placeholder="Select type..." />
                                 </SelectTrigger>
                               </FormControl>
@@ -1973,7 +1978,7 @@ export function WorkOrderDetail({
                                 disabled={!canEdit}
                               >
                                 <FormControl>
-                                  <SelectTrigger data-testid="select-old-system-type" className="flex-1" disabled={!canEdit}>
+                                  <SelectTrigger data-testid="select-old-system-type" className="flex-1" disabled={!canEdit || inventoryEnabled}>
                                     <SelectValue placeholder="Select type..." />
                                   </SelectTrigger>
                                 </FormControl>
@@ -1985,7 +1990,7 @@ export function WorkOrderDetail({
                                 </SelectContent>
                               </Select>
                               {canEdit && (
-                                <Button
+                                  <Button
                                   type="button"
                                   size="icon"
                                   variant="outline"
@@ -2021,7 +2026,7 @@ export function WorkOrderDetail({
                                 value={field.value || ""} 
                                 onChange={field.onChange} 
                                 placeholder="MOD-12345" 
-                                disabled={!canEdit}
+                                    disabled={!canEdit || inventoryEnabled}
                                 data-testid="input-old-module-id" 
                               />
                             </FormControl>
@@ -2062,7 +2067,7 @@ export function WorkOrderDetail({
                               disabled={!canEdit}
                             >
                               <FormControl>
-                                <SelectTrigger data-testid="select-old-module-type" disabled={!canEdit}>
+                                <SelectTrigger data-testid="select-old-module-type" disabled={!canEdit || inventoryEnabled}>
                                   <SelectValue placeholder="Select type..." />
                                 </SelectTrigger>
                               </FormControl>
@@ -2210,7 +2215,7 @@ export function WorkOrderDetail({
                                 disabled={!canEdit}
                               >
                                 <FormControl>
-                                  <SelectTrigger data-testid="select-new-system-type" className="flex-1" disabled={!canEdit}>
+                                  <SelectTrigger data-testid="select-new-system-type" className="flex-1" disabled={!canEdit || inventoryEnabled}>
                                     <SelectValue placeholder="Select type..." />
                                   </SelectTrigger>
                                 </FormControl>
@@ -2222,7 +2227,7 @@ export function WorkOrderDetail({
                                 </SelectContent>
                               </Select>
                               {canEdit && (
-                                <Button
+                                  <Button
                                   type="button"
                                   size="icon"
                                   variant="outline"
@@ -2258,7 +2263,7 @@ export function WorkOrderDetail({
                                 value={field.value || ""} 
                                 onChange={field.onChange} 
                                 placeholder="MOD-67890" 
-                                disabled={!canEdit}
+                                    disabled={!canEdit || inventoryEnabled}
                                 data-testid="input-new-module-id" 
                               />
                             </FormControl>
@@ -2299,7 +2304,7 @@ export function WorkOrderDetail({
                               disabled={!canEdit}
                             >
                               <FormControl>
-                                <SelectTrigger data-testid="select-new-module-type" disabled={!canEdit}>
+                                <SelectTrigger data-testid="select-new-module-type" disabled={!canEdit || inventoryEnabled}>
                                   <SelectValue placeholder="Select type..." />
                                 </SelectTrigger>
                               </FormControl>
@@ -3327,6 +3332,7 @@ export function WorkOrderDetail({
         trouble={workOrder.trouble}
         notes={workOrder.notes}
         projectId={typeof projectId === 'string' ? parseInt(projectId) : projectId}
+        inventoryEnabled={inventoryEnabled}
         troubleCodes={troubleCodes}
         existingOldReading={workOrder.oldSystemReading != null ? String(workOrder.oldSystemReading) : null}
         existingNewReading={workOrder.newSystemReading != null ? String(workOrder.newSystemReading) : null}

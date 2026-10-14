@@ -1,5 +1,11 @@
 # System Administration Guide
 
+## Project inventory control
+
+Inventory is an optional per-project feature managed through the project form and registered Inventory role permissions. It supports physical/vehicle warehouses, scanned serialized and quantity-based stock, vendor purchase orders, transfers, kits, cycle counts, quarantined returns and work-order reservations/consumption. See [INVENTORY.md](INVENTORY.md) / **Documentation > Project Inventory Control** for field examples, posting permissions and operational procedures.
+
+Before enabling a project, provision warehouses/access and catalog data, review saved import mappings, and grant technicians the required inventory view/assign permissions. Before disabling, resolve reservations and unfinished stock operations. New inventory tables are included in database backups; include project files to back up item images. Restores cannot merge inventory blindly or discard consumed-stock relationships.
+
 ## Customer-owned core updates
 
 See **Documentation → Customer Core Updates & Extensions** (`CUSTOMER_CORE_UPDATES.md`)

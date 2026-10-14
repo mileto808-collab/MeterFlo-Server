@@ -1,4 +1,6 @@
+import { inventoryPermissions } from "./inventory";
 export type PermissionCategory = 
+  | "Inventory"
   | "Navigation"
   | "Project Menu"
   | "Settings"
@@ -22,6 +24,11 @@ export interface PermissionDefinition {
 }
 
 export const permissionRegistry: PermissionDefinition[] = [
+  ...Object.entries(inventoryPermissions).map(([name, key]): PermissionDefinition => ({
+    key, label: `${name[0].toUpperCase()}${name.slice(1)} Inventory`,
+    category: "Inventory", description: `Permission to ${name} project inventory; project and warehouse access are also required.`,
+    defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
+  })),
   { key:"audit.view",label:"View Audit Logs",category:"Maintenance",description:"Read audit events for assigned projects; does not grant settings or cleanup access.",
     defaultAccess:{administrator:true,projectManager:false,fieldTechnician:false,viewer:false,customer:false} },
   { key:"audit.viewAllProjects",label:"View All Audit Projects",category:"Maintenance",description:"Read all project and global audit events, including deleted-project history. Requires View Audit Logs.",

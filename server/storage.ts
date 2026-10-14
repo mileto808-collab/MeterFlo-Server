@@ -86,7 +86,9 @@ import {
 } from "@shared/schema";
 import { db, pool } from "./db";
 import { enqueueCustomerDelivery } from "./customerApiService";
-import { eq, desc, and, inArray } from "drizzle-orm";
+import { eq, desc, and, inArray, sql } from "drizzle-orm";
+import type { InventoryState } from "../shared/inventory";
+import { InventoryError } from "../shared/inventory-engine";
 
 export interface IStorage {
   // User operations
@@ -463,6 +465,7 @@ export class DatabaseStorage implements IStorage {
       name: project.name,
       description: project.description,
       customerEmail: project.customerEmail,
+      inventoryEnabled: project.inventoryEnabled ?? false,
       systemReadingDecimalPlaces: project.systemReadingDecimalPlaces ?? 3,
       moduleReadingDecimalPlaces: project.moduleReadingDecimalPlaces ?? 3,
     }).returning();
@@ -475,6 +478,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateProject(id: number, project: Partial<InsertProject>): Promise<Project | undefined> {
+    if (Object.hasOwn(project, "inventoryEnabled")) return db.transaction(async tx => {
+      await tx.execute(sql`SELECT id FROM public.projects WHERE id=${id} FOR UPDATE`);
+      const result = await tx.execute(sql`SELECT state FROM public.inventory_state WHERE project_id=${id} FOR UPDATE`);
+      const state = result.rows[0]?.state as InventoryState | undefined;
+      if (project.inventoryEnabled === false && state &&
+        (state.allocations.some(a => a.status === "reserved" && a.lines.length) ||
+         state.orders.some(o => !["completed", "cancelled"].includes(o.status)) ||
+         state.counts.some(c => c.status === "open") || state.returns.some(r => r.disposition === "returned" && r.status !== "released")))
+        throw new InventoryError("Resolve reservations, open orders, counts and returns before disabling inventory.");
+      const [updated] = await tx.update(projects).set({ ...project, updatedAt: new Date() }).where(eq(projects.id, id)).returning();
+      return updated;
+    });
     const [updated] = await db
       .update(projects)
       .set({ ...project, updatedAt: new Date() })
@@ -493,6 +508,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteProject(id: number): Promise<boolean> {
+    const inventory = await db.execute(sql`SELECT 1 FROM public.inventory_state WHERE project_id=${id}`);
+    if (inventory.rows.length) throw new InventoryError("Inventory history protects this project from deletion. Deactivate the project instead.");
     await db.delete(projects).where(eq(projects.id, id));
     return true;
   }

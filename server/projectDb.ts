@@ -10,6 +10,8 @@ import { installProjectAudit } from "./auditMigration";
 import { auditedOperation, insertAuditEvent } from "./auditService";
 import { auditingEnabled } from "./auditContext";
 import { exactReadingDto, exactReadingFields, capturedReadingText, readingParameter, withExactReadings } from "../shared/exact-readings";
+import { inventoryWorkOrderChange, lockInventoryForSchema } from "./inventoryService";
+import { exportInventory, restoreInventory, validateInventoryBackup, type InventoryBackup } from "./inventoryBackup";
 
 function readingSetClauses(column: string, valueIndex: number, textIndex: number) {
   // Old clients may echo a rounded numeric compatibility field. Preserve the
@@ -717,12 +719,13 @@ export class ProjectWorkOrderStorage {
       
       // Resolve scheduledBy if scheduling
       const scheduledBy = workOrder.scheduledAt && createdBy ? await this.resolveUserId(createdBy) : null;
-      
+      await client.query("BEGIN");
+      await lockInventoryForSchema(client, this.schemaName);
       const result = await client.query(
         `INSERT INTO "${this.schemaName}".work_orders 
          (status, created_by, completed_at, notes, attachments, customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_system_id, new_system_id, old_gps, new_gps, old_system_reading, new_system_reading, scheduled_at, updated_by, trouble, old_system_type, new_system_type, old_module_id, new_module_id, old_module_read, new_module_read, old_module_type, new_module_type, signature_data, signature_name, assigned_user_id, assigned_group_id, completed_by, scheduled_by,old_system_reading_text,new_system_reading_text,old_module_read_text,new_module_read_text)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,$41,$42,$43,$44)
-         RETURNING id`,
+         RETURNING *`,
         [
           status,
           createdByValue,
@@ -770,7 +773,12 @@ export class ProjectWorkOrderStorage {
       
       // Re-fetch with JOINs to get display fields (scheduledByDisplay, completedByDisplay)
       const createdId = result.rows[0].id;
+      await inventoryWorkOrderChange(client, this.schemaName, null, result.rows[0], undefined, (workOrder as any).inventoryItems);
+      await client.query("COMMIT");
       return await this.getWorkOrder(createdId) as ProjectWorkOrder;
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
     } finally {
       client.release();
     }
@@ -993,11 +1001,13 @@ export class ProjectWorkOrderStorage {
     let committed = false;
     try {
       await client.query("BEGIN");
+      await lockInventoryForSchema(client, this.schemaName);
       const existing = await client.query(
         `SELECT * FROM "${this.schemaName}".work_orders WHERE id = $1 FOR UPDATE`, [id],
       );
       const row = existing.rows[0];
       if (!row) throw new WorkOrderResetError("Work order not found", 404);
+      await inventoryWorkOrderChange(client, this.schemaName, row, { ...row, status: "Open" });
       if (row.status !== "Completed") {
         throw new WorkOrderResetError("Only a Completed work order can be reset. Refresh and try again.", 409);
       }
@@ -1476,6 +1486,8 @@ export class ProjectWorkOrderStorage {
 
       await client.query("BEGIN");
       try {
+        await lockInventoryForSchema(client, this.schemaName);
+        const { rows: [prior] } = await client.query(`SELECT * FROM "${this.schemaName}".work_orders WHERE id=$1 FOR UPDATE`, [id]);
         const result = await client.query(
           `UPDATE "${this.schemaName}".work_orders SET ${setClauses.join(", ")} WHERE id = $${paramCount} RETURNING *`,
           values
@@ -1484,6 +1496,7 @@ export class ProjectWorkOrderStorage {
           await client.query("COMMIT");
           return undefined;
         }
+        await inventoryWorkOrderChange(client, this.schemaName, prior, result.rows[0], (updates as any).inventoryUsage, (updates as any).inventoryItems);
         await enqueueCustomerDelivery(client, this.schemaName, result.rows[0]);
         await client.query("COMMIT");
       } catch (error) {
@@ -1501,8 +1514,15 @@ export class ProjectWorkOrderStorage {
   async deleteWorkOrder(id: number): Promise<boolean> {
     const client = await pool.connect();
     try {
+      await client.query("BEGIN");
+      await lockInventoryForSchema(client, this.schemaName);
+      const { rows: [prior] } = await client.query(`SELECT * FROM "${this.schemaName}".work_orders WHERE id=$1 FOR UPDATE`, [id]);
+      if (prior) await inventoryWorkOrderChange(client, this.schemaName, prior, null);
       await client.query(`DELETE FROM "${this.schemaName}".work_orders WHERE id = $1`, [id]);
+      await client.query("COMMIT");
       return true;
+    } catch (e) {
+      await client.query("ROLLBACK"); throw e;
     } finally {
       client.release();
     }
@@ -1701,10 +1721,12 @@ async function backupProjectDatabaseData(schemaName: string): Promise<{
   backupDate: string;
   workOrders: ProjectWorkOrder[];
   version: string;
+  inventory?: InventoryBackup;
 }> {
   await migrateProjectSchema(schemaName);
   const client = await pool.connect();
   try {
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ");
     const result = await client.query(
       `SELECT * FROM "${schemaName}".work_orders ORDER BY id`
     );
@@ -1756,11 +1778,14 @@ async function backupProjectDatabaseData(schemaName: string): Promise<{
       scheduledBy: row.scheduled_by,
     })) as unknown as ProjectWorkOrder[];
     
+    const inventory = await exportInventory(client, schemaName);
+    await client.query("COMMIT");
     return {
       schemaName,
       backupDate: new Date().toISOString(),
       workOrders,
       version: "2.5",
+      inventory,
     };
   } finally {
     client.release();
@@ -1769,7 +1794,7 @@ async function backupProjectDatabaseData(schemaName: string): Promise<{
 
 // Restore project database from backup JSON
 export async function restoreProjectDatabase(
-  schemaName:string,backup:{workOrders:Array<Omit<ProjectWorkOrder,"id"|"createdAt"|"updatedAt">>},options:{clearExisting?:boolean}={}
+  schemaName:string,backup:{workOrders:Array<Omit<ProjectWorkOrder,"id"|"createdAt"|"updatedAt">>;inventory?:InventoryBackup},options:{clearExisting?:boolean}={}
 ) {
   if (!auditingEnabled) return restoreProjectDatabaseData(schemaName,backup,options);
   const {rows:[scope]}=await pool.query("SELECT project_id,project_label FROM meterflo_audit.project_scopes WHERE schema_name=$1",[schemaName]);
@@ -1777,7 +1802,7 @@ export async function restoreProjectDatabase(
 }
 async function restoreProjectDatabaseData(
   schemaName: string,
-  backup: { workOrders: Array<Omit<ProjectWorkOrder, "id" | "createdAt" | "updatedAt">> },
+  backup: { workOrders: Array<Omit<ProjectWorkOrder, "id" | "createdAt" | "updatedAt">>; inventory?: InventoryBackup },
   options: { clearExisting?: boolean } = {}
 ): Promise<{ restored: number; errors: string[] }> {
   await migrateProjectSchema(schemaName);
@@ -1786,6 +1811,17 @@ async function restoreProjectDatabaseData(
   let restored = 0;
   
   try {
+    if (backup.inventory) {
+      validateInventoryBackup(backup.inventory, backup.workOrders.map((wo: any) => zInventoryId(wo.id)));
+      const { rows: [r] } = await client.query(`SELECT count(*)::int n FROM "${schemaName}".work_orders`);
+      if (r.n && !options.clearExisting) throw new Error("Inventory backups require explicit replacement of existing project data; inventory cannot be merged safely.");
+      await client.query("BEGIN");
+      await lockInventoryForSchema(client, schemaName);
+    } else {
+      const existingInventory = await exportInventory(client, schemaName);
+      if (existingInventory && (existingInventory.enabled || existingInventory.state.allocations.length))
+        throw new Error("This backup has no inventory snapshot. Restore an inventory-aware backup to protect stock and work-order links.");
+    }
     if (options.clearExisting) {
       await client.query(`DELETE FROM "${schemaName}".work_orders`);
     }
@@ -1793,10 +1829,10 @@ async function restoreProjectDatabaseData(
     for (let i = 0; i < backup.workOrders.length; i++) {
       const wo = withExactReadings(backup.workOrders[i]) as any;
       try {
-        await client.query(
+        const inserted = await client.query(
           `INSERT INTO "${schemaName}".work_orders 
            (status, created_by, completed_at, notes, attachments, customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_system_id, new_system_id, old_gps, new_gps, old_system_reading, new_system_reading, scheduled_at, updated_by, trouble, old_system_type, new_system_type, old_module_id, new_module_id, old_module_read, new_module_read, old_module_type, new_module_type, signature_data, signature_name, assigned_user_id, assigned_group_id, completed_by, scheduled_by,old_system_reading_text,new_system_reading_text,old_module_read_text,new_module_read_text)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,$41,$42,$43,$44)`,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,$41,$42,$43,$44) RETURNING id`,
           [
             wo.status || "Open",
             wo.createdBy || null,
@@ -1841,16 +1877,35 @@ async function restoreProjectDatabaseData(
             ...exactReadingFields.map(({key}) => capturedReadingText(wo[key])),
           ]
         );
+        if (backup.inventory) {
+          // The legacy writer allocates a new ID. Preserve the original identity
+          // immediately, before rebuilding any inventory references.
+          await client.query(`UPDATE "${schemaName}".work_orders SET id=$1 WHERE id=$2`, [(wo as any).id, inserted.rows[0].id]);
+        }
         restored++;
       } catch (error) {
+        if (backup.inventory) throw error;
         errors.push(`Row ${i + 1}: ${error instanceof Error ? error.message : "Unknown error"}`);
       }
     }
     
+    if (backup.inventory) {
+      await restoreInventory(client, schemaName, backup.inventory);
+      await client.query(`SELECT setval(pg_get_serial_sequence('"${schemaName}".work_orders','id'), greatest(1,(SELECT coalesce(max(id),1) FROM "${schemaName}".work_orders)),true)`);
+      await client.query("COMMIT");
+    }
     return { restored, errors };
+  } catch (error) {
+    if (backup.inventory) await client.query("ROLLBACK");
+    throw error;
   } finally {
     client.release();
   }
+}
+
+function zInventoryId(value: unknown): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 1) throw new Error("Inventory backups require original numeric work-order IDs.");
+  return value as number;
 }
 
 // Get project database statistics

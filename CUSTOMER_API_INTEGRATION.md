@@ -1,5 +1,11 @@
 # Customer API Integration
 
+## Optional project inventory
+
+Inventory-enabled push deliveries include an additive `inventory` snapshot: `contractVersion:1`, work-order allocation/use, exact serials, removed-equipment dispositions and referenced catalog items. Apply it under the existing idempotent delivery ID; it is not a command to change MeterFlo stock.
+
+An enabled project's pull source may map `inventoryItems` to an array or JSON string, for example `[{"warehouseId":"warehouse-id","itemId":"item-id","quantity":1,"serials":["0000456"]}]`. Use MeterFlo IDs, not names/SKUs. Creation and reservation are atomic; invalid/unavailable stock rejects that row. Safe updates do not overwrite allocations. The importing actor needs inventory assignment and warehouse access. See [INVENTORY.md](INVENTORY.md) for full examples and backup/mobile rules.
+
 MeterFlo sends completed work-order and trouble-report data to a customer's backend using HTTP POST. Delivery runs in a persistent PostgreSQL queue, with automatic retries, an admin retry action, and a log for each attempt.
 
 MeterFlo also supports optional **inbound API Import**: pulling new work orders from a customer's JSON REST API using HTTP GET. Pull configuration is separate from outbound delivery. Either direction can be enabled without the other, and Excel/text uploads and direct database imports remain available.
@@ -186,6 +192,7 @@ Each target below is a valid mapping value; source keys are customer-specific. R
 | Old system ID / `oldSystemId` | No / 100 | `"OLD-100"`: map `meter.id`; check Old system ID to correct the expected existing meter ID, not a newly installed ID. | Yes |
 | Old system reading / `oldSystemReading` | No / 100 | `"12345678901234567890.001"`: map `meter.reading` as an exact decimal string. Check Old system reading only for authoritative baseline readings, never to overwrite technician captures. | Yes |
 | Old GPS / `oldGps` | No / 100 | `"40.7128,-74.0093"`: map `location.gps`; exactly latitude,longitude with ranges ±90/±180. Check Old GPS to correct baseline location, not New GPS. | Yes |
+| Inventory assignments / `inventoryItems` | No / 100000 | `"[]"` or an array containing `"warehouseId"`, `"itemId"`, `"quantity"` and `"serials"` as shown above; available only with inventory enabled. API safe updates do not overwrite allocations | No |
 | Old system type / `oldSystemType` | No / 100 | `"SYS-W1"`: map `meter.productId`; must be a system **product ID assigned to this project**. Check Old system type for baseline model corrections; do not send a friendly model label. | Yes |
 | Old module ID / `oldModuleId` | No / 100 | `"RADIO-100"`: map `module.id`; check Old module ID to correct the expected existing radio/module identifier. | Yes |
 | Old module reading / `oldModuleRead` | No / 100 | `"0.001"`: map `module.reading`; target is exactly `oldModuleRead`, not outbound `oldModuleReading`. Check Old module reading for baseline reading corrections. | Yes |

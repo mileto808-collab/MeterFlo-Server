@@ -33,14 +33,22 @@ import {
   type ApiImportConfig, type ApiImportPreview, type ApiImportRun, type ApiImportSettings, type ImportField,
 } from "@shared/customer-api-import";
 
-const fieldLabels: Record<ImportField, string> = {
+const fieldLabels: Record<string, string> = {
   customerWoId: "Customer work-order ID", customerId: "Customer ID", customerName: "Customer name",
   address: "Address", city: "City", state: "State / region", zip: "ZIP / postal code", phone: "Phone",
   email: "Email", route: "Route", zone: "Zone", serviceType: "Service type", oldSystemId: "Old system ID",
   oldSystemReading: "Old system reading", oldGps: "Old GPS", oldSystemType: "Old system type",
   oldModuleId: "Old module ID", oldModuleRead: "Old module reading", oldModuleType: "Old module type",
   status: "Status", notes: "Notes",
+  inventoryItems: "Inventory items (JSON array)",
 };
+const legacyAssetTypeTargets = ["oldSystemType", "newSystemType", "oldModuleType", "newModuleType"];
+const cleanFieldMapping = (mapping: Record<string, string>, inventoryEnabled: boolean) =>
+  Object.fromEntries(Object.entries(mapping).filter(([, target]) =>
+    inventoryEnabled
+      ? !legacyAssetTypeTargets.includes(target)
+      : target !== "inventoryItems",
+  ));
 const defaults: ApiImportSettings = {
   name: "", endpoint: "", authType: "none", secretEnvVar: "", keyHeader: "X-API-Key",
   recordsPath: "", fieldMapping: { id: "customerWoId" }, queryParams: {}, pagination: "none",
@@ -110,6 +118,16 @@ export default function ProjectApiImport({ projectId: explicitProjectId }: { pro
   const { data: project, isLoading: projectLoading, error: projectError } = useQuery<any>({
     queryKey: ["/api/projects", projectId], enabled: !!projectId, retry: false,
   });
+  const inventoryEnabled = Boolean(project?.inventoryEnabled);
+  const availableFieldKeys = useMemo(() => {
+    const fields = Object.keys(importFields);
+    const withoutLegacyTypes = inventoryEnabled
+      ? fields.filter(field => !legacyAssetTypeTargets.includes(field))
+      : fields;
+    return inventoryEnabled
+      ? [...withoutLegacyTypes.filter(field => field !== "inventoryItems"), "inventoryItems"]
+      : withoutLegacyTypes.filter(field => field !== "inventoryItems");
+  }, [inventoryEnabled]);
   const { data: configs, isLoading: configsLoading, error: configsError, refetch: refetchConfigs } =
     useQuery<ApiImportConfig[]>({
       queryKey: [`/api/projects/${projectId}/api-import/configs`],
@@ -180,17 +198,19 @@ export default function ProjectApiImport({ projectId: explicitProjectId }: { pro
   }
   function openEdit(config: ApiImportConfig) {
     const settings = settingsFrom(config);
-    setEditingId(config.id); setDraft(settings);
-    setMappingText(JSON.stringify(settings.fieldMapping, null, 2));
+    const fieldMapping = cleanFieldMapping(settings.fieldMapping as Record<string, string>, inventoryEnabled);
+    setEditingId(config.id); setDraft({ ...settings, fieldMapping: fieldMapping as ApiImportSettings["fieldMapping"] });
+    setMappingText(JSON.stringify(fieldMapping, null, 2));
     setParamsText(JSON.stringify(settings.queryParams, null, 2));
     setEditorError(""); setDialogOpen(true);
   }
   function getCompleteSettings(): ApiImportSettings | null {
     try {
-      const fieldMapping = JSON.parse(mappingText);
+      const parsedFieldMapping = JSON.parse(mappingText);
       const queryParams = JSON.parse(paramsText);
-      if (!fieldMapping || Array.isArray(fieldMapping) || typeof fieldMapping !== "object") throw new Error("Field mapping must be a JSON object.");
+      if (!parsedFieldMapping || Array.isArray(parsedFieldMapping) || typeof parsedFieldMapping !== "object") throw new Error("Field mapping must be a JSON object.");
       if (!queryParams || Array.isArray(queryParams) || typeof queryParams !== "object") throw new Error("Query parameters must be a JSON object.");
+      const fieldMapping = cleanFieldMapping(parsedFieldMapping as Record<string, string>, inventoryEnabled);
       const mandatoryTargets: ImportField[] = ["customerWoId", "customerId", "customerName", "address", "serviceType"];
       const mappedTargets = Object.values(fieldMapping);
       const missingTargets = mandatoryTargets.filter(target => !mappedTargets.includes(target));
@@ -199,7 +219,7 @@ export default function ProjectApiImport({ projectId: explicitProjectId }: { pro
       }
       if (draft.intervalMinutes !== 0 && draft.intervalMinutes < 15) throw new Error("Scheduled imports must be at least 15 minutes apart, or set to 0 for manual runs.");
       setEditorError("");
-      return { ...draft, fieldMapping, queryParams };
+      return { ...draft, fieldMapping: fieldMapping as ApiImportSettings["fieldMapping"], queryParams };
     } catch (error) {
       setEditorError(error instanceof Error ? error.message : "Fix the JSON before continuing.");
       return null;
@@ -348,7 +368,11 @@ export default function ProjectApiImport({ projectId: explicitProjectId }: { pro
             <div className="grid gap-5 md:grid-cols-2">
               <div className="space-y-3">
                 <Alert className="border-primary/20 bg-primary/5"><ShieldCheck className="h-4 w-4 text-primary" /><AlertTitle>Open baseline work orders only</AlertTitle><AlertDescription>Imported records use the Open baseline status. Every mapping must include these required targets: customerWoId, customerId, customerName, address, and serviceType.</AlertDescription></Alert>
-                <FormField label="Field mapping JSON" hint="Each sourcePath maps to one unique MeterFlo target. Example: { &quot;workOrder.id&quot;: &quot;customerWoId&quot;, &quot;customer.name&quot;: &quot;customerName&quot; }."><Textarea className="min-h-48 font-mono text-xs" value={mappingText} onChange={e => setMappingText(e.target.value)} spellCheck={false} /></FormField>
+                <FormField label="Field mapping JSON" hint={inventoryEnabled
+                  ? 'Each sourcePath maps to one MeterFlo target. Example: { "workOrder.id": "customerWoId", "stock": "inventoryItems" }. The stock source must be an array (or a JSON string) of { "warehouseId": "warehouse-id", "itemId": "item-id", "quantity": 2, "serials": [] }.'
+                  : 'Each sourcePath maps to one unique MeterFlo target. Example: { "workOrder.id": "customerWoId", "customer.name": "customerName" }.'}>
+                  <Textarea className="min-h-48 font-mono text-xs" value={mappingText} onChange={e => setMappingText(e.target.value)} spellCheck={false} />
+                </FormField>
               </div>
               <div><FormField label="Query parameters JSON" hint="Static request query values only. Credential-like names are rejected. Example: { &quot;region&quot;: &quot;north&quot; }"><Textarea className="min-h-32 font-mono text-xs" value={paramsText} onChange={e => setParamsText(e.target.value)} spellCheck={false} /></FormField>
                 <div className="mt-3"><FormField label="Watermark parameter (optional)" hint="Parameter name for incremental reads; do not use a credential name."><Input value={draft.watermarkParam} maxLength={100} onChange={e => field("watermarkParam", e.target.value)} placeholder="updated_since" /></FormField></div>
@@ -364,10 +388,10 @@ export default function ProjectApiImport({ projectId: explicitProjectId }: { pro
             </div>
             <div className="rounded-xl border border-amber-300/60 bg-amber-50/60 p-4">
               <div className="grid gap-4 md:grid-cols-2"><FormField label="Update behavior"><Select value={draft.updateMode} onValueChange={(value: ApiImportSettings["updateMode"]) => field("updateMode", value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="create_only">Create-only (recommended)</SelectItem><SelectItem value="safe_update">Safe update selected fields</SelectItem></SelectContent></Select></FormField><div className="text-sm leading-relaxed text-amber-950/75">{draft.updateMode === "create_only" ? "Incoming records will not change existing work orders." : "Only the selected baseline fields can be updated. Work-order ID, status, and notes are never eligible."}</div></div>
-              {draft.updateMode === "safe_update" && <div className="mt-4 flex flex-wrap gap-2">{safeUpdateFields.map(key => <label key={key} className="flex cursor-pointer items-center gap-2 rounded-lg border bg-background px-3 py-2 text-xs"><input type="checkbox" checked={draft.updateFields.includes(key)} onChange={e => field("updateFields", e.target.checked ? [...draft.updateFields, key] : draft.updateFields.filter(item => item !== key))} />{fieldLabels[key]}</label>)}</div>}
+              {draft.updateMode === "safe_update" && <div className="mt-4 flex flex-wrap gap-2">{safeUpdateFields.filter(key => !inventoryEnabled || !legacyAssetTypeTargets.includes(key)).map(key => <label key={key} className="flex cursor-pointer items-center gap-2 rounded-lg border bg-background px-3 py-2 text-xs"><input type="checkbox" checked={draft.updateFields.includes(key)} onChange={e => field("updateFields", e.target.checked ? [...draft.updateFields, key] : draft.updateFields.filter(item => item !== key))} />{fieldLabels[key]}</label>)}</div>}
             </div>
             {editorError && <Alert variant="destructive"><CircleAlert className="h-4 w-4" /><AlertDescription>{editorError}</AlertDescription></Alert>}
-            <div className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground"><strong>Available target fields:</strong> {Object.keys(importFields).map(key => fieldLabels[key as ImportField]).join(" · ")}</div>
+            <div className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground"><strong>Available target fields:</strong> {availableFieldKeys.map(key => fieldLabels[key]).join(" · ")}</div>
           </div>
           <DialogFooter className="flex-wrap sm:justify-between">
             <Button variant="outline" onClick={previewSettings} disabled={previewMutation.isPending}><Eye className="mr-2 h-4 w-4" />Test & preview unsaved settings</Button>

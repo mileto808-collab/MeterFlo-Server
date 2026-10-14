@@ -12,3 +12,9 @@ Reserve stock when assigned to a work order; deduct it when the changeout is com
 **Why:** The user explicitly specified these product boundaries; inventory must not turn a reading-only visit into an equipment replacement.
 
 **How to apply:** Keep feature visibility, imports, work-order printing, web completion, and mobile synchronization consistent with project enablement and the actual work performed. Do not assume reading completion consumes replacement inventory.
+
+Inventory retry comparisons must not depend on JSON object key order or optional-field defaults.
+
+**Why:** Native payloads and validated server records can contain equivalent data in different key orders; treating that as different work wrongly rejects retries.
+
+**How to apply:** Normalize contractual fields and compare canonical objects. Preserve the same operation identity across retries and never deduct stock twice.

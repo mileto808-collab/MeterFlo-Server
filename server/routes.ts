@@ -24,6 +24,17 @@ import { auditActorMiddleware, registerAuditRoutes } from "./auditRoutes";
 import { auditedOperation } from "./auditService";
 import { coreUpdatePreview, gitReader } from "./coreUpdatePreview";
 import { runtimeCustomerRelease } from "./customerExtensions";
+import { registerInventoryRoutes } from "./inventoryRoutes";
+import { inventoryState } from "./inventoryService";
+import { InventoryError } from "../shared/inventory-engine";
+
+function mobileInventoryUsage(req: any): unknown {
+  try {
+    const raw = req.body?.inventoryUsage ?? (typeof req.body?.data === "string" && req.body.data.includes('"inventoryUsage"')
+      ? JSON.parse(req.body.data).inventoryUsage : undefined);
+    return typeof raw === "string" ? JSON.parse(raw) : raw;
+  } catch { throw new InventoryError("inventoryUsage must contain valid JSON."); }
+}
 import { pool } from "./db";
 import { readingParameter, withExactReadings } from "../shared/exact-readings";
 import {
@@ -229,6 +240,7 @@ export async function registerRoutes(
   void cleanupMobileReleases();
   setInterval(cleanupMobileReleases, 5 * 60 * 1000).unref();
   registerCustomerApiSettings(app);
+  registerInventoryRoutes(app);
 
   // Local authentication
   app.post("/api/auth/local/login", async (req, res) => {
@@ -1685,6 +1697,10 @@ export async function registerRoutes(
       if (!canCreateProjects) {
         return res.status(403).json({ message: "Forbidden: You don't have permission to create projects" });
       }
+      if (req.body.inventoryEnabled === true &&
+          (!await storage.isAdminUser(currentUser) || !await storage.hasPermission(currentUser, permissionKeys.INVENTORY_CONFIGURE))) {
+        return res.status(403).json({ message: "Administrator and inventory configuration permission required." });
+      }
 
       if (req.body && Object.keys(req.body).some(key => key.startsWith("customerApi")) &&
           !await storage.hasPermission(currentUser, permissionKeys.PROJECTS_EDIT)) {
@@ -1709,6 +1725,7 @@ export async function registerRoutes(
       const project = customerPushFields.some(key => Object.hasOwn(req.body, key))
         ? await storage.createProjectWithFullData({
             name: parsed.data.name, description: parsed.data.description, customerEmail: parsed.data.customerEmail,
+            inventoryEnabled: parsed.data.inventoryEnabled ?? false,
             ...getReadingPrecision(parsed.data),
             ...customerPushSettings(parsed.data),
           })
@@ -1840,6 +1857,19 @@ export async function registerRoutes(
       if (!existingProject) {
         return res.status(404).json({ message: "Project not found" });
       }
+      if (Object.hasOwn(req.body, "inventoryEnabled")) {
+        if (req.body.inventoryEnabled !== !!existingProject.inventoryEnabled &&
+            (!await storage.isAdminUser(currentUser) || !await storage.hasPermission(currentUser, permissionKeys.INVENTORY_CONFIGURE)))
+          return res.status(403).json({ message: "Administrator and inventory configuration permission required." });
+        if (typeof req.body.inventoryEnabled !== "boolean") return res.status(400).json({ message: "Inventory enablement must be true or false." });
+        if (existingProject.inventoryEnabled && !req.body.inventoryEnabled) {
+          const inv = await inventoryState(projectId);
+          if (inv.allocations.some(a => a.status === "reserved" && a.lines.length) ||
+              inv.orders.some(o => !["completed", "cancelled"].includes(o.status)) ||
+              inv.counts.some(c => c.status === "open") || inv.returns.some(r => r.disposition === "returned" && r.status !== "released"))
+            return res.status(409).json({ message: "Resolve reservations, open orders, counts and equipment returns before disabling inventory. Historical stock is preserved." });
+        }
+      }
 
       if (hasReadingPrecisionSettings(req.body)) {
         if (!await storage.hasPermission(currentUser, readingPrecisionPermission)) {
@@ -1883,6 +1913,7 @@ export async function registerRoutes(
       res.json(project);
     } catch (error) {
       console.error("Error updating project:", error);
+      if (error instanceof InventoryError) return res.status(error.status).json({ message: error.message });
       res.status(500).json({ message: "Failed to update project" });
     }
   });
@@ -1913,6 +1944,7 @@ export async function registerRoutes(
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting project:", error);
+      if (error instanceof InventoryError) return res.status(error.status).json({ message: error.message });
       res.status(500).json({ message: "Failed to delete project" });
     }
   });
@@ -2696,10 +2728,9 @@ export async function registerRoutes(
         }
       }
       
-      // Get the user's display name for createdBy
-      const createdByName = currentUser?.firstName 
-        ? `${currentUser.firstName}${currentUser.lastName ? ' ' + currentUser.lastName : ''}`
-        : currentUser?.username || currentUser?.id;
+      // Foreign keys store account references; display names are resolved when
+      // reading the work order and are not unique account identifiers.
+      const createdByName = currentUser?.username || currentUser?.id;
       
       const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
       const workOrder = await workOrderStorage.createWorkOrder({
@@ -2711,6 +2742,7 @@ export async function registerRoutes(
       res.status(201).json(workOrder);
     } catch (error) {
       console.error("Error creating work order:", error);
+      if (error instanceof InventoryError) return res.status(error.status).json({ message: error.message, code: "INVENTORY_CONFLICT" });
       res.status(500).json({ message: "Failed to create work order" });
     }
   });
@@ -2949,6 +2981,7 @@ export async function registerRoutes(
       res.json(workOrder);
     } catch (error) {
       console.error("Error updating work order:", error);
+      if (error instanceof InventoryError) return res.status(error.status).json({ message: error.message, code: "INVENTORY_CONFLICT" });
       res.status(500).json({ message: "Failed to update work order" });
     }
   });
@@ -4118,7 +4151,7 @@ export async function registerRoutes(
             updateData.newSystemReading = newSystemReading;
             // Copy type from old to new
             const existingOldType = workOrder.oldSystemType || woAny.old_system_type;
-            if (existingOldType) {
+            if (existingOldType && !project.inventoryEnabled) {
               updateData.newSystemType = existingOldType;
             }
           } else {
@@ -4127,7 +4160,7 @@ export async function registerRoutes(
             updateData.newSystemId = newSystemId;
             updateData.newSystemReading = newSystemReading;
             // For changeout, copy type from request if provided
-            if (newSystemType) {
+            if (newSystemType && !project.inventoryEnabled) {
               updateData.newSystemType = newSystemType;
             }
           }
@@ -4142,7 +4175,7 @@ export async function registerRoutes(
             updateData.newModuleRead = newModuleReading;
             // Copy type from old to new
             const existingOldModuleType = workOrder.oldModuleType || woAny.old_module_type;
-            if (existingOldModuleType) {
+            if (existingOldModuleType && !project.inventoryEnabled) {
               updateData.newModuleType = existingOldModuleType;
             }
           } else {
@@ -4151,7 +4184,7 @@ export async function registerRoutes(
             updateData.newModuleId = newModuleId;
             updateData.newModuleRead = newModuleReading;
             // For changeout, copy type from request if provided
-            if (newModuleType) {
+            if (newModuleType && !project.inventoryEnabled) {
               updateData.newModuleType = newModuleType;
             }
           }
@@ -4304,6 +4337,7 @@ export async function registerRoutes(
       });
     } catch (error: any) {
       console.error("Error processing system changeout:", error);
+      if (error instanceof InventoryError) return res.status(error.status).json({ message: error.message, code: "INVENTORY_CONFLICT" });
       res.status(500).json({ message: error.message || "Failed to process system changeout" });
     }
   });
@@ -5020,6 +5054,9 @@ export async function registerRoutes(
       const coreRoot=process.env.NODE_ENV==="production" ? path.resolve(__dirname,"..") : process.cwd();
       
       switch (docType) {
+        case "inventory":
+          filePath = path.join(coreRoot, "INVENTORY.md");
+          break;
         case "core-updates":
           filePath = path.join(coreRoot, "CUSTOMER_CORE_UPDATES.md");
           break;
@@ -9241,11 +9278,20 @@ export async function registerRoutes(
           label: group.name,
           key: group.name,
         }));
+        if (project.inventoryEnabled && !await storage.hasPermission(currentUser, "inventory.view"))
+          return res.status(403).json({ message: "Inventory view permission is required to sync inventory-enabled projects." });
+        const inventoryAdmin = project.inventoryEnabled && await storage.isAdminUser(currentUser);
+        if (project.inventoryEnabled && !inventoryAdmin && !await storage.isUserAssignedToProject(currentUser.id, projectId))
+          return res.status(403).json({ message: "You are not assigned to this inventory project." });
+        const inv = project.inventoryEnabled ? await inventoryState(projectId) : null;
         
         res.json({
           success: true,
           serverTimestamp,
-          workOrders: withExactReadings(result.rows),
+          workOrders: withExactReadings(result.rows).map((wo: any) => ({ ...wo,
+            ...(inv ? { inventoryAllocation: inv.allocations.find(a => a.workOrderId === wo.id) || null } : {}) })),
+          inventory: { contractVersion: 1, enabled: !!inv, items: inv?.items || [],
+            warehouses: inv?.warehouses.filter(w => inventoryAdmin || w.assignedUserId === currentUser.id || w.userIds.includes(currentUser.id)) || [] },
           referenceData: {
             workOrderStatuses,
             troubleCodes,
@@ -9349,7 +9395,9 @@ export async function registerRoutes(
           results.push({ id, status: "success" });
         } catch (error) {
           console.error(`Error updating work order ${woUpdate.id}:`, error);
-          results.push({ id: woUpdate.id, status: "error", message: String(error) });
+          results.push({ id: woUpdate.id, status: "error",
+            ...(error instanceof InventoryError ? { code: "INVENTORY_CONFLICT" } : {}),
+            message: error instanceof InventoryError ? error.message : String(error) });
         }
       }
       
@@ -9527,7 +9575,7 @@ export async function registerRoutes(
       
       const updatedWorkOrder = await workOrderStorage.updateWorkOrder(
         workOrderId,
-        updateData,
+        { ...updateData, inventoryUsage: mobileInventoryUsage(req) },
         updatedByUsername
       );
       
@@ -9732,7 +9780,7 @@ export async function registerRoutes(
       
       const updatedWorkOrder = await workOrderStorage.updateWorkOrder(
         workOrderId,
-        updateData,
+        { ...updateData, inventoryUsage: mobileInventoryUsage(req) },
         updatedByUsername
       );
       
@@ -9751,6 +9799,7 @@ export async function registerRoutes(
       });
     } catch (error) {
       console.error("Error completing mobile system changeout:", error);
+      if (error instanceof InventoryError) return res.status(error.status).json({ message: error.message, code: "INVENTORY_CONFLICT" });
       res.status(500).json({ message: "Failed to complete system changeout" });
     }
   });
@@ -9892,7 +9941,7 @@ export async function registerRoutes(
       // The trouble code is included in updateData.trouble, which triggers auto-generated trouble note in updateWorkOrder
       const updatedWorkOrder = await workOrderStorage.updateWorkOrder(
         workOrderId,
-        updateData,
+        { ...updateData, inventoryUsage: mobileInventoryUsage(req) },
         updatedByUsername
       );
       
@@ -10141,7 +10190,7 @@ export async function registerRoutes(
         } else if (isReadingOnly) {
           // In Reading Only mode, copy old system type to new system type if mobile doesn't provide it
           const existingOldType = (workOrder as any).oldSystemType || (workOrder as any).old_system_type;
-          if (existingOldType) {
+          if (existingOldType && !project.inventoryEnabled) {
             updateData.newSystemType = existingOldType;
           }
         }
@@ -10166,7 +10215,7 @@ export async function registerRoutes(
         } else if (isReadingOnly) {
           // In Reading Only mode, copy old module type to new module type if mobile doesn't provide it
           const existingOldModType = (workOrder as any).oldModuleType || (workOrder as any).old_module_type;
-          if (existingOldModType) {
+          if (existingOldModType && !project.inventoryEnabled) {
             updateData.newModuleType = existingOldModType;
           }
         }
@@ -10193,7 +10242,7 @@ export async function registerRoutes(
       
       const updatedWorkOrder = await workOrderStorage.updateWorkOrder(
         workOrderId,
-        updateData,
+        { ...updateData, inventoryUsage: mobileInventoryUsage(req) },
         updatedByUsername
       );
       
@@ -10212,6 +10261,7 @@ export async function registerRoutes(
       });
     } catch (error: any) {
       console.error("Error in mobile complete endpoint:", error);
+      if (error instanceof InventoryError) return res.status(error.status).json({ message: error.message, code: "INVENTORY_CONFLICT" });
       res.status(500).json({ message: error.message || "Failed to complete system changeout" });
     }
   });
@@ -10354,7 +10404,7 @@ export async function registerRoutes(
       
       const updatedWorkOrder = await workOrderStorage.updateWorkOrder(
         workOrderId,
-        updateData,
+        { ...updateData, inventoryUsage: mobileInventoryUsage(req) },
         updatedByUsername
       );
       
@@ -10593,7 +10643,7 @@ export async function registerRoutes(
           updateData.newSystemReading = String(newSystemReading).trim();
           // Copy type from old to new
           const existingOldType = woAny.oldSystemType || woAny.old_system_type;
-          if (existingOldType) {
+          if (existingOldType && !project.inventoryEnabled) {
             updateData.newSystemType = existingOldType;
           }
         } else {
@@ -10622,7 +10672,7 @@ export async function registerRoutes(
           updateData.newModuleRead = String(newModuleReading).trim();
           // Copy type from old to new
           const existingOldModType = woAny.oldModuleType || woAny.old_module_type;
-          if (existingOldModType) {
+          if (existingOldModType && !project.inventoryEnabled) {
             updateData.newModuleType = existingOldModType;
           }
         } else {
@@ -10667,7 +10717,7 @@ export async function registerRoutes(
       
       const updatedWorkOrder = await workOrderStorage.updateWorkOrder(
         workOrderId,
-        updateData,
+        { ...updateData, inventoryUsage: mobileInventoryUsage(req) },
         updatedByUsername
       );
       
@@ -10686,6 +10736,7 @@ export async function registerRoutes(
       });
     } catch (error: any) {
       console.error("Error in project-scoped mobile complete endpoint:", error);
+      if (error instanceof InventoryError) return res.status(error.status).json({ message: error.message, code: "INVENTORY_CONFLICT" });
       res.status(500).json({ message: error.message || "Failed to complete system changeout" });
     }
   });

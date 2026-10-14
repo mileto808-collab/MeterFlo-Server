@@ -1,5 +1,15 @@
 # MeterFlo Mobile App Synchronization Guide
 
+## Inventory-enabled projects
+
+Inventory-enabled projects require `inventory.view` for sync download, in addition to normal work-order/project access. A missing grant returns 403 rather than exposing catalog costs or allocations. Handle this as a permission/configuration problem; do not erase queued work or substitute an inventory-disabled project.
+
+Fetch `inventoryEnabled` with the existing project settings. If true, persist each sync-downloaded work order's `inventoryAllocation` and its top-level `inventory` catalog/warehouse data. Disable legacy System/Module Type editors, show assigned stock on the changeout screen, scan only reserved serials, and capture actual use and removed-equipment disposition. Reading-only work is not a changeout.
+
+Send `inventoryUsage` with the completed work order: a stable operation UUID, downloaded allocation revision, mode, used allocation lines and dispositions. Preserve leading zeros. Do not silently discard pending work on `INVENTORY_CONFLICT`; keep it queued, refresh stock/assignment data and require reconciliation. A retry does not authorize a different posting under the same UUID. Inventory-disabled projects retain their current mobile flow.
+
+Read [INVENTORY.md](INVENTORY.md) for the exact JSON example and server endpoints before implementing this in the separately maintained Expo app.
+
 This document provides comprehensive instructions for updating the mobile application to synchronize with the web application's workflow configuration, search methods, time tracking, file uploads, and other features.
 
 This guide explains client behavior and implementation decisions. For the endpoint-by-endpoint HTTP contract, use the separate **MeterFlo Mobile API Documentation** on the Documentation page.

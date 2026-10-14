@@ -106,6 +106,7 @@ const workOrderFields = [
   { key: "oldGps", label: "Old GPS", required: false },
   { key: "oldSystemType", label: "Old System Type", required: false },
   { key: "newSystemType", label: "New System Type", required: false },
+  { key: "inventoryItems", label: "Inventory items (JSON array)", required: false },
   { key: "oldModuleId", label: "Old Module ID", required: false },
   { key: "newModuleId", label: "New Module ID", required: false },
   { key: "oldModuleRead", label: "Old Module Reading", required: false },
@@ -203,6 +204,17 @@ export default function ProjectDbImport() {
     enabled: !!projectId,
     retry: false,
   });
+  const inventoryEnabled = Boolean((project as any)?.inventoryEnabled);
+  const legacyTypeMappingKeys = ["oldSystemType", "newSystemType", "oldModuleType", "newModuleType"];
+  const visibleWorkOrderFields = workOrderFields.filter(field =>
+    inventoryEnabled
+      ? !legacyTypeMappingKeys.includes(field.key)
+      : field.key !== "inventoryItems",
+  );
+  const normalizeColumnName = (column: string) => column.toLowerCase().replace(/[_\s-]/g, "");
+  const visiblePreviewColumns = inventoryEnabled
+    ? previewColumns.filter(column => !legacyTypeMappingKeys.some(key => normalizeColumnName(key) === normalizeColumnName(column)))
+    : previewColumns;
 
   const { data: dbConfigs = [], refetch: refetchConfigs } = useQuery<ExternalDatabaseConfig[]>({
     queryKey: ["/api/projects", projectId, "database-configs"],
@@ -444,10 +456,14 @@ export default function ProjectDbImport() {
   };
 
   const openEditImportConfig = (config: ImportConfig) => {
+    const savedMapping = (config.columnMapping as Record<string, string>) || {};
+    const columnMapping = Object.fromEntries(Object.entries(savedMapping).filter(([key]) =>
+      inventoryEnabled ? !legacyTypeMappingKeys.includes(key) : key !== "inventoryItems",
+    ));
     setImportConfigForm({
       name: config.name,
       sqlQuery: config.sqlQuery,
-      columnMapping: (config.columnMapping as Record<string, string>) || {},
+      columnMapping,
       scheduleFrequency: config.scheduleFrequency,
       customCronExpression: config.customCronExpression || "",
       isEnabled: config.isEnabled || false,
@@ -492,11 +508,15 @@ export default function ProjectDbImport() {
 
   const handleSaveImportConfig = () => {
     if (!selectedDbConfigId) return;
+    const columnMapping = Object.fromEntries(Object.entries(importConfigForm.columnMapping).filter(([key]) =>
+      inventoryEnabled ? !legacyTypeMappingKeys.includes(key) : key !== "inventoryItems",
+    ));
+    const data = { ...importConfigForm, columnMapping };
     
     if (editingImportConfigId) {
-      updateImportConfigMutation.mutate({ id: editingImportConfigId, data: importConfigForm });
+      updateImportConfigMutation.mutate({ id: editingImportConfigId, data });
     } else {
-      createImportConfigMutation.mutate({ dbConfigId: selectedDbConfigId, data: importConfigForm });
+      createImportConfigMutation.mutate({ dbConfigId: selectedDbConfigId, data });
     }
   };
 
@@ -897,25 +917,26 @@ export default function ProjectDbImport() {
             {previewData && previewColumns.length > 0 && (
               <div className="grid gap-2">
                 <Label>Query Preview ({previewData.length} rows)</Label>
+                {inventoryEnabled && <p className="text-xs text-muted-foreground">Legacy system and module type columns are hidden for this inventory-enabled project.</p>}
                 <ScrollArea className="h-[150px] border rounded-md">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        {previewColumns.slice(0, 8).map((col) => (
+                        {visiblePreviewColumns.slice(0, 8).map((col) => (
                           <TableHead key={col} className="text-xs">{col}</TableHead>
                         ))}
-                        {previewColumns.length > 8 && <TableHead className="text-xs">...</TableHead>}
+                        {visiblePreviewColumns.length > 8 && <TableHead className="text-xs">...</TableHead>}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {previewData.slice(0, 5).map((row, idx) => (
                         <TableRow key={idx}>
-                          {previewColumns.slice(0, 8).map((col) => (
+                          {visiblePreviewColumns.slice(0, 8).map((col) => (
                             <TableCell key={col} className="text-xs truncate max-w-[100px]">
                               {String(row[col] ?? "")}
                             </TableCell>
                           ))}
-                          {previewColumns.length > 8 && <TableCell className="text-xs">...</TableCell>}
+                          {visiblePreviewColumns.length > 8 && <TableCell className="text-xs">...</TableCell>}
                         </TableRow>
                       ))}
                     </TableBody>
@@ -928,11 +949,12 @@ export default function ProjectDbImport() {
               <div className="grid gap-2">
                 <Label>Column Mapping</Label>
                 <p className="text-sm text-muted-foreground">Map source columns to work order fields. Required fields are marked with *</p>
+                {inventoryEnabled && <p className="text-xs leading-relaxed text-muted-foreground">Map inventory items from a JSON array column, for example <code className="rounded bg-muted px-1">[{"{\"warehouseId\":\"warehouse-id\",\"itemId\":\"item-id\",\"quantity\":2,\"serials\":[]}"}]</code>. Serialized serials arrays are also accepted.</p>}
                 <ScrollArea className="h-[250px] border rounded-md p-3">
                   <div className="grid gap-3">
-                    {workOrderFields.map((field) => (
+                    {visibleWorkOrderFields.map((field) => (
                       <div key={field.key} className="grid grid-cols-2 gap-4 items-center">
-                        <Label className="text-sm">
+                        <Label className="text-sm" title={field.key === "inventoryItems" ? "JSON array: warehouseId, itemId, quantity, optional serials." : undefined}>
                           {field.label}
                           {field.required && <span className="text-red-500 ml-1">*</span>}
                         </Label>
@@ -948,7 +970,7 @@ export default function ProjectDbImport() {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="_none_">-- Not mapped --</SelectItem>
-                            {previewColumns.map((col) => (
+                            {visiblePreviewColumns.map((col) => (
                               <SelectItem key={col} value={col}>{col}</SelectItem>
                             ))}
                           </SelectContent>

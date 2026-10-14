@@ -1,6 +1,9 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { Allocation, Disposition, InventoryItem, Warehouse, WorkAllocation } from "@shared/inventory";
+import { usePermissions } from "@/hooks/usePermissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -64,6 +67,7 @@ type WizardStep =
   | "newSystemId"
   | "newReading"
   | "afterPhotos"
+  | "inventoryReview"
   | "gps"
   | "notes"
   | "signature"
@@ -138,6 +142,7 @@ interface SystemChangeoutWizardProps {
   trouble?: string | null;
   notes?: string | null;
   projectId: number;
+  inventoryEnabled?: boolean;
   troubleCodes: Array<{ id: number; code: string; label: string }>;
   existingOldReading?: string | null;
   existingNewReading?: string | null;
@@ -160,6 +165,7 @@ const stepLabels: Record<WizardStep, string> = {
   newSystemId: "New System ID",
   newReading: "Capture New Reading",
   afterPhotos: "After Photos",
+  inventoryReview: "Inventory use & removed meter review",
   gps: "Capture GPS",
   notes: "Notes",
   signature: "Capture Signature",
@@ -173,7 +179,8 @@ function buildSuccessSteps(
   mode: "changeout" | "reading_only",
   config: WizardConfig,
   isUserChoice: boolean,
-  effectiveGpsMode: GpsCaptureMode
+  effectiveGpsMode: GpsCaptureMode,
+  inventoryEnabled = false,
 ): WizardStep[] {
   const steps: WizardStep[] = [];
   
@@ -208,6 +215,7 @@ function buildSuccessSteps(
     if (showGpsStep) steps.push("gps");
     if (config.showNotesStep) steps.push("notes");
     if (config.showSignatureStep) steps.push("signature");
+    if (inventoryEnabled) steps.push("inventoryReview");
     steps.push("confirm");
   }
   
@@ -230,6 +238,7 @@ export function SystemChangeoutWizard({
   trouble,
   notes,
   projectId,
+  inventoryEnabled = false,
   troubleCodes,
   existingOldReading,
   existingNewReading,
@@ -242,6 +251,14 @@ export function SystemChangeoutWizard({
   searchMethodSettings,
 }: SystemChangeoutWizardProps) {
   const { toast } = useToast();
+  const { hasPermission } = usePermissions();
+  const inventoryQueryKey = ["/api/projects", projectId, "work-orders", workOrderId, "inventory"];
+  const { data: workInventory } = useQuery<{ enabled: boolean; allocation: WorkAllocation | null; items: InventoryItem[]; warehouses: Warehouse[] }>({
+    queryKey: inventoryQueryKey,
+    enabled: !!inventoryEnabled && isOpen,
+  });
+  const [usedInventory, setUsedInventory] = useState<Record<string, { quantity: string; serials: string }>>({});
+  const [removedMeters, setRemovedMeters] = useState<Record<string, { serial: string; disposition: string; warehouseId: string }>>({});
   
   // Default search method settings - all enabled by default
   const searchSettings: SearchMethodSettings = searchMethodSettings ?? {
@@ -288,7 +305,8 @@ export function SystemChangeoutWizard({
       config.wizardMode === "reading_only" ? "reading_only" : "changeout",
       config,
       config.wizardMode === "user_choice",
-      effectiveGpsMode
+      effectiveGpsMode,
+      inventoryEnabled
     );
     return steps[0] || "canChange";
   };
@@ -383,7 +401,7 @@ export function SystemChangeoutWizard({
   };
 
   // Build steps dynamically based on config and mode
-  const successSteps = buildSuccessSteps(effectiveMode, config, config.wizardMode === "user_choice", effectiveGpsMode);
+  const successSteps = buildSuccessSteps(effectiveMode, config, config.wizardMode === "user_choice", effectiveGpsMode, inventoryEnabled);
   const currentSteps = data.canChange ? successSteps : troubleSteps;
   const currentStepIndex = currentSteps.indexOf(currentStep);
   const isFirstStep = currentStepIndex === 0;
@@ -636,6 +654,28 @@ export function SystemChangeoutWizard({
         // Accept either: drawn signature with name, OR typed signature (name only)
         // Just need a name - signature drawing is optional
         return !!data.signatureName.trim();
+      case "inventoryReview": {
+        if (!hasPermission("inventory.assign")) return false;
+        const lines = workInventory?.allocation?.lines ?? [];
+        const quantitiesValid = lines.every(line => {
+          const entry = usedInventory[`${line.warehouseId}/${line.itemId}`];
+          const quantity = Number(entry?.quantity ?? "0");
+          if (!Number.isInteger(quantity) || quantity < 0 || quantity > line.quantity) return false;
+          if (quantity === 0 || line.serials.length === 0) return true;
+          const serials = (entry?.serials || "").split(/[\\n,;]/).map(value => value.trim()).filter(Boolean);
+          return serials.length === quantity && serials.every(serial => line.serials.includes(serial));
+        });
+        const assets = [
+          ...(oldSystemId ? [{ key: "system" as const }] : []),
+          ...(oldModuleId ? [{ key: "module" as const }] : []),
+        ];
+        const dispositionsValid = assets.every(({ key }) => {
+          const entry = removedMeters[key];
+          return !!entry?.serial.trim() && !!entry.disposition &&
+            (entry.disposition !== "returned" || !!entry.warehouseId);
+        });
+        return quantitiesValid && dispositionsValid;
+      }
       case "confirm": {
         // Final validation: check all required fields based on path, scope, and mode
         // GPS validation based on gpsMode:
@@ -855,6 +895,54 @@ export function SystemChangeoutWizard({
 
     setIsSubmitting(true);
     try {
+      if (inventoryEnabled) {
+        if (!hasPermission("inventory.assign")) {
+          throw new Error("Inventory assignment permission is required to review stock before completion.");
+        }
+        const endpoint = `/api/projects/${projectId}/inventory/commands`;
+        const postCommand = async (action: string, commandData: Record<string, unknown>) => {
+          const response = await apiRequest("POST", endpoint, {
+            operationId: crypto.randomUUID(), action, data: commandData,
+          });
+          return response.json() as Promise<{ state: { allocations: WorkAllocation[] } }>;
+        };
+        let latest = await apiRequest("GET", `/api/projects/${projectId}/work-orders/${workOrderId}/inventory`)
+          .then(response => response.json() as Promise<{ allocation: WorkAllocation | null }>);
+        if (!latest.allocation) {
+          await postCommand("assign", { workOrderId, lines: [] });
+          latest = await apiRequest("GET", `/api/projects/${projectId}/work-orders/${workOrderId}/inventory`)
+            .then(response => response.json() as Promise<{ allocation: WorkAllocation | null }>);
+        }
+        if (!latest.allocation) throw new Error("Inventory assignment is not available. Refresh the work order and try again.");
+        const allocation = latest.allocation;
+        const mode = isReadingOnlyMode ? "reading_only" : "changeout";
+        const used: Allocation[] = mode === "reading_only" || !data.canChange ? [] : allocation.lines.flatMap(line => {
+          const key = `${line.warehouseId}/${line.itemId}`;
+          const entry = usedInventory[key];
+          const quantity = Number(entry?.quantity ?? "0");
+          if (!Number.isInteger(quantity) || quantity < 0 || quantity > line.quantity) throw new Error("Used quantity must be a whole number within the reserved amount.");
+          if (quantity === 0) return [];
+          const serials = line.serials.length ? (entry?.serials || "").split(/[\n,;]/).map(value => value.trim()).filter(Boolean) : [];
+          if (line.serials.length && (serials.length !== quantity || serials.some(serial => !line.serials.includes(serial)))) {
+            throw new Error(`Scan ${quantity} serial number${quantity === 1 ? "" : "s"} reserved to this work order.`);
+          }
+          return [{ ...line, quantity, serials }];
+        });
+        const removedAssets = [
+          ...(oldSystemId ? [{ equipment: "system" as const, key: "system", oldSerial: oldSystemId }] : []),
+          ...(oldModuleId ? [{ equipment: "module" as const, key: "module", oldSerial: oldModuleId }] : []),
+        ];
+        const dispositions: Disposition[] = mode === "reading_only" || !data.canChange ? [] : removedAssets.map(asset => {
+          const entry = removedMeters[asset.key];
+          if (!entry?.disposition) throw new Error(`Choose a disposition for the removed ${asset.key} meter.`);
+          const serial = entry.serial.trim();
+          if (!serial) throw new Error(`Scan the removed ${asset.key} meter serial.`);
+          if (entry.disposition === "returned" && !entry.warehouseId) throw new Error("Choose a warehouse for returned equipment.");
+          return { equipment: asset.equipment, serial, disposition: entry.disposition as Disposition["disposition"], warehouseId: entry.disposition === "returned" ? entry.warehouseId : null };
+        });
+        await postCommand("prepareUse", { workOrderId, revision: allocation.revision, mode, used, dispositions });
+        await queryClient.invalidateQueries({ queryKey: inventoryQueryKey });
+      }
       // For reading-only mode, set new IDs equal to old IDs (no equipment change)
       // Also copy old types to new types since no equipment is being changed
       let submitData = { ...data, isReadingOnly: isReadingOnlyMode };
@@ -863,8 +951,7 @@ export function SystemChangeoutWizard({
           ...submitData,
           newSystemId: oldSystemId || "",
           newModuleId: oldModuleId || "",
-          newSystemType: oldSystemType || "",
-          newModuleType: oldModuleType || "",
+          ...(!inventoryEnabled ? { newSystemType: oldSystemType || "", newModuleType: oldModuleType || "" } : {}),
         };
       }
       
@@ -2260,6 +2347,64 @@ export function SystemChangeoutWizard({
           </div>
         );
 
+      case "inventoryReview":
+        return (
+          <div className="space-y-4">
+            <div className="text-center">
+              <ClipboardCheck className="mx-auto mb-2 h-10 w-10 text-primary" />
+              <h3 className="text-lg font-semibold">Inventory use & removed meter review</h3>
+              <p className="mt-1 text-sm text-muted-foreground">Confirm what was installed and how each removed meter was handled before submitting this changeout.</p>
+            </div>
+            {!hasPermission("inventory.assign") ? (
+              <Card className="border-destructive/40"><CardContent className="pt-4 text-sm text-destructive">Inventory assignment permission is required to complete this work order.</CardContent></Card>
+            ) : (
+              <Card>
+                <CardHeader className="pb-3"><CardTitle className="text-base">Reserved replacement stock</CardTitle></CardHeader>
+                <CardContent className="space-y-4">
+                  {!workInventory?.allocation && <p className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">No stock assignment exists yet. An empty reservation will be created when this visit is submitted.</p>}
+                  {(workInventory?.allocation?.lines ?? []).length > 0 ? (
+                    <div className="space-y-3">
+                      {(workInventory?.allocation?.lines ?? []).map(line => {
+                        const item = workInventory?.items.find(value => value.id === line.itemId);
+                        const key = `${line.warehouseId}/${line.itemId}`;
+                        const current = usedInventory[key] ?? { quantity: "0", serials: "" };
+                        const warehouse = workInventory?.warehouses.find(value => value.id === line.warehouseId);
+                        return (
+                          <div key={key} className="grid gap-3 rounded-md border p-3 sm:grid-cols-[1fr_130px_1fr] sm:items-end">
+                            <div><div className="font-medium">{item?.name ?? line.itemId}</div><div className="text-xs text-muted-foreground">{warehouse?.code ?? line.warehouseId} · {line.quantity} reserved{line.serials.length ? ` · ${line.serials.join(", ")}` : ""}</div></div>
+                            <div className="space-y-1"><Label htmlFor={`wizard-used-${line.itemId}`}>Used quantity</Label><Input id={`wizard-used-${line.itemId}`} type="number" min="0" max={line.quantity} value={current.quantity} onChange={event => setUsedInventory(value => ({ ...value, [key]: { ...current, quantity: event.target.value } }))} /></div>
+                            {line.serials.length > 0 && <div className="space-y-1"><Label htmlFor={`wizard-serials-${line.itemId}`}>Installed serials</Label><Input id={`wizard-serials-${line.itemId}`} value={current.serials} onChange={event => setUsedInventory(value => ({ ...value, [key]: { ...current, serials: event.target.value } }))} placeholder="One reserved serial per unit used" /><span className="text-xs text-muted-foreground">Separate with commas or new lines.</span></div>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : <p className="text-sm text-muted-foreground">No replacement stock was reserved for this work order.</p>}
+                </CardContent>
+              </Card>
+            )}
+            {(oldSystemId || oldModuleId) && (
+              <Card>
+                <CardHeader className="pb-3"><CardTitle className="text-base">Removed meters</CardTitle></CardHeader>
+                <CardContent className="space-y-3">
+                  {[
+                    ...(oldSystemId ? [{ equipment: "system" as const, serial: oldSystemId }] : []),
+                    ...(oldModuleId ? [{ equipment: "module" as const, serial: oldModuleId }] : []),
+                  ].map(asset => {
+                    const value = removedMeters[asset.equipment] ?? { serial: asset.serial, disposition: "", warehouseId: "" };
+                    return (
+                      <div key={asset.equipment} className="grid gap-3 rounded-md border p-3 sm:grid-cols-3 sm:items-end">
+                        <div className="space-y-1"><Label htmlFor={`removed-${asset.equipment}`}>Removed {asset.equipment} serial</Label><Input id={`removed-${asset.equipment}`} value={value.serial} onChange={event => setRemovedMeters(current => ({ ...current, [asset.equipment]: { ...value, serial: event.target.value } }))} /></div>
+                        <div className="space-y-1"><Label>Disposition</Label><Select value={value.disposition} onValueChange={selected => setRemovedMeters(current => ({ ...current, [asset.equipment]: { ...value, disposition: selected } }))}><SelectTrigger><SelectValue placeholder="Choose condition" /></SelectTrigger><SelectContent><SelectItem value="returned">Return to stockroom</SelectItem><SelectItem value="scrapped">Scrapped</SelectItem><SelectItem value="left_onsite">Left onsite</SelectItem></SelectContent></Select></div>
+                        {value.disposition === "returned" && <div className="space-y-1"><Label>Return warehouse</Label><Select value={value.warehouseId} onValueChange={selected => setRemovedMeters(current => ({ ...current, [asset.equipment]: { ...value, warehouseId: selected } }))}><SelectTrigger><SelectValue placeholder="Choose warehouse" /></SelectTrigger><SelectContent>{workInventory?.warehouses.filter(warehouse => warehouse.active).map(warehouse => <SelectItem key={warehouse.id} value={warehouse.id}>{warehouse.code} · {warehouse.name}</SelectItem>)}</SelectContent></Select></div>}
+                      </div>
+                    );
+                  })}
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        );
+
       case "confirm":
         return (
           <div className="space-y-4">
@@ -2270,7 +2415,7 @@ export function SystemChangeoutWizard({
                   ? "Review System Changeout" 
                   : "Review Trouble Report"}
             </h3>
-            
+
             {isReadingOnlyMode ? (
               data.canChange ? (
                 <Card>

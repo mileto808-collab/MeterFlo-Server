@@ -54,6 +54,7 @@ export function buildCustomerPayload(row: Record<string, any>, project: { id: nu
     scheduledAt: iso(get(row, "scheduledAt", "scheduled_at")),
     completedAt: iso(get(row, "completedAt", "completed_at")),
     attachments: row.attachments ?? [],
+    ...(row.inventory ? { inventory: row.inventory } : {}),
   };
 }
 

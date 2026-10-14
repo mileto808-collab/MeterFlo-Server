@@ -4,6 +4,7 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
 import { readingDecimalPlacesSchema } from "./reading-precision";
+import { inventoryImportSchema } from "./inventory";
 
 // Session storage table - mandatory for Replit Auth
 export const sessions = pgTable(
@@ -102,6 +103,7 @@ export const projects = pgTable("projects", {
   notes: text("notes"),
   databaseName: varchar("database_name", { length: 255 }),
   isActive: boolean("is_active").default(true),
+  inventoryEnabled: boolean("inventory_enabled").notNull().default(false),
   webhookUrl: varchar("webhook_url", { length: 500 }),
   webhookEnabled: boolean("webhook_enabled").default(false),
   customerApiEnabled: boolean("customer_api_enabled").default(false),
@@ -667,6 +669,7 @@ export type UpdateProfile = z.infer<typeof updateProfileSchema>;
 
 export const insertProjectSchema = z.object({
   name: z.string().min(1).max(255),
+  inventoryEnabled: z.boolean().optional().default(false),
   description: z.string().optional().nullable(),
   customerEmail: z.string().email().optional().nullable(),
   phone: z.string().max(50).optional().nullable(),
@@ -781,6 +784,7 @@ export const insertSupportSubmissionSchema = z.object({
 
 // Project work order schema for utility meter tracking
 export const insertProjectWorkOrderSchema = z.object({
+  inventoryItems: inventoryImportSchema.optional(),
   customerWoId: z.string().min(1, "Work Order ID is required").max(100),
   customerId: z.string().min(1, "Customer ID is required").max(100),
   customerName: z.string().min(1, "Customer name is required").max(255),
@@ -1148,6 +1152,15 @@ export type InsertWorkOrderTimeTracking = z.infer<typeof insertWorkOrderTimeTrac
 
 // Permission keys - granular permissions from the registry
 export const permissionKeys = {
+  INVENTORY_CONFIGURE: "inventory.configure",
+  INVENTORY_VIEW: "inventory.view",
+  INVENTORY_MAINTAIN: "inventory.maintain",
+  INVENTORY_RECEIVE: "inventory.receive",
+  INVENTORY_PURCHASE: "inventory.purchase",
+  INVENTORY_TRANSFER: "inventory.transfer",
+  INVENTORY_COUNT: "inventory.count",
+  INVENTORY_ASSIGN: "inventory.assign",
+  INVENTORY_ASSEMBLE: "inventory.assemble",
   AUDIT_VIEW: "audit.view",
   AUDIT_ALL_PROJECTS: "audit.viewAllProjects",
   AUDIT_MANAGE_RETENTION: "audit.manageRetention",

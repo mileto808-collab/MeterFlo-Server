@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
+import { useQuery } from "@tanstack/react-query";
 import type { EquipmentVisibility } from "@shared/project-equipment-scope";
 import { buildWorkOrderEquipmentHtml } from "./work-order-pdf-equipment";
 
@@ -35,6 +36,7 @@ interface WorkOrderPdfProps {
   troubleCodes: Array<{ id: number; code: string; label: string }>;
   equipmentVisibility: EquipmentVisibility;
   timeTracking?: TimeTrackingData | null;
+  inventoryEnabled?: boolean;
   variant?: "default" | "outline" | "secondary" | "ghost" | "destructive";
   size?: "default" | "sm" | "lg" | "icon";
   testId?: string;
@@ -53,6 +55,7 @@ export function WorkOrderPdf({
   troubleCodes,
   equipmentVisibility,
   timeTracking,
+  inventoryEnabled = false,
   variant = "outline",
   size,
   testId = "button-print-pdf",
@@ -60,6 +63,15 @@ export function WorkOrderPdf({
   const [isGenerating, setIsGenerating] = useState(false);
   const [showDialog, setShowDialog] = useState(false);
   const [photoOption, setPhotoOption] = useState<PhotoOption>("thumbnails");
+  const { data: inventoryWorkOrder, refetch: refetchInventory } = useQuery<{
+    enabled: boolean;
+    allocation: { lines: Array<{ itemId: string; warehouseId: string; quantity: number; serials: string[] }>; used: Array<{ itemId: string; warehouseId: string; quantity: number; serials: string[] }>; dispositions: Array<{ equipment: string; serial: string; disposition: string; warehouseId: string | null }>; mode: string | null; status: string; revision: number } | null;
+    items: Array<{ id: string; sku: string; name: string }>;
+    warehouses: Array<{ id: string; code: string; name: string }>;
+  }>({
+    queryKey: ["/api/projects", projectId, "work-orders", workOrder.id, "inventory"],
+    enabled: inventoryEnabled,
+  });
 
   const formatElapsedTime = (startTime: string, endTime: string): string => {
     const start = new Date(startTime);
@@ -212,6 +224,25 @@ export function WorkOrderPdf({
       </div>
     ` : "";
 
+    const esc = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+    const inventoryAllocation = inventoryWorkOrder?.allocation;
+    const inventoryHtml = inventoryEnabled && inventoryAllocation ? `
+      <div style="background-color:#f1f5f2;padding:9px;border-radius:4px;margin-bottom:10px;page-break-inside:avoid;border-left:4px solid #47715b;">
+        <h3 style="margin:0 0 6px;font-size:12px;font-weight:bold;color:#24392c;">Meter inventory & serial trace</h3>
+        <p style="margin:0 0 6px;font-size:10px;color:#555;">Review: ${inventoryAllocation.mode || "pending"} · Status: ${inventoryAllocation.status}</p>
+        <table style="width:100%;font-size:10px;border-collapse:collapse;">
+          <thead><tr><th style="text-align:left;padding:3px;border-bottom:1px solid #ccc;">Item</th><th style="text-align:left;padding:3px;border-bottom:1px solid #ccc;">Location</th><th style="text-align:right;padding:3px;border-bottom:1px solid #ccc;">Reserved</th><th style="text-align:left;padding:3px;border-bottom:1px solid #ccc;">Scanned serials</th></tr></thead>
+          <tbody>${inventoryAllocation.lines.map(line => {
+            const item = inventoryWorkOrder?.items.find(value => value.id === line.itemId);
+            const warehouse = inventoryWorkOrder?.warehouses.find(value => value.id === line.warehouseId);
+            const used = inventoryAllocation.used.find(value => value.itemId === line.itemId && value.warehouseId === line.warehouseId);
+            return `<tr><td style="padding:3px;border-bottom:1px solid #ddd;">${esc(item?.sku || line.itemId)} · ${esc(item?.name)}</td><td style="padding:3px;border-bottom:1px solid #ddd;">${esc(warehouse?.code || line.warehouseId)} · ${esc(warehouse?.name)}</td><td style="padding:3px;text-align:right;border-bottom:1px solid #ddd;">${line.quantity}${used ? ` (${used.quantity} used)` : ""}</td><td style="padding:3px;border-bottom:1px solid #ddd;font-family:monospace;">${esc(used?.serials.join(", ") || line.serials.join(", ") || "-")}</td></tr>`;
+          }).join("")}</tbody>
+        </table>
+        ${inventoryAllocation.dispositions.length ? `<p style="margin:6px 0 0;font-size:10px;"><strong>Removed equipment:</strong> ${inventoryAllocation.dispositions.map(value => `${esc(value.equipment)} ${esc(value.serial)} — ${esc(value.disposition)}${value.warehouseId ? ` to ${esc(inventoryWorkOrder?.warehouses.find(w => w.id === value.warehouseId)?.name || value.warehouseId)}` : ""}`).join("; ")}</p>` : ""}
+      </div>
+    ` : "";
+
     return `
       <div id="pdf-content" style="width: 194mm; padding: 8mm; padding-bottom: 0; background-color: white; color: black; font-family: Arial, sans-serif; font-size: 11px; line-height: 1.4;">
         <div style="margin-bottom: 12px; border-bottom: 2px solid #333; padding-bottom: 8px;">
@@ -322,6 +353,7 @@ export function WorkOrderPdf({
 
         ${buildWorkOrderEquipmentHtml(workOrder, equipmentVisibility)}
 
+        ${inventoryHtml}
         ${timeTrackingHtml}
         ${notesHtml}
         ${signatureHtml}
@@ -482,7 +514,8 @@ export function WorkOrderPdf({
     }
   };
 
-  const handleOpenDialog = () => {
+  const handleOpenDialog = async () => {
+    if (inventoryEnabled) await refetchInventory();
     setShowDialog(true);
   };
 
