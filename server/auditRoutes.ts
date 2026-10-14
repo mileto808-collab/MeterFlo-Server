@@ -5,8 +5,8 @@ import { pool } from "./db";
 import { storage } from "./storage";
 import { isAuthenticated } from "./replitAuth";
 import { auditContext } from "./auditContext";
-import { auditFiltersSchema, auditPermissions } from "../shared/audit";
-import { auditInventory, cleanupAudit, eventDto, previewAuditCleanup, saveAuditPolicy } from "./auditService";
+import { auditFiltersSchema, auditPermissions, supportedAuditActions } from "../shared/audit";
+import { auditInventory, cleanupAudit, eventDto, previewAuditCleanup, saveAuditPolicy, safeAuditLabel } from "./auditService";
 
 export const auditActorMiddleware:RequestHandler=async(req:any,res,next)=>{
   try {
@@ -53,14 +53,24 @@ export function registerAuditRoutes(app:Express) {
     const values:unknown[]=[],where=scope(res,values);
     const [actors,projects,actions,types,timezone]=await Promise.all([
       pool.query(`SELECT DISTINCT coalesce(actor_id,'system') id,actor_label label FROM meterflo_audit.events WHERE ${where} ORDER BY label`,values),
-      pool.query(`SELECT DISTINCT project_id id,project_label name FROM meterflo_audit.events WHERE ${where} AND project_id IS NOT NULL ORDER BY name`,values),
+      pool.query(`SELECT p.id,p.name FROM public.projects p
+        WHERE ${res.locals.audit.all ? "true" : "p.id=ANY($1::integer[])"}
+        UNION ALL
+        SELECT historical.id,historical.name FROM (
+          SELECT DISTINCT ON (e.project_id) e.project_id id,
+            coalesce(e.project_label,'Project ' || e.project_id::text) name
+          FROM meterflo_audit.events e WHERE ${where} AND e.project_id IS NOT NULL
+            AND NOT EXISTS (SELECT 1 FROM public.projects p WHERE p.id=e.project_id)
+          ORDER BY e.project_id,e.occurred_at DESC,e.sequence DESC
+        ) historical ORDER BY name,id`,values),
       pool.query(`SELECT DISTINCT action FROM meterflo_audit.events WHERE ${where} ORDER BY action`,values),
       pool.query(`SELECT DISTINCT entity_type FROM meterflo_audit.events WHERE ${where} ORDER BY entity_type`,values),
       storage.getSetting("default_timezone"),
     ]);
     let tz=timezone || "America/Denver";
     try {new Intl.DateTimeFormat("en",{timeZone:tz});} catch {tz="UTC";}
-    return {actors:actors.rows,projects:projects.rows,actions:actions.rows.map(r=>r.action),
+    return {actors:actors.rows,projects:projects.rows.map(p=>({...p,name:safeAuditLabel(p.name)})),
+      actions:[...new Set([...supportedAuditActions,...actions.rows.map(r=>r.action)])],
       entityTypes:types.rows.map(r=>r.entity_type),timezone:tz,canManage:res.locals.audit.manage,canViewAll:res.locals.audit.all};
   }));
   app.get("/api/audit/retention",requireManage,handler(()=>auditInventory()));

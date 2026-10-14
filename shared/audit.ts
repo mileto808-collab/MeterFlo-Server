@@ -1,5 +1,18 @@
 import { z } from "zod";
 export const auditPermissions = { view:"audit.view", all:"audit.viewAllProjects", manage:"audit.manageRetention" } as const;
+// Capability metadata, not evidence that an action occurred in any project.
+const auditOperationTypes = [
+  "projectBackup", "projectRestore", "projectFilesBackup", "projectFilesRestore",
+  "systemBackup", "systemRestore", "systemFilesRestore", "databaseImport", "fileImport",
+  "workOrderFileUpload", "workOrderFileDelete", "projectDocumentUpload", "projectDocumentDelete",
+  "projectFtpUpload", "projectFtpDelete",
+] as const;
+export const supportedAuditActions: readonly string[] = [
+  "created", "updated", "deleted", "schema.deleted",
+  "import.started", "import.finished", "import.outcomeUnknown",
+  "audit.cleanup", "audit.policyChanged",
+  ...auditOperationTypes.flatMap(type => [`${type}.started`, `${type}.finished`]),
+];
 export interface AuditChange { field:string; before:unknown; after:unknown }
 export interface AuditEvent {
   id:string; occurredAt:string; actorId:string|null; actorLabel:string; actorKind:"user"|"service";

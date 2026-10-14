@@ -173,8 +173,8 @@ export default function AuditLogs() {
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1.5 rounded-full border bg-background px-3 py-1.5"><Clock3 className="h-3.5 w-3.5" />{timezone}</span>
-            <Button variant="outline" size="sm" onClick={() => { void optionsQuery.refetch(); void eventsQuery.refetch(); }} disabled={eventsQuery.isFetching}>
-              <RefreshCw className={`mr-2 h-4 w-4 ${eventsQuery.isFetching ? "animate-spin" : ""}`} /> Refresh
+            <Button variant="outline" size="sm" onClick={() => { void optionsQuery.refetch(); void eventsQuery.refetch(); }} disabled={eventsQuery.isFetching || optionsQuery.isFetching}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${eventsQuery.isFetching || optionsQuery.isFetching ? "animate-spin" : ""}`} /> Refresh
             </Button>
           </div>
         </div>
@@ -208,6 +208,7 @@ export default function AuditLogs() {
             <div className="space-y-1.5"><Label htmlFor="audit-outcome">Outcome</Label><Input id="audit-outcome" value={draft.outcome} onChange={(e) => updateDraft("outcome", e.target.value)} placeholder="Exact outcome" /></div>
             <div className="space-y-1.5 sm:col-span-2 lg:col-span-4"><Label htmlFor="audit-search">Search events</Label><Input id="audit-search" value={draft.q} onChange={(e) => updateDraft("q", e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") applyFilters(); }} placeholder="Search target label, record ID, or batch ID…" /></div>
             <p className="text-xs text-muted-foreground sm:col-span-2 lg:col-span-4">Dates are interpreted in {timezone}; requests include explicit ISO timestamps.</p>
+            <p className="text-xs text-muted-foreground sm:col-span-2 lg:col-span-4">Project and action choices include authorized projects and supported actions with no recorded events. A choice does not imply past activity.</p>
           </CardContent>
         </Card>
 

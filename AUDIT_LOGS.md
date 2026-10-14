@@ -27,12 +27,23 @@ Changing a URL, filter or event identifier does not bypass this scope.
   MeterFlo uses the configured default timezone, initially America/Denver.
 - **Actor:** select an operator or System. Actor labels are snapshots, so deleted
   users can still be identified.
-- **Project:** select a visible project; historical project labels survive deletion.
-- **Action/entity:** for example, `updated` + `work_orders` shows committed work-order edits.
+- **Project:** select any current project you are authorized to audit, even before
+  its first event. Current names take precedence after a rename. Deleted projects
+  retain their latest recorded label, visible only within your audit access scope.
+- **Action/entity:** `created`, `updated`, `deleted` and supported operation
+  start/finish, recovery and retention actions are selectable before their first
+  event. Older recorded action names remain available within your access scope.
+  For example, `updated` + `work_orders` shows committed work-order edits;
+  entity choices still reflect visible recorded activity.
 - **Record identifier:** enter the internal ID, for example `2011`.
 - **Search:** a target label/customer work-order number, record ID or batch/operation ID.
 - **Outcome:** narrow results to success, failed, partial, started or unknown.
 - **Pagination:** results and counts are computed on the server within your access scope.
+
+Project/action choices describe what you can search, not proof that activity has
+occurred. A project or action with no matches shows **No events match these filters**
+and a count of zero. No entries are manufactured for existing projects or earlier
+edits. **Refresh** reloads both choices and event results without a full-page reload.
 
 Open an event to inspect its actor, source, timestamp, target, operation ID,
 outcome, before/after differences and safe metadata. Use the operation ID in
