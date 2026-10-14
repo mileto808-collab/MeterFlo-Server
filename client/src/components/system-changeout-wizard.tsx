@@ -25,7 +25,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useGpsCapture, type GpsCaptureSource } from "@/hooks/use-gps-capture";
-import { isValidReading, normalizeReadingInput, readingLimitMessage } from "@shared/reading-precision";
+import { isValidReading, getReadingInputValue, readingLimitMessage } from "@shared/reading-precision";
 import { GPSCapture } from "./gps-capture";
 import SignaturePad, { SignaturePadRef, SignatureType } from "./signature-pad";
 import {
@@ -1449,8 +1449,9 @@ export function SystemChangeoutWizard({
                     }
                   }}
                   onChange={(e) => {
+                    const normalizedValue = getReadingInputValue(e.target.value, systemReadingLimit);
+                    if (normalizedValue === null) return;
                     setOldSystemReadingConfirmed(true);
-                    const normalizedValue = normalizeReadingInput(e.target.value);
                     setData((prev) => ({ ...prev, oldSystemReading: normalizedValue }));
                   }}
                   onKeyDown={(e) => {
@@ -1488,8 +1489,9 @@ export function SystemChangeoutWizard({
                     }
                   }}
                   onChange={(e) => {
+                    const normalizedValue = getReadingInputValue(e.target.value, moduleReadingLimit);
+                    if (normalizedValue === null) return;
                     setOldModuleReadingConfirmed(true);
-                    const normalizedValue = normalizeReadingInput(e.target.value);
                     setData((prev) => ({ ...prev, oldModuleReading: normalizedValue }));
                   }}
                   onKeyDown={(e) => {
@@ -2078,7 +2080,8 @@ export function SystemChangeoutWizard({
                   inputMode="decimal"
                   value={data.newSystemReading}
                   onChange={(e) => {
-                    const normalizedValue = normalizeReadingInput(e.target.value);
+                    const normalizedValue = getReadingInputValue(e.target.value, systemReadingLimit);
+                    if (normalizedValue === null) return;
                     setData((prev) => ({ ...prev, newSystemReading: normalizedValue }));
                   }}
                   onKeyDown={(e) => {
@@ -2108,7 +2111,8 @@ export function SystemChangeoutWizard({
                   inputMode="decimal"
                   value={data.newModuleReading || ""}
                   onChange={(e) => {
-                    const normalizedValue = normalizeReadingInput(e.target.value);
+                    const normalizedValue = getReadingInputValue(e.target.value, moduleReadingLimit);
+                    if (normalizedValue === null) return;
                     setData((prev) => ({ ...prev, newModuleReading: normalizedValue }));
                   }}
                   onKeyDown={(e) => {

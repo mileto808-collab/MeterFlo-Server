@@ -9,3 +9,4 @@
 - [Controlled numeric select labels](controlled-select-labels.md) — asynchronously reset numeric selects need explicit effective-value labels; verify zero after reopening.
 - [Equipment-scope preservation](equipment-scope-preservation.md) — hiding inapplicable project equipment is not permission to delete historical values or saved limits.
 - [Browser attachment authentication](browser-attachment-authentication.md) — native downloads may omit automation’s extra headers; use cookies for download acceptance fixtures.
+- [Reading capture entry policy](reading-capture-entry-policy.md) — reject excess fractional digits during typing/paste; retain the previous reading without truncation or a precision error.

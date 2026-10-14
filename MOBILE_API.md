@@ -234,7 +234,9 @@ still counts as a digit: `"123.0"` is not a new whole-number capture when the
 limit is 0. Negative values, exponent notation, and non-numeric strings are not
 valid readings. Send decimal strings with a period; do not use `parseFloat`,
 rounding, or truncation before upload. The web form normalizes a keyboard comma
-to a period without dropping digits.
+to a period without dropping digits. Web wizard inputs reject over-limit typing
+and paste, retaining the previous value without a precision error for that
+rejected attempt. The mobile client should use the same input guard.
 
 **Configuration authorization:** administrators have **Configure reading precision**
 (`projects.readingPrecision`) by default. Delegated operators need that explicit

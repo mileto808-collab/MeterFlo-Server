@@ -18,6 +18,16 @@ export function normalizeReadingInput(value: string): string {
   return value.replace(/,/g, ".");
 }
 
+/** Accept editable numeric text, including empty/trailing-dot states, without truncating it. */
+export function getReadingInputValue(value: string, decimalPlaces: number): string | null {
+  const normalized = normalizeReadingInput(value);
+  const pattern = decimalPlaces === 0 ? /^\d*$/ : /^\d*(?:\.\d*)?$/;
+  if (!pattern.test(normalized) || (normalized.split(".")[1]?.length ?? 0) > decimalPlaces) {
+    return null;
+  }
+  return normalized;
+}
+
 export function isValidReading(value: unknown, decimalPlaces: number): boolean {
   if (typeof value !== "string" && typeof value !== "number") return false;
   const text = String(value).trim();

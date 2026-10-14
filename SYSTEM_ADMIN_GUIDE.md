@@ -603,8 +603,10 @@ limits, including an explicit 0.
 Limits apply to newly captured/changed old and new readings of the matching
 equipment type, in changeout, reading-only, and user-choice workflows. They do
 not pad readings; shorter fractions and whole numbers, including 0, remain
-valid. With a 0 limit, enter `123`, not `123.0`. Invalid entry is shown without
-silently rounding or removing digits. Existing/imported baseline and historical
+valid. With a 0 limit, enter `123`, not `123.0`. Wizard inputs prevent over-limit
+typing or paste: the previous value stays unchanged, without a precision error
+for the rejected attempt. Readings are never silently rounded or truncated.
+Existing/imported baseline and historical
 values are not rewritten merely because the limit changes; an unrelated edit
 can retain an unchanged historical reading.
 

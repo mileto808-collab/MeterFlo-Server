@@ -12,11 +12,34 @@ import { getProjectFilesPath, getProjectDirectoryName } from "../server/fileStor
 import { getPermissionByKey } from "../shared/permissionRegistry";
 import { insertProjectSchema } from "../shared/schema";
 import {
-  getReadingPrecision, isValidReading, normalizeReadingInput,
+  getReadingPrecision, isValidReading, normalizeReadingInput, getReadingInputValue,
   readingPrecisionPatchSchema, validateCapturedReadings,
 } from "../shared/reading-precision";
 
 after(async () => { await pool.end(); });
+
+test("wizard input rejects excess digits without truncating and permits editing", () => {
+  for (let limit = 0; limit <= 6; limit++) {
+    const atLimit = limit ? `00123.${"4".repeat(limit)}` : "00123";
+    assert.equal(getReadingInputValue(atLimit,limit),atLimit);
+    assert.equal(getReadingInputValue(`00123.${"4".repeat(limit+1)}`,limit),null);
+    assert.equal(getReadingInputValue(atLimit.replace(".",","),limit),atLimit);
+    assert.equal(getReadingInputValue("",limit),"");
+    assert.equal(getReadingInputValue("0",limit),"0");
+    assert.equal(getReadingInputValue("123.",limit),limit ? "123." : null);
+    assert.equal(getReadingInputValue("123,",limit),limit ? "123." : null);
+  }
+  for (const invalid of ["-1","1e3","1.2.3","1,2,3","abc"," 123 "]) {
+    assert.equal(getReadingInputValue(invalid,6),null);
+  }
+  let current = "12.1234";
+  for (const attempt of ["12.12345","999.123456","12,12345"]) {
+    current = getReadingInputValue(attempt,4) ?? current;
+    assert.equal(current,"12.1234","invalid typing/paste leaves the complete previous value intact");
+  }
+  current = getReadingInputValue("12.123",4) ?? current;
+  assert.equal(current,"12.123","backspace is accepted");
+});
 
 test("independent precision: 0–6, default 3, zero retained, exact non-truncating input", () => {
   assert.deepEqual(getReadingPrecision(), { systemReadingDecimalPlaces: 3, moduleReadingDecimalPlaces: 3 });

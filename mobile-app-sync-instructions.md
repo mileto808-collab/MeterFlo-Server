@@ -150,8 +150,10 @@ Implement the following alongside the existing project wizard settings:
    sync-download response is not the project-settings response.
 3. Store entry/queue values as strings. Normalize a decimal comma to a period
    for entry, but do not truncate, round, convert to JavaScript numbers, or
-   discard leading zeros in the client. Count fractional digits and show a
-   field-specific error before advancing or confirming.
+   discard leading zeros in the client. Count fractional digits at entry:
+   reject typing/paste that would exceed the limit and retain
+   the previous value without rounding, truncation, or an over-limit error.
+   Keep validation for required/incomplete readings and server-side failures.
 4. When offline, use cached limits; default to 3 only when missing/null. When
    reconnected, a stricter server configuration may reject queued readings.
    Keep those records queued and show the server's error until the technician
