@@ -15,3 +15,4 @@
 - [Audit capability metadata](audit-capability-metadata.md) — supported choices are capabilities, not proof of activity; historical custom values still require authorized history.
 - [Portable npm lockfiles](portable-npm-lockfiles.md) — internal tarball URLs can break standalone installs despite a public registry setting; inspect locked addresses before changing Node/npm.
 - [Customer instance updates](customer-instance-updates.md) — customer-owned Replit or Windows/Linux instances need core updates that preserve custom work.
+- [Inventory scope](inventory-scope.md) — inventory is optional per project; reading-only work is not a changeout, and disabled projects retain current behavior.
