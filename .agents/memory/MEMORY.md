@@ -22,3 +22,4 @@
 - [Standalone acceptance isolation](standalone-acceptance-isolation.md) — own the database before imports; keep Linux PostgreSQL sockets inside the sandbox and Windows evidence separate.
 - [Unsaved transition safety](unsaved-transition-safety.md) — Discard clears edits only when the requested replacement or close succeeds; failures must keep the editor usable.
 - [Shipment retries](shipment-retry-boundary.md) — lost responses retain the posting identity; a later identical physical batch must not reuse a confirmed receipt.
+- [Credential logging boundary](credential-response-boundary.md) — keep generic request logs metadata-only; credential-name filters cannot protect unlabelled secrets.

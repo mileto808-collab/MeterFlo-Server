@@ -28,6 +28,7 @@ import { pool } from "./db";
 import { initializeAudit } from "./auditMigration";
 import { reconcileAuditOperations, startAuditRetention } from "./auditService";
 import { initializeInventory } from "./inventoryMigration";
+import { requestLogging } from "./requestLogging";
 
 const app = express();
 
@@ -92,31 +93,7 @@ export function log(message: string, source = "express") {
   console.log(`${formattedTime} [${source}] ${message}`);
 }
 
-app.use((req, res, next) => {
-  const start = Date.now();
-  const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
-
-  res.on("finish", () => {
-    const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse && !path.startsWith("/api/customer-api-") && !path.includes("/api-import")) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-
-      log(logLine);
-    }
-  });
-
-  next();
-});
+app.use(requestLogging(log));
 
 (async () => {
   // Initialize persistent file logging

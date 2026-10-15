@@ -45,6 +45,7 @@
     "test:exact-readings": "tsx --test tests/exact-readings.test.ts",
     "test:equipment-scope": "tsx --test tests/project-equipment-scope.test.ts tests/work-order-pdf.test.ts",
     "test:login-flow": "tsx --test tests/login-security.test.ts tests/logout.test.ts",
+    "test:user-response-security": "tsx --test tests/user-response-security.test.ts",
     "test:login-ui": "tsx tests/login-flow-ui.ts",
     "db:push": "drizzle-kit push"
   },

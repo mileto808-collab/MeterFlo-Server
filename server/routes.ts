@@ -14,6 +14,7 @@ import { promisify } from "util";
 
 const execAsync = promisify(exec);
 import { storage } from "./storage";
+import { loginUserResponse, userResponse } from "./userResponse";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { insertProjectWorkOrderSchema, insertProjectSchema, createUserSchema, updateUserSchema, resetPasswordSchema, changePasswordSchema, updateProfileSchema, permissionKeys, insertExternalDatabaseConfigSchema, updateExternalDatabaseConfigSchema, insertImportConfigSchema, updateImportConfigSchema, databaseTypeEnum, importScheduleFrequencyEnum, ADMINISTRATOR_SUBROLE_KEY, getSubroleLevel, insertSupportSubmissionSchema, type CustomerApiAuthType, type GpsMode, type WizardMode } from "@shared/schema";
 import { z } from "zod";
@@ -203,7 +204,7 @@ async function initializeAdminUser() {
   if (!existingAdmin) {
     const passwordHash = await bcrypt.hash("pa$$werd1", 10);
     await storage.createLocalUser("admin", passwordHash, "admin");
-    console.log("Admin user created: username 'admin', password 'pa$$werd1'");
+    console.log("Default admin user created; change the initial password before use.");
   }
 }
 
@@ -275,13 +276,13 @@ export async function registerRoutes(
       };
       (req as any).login(sessionUser, (err: any) => {
         if (err) {
-          console.error("Login error:", err);
+          console.error("Login session creation failed");
           return res.status(500).json({ message: "Login failed" });
         }
-        res.json({ message: "Login successful", user: { id: user.id, username: user.username, role: user.role } });
+        res.json({ message: "Login successful", user: loginUserResponse(user) });
       });
     } catch (error) {
-      console.error("Local login error:", error);
+      console.error("Local login failed");
       res.status(500).json({ message: "Login failed" });
     }
   });
@@ -301,9 +302,9 @@ export async function registerRoutes(
         subroleKey = subrole?.key || null;
       }
       
-      res.json({ ...user, subroleKey });
+      res.json({ ...userResponse(user), subroleKey });
     } catch (error) {
-      console.error("Error fetching user:", error);
+      console.error("Error fetching user");
       res.status(500).json({ message: "Failed to fetch user" });
     }
   });
@@ -343,9 +344,9 @@ export async function registerRoutes(
         users = await storage.getUsersInSameProjects(currentUser.id);
       }
       
-      res.json(users);
+      res.json(users.map(userResponse));
     } catch (error) {
-      console.error("Error fetching users:", error);
+      console.error("Error fetching users");
       res.status(500).json({ message: "Failed to fetch users" });
     }
   });
@@ -394,9 +395,9 @@ export async function registerRoutes(
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
-      res.json(user);
+      res.json(userResponse(user));
     } catch (error) {
-      console.error("Error updating user role:", error);
+      console.error("Error updating user role");
       res.status(500).json({ message: "Failed to update user role" });
     }
   });
@@ -472,15 +473,17 @@ export async function registerRoutes(
         }
       }
       
-      res.status(201).json(user);
+      res.status(201).json(userResponse(user));
     } catch (error) {
-      console.error("Error creating user:", error);
+      console.error("Error creating user");
       res.status(500).json({ message: "Failed to create user" });
     }
   });
 
   // Update user
-  app.patch("/api/users/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/users/:id", isAuthenticated, async (req: any, res, next) => {
+    // The dedicated self-service profile route is registered below this one.
+    if (req.params.id === "profile") return next("route");
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       if (!currentUser) {
@@ -575,9 +578,9 @@ export async function registerRoutes(
       }
       
       const user = await storage.updateUser(targetUserId, parsed.data);
-      res.json(user);
+      res.json(userResponse(user));
     } catch (error) {
-      console.error("Error updating user:", error);
+      console.error("Error updating user");
       res.status(500).json({ message: "Failed to update user" });
     }
   });
@@ -622,9 +625,9 @@ export async function registerRoutes(
       const passwordHash = await bcrypt.hash(parsed.data.newPassword, 10);
       const user = await storage.updateUserPassword(targetUserId, passwordHash);
       
-      res.json({ message: "Password reset successfully", user });
+      res.json({ message: "Password reset successfully", user: userResponse(user) });
     } catch (error) {
-      console.error("Error resetting password:", error);
+      console.error("Error resetting password");
       res.status(500).json({ message: "Failed to reset password" });
     }
   });
@@ -652,9 +655,9 @@ export async function registerRoutes(
       }
       
       const user = await storage.updateUser(userId, parsed.data);
-      res.json(user);
+      res.json(userResponse(user));
     } catch (error) {
-      console.error("Error updating profile:", error);
+      console.error("Error updating profile");
       res.status(500).json({ message: "Failed to update profile" });
     }
   });
@@ -689,7 +692,7 @@ export async function registerRoutes(
       
       res.json({ message: "Password changed successfully" });
     } catch (error) {
-      console.error("Error changing password:", error);
+      console.error("Error changing password");
       res.status(500).json({ message: "Failed to change password" });
     }
   });
@@ -741,9 +744,9 @@ export async function registerRoutes(
       const { reason } = req.body;
       const user = await storage.lockUser(targetUserId, reason);
       
-      res.json(user);
+      res.json(userResponse(user));
     } catch (error) {
-      console.error("Error locking user:", error);
+      console.error("Error locking user");
       res.status(500).json({ message: "Failed to lock user" });
     }
   });
@@ -781,9 +784,9 @@ export async function registerRoutes(
       }
       
       const user = await storage.unlockUser(targetUserId);
-      res.json(user);
+      res.json(userResponse(user));
     } catch (error) {
-      console.error("Error unlocking user:", error);
+      console.error("Error unlocking user");
       res.status(500).json({ message: "Failed to unlock user" });
     }
   });
@@ -1393,9 +1396,9 @@ export async function registerRoutes(
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
-      res.json(user);
+      res.json(userResponse(user));
     } catch (error) {
-      console.error("Error updating user subrole:", error);
+      console.error("Error updating user subrole");
       res.status(500).json({ message: "Failed to update user subrole" });
     }
   });
@@ -1568,9 +1571,9 @@ export async function registerRoutes(
       }
       
       const users = await storage.getProjectUsers(parseInt(req.params.id));
-      res.json(users);
+      res.json(users.map(userResponse));
     } catch (error) {
-      console.error("Error fetching project users:", error);
+      console.error("Error fetching project users");
       res.status(500).json({ message: "Failed to fetch project users" });
     }
   });
@@ -8130,9 +8133,9 @@ export async function registerRoutes(
         members = filteredMembers;
       }
       
-      res.json(members);
+      res.json(members.map(userResponse));
     } catch (error) {
-      console.error("Error fetching group members:", error);
+      console.error("Error fetching group members");
       res.status(500).json({ message: "Failed to fetch group members" });
     }
   });
