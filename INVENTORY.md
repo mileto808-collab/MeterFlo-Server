@@ -132,7 +132,7 @@ The **Supplier/customer reference** is optional, up to 100 characters. For examp
 
 The immutable **internal ID** continues to identify API commands, receipts, saved scans, replacement links and historical audit events. Expand **Internal ID / copy** on a card to see/copy it; old IDs remain searchable. Changing a reference does not create a second order, including when retrying after an unconfirmed save. Existing manually entered IDs remain valid and visible as legacy references. For older UUID-based orders, an authorized inventory maintainer can click **Assign legacy order numbers**, with access to every affected warehouse. This is an audited, atomic numbering action only: it does not post stock or rewrite receipts, saved scans or historical IDs. Until assigned, these orders show **PO/TR · number pending** and their internal ID remains available. Existing manually named legacy orders retain their original display label.
 
-Readable order numbers and references appear in save confirmations, order cards, shipment capture/recovery views, and printed orders and receiving/dispatch/acceptance receipts. Printed documents also retain the internal ID for traceability. Each partial movement retains its own distinct Receipt ID.
+Readable order numbers and references appear in save confirmations, order cards, shipment capture/recovery views, and printed orders and receiving/dispatch/acceptance receipts. The Activity ledger resolves linked orders to their readable order numbers, including existing movements, without rewriting stored references. Printed documents also retain the internal ID for traceability. Each partial movement retains its own distinct Receipt ID.
 
 ### Finding purchase and transfer orders
 
