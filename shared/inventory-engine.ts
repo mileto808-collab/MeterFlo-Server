@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { COUNT_MAX_LINES, COUNT_MAX_SERIALS, countPayloadFits } from "./inventory-count-limits";
 import { allocationSchema, dispositionSchema, itemSchema, stockLineSchema, vendorSchema, warehouseSchema, countDraftSchema,
   type Allocation, type InventoryCommand, type InventoryState, type StockLine, type Stock } from "./inventory";
 
@@ -106,6 +107,8 @@ function kitCycles(s: InventoryState) {
   for (const i of s.items) visit(i.id, []);
 }
 export function applyInventoryCommand(original: InventoryState, command: InventoryCommand, actor: string, admin: boolean, now = new Date().toISOString()) {
+  if (command.action === "countSaveDraft" || command.action === "countPost")
+    assert(countPayloadFits(command.data), "Count data exceeds the 8 MiB limit; no changes were posted.");
   const fingerprint = canonicalInventoryJson({ action: command.action, data: command.data, actor });
   if (original.operations[command.operationId]) {
     assert(original.operations[command.operationId] === fingerprint, "Posting identifier was already used for a different operation.");
@@ -229,6 +232,8 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
   } else if (a === "countStart") {
     const { id, warehouseId } = z.object({ id: identifier, warehouseId: identifier }).strict().parse(d);
     access(warehouseId); assert(!s.counts.some(c => c.id === id), "Count identifier already exists.");
+    assert(s.stock.filter(b => b.warehouseId === warehouseId).length <= COUNT_MAX_LINES,
+      `This warehouse exceeds the ${COUNT_MAX_LINES}-item complete-count limit; no items were omitted.`);
     s.counts.push({ id, warehouseId, snapshot: structuredClone(s.stock.filter(b => b.warehouseId === warehouseId)), status: "open" });
   } else if (a === "countSaveDraft") {
     const { id, ...draft } = countDraftSchema.extend({ id: identifier }).parse(d);
@@ -236,20 +241,25 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     assert(draft.revision === (c.draft?.revision ?? 0), "Count draft changed. Reload saved draft before saving or posting.");
     assert(new Set(draft.rows.map(row => row.itemId)).size === draft.rows.length, "Duplicate draft item.");
     assert(draft.rows.every(row => s.items.some(item => item.id === row.itemId)), "Draft item is not in this project.");
-    c.draft = { ...draft, revision: draft.revision + 1, savedBy: actor, savedAt: now };
+    const savedDraft = { ...draft, revision: draft.revision + 1, savedBy: actor, savedAt: now };
+    assert(countPayloadFits(savedDraft), "Saved count draft exceeds the 8 MiB limit; no changes were saved.");
+    c.draft = savedDraft;
   } else if (a === "countCancel") {
     const { id, reason } = z.object({ id: identifier, reason: z.string().trim().min(1).max(1000) }).strict().parse(d);
     const c = s.counts.find(c => c.id === id); assert(c && c.status === "open", "Open count required."); access(c.warehouseId);
     c.status = "cancelled"; c.reason = reason; delete c.draft;
   } else if (a === "countPost") {
-    const { id, lines: input, reason, draftRevision } = z.object({ id: identifier, draftRevision: z.number().int().nonnegative().optional(), lines: z.array(stockLineSchema.extend({ quantity: z.number().int().nonnegative().max(1000000) })).max(500),
+    const { id, lines: input, reason, draftRevision } = z.object({ id: identifier, draftRevision: z.number().int().nonnegative().optional(), lines: z.array(stockLineSchema.extend({ quantity: z.number().int().nonnegative().max(1000000) })).max(COUNT_MAX_LINES),
       reason: z.string().trim().min(1).max(1000) }).strict().parse(d);
     const c = s.counts.find(c => c.id === id); assert(c && c.status === "open", "Open count required."); access(c.warehouseId);
     assert(!c.draft && draftRevision === undefined || (draftRevision ?? 0) === (c.draft?.revision ?? 0),
       "Count draft changed. Reload saved draft before saving or posting.");
     assert(same(c.snapshot, s.stock.filter(b => b.warehouseId === c.warehouseId)), "Stock moved since counting began; start a new count.");
+    assert(input.reduce((sum, line) => sum + line.serials.length, 0) <= COUNT_MAX_SERIALS,
+      `Count exceeds the ${COUNT_MAX_SERIALS}-serial complete-count limit; no changes were posted.`);
     validateLines(s, input);
-    assert(c.snapshot.every(b => input.some(l => l.itemId === b.itemId)), "Enter every item in this warehouse count, including zero quantities.");
+    const submittedIds = new Set(input.map(line => line.itemId));
+    assert(c.snapshot.every(b => submittedIds.has(b.itemId)), "Enter every item in this warehouse count, including zero quantities.");
     for (const l of input) {
       const b = balance(s, c.warehouseId, l.itemId);
       assert(l.quantity >= reserved(s, c.warehouseId, l.itemId), "Count would remove reserved stock; reconcile assignments first.");

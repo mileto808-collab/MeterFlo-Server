@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { COUNT_MAX_LINES } from "./inventory-count-limits";
 
 export const inventoryPermissions = {
   configure: "inventory.configure", view: "inventory.view", maintain: "inventory.maintain",
@@ -45,7 +46,7 @@ export const dispositionSchema = z.object({ equipment: z.enum(["system", "module
 // Preserve unfinished input verbatim; stock validation happens only when posting.
 export const countDraftSchema = z.object({
   revision: z.number().int().nonnegative(),
-  rows: z.array(z.object({ itemId: id, quantity: z.string().max(30), serials: z.string().max(1010000) }).strict()).max(500),
+  rows: z.array(z.object({ itemId: id, quantity: z.string().max(30), serials: z.string().max(1010000) }).strict()).max(COUNT_MAX_LINES),
   reason: z.string().max(1000),
 }).strict();
 export const savedCountDraftSchema = countDraftSchema.extend({

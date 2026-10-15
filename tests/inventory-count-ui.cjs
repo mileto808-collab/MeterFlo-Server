@@ -32,13 +32,21 @@ async function main() {
     page.on("pageerror", e => errors.push(e.message));
     await page.goto(`/projects/${fixture.projectId}/inventory`);
     await page.getByRole("tab", { name: "Counts & assembly", exact: true }).click();
-    const start = async location => {
+    const addProduct = async id => {
+      await page.getByLabel("Find discovery product", { exact: true }).fill(id);
+      await page.getByRole("combobox", { name: "Discovery product", exact: true }).click();
+      await page.getByRole("option", { name: new RegExp(`^${id.toUpperCase()} ·`) }).click();
+      await page.getByRole("button", { name: "Add discovery to count", exact: true }).click();
+    };
+    const start = async (location, addBaselineDiscoveries = true) => {
       await page.getByRole("combobox").first().click();
       await page.getByRole("option", { name: `${location.toUpperCase()} · ${location} fixture`, exact: true }).click();
       const response = page.waitForResponse(r => r.url().endsWith(`${endpoint}/commands`) && r.request().method() === "POST" && r.request().postDataJSON().action === "countStart");
       await page.getByRole("button", { name: "Start count", exact: true }).click();
       assert.equal((await response).status(), 200);
       await page.getByLabel("Count adjustment reason").waitFor();
+      if (addBaselineDiscoveries) for (const id of ["bulk", "serial", "zero"])
+        if (!await page.locator(`#count-${id}`).count()) await addProduct(id);
       return (await state()).counts.at(-1);
     };
     const post = async (expectedStatus = 200) => {
@@ -77,6 +85,8 @@ async function main() {
     await page.reload();
     await page.getByRole("tab", { name: "Counts & assembly", exact: true }).click();
     await continueCount(2);
+    await addProduct("zero");
+    await addProduct("late");
     assert.equal(await page.locator("#count-late").inputValue(), "0");
     await page.locator("#count-late").fill("3");
     await page.getByLabel("Count adjustment reason").fill("New catalog discovery");
@@ -232,6 +242,41 @@ async function main() {
       action: "countSaveDraft", data: { id: resumed.id, revision: resumed.draft.revision,
         rows: resumed.draft.rows, reason: "Warehouse operator resumed" } } })).status(), 200);
     await viewer.close();
+
+    // Optional isolated capacity fixture: 3,000 catalog products and 600 on-hand
+    // products. Paging/filtering never changes the complete submitted set.
+    if ((await state()).warehouses.some(w => w.id === "large")) {
+      await page.getByRole("button", { name: "Close", exact: true }).click();
+      await start("large", false);
+      await page.getByText("600 total count entries", { exact: false }).waitFor();
+      assert.equal(await page.locator('input[id^="count-capacity-"]').count(), 50);
+      assert.equal(await page.locator("#count-bulk").count(), 0);
+      await page.locator("#count-capacity-0").fill("0");
+      await page.getByRole("button", { name: "Next count entries page", exact: true }).click();
+      await page.locator("#count-capacity-50").fill("9");
+      await page.getByLabel("Search count entries", { exact: true }).fill("CAP-0599");
+      await page.locator("#count-capacity-599").fill("7");
+      await addProduct("CAP-2999");
+      await page.locator("#count-capacity-2999").fill("4");
+      await page.getByLabel("Count adjustment reason").fill("Large warehouse capacity verified");
+      await saveDraft(200);
+      const largeSaved = (await state()).counts.at(-1);
+      assert.equal(largeSaved.draft.rows.length, 601);
+      await page.reload();
+      await page.getByRole("tab", { name: "Counts & assembly", exact: true }).click();
+      const countReference = `Count #${(await state()).counts.length}`;
+      await page.getByText(countReference, { exact: true }).locator("../..").getByRole("button", { name: "Continue count", exact: true }).click();
+      await page.getByLabel("Search count entries", { exact: true }).fill("CAP-2999");
+      assert.equal(await page.locator("#count-capacity-2999").inputValue(), "4");
+      const largeResult = await post();
+      assert.equal(largeResult.submitted.lines.length, 601);
+      for (const [id, quantity] of [["capacity-0", 0], ["capacity-50", 9], ["capacity-599", 7], ["capacity-2999", 4]]) {
+        assert.equal(largeResult.body.state.stock.find(row => row.warehouseId === "large" && row.itemId === id).quantity, quantity);
+      }
+      assert.equal(largeResult.body.state.stock.some(row => row.itemId === "capacity-2500"), false);
+      console.log("Large count browser passed: 3,000 catalog products, 600 snapshot items, 601 saved/restored/posted rows, 50 mounted rows.");
+      await start("large", false);
+    }
 
     await fs.mkdir("generated-artifacts/inventory-counts", { recursive: true });
     await page.setViewportSize({ width: 390, height: 844 });

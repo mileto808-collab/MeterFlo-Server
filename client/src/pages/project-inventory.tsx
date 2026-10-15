@@ -6,6 +6,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { useToast } from "@/hooks/use-toast";
 import type { InventoryCommand, InventoryCount, InventoryItem, InventoryOrder, InventoryState, StockLine, Vendor, Warehouse } from "@shared/inventory";
 import { inventoryCountReference } from "@shared/inventory-count-reference";
+import { COUNT_MAX_LINES, COUNT_PAGE_SIZE } from "@shared/inventory-count-limits";
 import { inventoryCountRows, inventoryCountLines } from "@/lib/inventory-count-form";
 import { inventoryResourceFailure, validateInventoryResource } from "@/lib/inventory-resource-save";
 import { Badge } from "@/components/ui/badge";
@@ -84,6 +85,10 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [countDraftId, setCountDraftId] = useState<string | null>(null);
   const [countDraftRevision, setCountDraftRevision] = useState(0);
   const [countDraftMessage, setCountDraftMessage] = useState("");
+  const [countPage, setCountPage] = useState(0);
+  const [countSearch, setCountSearch] = useState("");
+  const [countProductSearch, setCountProductSearch] = useState("");
+  const [countProduct, setCountProduct] = useState("");
   const [assembleItem, setAssembleItem] = useState("");
   const [assembleWarehouse, setAssembleWarehouse] = useState("");
   const [assembleQty, setAssembleQty] = useState("1");
@@ -247,11 +252,31 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       setCountDraftRevision(count.draft?.revision ?? 0);
       setCountDraftMessage(count.draft ? `Loaded saved draft revision ${count.draft.revision}.` : "");
       setCountDraftId(count.id);
+      setCountPage(0);
+      setCountSearch("");
+      setCountProductSearch("");
+      setCountProduct("");
     }
     setActiveCount(count);
     setCountWarehouse(count.warehouseId);
   };
   const countRows = activeCount ? inventoryCountRows(activeCount, items, countQuantities, countSerials) : [];
+  const countRowIds = new Set(countRows.map(row => row.itemId));
+  const discoveryProducts = items.filter(item => item.active && !countRowIds.has(item.id) &&
+    `${item.sku} ${item.name} ${item.barcode}`.toLowerCase().includes(countProductSearch.toLowerCase())).slice(0, 100);
+  const matchingCountRows = countRows.filter(row => `${row.item?.sku} ${row.item?.name}`.toLowerCase().includes(countSearch.toLowerCase()));
+  const lastCountPage = Math.max(0, Math.ceil(matchingCountRows.length / COUNT_PAGE_SIZE) - 1);
+  const currentCountPage = Math.min(countPage, lastCountPage);
+  const visibleCountRows = matchingCountRows.slice(currentCountPage * COUNT_PAGE_SIZE, (currentCountPage + 1) * COUNT_PAGE_SIZE);
+  const addCountProduct = () => {
+    if (!countProduct || countRowIds.has(countProduct) || countRows.length >= COUNT_MAX_LINES) return;
+    setCountQuantities(current => ({ ...current, [countProduct]: "0" }));
+    setCountSerials(current => ({ ...current, [countProduct]: "" }));
+    setCountSearch("");
+    setCountPage(Math.floor(countRows.length / COUNT_PAGE_SIZE));
+    setCountProduct("");
+    setCountDraftMessage("Unsaved discovery added. Save the draft before leaving.");
+  };
   const saveCountDraft = () => {
     if (!activeCount || command.isPending) return;
     command.mutate({ action: "countSaveDraft", data: {
@@ -340,9 +365,20 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       <TabsContent value="counts" className="space-y-4"><Card><CardHeader><CardTitle>Physical stock count</CardTitle><CardDescription>Start a snapshot, count every item including zero, and post with a reason.</CardDescription></CardHeader><CardContent className="space-y-4"><div className="flex flex-wrap items-end gap-3"><div className="w-full max-w-sm space-y-1"><Label>Warehouse or vehicle</Label><Select value={countWarehouse} onValueChange={setCountWarehouse}><SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger><SelectContent>{activeWarehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.code} · {w.name}</SelectItem>)}</SelectContent></Select></div>{can("inventory.count") && <Button onClick={startCount} disabled={!countWarehouse || command.isPending}>Start count</Button>}</div>
           {state.counts.map(count => <div key={count.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3"><div><span className="font-medium">{warehouses.find(w => w.id === count.warehouseId)?.name ?? "Location unavailable"}</span><span className="ml-2 text-sm text-muted-foreground">{inventoryCountReference(state.counts, count.id)}</span><Badge className="ml-2" variant={count.status === "open" ? "outline" : "secondary"}>{count.status}</Badge></div>{count.status === "open" && <div className="flex gap-2"><Button size="sm" variant="outline" disabled={command.isPending} onClick={() => openCount(count)}>Continue count</Button><Button size="sm" variant="outline" disabled={!can("inventory.count") || command.isPending} onClick={() => command.mutate({ action: "countCancel", data: { id: count.id, reason: "Operator cancelled stale or unfinished count" } }, { onSuccess: () => { if (activeCount?.id === count.id) setActiveCount(null); } })}>Cancel count</Button></div>}{count.status === "posted" && <Button size="sm" variant="ghost" onClick={() => openPrint("count", count.id)}>Print</Button>}</div>)}
           {activeCount && <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
-            <div><h3 className="font-medium">{inventoryCountReference(state.counts, activeCount.id)} · {warehouses.find(w => w.id === activeCount.warehouseId)?.name}</h3><p className="text-xs text-muted-foreground">Verify every quantity and serial before posting. Save count draft before refreshing, switching counts or leaving this page. Saving does not adjust stock. Clear serials when counting zero.</p></div>
+            <div><h3 className="font-medium">{inventoryCountReference(state.counts, activeCount.id)} · {warehouses.find(w => w.id === activeCount.warehouseId)?.name}</h3><p className="text-xs text-muted-foreground">Verify all snapshot items, including zero quantities. Add discovered products below; unused project catalog products are not required. Every entry on every page is included when saving or posting. Save count draft before leaving. Saving does not adjust stock.</p></div>
             <p role="status" className="text-sm">{countDraftMessage || "Unsaved entries remain only on this page until you save the draft."}</p>
-            {countRows.map(row => {
+            <div className="space-y-2 rounded border p-3">
+              <Label htmlFor="count-discovery-search">Find discovery product</Label>
+              <Input id="count-discovery-search" value={countProductSearch} disabled={command.isPending} onChange={event => { setCountProductSearch(event.target.value); setCountProduct(""); }} placeholder="Search the project catalog by SKU, name or barcode" />
+              <Label htmlFor="count-discovery-product">Discovery product</Label>
+              <Select value={countProduct} onValueChange={setCountProduct} disabled={command.isPending || !can("inventory.count")}><SelectTrigger id="count-discovery-product"><SelectValue placeholder="Choose a product found in this warehouse" /></SelectTrigger><SelectContent>{discoveryProducts.map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select>
+              <p className="text-xs text-muted-foreground">Up to 100 matches shown. Refine the search for another product. Adding a product starts at zero; enter its actual quantity and scans.</p>
+              <Button variant="outline" onClick={addCountProduct} disabled={!can("inventory.count") || !countProduct || command.isPending || countRows.length >= COUNT_MAX_LINES}>Add discovery to count</Button>
+            </div>
+            <Label htmlFor="count-entry-search">Search count entries</Label>
+            <Input id="count-entry-search" value={countSearch} onChange={event => { setCountSearch(event.target.value); setCountPage(0); }} placeholder="Filter entered items by SKU or name; hidden entries are still included" />
+            <p className="text-sm">{countRows.length} total count entries · {matchingCountRows.length} matching · limit {COUNT_MAX_LINES}. All pages are saved and posted together.</p>
+            {visibleCountRows.map(row => {
               const { itemId: id, item } = row;
               if (!item) return <Alert key={id} variant="destructive"><AlertTitle>Count item unavailable</AlertTitle><AlertDescription>Item {id} is no longer in the catalog. Resolve it before posting; it will not be silently omitted.</AlertDescription></Alert>;
               const old = activeCount.snapshot.find(row => row.itemId === id);
@@ -352,6 +388,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
                 {item.tracking === "serialized" && <div className="space-y-1"><Label htmlFor={`countserial-${id}`}>Scan all serials</Label><Textarea id={`countserial-${id}`} value={row.serials} disabled={command.isPending} onChange={event => setCountSerials(current => ({ ...current, [id]: event.target.value }))} /></div>}
               </div>;
             })}
+            {countRows.length === 0 && <p>No stock rows in the starting snapshot. Add discovered products, or post an empty count to confirm this warehouse is empty.</p>}
+            <div className="flex flex-wrap items-center gap-2"><Button variant="outline" aria-label="Previous count entries page" disabled={currentCountPage === 0 || command.isPending} onClick={() => setCountPage(currentCountPage - 1)}>Previous</Button><span className="text-sm">Count entries page {currentCountPage + 1} of {lastCountPage + 1}</span><Button variant="outline" aria-label="Next count entries page" disabled={currentCountPage === lastCountPage || command.isPending} onClick={() => setCountPage(currentCountPage + 1)}>Next</Button></div>
             <div className="space-y-1"><Label htmlFor="count-reason">Count adjustment reason</Label><Input id="count-reason" maxLength={1000} disabled={command.isPending} value={countReason} onChange={event => setCountReason(event.target.value)} placeholder="Required audit note" /></div>
             <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={saveCountDraft} disabled={!can("inventory.count") || command.isPending}>Save count draft</Button><Button variant="outline" onClick={reloadCountDraft} disabled={!can("inventory.count") || command.isPending}>Reload saved draft</Button><Button onClick={postCount} disabled={!can("inventory.count") || !countReason.trim() || command.isPending}>Post count</Button><Button variant="outline" disabled={command.isPending} onClick={() => setActiveCount(null)}>Close</Button></div>
           </div>}

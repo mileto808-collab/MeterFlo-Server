@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 import { emptyInventory, warehouseSchema, itemSchema, vendorSchema, allocationSchema, savedCountDraftSchema, type InventoryState } from "../shared/inventory";
 import { z } from "zod";
+import { countPayloadFits } from "../shared/inventory-count-limits";
 import { reserved } from "../shared/inventory-engine";
 
 export type InventoryBackup = { state: InventoryState; movements: any[]; enabled: boolean };
@@ -23,7 +24,7 @@ export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: n
   }
   for (const count of s.counts) if (count.draft) {
     const draft = savedCountDraftSchema.parse(count.draft);
-    if (count.status !== "open" || !s.warehouses.some(w => w.id === count.warehouseId) ||
+    if (!countPayloadFits(draft) || count.status !== "open" || !s.warehouses.some(w => w.id === count.warehouseId) ||
       new Set(draft.rows.map(row => row.itemId)).size !== draft.rows.length ||
       draft.rows.some(row => !s.items.some(item => item.id === row.itemId)))
       throw new Error("Inventory backup has an invalid count draft.");

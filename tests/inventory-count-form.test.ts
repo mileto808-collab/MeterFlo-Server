@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { inventoryCountRows, inventoryCountLines } from "../client/src/lib/inventory-count-form";
 import { emptyInventory, type InventoryCommand, type InventoryState } from "../shared/inventory";
 import { applyInventoryCommand } from "../shared/inventory-engine";
+import { COUNT_MAX_LINES, COUNT_MAX_BYTES } from "../shared/inventory-count-limits";
 
 function post(s: InventoryState, action: InventoryCommand["action"], data: Record<string, unknown>) {
   return applyInventoryCommand(s, { operationId: randomUUID(), action, data }, "fixture", true).state;
@@ -55,8 +56,55 @@ test("blank/invalid quantity, mismatched/duplicate scans, unavailable rows and o
   assert.throws(() => build({ serial: "0" }, { serial: "00001" }), /counting zero/);
   const missing = { ...state.counts[0], snapshot: [{ warehouseId: "main", itemId: "missing", quantity: 0, serials: [], revision: 0 }] };
   assert.throws(() => inventoryCountLines(inventoryCountRows(missing, state.items, {}, {})), /no longer in the catalog/);
-  const rows = inventoryCountRows(state.counts[0], state.items, {}, {});
-  assert.throws(() => inventoryCountLines(Array(501).fill(rows[0])), /500-item/);
+  const rows = inventoryCountRows(state.counts[0], state.items, { regular: "0" }, {});
+  assert.throws(() => inventoryCountLines(Array(COUNT_MAX_LINES + 1).fill(rows[0])), /2000-item/);
+});
+
+test("large catalogs do not force unused products into complete atomic counts", () => {
+  let state = fixture();
+  const base = state.items.find(item => item.id === "regular")!;
+  state.items.push(...Array.from({ length: 3000 }, (_, n) => ({ ...base, id: `large-${n}`, sku: `LARGE-${n}` })));
+  state.stock = Array.from({ length: COUNT_MAX_LINES - 1 }, (_, n) => ({
+    warehouseId: "main", itemId: `large-${n}`, quantity: 2, serials: [], revision: 0,
+  }));
+  state = post(state, "countStart", { id: "large", warehouseId: "main" });
+  const quantities = { "large-2999": "0", "large-0": "0" };
+  const rows = inventoryCountRows(state.counts[0], state.items, quantities, {});
+  assert.equal(rows.length, COUNT_MAX_LINES);
+  assert.ok(!rows.some(row => row.itemId === "large-2500"), "unused catalog items are excluded");
+  const lines = inventoryCountLines(rows);
+  const saved = post(state, "countSaveDraft", { id: "large", revision: 0, reason: "Large saved draft",
+    rows: rows.map(row => ({ itemId: row.itemId, quantity: row.quantity, serials: row.serials })) });
+  assert.equal(saved.counts[0].draft?.rows.length, COUNT_MAX_LINES);
+  assert.equal(inventoryCountRows(JSON.parse(JSON.stringify(saved.counts[0])), state.items, {}, {}).length, COUNT_MAX_LINES);
+  const before = JSON.stringify(state);
+  assert.throws(() => post(state, "countPost", { id: "large", reason: "Missing one", lines: lines.slice(1) }), /every item/);
+  assert.equal(JSON.stringify(state), before);
+  const begin = performance.now();
+  const completed = post(state, "countPost", { id: "large", reason: "Complete physical count", lines });
+  console.log(JSON.stringify({ metric: "engine.countPost2000", milliseconds: Math.round(performance.now() - begin) }));
+  assert.equal(completed.counts[0].lines!.length, COUNT_MAX_LINES);
+  assert.equal(completed.stock.find(row => row.itemId === "large-0")!.quantity, 0);
+  assert.equal(completed.stock.find(row => row.itemId === "large-2999")!.quantity, 0);
+  assert.throws(() => inventoryCountLines([...rows, { ...rows[0], itemId: "large-2500" }]), /2000-item/);
+  assert.throws(() => post(state, "countPost", { id: "large", reason: "Too large", lines: [...lines, { itemId: "large-2500", quantity: 0 }] }), /2000/);
+  const moved = structuredClone(state);
+  moved.stock[0].quantity++;
+  assert.throws(() => post(moved, "countPost", { id: "large", reason: "Stale", lines }), /Stock moved/);
+  const tooLarge = structuredClone(state);
+  tooLarge.stock.push(...[2000, 2001].map(n => ({ warehouseId: "main", itemId: `large-${n}`, quantity: 0, serials: [], revision: 0 })));
+  assert.throws(() => post(tooLarge, "countStart", { id: "oversized", warehouseId: "main" }), /2000-item/);
+  assert.throws(() => post(state, "countSaveDraft", { id: "large", revision: 0, reason: "Oversized",
+    rows: [{ itemId: "regular", quantity: "0", serials: "x".repeat(COUNT_MAX_BYTES) }] }), /8 MiB/);
+  const serialized = structuredClone(state);
+  const serialLines = Array.from({ length: 6 }, (_, n) => {
+    serialized.items.push({ ...base, id: `serial-limit-${n}`, sku: `SER-LIMIT-${n}`, tracking: "serialized" });
+    return { itemId: `serial-limit-${n}`, quantity: 10000, serials: Array.from({ length: 10000 }, (_, serial) => `S${n}-${serial}`) };
+  });
+  assert.throws(() => post(serialized, "countPost", { id: "large", reason: "Too many serials", lines: [...lines, ...serialLines] }), /2000/);
+  const small = post(fixture(), "countStart", { id: "small", warehouseId: "main" });
+  small.items.push(...serialized.items.filter(item => item.id.startsWith("serial-limit-")));
+  assert.throws(() => post(small, "countPost", { id: "small", reason: "Too many serials", lines: serialLines }), /50000-serial/);
 });
 
 test("complete form payloads still reject stale stock and removal of reservations atomically", () => {

@@ -9,6 +9,8 @@ import { initializeInventory } from "../../server/inventoryMigration";
 import { getProjectFilesPath } from "../../server/fileStorage";
 import path from "node:path";
 import { enableAuditing } from "../../server/auditContext";
+import { emptyInventory, itemSchema, warehouseSchema } from "../../shared/inventory";
+import { saveInventory } from "../../server/inventoryService";
 const file = "/tmp/meterflo-inventory-ui-fixture.json";
 async function main() {
   if (process.argv[2] === "cleanup") {
@@ -38,6 +40,22 @@ async function main() {
   const schema = await createProjectSchema(project.name, project.id);
   await pool.query("UPDATE public.projects SET database_name=$2 WHERE id=$1", [project.id, schema]);
   await storage.assignUserToProject(user.id, project.id);
+  if (process.argv.includes("--large-counts")) {
+    const state = emptyInventory();
+    state.warehouses.push(warehouseSchema.parse({ id: "large", code: "LARGE", name: "large fixture", type: "physical", address: "Test only" }));
+    state.items = Array.from({ length: 3000 }, (_, n) => itemSchema.parse({
+      id: `capacity-${n}`, sku: `CAP-${String(n).padStart(4, "0")}`, name: `Capacity product ${n}`, tracking: "regular",
+    }));
+    state.stock = state.items.slice(0, 600).map(item => ({ warehouseId: "large", itemId: item.id, quantity: 2, serials: [], revision: 0 }));
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("INSERT INTO public.inventory_state(project_id,state) VALUES($1,$2)", [project.id, JSON.stringify(emptyInventory())]);
+      await saveInventory(client, project.id, emptyInventory(), state, randomUUID(), "countCapacityFixture");
+      await client.query("COMMIT");
+    } catch (error) { await client.query("ROLLBACK"); throw error; }
+    finally { client.release(); }
+  }
   const viewerRole = await storage.createSubrole({ key: `inventory-viewer-fixture-${suffix}`, label: "Inventory test viewer", baseRole: "user" });
   await storage.setSubrolePermissions(viewerRole.id, ["workOrders.view", "projects.view"]);
   const viewerPassword = `Fixture-${randomUUID()}!`;

@@ -159,18 +159,24 @@ claim for 500-line, multi-million-serial shipments.
 
 ### Current hard limits and caveats
 
-* Commands allow at most 500 stock lines; a serial list allows at most 10,000
+* Purchase/transfer and other non-count stock commands allow at most 500 stock lines; a serial list allows at most 10,000
   entries per line, each at most 100 characters. Quantity is an integer up to
   1,000,000. Regular items have no serial entries.
 * Larger receipts must be split into separately identified partial receipts.
   Reuse the **same operation ID and identical payload** for a network retry;
   do not reuse an ID for corrected data.
-* **A counted warehouse must contain at most 500 product balances and at most
-  10,000 serials per product.** Multiple receipts can create a larger bin, but
+* **A complete count supports at most 2,000 total product rows (snapshot plus
+  discoveries), 50,000 serial entries overall, 10,000 serials per product and
+  8 MiB of UTF-8 JSON command data.** Count rows are paged at 50; all pages post
+  atomically. Unused global catalog products are excluded unless deliberately
+  added as discoveries. Multiple receipts can create a larger bin, but
   the current count command cannot post its complete snapshot. The shipment
   test deliberately produces a 10,100-serial bin and verifies rejection rather
   than silent truncation; a separate test proves a 10,000-serial count works.
-  Plan stock distribution within these count limits until chunked counts exist.
+  Plan stock distribution within these limits. This is bounded complete
+  posting, not partial/page-by-page stock updates. See INVENTORY.md for the
+  dedicated count-capacity tests; earlier Windows volume timings above do not
+  measure the newer 2,000-row count capacity.
 * Posts serialize at the **project** level, including across different warehouses.
   Eight clients is the exercised concurrency, not a promise of linear scaling.
 * Web GET and POST responses currently contain the full visible stock/history
