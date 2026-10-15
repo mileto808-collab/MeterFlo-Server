@@ -19,6 +19,12 @@ Inventory retry comparisons must not depend on JSON object key order or optional
 
 **How to apply:** Normalize contractual fields and compare canonical objects. Preserve the same operation identity across retries and never deduct stock twice.
 
+Resource-form retries must retain the new resource's identity, and an unchanged retry must reuse the same operation identity. Corrections get a new operation identity for that same resource.
+
+**Why:** A failed network response does not prove that the server failed to commit. Generating another resource identity on retry can create duplicates or leave an operator unable to recover from a duplicate-SKU conflict.
+
+**How to apply:** Carry both identities through any future draft persistence or form refactor; do not assume a connection failure means nothing was saved.
+
 Physical stock counts use starting-snapshot quantities and serials as editable defaults. After the operator verifies them and posts with a reason, unchanged visible defaults are accepted without mandatory rescanning.
 
 **Why:** The former form showed saved serials but submitted an empty list unless the operator retyped them. Requiring re-entry of correct defaults would not address the mismatch between visible and submitted data.

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRoute } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { InventoryCommand, InventoryCount, InventoryItem, InventoryOrder, InventoryState, StockLine, Vendor, Warehouse } from "@shared/inventory";
 import { inventoryCountReference } from "@shared/inventory-count-reference";
 import { inventoryCountRows, inventoryCountLines } from "@/lib/inventory-count-form";
+import { inventoryResourceFailure, validateInventoryResource } from "@/lib/inventory-resource-save";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -52,6 +53,12 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [vendorForm, setVendorForm] = useState<Vendor>(blankVendor());
   const [itemForm, setItemForm] = useState<InventoryItem>(blankItem());
   const [imageBusy, setImageBusy] = useState(false);
+  const [resourceError, setResourceError] = useState<string | null>(null);
+  const resourceErrorRef = useRef<HTMLDivElement>(null);
+  const resourceId = useRef("");
+  const resourceAttempt = useRef<{ fingerprint: string; operationId: string } | null>(null);
+  const resourceSaving = useRef(false);
+  useEffect(() => { if (resourceError) resourceErrorRef.current?.focus(); }, [resourceError]);
   const [orderType, setOrderType] = useState<"purchase" | "transfer">("purchase");
   const [orderId, setOrderId] = useState("");
   const [orderDestination, setOrderDestination] = useState("");
@@ -93,6 +100,31 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     },
     onError: (error: Error) => toast({ title: "Inventory action failed", description: error.message, variant: "destructive" }),
   });
+  const resourceSave = useMutation({
+    mutationFn: async (payload: InventoryCommand) => {
+      let response: Response;
+      try {
+        response = await fetch(`${base}/commands`, { method: "POST", credentials: "include",
+          headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      } catch { throw new Error(inventoryResourceFailure(0, null)); }
+      if (!response.ok) {
+        const body = await response.json().catch(() => null);
+        throw new Error(inventoryResourceFailure(response.status, body));
+      }
+      const result = await response.json().catch(() => null);
+      if (!result?.state) throw new Error(inventoryResourceFailure(0, null));
+      return result;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey });
+      setResource(null);
+      setResourceError(null);
+      toast({ title: "Inventory saved", description: "The project stock ledger is up to date." });
+    },
+    onError: (error: Error) => setResourceError(error.message),
+    onSettled: () => { resourceSaving.current = false; },
+  });
+  const resourceBusy = resourceSave.isPending || imageBusy;
   const warehouses = state?.warehouses ?? [];
   const vendors = state?.vendors ?? [];
   const items = state?.items ?? [];
@@ -116,6 +148,10 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   if (!can("inventory.view")) return <main className="mx-auto max-w-3xl p-6"><Card><CardHeader><CardTitle>Inventory access required</CardTitle><CardDescription>Your account does not have permission to view this project’s stock.</CardDescription></CardHeader></Card></main>;
 
   const openResource = (kind: ResourceKind, existing?: Warehouse | Vendor | InventoryItem) => {
+    if (resourceSaving.current || imageBusy) return;
+    resourceId.current = existing?.id || freshId();
+    resourceAttempt.current = null;
+    setResourceError(null);
     setResource(kind);
     if (kind === "warehouse") setWarehouseForm(existing as Warehouse ?? blankWarehouse());
     if (kind === "vendor") setVendorForm(existing as Vendor ?? blankVendor());
@@ -125,10 +161,21 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     }
   };
   const saveResource = () => {
-    if (resource === "warehouse") command.mutate({ action: "warehouse", data: { ...warehouseForm, id: warehouseForm.id || freshId() } });
-    if (resource === "vendor") command.mutate({ action: "vendor", data: { ...vendorForm, id: vendorForm.id || freshId() } });
-    if (resource === "item") command.mutate({ action: "item", data: { ...itemForm, id: itemForm.id || freshId() } });
-    setResource(null);
+    if (!resource || resourceSaving.current || imageBusy || command.isPending || !can("inventory.maintain")) return;
+    setResourceError(null);
+    let payload: Record<string, unknown>;
+    try {
+      const draft = resource === "warehouse" ? warehouseForm : resource === "vendor" ? vendorForm : itemForm;
+      payload = validateInventoryResource(resource, { ...draft, id: resourceId.current });
+    } catch (error) {
+      setResourceError(error instanceof Error ? error.message : "Check the required fields.");
+      return;
+    }
+    const fingerprint = JSON.stringify({ action: resource, data: payload });
+    if (resourceAttempt.current?.fingerprint !== fingerprint)
+      resourceAttempt.current = { fingerprint, operationId: freshId() };
+    resourceSaving.current = true;
+    resourceSave.mutate({ action: resource, data: payload, operationId: resourceAttempt.current!.operationId });
   };
   const addLine = (destination: "order" | "operation") => {
     const item = items.find(value => value.id === lineItem);
@@ -274,7 +321,9 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           <TabsContent value="activity"><Card><CardHeader><CardTitle>Stock movement ledger</CardTitle><CardDescription>Printable documents open as same-origin project reports.</CardDescription></CardHeader><CardContent><div className="space-y-2">{state.receipts.slice().reverse().map(receipt => <div key={receipt.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3"><div><div className="font-medium">{receipt.action} · {receipt.action.startsWith("count") ? inventoryCountReference(state.counts, receipt.reference) : receipt.reference}</div><div className="text-xs text-muted-foreground">{new Date(receipt.occurredAt).toLocaleString()} · {receipt.actor} · {receipt.lines.map(line => `${items.find(item => item.id === line.itemId)?.sku ?? line.itemId} × ${line.quantity}`).join(" · ") || receipt.reason}</div></div><Button size="sm" variant="outline" onClick={() => openPrint(receipt.action.startsWith("count") ? "count" : "receipt", receipt.action.startsWith("count") ? receipt.reference : receipt.id)}><Printer className="mr-2 h-4 w-4" />Print</Button></div>)}</div>{state.receipts.length === 0 && <Empty title="No movement recorded" description="Receiving, transfers, kit assembly, count adjustments and returns appear here." />}</CardContent></Card></TabsContent>
     </Tabs>
 
-    <Dialog open={!!resource} onOpenChange={open => !open && setResource(null)}><DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{resource === "warehouse" ? "Location details" : resource === "vendor" ? "Vendor details" : "Item details"}</DialogTitle><DialogDescription>Changes apply only to this project. Keep scanned identities and stock rules intact.</DialogDescription></DialogHeader>
+    <Dialog open={!!resource} onOpenChange={open => { if (!open && !resourceSaving.current && !imageBusy) setResource(null); }}><DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{resource === "warehouse" ? "Location details" : resource === "vendor" ? "Vendor details" : "Item details"}</DialogTitle><DialogDescription>Changes apply only to this project. Keep scanned identities and stock rules intact.</DialogDescription></DialogHeader>
+      {resourceError && <Alert ref={resourceErrorRef} tabIndex={-1} id="inventory-resource-error" role="alert" variant="destructive"><AlertTitle>Details not saved</AlertTitle><AlertDescription>{resourceError} Your entered values have been kept. Correct the details and retry, or cancel to discard them.</AlertDescription></Alert>}
+      <fieldset disabled={resourceBusy} aria-describedby={resourceError ? "inventory-resource-error" : undefined} className="contents">
       {resource === "warehouse" && <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Code" value={warehouseForm.code} set={value => setWarehouseForm(form => ({ ...form, code: value }))} /><Field label="Name" value={warehouseForm.name} set={value => setWarehouseForm(form => ({ ...form, name: value }))} />
         <div className="space-y-1"><Label>Location type</Label><Select value={warehouseForm.type} onValueChange={value => setWarehouseForm(form => ({ ...form, type: value as "physical" | "vehicle" }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="physical">Warehouse</SelectItem><SelectItem value="vehicle">Service vehicle</SelectItem></SelectContent></Select></div>
@@ -306,7 +355,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
         <div className="sm:col-span-2 space-y-1.5"><Label>Kit components</Label><p id="item-components-help" className="text-xs leading-relaxed text-muted-foreground">Leave this empty for a standalone product. For a kit, add each product and the whole-number quantity needed per finished kit (example: 1 meter body and 2 seals). Up to 100 component lines; each quantity must be 1–1,000,000. Components cannot include this kit or create a circular recipe. Serialized components require a serialized kit, and serialized kits are assembled one at a time. Kit edits are restricted while stock or assigned records exist.</p><div className="mt-2 space-y-2">{itemForm.components.map((component, index) => <div className="flex flex-wrap items-start gap-2" key={`${component.itemId}-${index}`}><div className="min-w-0 flex-1 space-y-1"><Label className="sr-only" htmlFor={`kit-component-${index}`}>Component product {index + 1}</Label><Select value={component.itemId} onValueChange={value => setItemForm(form => ({ ...form, components: form.components.map((entry, i) => i === index ? { ...entry, itemId: value } : entry) }))}><SelectTrigger id={`kit-component-${index}`} aria-describedby="item-components-help"><SelectValue placeholder="Choose component product" /></SelectTrigger><SelectContent>{items.filter(item => item.id !== itemForm.id).map(item => <SelectItem value={item.id} key={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select></div><div className="w-28 space-y-1"><Label className="sr-only" htmlFor={`kit-quantity-${index}`}>Quantity for component {index + 1}</Label><Input id={`kit-quantity-${index}`} aria-describedby="item-components-help" aria-label={`Quantity for component ${index + 1}`} type="number" min="1" max="1000000" step="1" value={component.quantity} onChange={event => setItemForm(form => ({ ...form, components: form.components.map((entry, i) => i === index ? { ...entry, quantity: Number(event.target.value) } : entry) }))} /></div><Button type="button" variant="ghost" aria-describedby="item-components-help" aria-label={`Remove component ${index + 1}`} onClick={() => setItemForm(form => ({ ...form, components: form.components.filter((_, i) => i !== index) }))}>Remove</Button></div>)}</div><Button type="button" className="mt-2" variant="outline" aria-describedby="item-components-help" disabled={itemForm.components.length >= 100 || !items.some(item => item.id !== itemForm.id)} onClick={() => setItemForm(form => ({ ...form, components: [...form.components, { itemId: items.find(item => item.id !== form.id)?.id ?? "", quantity: 1 }] }))}><Plus className="mr-1 h-4 w-4" />Add component</Button></div>
         <div className="sm:col-span-2"><label htmlFor="item-active" className="flex items-start gap-2 text-sm"><Checkbox id="item-active" checked={itemForm.active} aria-describedby="item-active-help" onCheckedChange={checked => setItemForm(form => ({ ...form, active: checked === true }))} /><span><span className="font-medium">Active product</span><span id="item-active-help" className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">New products default to active and can be used in new inventory activity. Turn off a discontinued supply to retain its catalog record without offering it for new use. Deactivation is blocked while stock, reservations, or open orders remain.</span></span></label></div>
       </div>}
-      <DialogFooter><Button variant="outline" onClick={() => setResource(null)}>Cancel</Button><Button onClick={saveResource} disabled={command.isPending || !can("inventory.maintain")}>{command.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Save changes</Button></DialogFooter>
+      </fieldset>
+      <DialogFooter><Button variant="outline" disabled={resourceBusy} onClick={() => setResource(null)}>Cancel</Button><Button onClick={saveResource} disabled={resourceBusy || command.isPending || !can("inventory.maintain")}>{resourceSave.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{resourceSave.isPending ? "Saving..." : "Save changes"}</Button></DialogFooter>
     </DialogContent></Dialog>
 
     <Dialog open={!!operationOrder} onOpenChange={open => !open && setOperationOrder(null)}><DialogContent className="sm:max-w-xl"><DialogHeader><DialogTitle>{operation === "receive" ? "Receive purchase" : operation === "dispatch" ? "Dispatch transfer" : "Accept transfer arrival"}</DialogTitle><DialogDescription>Scan serial identity and post the confirmed quantities for order {operationOrder?.id}.</DialogDescription></DialogHeader>
