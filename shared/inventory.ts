@@ -57,7 +57,7 @@ export const savedCountDraftSchema = countDraftSchema.extend({
 });
 export const inventoryCommandSchema = z.object({
   operationId: z.string().uuid(), action: z.enum(["warehouse", "vendor", "item", "order", "release",
-    "cancel", "unrelease", "archiveOrder", "restoreOrder", "receive", "dispatch", "accept", "assemble", "countStart", "countPost", "countCancel", "countSaveDraft",
+    "cancel", "unrelease", "archiveOrder", "restoreOrder", "numberOrders", "receive", "dispatch", "accept", "assemble", "countStart", "countPost", "countCancel", "countSaveDraft",
     "assign", "prepareUse", "returnAccept", "returnRelease", "reconcileWorkOrder", "closeOrder", "resolveTransit", "resolveHold",
     "shipmentDraftSave", "shipmentDraftPrepare", "shipmentDraftUnlock", "shipmentDraftDelete", "shipmentDraftClaim"]),
   data: z.record(z.unknown()),
@@ -71,6 +71,7 @@ export type Disposition = z.infer<typeof dispositionSchema>;
 export type InventoryCommand = z.infer<typeof inventoryCommandSchema>;
 export type Stock = { warehouseId: string; itemId: string; quantity: number; serials: string[]; revision: number };
 export type InventoryOrder = { id: string; type: "purchase" | "transfer"; vendorId: string | null; sourceId: string | null;
+  orderNumber?: string; reference?: string;
   destinationId: string; lines: StockLine[]; received: StockLine[]; dispatched: StockLine[]; status: "draft" | "released" | "partial" | "completed" | "cancelled" | "closed"; notes: string; createdAt: string; archivedAt?: string;
   replacementFor?: string; losses?: StockLine[]; closure?: OrderClosure };
 export type WorkAllocation = { workOrderId: number; lines: Allocation[]; used: Allocation[]; dispositions: Disposition[];
@@ -82,6 +83,7 @@ export type InventoryReceipt = { id: string; action: string; reference: string; 
   holdDisposition?: HoldDisposition };
 export type EquipmentReturn = Disposition & { id: string; workOrderId: number; status: "pending" | "quarantine" | "released"; itemId?: string };
 export type InventoryState = { warehouses: Warehouse[]; vendors: Vendor[]; items: InventoryItem[]; stock: Stock[];
+  orderNumberCounters?: Record<string, number>;
   orders: InventoryOrder[]; counts: InventoryCount[]; allocations: WorkAllocation[];
   receipts: InventoryReceipt[]; returns: EquipmentReturn[]; operations: Record<string, string>; revision: number;
   serialOccupancy?: { itemId: string; serial: string; workOrderId: number | null }[];
@@ -92,7 +94,7 @@ export const commandPermission = (action: InventoryCommand["action"]) =>
   action === "closeOrder" ? inventoryPermissions.closeOrders :
   ["resolveTransit", "resolveHold"].includes(action) ? inventoryPermissions.resolveExceptions :
   ["unrelease", "archiveOrder", "restoreOrder"].includes(action) ? inventoryPermissions.purchase :
-  ["warehouse", "vendor", "item"].includes(action) ? inventoryPermissions.maintain :
+  ["warehouse", "vendor", "item", "numberOrders"].includes(action) ? inventoryPermissions.maintain :
   ["receive", "accept", "returnAccept", "returnRelease"].includes(action) ? inventoryPermissions.receive :
   action === "assemble" ? inventoryPermissions.assemble : action.startsWith("count") ? inventoryPermissions.count :
   action === "reconcileWorkOrder" ? inventoryPermissions.count :

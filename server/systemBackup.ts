@@ -11,6 +11,8 @@ import { pool as applicationPool } from "./db";
 import { backupProjectDatabase, createProjectSchema, migrateProjectSchema, restoreProjectDatabaseInTransaction } from "./projectDb";
 import { getProjectFilesPath } from "./fileStorage";
 import { exportInventory, validateInventoryBackup, type InventoryBackup } from "./inventoryBackup";
+import { mergeOrderHighWater } from "../shared/inventory-order-labels";
+import { emptyInventory } from "../shared/inventory";
 import { lockInventoryForSchema } from "./inventoryService";
 
 const pool = applicationPool;
@@ -380,6 +382,23 @@ export async function restoreFullSystemData(
     }
     
     await client.query("BEGIN");
+    // Retain locally issued numbers even when replacing stock with an older
+    // snapshot. Clone the caller's archive before adding local high-water marks.
+    backupData = structuredClone(backupData);
+    const { rows: localNumbering } = await client.query("SELECT project_id,state FROM public.inventory_state FOR UPDATE");
+    for (const local of localNumbering) {
+      const row = backupData.mainDatabase.inventory_state?.find(row => row.project_id === local.project_id);
+      if (row) row.state = mergeOrderHighWater(row.state, local.state);
+      else if (backupData.mainDatabase.projects?.some(project => project.id === local.project_id)) {
+        const state = mergeOrderHighWater(emptyInventory(), local.state);
+        if (state.orderNumberCounters) {
+          backupData.mainDatabase.inventory_state ??= [];
+          backupData.mainDatabase.inventory_state.push({ project_id: local.project_id, state });
+        }
+      }
+      const project = backupData.projectDatabases?.find(project => project.projectId === local.project_id);
+      if (project?.inventory) project.inventory.state = mergeOrderHighWater(project.inventory.state, local.state);
+    }
     // Check the destination before restoring public inventory/configuration.
     // Otherwise those rows could mask an unsafe merge or a legacy downgrade.
     for (const projectBackup of backupData.projectDatabases) {

@@ -37,6 +37,13 @@ test("transactional completion, mobile usage, concurrency, import rollback, and 
     await command("receive", { orderId: "po", lines: [{ itemId: "meter", quantity: 2, serials: ["0001", "0002"] }] }, receiveId);
     await command("receive", { orderId: "po", lines: [{ itemId: "meter", quantity: 2, serials: ["0001", "0002"] }] }, receiveId);
     assert.equal((await inventoryState(project.id)).stock[0].quantity, 2);
+    const concurrentOrders = Array.from({ length: 8 }, () => randomUUID());
+    await Promise.all(concurrentOrders.map(id => command("order", { id, type: "purchase", destinationId: "w", vendorId: "v",
+      reference: "Shared supplier reference", lines: [{ itemId: "meter", quantity: 1 }] })));
+    const issued = (await inventoryState(project.id)).orders.filter(order => concurrentOrders.includes(order.id as ReturnType<typeof randomUUID>));
+    assert.equal(issued.length, 8);
+    assert.equal(new Set(issued.map(order => order.orderNumber)).size, 8, "concurrent project writes issue distinct server numbers");
+    assert.ok(issued.every(order => /^PO-\d{4}-\d{6,9}$/.test(order.orderNumber!)));
     await command("order", { id: "amend-po", type: "purchase", destinationId: "w", vendorId: "v", lines: [{ itemId: "meter", quantity: 1 }] });
     await command("release", { orderId: "amend-po" });
     await command("unrelease", { orderId: "amend-po" });
@@ -154,8 +161,17 @@ test("transactional completion, mobile usage, concurrency, import rollback, and 
       assert.ok(events.some(e => e.actor_id === user.id && e.outcome === "failed"), "failure preserves prior audit evidence");
     }
     await assert.rejects(restoreProjectDatabase(schema, { workOrders: backup.workOrders }), /no inventory snapshot/);
+    const afterSnapshotId = randomUUID();
+    await command("order", { id: afterSnapshotId, type: "purchase", destinationId: "w", vendorId: "v",
+      reference: "Issued after snapshot", lines: [{ itemId: "meter", quantity: 1 }] });
+    const knownCounters = (await inventoryState(project.id)).orderNumberCounters!;
     await restoreProjectDatabase(schema, backup, { clearExisting: true });
-    assert.deepEqual(await inventoryState(project.id), before);
+    assert.deepEqual(await inventoryState(project.id), { ...before, orderNumberCounters: knownCounters });
+    const nextId = randomUUID();
+    await command("order", { id: nextId, type: "purchase", destinationId: "w", vendorId: "v", lines: [{ itemId: "meter", quantity: 1 }] });
+    const nextOrder = (await inventoryState(project.id)).orders.find(order => order.id === nextId)!;
+    const year = String(new Date().getUTCFullYear());
+    assert.equal(Number(nextOrder.orderNumber!.split("-")[2]), knownCounters[year] + 1, "project restore does not reuse an issued number");
     assert.equal((await work.getWorkOrder(allocatedId))?.newSystemId, "0001");
     await command("reconcileWorkOrder", { workOrderId: allocatedId, reason: "Fixture physical return confirmed", restoreUsedStock: true });
     assert.equal((await inventoryState(project.id)).stock[0].quantity, 3);

@@ -24,3 +24,4 @@
 - [Shipment retries](shipment-retry-boundary.md) — unknown outcomes retain identity across saved-draft recovery; atomic unlock prevents late posts; later batches use new identities.
 - [Credential logging boundary](credential-response-boundary.md) — keep generic request logs metadata-only; credential-name filters cannot protect unlabelled secrets.
 - [Shipment quarantine custody](shipment-quarantine-custody.md) — partial dispositions preserve physical receiving evidence; only selected verified units become usable.
+- [Inventory order identity](inventory-order-identity.md) — readable numbers and editable references must not replace replay/shipment identities; restores retain known numbering history.

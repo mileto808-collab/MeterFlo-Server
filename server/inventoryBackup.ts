@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 import { emptyInventory, warehouseSchema, itemSchema, vendorSchema, allocationSchema, savedCountDraftSchema, type InventoryState } from "../shared/inventory";
 import { z } from "zod";
+import { mergeOrderHighWater, validateOrderNumbers } from "../shared/inventory-order-labels";
 import { countPayloadFits } from "../shared/inventory-count-limits";
 import { reserved } from "../shared/inventory-engine";
 import { validateShipmentBackup } from "./inventoryShipmentBackup";
@@ -41,6 +42,7 @@ export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: n
     if (!workOrderIds.includes(a.workOrderId)) throw new Error("Inventory backup refers to a missing work order.");
     z.array(allocationSchema).parse(a.lines); z.array(allocationSchema).parse(a.used);
   }
+  validateOrderNumbers(s);
   for (const order of s.orders) if (order.archivedAt !== undefined) {
     z.string().datetime().parse(order.archivedAt);
     if (order.type !== "purchase" || order.status !== "cancelled")
@@ -66,6 +68,8 @@ export async function restoreInventory(client: PoolClient, schema: string, backu
   if (!p) throw new Error("Restore the project configuration before inventory.");
   const { rows: ids } = await client.query(`SELECT id FROM "${schema}".work_orders`);
   validateInventoryBackup(backup, ids.map(x => x.id));
+  const { rows: [local] } = await client.query("SELECT state FROM public.inventory_state WHERE project_id=$1 FOR UPDATE", [p.id]);
+  backup = { ...backup, state: mergeOrderHighWater(backup.state, local?.state) };
   await client.query("INSERT INTO public.inventory_state(project_id,state) VALUES($1,$2) ON CONFLICT(project_id) DO UPDATE SET state=EXCLUDED.state,updated_at=now()", [p.id, JSON.stringify(backup.state || emptyInventory())]);
   await client.query("DELETE FROM public.inventory_quantities WHERE project_id=$1", [p.id]);
   await client.query("DELETE FROM public.inventory_items WHERE project_id=$1", [p.id]);

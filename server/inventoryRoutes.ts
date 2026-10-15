@@ -14,6 +14,7 @@ import { getProjectFilesPath } from "./fileStorage";
 import { insertAuditEvent } from "./auditService";
 import { auditingEnabled } from "./auditContext";
 import { inventoryCountReference } from "../shared/inventory-count-reference";
+import { orderLabel, orderReference as customerOrderReference } from "../shared/inventory-order-labels";
 import { shipmentPrint } from "./inventoryShipmentPrint";
 import { draftWarehouse, isShipmentDraftAction } from "../shared/inventory-shipment-drafts";
 
@@ -36,14 +37,14 @@ const escape = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": 
 export function inventoryPrint(kind: string, record: any, state: InventoryState, project: string) {
   const lineList = record.lines || record.snapshot?.map((b: any) => ({ ...b, quantity: b.quantity })) || [];
   const warehouse = (id: string) => state.warehouses.find(w => w.id === id)?.name || id || "";
-  const reference = kind === "count" ? inventoryCountReference(state.counts, record.id) : record.id;
-  const orderReference = kind === "order" ? record.id :
-    kind === "receipt" ? state.orders.find(order => order.id === record.reference)?.id : undefined;
+  const reference = kind === "count" ? inventoryCountReference(state.counts, record.id) : kind === "order" ? orderLabel(record) : record.id;
+  const linkedOrder = kind === "order" ? record : kind === "receipt" ? state.orders.find(order => order.id === record.reference) : undefined;
+  const orderReference = linkedOrder ? `${orderLabel(linkedOrder)}${customerOrderReference(linkedOrder) ? ` · Reference: ${customerOrderReference(linkedOrder)}` : ""} · Internal ID: ${linkedOrder.id}` : undefined;
   return `<!doctype html><html><head><meta charset="utf-8"><title>${escape(kind)} ${escape(reference)}</title><style>
     body{font:14px Arial;margin:30px;color:#111}table{border-collapse:collapse;width:100%;margin-top:20px}th,td{border:1px solid #bbb;padding:8px;text-align:left}button{padding:10px}@media print{button{display:none}}</style></head>
     <body><button onclick="window.print()">Print / Save PDF</button><h1>${escape(project)} — ${escape(kind)}</h1>
     <p>${kind === "receipt" ? "Receipt ID" : "Reference"}: ${escape(reference)} · Status: ${escape(record.status || record.action)}</p>
-    ${orderReference ? `<p><strong>Order ID / reference: ${escape(orderReference)}</strong></p>` :
+    ${orderReference ? `<p><strong>Order number / reference: ${escape(orderReference)}</strong></p>` :
       kind === "receipt" && record.reference ? `<p>Operation reference: ${escape(record.reference)}</p>` : ""}
     <p>Date: ${escape(record.createdAt || record.occurredAt)} · Actor: ${escape(record.actor)}</p>
     <p>From: ${escape(warehouse(record.sourceId))} · To: ${escape(warehouse(record.destinationId || record.warehouseId))}</p>
@@ -81,12 +82,14 @@ export function registerInventoryRoutes(app: Express) {
   };
   const snapshot = async (res: any) => {
     const c = res.locals.inventory, state = inventoryVisibleState(await inventoryState(c.project.id), c.user.id, c.admin, c.permissions.includes(inventoryPermissions.count), c.permissions);
+    const [defaultTimezone, timezoneEnabled] = await Promise.all([storage.getSetting("default_timezone"), storage.getSetting("timezone_enabled")]);
     const { rows: users } = await pool.query(`SELECT u.id,u.username FROM public.users u
       WHERE NOT coalesce(u.is_locked,false) AND
       (EXISTS(SELECT 1 FROM public.user_projects up WHERE up.user_id=u.id AND up.project_id=$1)
        OR EXISTS(SELECT 1 FROM public.user_group_members gm JOIN public.user_group_projects gp ON gp.group_id=gm.group_id
          WHERE gm.user_id=u.id AND gp.project_id=$1)) ORDER BY u.username`, [c.project.id]);
-    return { enabled: !!c.project.inventoryEnabled, state, permissions: c.permissions, users: users.map(u => ({ id: u.id, username: u.username || u.id })) };
+    return { enabled: !!c.project.inventoryEnabled, timezone: timezoneEnabled === "false" ? "UTC" : defaultTimezone || "America/Denver",
+      state, permissions: c.permissions, users: users.map(u => ({ id: u.id, username: u.username || u.id })) };
   };
   app.use(base, isAuthenticated, auth);
   app.get(base, handler((_req, res) => snapshot(res)));

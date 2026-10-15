@@ -138,6 +138,9 @@ test("full-system inventory restore preserves identity IDs, JSON serials, sequen
     const legacyMissingLookups = structuredClone(full);
     for (const table of catalogs) delete legacyMissingLookups.mainDatabase[table];
     await assert.rejects(restoreFullSystemData(legacyMissingLookups, { clearExisting: true }, transactional), /Missing service_types configuration/);
+    const numberingYear = String(new Date().getUTCFullYear());
+    const advancedCounters = { ...state.orderNumberCounters, [numberingYear]: (state.orderNumberCounters?.[numberingYear] || 0) + 20 };
+    await client.query("UPDATE inventory_state SET state=jsonb_set(state,'{orderNumberCounters}',$1::jsonb) WHERE project_id=42", [JSON.stringify(advancedCounters)]);
     const restoredFull = await withAuditContext(scope(), () => restoreFullSystem(full, { clearExisting: true }, transactional));
     assert.equal(restoredFull.success, true);
     assert.equal(restoredFull.databaseCommitted, true);
@@ -149,7 +152,7 @@ test("full-system inventory restore preserves identity IDs, JSON serials, sequen
     assert.ok(priorAudit.some(e => e.outcome === "started"));
     assert.ok(priorAudit.some(e => e.outcome === "success"), "authenticated identity is retained even though it is absent from the snapshot");
     assert.deepEqual((await client.query(`SELECT id FROM "${workSchema}".work_orders ORDER BY id`)).rows.map(r => r.id), [2, 3]);
-    assert.deepEqual((await client.query("SELECT state FROM inventory_state WHERE project_id=42")).rows[0].state, state);
+    assert.deepEqual((await client.query("SELECT state FROM inventory_state WHERE project_id=42")).rows[0].state, { ...state, orderNumberCounters: advancedCounters });
     assert.deepEqual((await client.query("SELECT serials FROM inventory_quantities WHERE project_id=42")).rows[0].serials, ["00002", "QUARANTINE-0003"]);
     assert.equal((await client.query(`INSERT INTO "${workSchema}".work_orders(customer_wo_id,created_by) VALUES('after-full',NULL) RETURNING id`)).rows[0].id, 4);
     const savedRows = (await client.query(`SELECT * FROM "${workSchema}".work_orders ORDER BY id`)).rows;

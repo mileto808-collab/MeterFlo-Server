@@ -2,7 +2,7 @@ import type { InventoryCommand, InventoryState } from "@shared/inventory";
 import type { SavedShipmentDraft, ShipmentCapture } from "@shared/inventory-shipment-draft-model";
 import { queryClient } from "@/lib/queryClient";
 
-export type InventorySnapshot = { enabled: boolean; state: InventoryState; permissions: string[]; users: Array<{ id: string; username: string }> };
+export type InventorySnapshot = { enabled: boolean; timezone: string; state: InventoryState; permissions: string[]; users: Array<{ id: string; username: string }> };
 
 export function shipmentDraftKey(base: string) {
   return [base] as const;

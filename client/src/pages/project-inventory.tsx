@@ -10,6 +10,9 @@ import type { InventoryCommand, InventoryCount, InventoryItem, InventoryOrder, I
 import type { SavedShipmentDraft } from "@shared/inventory-shipment-draft-model";
 import { orderLineProgress } from "@shared/inventory-shipment-model";
 import { inventoryCountReference } from "@shared/inventory-count-reference";
+import { orderLabel, orderReference, uuidOrderId } from "@shared/inventory-order-labels";
+import { emptyOrderFilters, searchOrders } from "@shared/inventory-order-search";
+import { InventoryOrderFilters } from "@/components/inventory-order-filters";
 import { COUNT_MAX_LINES, COUNT_PAGE_SIZE } from "@shared/inventory-count-limits";
 import { inventoryCountRows, inventoryCountLines } from "@/lib/inventory-count-form";
 import { inventoryResourceFailure, validateInventoryResource } from "@/lib/inventory-resource-save";
@@ -33,7 +36,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertTriangle, ArrowLeftRight, Boxes, ClipboardList, Loader2, Package, Plus, Printer, RefreshCw, Search, Warehouse as WarehouseIcon } from "lucide-react";
 
-type Snapshot = { enabled: boolean; state: InventoryState; permissions: string[]; users: Array<{ id: string; username: string }> };
+type Snapshot = { enabled: boolean; timezone: string; state: InventoryState; permissions: string[]; users: Array<{ id: string; username: string }> };
 type ResourceKind = "warehouse" | "vendor" | "item";
 const blankWarehouse = (): Warehouse => ({ id: "", code: "", name: "", type: "physical", active: true, address: "", city: "", state: "", zip: "", contact: "", phone: "", location: "", vin: "", plate: "", plateState: "", make: "", model: "", year: null, assignedUserId: null, userIds: [] });
 const blankVendor = (): Vendor => ({ id: "", name: "", contact: "", address: "", phone: "", email: "", reference: "", active: true });
@@ -76,6 +79,9 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   useEffect(() => { if (resourceError) resourceErrorRef.current?.focus(); }, [resourceError]);
   const [orderType, setOrderType] = useState<"purchase" | "transfer">("purchase");
   const [orderId, setOrderId] = useState("");
+  const [editingOrderId, setEditingOrderId] = useState("");
+  const [orderFilters, setOrderFilters] = useState(emptyOrderFilters);
+  const timezone = data?.timezone ?? "UTC";
   const [orderDestination, setOrderDestination] = useState("");
   const [orderSource, setOrderSource] = useState("");
   const [orderVendor, setOrderVendor] = useState("");
@@ -209,7 +215,9 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const vendors = state?.vendors ?? [];
   const items = state?.items ?? [];
   const orderItems = state?.orders ?? [];
-  const visibleOrders = orderItems.filter(order => showClearedOrders || !order.archivedAt);
+  const visibleOrders = useMemo(() => state ? searchOrders(state, orderFilters, showClearedOrders, timezone) : [],
+    [state, orderFilters, showClearedOrders, timezone]);
+  const orderTitle = (id: string) => { const order = orderItems.find(order => order.id === id); return order ? orderLabel(order) : id; };
   const activityPageSize = 100;
   const lastActivityPage = Math.max(0, Math.ceil((state?.receipts.length ?? 0) / activityPageSize) - 1);
   const currentActivityPage = Math.min(activityPage, lastActivityPage);
@@ -306,9 +314,9 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     setOrderMessage("");
     const payload = { type: orderType, destinationId: orderDestination,
       sourceId: orderType === "transfer" ? orderSource : null, vendorId: orderType === "purchase" ? orderVendor : null,
-      lines: orderLines.map(line => ({ ...line, quantity: Number(orderLineQuantities[line.itemId] ?? line.quantity), serials: [] })), notes: orderNotes,
+      lines: orderLines.map(line => ({ ...line, quantity: Number(orderLineQuantities[line.itemId] ?? line.quantity), serials: [] })), notes: orderNotes, reference: orderId,
       ...(replacementFor ? { replacementFor } : {}) };
-    const attempt = orderSaveAttempt(orderAttempt.current, base, orderId, payload, freshId);
+    const attempt = orderSaveAttempt(orderAttempt.current, base, editingOrderId, payload, freshId);
     orderAttempt.current = attempt;
     const id = attempt.id;
     command.mutate({ action: "order", data: { ...payload, id }, operationId: attempt.operationId }, {
@@ -319,9 +327,9 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           return;
         }
         orderAttempt.current = null;
-        setOrderLines([]); setOrderLineQuantities({}); setOrderId(""); setOrderNotes(""); setReplacementFor("");
+        setOrderLines([]); setOrderLineQuantities({}); setOrderId(""); setEditingOrderId(""); setOrderNotes(""); setReplacementFor("");
         setSavedOrderValues(JSON.stringify({ ...orderValues, orderLines: [], orderLineQuantities: {}, orderId: "", orderNotes: "", replacementFor: "" }));
-        setOrderMessage(`Order ID ${saved.id} saved as a draft. Stock has not changed.`);
+        setOrderMessage(`Order ${orderLabel(saved)}${orderReference(saved) ? ` · Reference ${orderReference(saved)}` : ""} saved as a draft. Stock has not changed.`);
         orderSaving.current = false;
         if (afterSave) {
           setPendingOrderTransition(null);
@@ -334,13 +342,13 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   };
   const editOrderDraft = (order: InventoryOrder) => requestOrderTransition(() => {
     orderAttempt.current = null;
-    setOrderId(order.id); setOrderType(order.type); setOrderDestination(order.destinationId);
+    setOrderId(orderReference(order)); setEditingOrderId(order.id); setOrderType(order.type); setOrderDestination(order.destinationId);
     setOrderSource(order.sourceId || ""); setOrderVendor(order.vendorId || "");
     setReplacementFor(order.replacementFor ?? "");
     setOrderLines(order.lines); setOrderNotes(order.notes);
     setOrderLineItem(""); setOrderLineQty("1"); setOrderLineQuantities({});
     setOrderMessage("");
-    setSavedOrderValues(JSON.stringify({ orderType: order.type, orderId: order.id,
+    setSavedOrderValues(JSON.stringify({ orderType: order.type, orderId: orderReference(order),
       orderDestination: order.destinationId, orderSource: order.sourceId || "", orderVendor: order.vendorId || "",
       orderNotes: order.notes, replacementFor: order.replacementFor ?? "", orderLines: order.lines, orderLineQuantities: {}, orderLineItem: "", orderLineQty: "1" }));
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -382,11 +390,11 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     const next = {
       orderType: order.type, orderId: "", orderDestination: order.destinationId,
       orderSource: order.sourceId ?? "", orderVendor: order.vendorId ?? "",
-      orderNotes: `Replacement for order ${order.id}`, replacementFor: order.id,
+      orderNotes: `Replacement for order ${orderLabel(order)}`, replacementFor: order.id,
       orderLines: replacementLines, orderLineQuantities: {}, orderLineItem: "", orderLineQty: "1",
     };
     orderAttempt.current = null;
-    setOrderType(next.orderType); setOrderId(next.orderId); setOrderDestination(next.orderDestination);
+    setOrderType(next.orderType); setOrderId(next.orderId); setEditingOrderId(""); setOrderDestination(next.orderDestination);
     setOrderSource(next.orderSource); setOrderVendor(next.orderVendor); setOrderNotes(next.orderNotes);
     setReplacementFor(next.replacementFor); setOrderLines(next.orderLines); setOrderLineQuantities({});
     setOrderLineItem(""); setOrderLineQty("1"); setOrderMessage("");
@@ -590,7 +598,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
         <DialogHeader>
           <DialogTitle>Clear cancelled purchase order?</DialogTitle>
           <DialogDescription>
-            {orderToClear?.id} will be hidden from the default order list. The order, audit history, and any receipts are retained. You can recover it by turning on “Show cleared POs”.
+            {orderToClear ? orderLabel(orderToClear) : ""} will be hidden from the default order list. The order, audit history, and any receipts are retained. You can recover it by turning on “Show cleared POs”.
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -602,7 +610,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     </Dialog>
     <Dialog open={!!orderToClose} onOpenChange={open => { if (!open && !command.isPending) setOrderToClose(null); }}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl" onEscapeKeyDown={event => { if (command.isPending) event.preventDefault(); }} onPointerDownOutside={event => event.preventDefault()}>
-        <DialogHeader><DialogTitle>Close remainder · <span className="font-mono">{orderToClose?.id}</span></DialogTitle><DialogDescription>Outstanding units will be recorded as explicitly unfulfilled. No stock movement is created. This cannot be undone.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>Close remainder · <span className="font-mono">{orderToClose ? orderLabel(orderToClose) : ""}</span></DialogTitle><DialogDescription>Outstanding units will be recorded as explicitly unfulfilled. No stock movement is created. This cannot be undone.</DialogDescription></DialogHeader>
         {orderToClose && <div className="max-h-56 space-y-2 overflow-y-auto rounded-md border p-3">{orderToClose.lines.map(line => {
           const item = items.find(value => value.id === line.itemId);
           const p = orderLineProgress(state, orderToClose, line.itemId);
@@ -642,10 +650,15 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       <TabsContent value="orders" className="space-y-4">
         <InventoryShipmentDraftsPanel base={base} state={state} users={data.users} orders={orderItems}
           userId={user?.id} isAdmin={user?.role === "admin"} onResume={(draft, snapshot) => void resumeShipmentDraft(draft, snapshot)} />
-        {can("inventory.purchase") || can("inventory.transfer") ? <Card><CardHeader><CardTitle>{replacementFor ? "Build a linked replacement draft" : "Build an order draft"}</CardTitle><CardDescription>{replacementFor ? `This is a new order linked to ${replacementFor}; the original quantities and exception history stay unchanged.` : "Plan items and quantities now. Record serials later during receiving or transfer dispatch."}</CardDescription></CardHeader><CardContent><fieldset disabled={command.isPending} className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-4"><div className="space-y-1"><Label>Order type</Label><Select value={orderType} onValueChange={value => setOrderType(value as "purchase" | "transfer")}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="purchase">Purchase</SelectItem><SelectItem value="transfer">Transfer</SelectItem></SelectContent></Select></div><div className="space-y-1"><Label>Destination</Label><Select value={orderDestination} onValueChange={setOrderDestination}><SelectTrigger><SelectValue placeholder="Choose location" /></SelectTrigger><SelectContent>{activeWarehouses.map(w => <SelectItem value={w.id} key={w.id}>{w.code} · {w.name}</SelectItem>)}</SelectContent></Select></div>{orderType === "purchase" ? <div className="space-y-1"><Label>Vendor</Label><Select value={orderVendor} onValueChange={setOrderVendor}><SelectTrigger><SelectValue placeholder="Choose vendor" /></SelectTrigger><SelectContent>{vendors.filter(v => v.active).map(v => <SelectItem value={v.id} key={v.id}>{v.name}</SelectItem>)}</SelectContent></Select></div> : <div className="space-y-1"><Label>Source</Label><Select value={orderSource} onValueChange={setOrderSource}><SelectTrigger><SelectValue placeholder="Choose location" /></SelectTrigger><SelectContent>{activeWarehouses.filter(w => w.id !== orderDestination).map(w => <SelectItem value={w.id} key={w.id}>{w.code} · {w.name}</SelectItem>)}</SelectContent></Select></div>}<div className="space-y-1"><Label htmlFor="order-id-reference">Order ID / reference</Label><Input id="order-id-reference" maxLength={100} aria-describedby="order-id-reference-help" value={orderId} onChange={event => setOrderId(event.target.value)} placeholder="Optional reference" /><p id="order-id-reference-help" className="text-xs text-muted-foreground">Leave blank to generate an Order ID. Existing IDs remain visible here while editing.</p></div></div>
-          {orderId && orderItems.some(order => order.id === orderId) && <p className="rounded-md border bg-muted/30 px-3 py-2 text-sm font-medium" role="status">Saved Order ID: <span className="font-mono">{orderId}</span></p>}
-          {replacementFor && <div className="flex items-center justify-between gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm"><span>Replacement for <span className="font-mono font-medium">{replacementFor}</span></span><Button type="button" size="sm" variant="ghost" onClick={() => setReplacementFor("")}>Unlink replacement</Button></div>}
+        {can("inventory.purchase") || can("inventory.transfer") ? <Card><CardHeader><CardTitle>{replacementFor ? "Build a linked replacement draft" : "Build an order draft"}</CardTitle><CardDescription>{replacementFor ? `This is a new order linked to ${orderTitle(replacementFor)}; the original quantities and exception history stay unchanged.` : "Plan items and quantities now. Record serials later during receiving or transfer dispatch."}</CardDescription></CardHeader><CardContent><fieldset disabled={command.isPending} className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-4">
+            <div className="space-y-1"><Label>Order type</Label><Select value={orderType} onValueChange={value => setOrderType(value as "purchase" | "transfer")}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="purchase">Purchase</SelectItem><SelectItem value="transfer">Transfer</SelectItem></SelectContent></Select></div>
+            <div className="space-y-1"><Label>Destination</Label><Select value={orderDestination} onValueChange={setOrderDestination}><SelectTrigger><SelectValue placeholder="Choose location" /></SelectTrigger><SelectContent>{activeWarehouses.map(w => <SelectItem value={w.id} key={w.id}>{w.code} · {w.name}</SelectItem>)}</SelectContent></Select></div>
+            {orderType === "purchase" ? <div className="space-y-1"><Label>Vendor</Label><Select value={orderVendor} onValueChange={setOrderVendor}><SelectTrigger><SelectValue placeholder="Choose vendor" /></SelectTrigger><SelectContent>{vendors.filter(v => v.active).map(v => <SelectItem value={v.id} key={v.id}>{v.name}</SelectItem>)}</SelectContent></Select></div> : <div className="space-y-1"><Label>Source</Label><Select value={orderSource} onValueChange={setOrderSource}><SelectTrigger><SelectValue placeholder="Choose location" /></SelectTrigger><SelectContent>{activeWarehouses.filter(w => w.id !== orderDestination).map(w => <SelectItem value={w.id} key={w.id}>{w.code} · {w.name}</SelectItem>)}</SelectContent></Select></div>}
+            <div className="space-y-1"><Label htmlFor="order-id-reference">Supplier/customer reference</Label><Input id="order-id-reference" maxLength={100} aria-describedby="order-id-reference-help" value={orderId} onChange={event => setOrderId(event.target.value)} placeholder="Optional supplier PO or reference" /><p id="order-id-reference-help" className="text-xs text-muted-foreground">Optional reference, not the order ID. Changing it edits this draft; the generated number and internal ID stay unchanged.</p></div>
+          </div>
+          <p className="rounded-md border bg-muted/30 px-3 py-2 text-sm font-medium" role="status">Order number: <span className="font-mono">{editingOrderId ? orderTitle(editingOrderId) : "Assigned automatically when saved"}</span></p>
+          {replacementFor && <div className="flex items-center justify-between gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm"><span>Replacement for <span className="font-mono font-medium">{orderTitle(replacementFor)}</span></span><Button type="button" size="sm" variant="ghost" onClick={() => setReplacementFor("")}>Unlink replacement</Button></div>}
           <OrderLineEditor items={items} draftMode lineItem={orderLineItem} setLineItem={setOrderLineItem} lineQty={orderLineQty} setLineQty={setOrderLineQty} lines={orderLines} quantityValues={orderLineQuantities} setQuantityValue={(itemId, value) => setOrderLineQuantities(current => { const next = { ...current }; const original = orderLines.find(line => line.itemId === itemId); if (original && value === String(original.quantity)) delete next[itemId]; else next[itemId] = value; return next; })} add={addLine} remove={index => { const line = orderLines[index]; setOrderLines(value => value.filter((_, i) => i !== index)); if (line) setOrderLineQuantities(current => { const next = { ...current }; delete next[line.itemId]; return next; }); }} />
           <Textarea aria-label="Order notes" placeholder="Notes for purchasing or the receiving crew" value={orderNotes} onChange={event => setOrderNotes(event.target.value)} />
           {orderDirty && <p role="status" className="text-sm text-amber-700 dark:text-amber-400">Unsaved order changes. Save the draft to keep your entries.</p>}
@@ -654,6 +667,10 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           <Button disabled={command.isPending || !canSaveOrder} onClick={() => saveOrderDraft()}><Plus className="mr-2 h-4 w-4" />Save draft</Button>
         </fieldset></CardContent></Card> : null}
         <Card><CardHeader><CardTitle>Purchase & transfer orders</CardTitle><CardDescription>Open the relevant action to scan and post each partial movement.</CardDescription></CardHeader><CardContent>
+          <InventoryOrderFilters filters={orderFilters} onChange={setOrderFilters} warehouses={warehouses} vendors={vendors}
+            timezone={timezone} resultCount={visibleOrders.length} totalCount={orderItems.filter(order => showClearedOrders || !order.archivedAt).length} />
+          {can("inventory.maintain") && orderItems.some(order => uuidOrderId(order.id) && !order.orderNumber) &&
+            <div className="mb-4 rounded-md border p-3 text-sm"><p>Older orders can receive readable numbers without changing their internal IDs or history. This requires access to their warehouses.</p><Button className="mt-2" size="sm" variant="outline" disabled={command.isPending} onClick={() => command.mutate({ action: "numberOrders", data: {} })}>Assign legacy order numbers</Button></div>}
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/20 p-3">
             <div><Label htmlFor="show-cleared-orders" className="cursor-pointer">Show cleared POs</Label><p className="text-xs text-muted-foreground">Cleared orders are hidden by default; turn this on to restore them.</p></div>
             <Checkbox id="show-cleared-orders" checked={showClearedOrders} onCheckedChange={checked => setShowClearedOrders(checked === true)} aria-label="Show cleared purchase orders" />
@@ -665,7 +682,9 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
             return <div key={order.id} className="rounded-lg border p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <div className="flex flex-wrap items-center gap-2 font-medium">{order.id}<Badge variant={order.status === "completed" ? "default" : "outline"}>{order.status}</Badge><Badge variant="secondary">{order.type}</Badge>{order.replacementFor && <Badge variant="outline">replacement for {order.replacementFor}</Badge>}{archived && <Badge variant="secondary">cleared</Badge>}</div>
+                  <div className="flex flex-wrap items-center gap-2 font-medium">{orderLabel(order)}<Badge variant={order.status === "completed" ? "default" : "outline"}>{order.status}</Badge><Badge variant="secondary">{order.type}</Badge>{order.replacementFor && <Badge variant="outline">replacement for {orderTitle(order.replacementFor)}</Badge>}{archived && <Badge variant="secondary">cleared</Badge>}</div>
+                  {orderReference(order) && <p className="mt-1 text-sm">Reference: {orderReference(order)}</p>}
+                  <details className="mt-1 text-xs text-muted-foreground"><summary className="cursor-pointer">Internal ID / copy</summary><div className="mt-1 flex flex-wrap items-center gap-2"><span className="break-all font-mono">{order.id}</span><Button size="sm" variant="ghost" onClick={() => navigator.clipboard.writeText(order.id).catch(() => toast({ title: "Copy unavailable", description: "Select and copy the displayed internal ID." }))}>Copy internal ID</Button></div></details>
                   <p className="mt-1 text-sm text-muted-foreground">{purchase ? vendors.find(v => v.id === order.vendorId)?.name : warehouses.find(w => w.id === order.sourceId)?.name} → {warehouses.find(w => w.id === order.destinationId)?.name}</p>
                   <p className="text-xs text-muted-foreground">{order.lines.map(line => `${items.find(item => item.id === line.itemId)?.sku ?? line.itemId} × ${line.quantity}`).join(" · ")}</p>
                 </div>
@@ -709,7 +728,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
               {order.closure && <p className="mt-2 rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">Closed by {order.closure.actor} · {new Date(order.closure.occurredAt).toLocaleString()} · {order.closure.reason}</p>}
             </div>;
           })}</div>
-          {visibleOrders.length === 0 && <Empty title={showClearedOrders ? "No orders yet" : "No active orders"} description={showClearedOrders ? "Draft a purchase order or a transfer between a stockroom and service vehicle." : orderItems.length ? "All purchase orders in this list are cleared. Turn on Show cleared POs to recover one." : "Draft a purchase order or a transfer between a stockroom and service vehicle."} />}
+          {visibleOrders.length === 0 && <Empty title={orderItems.length ? "No matching orders" : "No orders yet"} description={orderItems.length ? "Clear search or reset filters; enable Show cleared POs to include cleared purchase orders." : "Draft a purchase order or a transfer between a stockroom and service vehicle."} />}
         </CardContent></Card>
       </TabsContent>
       <TabsContent value="exceptions">

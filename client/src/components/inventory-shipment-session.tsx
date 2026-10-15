@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { InventoryItem, InventoryOrder, InventoryState } from "@shared/inventory";
+import { orderLabel, orderReference } from "@shared/inventory-order-labels";
 import { blankShipmentCapture, type SavedShipmentDraft, type ShipmentCapture } from "@shared/inventory-shipment-draft-model";
 import { AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -228,7 +229,7 @@ export function InventoryShipmentSession(props: Props) {
   if (recoveryDraft?.pending) return <Dialog open onOpenChange={open => { if (!open) closeRecovery(); }}>
     <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-xl" onEscapeKeyDown={event => { event.preventDefault(); closeRecovery(); }} onPointerDownOutside={event => { event.preventDefault(); closeRecovery(); }}>
       <DialogHeader><DialogTitle>Recover prepared shipment</DialogTitle><DialogDescription>
-        {order.id} · {action === "receive" ? "Receiving" : action === "dispatch" ? "Dispatch" : "Arrival"} · posting identity <span className="font-mono">{recoveryDraft.pending.operationId}</span>
+        {orderLabel(order)} · {orderReference(order)} · {action === "receive" ? "Receiving" : action === "dispatch" ? "Dispatch" : "Arrival"} · posting identity <span className="font-mono">{recoveryDraft.pending.operationId}</span>
       </DialogDescription></DialogHeader>
       <Alert variant={matchingReceipt ? "default" : "destructive"}>
         {matchingReceipt ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}

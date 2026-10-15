@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { InventoryItem, InventoryOrder } from "@shared/inventory";
+import { orderLabel } from "@shared/inventory-order-labels";
 import { Check, ChevronLeft, ChevronRight, Search, Trash2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -118,7 +119,7 @@ export function InventoryShipmentSerialDialog({
           {viewOnly ? "View serials" : "Scan serials"} for {item.name}
         </DialogTitle>
         <DialogDescription className="break-words [overflow-wrap:anywhere]">
-          {item.sku} · {currentOrderStage} · Order <span className="font-mono">{order.id}</span>
+          {item.sku} · {currentOrderStage} · Order <span className="font-mono">{orderLabel(order)}</span>
         </DialogDescription>
       </DialogHeader>
 

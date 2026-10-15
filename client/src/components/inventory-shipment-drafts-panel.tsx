@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { InventoryOrder, InventoryState } from "@shared/inventory";
+import { orderLabel, orderReference } from "@shared/inventory-order-labels";
 import type { SavedShipmentDraft } from "@shared/inventory-shipment-draft-model";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -19,11 +20,12 @@ type Props = {
 };
 
 export function InventoryShipmentDraftsPanel({ base, state, users, orders, userId, isAdmin, onResume }: Props) {
+  const title = (id: string) => { const order = orders.find(order => order.id === id); return order ? `${orderLabel(order)}${orderReference(order) ? ` · ${orderReference(order)}` : ""}` : id; };
   const [busyId, setBusyId] = useState("");
   const [error, setError] = useState("");
   const drafts = state.shipmentDrafts ?? [];
   const remove = async (draft: SavedShipmentDraft) => {
-    if (!window.confirm(`Discard the saved ${draft.stage} shipment draft for order ${draft.orderId}? This removes its saved capture.`)) return;
+    if (!window.confirm(`Discard the saved ${draft.stage} shipment draft for order ${title(draft.orderId)}? This removes its saved capture.`)) return;
     setBusyId(draft.id);
     setError("");
     try {
@@ -48,7 +50,7 @@ export function InventoryShipmentDraftsPanel({ base, state, users, orders, userI
         return <div key={draft.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2 font-medium">
-              <span className="font-mono">{draft.orderId}</span>
+              <span className="font-mono">{title(draft.orderId)}</span>
               <Badge variant="outline">{draft.stage === "receive" ? "Receiving" : draft.stage === "dispatch" ? "Dispatch" : "Arrival"}</Badge>
               {draft.pending && <Badge variant="destructive">Posting needs confirmation</Badge>}
               {!order && <Badge variant="destructive">Order unavailable</Badge>}
@@ -63,7 +65,7 @@ export function InventoryShipmentDraftsPanel({ base, state, users, orders, userI
                 {busyId === draft.id ? <><RefreshCw className="mr-2 h-3.5 w-3.5 animate-spin" />Discarding…</> : "Discard saved draft"}
               </Button>
             </> : isAdmin ? <Button size="sm" variant="outline" disabled={!!busyId || !order} onClick={async () => {
-              if (!window.confirm(`Take ownership of ${draft.orderId} ${draft.stage} draft? Any unposted prepared attempt will be canceled atomically; the saved capture is retained. If already posted, its receipt will remain available for acknowledgement.`)) return;
+              if (!window.confirm(`Take ownership of ${title(draft.orderId)} ${draft.stage} draft? Any unposted prepared attempt will be canceled atomically; the saved capture is retained. If already posted, its receipt will remain available for acknowledgement.`)) return;
               setBusyId(draft.id); setError("");
               try {
                 const result = await sendShipmentDraftCommand(base, "shipmentDraftClaim", { id: draft.id, revision: draft.revision });

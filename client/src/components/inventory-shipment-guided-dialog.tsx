@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { orderLabel, orderReference } from "@shared/inventory-order-labels";
 import type { InventoryItem, InventoryOrder, InventoryState } from "@shared/inventory";
 import type { ShipmentCapture } from "@shared/inventory-shipment-draft-model";
 import { orderLineProgress, remainingHold } from "@shared/inventory-shipment-model";
@@ -254,12 +255,12 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
         onPointerDownOutside={event => { event.preventDefault(); if (!serialDialogOpenRef.current && !isChildPortalEvent(event)) close(); }}
         onInteractOutside={event => { if (serialDialogOpenRef.current || isChildPortalEvent(event)) event.preventDefault(); }}>
       <fieldset disabled={busy || savingDraft} className="contents">
-      <DialogHeader><DialogTitle>{heading} · <span className="font-mono">{order.id}</span></DialogTitle><DialogDescription>
+      <DialogHeader><DialogTitle>{heading} · <span className="font-mono">{orderLabel(order)}</span></DialogTitle><DialogDescription>
         {action === "dispatch" ? "Scan actual serialized identities leaving the source location." : action === "accept" ? "Scan newly received identities. Unreadable damaged units must reference unresolved dispatched identities." : "Record physical units received. Damaged units are held for inspection, not available stock."}
       </DialogDescription></DialogHeader>
       {discard ? <Alert><AlertTriangle className="h-4 w-4" /><AlertTitle>Discard movement edits?</AlertTitle><AlertDescription>Unsaved local changes will be abandoned. Server checkpoints remain available to Resume; no stock has been posted. {checkpointBusy && "Waiting for the current checkpoint before closing."}</AlertDescription><div className="mt-3 flex justify-end gap-2"><Button variant="outline" onClick={() => setDiscard(false)}>Stay</Button><Button variant="destructive" disabled={checkpointBusy} onClick={() => { onDirtyChange(false); onClose(); }}>Discard</Button></div></Alert> : <>
         <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-          <div className="rounded border p-2"><span className="text-muted-foreground">Order</span><p className="font-mono font-medium">{order.id}</p></div>
+          <div className="rounded border p-2"><span className="text-muted-foreground">Order</span><p className="font-mono font-medium">{orderLabel(order)}</p><p>{orderReference(order)}</p></div>
           <div className="rounded border p-2"><span className="text-muted-foreground">Movement</span><p className="font-medium">{heading}</p></div>
           <div className="rounded border p-2"><span className="text-muted-foreground">Scan count</span><p className="font-mono font-medium" aria-live="polite">{scannedTotal} committed</p></div>
           <div className="rounded border p-2"><span className="text-muted-foreground">Rows</span><p className="font-mono font-medium">{eligible.length} retained</p></div>
@@ -347,7 +348,7 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
           }}>{savingDraft ? "Saving draft…" : "Save draft"}</Button>}
           {!review ? <Button disabled={busy || !eligible.length} onClick={() => { if (validateAll()) setReview(true); }}>Review movement</Button> :
             <><Button variant="outline" disabled={busy} onClick={() => setReview(false)}>Back to entries</Button>
-            <Button disabled={busy} onClick={() => closeRemainder && !window.confirm(`Close order ${order.id} with the outstanding amounts shown? This cannot be undone.`) ? undefined : void submit()}>{busy ? "Posting…" : closeRemainder ? "Confirm & post close" : "Post movement"}</Button></>}
+            <Button disabled={busy} onClick={() => closeRemainder && !window.confirm(`Close order ${orderLabel(order)} with the outstanding amounts shown? This cannot be undone.`) ? undefined : void submit()}>{busy ? "Posting…" : closeRemainder ? "Confirm & post close" : "Post movement"}</Button></>}
         </DialogFooter>
       </>}
       </fieldset>

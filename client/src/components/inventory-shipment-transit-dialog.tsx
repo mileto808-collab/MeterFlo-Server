@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { InventoryItem, InventoryOrder, InventoryState, StockLine } from "@shared/inventory";
 import { orderLineProgress } from "@shared/inventory-shipment-model";
+import { orderLabel } from "@shared/inventory-order-labels";
 import { AlertTriangle, PackageX, ScanLine, Trash2 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -95,7 +96,7 @@ export function InventoryShipmentTransitDialog({ state, order, items, busy = fal
   };
   return <Dialog open onOpenChange={open => { if (!open && !busy) requestClose(); }}>
     <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-2xl" onEscapeKeyDown={event => { event.preventDefault(); requestClose(); }} onPointerDownOutside={event => { event.preventDefault(); requestClose(); }}>
-      <DialogHeader><DialogTitle>Resolve in-transit loss · <span className="font-mono">{order.id}</span></DialogTitle><DialogDescription>Explicitly write off dispatched stock that will not arrive. This does not create a destination receipt or restock the source.</DialogDescription></DialogHeader>
+      <DialogHeader><DialogTitle>Resolve in-transit loss · <span className="font-mono">{orderLabel(order)}</span></DialogTitle><DialogDescription>Explicitly write off dispatched stock that will not arrive. This does not create a destination receipt or restock the source.</DialogDescription></DialogHeader>
       {discard ? <Alert><AlertTriangle className="h-4 w-4" /><AlertTitle>Discard loss resolution entries?</AlertTitle><AlertDescription>This write-off has not been recorded.</AlertDescription><div className="mt-3 flex justify-end gap-2"><Button variant="outline" onClick={() => setDiscard(false)}>Stay</Button><Button variant="destructive" onClick={() => { onDirtyChange(false); onClose(); }}>Discard</Button></div></Alert> :
       !rows.length ? <Alert><PackageX className="h-4 w-4" /><AlertTitle>No unresolved transit quantities</AlertTitle><AlertDescription>Every dispatched unit is received or already resolved.</AlertDescription></Alert> :
       review ? <div className="max-h-[44dvh] space-y-2 overflow-y-auto">{rows.filter(row => Number(quantities[row.item!.id] ?? "0") > 0).map(row => <div key={row.item!.id} className="rounded-md border p-3"><p className="font-medium">{row.item!.name} · lost {quantities[row.item!.id]}</p>{(scanned[row.item!.id] ?? []).length > 0 && <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{scanned[row.item!.id].join(", ")}</p>}</div>)}<Alert><PackageX className="h-4 w-4" /><AlertTitle>Explicit transit write-off</AlertTitle><AlertDescription>{reason}</AlertDescription></Alert></div> :

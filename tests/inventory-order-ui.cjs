@@ -45,7 +45,7 @@ async function main() {
     page.on("request", r => { if (r.url().endsWith(`${endpoint}/commands`)) posted.push(r.postDataJSON()); });
     const builder = page.locator("fieldset");
     const notes = page.getByLabel("Order notes", { exact: true });
-    const reference = page.getByLabel("Order ID / reference", { exact: true });
+    const reference = page.getByLabel("Supplier/customer reference", { exact: true });
     const warning = page.getByRole("dialog", { name: "Unsaved order changes", exact: true });
     const countWarning = page.getByRole("dialog", { name: "Unsaved count changes", exact: true });
     const spa = url => page.evaluate(url => window.history.pushState({}, "", url), url);
@@ -65,7 +65,7 @@ async function main() {
       await page.getByRole("option", { name, exact: true }).click();
     };
     const saved = async () => {
-      await page.getByText(/^Order ID .+ saved as a draft\./).waitFor();
+      await page.getByText(/^Order .+ saved as a draft\./).waitFor();
       await unload(false);
     };
 
@@ -429,12 +429,12 @@ async function main() {
     await amended.getByRole("button", { name: "Restore", exact: true }).waitFor();
     const printOrder = await context.request.get(`${endpoint}/print/order/ORDER-AMEND`);
     assert.equal(printOrder.status(), 200);
-    assert.match(await printOrder.text(), /Order ID \/ reference: ORDER-AMEND/);
+    assert.match(await printOrder.text(), /Order number \/ reference: PO-\d{4}-\d{6,9} · Reference: ORDER-AMEND · Internal ID: ORDER-AMEND/);
     const orderReceipt = postedReceipts.find(receipt => receipt.reference === "ORDER-AMEND");
     const printReceipt = await context.request.get(`${endpoint}/print/receipt/${orderReceipt.id}`);
     assert.equal(printReceipt.status(), 200);
     const receiptHTML = await printReceipt.text();
-    assert.match(receiptHTML, /Order ID \/ reference: ORDER-AMEND/);
+    assert.match(receiptHTML, /Order number \/ reference: PO-\d{4}-\d{6,9} · Reference: ORDER-AMEND · Internal ID: ORDER-AMEND/);
     assert.ok(receiptHTML.includes(`Receipt ID: ${orderReceipt.id}`));
     await fs.mkdir("generated-artifacts/inventory", { recursive: true });
     await page.screenshot({ path: "generated-artifacts/inventory/purchase-order-controls.jpg", fullPage: true });
@@ -547,7 +547,7 @@ async function main() {
       const printed = await context.request.get(`${endpoint}/print/receipt/${receipt.id}`);
       assert.equal(printed.status(), 200);
       const html = await printed.text();
-      assert.match(html, /Order ID \/ reference: ORDER-SERIAL-MOVE/);
+      assert.match(html, /Order number \/ reference: TR-\d{4}-\d{6,9} · Reference: ORDER-SERIAL-MOVE · Internal ID: ORDER-SERIAL-MOVE/);
       assert.ok(html.includes(`Receipt ID: ${receipt.id}`));
     }
     assert.deepEqual(errors, []);

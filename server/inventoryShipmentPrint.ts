@@ -1,5 +1,6 @@
 import type { InventoryReceipt, InventoryState, InventoryOrder, StockLine } from "../shared/inventory";
 import { orderLineProgress, remainingHold, holdDispositions } from "../shared/inventory-shipment-model";
+import { orderLabel } from "../shared/inventory-order-labels";
 
 const escape = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 export function shipmentPrint(kind: string, record: InventoryOrder | InventoryReceipt, state: InventoryState) {
@@ -8,7 +9,7 @@ export function shipmentPrint(kind: string, record: InventoryOrder | InventoryRe
   if (kind === "order") {
     const order = record as InventoryOrder;
     const holds = (state.shipmentHolds ?? []).filter(h => h.orderId === order.id);
-    return `<h2>Fulfillment / custody</h2>${order.replacementFor ? `<p>Replacement for order: ${escape(order.replacementFor)}</p>` : ""}
+    return `<h2>Fulfillment / custody</h2>${order.replacementFor ? `<p>Replacement for order: ${escape(state.orders.find(value => value.id === order.replacementFor) ? orderLabel(state.orders.find(value => value.id === order.replacementFor)!) : order.replacementFor)}</p>` : ""}
       <table><thead><tr><th>Product</th><th>Ordered</th><th>Dispatched</th><th>Physically received</th><th>Usable accepted</th><th>Damaged total</th><th>Quarantined now</th><th>Transit loss</th><th>Still in transit</th><th>Still expected</th><th>Closed short</th></tr></thead><tbody>
       ${order.lines.map(l => { const p = orderLineProgress(state, order, l.itemId); return `<tr><td>${escape(labels(l))}</td>${[p.ordered, p.dispatched, p.received, p.usable, p.damaged, p.held, p.lost, p.inTransit, p.remaining, p.closedShort].map(n => `<td>${n}</td>`).join("")}</tr>`; }).join("")}
       </tbody></table><p>Usable accepted is historical acceptance/release, not current warehouse availability. Damaged goods may later be returned or scrapped.</p>

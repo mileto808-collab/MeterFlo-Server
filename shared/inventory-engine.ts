@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { allocateOrderNumber, uuidOrderId } from "./inventory-order-labels";
 import { COUNT_MAX_LINES, COUNT_MAX_SERIALS, countPayloadFits } from "./inventory-count-limits";
 import { allocationSchema, dispositionSchema, itemSchema, stockLineSchema, vendorSchema, warehouseSchema, countDraftSchema,
   type Allocation, type InventoryCommand, type InventoryState, type StockLine, type Stock } from "./inventory";
@@ -167,10 +168,18 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     }
     if (old) list[list.indexOf(old)] = value; else list.push(value);
     if (a === "item") kitCycles(s);
+  } else if (a === "numberOrders") {
+    z.object({}).strict().parse(d);
+    for (const order of [...s.orders].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))) {
+      if (order.orderNumber || !uuidOrderId(order.id)) continue;
+      access(order.destinationId);
+      if (order.sourceId) access(order.sourceId);
+      order.orderNumber = allocateOrderNumber(s, order.type, Number.isFinite(Date.parse(order.createdAt)) ? order.createdAt : now);
+    }
   } else if (a === "order") {
     const o = z.object({ id: identifier, type: z.enum(["purchase", "transfer"]), destinationId: identifier,
       sourceId: identifier.nullable().default(null), vendorId: identifier.nullable().default(null),
-      replacementFor: identifier.optional(),
+      replacementFor: identifier.optional(), reference: z.string().trim().max(100).optional(),
       lines, notes: z.string().max(2000).default("") }).strict().parse(d);
     assert(!o.replacementFor || o.replacementFor !== o.id && s.orders.some(x => x.id === o.replacementFor && !x.replacementFor),
       "Select an existing original order for replacements, not this order or another replacement.");
@@ -194,7 +203,8 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
       if (old.sourceId) access(old.sourceId);
     }
     if (old) s.orders[s.orders.indexOf(old)] = { ...old, ...o };
-    else s.orders.push({ ...o, received: [], dispatched: [], status: "draft", createdAt: now });
+    else s.orders.push({ ...o, reference: o.reference ?? (uuidOrderId(o.id) ? "" : o.id),
+      orderNumber: allocateOrderNumber(s, o.type, now), received: [], dispatched: [], status: "draft", createdAt: now });
   } else if (["release", "cancel", "unrelease", "archiveOrder", "restoreOrder"].includes(a)) {
     const orderId = identifier.parse(d.orderId), o = s.orders.find(o => o.id === orderId);
     assert(o, "Order not found.");

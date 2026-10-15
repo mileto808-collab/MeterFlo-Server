@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { InventoryItem, InventoryOrder, InventoryState } from "@shared/inventory";
+import { orderLabel, orderReference } from "@shared/inventory-order-labels";
 import { holdDispositions, holdStatus, remainingHold, type ShipmentHold } from "@shared/inventory-shipment-model";
 import { holdDispositionCommandSchema, selectHoldDisposition, type HoldDispositionCommand } from "@shared/inventory-hold-disposition";
 import { AlertTriangle, Search, ShieldAlert } from "lucide-react";
@@ -51,7 +52,7 @@ export function InventoryShipmentExceptions({ state, items, orders, canResolve, 
     const item = items.find(value => value.id === hold.itemId);
     const order = orders.find(value => value.id === hold.orderId);
     const location = state.warehouses.find(value => value.id === hold.warehouseId);
-    return `${item?.sku ?? hold.itemId} ${item?.name ?? ""} ${hold.orderId} ${hold.receiptId} ${location?.code ?? ""} ${location?.name ?? ""} ${hold.serials.join(" ")} ${hold.expectedSerials.join(" ")}`.toLowerCase().includes(query.toLowerCase().trim());
+    return `${item?.sku ?? hold.itemId} ${item?.name ?? ""} ${hold.orderId} ${order ? `${orderLabel(order)} ${orderReference(order)}` : ""} ${hold.receiptId} ${location?.code ?? ""} ${location?.name ?? ""} ${hold.serials.join(" ")} ${hold.expectedSerials.join(" ")}`.toLowerCase().includes(query.toLowerCase().trim());
   }), [holds, items, orders, state.warehouses, warehouse, query]);
   const openResolution = (hold: ShipmentHold) => {
     const stillHeld = remainingHold(hold);
@@ -85,6 +86,7 @@ export function InventoryShipmentExceptions({ state, items, orders, canResolve, 
     }
   };
   const activeWarehouses = state.warehouses.filter(value => value.active);
+  const orderTitle = (id: string) => { const order = orders.find(order => order.id === id); return order ? orderLabel(order) : id; };
   const openHolds = holds.filter(value => remainingHold(value).quantity > 0).length;
   return <section className="space-y-3 rounded-lg border p-4" aria-labelledby="shipment-exceptions-title">
     <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 id="shipment-exceptions-title" className="font-semibold">Shipment holds & exceptions</h3><p className="text-sm text-muted-foreground">Damaged arrivals remain quarantined until an authorized, reasoned batch disposition.</p></div><Badge variant={openHolds ? "outline" : "secondary"}>{openHolds} held</Badge></div>
@@ -102,7 +104,7 @@ export function InventoryShipmentExceptions({ state, items, orders, canResolve, 
         const status = holdStatus(hold);
         return <div key={hold.id} data-testid={`shipment-hold-${hold.id}`} className="flex flex-col justify-between gap-2 rounded-md border p-3 sm:flex-row sm:items-start">
           <div className="min-w-0"><div className="flex flex-wrap items-center gap-2 font-medium">{item?.name ?? hold.itemId}<span className="font-mono text-xs text-muted-foreground">{item?.sku ?? hold.itemId}</span><Badge variant={stillHeld.quantity > 0 ? "outline" : "secondary"}>{status}</Badge></div>
-            <p className="mt-1 text-xs text-muted-foreground">Order <span className="font-mono">{hold.orderId}</span> · Receipt <span className="font-mono">{hold.receiptId}</span> · {location?.code ?? hold.warehouseId} · {stillHeld.quantity} held</p>
+            <p className="mt-1 text-xs text-muted-foreground">Order <span className="font-mono">{order ? orderLabel(order) : hold.orderId}</span>{order && orderReference(order) ? ` · ${orderReference(order)}` : ""} · Receipt <span className="font-mono">{hold.receiptId}</span> · {location?.code ?? hold.warehouseId} · {stillHeld.quantity} held</p>
             <p className="mt-1 text-xs text-muted-foreground">Received by {hold.actor} · {new Date(hold.occurredAt).toLocaleString()}</p>
             <p className="mt-1 text-xs">{hold.reason}</p>
             {(hold.serials.length > 0 || hold.expectedSerials.length > 0) && <p className="mt-1 break-all font-mono text-xs text-muted-foreground">Still held — known: {stillHeld.serials.join(", ") || "none"}{stillHeld.expectedSerials.length ? ` · Unverified dispatch refs: ${stillHeld.expectedSerials.join(", ")}` : ""}{stillHeld.unidentifiedQuantity ? ` · ${stillHeld.unidentifiedQuantity} unidentified` : ""}</p>}
@@ -122,7 +124,7 @@ export function InventoryShipmentExceptions({ state, items, orders, canResolve, 
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg" onEscapeKeyDown={event => { event.preventDefault(); requestClose(); }} onPointerDownOutside={event => { event.preventDefault(); requestClose(); }}>
         <DialogHeader><DialogTitle>Resolve shipment hold</DialogTitle><DialogDescription>Record one disposition for the selected units. Any units you leave unselected stay quarantined. This records custody; it does not create a vendor credit or carrier claim.</DialogDescription></DialogHeader>
         {selected && <div className="space-y-3">
-          <Alert><ShieldAlert className="h-4 w-4" /><AlertTitle>{items.find(item => item.id === selected.itemId)?.name ?? selected.itemId} · {remaining?.quantity} remaining units</AlertTitle><AlertDescription>Order {selected.orderId} · receipt {selected.receiptId} · {remaining?.serials.length} known serials, {remaining?.unidentifiedQuantity} unidentified. {holdDispositions(selected).length} disposition(s) already recorded.</AlertDescription></Alert>
+          <Alert><ShieldAlert className="h-4 w-4" /><AlertTitle>{items.find(item => item.id === selected.itemId)?.name ?? selected.itemId} · {remaining?.quantity} remaining units</AlertTitle><AlertDescription>Order {orderTitle(selected.orderId)} · receipt {selected.receiptId} · {remaining?.serials.length} known serials, {remaining?.unidentifiedQuantity} unidentified. {holdDispositions(selected).length} disposition(s) already recorded.</AlertDescription></Alert>
           <div className="space-y-1"><Label>Disposition</Label><Select disabled={busy} value={outcome} onValueChange={value => setOutcome(value as typeof outcome)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="released">Release after inspection</SelectItem><SelectItem value="returned">Record physical return</SelectItem><SelectItem value="scrapped">Scrap / write off</SelectItem></SelectContent></Select></div>
           {isSerialized && <fieldset className="space-y-2 rounded-md border p-3" disabled={busy}>
             <legend className="px-1 text-sm font-medium">Partial disposition selection</legend>
