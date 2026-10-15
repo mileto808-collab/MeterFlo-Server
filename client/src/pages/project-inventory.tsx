@@ -81,6 +81,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const orderSaving = useRef(false);
   const [orderMessage, setOrderMessage] = useState("");
   const [pendingOrderTransition, setPendingOrderTransition] = useState<(() => void) | null>(null);
+  const [showClearedOrders, setShowClearedOrders] = useState(false);
+  const [orderToClear, setOrderToClear] = useState<InventoryOrder | null>(null);
   const requestOrderTransition = (transition: () => void) => {
     if (orderSaving.current || command.isPending) return;
     if (orderDirty) setPendingOrderTransition(current => current ?? transition);
@@ -171,6 +173,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const vendors = state?.vendors ?? [];
   const items = state?.items ?? [];
   const orderItems = state?.orders ?? [];
+  const visibleOrders = orderItems.filter(order => showClearedOrders || !order.archivedAt);
   const activityPageSize = 100;
   const lastActivityPage = Math.max(0, Math.ceil((state?.receipts.length ?? 0) / activityPageSize) - 1);
   const currentActivityPage = Math.min(activityPage, lastActivityPage);
@@ -304,6 +307,15 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const openPrint = (kind: "order" | "receipt" | "count", id: string) => {
     window.open(`${base}/print/${kind}/${encodeURIComponent(id)}`, "_blank", "noopener,noreferrer");
   };
+  const runOrderCommand = (action: "unrelease" | "archiveOrder" | "restoreOrder", order: InventoryOrder) => {
+    if (command.isPending || !can("inventory.purchase")) return;
+    command.mutate({ action, data: { orderId: order.id } }, {
+      onSuccess: () => { if (action === "archiveOrder") setOrderToClear(null); },
+    });
+  };
+  const orderHasReceipt = (order: InventoryOrder) => state.receipts.some(receipt => receipt.reference === order.id);
+  const isUnreleaseLocked = (order: InventoryOrder) => order.status !== "released" ||
+    order.received.length > 0 || order.dispatched.length > 0 || orderHasReceipt(order);
   const uploadImage = async (file?: File) => {
     if (!file) return;
     setImageBusy(true);
@@ -456,6 +468,21 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    <Dialog open={!!orderToClear} onOpenChange={open => { if (!open && !command.isPending) setOrderToClear(null); }}>
+      <DialogContent onEscapeKeyDown={event => { if (command.isPending) event.preventDefault(); }} onPointerDownOutside={event => { if (command.isPending) event.preventDefault(); }}>
+        <DialogHeader>
+          <DialogTitle>Clear cancelled purchase order?</DialogTitle>
+          <DialogDescription>
+            {orderToClear?.id} will be hidden from the default order list. The order, audit history, and any receipts are retained. You can recover it by turning on “Show cleared POs”.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" disabled={command.isPending} onClick={() => setOrderToClear(null)}>Keep order visible</Button>
+          <Button variant="destructive" disabled={command.isPending || !can("inventory.purchase") || !orderToClear}
+            onClick={() => orderToClear && runOrderCommand("archiveOrder", orderToClear)}>Clear PO</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
     {isError && <Alert variant="destructive"><AlertTitle>Inventory refresh failed</AlertTitle><AlertDescription>The last loaded inventory is shown. Your count entries were kept; retry before relying on current stock.</AlertDescription><Button variant="outline" className="mt-2" onClick={() => refetch()}>Retry inventory refresh</Button></Alert>}
     <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
       <div><p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Project operations</p><h1 className="text-3xl font-semibold tracking-tight">Inventory</h1><p className="mt-1 text-sm text-muted-foreground">Know what’s on hand, where it lives, and which serial leaves with each crew.</p></div>
@@ -492,7 +519,38 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           {orderMessage && <p role="status" className="text-sm">{orderMessage}</p>}
           <Button disabled={command.isPending || !canSaveOrder} onClick={() => saveOrderDraft()}><Plus className="mr-2 h-4 w-4" />Save draft</Button>
         </fieldset></CardContent></Card> : null}
-        <Card><CardHeader><CardTitle>Purchase & transfer orders</CardTitle><CardDescription>Open the relevant action to scan and post each partial movement.</CardDescription></CardHeader><CardContent><div className="space-y-3">{orderItems.map(order => <div key={order.id} className="rounded-lg border p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2 font-medium">{order.id}<Badge variant={order.status === "completed" ? "default" : "outline"}>{order.status}</Badge><Badge variant="secondary">{order.type}</Badge></div><p className="mt-1 text-sm text-muted-foreground">{order.type === "purchase" ? vendors.find(v => v.id === order.vendorId)?.name : warehouses.find(w => w.id === order.sourceId)?.name} → {warehouses.find(w => w.id === order.destinationId)?.name}</p><p className="text-xs text-muted-foreground">{order.lines.map(line => `${items.find(item => item.id === line.itemId)?.sku ?? line.itemId} × ${line.quantity}`).join(" · ")}</p></div><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => openPrint("order", order.id)}><Printer className="mr-1 h-3.5 w-3.5" />Print</Button>{order.status === "draft" && can(order.type === "purchase" ? "inventory.purchase" : "inventory.transfer") && <><Button size="sm" variant="outline" onClick={() => editOrderDraft(order)}>Edit draft</Button><Button size="sm" onClick={() => command.mutate({ action: "release", data: { orderId: order.id } })}>Release</Button></>}{!["completed", "cancelled"].includes(order.status) && <Button size="sm" variant="ghost" onClick={() => command.mutate({ action: "cancel", data: { orderId: order.id } })}>Cancel</Button>}{order.status === "released" || order.status === "partial" ? <Button size="sm" onClick={() => openOrderOperation(order, order.type === "purchase" ? "receive" : "dispatch")}>{order.type === "purchase" ? "Receive" : "Dispatch"}</Button> : null}{order.type === "transfer" && ["released", "partial"].includes(order.status) && <Button size="sm" variant="outline" onClick={() => openOrderOperation(order, "accept")}>Accept arrival</Button>}</div></div></div>)}</div>{orderItems.length === 0 && <Empty title="No orders yet" description="Draft a purchase order or a transfer between a stockroom and service vehicle." />}</CardContent></Card>
+        <Card><CardHeader><CardTitle>Purchase & transfer orders</CardTitle><CardDescription>Open the relevant action to scan and post each partial movement.</CardDescription></CardHeader><CardContent>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/20 p-3">
+            <div><Label htmlFor="show-cleared-orders" className="cursor-pointer">Show cleared POs</Label><p className="text-xs text-muted-foreground">Cleared orders are hidden by default; turn this on to restore them.</p></div>
+            <Checkbox id="show-cleared-orders" checked={showClearedOrders} onCheckedChange={checked => setShowClearedOrders(checked === true)} aria-label="Show cleared purchase orders" />
+          </div>
+          <div className="space-y-3">{visibleOrders.map(order => {
+            const archived = !!order.archivedAt;
+            const purchase = order.type === "purchase";
+            const unreleaseLocked = purchase && ["released", "partial", "completed"].includes(order.status) && isUnreleaseLocked(order);
+            return <div key={order.id} className="rounded-lg border p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2 font-medium">{order.id}<Badge variant={order.status === "completed" ? "default" : "outline"}>{order.status}</Badge><Badge variant="secondary">{order.type}</Badge>{archived && <Badge variant="secondary">cleared</Badge>}</div>
+                  <p className="mt-1 text-sm text-muted-foreground">{purchase ? vendors.find(v => v.id === order.vendorId)?.name : warehouses.find(w => w.id === order.sourceId)?.name} → {warehouses.find(w => w.id === order.destinationId)?.name}</p>
+                  <p className="text-xs text-muted-foreground">{order.lines.map(line => `${items.find(item => item.id === line.itemId)?.sku ?? line.itemId} × ${line.quantity}`).join(" · ")}</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button size="sm" variant="outline" onClick={() => openPrint("order", order.id)}><Printer className="mr-1 h-3.5 w-3.5" />Print</Button>
+                  {order.status === "draft" && can(purchase ? "inventory.purchase" : "inventory.transfer") && <><Button size="sm" variant="outline" onClick={() => editOrderDraft(order)}>Edit draft</Button><Button size="sm" disabled={command.isPending} onClick={() => command.mutate({ action: "release", data: { orderId: order.id } })}>Release</Button></>}
+                  {!["completed", "cancelled"].includes(order.status) && <Button size="sm" variant="ghost" disabled={command.isPending} onClick={() => command.mutate({ action: "cancel", data: { orderId: order.id } })}>Cancel</Button>}
+                  {order.status === "released" || order.status === "partial" ? <Button size="sm" disabled={command.isPending} onClick={() => openOrderOperation(order, purchase ? "receive" : "dispatch")}>{purchase ? "Receive" : "Dispatch"}</Button> : null}
+                  {order.type === "transfer" && ["released", "partial"].includes(order.status) && <Button size="sm" variant="outline" disabled={command.isPending} onClick={() => openOrderOperation(order, "accept")}>Accept arrival</Button>}
+                  {purchase && order.status === "released" && !archived && can("inventory.purchase") && <Button size="sm" variant="outline" disabled={command.isPending || isUnreleaseLocked(order)} onClick={() => requestOrderTransition(() => runOrderCommand("unrelease", order))}>Un-release to draft</Button>}
+                  {purchase && order.status === "cancelled" && !archived && can("inventory.purchase") && <Button size="sm" variant="outline" disabled={command.isPending} onClick={() => requestOrderTransition(() => setOrderToClear(order))}>Clear</Button>}
+                  {purchase && order.status === "cancelled" && archived && can("inventory.purchase") && <Button size="sm" variant="outline" disabled={command.isPending} onClick={() => requestOrderTransition(() => runOrderCommand("restoreOrder", order))}>Restore</Button>}
+                </div>
+              </div>
+              {purchase && unreleaseLocked && <p className="mt-3 text-xs text-muted-foreground" role="note">This purchase order is receipt-locked and cannot be un-released. Received, dispatched, or receipt activity must remain attached to the order; partially received and completed POs cannot return to draft.</p>}
+            </div>;
+          })}</div>
+          {visibleOrders.length === 0 && <Empty title={showClearedOrders ? "No orders yet" : "No active orders"} description={showClearedOrders ? "Draft a purchase order or a transfer between a stockroom and service vehicle." : orderItems.length ? "All purchase orders in this list are cleared. Turn on Show cleared POs to recover one." : "Draft a purchase order or a transfer between a stockroom and service vehicle."} />}
+        </CardContent></Card>
       </TabsContent>
 
       <TabsContent value="counts" className="space-y-4"><Card><CardHeader><CardTitle>Physical stock count</CardTitle><CardDescription>Start a snapshot, count every item including zero, and post with a reason.</CardDescription></CardHeader><CardContent className="space-y-4"><div className="flex flex-wrap items-end gap-3"><div className="w-full max-w-sm space-y-1"><Label>Warehouse or vehicle</Label><Select value={countWarehouse} onValueChange={setCountWarehouse}><SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger><SelectContent>{activeWarehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.code} · {w.name}</SelectItem>)}</SelectContent></Select></div>{can("inventory.count") && <Button onClick={() => requestCountTransition(startCount)} disabled={!countWarehouse || command.isPending}>Start count</Button>}</div>

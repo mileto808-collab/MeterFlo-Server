@@ -159,14 +159,36 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
       for (const l of o.lines) { item(s, l.itemId); assert(!l.serials.length, "Scan purchase serials when receiving."); }
     }
     const old = s.orders.find(x => x.id === o.id); assert(!old || old.status === "draft", "Only draft orders are editable.");
+    if (old) {
+      assert(old.type === o.type && !old.archivedAt, "Order type cannot change; cleared orders cannot be edited.");
+      access(old.destinationId);
+      if (old.sourceId) access(old.sourceId);
+    }
     if (old) s.orders[s.orders.indexOf(old)] = { ...old, ...o };
     else s.orders.push({ ...o, received: [], dispatched: [], status: "draft", createdAt: now });
-  } else if (["release", "cancel", "receive", "dispatch", "accept"].includes(a)) {
+  } else if (["release", "cancel", "unrelease", "archiveOrder", "restoreOrder", "receive", "dispatch", "accept"].includes(a)) {
     const orderId = identifier.parse(d.orderId), o = s.orders.find(o => o.id === orderId);
     assert(o, "Order not found.");
     if (a === "dispatch" || a === "release" && o.type === "transfer") access(o.sourceId!);
     else access(o.destinationId);
-    if (a === "release") { assert(o.status === "draft", "Only draft orders can be released."); o.status = "released"; }
+    if (["unrelease", "archiveOrder", "restoreOrder"].includes(a)) {
+      assert(o.type === "purchase", "Purchase order required.");
+      if (a === "unrelease") {
+        assert(o.status === "released" && !o.archivedAt, "Only released purchase orders can be un-released.");
+        assert(!o.received.length && !o.dispatched.length && !s.receipts.some(r => r.reference === o.id),
+          "Purchase orders with posted receipts cannot be un-released.");
+        o.status = "draft";
+      } else {
+        assert(o.status === "cancelled", "Only cancelled purchase orders can be cleared or restored.");
+        if (a === "archiveOrder") {
+          assert(!o.archivedAt, "Purchase order is already cleared.");
+          o.archivedAt = now;
+        } else {
+          assert(o.archivedAt, "Purchase order is not cleared.");
+          delete o.archivedAt;
+        }
+      }
+    } else if (a === "release") { assert(o.status === "draft" && !o.archivedAt, "Only draft orders can be released."); o.status = "released"; }
     else if (a === "cancel") {
       assert(!["cancelled", "completed"].includes(o.status), "Order is already closed.");
       assert(o.dispatched.every(l => totals(o.received, l.itemId) >= totals(o.dispatched, l.itemId)), "Receive dispatched stock before cancelling remaining quantities.");

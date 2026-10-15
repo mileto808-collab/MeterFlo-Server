@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { emptyInventory, type InventoryState, type InventoryCommand } from "../shared/inventory";
+import { emptyInventory, commandPermission, inventoryPermissions, inventoryCommandSchema, type InventoryState, type InventoryCommand } from "../shared/inventory";
 import { applyInventoryCommand, completeInventoryWorkOrder, reserved } from "../shared/inventory-engine";
 
 const actor = "admin";
@@ -23,6 +23,72 @@ function setup() {
   ] });
   return s;
 }
+
+test("purchase orders can be un-released, edited and released again only before receiving", () => {
+  let s = setup();
+  const data = { id: "editable-po", type: "purchase", vendorId: "vendor", destinationId: "main",
+    lines: [{ itemId: "seal", quantity: 5 }] };
+  const stock = structuredClone(s.stock), receipts = structuredClone(s.receipts);
+  s = post(s, "order", data);
+  assert.throws(() => post(s, "unrelease", { orderId: data.id }), /Only released/);
+  s = post(s, "release", { orderId: data.id });
+  const operationId = randomUUID();
+  const request = { action: "unrelease" as const, operationId, data: { orderId: data.id } };
+  assert.equal(inventoryCommandSchema.parse(request).action, "unrelease");
+  s = post(s, "unrelease", request.data, operationId);
+  assert.deepEqual(post(s, "unrelease", request.data, operationId), s, "same operation retry is safe");
+  assert.equal(s.orders.find(o => o.id === data.id)?.status, "draft");
+  assert.throws(() => post(s, "receive", { orderId: data.id, lines: data.lines }), /Release an open/);
+  assert.throws(() => post(s, "order", { ...data, type: "transfer", vendorId: null, sourceId: "van" }), /Order type cannot change/);
+  s = post(s, "order", { ...data, notes: "Add a serialized meter", lines: [
+    { itemId: "seal", quantity: 8 }, { itemId: "meter", quantity: 1 },
+  ] });
+  assert.deepEqual(s.stock, stock); assert.deepEqual(s.receipts, receipts);
+  s = post(s, "release", { orderId: data.id });
+  const released = s;
+  assert.throws(() => applyInventoryCommand(s, { ...request, operationId: randomUUID() }, "outsider", false), /Warehouse access/);
+  assert.deepEqual(s, released, "unauthorized attempt does not mutate the order");
+  s = post(s, "receive", { orderId: data.id, lines: [{ itemId: "seal", quantity: 1 }] });
+  assert.throws(() => post(s, "unrelease", request.data), /Only released/);
+  // A stale released status must not allow erasing previously posted activity.
+  const inconsistent = structuredClone(s);
+  inconsistent.orders.find(o => o.id === data.id)!.status = "released";
+  assert.throws(() => post(inconsistent, "unrelease", request.data), /posted receipts/);
+  assert.throws(() => post(s, "unrelease", { orderId: "po" }), /Only released/);
+  assert.equal(commandPermission("unrelease"), inventoryPermissions.purchase);
+});
+
+test("clearing cancelled POs preserves stock, receipts and IDs and supports restoration", () => {
+  let s = setup();
+  s = post(s, "order", { id: "cancel-po", type: "purchase", vendorId: "vendor", destinationId: "main",
+    lines: [{ itemId: "seal", quantity: 5 }] });
+  s = post(s, "release", { orderId: "cancel-po" });
+  s = post(s, "receive", { orderId: "cancel-po", lines: [{ itemId: "seal", quantity: 2 }] });
+  assert.throws(() => post(s, "archiveOrder", { orderId: "cancel-po" }), /Only cancelled/);
+  s = post(s, "cancel", { orderId: "cancel-po" });
+  const stock = structuredClone(s.stock), receipts = structuredClone(s.receipts), orders = s.orders.length;
+  const operationId = randomUUID();
+  assert.throws(() => applyInventoryCommand(s, { action: "archiveOrder", operationId,
+    data: { orderId: "cancel-po" } }, "outsider", false), /Warehouse access/);
+  s = post(s, "archiveOrder", { orderId: "cancel-po" }, operationId);
+  assert.ok(s.orders.find(o => o.id === "cancel-po")?.archivedAt);
+  assert.deepEqual(post(s, "archiveOrder", { orderId: "cancel-po" }, operationId), s);
+  assert.equal(s.orders.length, orders);
+  assert.deepEqual(s.stock, stock); assert.deepEqual(s.receipts, receipts);
+  assert.throws(() => post(s, "order", { id: "cancel-po", type: "purchase", vendorId: "vendor",
+    destinationId: "main", lines: [{ itemId: "seal", quantity: 1 }] }), /Only draft/);
+  s = JSON.parse(JSON.stringify(s));
+  s = post(s, "restoreOrder", { orderId: "cancel-po" });
+  assert.equal(s.orders.find(o => o.id === "cancel-po")?.archivedAt, undefined);
+  assert.equal(s.orders.find(o => o.id === "cancel-po")?.status, "cancelled");
+  s = post(s, "order", { id: "tr", type: "transfer", sourceId: "main", destinationId: "van",
+    lines: [{ itemId: "seal", quantity: 1 }] });
+  s = post(s, "cancel", { orderId: "tr" });
+  for (const action of ["unrelease", "archiveOrder", "restoreOrder"] as const) {
+    assert.throws(() => post(s, action, { orderId: "tr" }), /Purchase order required/);
+    assert.equal(commandPermission(action), inventoryPermissions.purchase);
+  }
+});
 
 test("count drafts preserve unfinished input, isolate editors and never change the stock snapshot", () => {
   let s = setup();

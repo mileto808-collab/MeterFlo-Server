@@ -22,6 +22,11 @@ export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: n
     if (!workOrderIds.includes(a.workOrderId)) throw new Error("Inventory backup refers to a missing work order.");
     z.array(allocationSchema).parse(a.lines); z.array(allocationSchema).parse(a.used);
   }
+  for (const order of s.orders) if (order.archivedAt !== undefined) {
+    z.string().datetime().parse(order.archivedAt);
+    if (order.type !== "purchase" || order.status !== "cancelled")
+      throw new Error("Only cancelled purchase orders may be cleared in an inventory backup.");
+  }
   for (const count of s.counts) if (count.draft) {
     const draft = savedCountDraftSchema.parse(count.draft);
     if (!countPayloadFits(draft) || count.status !== "open" || !s.warehouses.some(w => w.id === count.warehouseId) ||

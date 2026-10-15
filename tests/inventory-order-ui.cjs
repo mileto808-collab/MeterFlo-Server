@@ -270,6 +270,62 @@ async function main() {
     assert.equal((await state()).counts.at(-1).draft.reason, "Count and order correction");
     assert.deepEqual((await state()).stock, originalStock, "Draft saves, discards and navigation must not change stock");
 
+    // Real PO lifecycle controls: un-release, edit/add a product, re-release,
+    // reject receipt-backed reopening, clear with confirmation and restore.
+    await command("order", order("ORDER-AMEND", "purchase"));
+    await command("release", { orderId: "ORDER-AMEND" });
+    await page.goto(inventoryURL);
+    await ordersTab();
+    const poRow = id => page.locator("div.rounded-lg.border.p-4").filter({ hasText: id });
+    const amended = poRow("ORDER-AMEND");
+    await amended.getByRole("button", { name: "Un-release to draft", exact: true }).click();
+    await amended.getByRole("button", { name: "Edit draft", exact: true }).waitFor();
+    assert.equal((await state()).orders.find(o => o.id === "ORDER-AMEND").status, "draft");
+    await amended.getByRole("button", { name: "Edit draft", exact: true }).click();
+    await select(3, "ORDER-SERIAL · Order meter");
+    await builder.getByRole("button", { name: "Add line", exact: true }).click();
+    await notes.fill("Added a meter before receiving");
+    await builder.getByRole("button", { name: "Save draft", exact: true }).click();
+    await saved();
+    assert.equal((await state()).orders.find(o => o.id === "ORDER-AMEND").lines.length, 2);
+    await amended.getByRole("button", { name: "Release", exact: true }).click();
+    await amended.getByRole("button", { name: "Receive", exact: true }).waitFor();
+    await command("receive", { orderId: "ORDER-AMEND", lines: [{ itemId: "order-bulk", quantity: 1 }] });
+    const postedStock = (await state()).stock, postedReceipts = (await state()).receipts;
+    const locked = await context.request.post(`${endpoint}/commands`, { data: {
+      operationId: crypto.randomUUID(), action: "unrelease", data: { orderId: "ORDER-AMEND" },
+    } });
+    assert.equal(locked.status(), 409);
+    await page.reload();
+    await ordersTab();
+    assert.equal(await amended.getByRole("button", { name: "Un-release to draft", exact: true }).count(), 0);
+    await amended.getByRole("button", { name: "Cancel", exact: true }).click();
+    await amended.getByRole("button", { name: "Clear", exact: true }).click();
+    const clearDialog = page.getByRole("dialog", { name: "Clear cancelled purchase order?", exact: true });
+    await clearDialog.getByRole("button", { name: "Keep order visible", exact: true }).click();
+    assert.equal(await amended.count(), 1, "dismissal does not clear the PO");
+    await amended.getByRole("button", { name: "Clear", exact: true }).click();
+    await clearDialog.getByRole("button", { name: "Clear PO", exact: true }).click();
+    await clearDialog.waitFor({ state: "hidden" });
+    await amended.waitFor({ state: "detached" });
+    await page.reload();
+    await ordersTab();
+    assert.equal(await amended.count(), 0, "cleared state persists after reloading");
+    await page.getByRole("checkbox", { name: "Show cleared purchase orders", exact: true }).check();
+    await amended.getByRole("button", { name: "Restore", exact: true }).waitFor();
+    assert.equal((await context.request.get(`${endpoint}/print/order/ORDER-AMEND`)).status(), 200);
+    await fs.mkdir("generated-artifacts/inventory", { recursive: true });
+    await page.screenshot({ path: "generated-artifacts/inventory/purchase-order-controls.jpg", fullPage: true });
+    await amended.getByRole("button", { name: "Restore", exact: true }).click();
+    await amended.getByRole("button", { name: "Clear", exact: true }).waitFor();
+    await page.getByRole("checkbox", { name: "Show cleared purchase orders", exact: true }).uncheck();
+    assert.equal(await amended.count(), 1);
+    assert.equal((await state()).orders.find(o => o.id === "ORDER-AMEND").status, "cancelled");
+    assert.deepEqual((await state()).stock, postedStock);
+    assert.deepEqual((await state()).receipts, postedReceipts, "clear/restore never erases receipts");
+    await command("order", order("ORDER-RELEASEABLE", "purchase"));
+    await command("release", { orderId: "ORDER-RELEASEABLE" });
+
     // Permissions are granted through normal role administration, not raw DB
     // keys. A warning never enables the other order type's save permission.
     for (const permission of [null, "inventory.purchase", "inventory.transfer"]) {
@@ -282,6 +338,23 @@ async function main() {
         const viewPage = await viewer.newPage();
         await viewPage.goto(inventoryURL);
         await viewPage.getByRole("tab", { name: "Orders", exact: true }).click();
+        if (permission !== "inventory.purchase") {
+          for (const action of ["unrelease", "archiveOrder", "restoreOrder"]) {
+            const response = await viewer.request.post(`${endpoint}/commands`, { data: {
+              operationId: crypto.randomUUID(), action, data: { orderId: action === "unrelease" ? "ORDER-RELEASEABLE" : "ORDER-AMEND" },
+            } });
+            assert.equal(response.status(), 403, `${action} must require purchase permission`);
+          }
+          assert.equal(await viewPage.getByRole("button", { name: "Un-release to draft", exact: true }).count(), 0);
+          assert.equal(await viewPage.getByRole("button", { name: "Clear", exact: true }).count(), 0);
+        } else {
+          for (const [action, orderId] of [["unrelease", "ORDER-RELEASEABLE"], ["archiveOrder", "ORDER-AMEND"], ["restoreOrder", "ORDER-AMEND"]]) {
+            const response = await viewer.request.post(`${endpoint}/commands`, { data: {
+              operationId: crypto.randomUUID(), action, data: { orderId },
+            } });
+            assert.equal(response.status(), 200, `${action} works through an authorized non-admin role`);
+          }
+        }
         if (!permission) {
           assert.equal(await viewPage.locator("fieldset").count(), 0);
           assert.equal(await viewPage.getByRole("button", { name: "Edit draft", exact: true }).count(), 0);
@@ -306,7 +379,7 @@ async function main() {
       } finally { await viewer.close(); }
     }
     assert.deepEqual(errors, []);
-    console.log("Order warnings: purchase/transfer Stay, Discard, Save, failures, pending lines, refresh, app/history navigation, project isolation, count coexistence, permission gates and unchanged stock passed.");
+    console.log("PO un-release/edit/add/re-release, receipt locking, clear/restore/reload/print, retained stock/receipts and normal-role permission gates passed. Order warning/navigation regressions passed.");
   } finally {
     try {
       if (context && otherProject) assert.ok([200, 204].includes((await context.request.delete(`/api/projects/${otherProject}`)).status()));

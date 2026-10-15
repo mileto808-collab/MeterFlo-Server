@@ -30,3 +30,9 @@ Physical stock counts use starting-snapshot quantities and serials as editable d
 **Why:** The former form showed saved serials but submitted an empty list unless the operator retyped them. Requiring re-entry of correct defaults would not address the mismatch between visible and submitted data.
 
 **How to apply:** Keep display and submission consistent, including discovered products absent from the snapshot. Never interpret a blank quantity as zero or treat prefilled data alone as physical verification; retain explicit posting and the server's stale-stock/reservation checks.
+
+Clearing cancelled purchase orders means archiving from the operator's list, not deleting their business identity. Returning a released PO to draft is supported only before posted receiving activity.
+
+**Why:** Cancelling the remaining quantity does not undo earlier receipts. Hard deletion or reopening received orders would disconnect stock history from the original order and could allow ambiguous reuse of its reference.
+
+**How to apply:** Preserve recoverable order history when reducing clutter. Once receiving has started, additional purchases should use a new PO rather than resetting the original document's lifecycle.

@@ -36,6 +36,26 @@ test("transactional completion, mobile usage, concurrency, import rollback, and 
     await command("receive", { orderId: "po", lines: [{ itemId: "meter", quantity: 2, serials: ["0001", "0002"] }] }, receiveId);
     await command("receive", { orderId: "po", lines: [{ itemId: "meter", quantity: 2, serials: ["0001", "0002"] }] }, receiveId);
     assert.equal((await inventoryState(project.id)).stock[0].quantity, 2);
+    await command("order", { id: "amend-po", type: "purchase", destinationId: "w", vendorId: "v", lines: [{ itemId: "meter", quantity: 1 }] });
+    await command("release", { orderId: "amend-po" });
+    await command("unrelease", { orderId: "amend-po" });
+    await command("order", { id: "amend-po", type: "purchase", destinationId: "w", vendorId: "v",
+      notes: "Amended before receiving", lines: [{ itemId: "meter", quantity: 3 }] });
+    await command("release", { orderId: "amend-po" });
+    await command("cancel", { orderId: "amend-po" });
+    await command("archiveOrder", { orderId: "amend-po" });
+    await command("restoreOrder", { orderId: "amend-po" });
+    await command("archiveOrder", { orderId: "amend-po" });
+    const { rows: poChanges } = await pool.query(
+      "SELECT action,actor_id,changes FROM public.inventory_movements WHERE project_id=$1 AND action=ANY($2::text[]) ORDER BY id",
+      [project.id, ["unrelease", "archiveOrder", "restoreOrder"]]);
+    assert.deepEqual(poChanges.map(row => row.action), ["unrelease", "archiveOrder", "restoreOrder", "archiveOrder"]);
+    assert.ok(poChanges.every(row => row.actor_id === user.id && row.changes.entities.some((change: any) => change.field === "orders/amend-po")));
+    const { rows: poAudit } = await pool.query(
+      "SELECT action,actor_id FROM meterflo_audit.events WHERE project_id=$1 AND action=ANY($2::text[])",
+      [project.id, ["inventory.unrelease", "inventory.archiveOrder", "inventory.restoreOrder"]]);
+    assert.equal(poAudit.length, 4);
+    assert.ok(poAudit.every(row => row.actor_id === user.id));
     const deleted = await work.createWorkOrder({ customerWoId: "deleted-gap" } as any);
     await pool.query(`DELETE FROM "${schema}".work_orders WHERE id=$1`, [deleted.id]);
     const wo = await withAuditContext(scope(), () => work.createWorkOrder({ customerWoId: "fixture-wo", customerName: "Fixture", serviceType: "Electric", oldSystemId: "OLD1" } as any));
@@ -68,6 +88,7 @@ test("transactional completion, mobile usage, concurrency, import rollback, and 
     assert.deepEqual(draftMovements.map(row => row.actor_id), [user.id], "one deliberate draft save records its actor");
     const before = await inventoryState(project.id), backup = await backupProjectDatabase(schema);
     assert.ok(backup.inventory);
+    assert.ok(backup.inventory.state.orders.find(order => order.id === "amend-po")?.archivedAt, "cleared POs remain in portable backups");
     assert.deepEqual(backup.workOrders.map(w => w.id), [2, 3], "ordered IDs expose the fresh-sequence collision");
     for (const identity of [false, true]) {
       const { rows: [target] } = await pool.query("INSERT INTO public.projects(name,inventory_enabled) VALUES($1,true) RETURNING id,name", [`Fresh restore ${suffix} ${identity}`]);
