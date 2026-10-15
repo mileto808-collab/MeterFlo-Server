@@ -2,7 +2,7 @@ import type { PoolClient } from "pg";
 import { pool } from "./db";
 import { auditContext, auditingEnabled } from "./auditContext";
 import { insertAuditEvent } from "./auditService";
-import { applyInventoryCommand, canonicalInventoryJson, completeInventoryWorkOrder, InventoryError, reserved, warehouseAccess } from "../shared/inventory-engine";
+import { applyInventoryCommand, canonicalInventoryJson, completeInventoryWorkOrder, InventoryError, warehouseAccess } from "../shared/inventory-engine";
 import { emptyInventory, allocationSchema, dispositionSchema, inventoryImportSchema, inventoryPermissions, type InventoryState, type InventoryCommand } from "../shared/inventory";
 import { storage } from "./storage";
 import { z } from "zod";
@@ -18,29 +18,42 @@ export async function lockInventory(client: PoolClient, projectId: number) {
 }
 export async function saveInventory(client: PoolClient, projectId: number, before: InventoryState, after: InventoryState, operationId: string, action: string) {
   const actor = auditContext.getStore()?.actorId || null;
+  const stockKey = (b: { warehouseId: string; itemId: string }) => JSON.stringify([b.warehouseId, b.itemId]);
+  const priorStock = new Map(before.stock.map(b => [stockKey(b), b]));
+  const reservations = (s: InventoryState) => {
+    const totals = new Map<string, number>();
+    for (const a of s.allocations) if (a.status === "reserved") for (const l of a.lines) {
+      const key = stockKey(l); totals.set(key, (totals.get(key) || 0) + l.quantity);
+    }
+    return totals;
+  };
+  const reservedBefore = reservations(before), reservedAfter = reservations(after);
   const changes = [
     ...after.stock.map(b => {
-      const prior = before.stock.find(p => p.warehouseId === b.warehouseId && p.itemId === b.itemId);
+      const key = stockKey(b), prior = priorStock.get(key);
       return { warehouseId: b.warehouseId, itemId: b.itemId, before: prior?.quantity || 0, after: b.quantity,
-        reservedBefore: reserved(before, b.warehouseId, b.itemId), reservedAfter: reserved(after, b.warehouseId, b.itemId),
+        reservedBefore: reservedBefore.get(key) || 0, reservedAfter: reservedAfter.get(key) || 0,
         serialsBefore: prior?.serials || [], serialsAfter: b.serials };
     }).filter(b => b.before !== b.after || b.reservedBefore !== b.reservedAfter || JSON.stringify(b.serialsBefore) !== JSON.stringify(b.serialsAfter)),
   ];
-  const entityChanges = (["warehouses", "vendors", "items", "orders", "allocations", "counts", "returns"] as const).flatMap(kind =>
-    after[kind].filter(value => {
+  const entityChanges = (["warehouses", "vendors", "items", "orders", "allocations", "counts", "returns"] as const).flatMap(kind => {
+    const previous = new Map(before[kind].map(value => [((value as any).id ?? (value as any).workOrderId), value]));
+    return after[kind].flatMap(value => {
       const id = (value as any).id ?? (value as any).workOrderId;
-      return JSON.stringify(value) !== JSON.stringify(before[kind].find(old => ((old as any).id ?? (old as any).workOrderId) === id));
-    }).map(value => {
-      const id = (value as any).id ?? (value as any).workOrderId;
-      const prior = before[kind].find(old => ((old as any).id ?? (old as any).workOrderId) === id);
-      return { field: `${kind}/${id}`, before: prior || null, after: value };
-    }));
+      const prior = previous.get(id);
+      return JSON.stringify(value) === JSON.stringify(prior) ? [] : [{ field: `${kind}/${id}`, before: prior || null, after: value }];
+    });
+  });
   await client.query("UPDATE public.inventory_state SET state=$2,updated_at=now() WHERE project_id=$1", [projectId, JSON.stringify(after)]);
-  for (const i of after.items) await client.query(`INSERT INTO public.inventory_items(project_id,id,sku,data) VALUES($1,$2,$3,$4)
+  // These tables mirror the locked JSON state. Only changed rows need writes;
+  // count/order metadata changes must not rewrite every warehouse's balances.
+  const previousItems = new Map(before.items.map(i => [i.id, JSON.stringify(i)]));
+  for (const i of after.items.filter(i => previousItems.get(i.id) !== JSON.stringify(i))) await client.query(`INSERT INTO public.inventory_items(project_id,id,sku,data) VALUES($1,$2,$3,$4)
     ON CONFLICT(project_id,id) DO UPDATE SET sku=EXCLUDED.sku,data=EXCLUDED.data`, [projectId, i.id, i.sku, JSON.stringify(i)]);
-  for (const b of after.stock) await client.query(`INSERT INTO public.inventory_quantities(project_id,warehouse_id,item_id,quantity,reserved,serials)
+  const changedStock = new Set(changes.map(stockKey));
+  for (const b of after.stock.filter(b => !priorStock.has(stockKey(b)) || changedStock.has(stockKey(b)))) await client.query(`INSERT INTO public.inventory_quantities(project_id,warehouse_id,item_id,quantity,reserved,serials)
     VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(project_id,warehouse_id,item_id) DO UPDATE SET quantity=EXCLUDED.quantity,reserved=EXCLUDED.reserved,serials=EXCLUDED.serials`,
-    [projectId, b.warehouseId, b.itemId, b.quantity, reserved(after, b.warehouseId, b.itemId), JSON.stringify(b.serials)]);
+    [projectId, b.warehouseId, b.itemId, b.quantity, reservedAfter.get(stockKey(b)) || 0, JSON.stringify(b.serials)]);
   await client.query("INSERT INTO public.inventory_movements(project_id,operation_id,action,actor_id,changes) VALUES($1,$2,$3,$4,$5)",
     [projectId, operationId, action, actor, JSON.stringify({ stock: changes, entities: entityChanges })]);
   if (auditingEnabled) await insertAuditEvent(client, { action: `inventory.${action}`, entityType: "inventory", entityId: operationId,

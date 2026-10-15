@@ -18,3 +18,4 @@
 - [Inventory scope](inventory-scope.md) — inventory is optional per project; reading-only work is not a changeout, and disabled projects retain current behavior.
 - [Inventory backup types](inventory-backup-types.md) — test full-system and project restores separately with posted serialized stock; JSON arrays and generated identities need type-aware handling.
 - [Audited test fixtures](audited-test-fixtures.md) — CLI fixture creation must match the app's audit initialization; persistent triggers alone do not supply project scope metadata.
+- [Inventory concurrency boundary](inventory-concurrency-boundary.md) — reducing mirror writes must not weaken the aggregate lock; warehouse-only locks can lose cross-warehouse updates.

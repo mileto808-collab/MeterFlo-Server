@@ -13,6 +13,8 @@
     "test:customer-updates": "tsx --test tests/customer-updates.test.ts",
     "test:customer-updates-integration": "tsx --test tests/customer-updates-integration.test.ts",
     "test:inventory": "tsx --test tests/inventory.test.ts tests/inventory-count-form.test.ts tests/inventory-count-reference.test.ts tests/inventory-resource-save.test.ts",
+    "test:inventory-volume": "tsx --test tests/inventory-volume.test.ts tests/inventory-persistence.test.ts",
+    "test:inventory-volume:acceptance": "INVENTORY_VOLUME_ACCEPTANCE=1 tsx --test tests/inventory-volume-integration.test.ts",
     "test:inventory-resource:browser": "node tests/inventory-resource-ui.cjs",
     "test:inventory-count:browser": "node tests/inventory-count-ui.cjs",
     "test:inventory-integration": "tsx --test tests/inventory-integration.test.ts",

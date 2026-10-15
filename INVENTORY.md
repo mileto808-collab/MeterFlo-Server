@@ -2,6 +2,9 @@
 
 Inventory is optional for each project. An administrator enables **Project inventory** in the project form. It uses the same PostgreSQL database and configured local project-files directory on Replit, Windows, and Linux. No Replit bucket or external inventory service is required.
 
+See [INVENTORY_VOLUME.md](INVENTORY_VOLUME.md) for reproducible isolated load
+tests, measured operating limits, concurrency budgets and large-count caveats.
+
 ## Setup and permissions
 
 1. Enable inventory for the project using an administrator account with `inventory.configure` and project-edit permission.
