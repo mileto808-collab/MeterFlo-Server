@@ -20,3 +20,4 @@
 - [Audited test fixtures](audited-test-fixtures.md) — CLI fixture creation must match the app's audit initialization; persistent triggers alone do not supply project scope metadata.
 - [Inventory concurrency boundary](inventory-concurrency-boundary.md) — reducing mirror writes must not weaken the aggregate lock; warehouse-only locks can lose cross-warehouse updates.
 - [Standalone acceptance isolation](standalone-acceptance-isolation.md) — own the database before imports; keep Linux PostgreSQL sockets inside the sandbox and Windows evidence separate.
+- [Unsaved transition safety](unsaved-transition-safety.md) — Discard clears edits only when the requested replacement or close succeeds; failures must keep the editor usable.

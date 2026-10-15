@@ -20,7 +20,7 @@ async function main() {
     for (const id of ["main", "empty"])
       await command("warehouse", { id, code: id.toUpperCase(), name: `${id} fixture`, type: "physical", address: "Test only" });
     await command("vendor", { id: "vendor", name: "Fixture supplier" });
-    for (const [id, tracking] of [["bulk", "regular"], ["serial", "serialized"], ["zero", "regular"]])
+    for (const [id, tracking] of [["bulk", "regular"], ["serial", "serialized"], ["zero", "regular"], ["cancel-discovery", "regular"]])
       await command("item", { id, sku: id.toUpperCase(), name: `${id} fixture`, tracking });
     await command("order", { id: "po", type: "purchase", vendorId: "vendor", destinationId: "main",
       lines: [{ itemId: "bulk", quantity: 5 }, { itemId: "serial", quantity: 2 }] });
@@ -30,6 +30,16 @@ async function main() {
     ] });
     const page = await context.newPage(), errors = [];
     page.on("pageerror", e => errors.push(e.message));
+    const unsaved = page.getByRole("dialog", { name: "Unsaved count changes", exact: true });
+    const choose = async name => {
+      await unsaved.getByRole("button", { name, exact: true }).click();
+      if (name !== "Save draft") await unsaved.waitFor({ state: "hidden" });
+    };
+    const assertUnload = async dirty => assert.equal(await page.evaluate(() => {
+      const event = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    }), dirty, "beforeunload reflects only unsaved count values");
     await page.goto(`/projects/${fixture.projectId}/inventory`);
     await page.getByRole("tab", { name: "Counts & assembly", exact: true }).click();
     const addProduct = async id => {
@@ -77,7 +87,7 @@ async function main() {
     assert.equal(found.body.state.counts[0].lines.find(l => l.itemId === "zero").quantity, 0);
 
     // Item introduced AFTER snapshot creation is rendered and submitted too.
-    const existing = await start("main");
+    const existing = await start("main", false);
     assert.equal(await page.locator("#count-bulk").inputValue(), "5");
     assert.equal(await page.locator("#countserial-serial").inputValue(), "000001\n000002");
     assert.equal(await page.getByLabel("Count adjustment reason").inputValue(), "");
@@ -103,21 +113,47 @@ async function main() {
     assert.deepEqual(unchanged.body.state.stock, before);
     assert.equal(unchanged.submitted.lines.length, 4);
 
-    // Drafts stay for Close/Continue of the SAME count, not another warehouse/count.
+    // Close offers all choices. Failed saves retain entries AND the destination.
     await start("main");
     await page.locator("#count-bulk").fill("123");
     await page.getByLabel("Count adjustment reason").fill("Main draft");
+    await assertUnload(true);
     await page.getByRole("button", { name: "Close", exact: true }).click();
+    await choose("Stay");
+    assert.equal(await page.locator("#count-bulk").inputValue(), "123");
+    await page.getByRole("button", { name: "Close", exact: true }).click();
+    const failSave = route => route.request().postDataJSON()?.action === "countSaveDraft"
+      ? route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ message: "Temporary fixture failure" }) })
+      : route.continue();
+    await page.route(`**${endpoint}/commands`, failSave);
+    await choose("Save draft");
+    await unsaved.getByText(/Draft not saved/).waitFor();
+    assert.equal(await page.locator("#count-bulk").inputValue(), "123");
+    await assertUnload(true);
+    await page.unroute(`**${endpoint}/commands`, failSave);
+    const abortSave = route => route.request().postDataJSON()?.action === "countSaveDraft" ? route.abort("failed") : route.continue();
+    await page.route(`**${endpoint}/commands`, abortSave);
+    await choose("Save draft");
+    await page.getByRole("button", { name: "Save draft", exact: true }).waitFor();
+    await page.waitForFunction(() => !Array.from(document.querySelectorAll('button')).find(b => b.textContent === "Save draft")?.disabled);
+    assert.equal(await unsaved.isVisible(), true);
+    await page.unroute(`**${endpoint}/commands`, abortSave);
+    await choose("Save draft");
+    await unsaved.waitFor({ state: "hidden" });
+    await page.getByLabel("Count adjustment reason").waitFor({ state: "hidden" });
+    await assertUnload(false);
     await continueCount(4);
     assert.equal(await page.locator("#count-bulk").inputValue(), "123");
+    await assertUnload(false);
     await page.getByRole("button", { name: "Close", exact: true }).click();
     await start("empty");
     assert.equal(await page.locator("#count-bulk").inputValue(), "7");
     assert.equal(await page.locator("#countserial-serial").inputValue(), "000010\n000011");
     assert.equal(await page.getByLabel("Count adjustment reason").inputValue(), "");
     await page.getByRole("button", { name: "Close", exact: true }).click();
+    if (await unsaved.isVisible()) await choose("Discard");
     await continueCount(4);
-    assert.equal(await page.locator("#count-bulk").inputValue(), "5");
+    assert.equal(await page.locator("#count-bulk").inputValue(), "123");
 
     // Blank is not zero: fail locally, keeping all entries and reason.
     await page.locator("#count-bulk").fill("");
@@ -159,9 +195,22 @@ async function main() {
     await page.getByLabel("Count adjustment reason").fill("Unsaved local correction");
     await saveDraft(409);
     assert.equal(await page.getByLabel("Count adjustment reason").inputValue(), "Unsaved local correction");
-    page.once("dialog", dialog => dialog.accept());
+    // Discard is conditional on the replacement actually loading. A failed
+    // refetch must not erase the older editor's edits or hide the editor.
+    const failReload = route => route.fulfill({ status: 503, contentType: "application/json",
+      body: JSON.stringify({ message: "Temporary fixture reload failure" }) });
+    await page.route(`**${endpoint}`, failReload);
     await page.getByRole("button", { name: "Reload saved draft", exact: true }).click();
-    await page.getByText("Loaded saved draft revision 2.", { exact: true }).waitFor();
+    await choose("Discard");
+    await page.getByText("The saved draft could not be loaded, or the count is no longer open. Your entries were kept.", { exact: true }).waitFor();
+    assert.equal(await page.getByLabel("Count adjustment reason").inputValue(), "Unsaved local correction");
+    assert.equal(await page.locator("#count-bulk").inputValue(), "");
+    assert.equal(await page.locator("#countserial-serial").inputValue(), "000001\npartial-scan");
+    await assertUnload(true);
+    await page.unroute(`**${endpoint}`, failReload);
+    await page.getByRole("button", { name: "Reload saved draft", exact: true }).click();
+    await choose("Discard");
+    await page.getByText(`Loaded saved draft revision ${savedCount.draft.revision + 1}.`, { exact: true }).waitFor();
     assert.equal(await page.getByLabel("Count adjustment reason").inputValue(), "Other operator saved");
     await page.getByLabel("Count adjustment reason").fill("Keep this draft");
     await page.locator("#countserial-serial").fill("000001\n000002");
@@ -247,6 +296,7 @@ async function main() {
     // products. Paging/filtering never changes the complete submitted set.
     if ((await state()).warehouses.some(w => w.id === "large")) {
       await page.getByRole("button", { name: "Close", exact: true }).click();
+      await choose("Discard");
       await start("large", false);
       await page.getByText("600 total count entries", { exact: false }).waitFor();
       assert.equal(await page.locator('input[id^="count-capacity-"]').count(), 50);
@@ -278,12 +328,84 @@ async function main() {
       await start("large", false);
     }
 
+    await page.getByRole("button", { name: "Close", exact: true }).click();
+    if (await unsaved.isVisible()) await choose("Discard");
+    await start("main", false);
     await fs.mkdir("generated-artifacts/inventory-counts", { recursive: true });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.getByLabel("Count adjustment reason").scrollIntoViewIfNeeded();
     await page.screenshot({ path: "generated-artifacts/inventory-counts/mobile.jpg" });
 
-    // An SPA project change must unmount the old project's count draft.
+    // True reverts and display-only filters are clean; editing never autosaves.
+    const oldQuantity = await page.locator("#count-bulk").inputValue();
+    await page.getByRole("button", { name: "Reload saved draft", exact: true }).click();
+    if (await unsaved.isVisible()) await choose("Discard");
+    await page.getByText("Unsaved count changes. Save the draft to keep your entries.", { exact: true }).waitFor({ state: "hidden" });
+    await page.getByLabel("Count adjustment reason").fill("Reverted edit");
+    await page.getByLabel("Count adjustment reason").fill((await state()).counts.at(-1).draft?.reason ?? "");
+    await assertUnload(false);
+    await page.locator("#count-bulk").fill("999");
+    await assertUnload(true);
+    await page.locator("#count-bulk").fill(oldQuantity);
+    await assertUnload(false);
+    const baselineSerials = await page.locator("#countserial-serial").inputValue();
+    await page.locator("#countserial-serial").fill("000001\nunfinished");
+    await assertUnload(true);
+    await page.locator("#countserial-serial").fill(baselineSerials);
+    await assertUnload(false);
+    await page.getByLabel("Search count entries", { exact: true }).fill("bulk");
+    await assertUnload(false);
+    await page.getByLabel("Search count entries", { exact: true }).fill("");
+    let draftWrites = 0;
+    const recordDraft = request => { if (request.url().endsWith(`${endpoint}/commands`) && request.postDataJSON()?.action === "countSaveDraft") draftWrites++; };
+    page.on("request", recordDraft);
+    await page.getByLabel("Count adjustment reason").fill("Unsaved project correction");
+    await assertUnload(true);
+    assert.equal(draftWrites, 0);
+    page.off("request", recordDraft);
+
+    // Switching counts, starting a replacement, and cancelling must not silently
+    // abandon the active editor; selecting the same count does not warn.
+    const activeNumber = (await state()).counts.length;
+    await continueCount(activeNumber);
+    assert.equal(await unsaved.isVisible(), false);
+    await page.getByRole("button", { name: "Start count", exact: true }).click();
+    await choose("Stay");
+    assert.equal((await state()).counts.length, activeNumber);
+    const otherNumber = (await state()).counts.findIndex((count, i) => count.status === "open" && i + 1 !== activeNumber) + 1;
+    await continueCount(otherNumber);
+    await choose("Stay");
+    assert.equal(await page.getByLabel("Count adjustment reason").inputValue(), "Unsaved project correction");
+    await page.getByText(`Count #${activeNumber}`, { exact: true }).locator("../..").getByRole("button", { name: "Cancel count", exact: true }).click();
+    await choose("Stay");
+    assert.equal((await state()).counts.at(-1).status, "open");
+    await addProduct("cancel-discovery");
+    const quantityBeforeCancel = await page.locator("#count-bulk").inputValue();
+    const serialsBeforeCancel = await page.locator("#countserial-serial").inputValue();
+    const failCancel = route => route.request().postDataJSON()?.action === "countCancel"
+      ? route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ message: "Fixture cancellation rejected" }) })
+      : route.continue();
+    await page.route(`**${endpoint}/commands`, failCancel);
+    await page.getByText(`Count #${activeNumber}`, { exact: true }).locator("../..").getByRole("button", { name: "Cancel count", exact: true }).click();
+    await choose("Discard");
+    await page.getByText(/Fixture cancellation rejected/).first().waitFor();
+    assert.equal((await state()).counts.at(-1).status, "open");
+    assert.equal(await page.getByLabel("Count adjustment reason").inputValue(), "Unsaved project correction");
+    assert.equal(await page.locator("#count-bulk").inputValue(), quantityBeforeCancel);
+    assert.equal(await page.locator("#countserial-serial").inputValue(), serialsBeforeCancel);
+    assert.equal(await page.locator("#count-cancel-discovery").inputValue(), "0", "discovery survives rejected cancellation");
+    await assertUnload(true);
+    await page.unroute(`**${endpoint}/commands`, failCancel);
+
+    // Actual refresh warning can be cancelled without losing entries.
+    const refreshWarning = page.waitForEvent("dialog");
+    await page.evaluate(() => { setTimeout(() => window.location.reload(), 0); });
+    const warning = await refreshWarning;
+    assert.equal(warning.type(), "beforeunload");
+    await warning.dismiss();
+    assert.equal(await page.getByLabel("Count adjustment reason").inputValue(), "Unsaved project correction");
+
+    // An SPA project change waits for a choice, and never leaks project values.
     const navigationProject = await context.request.post("/api/projects", { data: {
       name: `Count navigation fixture ${fixture.projectId}`, inventoryEnabled: true,
     } });
@@ -291,13 +413,66 @@ async function main() {
     navigationProjectId = (await navigationProject.json()).id;
     await page.evaluate(url => {
       window.history.pushState({}, "", url);
-      window.dispatchEvent(new PopStateEvent("popstate"));
     }, `/projects/${navigationProjectId}/inventory`);
+    await choose("Stay");
+    assert.ok(page.url().endsWith(`/projects/${fixture.projectId}/inventory`));
+    await page.evaluate(url => window.history.pushState({}, "", url), `/projects/${navigationProjectId}/inventory`);
+    await choose("Save draft");
+    await unsaved.waitFor({ state: "hidden" });
+    await page.waitForURL(`**/projects/${navigationProjectId}/inventory`);
     await page.getByRole("tab", { name: "Counts & assembly", exact: true }).click();
     assert.equal(await page.getByLabel("Count adjustment reason").count(), 0);
     assert.equal(await page.getByRole("button", { name: "Post count", exact: true }).count(), 0);
+    const newProjectState = (await (await context.request.get(`/api/projects/${navigationProjectId}/inventory`)).json()).state;
+    assert.equal(newProjectState.counts.length, 0);
+    await page.goBack();
+    await page.getByRole("tab", { name: "Counts & assembly", exact: true }).click();
+    await continueCount(activeNumber);
+    assert.equal(await page.getByLabel("Count adjustment reason").inputValue(), "Unsaved project correction");
+    await assertUnload(false);
+    // Exercise an ordinary app link as well as programmatic project navigation.
+    // The saved transition must leave immediately, without a second warning.
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.getByLabel("Count adjustment reason").fill("Saved before app link");
+    await page.getByRole("link", { name: "Projects", exact: true }).click();
+    await choose("Save draft");
+    await page.waitForURL("**/projects");
+    assert.equal(await unsaved.isVisible(), false);
+    assert.equal((await state()).counts.at(-1).draft.reason, "Saved before app link");
+    await page.goBack();
+    await page.getByRole("tab", { name: "Counts & assembly", exact: true }).click();
+    await continueCount(activeNumber);
+    assert.equal(await page.getByLabel("Count adjustment reason").inputValue(), "Saved before app link");
+    await assertUnload(false);
+    // Recreate a forward project entry after following the app link.
+    await page.evaluate(url => window.history.pushState({}, "", url), `/projects/${navigationProjectId}/inventory`);
+    await page.waitForURL(`**/projects/${navigationProjectId}/inventory`);
+    await page.goBack();
+    await page.getByRole("tab", { name: "Counts & assembly", exact: true }).click();
+    await continueCount(activeNumber);
+    await page.getByLabel("Count adjustment reason").fill("Forward local change");
+    await page.evaluate(() => window.history.forward());
+    await unsaved.waitFor();
+    assert.ok(page.url().endsWith(`/projects/${fixture.projectId}/inventory`));
+    await choose("Stay");
+    await page.evaluate(() => window.history.forward());
+    await choose("Discard");
+    await page.waitForURL(`**/projects/${navigationProjectId}/inventory`);
+    await page.goBack();
+    await page.getByRole("tab", { name: "Counts & assembly", exact: true }).click();
+    await continueCount(activeNumber);
+    assert.equal(await page.getByLabel("Count adjustment reason").inputValue(), "Saved before app link");
+    // Push a same-route entry so Back also exercises a dirty transition.
+    await page.evaluate(() => window.history.pushState({}, "", window.location.href));
+    await page.getByLabel("Count adjustment reason").fill("Back local change");
+    await page.evaluate(() => window.history.back());
+    await choose("Stay");
+    assert.equal(await page.getByLabel("Count adjustment reason").inputValue(), "Back local change");
+    await page.evaluate(url => window.history.replaceState({}, "", url), `/projects/${navigationProjectId}/inventory`);
+    await choose("Discard");
+    await page.waitForURL(`**/projects/${navigationProjectId}/inventory`);
     assert.deepEqual(errors, []);
-    console.log("Real stock-count UI passed: discoveries, defaults, zero, save/reload/resume, conflicting editors, authorized handoff, project/warehouse/permission isolation, blank rejection, reservations and stale snapshots.");
+    console.log("Real stock-count UI passed: dirty/clean navigation, refresh, save/discard/stay, failed saves, history, project isolation, discoveries, save/reload/resume, conflicting editors, permissions and stock safeguards.");
   } finally {
     try {
       if (navigationProjectId) {
