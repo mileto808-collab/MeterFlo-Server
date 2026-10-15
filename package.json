@@ -23,6 +23,7 @@
     "test:inventory-order:browser": "node tests/inventory-order-ui.cjs",
     "test:inventory-order-discovery": "tsx --test tests/inventory-order-discovery.test.ts",
     "test:inventory-print": "tsx --test tests/inventory-print-labels.test.ts",
+    "test:inventory-print:browser": "node tests/inventory-serial-print-ui.cjs",
     "test:inventory-order-discovery:browser": "node tests/inventory-order-discovery-ui.cjs",
     "test:inventory-shipment-dismissal:browser": "node tests/inventory-shipment-dismissal-ui.cjs",
     "test:inventory-partial-holds:browser": "node tests/inventory-partial-holds-ui.cjs",

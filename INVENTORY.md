@@ -136,6 +136,16 @@ Readable order numbers and references appear in save confirmations, order cards,
 
 Printed orders and receiving/dispatch/acceptance receipts use readable order numbers and usernames. Each receipt also has a project-local **Receipt #** derived from its position in the append-only ledger, so separate partial movements remain distinguishable. Internal order and receipt IDs are printed as **Code 128 barcodes**, without UUID text underneath. Scanning a barcode returns the exact original internal ID, not the display number. Barcodes are generated on the server as inline vector images: they work offline and on standalone Windows/Linux installations without external services or barcode fonts. These display changes do not alter stock, saved scans, audit history, backup contents or internal relationships.
 
+### Receipt Serial Details appendix
+
+Receipt summaries show a serial count and a **Serial Details** link instead of placing hundreds of serials in an item row. The link jumps to the appendix in the browser. In Print / Save PDF, the appendix starts on a separate page and continues for as many pages as needed. Receipts with no recorded serials or dispatch-reference evidence do not add an empty appendix; unknown/unreadable quantities still appear as counts in the summary.
+
+The appendix groups evidence by product/SKU and category: confirmed identities, damaged/quarantined identities, unverified dispatch references, and verified release identities. Disposition movement identities and selected known identities remain separately labeled; disposition movement lists can include unverified references and are not proof that those labels were physically read. Transit-loss references are labeled as not physically received. Component serials are included when recorded on the printed receipt.
+
+Each continuation table repeats the project, readable order/receipt number, product/category, and column headings. One numbered serial per row preserves leading zeros, case and punctuation; long values wrap rather than being cut off. Unknown units are never assigned invented serials, and the same identity recorded in different evidence categories remains in each category. Only this receipt's evidence is printed—not serials from earlier/later partial shipments or the current state of its entire inspection hold.
+
+Automated checks: `npm run test:inventory-print` verifies evidence scope and display; `npm run test:inventory-print:browser` generates isolated fixtures and Chromium Letter/A4 PDFs under ignored `generated-artifacts/inventory-serial-print/`. The browser check requires Chromium (or `CHROMIUM_PATH`) and Poppler's `pdftotext`. It checks exact serial preservation, category duplicates, repeated page identifiers/headings, printable bounds, no empty appendix pages and offline rendering, including a 1,510-serial receipt. Actual browser print engines and printer settings can affect page counts; Firefox/Safari and physical printers are not verified by this Chromium check. Order and count serial layouts are unchanged.
+
 ### Finding purchase and transfer orders
 
 Search and filters work on the inventory snapshot already authorized for the current project and warehouse access. They do not change stock or orders.

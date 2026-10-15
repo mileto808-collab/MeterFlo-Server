@@ -4,6 +4,7 @@ import { inventoryActorLabel, inventoryReceiptLabel, type InventoryActorLabel } 
 import { orderLabel, orderReference as customerOrderReference } from "../shared/inventory-order-labels";
 import { inventoryBarcode } from "./inventoryBarcode";
 import { shipmentPrint } from "./inventoryShipmentPrint";
+import { receiptSerialAppendix, receiptSerialSummary } from "./inventoryReceiptSerials";
 
 const escape = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 export function inventoryPrint(kind: string, record: any, state: InventoryState, project: string, actors: readonly InventoryActorLabel[] = []) {
@@ -16,9 +17,15 @@ export function inventoryPrint(kind: string, record: any, state: InventoryState,
   const actorLabel = (id: string) => inventoryActorLabel(id, actors);
   const origin = linkedOrder || record;
   return `<!doctype html><html><head><meta charset="utf-8"><title>${escape(reference)}</title><style>
-    body{font:14px Arial;margin:30px;color:#111}table{border-collapse:collapse;width:100%;margin-top:20px}th,td{border:1px solid #bbb;padding:8px;text-align:left}button{padding:10px}
+     body{font:14px Arial;margin:30px;color:#111}table{border-collapse:collapse;width:100%;margin-top:20px}th,td{border:1px solid #bbb;padding:8px;text-align:left}button{padding:10px}
     .internal-barcode{margin:12px 0;break-inside:avoid;page-break-inside:avoid}.internal-barcode figcaption{font-size:12px;font-weight:bold;margin-bottom:4px}.internal-barcode svg{display:block;width:135mm;max-width:100%;height:auto}
-    @media print{button{display:none}.internal-barcode{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head>
+     .serial-details{margin-top:2rem}.serial-details>h2{margin-top:0}.serial-evidence-group{table-layout:fixed;break-inside:auto;page-break-inside:auto;margin-top:1rem}
+     .serial-evidence-group thead{display:table-header-group}.serial-evidence-group tr{break-inside:avoid;page-break-inside:avoid}
+     .serial-number-column{width:3.5rem}.serial-evidence-group td{vertical-align:top}.serial-evidence-group .serial-text{overflow-wrap:anywhere;word-break:break-word;white-space:pre-wrap}
+     .serial-identification th{font-size:12px}.serial-evidence-group .unidentified td{font-style:italic}
+     @media print{button{display:none}.internal-barcode{-webkit-print-color-adjust:exact;print-color-adjust:exact}.serial-details{break-before:page;page-break-before:always}
+       .serial-evidence-group{font-size:10pt}.serial-evidence-group th,.serial-evidence-group td{padding:5px}}
+     ${kind === "receipt" ? "@page{size:auto;margin:12mm}" : ""}</style></head>
     <body><button onclick="window.print()">Print / Save PDF</button><h1>${escape(project)} — ${escape(kind)}</h1>
     <p>${escape(reference)} · Status: ${escape(record.status || record.action)}</p>
     ${orderReference ? `<p><strong>Order number / reference: ${escape(orderReference)}</strong></p>` :
@@ -29,9 +36,10 @@ export function inventoryPrint(kind: string, record: any, state: InventoryState,
     ${kind === "receipt" ? inventoryBarcode(record.id, "Internal receipt ID") : ""}
     ${linkedOrder ? inventoryBarcode(linkedOrder.id, "Internal order ID") : ""}
     <table><thead><tr><th>SKU</th><th>Item</th><th>Quantity</th><th>Serials</th><th>Dispatched</th><th>Received</th></tr></thead><tbody>
-    ${lineList.map((l: any) => `<tr><td>${escape(state.items.find(i => i.id === l.itemId)?.sku)}</td><td>${escape(state.items.find(i => i.id === l.itemId)?.name)}</td>
-    <td>${escape(l.quantity)}</td><td>${escape((l.serials || []).join(", "))}</td><td>${escape((record.dispatched || []).filter((x: any) => x.itemId === l.itemId).reduce((n: number, x: any) => n + x.quantity, 0))}</td>
+     ${lineList.map((l: any) => `<tr><td>${escape(state.items.find(i => i.id === l.itemId)?.sku)}</td><td>${escape(state.items.find(i => i.id === l.itemId)?.name)}</td>
+     <td>${escape(l.quantity)}</td><td>${kind === "receipt" ? receiptSerialSummary(l) : escape((l.serials || []).join(", "))}</td><td>${escape((record.dispatched || []).filter((x: any) => x.itemId === l.itemId).reduce((n: number, x: any) => n + x.quantity, 0))}</td>
     <td>${escape((record.received || []).filter((x: any) => x.itemId === l.itemId).reduce((n: number, x: any) => n + x.quantity, 0))}</td></tr>`).join("")}</tbody></table>
     ${shipmentPrint(kind, record, state, actorLabel)}
-    ${record.components ? `<h2>Components</h2><p>${escape(record.components.map((l: any) => `${l.itemId}: ${l.quantity} (${l.serials.join(", ")})`).join("; "))}</p>` : ""}</body></html>`;
+     ${record.components ? `<h2>Components</h2><p>${kind === "receipt" ? record.components.map((l: any) => `${escape(l.itemId)}: ${escape(l.quantity)} (${receiptSerialSummary(l)})`).join("; ") : escape(record.components.map((l: any) => `${l.itemId}: ${l.quantity} (${(l.serials || []).join(", ")})`).join("; "))}</p>` : ""}
+     ${kind === "receipt" ? receiptSerialAppendix(record, state, project) : ""}</body></html>`;
 }

@@ -2,6 +2,7 @@ import type { InventoryReceipt, InventoryState, InventoryOrder, StockLine } from
 import { orderLineProgress, remainingHold, holdDispositions } from "../shared/inventory-shipment-model";
 import { orderLabel } from "../shared/inventory-order-labels";
 import { inventoryActorLabel, inventoryHoldLabel, inventoryReceiptLabel } from "../shared/inventory-display-labels";
+import { receiptDispositionSerialSummary } from "./inventoryReceiptSerials";
 
 const escape = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 export function shipmentPrint(kind: string, record: InventoryOrder | InventoryReceipt, state: InventoryState, actorLabel: (id: string) => string = inventoryActorLabel) {
@@ -23,8 +24,8 @@ export function shipmentPrint(kind: string, record: InventoryOrder | InventoryRe
   const r = record as InventoryReceipt;
   return `${r.resolution ? `<p>Disposition: ${escape(r.resolution)}. ${r.resolution === "confirmed transit loss" ? "These units were written off in transit, not physically received at the destination." : ""}</p>` : ""}
     ${r.holdId ? `<p>${escape(inventoryHoldLabel(state.shipmentHolds ?? [], r.holdId))}</p>` : ""}
-    ${r.holdDisposition ? `<p>This disposition covers ${r.holdDisposition.quantity} units only; it does not rewrite the original physical receipt. Unidentified units selected: ${r.holdDisposition.unidentifiedQuantity}. Known identities: ${escape(r.holdDisposition.serials.join(", "))}. Dispatch references: ${escape(r.holdDisposition.expectedSerials.join(", "))}. Verified release identities: ${escape(r.holdDisposition.verifiedSerials.join(", "))}.</p>` : ""}
+     ${r.holdDisposition ? `<p>This disposition covers ${r.holdDisposition.quantity} units only; it does not rewrite the original physical receipt. Unidentified units selected: ${r.holdDisposition.unidentifiedQuantity}. ${receiptDispositionSerialSummary(r.holdDisposition)}.</p>` : ""}
     ${r.externalReference ? `<p>Return / external reference: ${escape(r.externalReference)}</p>` : ""}
-    ${(r.damaged ?? []).map(l => `<p><strong>Damaged / quarantined:</strong> ${escape(labels(l))} × ${l.quantity}. Serial identities: ${escape(l.serials.join(", "))}; unidentified: ${l.unidentifiedQuantity}; unverified dispatch references: ${escape(l.expectedSerials.join(", "))}. Reason: ${escape(l.reason)}</p>`).join("")}
+     ${(r.damaged ?? []).map(l => `<p><strong>Damaged / quarantined:</strong> ${escape(labels(l))} × ${l.quantity}. ${l.serials.length} known identit${l.serials.length === 1 ? "y" : "ies"}; unidentified: ${l.unidentifiedQuantity}; ${l.expectedSerials.length} unverified dispatch reference${l.expectedSerials.length === 1 ? "" : "s"}.${l.serials.length || l.expectedSerials.length ? ` <a href="#serial-details">Serial Details</a>.` : ""} Reason: ${escape(l.reason)}</p>`).join("")}
     ${r.closedShort ? `<h2>Approved closed-short quantities (not received)</h2>${r.closedShort.map(l => `<p>${escape(labels(l))} × ${l.quantity}</p>`).join("")}<p>Original ordered quantities were preserved. Reason: ${escape(r.reason)}</p>` : ""}`;
 }

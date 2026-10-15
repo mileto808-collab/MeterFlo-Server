@@ -4,6 +4,8 @@ import { randomUUID } from "node:crypto";
 import { emptyInventory, type InventoryOrder, type InventoryReceipt } from "../shared/inventory";
 import { inventoryActorLabel, inventoryReceiptLabel, inventoryHoldLabel } from "../shared/inventory-display-labels";
 import { inventoryPrint } from "../server/inventoryPrint";
+import { extractReceiptSerialEvidence } from "../server/inventoryReceiptSerials";
+import { serialPrintFixture } from "./support/inventory-serial-print-fixtures";
 
 test("actor and ledger labels remain readable without inventing historical identities", () => {
   const id = randomUUID();
@@ -49,3 +51,24 @@ test("receipt and order printing uses readable labels and inline barcodes withou
   }
   assert.deepEqual(state, before);
 });
+
+for (const name of ["none", "one", "hundreds", "thousands", "exceptions", "unknown-only", "disposition", "long", "components", "transit-loss", "escaping"]) {
+  test(`receipt serial appendix retains exact movement evidence: ${name}`, () => {
+    const { state, record, expected, actor, project } = serialPrintFixture(name);
+    const before = structuredClone({ state, record });
+    const evidence = extractReceiptSerialEvidence(record, state);
+    assert.deepEqual(evidence.flatMap(group => group.serials), expected);
+    if (name === "disposition") {
+      assert.ok(evidence.every(group => group.itemId === "meter"), "Disposition uses original hold's product, not its serials");
+      assert.ok(evidence.some(group => group.category === "verified-release"));
+    }
+    if (name === "transit-loss") assert.equal(evidence[0].category, "transit-loss");
+    const html = inventoryPrint("receipt", record, state, project, [{ id: actor, username: "operator" }]);
+    assert.equal(html.includes('id="serial-details"'), expected.length > 0);
+    const summary = html.split('<section id="serial-details"')[0];
+    for (const serial of expected) assert.ok(!summary.includes(serial), "Summary contains counts, not raw serial evidence");
+    assert.ok(!html.includes("OTHER-PARTIAL-NOT-PRINTED"));
+    assert.ok(!html.includes("OTHER-HOLD-NOT-PRINTED"));
+    assert.deepEqual({ state, record }, before, "Printing is read-only");
+  });
+}

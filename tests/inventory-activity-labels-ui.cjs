@@ -22,13 +22,14 @@ async function main() {
     for (const id of ["activity-source", "activity-destination"])
       await send("warehouse", { id, code: id.toUpperCase(), name: id, type: "physical", address: "Disposable fixture" });
     await send("vendor", { id: "activity-vendor", name: "Activity vendor" });
-    await send("item", { id: "activity-seal", sku: "ACT-SEAL", name: "Activity seal", tracking: "regular" });
+    await send("item", { id: "activity-seal", sku: "ACT-SEAL", name: "Activity seal", tracking: "serialized" });
     const purchaseId = crypto.randomUUID(), transferId = crypto.randomUUID();
-    const lines = [{ itemId: "activity-seal", quantity: 2 }];
-    await send("order", { id: purchaseId, type: "purchase", vendorId: "activity-vendor", destinationId: "activity-source", lines });
+    const lines = [{ itemId: "activity-seal", quantity: 2, serials: ["0000ACT-01", "0000ACT-02"] }];
+    const plannedLines = lines.map(({ itemId, quantity }) => ({ itemId, quantity }));
+    await send("order", { id: purchaseId, type: "purchase", vendorId: "activity-vendor", destinationId: "activity-source", lines: plannedLines });
     await send("release", { orderId: purchaseId });
     await send("receive", { orderId: purchaseId, lines });
-    await send("order", { id: transferId, type: "transfer", sourceId: "activity-source", destinationId: "activity-destination", lines });
+    await send("order", { id: transferId, type: "transfer", sourceId: "activity-source", destinationId: "activity-destination", lines: plannedLines });
     await send("release", { orderId: transferId });
     await send("dispatch", { orderId: transferId, lines });
     const before = await send("accept", { orderId: transferId, lines });
@@ -93,6 +94,11 @@ async function main() {
       for (const id of [movement.id, movement.reference, movement.actor])
         assert.ok(!text.includes(id), "Receipt text contains no raw tracking or actor UUID");
       assert.match(text, /Receipt #\d+/);
+      assert.deepEqual(await popup.locator("#serial-details .serial-text").allTextContents(), lines[0].serials,
+        "Authenticated receipt route renders only the movement's exact serials");
+      const summary = await popup.locator("table").first().innerText();
+      assert.ok(summary.includes("2 serials"));
+      assert.ok(!summary.includes(lines[0].serials[0]), "Summary keeps serial detail in the appendix");
       const decoded = await decodeBarcodes(popup);
       assert.deepEqual(decoded, { "Internal receipt ID": movement.id, "Internal order ID": movement.reference },
         "Independent scanner decodes barcodes to original immutable identifiers");

@@ -26,3 +26,13 @@ disposed identity can wrongly release or duplicate equipment.
 **How to apply:** Validate selected identities and unidentified counts against
 still-held custody under the project-wide lock, retain terminal write-off
 blocking, and preserve exact selection identities across unknown-outcome retries.
+
+Receipt serial appendices must use the printed movement's saved evidence, not
+the current contents of its parent hold or the order's accumulated serials.
+
+**Why:** Later partial arrivals and inspections change current custody. Using
+that state in a historical printout can introduce serials that were never part
+of the printed movement or label an unverified reference as a confirmed reading.
+
+**How to apply:** Use linked records only for product/display metadata; retain
+separate confirmed, damaged, unverified and disposition evidence categories.
