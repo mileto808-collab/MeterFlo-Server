@@ -454,13 +454,15 @@ async function main() {
     await amended.getByRole("button", { name: "Restore", exact: true }).waitFor();
     const printOrder = await context.request.get(`${endpoint}/print/order/ORDER-AMEND`);
     assert.equal(printOrder.status(), 200);
-    assert.match(await printOrder.text(), /Order number \/ reference: PO-\d{4}-\d{6,9} · Reference: ORDER-AMEND · Internal ID: ORDER-AMEND/);
+    assert.match(await printOrder.text(), /Order number \/ reference: PO-\d{4}-\d{6,9} · Reference: ORDER-AMEND/);
     const orderReceipt = postedReceipts.find(receipt => receipt.reference === "ORDER-AMEND");
     const printReceipt = await context.request.get(`${endpoint}/print/receipt/${orderReceipt.id}`);
     assert.equal(printReceipt.status(), 200);
     const receiptHTML = await printReceipt.text();
-    assert.match(receiptHTML, /Order number \/ reference: PO-\d{4}-\d{6,9} · Reference: ORDER-AMEND · Internal ID: ORDER-AMEND/);
-    assert.ok(receiptHTML.includes(`Receipt ID: ${orderReceipt.id}`));
+    assert.match(receiptHTML, /Order number \/ reference: PO-\d{4}-\d{6,9} · Reference: ORDER-AMEND/);
+    assert.match(receiptHTML, /Receipt #\d+/);
+    assert.match(receiptHTML, /aria-label="Internal receipt ID barcode"/);
+    assert.ok(!receiptHTML.includes(orderReceipt.id));
     await fs.mkdir("generated-artifacts/inventory", { recursive: true });
     await page.screenshot({ path: "generated-artifacts/inventory/purchase-order-controls.jpg", fullPage: true });
     await amended.getByRole("button", { name: "Restore", exact: true }).click();
@@ -612,8 +614,10 @@ async function main() {
       const printed = await context.request.get(`${endpoint}/print/receipt/${receipt.id}`);
       assert.equal(printed.status(), 200);
       const html = await printed.text();
-      assert.match(html, /Order number \/ reference: TR-\d{4}-\d{6,9} · Reference: ORDER-SERIAL-MOVE · Internal ID: ORDER-SERIAL-MOVE/);
-      assert.ok(html.includes(`Receipt ID: ${receipt.id}`));
+      assert.match(html, /Order number \/ reference: TR-\d{4}-\d{6,9} · Reference: ORDER-SERIAL-MOVE/);
+      assert.match(html, /Receipt #\d+/);
+      assert.match(html, /aria-label="Internal receipt ID barcode"/);
+      assert.ok(!html.includes(receipt.id));
     }
     assert.deepEqual(errors, []);
     console.log("Quantity-only PO/transfer drafts, inline quantity validation/save/reopen, operation-time serial dispatch/acceptance, order/receipt references and PO lifecycle/permission/navigation regressions passed.");

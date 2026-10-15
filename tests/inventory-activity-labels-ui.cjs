@@ -46,6 +46,38 @@ async function main() {
       assert.ok(displayed.includes(`${action} · ${order.orderNumber}`), `${action} displays readable order number`);
       assert.ok(!displayed.some(text => text.includes(order.id)), "Title does not expose internal order UUID");
     }
+    const activityText = await page.getByTestId("inventory-activity-entries").innerText();
+    assert.ok(activityText.includes(fixture.username), "Activity details show the actor username, including an unassigned administrator");
+    for (const receipt of before.receipts)
+      assert.ok(!activityText.includes(receipt.actor), "Activity details do not display actor UUIDs");
+    const decodeBarcodes = async document => {
+      await document.addScriptTag({ path: "node_modules/html5-qrcode/third_party/zxing-js.umd.js" });
+      return document.locator(".internal-barcode").evaluateAll(async figures => {
+        const results = {};
+        for (const figure of figures) {
+          const svg = figure.querySelector("svg");
+          const image = new Image();
+          image.width = svg.viewBox.baseVal.width;
+          image.height = svg.viewBox.baseVal.height;
+          image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new XMLSerializer().serializeToString(svg))}`;
+          await image.decode();
+          const canvas = document.createElement("canvas");
+          canvas.width = image.width;
+          canvas.height = image.height;
+          const ctx = canvas.getContext("2d");
+          ctx.fillStyle = "white";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+          const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+          const luminance = new Uint8ClampedArray(canvas.width * canvas.height);
+          for (let i = 0; i < luminance.length; i++) luminance[i] = pixels[i * 4];
+          const source = new ZXing.RGBLuminanceSource(luminance, canvas.width, canvas.height);
+          const bitmap = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(source));
+          results[figure.querySelector("figcaption").textContent] = new ZXing.MultiFormatReader().decode(bitmap, new Map()).getText();
+        }
+        return results;
+      });
+    };
     const popupPromise = page.waitForEvent("popup");
     await page.getByTestId("inventory-activity-entries").getByRole("button", { name: "Print", exact: true }).first().click();
     const popup = await popupPromise;
@@ -53,10 +85,25 @@ async function main() {
     assert.ok((await popup.locator("body").innerText()).includes(transfer.orderNumber), "Print still resolves the transfer");
     const receipt = before.receipts.find(receipt => receipt.action === "accept" && receipt.reference === transferId);
     assert.ok(popup.url().includes(encodeURIComponent(receipt.id)), "Print uses the immutable receipt ID");
+    await fs.mkdir("generated-artifacts/inventory-activity", { recursive: true });
+    for (const movement of before.receipts) {
+      await popup.goto(`${endpoint}/print/receipt/${movement.id}`);
+      const text = await popup.locator("body").innerText();
+      assert.ok(text.includes(fixture.username), "Printed receipt shows the actor username");
+      for (const id of [movement.id, movement.reference, movement.actor])
+        assert.ok(!text.includes(id), "Receipt text contains no raw tracking or actor UUID");
+      assert.match(text, /Receipt #\d+/);
+      const decoded = await decodeBarcodes(popup);
+      assert.deepEqual(decoded, { "Internal receipt ID": movement.id, "Internal order ID": movement.reference },
+        "Independent scanner decodes barcodes to original immutable identifiers");
+      await popup.emulateMedia({ media: "print" });
+      assert.equal(await popup.getByRole("button").isVisible(), false);
+      await popup.screenshot({ path: `generated-artifacts/inventory-activity/${movement.action}-receipt-print.jpg`, fullPage: true });
+      await popup.emulateMedia({ media: "screen" });
+    }
     await popup.close();
     const after = (await (await context.request.get(endpoint)).json()).state;
     assert.deepEqual(after.receipts, before.receipts, "Displaying labels never rewrites receipt references");
-    await fs.mkdir("generated-artifacts/inventory-activity", { recursive: true });
     await page.screenshot({ path: "generated-artifacts/inventory-activity/readable-order-labels.jpg" });
     assert.deepEqual(errors, []);
     console.log("Activity uses readable PO/transfer numbers for receive, dispatch and accept; print links and stored references preserved.");

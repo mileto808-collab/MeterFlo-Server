@@ -67,7 +67,8 @@ test("partial known/unidentified dispositions retain original evidence, custody 
   const printed = shipmentPrint("order", s.orders[0], s);
   assert.match(printed, /Remaining quarantined: 0/);
   for (const event of dispositions!) {
-    assert.ok(printed.includes(event.operationId));
+    assert.ok(printed.includes(`Receipt #${s.receipts.findIndex(receipt => receipt.id === event.operationId) + 1}`));
+    assert.ok(!printed.includes(event.operationId));
     assert.ok(printed.includes(event.reason));
     const receipt = s.receipts.find(r => r.id === event.operationId)!;
     assert.match(shipmentPrint("receipt", receipt, s), /covers 1 units only/);

@@ -13,9 +13,8 @@ import { isAuthenticated } from "./replitAuth";
 import { getProjectFilesPath } from "./fileStorage";
 import { insertAuditEvent } from "./auditService";
 import { auditingEnabled } from "./auditContext";
-import { inventoryCountReference } from "../shared/inventory-count-reference";
-import { orderLabel, orderReference as customerOrderReference } from "../shared/inventory-order-labels";
-import { shipmentPrint } from "./inventoryShipmentPrint";
+import { inventoryPrint } from "./inventoryPrint";
+export { inventoryPrint } from "./inventoryPrint";
 import { draftWarehouse, isShipmentDraftAction } from "../shared/inventory-shipment-drafts";
 
 export function inventoryVisibleState(state: InventoryState, actor: string, admin: boolean, canCount = true, permissions?: string[]) {
@@ -32,29 +31,6 @@ export function inventoryVisibleState(state: InventoryState, actor: string, admi
     const { draft, ...visible } = count;
     return visible;
   }) };
-}
-const escape = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
-export function inventoryPrint(kind: string, record: any, state: InventoryState, project: string) {
-  const lineList = record.lines || record.snapshot?.map((b: any) => ({ ...b, quantity: b.quantity })) || [];
-  const warehouse = (id: string) => state.warehouses.find(w => w.id === id)?.name || id || "";
-  const reference = kind === "count" ? inventoryCountReference(state.counts, record.id) : kind === "order" ? orderLabel(record) : record.id;
-  const linkedOrder = kind === "order" ? record : kind === "receipt" ? state.orders.find(order => order.id === record.reference) : undefined;
-  const orderReference = linkedOrder ? `${orderLabel(linkedOrder)}${customerOrderReference(linkedOrder) ? ` · Reference: ${customerOrderReference(linkedOrder)}` : ""} · Internal ID: ${linkedOrder.id}` : undefined;
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${escape(kind)} ${escape(reference)}</title><style>
-    body{font:14px Arial;margin:30px;color:#111}table{border-collapse:collapse;width:100%;margin-top:20px}th,td{border:1px solid #bbb;padding:8px;text-align:left}button{padding:10px}@media print{button{display:none}}</style></head>
-    <body><button onclick="window.print()">Print / Save PDF</button><h1>${escape(project)} — ${escape(kind)}</h1>
-    <p>${kind === "receipt" ? "Receipt ID" : "Reference"}: ${escape(reference)} · Status: ${escape(record.status || record.action)}</p>
-    ${orderReference ? `<p><strong>Order number / reference: ${escape(orderReference)}</strong></p>` :
-      kind === "receipt" && record.reference ? `<p>Operation reference: ${escape(record.reference)}</p>` : ""}
-    <p>Date: ${escape(record.createdAt || record.occurredAt)} · Actor: ${escape(record.actor)}</p>
-    <p>From: ${escape(warehouse(record.sourceId))} · To: ${escape(warehouse(record.destinationId || record.warehouseId))}</p>
-    <p>Vendor: ${escape(state.vendors.find(v => v.id === record.vendorId)?.name)} · ${escape(record.reason || record.notes)}</p>
-    <table><thead><tr><th>SKU</th><th>Item</th><th>Quantity</th><th>Serials</th><th>Dispatched</th><th>Received</th></tr></thead><tbody>
-    ${lineList.map((l: any) => `<tr><td>${escape(state.items.find(i => i.id === l.itemId)?.sku)}</td><td>${escape(state.items.find(i => i.id === l.itemId)?.name)}</td>
-    <td>${escape(l.quantity)}</td><td>${escape((l.serials || []).join(", "))}</td><td>${escape((record.dispatched || []).filter((x: any) => x.itemId === l.itemId).reduce((n: number, x: any) => n + x.quantity, 0))}</td>
-    <td>${escape((record.received || []).filter((x: any) => x.itemId === l.itemId).reduce((n: number, x: any) => n + x.quantity, 0))}</td></tr>`).join("")}</tbody></table>
-    ${shipmentPrint(kind, record, state)}
-    ${record.components ? `<h2>Components</h2><p>${escape(record.components.map((l: any) => `${l.itemId}: ${l.quantity} (${l.serials.join(", ")})`).join("; "))}</p>` : ""}</body></html>`;
 }
 export function registerInventoryRoutes(app: Express) {
   const base = "/api/projects/:projectId/inventory";
@@ -88,8 +64,10 @@ export function registerInventoryRoutes(app: Express) {
       (EXISTS(SELECT 1 FROM public.user_projects up WHERE up.user_id=u.id AND up.project_id=$1)
        OR EXISTS(SELECT 1 FROM public.user_group_members gm JOIN public.user_group_projects gp ON gp.group_id=gm.group_id
          WHERE gm.user_id=u.id AND gp.project_id=$1)) ORDER BY u.username`, [c.project.id]);
+    const { rows: actors } = await pool.query(`SELECT id, username FROM public.users WHERE id = ANY($1::text[])`,
+      [[...new Set(state.receipts.map(receipt => receipt.actor))]]);
     return { enabled: !!c.project.inventoryEnabled, timezone: timezoneEnabled === "false" ? "UTC" : defaultTimezone || "America/Denver",
-      state, permissions: c.permissions, users: users.map(u => ({ id: u.id, username: u.username || u.id })) };
+      state, permissions: c.permissions, users: users.map(u => ({ id: u.id, username: u.username || u.id })), actors };
   };
   app.use(base, isAuthenticated, auth);
   app.get(base, handler((_req, res) => snapshot(res)));
@@ -133,7 +111,9 @@ export function registerInventoryRoutes(app: Express) {
     const c = res.locals.inventory, state = inventoryVisibleState(await inventoryState(c.project.id), c.user.id, c.admin);
     const record = (req.params.kind === "order" ? state.orders : req.params.kind === "receipt" ? state.receipts : req.params.kind === "count" ? state.counts : []).find((r: any) => r.id === req.params.id);
     if (!record) throw Object.assign(new InventoryError("Document not found."), { status: 404 });
-    res.type("html").send(inventoryPrint(req.params.kind, record, state, c.project.name));
+    const { rows: actors } = await pool.query(`SELECT id, username FROM public.users WHERE id = ANY($1::text[])`,
+      [[...new Set(state.receipts.map(receipt => receipt.actor))]]);
+    res.type("html").send(inventoryPrint(req.params.kind, record, state, c.project.name, actors));
   }));
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } });
   app.post(`${base}/images`, upload.single("image"), handler(async (req, res) => {

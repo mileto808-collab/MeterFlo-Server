@@ -11,6 +11,7 @@ import type { SavedShipmentDraft } from "@shared/inventory-shipment-draft-model"
 import { orderLineProgress } from "@shared/inventory-shipment-model";
 import { inventoryCountReference } from "@shared/inventory-count-reference";
 import { orderLabel, orderReference, uuidOrderId } from "@shared/inventory-order-labels";
+import { inventoryActorLabel, inventoryHoldLabel, type InventoryActorLabel } from "@shared/inventory-display-labels";
 import { emptyOrderFilters, searchOrders } from "@shared/inventory-order-search";
 import { InventoryOrderFilters } from "@/components/inventory-order-filters";
 import { COUNT_MAX_LINES, COUNT_PAGE_SIZE } from "@shared/inventory-count-limits";
@@ -36,7 +37,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertTriangle, ArrowLeftRight, BarChart3, Boxes, ChevronDown, ChevronUp, ClipboardList, Loader2, Package, Plus, Printer, RefreshCw, Search, Warehouse as WarehouseIcon } from "lucide-react";
 
-type Snapshot = { enabled: boolean; timezone: string; state: InventoryState; permissions: string[]; users: Array<{ id: string; username: string }> };
+type Snapshot = { enabled: boolean; timezone: string; state: InventoryState; permissions: string[]; users: Array<{ id: string; username: string }>; actors?: InventoryActorLabel[] };
 type ResourceKind = "warehouse" | "vendor" | "item";
 const blankWarehouse = (): Warehouse => ({ id: "", code: "", name: "", type: "physical", active: true, address: "", city: "", state: "", zip: "", contact: "", phone: "", location: "", vin: "", plate: "", plateState: "", make: "", model: "", year: null, assignedUserId: null, userIds: [] });
 const blankVendor = (): Vendor => ({ id: "", name: "", contact: "", address: "", phone: "", email: "", reference: "", active: true });
@@ -868,8 +869,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
                   {activityReceipts.map(receipt => <div key={receipt.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
                     <div className="min-w-0">
                       <div className="font-medium" data-testid="inventory-activity-title">{receipt.action} · {receipt.action.startsWith("count") ? inventoryCountReference(state.counts, receipt.reference) : orderTitle(receipt.reference)}</div>
-                      <div className="mt-1 text-xs text-muted-foreground">{new Date(receipt.occurredAt).toLocaleString()} · {receipt.actor} · {receiptSummary(receipt)}</div>
-                      {receipt.holdId && <p className="mt-1 text-xs">Inspection hold <span className="font-mono">{receipt.holdId}</span></p>}
+                      <div className="mt-1 text-xs text-muted-foreground">{new Date(receipt.occurredAt).toLocaleString()} · {inventoryActorLabel(receipt.actor, data.actors ?? data.users)} · {receiptSummary(receipt)}</div>
+                      {receipt.holdId && <p className="mt-1 text-xs">{inventoryHoldLabel(state.shipmentHolds ?? [], receipt.holdId)}</p>}
                     </div>
                     <Button size="sm" variant="outline" onClick={() => openPrint(receipt.action.startsWith("count") ? "count" : "receipt", receipt.action.startsWith("count") ? receipt.reference : receipt.id)}><Printer className="mr-2 h-4 w-4" />Print</Button>
                   </div>)}

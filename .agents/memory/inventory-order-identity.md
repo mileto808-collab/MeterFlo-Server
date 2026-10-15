@@ -19,3 +19,9 @@ Restore must preserve locally known numbering high-water marks and known immutab
 **Why:** Printed order numbers and supplier communications can exist outside the database snapshot. Restoring stock does not make those already issued numbers unused.
 
 **How to apply:** Maintain this boundary in both project and full-system restore paths. A fresh independent server cannot infer numbers issued elsewhere after its snapshot; do not promise global or gapless numbering across customer instances.
+
+Show readable business identifiers and usernames in inventory activity and shipment documents. Printed internal tracking IDs should be barcodes, not raw UUID text.
+
+**Why:** The user explicitly requested readable Activity details and receiving/transfer receipts, with a barcode in place of the printed internal ID.
+
+**How to apply:** Preserve the original internal identity in barcode data and stored relationships. Never encode the editable supplier reference as if it were the internal ID or rewrite historical evidence merely to improve its display.
