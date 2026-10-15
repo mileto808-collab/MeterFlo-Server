@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { InventoryItem, InventoryOrder, InventoryState } from "@shared/inventory";
 import { orderLineProgress } from "@shared/inventory-shipment-model";
-import { AlertTriangle, Check, PackageCheck, ScanLine, Trash2 } from "lucide-react";
+import { AlertTriangle, Check, PackageCheck } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { buildShipmentPayload, blankShipmentEntry, shipmentCapacity, unresolvedTransferSerials, validateShipmentEntry, type ShipmentAction, type ShipmentEntry } from "@/lib/inventory-shipment-guidance";
+import { InventoryShipmentSerialDialog } from "@/components/inventory-shipment-serial-dialog";
 
 type Props = {
   state: InventoryState; order: InventoryOrder; action: ShipmentAction; items: InventoryItem[];
@@ -33,7 +34,10 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
   const [error, setError] = useState("");
   const [discard, setDiscard] = useState(false);
   const [scanBuffers, setScanBuffers] = useState<Record<string, string>>({});
-  const scanRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const [serialDialog, setSerialDialog] = useState<{ itemId: string; viewOnly: boolean } | null>(null);
+  const serialDialogOpenRef = useRef(false);
+  serialDialogOpenRef.current = !!serialDialog;
+  const serialOpenerRef = useRef<HTMLElement | null>(null);
   const dirty = Object.values(entries).some(entry => entry.goodQuantity !== "0" || entry.damagedQuantity !== "0" ||
     entry.unreadableQuantity !== "0" || entry.goodSerials.length || entry.damagedSerials.length ||
     entry.expectedSerials.length || !!entry.damageReason) || Object.values(scanBuffers).some(Boolean) || !!reason || closeRemainder;
@@ -85,31 +89,22 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
     setValidation("");
     return true;
   };
-  const commitScannerInput = (item: InventoryItem, bucket: "goodSerials" | "damagedSerials", input: HTMLInputElement) => {
-    const before = values(item.id);
-    if (!scanCommit(item, bucket, input.value)) return;
-    const inputKey = `${item.id}-${bucket}`;
-    setScanBuffers(current => ({ ...current, [inputKey]: "" }));
-    const nextCount = before[bucket].length + 1;
-    const bucketTarget = Number(bucket === "goodSerials" ? before.goodQuantity : before.damagedQuantity);
-    let next: { itemId: string; bucket: "goodSerials" | "damagedSerials" } | undefined;
-    if (nextCount < bucketTarget) next = { itemId: item.id, bucket };
-    else if (bucket === "goodSerials" && before.damagedSerials.length < Number(before.damagedQuantity))
-      next = { itemId: item.id, bucket: "damagedSerials" };
-    if (!next) {
-      const currentIndex = eligible.findIndex(candidate => candidate.id === item.id);
-      for (const candidate of eligible.slice(currentIndex + 1)) {
-        if (candidate.tracking !== "serialized") continue;
-        const candidateEntry = values(candidate.id);
-        if (candidateEntry.goodSerials.length < Number(candidateEntry.goodQuantity)) {
-          next = { itemId: candidate.id, bucket: "goodSerials" }; break;
-        }
-        if (candidateEntry.damagedSerials.length < Number(candidateEntry.damagedQuantity)) {
-          next = { itemId: candidate.id, bucket: "damagedSerials" }; break;
-        }
-      }
-    }
-    if (next) requestAnimationFrame(() => scanRefs.current[`${next!.itemId}-${next!.bucket}`]?.focus());
+  const commitChildScannerInput = (item: InventoryItem, bucket: "goodSerials" | "damagedSerials", input: HTMLInputElement) => {
+    if (!scanCommit(item, bucket, input.value)) return false;
+    setScanBuffers(current => ({ ...current, [`${item.id}-${bucket}`]: "" }));
+    return true;
+  };
+  const openSerialDialog = (item: InventoryItem, viewOnly: boolean, opener: HTMLElement) => {
+    serialOpenerRef.current = opener;
+    setSerialDialog({ itemId: item.id, viewOnly });
+  };
+  const closeSerialDialog = () => {
+    setSerialDialog(null);
+    requestAnimationFrame(() => serialOpenerRef.current?.focus());
+  };
+  const isChildPortalEvent = (event: Event) => {
+    const target = (event as CustomEvent).detail?.originalEvent?.target as Element | undefined;
+    return !!target?.closest?.("[data-serial-child-dialog]");
   };
   const validateAll = () => {
     if (Object.values(scanBuffers).some(buffer => buffer.length > 0)) {
@@ -168,8 +163,11 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
     }
   };
   const heading = action === "receive" ? "Receive purchase" : action === "dispatch" ? "Dispatch transfer" : "Accept transfer arrival";
-  return <Dialog open onOpenChange={open => { if (!open) close(); }}>
-      <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-3xl" onEscapeKeyDown={event => { event.preventDefault(); close(); }} onPointerDownOutside={event => { event.preventDefault(); close(); }}>
+  return <Dialog open onOpenChange={open => { if (!open && !serialDialogOpenRef.current) close(); }}>
+      <DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-3xl"
+        onEscapeKeyDown={event => { event.preventDefault(); if (!serialDialogOpenRef.current) close(); }}
+        onPointerDownOutside={event => { event.preventDefault(); if (!serialDialogOpenRef.current && !isChildPortalEvent(event)) close(); }}
+        onInteractOutside={event => { if (serialDialogOpenRef.current || isChildPortalEvent(event)) event.preventDefault(); }}>
       <DialogHeader><DialogTitle>{heading} · <span className="font-mono">{order.id}</span></DialogTitle><DialogDescription>
         {action === "dispatch" ? "Scan actual serialized identities leaving the source location." : action === "accept" ? "Scan newly received identities. Unreadable damaged units must reference unresolved dispatched identities." : "Record physical units received. Damaged units are held for inspection, not available stock."}
       </DialogDescription></DialogHeader>
@@ -189,9 +187,10 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
               const row = values(item.id);
               return <section key={item.id} className="rounded-md border p-3">
                 <div className="flex justify-between gap-2"><div className="font-medium">{item.name}<span className="ml-2 font-mono text-xs text-muted-foreground">{item.sku}</span></div><span className="font-mono text-sm">Good {row.goodQuantity} · Damaged {Number(row.damagedQuantity) + Number(row.unreadableQuantity)}</span></div>
-                {row.goodSerials.length > 0 && <p className="mt-1 break-all font-mono text-xs text-muted-foreground">Good scans: {row.goodSerials.join(", ")}</p>}
-                {row.damagedSerials.length > 0 && <p className="mt-1 break-all font-mono text-xs text-muted-foreground">Known damaged: {row.damagedSerials.join(", ")}</p>}
-                {row.expectedSerials.length > 0 && <p className="mt-1 break-all font-mono text-xs text-muted-foreground">Unreadable dispatched identities: {row.expectedSerials.join(", ")}</p>}
+                {item.tracking === "serialized" && <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-xs text-muted-foreground">Good {row.goodSerials.length}/{row.goodQuantity} · Known damaged {row.damagedSerials.length}/{row.damagedQuantity}{action === "accept" ? ` · Unreadable refs ${row.expectedSerials.length}/${row.unreadableQuantity}` : ""}</span>
+                  <Button type="button" size="sm" variant="outline" aria-label={`View serials for ${item.name}`} onClick={event => openSerialDialog(item, true, event.currentTarget)}>View serials</Button>
+                </div>}
                 {(Number(row.damagedQuantity) + Number(row.unreadableQuantity)) > 0 && <p className="mt-1 text-xs">Condition: {row.damageReason}</p>}
               </section>;
             })}
@@ -213,7 +212,6 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
             {eligible.map(item => {
               const row = values(item.id), progress = orderLineProgress(state, order, item.id);
               const capacity = shipmentCapacity(state, order, action, item.id);
-              const serialBuckets: Array<["goodSerials" | "damagedSerials", string]> = [["goodSerials", "Good"], ["damagedSerials", "Known damaged"]];
               return <section key={item.id} className="rounded-md border p-3">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0"><div className="font-medium">{item.name}</div><div className="font-mono text-xs text-muted-foreground">{item.sku} · {item.tracking === "serialized" ? "serialized" : "quantity tracked"}</div></div>
@@ -225,30 +223,13 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
                     .filter(([key]) => key !== "unreadableQuantity" || item.tracking === "serialized").map(([key, label]) =>
                     <div key={key} className="space-y-1"><Label htmlFor={`${item.id}-${key}`} className="text-xs">{label}</Label><Input id={`${item.id}-${key}`} className="h-9 px-2 text-center tabular-nums" type="number" min="0" max={capacity} step="1" value={row[key]} disabled={action === "dispatch" && key !== "goodQuantity"} onChange={event => patch(item.id, { [key]: event.target.value })} /></div>)}
                 </div>
-                {item.tracking === "serialized" && <div className="mt-2 space-y-2">
-                  {serialBuckets.map(([bucket, label]) => {
-                    const qty = Number(bucket === "goodSerials" ? row.goodQuantity : row.damagedQuantity);
-                    if (!qty && !row[bucket].length) return null;
-                    return <div key={bucket} className="space-y-1">
-                      <Label htmlFor={`${item.id}-${bucket}`} className="text-xs">{label} serials · {row[bucket].length}/{Number.isFinite(qty) ? qty : 0}</Label>
-                      <div className="flex gap-2"><Input ref={node => { scanRefs.current[`${item.id}-${bucket}`] = node; }} id={`${item.id}-${bucket}`} aria-label={`${label} serial scanner for ${item.name}`} className="h-9 font-mono" autoComplete="off" value={scanBuffers[`${item.id}-${bucket}`] ?? ""} onChange={event => setScanBuffers(current => ({ ...current, [`${item.id}-${bucket}`]: event.target.value }))} placeholder="Scan or type, then Enter / Tab" onKeyDown={event => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          commitScannerInput(item, bucket, event.currentTarget);
-                          return;
-                        }
-                        if (event.key === "Tab" && (scanBuffers[`${item.id}-${bucket}`] ?? "").length > 0) {
-                          event.preventDefault();
-                          commitScannerInput(item, bucket, event.currentTarget);
-                        }
-                      }} /><Button type="button" size="sm" variant="outline" aria-label={`Commit ${label} serial`} onClick={() => {
-                        const input = scanRefs.current[`${item.id}-${bucket}`];
-                        if (input) commitScannerInput(item, bucket, input);
-                      }}><ScanLine className="h-4 w-4" /></Button></div>
-                      {row[bucket].length > 0 && <ul className="max-h-36 space-y-1 overflow-y-auto">{row[bucket].map((serial, index) => <li key={`${serial}-${index}`} className="flex items-center justify-between gap-1 rounded bg-muted px-2 py-1 font-mono text-xs"><span>{index + 1}. {serial}</span><button type="button" className="rounded p-0.5 hover:bg-background" aria-label={`Remove serial ${serial}`} onClick={() => patch(item.id, { [bucket]: row[bucket].filter((_, i) => i !== index) })}><Trash2 className="h-3 w-3" /></button></li>)}</ul>}
-                    </div>;
-                  })}
-                  {action === "accept" && Number(row.unreadableQuantity) > 0 && <fieldset className="space-y-1 border-t pt-2"><legend className="text-xs font-medium">Unidentified damage references · {row.expectedSerials.length}/{Number(row.unreadableQuantity)}</legend><p className="text-xs text-muted-foreground">Select the actual dispatched identities; no replacement serial is created.</p>{unresolvedTransferSerials(state, order, item.id).filter(serial => !row.goodSerials.includes(serial) && !row.damagedSerials.includes(serial)).map(serial => <label key={serial} className="flex items-center gap-2 py-0.5 font-mono text-xs"><input type="checkbox" checked={row.expectedSerials.includes(serial)} disabled={!row.expectedSerials.includes(serial) && row.expectedSerials.length >= Number(row.unreadableQuantity)} onChange={event => patch(item.id, { expectedSerials: event.target.checked ? [...row.expectedSerials, serial] : row.expectedSerials.filter(value => value !== serial) })} />{serial}</label>)}</fieldset>}
+                {item.tracking === "serialized" && <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md bg-muted/35 px-2.5 py-2">
+                  <span className="font-mono text-xs text-muted-foreground">
+                    Good {row.goodSerials.length}/{row.goodQuantity} · Damaged {row.damagedSerials.length}/{row.damagedQuantity}
+                    {action === "accept" ? ` · Refs ${row.expectedSerials.length}/${row.unreadableQuantity}` : ""}
+                  </span>
+                  <Button type="button" size="sm" variant="outline" aria-label={`Scan / edit serials for ${item.name}`}
+                    onClick={event => openSerialDialog(item, false, event.currentTarget)}>Scan / edit serials</Button>
                 </div>}
                 {Number(row.damagedQuantity) + Number(row.unreadableQuantity) > 0 && <div className="mt-2 space-y-1"><Label htmlFor={`${item.id}-damage-reason`} className="text-xs">Damage condition / reason</Label><Textarea id={`${item.id}-damage-reason`} rows={2} maxLength={1000} value={row.damageReason} onChange={event => patch(item.id, { damageReason: event.target.value })} placeholder="Describe observed condition" /></div>}
                 {Number(row.goodQuantity) + Number(row.damagedQuantity) + Number(row.unreadableQuantity) > capacity && <p className="mt-1 text-xs text-destructive" role="alert">Total exceeds the {capacity} eligible units.</p>}
@@ -267,5 +248,25 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
         </DialogFooter>
       </>}
     </DialogContent>
+    {serialDialog && (() => {
+      const item = items.find(value => value.id === serialDialog.itemId);
+      if (!item) return null;
+      const row = values(item.id);
+      return <InventoryShipmentSerialDialog
+        key={`${item.id}-${serialDialog.viewOnly ? "view" : "edit"}`}
+        item={item}
+        order={order}
+        action={action}
+        entry={row}
+        viewOnly={serialDialog.viewOnly}
+        rawBuffers={scanBuffers}
+        expectedReferences={action === "accept" ? unresolvedTransferSerials(state, order, item.id) : []}
+        validation={validation}
+        onRawChange={(key, value) => setScanBuffers(current => ({ ...current, [key]: value }))}
+        onCommit={(bucket, input) => commitChildScannerInput(item, bucket, input)}
+        onPatch={change => patch(item.id, change)}
+        onClose={closeSerialDialog}
+      />;
+    })()}
   </Dialog>;
 }

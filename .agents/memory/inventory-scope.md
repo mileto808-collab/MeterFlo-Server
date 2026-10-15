@@ -54,3 +54,9 @@ Receiving and transfer movements should show the order's items inline and captur
 **Why:** The user specified keyboard-wedge scanners, automatic advancement to the next serial entry, and that scanned identities must match received/transferred quantities. Shortages and damage must allow partial completion or an explicit exception, not invented receipts.
 
 **How to apply:** Keep draft planning quantity-only; capture identities when physical custody changes. Do not replace the guided order rows with a generic item picker or silently treat damage as usable stock.
+
+Keep serialized-unit capture in a dedicated, bounded sub-modal while receiving and transfer forms retain compact item quantities and scan summaries.
+
+**Why:** The user said the inline serial list “could easily fill up the screen” and requested a scanning sub-modal.
+
+**How to apply:** Do not reintroduce full identity lists into the parent entry or review screen. Closing a scanning window returns to the movement draft rather than posting stock or abandoning that draft.
