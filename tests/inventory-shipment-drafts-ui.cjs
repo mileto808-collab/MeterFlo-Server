@@ -55,6 +55,7 @@ async function main() {
       type: "physical", address: "Disposable restart fixture", userIds: [fixture.viewer.id] });
     await post("vendor", { id: "vendor", name: "Resume vendor" });
     await post("item", { id: "meter", sku: "R-METER", name: "Resume meter", tracking: "serialized" });
+    await require("./helpers/inventory-shipment-autosave-ui.cjs")({ browser, baseURL, base, fixture, admin: context, order, state, post });
     await order("RESUME-PO");
     await openPage();
     await orderCard("RESUME-PO").getByRole("button", { name: "Receive", exact: true }).click();
@@ -105,6 +106,14 @@ async function main() {
     await parent.getByRole("button", { name: "Post movement", exact: true }).click();
     let recovery = page.getByRole("dialog", { name: "Recover prepared shipment", exact: true });
     await recovery.waitFor();
+    let recoverySaves = 0;
+    const observeRecovery = request => {
+      if (request.url().endsWith(`${base}/commands`) && request.postDataJSON().action === "shipmentDraftSave") recoverySaves++;
+    };
+    page.on("request", observeRecovery);
+    await page.waitForTimeout(1100);
+    page.off("request", observeRecovery);
+    assert.equal(recoverySaves, 0, "prepared recovery never starts an automatic checkpoint");
     assert.equal((await state()).receipts.length, 0);
     await page.unroute(`**${base}/commands`, fail);
     await recovery.getByRole("button", { name: "Close — keep saved draft", exact: true }).click();
@@ -148,7 +157,8 @@ async function main() {
       child = await scans(parent); scanner = child.getByRole("textbox", { name: "Good serial scanner for Resume meter", exact: true });
       await scanner.fill("00001"); await scanner.press("Enter");
       await child.getByRole("button", { name: "Done", exact: true }).click();
-      await save(parent); await cancel(parent);
+      await parent.getByTestId("shipment-checkpoint-status").getByText("Saved — latest capture confirmed on server.", { exact: true }).waitFor();
+      await cancel(parent);
       assert.equal((await state()).shipmentDrafts[0].stage, stage);
       await page.reload(); await page.getByRole("tab", { name: "Orders", exact: true }).click();
       await draftCard("RESUME-TR").getByRole("button", { name: "Resume", exact: true }).click();

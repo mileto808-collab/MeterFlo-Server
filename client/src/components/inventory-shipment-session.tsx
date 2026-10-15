@@ -1,6 +1,5 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { InventoryItem, InventoryOrder, InventoryState } from "@shared/inventory";
-import { canonicalInventoryJson } from "@shared/inventory-engine";
 import { blankShipmentCapture, type SavedShipmentDraft, type ShipmentCapture } from "@shared/inventory-shipment-draft-model";
 import { AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -9,14 +8,14 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { InventoryShipmentGuidedDialog } from "@/components/inventory-shipment-guided-dialog";
 import { captureFromDraft, findSavedShipmentDraft, refreshShipmentInventory, sendShipmentDraftCommand } from "@/components/inventory-shipment-draft-api";
 import type { ShipmentAction } from "@/lib/inventory-shipment-guidance";
+import { ShipmentCheckpointWriter } from "@/lib/inventory-shipment-checkpoint-writer";
 
 type Props = {
   base: string; state: InventoryState; order: InventoryOrder; action: ShipmentAction;
   items: InventoryItem[]; canCloseRemainder: boolean; busy?: boolean; draft?: SavedShipmentDraft; ownerId?: string;
   onClose: () => void; onDirtyChange: (dirty: boolean) => void;
+  autoSavePaused?: boolean; onCheckpointBusyChange?: (busy: boolean) => void;
 };
-
-const captureFingerprint = canonicalInventoryJson;
 
 export function InventoryShipmentSession(props: Props) {
   const { base, state: initialState, order, action, items, draft: incomingDraft, ownerId, onClose, onDirtyChange } = props;
@@ -32,51 +31,48 @@ export function InventoryShipmentSession(props: Props) {
   const [editorEpoch, setEditorEpoch] = useState(0);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [checkpointBusy, setCheckpointBusy] = useState(false);
+  const activeSaves = useRef(0);
+  const [autoSaveBlocked, setAutoSaveBlocked] = useState(false);
   const [statusChecked, setStatusChecked] = useState(false);
   const draftIdRef = useRef<string | null>(incomingDraft?.id ?? null);
   const [freshState, setFreshState] = useState<InventoryState>(initialState);
   const pending = recoveryDraft?.pending ?? null;
   const capture = useMemo(() => savedDraft ? captureFromDraft(savedDraft) : undefined, [savedDraft]);
+  const writerRef = useRef<ShipmentCheckpointWriter | null>(null);
+  if (!writerRef.current) writerRef.current = new ShipmentCheckpointWriter({
+    orderId: order.id, stage: action, ownerId, initial: savedDraft,
+    send: async attempt => {
+      const result = await sendShipmentDraftCommand(base, "shipmentDraftSave", attempt.data, attempt.operationId);
+      const updated = result.state.shipmentDrafts?.find(value => value.id === attempt.data.id);
+      if (!updated) throw new Error("Save response did not include the checkpoint.");
+      return updated;
+    },
+    find: id => findSavedShipmentDraft(base, id),
+    confirmed: updated => {
+      setSavedDraft(updated); draftIdRef.current = updated.id;
+      setMessage(`Saved revision ${updated.revision}.`);
+    },
+  });
+  const writer = writerRef.current;
+  useEffect(() => {
+    props.onCheckpointBusyChange?.(checkpointBusy);
+    return () => props.onCheckpointBusyChange?.(false);
+  }, [checkpointBusy, props.onCheckpointBusyChange]);
 
   const persistCapture = async (current: ShipmentCapture): Promise<SavedShipmentDraft | null> => {
-    const id = savedDraft?.id ?? draftIdRef.current ?? crypto.randomUUID();
-    draftIdRef.current = id;
+    draftIdRef.current = writer.draftId;
+    activeSaves.current++;
+    setCheckpointBusy(true);
     try {
-      const result = await sendShipmentDraftCommand(base, "shipmentDraftSave", {
-        id, revision: savedDraft?.revision ?? 0, orderId: order.id, stage: action, capture: current,
-      });
-      const updated = result.state.shipmentDrafts?.find(value => value.id === id);
-      if (!updated) throw new Error("Draft save response did not include the saved draft.");
-      setSavedDraft(updated);
-      draftIdRef.current = updated.id;
-      setMessage(`Saved revision ${updated.revision}.`);
+      const updated = await writer.save(current);
+      setAutoSaveBlocked(false);
       return updated;
     } catch (cause) {
-      setMessage(cause instanceof Error ? `${cause.message} Your capture remains open; refresh inventory and resume the saved draft if needed.` :
-        "Draft save could not be confirmed. Your capture remains open.");
-      try {
-        const found = await findSavedShipmentDraft(base, id);
-        if (found) {
-          if (found.ownerId !== ownerId) {
-            setMessage("Draft ownership changed in another session. Your local capture remains open; cancel local edits and refresh inventory.");
-            return null;
-          }
-          if (found.pending) {
-            setSavedDraft(found); setRecoveryDraft(found);
-            return null;
-          }
-          if (captureFingerprint(captureFromDraft(found)) === captureFingerprint(current)) {
-            setSavedDraft(found); draftIdRef.current = found.id;
-            setMessage(`Saved revision ${found.revision}; confirmed after reconnecting.`);
-            return found;
-          }
-          // A concurrent writer's capture must not replace this editor's local
-          // values. The operator can cancel local edits then Resume explicitly.
-          setMessage("The saved draft changed in another session. Your local capture is retained. Cancel, choose Discard for local edits, then Resume to load the server version; the saved draft is not removed.");
-        }
-      } catch { /* keep the local capture and the actionable reconnect message */ }
+      setAutoSaveBlocked(true);
+      setMessage(cause instanceof Error ? cause.message : "Checkpoint not confirmed. Your local capture is retained.");
       return null;
-    }
+    } finally { if (--activeSaves.current === 0) setCheckpointBusy(false); }
   };
 
   const saveCapture = async (current: ShipmentCapture) => {
@@ -99,6 +95,7 @@ export function InventoryShipmentSession(props: Props) {
       if (!prepared?.pending) throw new Error("Posting preparation was not confirmed. Refresh inventory before retrying.");
       const preparedPending = prepared.pending;
       setSavedDraft(prepared);
+      writer.accept(prepared);
       const result = await sendShipmentDraftCommand(base, action, {
         ...preparedPending.payload, draftId: prepared.id, draftRevision: prepared.revision,
       }, preparedPending.operationId);
@@ -138,6 +135,7 @@ export function InventoryShipmentSession(props: Props) {
       });
       setRecoveryDraft(null);
       setSavedDraft(undefined);
+      writer.accept(undefined);
       onDirtyChange(false);
       onClose();
       return true;
@@ -207,6 +205,8 @@ export function InventoryShipmentSession(props: Props) {
       if (!unlocked) throw new Error("The unlocked draft could not be confirmed. Refresh inventory.");
       setFreshState(result.state);
       setSavedDraft(unlocked);
+      writer.accept(unlocked);
+      setAutoSaveBlocked(false);
       setRecoveryDraft(null);
       setStatusChecked(false);
       setEditorEpoch(value => value + 1);
@@ -253,6 +253,8 @@ export function InventoryShipmentSession(props: Props) {
     key={`${order.id}:${action}:${editorEpoch}`}
     state={freshState} order={freshState.orders.find(value => value.id === order.id) ?? order} action={action} items={freshState.items} canCloseRemainder={props.canCloseRemainder}
     busy={props.busy || busy} initialCapture={capture}
+    confirmedCapture={capture} checkpointBusy={checkpointBusy} autoSaveBlocked={autoSaveBlocked} autoSavePaused={props.autoSavePaused}
+    onAutoSave={current => persistCapture(current).then(Boolean)}
     onSaveDraft={saveCapture} onPost={(payload, current) => post(payload, current ?? blankShipmentCapture())} onClose={onClose} onDirtyChange={onDirtyChange}
     externalMessage={message}
   />;

@@ -96,6 +96,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [pendingOrderTransition, setPendingOrderTransition] = useState<(() => void) | null>(null);
   const [pendingMovementTransition, setPendingMovementTransition] = useState<(() => void) | null>(null);
   const [movementDirty, setMovementDirty] = useState(false);
+  const [movementCheckpointBusy, setMovementCheckpointBusy] = useState(false);
   const movementAttempts = useRef(new Map<string, string>());
   const [orderToClose, setOrderToClose] = useState<InventoryOrder | null>(null);
   const [closeReason, setCloseReason] = useState("");
@@ -108,7 +109,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   };
   const requestMovementTransition = (transition: () => void) => {
     if (command.isPending) return;
-    if (movementDirty) setPendingMovementTransition(current => current ?? transition);
+    if (movementDirty || movementCheckpointBusy) setPendingMovementTransition(current => current ?? transition);
     else transition();
   };
   const [operationOrder, setOperationOrder] = useState<InventoryOrder | null>(null);
@@ -142,7 +143,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   };
   // Register a single navigation guard: both editors can have unsaved values.
   // A count choice must not silently discard an unrelated order draft.
-  const completeSavedNavigation = useUnsavedNavigation(countDirty || orderDirty || movementDirty,
+  const completeSavedNavigation = useUnsavedNavigation(countDirty || orderDirty || movementDirty || movementCheckpointBusy,
     transition => requestCountTransition(() => requestOrderTransition(() => requestMovementTransition(transition))));
   const [assembleItem, setAssembleItem] = useState("");
   const [assembleWarehouse, setAssembleWarehouse] = useState("");
@@ -576,8 +577,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     </Dialog>
     <Dialog open={!!pendingMovementTransition} onOpenChange={open => { if (!open && !command.isPending) setPendingMovementTransition(null); }}>
       <DialogContent onEscapeKeyDown={event => event.preventDefault()} onPointerDownOutside={event => event.preventDefault()}>
-        <DialogHeader><DialogTitle>Unsaved movement scans</DialogTitle><DialogDescription>This receiving or transfer movement has not been posted. Stay and continue scanning, or discard these entries. Nothing is posted automatically.</DialogDescription></DialogHeader>
-        <DialogFooter><Button variant="outline" disabled={command.isPending} onClick={() => setPendingMovementTransition(null)}>Stay</Button><Button variant="destructive" disabled={command.isPending} onClick={() => {
+        <DialogHeader><DialogTitle>Unsaved movement scans</DialogTitle><DialogDescription>Stay and continue scanning, or discard unsaved local changes. Server checkpoints remain available to Resume. Nothing is posted automatically.{movementCheckpointBusy && " Waiting for the current checkpoint before leaving."}</DialogDescription></DialogHeader>
+        <DialogFooter><Button variant="outline" disabled={command.isPending} onClick={() => setPendingMovementTransition(null)}>Stay</Button><Button variant="destructive" disabled={command.isPending || movementCheckpointBusy} onClick={() => {
           const next = pendingMovementTransition;
           setPendingMovementTransition(null); setMovementDirty(false); setOperationOrder(null); setTransitOrder(null);
           next?.();
@@ -798,6 +799,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     {operationOrder && <InventoryShipmentSession base={base} state={sessionState ?? state} order={operationOrder} action={operation as ShipmentAction} items={items} draft={sessionDraft} ownerId={user?.id}
       canCloseRemainder={can("inventory.closeOrders") && !(operationOrder.type === "transfer" && operationOrder.lines.some(line => orderLineProgress(state, operationOrder, line.itemId).inTransit > 0))} busy={command.isPending}
       onDirtyChange={setMovementDirty}
+      autoSavePaused={!!pendingMovementTransition} onCheckpointBusyChange={setMovementCheckpointBusy}
       onClose={() => { setOperationOrder(null); setSessionDraft(undefined); setSessionState(null); setMovementDirty(false); }} />}
     {transitOrder && <InventoryShipmentTransitDialog state={state} order={transitOrder} items={items} busy={command.isPending}
       onPost={payload => postWithStableIdentity("resolveTransit", payload)}

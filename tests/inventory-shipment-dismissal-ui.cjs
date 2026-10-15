@@ -46,12 +46,22 @@ async function main() {
     await post("dispatch", { orderId: "DISMISS-ARRIVAL",
       lines: [{ itemId: "dismiss-meter", quantity: 1, serials: ["000701"] }] });
     const page = await context.newPage();
+    // Keep these intentionally unsaved-warning cases unsaved even on slow
+    // runners. Successful automatic checkpoints are covered by the drafts UI
+    // suite; here a server outage must never remove the dirty-dismiss guard.
+    await page.route(`**${endpoint}/commands`, async route => {
+      if (route.request().postDataJSON().action === "shipmentDraftSave")
+        return route.fulfill({ status: 503, contentType: "application/json",
+          body: JSON.stringify({ message: "Checkpoint outage for unsaved-dismissal acceptance" }) });
+      return route.continue();
+    });
     page.setDefaultTimeout(20000);
     const errors = [];
     page.on("pageerror", error => errors.push(error.message));
     let commands = 0;
     page.on("request", request => {
-      if (request.method() === "POST" && request.url().endsWith("/inventory/commands")) commands++;
+      if (request.method() === "POST" && request.url().endsWith("/inventory/commands") &&
+        request.postDataJSON().action !== "shipmentDraftSave") commands++;
     });
     for (const [id, button, heading] of [
       ["DISMISS-RECEIVE", "Receive", /^Receive purchase/],
@@ -147,7 +157,7 @@ async function main() {
       await dialog.waitFor({ state: "hidden" });
       assert.deepEqual(await snapshot(), before);
     }
-    assert.equal(commands, 0, "Stay, Discard and navigation never send movement or draft commands");
+    assert.equal(commands, 0, "Stay, Discard and navigation never prepare or post stock; checkpoint outages retain local edits");
     assert.deepEqual(errors, []);
     console.log("Shipment dismissal acceptance passed: all three stages, Cancel/Escape/outside/close, raw HID retention, unload and navigation, no stock commands.");
   } finally {

@@ -39,3 +39,16 @@ instead violates server replay checks or confirms an obsolete edit.
 **How to apply:** Keep this protection scoped to the current editor and project,
 and distinguish it from durable shipment checkpoints. Do not promise
 browser-restart recovery for unsaved purchase/transfer order drafts.
+
+Automatic checkpoints must advance the confirmed baseline to the snapshot
+actually saved, never to whatever the operator has typed since the request began.
+Serialize writes, preserve the unknown attempt's exact identity before saving a
+newer capture, and pause automatic retries on conflicts or unconfirmed outcomes.
+
+**Why:** Marking newer local edits as saved hides crash-loss risk; blindly
+retrying with new identities can collide with a late committed checkpoint.
+
+**How to apply:** Keep scanning enabled during background saves, retain newer
+edits for a later checkpoint, pause timers during discard/navigation decisions
+and prepared recovery, and distinguish local Discard from deleting durable
+server evidence. Only a confirmed checkpoint is promised to survive restart.

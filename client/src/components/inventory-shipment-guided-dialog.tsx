@@ -18,12 +18,15 @@ type Props = {
   canCloseRemainder: boolean; busy?: boolean;
   initialCapture?: ShipmentCapture;
   onSaveDraft?: (capture: ShipmentCapture) => Promise<boolean>;
+  onAutoSave?: (capture: ShipmentCapture) => Promise<boolean>;
+  confirmedCapture?: ShipmentCapture;
+  checkpointBusy?: boolean; autoSaveBlocked?: boolean; autoSavePaused?: boolean;
   externalMessage?: string;
   onPost: (data: Record<string, unknown>, capture?: ShipmentCapture) => Promise<boolean>;
   onClose: () => void; onDirtyChange: (dirty: boolean) => void;
 };
 
-export function InventoryShipmentGuidedDialog({ state: openingState, order, action, items, canCloseRemainder, busy = false, initialCapture, onSaveDraft, onPost, onClose, onDirtyChange, externalMessage }: Props) {
+export function InventoryShipmentGuidedDialog({ state: openingState, order, action, items, canCloseRemainder, busy = false, initialCapture, onSaveDraft, onAutoSave, confirmedCapture, checkpointBusy = false, autoSaveBlocked = false, autoSavePaused = false, onPost, onClose, onDirtyChange, externalMessage }: Props) {
   // A lost response may refresh stock after the server committed. Keep this
   // editor's opening snapshot so client-side availability does not block its
   // same-operation retry; the server still validates every fresh posting.
@@ -75,13 +78,36 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
   serialDialogOpenRef.current = !!serialDialog;
   const serialOpenerRef = useRef<HTMLElement | null>(null);
   const dirty = fingerprint !== savedBase;
+  const autoSaveRef = useRef(onAutoSave);
+  autoSaveRef.current = onAutoSave;
+  const captureRef = useRef(capture);
+  captureRef.current = capture;
+  const autoSaveDeadline = useRef<number | null>(null);
+  // Updating the saved baseline never replaces newer local fields/scanner text.
+  useEffect(() => {
+    if (confirmedCapture) setSavedBase(shipmentCaptureEditFingerprint(confirmedCapture));
+  }, [confirmedCapture]);
+  useEffect(() => {
+    if (!dirty || !autoSaveRef.current || checkpointBusy || autoSaveBlocked || autoSavePaused || discard || busy || savingDraft) {
+      autoSaveDeadline.current = null;
+      return;
+    }
+    // Continuous HID input must not postpone every checkpoint indefinitely.
+    autoSaveDeadline.current ??= Date.now() + 5000;
+    const delay = Math.min(800, Math.max(0, autoSaveDeadline.current - Date.now()));
+    const timer = window.setTimeout(() => {
+      autoSaveDeadline.current = null;
+      void autoSaveRef.current?.(captureRef.current);
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [fingerprint, dirty, checkpointBusy, autoSaveBlocked, autoSavePaused, discard, busy, savingDraft]);
   useEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
   const values = (itemId: string) => entries[itemId] ?? blankShipmentEntry(itemId);
   const patch = (itemId: string, change: Partial<ShipmentEntry>) => {
     setEntries(current => ({ ...current, [itemId]: { ...values(itemId), ...change } }));
     setValidation("");
   };
-  const close = () => { if (busy || savingDraft) return; if (dirty) setDiscard(true); else onClose(); };
+  const close = () => { if (busy || savingDraft) return; if (dirty || checkpointBusy) setDiscard(true); else onClose(); };
   const scannedTotal = Object.values(entries).reduce((sum, row) => sum + row.goodSerials.length + row.damagedSerials.length, 0);
   const unavailableSerialReason = (serial: string) => {
     if (state.stock.some(stock => stock.serials.includes(serial))) return "This serial is already in current stock.";
@@ -231,7 +257,7 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
       <DialogHeader><DialogTitle>{heading} · <span className="font-mono">{order.id}</span></DialogTitle><DialogDescription>
         {action === "dispatch" ? "Scan actual serialized identities leaving the source location." : action === "accept" ? "Scan newly received identities. Unreadable damaged units must reference unresolved dispatched identities." : "Record physical units received. Damaged units are held for inspection, not available stock."}
       </DialogDescription></DialogHeader>
-      {discard ? <Alert><AlertTriangle className="h-4 w-4" /><AlertTitle>Discard movement edits?</AlertTitle><AlertDescription>Your scans and quantities have not been posted.</AlertDescription><div className="mt-3 flex justify-end gap-2"><Button variant="outline" onClick={() => setDiscard(false)}>Stay</Button><Button variant="destructive" onClick={() => { onDirtyChange(false); onClose(); }}>Discard</Button></div></Alert> : <>
+      {discard ? <Alert><AlertTriangle className="h-4 w-4" /><AlertTitle>Discard movement edits?</AlertTitle><AlertDescription>Unsaved local changes will be abandoned. Server checkpoints remain available to Resume; no stock has been posted. {checkpointBusy && "Waiting for the current checkpoint before closing."}</AlertDescription><div className="mt-3 flex justify-end gap-2"><Button variant="outline" onClick={() => setDiscard(false)}>Stay</Button><Button variant="destructive" disabled={checkpointBusy} onClick={() => { onDirtyChange(false); onClose(); }}>Discard</Button></div></Alert> : <>
         <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
           <div className="rounded border p-2"><span className="text-muted-foreground">Order</span><p className="font-mono font-medium">{order.id}</p></div>
           <div className="rounded border p-2"><span className="text-muted-foreground">Movement</span><p className="font-medium">{heading}</p></div>
@@ -303,10 +329,15 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
         {validation && <p className="text-sm text-destructive" role="alert">{validation}</p>}
         {error && <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Posting not confirmed</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
         {draftMessage && <p className="text-sm" role="status">{draftMessage}</p>}
-        {externalMessage && <p className="text-sm" role="status">{externalMessage}</p>}
+        {externalMessage && (!onAutoSave || !externalMessage.startsWith("Saved revision ")) && <p className="text-sm" role="status">{externalMessage}</p>}
+        {onAutoSave && <p role="status" data-testid="shipment-checkpoint-status" className="min-h-8 text-xs text-muted-foreground">
+          {checkpointBusy ? "Saving…" : autoSaveBlocked ? "Not saved — automatic saving paused. Reconnect and use Save draft to retry." :
+            dirty ? autoSavePaused ? "Not saved — automatic saving paused." : "Not saved — waiting to save automatically." :
+              confirmedCapture ? "Saved — latest capture confirmed on server." : "Not saved — no checkpoint yet."}
+        </p>}
         <DialogFooter className="flex-col sm:flex-row">
           <Button variant="outline" disabled={busy} onClick={close}>Cancel</Button>
-          {onSaveDraft && <Button variant="outline" disabled={busy || savingDraft || !dirty} onClick={async () => {
+          {onSaveDraft && <Button variant="outline" disabled={busy || savingDraft || checkpointBusy || (!dirty && !autoSaveBlocked)} onClick={async () => {
             setSavingDraft(true); setDraftMessage("");
             try {
               const ok = await onSaveDraft(capture);

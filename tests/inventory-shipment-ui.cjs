@@ -167,7 +167,9 @@ async function main() {
     const parentDOM = page.locator(`[id="${parentId}"]`);
     const parentBefore = await parentDOM.evaluate(el => el.offsetHeight);
     let childRequests = 0;
-    const trackCommands = request => { if (request.url().endsWith(`${endpoint}/commands`)) childRequests++; };
+    const trackCommands = request => {
+      if (request.url().endsWith(`${endpoint}/commands`) && request.postDataJSON().action !== "shipmentDraftSave") childRequests++;
+    };
     page.on("request", trackCommands);
     const large = await openScans(dialog, "ship-meter");
     const largeScanner = large.getByRole("textbox", { name: "Good serial scanner for ship-meter", exact: true });
@@ -213,9 +215,22 @@ async function main() {
     await largeView.waitFor({ state: "hidden" });
     assert.equal(childRequests, 0, "opening, scanning, correcting, closing and reviewing serials never posts stock");
     page.off("request", trackCommands);
-    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-    await dialog.getByRole("button", { name: "Discard", exact: true }).click();
-    await dialog.waitFor({ state: "hidden" });
+    const closeTestCapture = async (parent, orderId) => {
+      await parent.getByRole("button", { name: "Cancel", exact: true }).click();
+      const asks = await Promise.race([
+        parent.getByRole("button", { name: "Discard", exact: true }).waitFor({ state: "visible" }).then(() => true),
+        parent.waitFor({ state: "hidden" }).then(() => false),
+      ]);
+      if (asks) await parent.getByRole("button", { name: "Discard", exact: true }).click();
+      await parent.waitFor({ state: "hidden" });
+      // Cancel retains automatic checkpoints by design. Explicitly remove this
+      // throwaway capture before a separate fresh-form acceptance case.
+      const saved = (await state()).shipmentDrafts.find(d => d.orderId === orderId);
+      if (saved) await post("shipmentDraftDelete", { id: saved.id, revision: saved.revision });
+      await page.reload();
+      await page.getByRole("tab", { name: "Orders", exact: true }).click();
+    };
+    await closeTestCapture(dialog, "SHIP-LARGE");
     assert.deepEqual((await state()).stock, committed.stock);
     await row("SHIP-LARGE").getByRole("button", { name: "Receive", exact: true }).click();
     await dialog.locator("#ship-meter-damagedQuantity").fill("1");
@@ -223,9 +238,7 @@ async function main() {
     await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Known damaged serial scanner for ship-meter");
     await damageOnly.getByRole("button", { name: "Close", exact: true }).click();
     await damageOnly.waitFor({ state: "hidden" });
-    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-    await dialog.getByRole("button", { name: "Discard", exact: true }).click();
-    await dialog.waitFor({ state: "hidden" });
+    await closeTestCapture(dialog, "SHIP-LARGE");
     // A large dispatch list must not expand the parent for unreadable arrivals.
     await post("receive", { orderId: "SHIP-LARGE", lines: [{ itemId: "ship-meter", quantity: 151,
       serials: Array.from({ length: 151 }, (_, i) => identity(i + 1)) }] });
@@ -253,8 +266,7 @@ async function main() {
     assert.equal(await refsView.getByRole("checkbox", { name: identity(151), exact: true }).isDisabled(), true);
     await refsView.getByRole("button", { name: "Close", exact: true }).first().click();
     await refsView.waitFor({ state: "hidden" });
-    await largeArrival.getByRole("button", { name: "Cancel", exact: true }).click();
-    await largeArrival.getByRole("button", { name: "Discard", exact: true }).click();
+    await closeTestCapture(largeArrival, "SHIP-LARGE-TR");
     await largeArrival.waitFor({ state: "hidden" });
     // A NEW identical regular partial receipt is a fresh business operation.
     await order("SHIP-REPEAT", [{ itemId: "ship-bulk", quantity: 3 }]);
