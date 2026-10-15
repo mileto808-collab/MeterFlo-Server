@@ -423,14 +423,15 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     return [...good, ...damaged, ...closed, receipt.reason].filter(Boolean).join(" · ");
   };
   const runOrderCommand = (action: "unrelease" | "archiveOrder" | "restoreOrder", order: InventoryOrder) => {
-    if (command.isPending || !can("inventory.purchase")) return;
+    if (command.isPending || !can(action === "unrelease" && order.type === "transfer" ? "inventory.transfer" : "inventory.purchase")) return;
     command.mutate({ action, data: { orderId: order.id } }, {
       onSuccess: () => { if (action === "archiveOrder") setOrderToClear(null); },
     });
   };
   const orderHasReceipt = (order: InventoryOrder) => state.receipts.some(receipt => receipt.reference === order.id);
   const isUnreleaseLocked = (order: InventoryOrder) => order.status !== "released" ||
-    order.received.length > 0 || order.dispatched.length > 0 || orderHasReceipt(order);
+    order.received.length > 0 || order.dispatched.length > 0 || orderHasReceipt(order) ||
+    (state.shipmentDrafts ?? []).some(draft => draft.orderId === order.id);
   const uploadImage = async (file?: File) => {
     if (!file) return;
     setImageBusy(true);
@@ -678,7 +679,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           <div className="space-y-3">{visibleOrders.map(order => {
             const archived = !!order.archivedAt;
             const purchase = order.type === "purchase";
-            const unreleaseLocked = purchase && ["released", "partial", "completed"].includes(order.status) && isUnreleaseLocked(order);
+            const unreleaseLocked = ["released", "partial", "completed"].includes(order.status) && isUnreleaseLocked(order);
             return <div key={order.id} className="rounded-lg border p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -707,12 +708,12 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
                     const progress = orderLineProgress(state, order, line.itemId);
                     return progress.ordered > progress.usable;
                   }) && can(purchase ? "inventory.purchase" : "inventory.transfer") && <Button size="sm" variant="outline" disabled={command.isPending} onClick={() => startReplacementOrder(order)}>Create replacement</Button>}
-                  {purchase && order.status === "released" && !archived && can("inventory.purchase") && <Button size="sm" variant="outline" disabled={command.isPending || isUnreleaseLocked(order)} onClick={() => requestOrderTransition(() => runOrderCommand("unrelease", order))}>Un-release to draft</Button>}
+                  {order.status === "released" && !archived && can(purchase ? "inventory.purchase" : "inventory.transfer") && <Button size="sm" variant="outline" disabled={command.isPending || isUnreleaseLocked(order)} onClick={() => requestOrderTransition(() => runOrderCommand("unrelease", order))}>Un-release to draft</Button>}
                   {purchase && order.status === "cancelled" && !archived && can("inventory.purchase") && <Button size="sm" variant="outline" disabled={command.isPending} onClick={() => requestOrderTransition(() => setOrderToClear(order))}>Clear</Button>}
                   {purchase && order.status === "cancelled" && archived && can("inventory.purchase") && <Button size="sm" variant="outline" disabled={command.isPending} onClick={() => requestOrderTransition(() => runOrderCommand("restoreOrder", order))}>Restore</Button>}
                 </div>
               </div>
-              {purchase && unreleaseLocked && <p className="mt-3 text-xs text-muted-foreground" role="note">This purchase order is receipt-locked and cannot be un-released. Received, dispatched, or receipt activity must remain attached to the order; partially received and completed POs cannot return to draft.</p>}
+              {unreleaseLocked && <p className="mt-3 text-xs text-muted-foreground" role="note">{(state.shipmentDrafts ?? []).some(draft => draft.orderId === order.id) ? "Resume or discard the saved shipment capture before un-releasing this order." : "This order has posted shipment activity and cannot return to draft. Dispatches and receipts must remain attached to the order."}</p>}
               <div className="mt-3 grid gap-1 border-t pt-2">{order.lines.map(line => {
                 const item = items.find(value => value.id === line.itemId);
                 const p = orderLineProgress(state, order, line.itemId);

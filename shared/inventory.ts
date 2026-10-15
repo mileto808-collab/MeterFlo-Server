@@ -93,7 +93,7 @@ export const emptyInventory = (): InventoryState => ({ warehouses: [], vendors: 
 export const commandPermission = (action: InventoryCommand["action"]) =>
   action === "closeOrder" ? inventoryPermissions.closeOrders :
   ["resolveTransit", "resolveHold"].includes(action) ? inventoryPermissions.resolveExceptions :
-  ["unrelease", "archiveOrder", "restoreOrder"].includes(action) ? inventoryPermissions.purchase :
+  ["archiveOrder", "restoreOrder"].includes(action) ? inventoryPermissions.purchase :
   ["warehouse", "vendor", "item", "numberOrders"].includes(action) ? inventoryPermissions.maintain :
   ["receive", "accept", "returnAccept", "returnRelease"].includes(action) ? inventoryPermissions.receive :
   action === "assemble" ? inventoryPermissions.assemble : action.startsWith("count") ? inventoryPermissions.count :

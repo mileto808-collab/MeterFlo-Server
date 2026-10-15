@@ -5,6 +5,7 @@ import { emptyInventory, commandPermission, inventoryPermissions, inventoryComma
 import { applyInventoryCommand, completeInventoryWorkOrder, reserved } from "../shared/inventory-engine";
 import { validateInventoryBackup } from "../server/inventoryBackup";
 import { orderLineProgress } from "../shared/inventory-shipment-model";
+import { blankShipmentCapture } from "../shared/inventory-shipment-draft-model";
 
 const actor = "admin";
 function post(s: InventoryState, action: InventoryCommand["action"], data: Record<string, unknown>, operationId = randomUUID()) {
@@ -57,7 +58,40 @@ test("purchase orders can be un-released, edited and released again only before 
   inconsistent.orders.find(o => o.id === data.id)!.status = "released";
   assert.throws(() => post(inconsistent, "unrelease", request.data), /posted receipts/);
   assert.throws(() => post(s, "unrelease", { orderId: "po" }), /Only released/);
-  assert.equal(commandPermission("unrelease"), inventoryPermissions.purchase);
+  assert.equal(commandPermission("unrelease"), null, "permission is resolved from the persisted order type");
+});
+
+test("transfers return to draft without moving stock, retain identity and block dispatch until re-released", () => {
+  let s = setup();
+  const data = { id: "editable-transfer", type: "transfer", sourceId: "main", destinationId: "van",
+    lines: [{ itemId: "seal", quantity: 2 }] };
+  s = post(s, "order", data);
+  s = post(s, "release", { orderId: data.id });
+  const original = structuredClone(s), number = s.orders.find(o => o.id === data.id)!.orderNumber;
+  const operationId = randomUUID();
+  s = post(s, "unrelease", { orderId: data.id }, operationId);
+  assert.deepEqual(post(s, "unrelease", { orderId: data.id }, operationId), s);
+  assert.equal(s.orders.find(o => o.id === data.id)!.status, "draft");
+  assert.throws(() => post(s, "dispatch", { orderId: data.id, lines: data.lines }), /Release an open/);
+  s = post(s, "order", { ...data, lines: [{ itemId: "seal", quantity: 4 }, { itemId: "meter", quantity: 1 }] });
+  assert.deepEqual(s.stock, original.stock);
+  assert.deepEqual(s.receipts, original.receipts);
+  assert.equal(s.orders.find(o => o.id === data.id)!.orderNumber, number);
+  s = post(s, "release", { orderId: data.id });
+  const draft = { id: randomUUID(), revision: 0, orderId: data.id, stage: "dispatch", capture: blankShipmentCapture() };
+  const captured = post(s, "shipmentDraftSave", draft);
+  assert.throws(() => post(captured, "unrelease", { orderId: data.id }), /saved shipment drafts/);
+  for (const accessible of [["main"], ["van"]]) {
+    const restricted = structuredClone(s);
+    for (const warehouse of restricted.warehouses) warehouse.userIds = accessible.includes(warehouse.id) ? ["tech"] : [];
+    assert.throws(() => applyInventoryCommand(restricted, { action: "unrelease", data: { orderId: data.id }, operationId: randomUUID() }, "tech", false), /Warehouse access/);
+  }
+  s = post(s, "dispatch", { orderId: data.id, lines: [{ itemId: "seal", quantity: 1 }] });
+  assert.throws(() => post(s, "unrelease", { orderId: data.id }), /Only released|posted receipts/);
+  const stale = structuredClone(s);
+  stale.orders.find(o => o.id === data.id)!.status = "released";
+  assert.throws(() => post(stale, "unrelease", { orderId: data.id }), /posted receipts/);
+  assert.throws(() => post(stale, "archiveOrder", { orderId: data.id }), /Purchase order required/);
 });
 
 test("clearing cancelled POs preserves stock, receipts and IDs and supports restoration", () => {
@@ -86,7 +120,8 @@ test("clearing cancelled POs preserves stock, receipts and IDs and supports rest
   s = post(s, "order", { id: "tr", type: "transfer", sourceId: "main", destinationId: "van",
     lines: [{ itemId: "seal", quantity: 1 }] });
   s = post(s, "cancel", { orderId: "tr" });
-  for (const action of ["unrelease", "archiveOrder", "restoreOrder"] as const) {
+  assert.throws(() => post(s, "unrelease", { orderId: "tr" }), /Only released/);
+  for (const action of ["archiveOrder", "restoreOrder"] as const) {
     assert.throws(() => post(s, action, { orderId: "tr" }), /Purchase order required/);
     assert.equal(commandPermission(action), inventoryPermissions.purchase);
   }

@@ -211,13 +211,16 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     if (a === "dispatch" || a === "release" && o.type === "transfer") access(o.sourceId!);
     else access(o.destinationId);
     if (["unrelease", "archiveOrder", "restoreOrder"].includes(a)) {
-      assert(o.type === "purchase", "Purchase order required.");
       if (a === "unrelease") {
-        assert(o.status === "released" && !o.archivedAt, "Only released purchase orders can be un-released.");
+        if (o.type === "transfer") access(o.sourceId!);
+        assert(o.status === "released" && !o.archivedAt, "Only released orders can be un-released.");
         assert(!o.received.length && !o.dispatched.length && !s.receipts.some(r => r.reference === o.id),
-          "Purchase orders with posted receipts cannot be un-released.");
+          "Orders with posted receipts or dispatches cannot be un-released.");
+        assert(!(s.shipmentDrafts ?? []).some(draft => draft.orderId === o.id),
+          "Resume or discard saved shipment drafts before un-releasing this order.");
         o.status = "draft";
       } else {
+        assert(o.type === "purchase", "Purchase order required.");
         assert(o.status === "cancelled", "Only cancelled purchase orders can be cleared or restored.");
         if (a === "archiveOrder") {
           assert(!o.archivedAt, "Purchase order is already cleared.");
