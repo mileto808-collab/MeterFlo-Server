@@ -1,6 +1,8 @@
 import type { InventoryOrder, InventoryState, StockLine } from "@shared/inventory";
 import type { DamageLine } from "@shared/inventory-shipment-model";
 import { orderLineProgress, settledLines } from "@shared/inventory-shipment-model";
+import { canonicalInventoryJson } from "@shared/inventory-engine";
+import type { ShipmentCapture } from "@shared/inventory-shipment-draft-model";
 
 export type ShipmentAction = "receive" | "dispatch" | "accept";
 export type ShipmentEntry = {
@@ -18,6 +20,17 @@ export const blankShipmentEntry = (itemId: string): ShipmentEntry => ({
   itemId, goodQuantity: "0", damagedQuantity: "0", unreadableQuantity: "0",
   goodSerials: [], damagedSerials: [], expectedSerials: [], damageReason: "",
 });
+
+// Dirty checks ignore empty UI slots, not actual captured text. Keep durable
+// save/replay equality exact: this normalization is only for dismissal warnings.
+export function shipmentCaptureEditFingerprint(capture: ShipmentCapture) {
+  return canonicalInventoryJson({
+    ...capture,
+    entries: Object.fromEntries(Object.entries(capture.entries).filter(([id, row]) =>
+      canonicalInventoryJson(row) !== canonicalInventoryJson(blankShipmentEntry(id)))),
+    scanBuffers: Object.fromEntries(Object.entries(capture.scanBuffers).filter(([, value]) => value !== "")),
+  });
+}
 
 export function shipmentCapacity(state: InventoryState, order: InventoryOrder, action: ShipmentAction, itemId: string) {
   const progress = orderLineProgress(state, order, itemId);

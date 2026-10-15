@@ -254,7 +254,6 @@ export function InventoryShipmentSession(props: Props) {
     state={freshState} order={freshState.orders.find(value => value.id === order.id) ?? order} action={action} items={freshState.items} canCloseRemainder={props.canCloseRemainder}
     busy={props.busy || busy} initialCapture={capture}
     onSaveDraft={saveCapture} onPost={(payload, current) => post(payload, current ?? blankShipmentCapture())} onClose={onClose} onDirtyChange={onDirtyChange}
-    savedFingerprint={capture ? captureFingerprint(capture) : undefined}
     externalMessage={message}
   />;
 }

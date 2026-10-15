@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { InventoryItem, InventoryOrder, InventoryState } from "@shared/inventory";
-import { canonicalInventoryJson } from "@shared/inventory-engine";
 import type { ShipmentCapture } from "@shared/inventory-shipment-draft-model";
 import { orderLineProgress } from "@shared/inventory-shipment-model";
 import { AlertTriangle, Check, PackageCheck } from "lucide-react";
@@ -11,20 +10,20 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { buildShipmentPayload, blankShipmentEntry, shipmentCapacity, unresolvedTransferSerials, validateShipmentEntry, type ShipmentAction, type ShipmentEntry } from "@/lib/inventory-shipment-guidance";
+import { buildShipmentPayload, blankShipmentEntry, shipmentCapacity, shipmentCaptureEditFingerprint, unresolvedTransferSerials, validateShipmentEntry, type ShipmentAction, type ShipmentEntry } from "@/lib/inventory-shipment-guidance";
 import { InventoryShipmentSerialDialog } from "@/components/inventory-shipment-serial-dialog";
 
 type Props = {
   state: InventoryState; order: InventoryOrder; action: ShipmentAction; items: InventoryItem[];
   canCloseRemainder: boolean; busy?: boolean;
-  initialCapture?: ShipmentCapture; savedFingerprint?: string;
+  initialCapture?: ShipmentCapture;
   onSaveDraft?: (capture: ShipmentCapture) => Promise<boolean>;
   externalMessage?: string;
   onPost: (data: Record<string, unknown>, capture?: ShipmentCapture) => Promise<boolean>;
   onClose: () => void; onDirtyChange: (dirty: boolean) => void;
 };
 
-export function InventoryShipmentGuidedDialog({ state: openingState, order, action, items, canCloseRemainder, busy = false, initialCapture, savedFingerprint, onSaveDraft, onPost, onClose, onDirtyChange, externalMessage }: Props) {
+export function InventoryShipmentGuidedDialog({ state: openingState, order, action, items, canCloseRemainder, busy = false, initialCapture, onSaveDraft, onPost, onClose, onDirtyChange, externalMessage }: Props) {
   // A lost response may refresh stock after the server committed. Keep this
   // editor's opening snapshot so client-side availability does not block its
   // same-operation retry; the server still validates every fresh posting.
@@ -39,7 +38,7 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
   const [error, setError] = useState("");
   const [discard, setDiscard] = useState(false);
   const [scanBuffers, setScanBuffers] = useState<Record<string, string>>(initialCapture?.scanBuffers ?? {});
-  const [savedBase, setSavedBase] = useState(savedFingerprint ?? canonicalInventoryJson({
+  const [savedBase, setSavedBase] = useState(shipmentCaptureEditFingerprint({
     entries: Object.fromEntries(Object.entries(initialEntries).sort(([a], [b]) => a.localeCompare(b))),
     scanBuffers: Object.fromEntries(Object.entries(initialBuffers).sort(([a], [b]) => a.localeCompare(b))),
     reason: initialCapture?.reason ?? "", closeRemainder: initialCapture?.closeRemainder ?? false,
@@ -70,7 +69,7 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
       key.endsWith("-damagedSerials") ? key.slice(0, -"-damagedSerials".length) : "").filter(id => !!id && !items.some(item => item.id === id)),
     [scanBuffers, items]);
   const capture: ShipmentCapture = { entries, scanBuffers, reason, closeRemainder };
-  const fingerprint = canonicalInventoryJson(capture);
+  const fingerprint = shipmentCaptureEditFingerprint(capture);
   const [serialDialog, setSerialDialog] = useState<{ itemId: string; viewOnly: boolean } | null>(null);
   const serialDialogOpenRef = useRef(false);
   serialDialogOpenRef.current = !!serialDialog;

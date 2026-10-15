@@ -18,3 +18,13 @@ HTTP proxy could not finish reading the application's continuous event stream.
 
 **How to apply:** Treat event transport and teardown as part of the test harness,
 not evidence of a failed screen or permission check.
+
+For nested animated modal tests, wait for the child layer to detach and click
+the live parent overlay through a locator, not a raw coordinate mouse event.
+
+**Why:** A child can be visually hidden while its dismissable layer still
+intercepts pointers. Immediate coordinate clicks produced intermittent missing
+parent-dismissal warnings despite the same user flow working after settling.
+
+**How to apply:** Let locator actionability checks wait for the target overlay;
+do not add arbitrary sleeps or weaken the warning assertion.
