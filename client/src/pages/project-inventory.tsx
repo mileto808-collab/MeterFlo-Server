@@ -6,6 +6,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { useToast } from "@/hooks/use-toast";
 import type { InventoryCommand, InventoryCount, InventoryItem, InventoryOrder, InventoryState, StockLine, Vendor, Warehouse } from "@shared/inventory";
 import { inventoryCountReference } from "@shared/inventory-count-reference";
+import { inventoryCountRows, inventoryCountLines } from "@/lib/inventory-count-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,6 +35,12 @@ const sameOriginImage = (value: string) => {
 export default function ProjectInventory() {
   const [, params] = useRoute("/projects/:projectId/inventory");
   const projectId = params?.projectId;
+  if (!projectId) return <div className="p-6">Project not found.</div>;
+  // Route changes must not carry one project's drafts into another project's commands.
+  return <ProjectInventoryWorkspace key={projectId} projectId={projectId} />;
+}
+
+function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const { hasPermission } = usePermissions();
   const { toast } = useToast();
   const base = `/api/projects/${projectId}/inventory`;
@@ -65,6 +72,7 @@ export default function ProjectInventory() {
   const [countQuantities, setCountQuantities] = useState<Record<string, string>>({});
   const [countSerials, setCountSerials] = useState<Record<string, string>>({});
   const [countReason, setCountReason] = useState("");
+  const [countDraftId, setCountDraftId] = useState<string | null>(null);
   const [assembleItem, setAssembleItem] = useState("");
   const [assembleWarehouse, setAssembleWarehouse] = useState("");
   const [assembleQty, setAssembleQty] = useState("1");
@@ -170,23 +178,37 @@ export default function ProjectInventory() {
     finally { setImageBusy(false); }
   };
 
+  const openCount = (count: InventoryCount) => {
+    if (countDraftId !== count.id) {
+      setCountQuantities({});
+      setCountSerials({});
+      setCountReason("");
+      setCountDraftId(count.id);
+    }
+    setActiveCount(count);
+    setCountWarehouse(count.warehouseId);
+  };
+  const countRows = activeCount ? inventoryCountRows(activeCount, items, countQuantities, countSerials) : [];
   const startCount = () => {
     if (!countWarehouse) return;
     const id = freshId();
-    command.mutate({ action: "countStart", data: { id, warehouseId: countWarehouse } }, { onSuccess: () => {
-      const count = state?.counts.find(value => value.id === id);
-      setActiveCount(count ?? { id, warehouseId: countWarehouse, snapshot: state?.stock.filter(row => row.warehouseId === countWarehouse) ?? [], status: "open" });
+    command.mutate({ action: "countStart", data: { id, warehouseId: countWarehouse } }, { onSuccess: result => {
+      const count = (result.state as InventoryState).counts.find(value => value.id === id);
+      if (!count) {
+        toast({ title: "Count snapshot unavailable", description: "Refresh inventory and continue the saved count.", variant: "destructive" });
+        return;
+      }
+      openCount(count);
     } });
   };
   const postCount = () => {
     if (!activeCount) return;
-    const expectedItems = new Set(activeCount.snapshot.map(row => row.itemId));
-    const countLines = [...expectedItems].map(id => {
-      const item = items.find(value => value.id === id);
-      const scanned = item?.tracking === "serialized" ? csv(countSerials[id] ?? "") : [];
-      const snapshotQty = activeCount.snapshot.find(row => row.itemId === id)?.quantity ?? 0;
-      return { itemId: id, quantity: Number(countQuantities[id] ?? snapshotQty), serials: scanned };
-    });
+    let countLines: StockLine[];
+    try { countLines = inventoryCountLines(countRows); }
+    catch (error) {
+      toast({ title: "Check count entries", description: error instanceof Error ? error.message : "Review every counted item.", variant: "destructive" });
+      return;
+    }
     command.mutate({ action: "countPost", data: { id: activeCount.id, lines: countLines, reason: countReason } }, { onSuccess: () => setActiveCount(null) });
   };
 
@@ -229,20 +251,21 @@ export default function ProjectInventory() {
       </TabsContent>
 
       <TabsContent value="counts" className="space-y-4"><Card><CardHeader><CardTitle>Physical stock count</CardTitle><CardDescription>Start a snapshot, count every item including zero, and post with a reason.</CardDescription></CardHeader><CardContent className="space-y-4"><div className="flex flex-wrap items-end gap-3"><div className="w-full max-w-sm space-y-1"><Label>Warehouse or vehicle</Label><Select value={countWarehouse} onValueChange={setCountWarehouse}><SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger><SelectContent>{activeWarehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.code} · {w.name}</SelectItem>)}</SelectContent></Select></div>{can("inventory.count") && <Button onClick={startCount} disabled={!countWarehouse || command.isPending}>Start count</Button>}</div>
-          {state.counts.map(count => <div key={count.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3"><div><span className="font-medium">{warehouses.find(w => w.id === count.warehouseId)?.name ?? "Location unavailable"}</span><span className="ml-2 text-sm text-muted-foreground">{inventoryCountReference(state.counts, count.id)}</span><Badge className="ml-2" variant={count.status === "open" ? "outline" : "secondary"}>{count.status}</Badge></div>{count.status === "open" && <div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => { setActiveCount(count); setCountWarehouse(count.warehouseId); }}>Continue count</Button><Button size="sm" variant="outline" disabled={!can("inventory.count") || command.isPending} onClick={() => command.mutate({ action: "countCancel", data: { id: count.id, reason: "Operator cancelled stale or unfinished count" } }, { onSuccess: () => { if (activeCount?.id === count.id) setActiveCount(null); } })}>Cancel count</Button></div>}{count.status === "posted" && <Button size="sm" variant="ghost" onClick={() => openPrint("count", count.id)}>Print</Button>}</div>)}
+          {state.counts.map(count => <div key={count.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3"><div><span className="font-medium">{warehouses.find(w => w.id === count.warehouseId)?.name ?? "Location unavailable"}</span><span className="ml-2 text-sm text-muted-foreground">{inventoryCountReference(state.counts, count.id)}</span><Badge className="ml-2" variant={count.status === "open" ? "outline" : "secondary"}>{count.status}</Badge></div>{count.status === "open" && <div className="flex gap-2"><Button size="sm" variant="outline" disabled={command.isPending} onClick={() => openCount(count)}>Continue count</Button><Button size="sm" variant="outline" disabled={!can("inventory.count") || command.isPending} onClick={() => command.mutate({ action: "countCancel", data: { id: count.id, reason: "Operator cancelled stale or unfinished count" } }, { onSuccess: () => { if (activeCount?.id === count.id) setActiveCount(null); } })}>Cancel count</Button></div>}{count.status === "posted" && <Button size="sm" variant="ghost" onClick={() => openPrint("count", count.id)}>Print</Button>}</div>)}
           {activeCount && <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
-            <div><h3 className="font-medium">{inventoryCountReference(state.counts, activeCount.id)} · {warehouses.find(w => w.id === activeCount.warehouseId)?.name}</h3><p className="text-xs text-muted-foreground">Count every item, including zero. Serialized stock is reconciled from scanned identities.</p></div>
-            {[...new Set([...activeCount.snapshot.map(row => row.itemId), ...items.filter(item => item.active && !activeCount.snapshot.some(row => row.itemId === item.id)).map(item => item.id)])].map(id => {
-              const item = items.find(value => value.id === id); if (!item) return null;
+            <div><h3 className="font-medium">{inventoryCountReference(state.counts, activeCount.id)} · {warehouses.find(w => w.id === activeCount.warehouseId)?.name}</h3><p className="text-xs text-muted-foreground">Verify every displayed quantity and serial before posting. Existing values come from the starting snapshot; newly discovered stock starts at zero. Clear serials when counting zero. Closing keeps this draft on this page; switching counts discards it.</p></div>
+            {countRows.map(row => {
+              const { itemId: id, item } = row;
+              if (!item) return <Alert key={id} variant="destructive"><AlertTitle>Count item unavailable</AlertTitle><AlertDescription>Item {id} is no longer in the catalog. Resolve it before posting; it will not be silently omitted.</AlertDescription></Alert>;
               const old = activeCount.snapshot.find(row => row.itemId === id);
               return <div key={id} className="grid gap-2 rounded border bg-background p-3 sm:grid-cols-[1fr_130px_2fr] sm:items-end">
                 <div><div className="font-medium">{item.name}</div><div className="font-mono text-xs text-muted-foreground">{item.sku} · snapshot {old?.quantity ?? 0}</div></div>
-                <div className="space-y-1"><Label htmlFor={`count-${id}`}>Actual quantity</Label><Input id={`count-${id}`} type="number" min="0" value={countQuantities[id] ?? String(old?.quantity ?? 0)} onChange={event => setCountQuantities(current => ({ ...current, [id]: event.target.value }))} /></div>
-                {item.tracking === "serialized" && <div className="space-y-1"><Label htmlFor={`countserial-${id}`}>Scan all serials</Label><Textarea id={`countserial-${id}`} value={countSerials[id] ?? old?.serials.join("\n") ?? ""} onChange={event => setCountSerials(current => ({ ...current, [id]: event.target.value }))} /></div>}
+                <div className="space-y-1"><Label htmlFor={`count-${id}`}>Actual quantity</Label><Input id={`count-${id}`} type="number" min="0" max="1000000" step="1" value={row.quantity} disabled={command.isPending} onChange={event => setCountQuantities(current => ({ ...current, [id]: event.target.value }))} /></div>
+                {item.tracking === "serialized" && <div className="space-y-1"><Label htmlFor={`countserial-${id}`}>Scan all serials</Label><Textarea id={`countserial-${id}`} value={row.serials} disabled={command.isPending} onChange={event => setCountSerials(current => ({ ...current, [id]: event.target.value }))} /></div>}
               </div>;
             })}
-            <div className="space-y-1"><Label htmlFor="count-reason">Count adjustment reason</Label><Input id="count-reason" value={countReason} onChange={event => setCountReason(event.target.value)} placeholder="Required audit note" /></div>
-            <div className="flex gap-2"><Button onClick={postCount} disabled={!can("inventory.count") || !countReason.trim() || command.isPending}>Post count</Button><Button variant="outline" onClick={() => setActiveCount(null)}>Close</Button></div>
+            <div className="space-y-1"><Label htmlFor="count-reason">Count adjustment reason</Label><Input id="count-reason" maxLength={1000} disabled={command.isPending} value={countReason} onChange={event => setCountReason(event.target.value)} placeholder="Required audit note" /></div>
+            <div className="flex gap-2"><Button onClick={postCount} disabled={!can("inventory.count") || !countReason.trim() || command.isPending}>Post count</Button><Button variant="outline" disabled={command.isPending} onClick={() => setActiveCount(null)}>Close</Button></div>
           </div>}
         </CardContent></Card>
         <Card><CardHeader><CardTitle>Assemble a kit</CardTitle><CardDescription>Select a defined kit; scan components from the selected location and record its finished serial identity.</CardDescription></CardHeader><CardContent className="space-y-4"><div className="grid gap-3 sm:grid-cols-3"><div className="space-y-1"><Label>Kit item</Label><Select value={assembleItem} onValueChange={value => { setAssembleItem(value); setComponentScan({}); }}><SelectTrigger><SelectValue placeholder="Select kit" /></SelectTrigger><SelectContent>{items.filter(item => item.active && item.components.length).map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1"><Label>Build location</Label><Select value={assembleWarehouse} onValueChange={setAssembleWarehouse}><SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger><SelectContent>{activeWarehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.code} · {w.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1"><Label>Build quantity</Label><Input type="number" min="1" value={assembleQty} onChange={event => setAssembleQty(event.target.value)} /></div></div>{items.find(item => item.id === assembleItem)?.components.map(component => { const item = items.find(value => value.id === component.itemId); return <div key={component.itemId} className="grid gap-2 sm:grid-cols-[1fr_2fr] sm:items-center"><Label>{item?.sku} · {item?.name} — {component.quantity * Number(assembleQty || 1)} required</Label><Input aria-label={`Scan ${item?.name ?? "component"} serials`} value={componentScan[component.itemId] ?? ""} onChange={event => setComponentScan(current => ({ ...current, [component.itemId]: event.target.value }))} placeholder={item?.tracking === "serialized" ? "Scan component serials" : "Quantity is taken from this location"} /></div>; })}{items.find(item => item.id === assembleItem)?.tracking === "serialized" && <div className="space-y-1"><Label>Finished kit serials</Label><Input value={assembleSerials} onChange={event => setAssembleSerials(event.target.value)} placeholder="Scan each finished unit" /></div>}<Button disabled={!can("inventory.assemble") || !assembleItem || !assembleWarehouse || command.isPending} onClick={() => { const kit = items.find(item => item.id === assembleItem); if (!kit) return; const quantity = Number(assembleQty); const components = kit.components.map(component => { const componentItem = items.find(item => item.id === component.itemId); const serialList = componentItem?.tracking === "serialized" ? csv(componentScan[component.itemId] ?? "") : []; return { itemId: component.itemId, quantity: componentItem?.tracking === "serialized" ? serialList.length : component.quantity * quantity, serials: serialList }; }); command.mutate({ action: "assemble", data: { warehouseId: assembleWarehouse, itemId: kit.id, quantity, serials: kit.tracking === "serialized" ? csv(assembleSerials) : [], components } }); }}>Assemble kit</Button></CardContent></Card>

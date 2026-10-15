@@ -105,6 +105,14 @@ Start a count for a warehouse. Enter every stocked item, including **zero** for 
 
 **Continue count** resumes an open count. **Cancel count** closes a stale or unfinished count without changing quantities; cancellation is audited. The corresponding API command is `countCancel` with `{id,reason}`.
 
+The editor submits every displayed item, including active catalog products not present in the starting warehouse snapshot. For example, in an empty warehouse enter quantity `4` for seals and quantity `2` with serials `00001` and `00002` for newly found serialized equipment; both are posted. A product added to the catalog after the count started is included when inventory is refreshed and the count is continued.
+
+Existing quantities and serial lists are initially filled from the saved starting snapshot. Verify them physically: unchanged visible values are submitted as shown, without requiring you to retype the serials. Blank quantity is invalid, not zero. To record zero serialized units, enter `0` **and clear the serial list**. Duplicate serials or a quantity/serial mismatch block posting without dropping the draft. No serials are truncated or converted to numbers.
+
+Closing and continuing the same count on this page retains its unsaved entries. Switching to another count starts from that count's own snapshot and discards the prior local draft. Refreshing, leaving the page or changing projects also loses unsaved entries; Continue count restores the saved starting snapshot, not an autosaved draft. A failed post retains the visible entries/reason for correction, but a stale snapshot still requires cancellation and a new count. The current posting limit is 500 item lines; larger displayed counts fail explicitly rather than silently omitting items.
+
+Count regressions are included in `npm run test:inventory`. To run the signed-in browser checks against a running development server, create an isolated fixture with `npx tsx tests/support/inventory-ui-fixture.ts`, then run `npm run test:inventory-count:browser` (set `CHROMIUM_PATH` to an installed Chromium executable when needed). Afterwards run `npx tsx tests/support/inventory-ui-fixture.ts cleanup`. The test uses only its own temporary projects, warehouses, users and stock.
+
 Counts display project-scoped readable references such as **Count #1**, **Count #2** beside the warehouse name and status. The reference is derived from the count's position in the saved, append-only project count history; cancelling or posting does not renumber it. Existing UUID-only counts use the same numbering without rewriting their identifiers. List rows, continuation views, count activity and printed counts share that reference. It is not the warehouse code; internal UUIDs remain in command URLs, relationships and audit evidence. References are scoped to the project, not globally unique.
 
 During changeout select a disposition for each removed piece of equipment:

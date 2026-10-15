@@ -18,3 +18,9 @@ Inventory retry comparisons must not depend on JSON object key order or optional
 **Why:** Native payloads and validated server records can contain equivalent data in different key orders; treating that as different work wrongly rejects retries.
 
 **How to apply:** Normalize contractual fields and compare canonical objects. Preserve the same operation identity across retries and never deduct stock twice.
+
+Physical stock counts use starting-snapshot quantities and serials as editable defaults. After the operator verifies them and posts with a reason, unchanged visible defaults are accepted without mandatory rescanning.
+
+**Why:** The former form showed saved serials but submitted an empty list unless the operator retyped them. Requiring re-entry of correct defaults would not address the mismatch between visible and submitted data.
+
+**How to apply:** Keep display and submission consistent, including discovered products absent from the snapshot. Never interpret a blank quantity as zero or treat prefilled data alone as physical verification; retain explicit posting and the server's stale-stock/reservation checks.

@@ -136,11 +136,9 @@ async function main() {
     await page.getByRole("heading", { name: "Count #2 · Main warehouse", exact: true }).waitFor();
     state = await snapshot();
     const count = state.counts[1];
-    for (const row of count.snapshot) {
-      const scans = page.locator(`#countserial-${row.itemId}`);
-      await scans.fill("");
-      await scans.fill(row.serials.join("\n"));
-    }
+    // Untouched displayed serial defaults must be submitted, not replaced by [].
+    for (const row of count.snapshot)
+      assert.equal(await page.locator(`#countserial-${row.itemId}`).inputValue(), row.serials.join("\n"));
     await page.getByLabel("Count adjustment reason").fill("Fixture count verified");
     const [countPosted] = await Promise.all([
       page.waitForResponse(response => response.url().endsWith(`${endpoint}/commands`) &&
