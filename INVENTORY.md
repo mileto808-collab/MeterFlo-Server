@@ -146,6 +146,18 @@ Each continuation table repeats the project, readable order/receipt number, prod
 
 Automated checks: `npm run test:inventory-print` verifies evidence scope and display; `npm run test:inventory-print:browser` generates isolated fixtures and Chromium Letter/A4 PDFs under ignored `generated-artifacts/inventory-serial-print/`. The browser check requires Chromium (or `CHROMIUM_PATH`) and Poppler's `pdftotext`. It checks exact serial preservation, category duplicates, repeated page identifiers/headings, printable bounds, no empty appendix pages and offline rendering, including a 1,510-serial receipt. Actual browser print engines and printer settings can affect page counts; Firefox/Safari and physical printers are not verified by this Chromium check. Order and count serial layouts are unchanged.
 
+### Stock serial viewer and exports
+
+In **Stock & search**, serialized stock rows show **View serials (count)** rather than placing every serial in the balance table. Quantity-only rows do not show a serial button. The dialog identifies the item/SKU and warehouse or vehicle; it shows the selected location's current on-hand serials, **including reserved units**, not a list of units available for allocation.
+
+Search within the dialog and use Previous/Next to browse 50 serials at a time. Search ignores case, but display and exports preserve exact stored text, including leading zeros, capitalization, decimal-looking values and punctuation. The outer inventory search continues to find balances by serial without displaying the entire serial list.
+
+Choose **All serials** or **Filtered results** under Export scope. The count displayed there is the number exported; exports include the entire chosen set, not just the visible page. Excel downloads `.xlsx` with project/item/location metadata and explicitly text-formatted serial cells (even formula-like serials are not formulas). TXT downloads UTF-8 plain text with one unmodified serial per line. **PDF / Print** opens a self-contained printable view; select **Print / Save PDF** in that view to save a PDF using the browser. Product/location headings repeat across printed pages, and long serials wrap without truncation. No external fonts or export service are required, including on standalone Windows/Linux installations.
+
+The viewer uses the same authorized, warehouse-filtered inventory state as the Stock & search table and requires the existing inventory view permission. The selected row is resolved from current state rather than retaining an old serial snapshot. Viewing, searching and exporting do not reserve, move, adjust or otherwise change stock. Close/reopen for another item or location to reset the dialog search and export scope.
+
+Checks: `npm run test:inventory-stock-serials` verifies text/Excel identity preservation and print escaping. After creating the disposable fixture with `npx tsx tests/support/inventory-ui-fixture.ts`, run `npm run test:inventory-stock-serials:browser`, then `npx tsx tests/support/inventory-ui-fixture.ts cleanup`. The browser check creates only disposable project stock, verifies real XLSX/TXT downloads and Letter/A4 PDFs, location isolation, search/paging, mobile bounds, denied unauthorized access and unchanged stock. It requires the same Chromium/Poppler tools as the receipt print check; generated evidence stays in ignored `generated-artifacts/`.
+
 ### Finding purchase and transfer orders
 
 Search and filters work on the inventory snapshot already authorized for the current project and warehouse access. They do not change stock or orders.

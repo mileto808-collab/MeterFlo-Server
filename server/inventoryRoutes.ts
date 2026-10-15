@@ -66,7 +66,7 @@ export function registerInventoryRoutes(app: Express) {
          WHERE gm.user_id=u.id AND gp.project_id=$1)) ORDER BY u.username`, [c.project.id]);
     const { rows: actors } = await pool.query(`SELECT id, username FROM public.users WHERE id = ANY($1::text[])`,
       [[...new Set(state.receipts.map(receipt => receipt.actor))]]);
-    return { enabled: !!c.project.inventoryEnabled, timezone: timezoneEnabled === "false" ? "UTC" : defaultTimezone || "America/Denver",
+    return { enabled: !!c.project.inventoryEnabled, projectName: c.project.name, timezone: timezoneEnabled === "false" ? "UTC" : defaultTimezone || "America/Denver",
       state, permissions: c.permissions, users: users.map(u => ({ id: u.id, username: u.username || u.id })), actors };
   };
   app.use(base, isAuthenticated, auth);
