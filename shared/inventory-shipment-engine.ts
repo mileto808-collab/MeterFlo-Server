@@ -1,7 +1,8 @@
 import { z } from "zod";
 import { InventoryError } from "./inventory-errors";
 import { stockLineSchema, type InventoryCommand, type InventoryState, type InventoryReceipt, type StockLine } from "./inventory";
-import { damageLineSchema, settledLines, shipmentStatus, shipmentTotal } from "./inventory-shipment-model";
+import { damageLineSchema, remainingHold, holdStatus, settledLines, shipmentStatus, shipmentTotal } from "./inventory-shipment-model";
+import { holdDispositionCommandSchema, selectHoldDisposition } from "./inventory-hold-disposition";
 
 const assert: (value: unknown, message: string) => asserts value = (value, message) => {
   if (!value) throw new InventoryError(message);
@@ -20,7 +21,7 @@ export const shipmentActions = ["receive", "dispatch", "accept", "closeOrder", "
 // A single availability boundary is shared with receiving, counting and returns.
 export function assertNotHeld(state: InventoryState, itemId: string, serial: string) {
   assert(!(state.shipmentHolds ?? []).some(h => h.status === "held" &&
-    (h.serials.includes(serial) || h.expectedSerials.includes(serial))),
+    (remainingHold(h).serials.includes(serial) || remainingHold(h).expectedSerials.includes(serial))),
   "Serial is quarantined; inspect and resolve the shipment hold first.");
 }
 export function applyShipmentCommand(
@@ -32,33 +33,27 @@ export function applyShipmentCommand(
     extra: Partial<InventoryReceipt> = {}) =>
     s.receipts.push({ id: operationId, action, reference, warehouseId, lines: input, actor, occurredAt: now, reason: why, ...extra });
   if (action === "resolveHold") {
-    const d = z.object({ id, outcome: z.enum(["released", "returned", "scrapped"]), reason,
-      reference: z.string().trim().max(500).default(""), verifiedSerials: z.array(id).max(10000).default([]) }).strict().parse(data);
+    const d = holdDispositionCommandSchema.parse(data);
     const hold = s.shipmentHolds.find(h => h.id === d.id);
     assert(hold && hold.status === "held", "Open shipment hold required.");
     ctx.access(hold.warehouseId);
     const item = s.items.find(i => i.id === hold.itemId);
     assert(item?.active, "Choose an active item in this project.");
-    assert(d.outcome !== "returned" || d.reference, "Return destination and shipment/reference are required.");
-    let serials = [...hold.serials];
-    if (d.outcome === "released") {
-      serials = d.verifiedSerials;
-      ctx.validate([{ itemId: hold.itemId, quantity: hold.quantity, serials }]);
-      assert(hold.serials.every(x => serials.includes(x)), "Keep every already verified serial.");
-      assert(!hold.expectedSerials.length || hold.expectedSerials.every(x => serials.includes(x)),
-        "Verified identities must match the unverified dispatched identities; investigate any mismatch before release.");
-    } else {
-      assert(!d.verifiedSerials.length, "Verified serials are supplied only when releasing to usable stock.");
-    }
-    // Mark resolved before moving: the same hold must not block its own identities.
-    hold.status = d.outcome;
-    hold.resolution = { operationId, actor, occurredAt: now, reason: d.reason, reference: d.reference, verifiedSerials: serials };
-    const moved = [{ itemId: hold.itemId, quantity: hold.quantity, serials }];
+    const selected = selectHoldDisposition(hold, item.tracking === "serialized", d);
+    const disposition = { ...selected, operationId, actor, occurredAt: now, outcome: d.outcome,
+      reason: d.reason, reference: d.reference, verifiedSerials: d.verifiedSerials };
+    const serials = d.outcome === "released" ? d.verifiedSerials : [...selected.serials, ...selected.expectedSerials];
+    const moved = [{ itemId: hold.itemId, quantity: selected.quantity, serials }];
+    if (d.outcome === "released") ctx.validate(moved);
+    // Remove only selected custody before moving. Unselected identities remain blocked.
+    hold.dispositions ??= [];
+    hold.dispositions.push(disposition);
+    hold.status = holdStatus(hold);
     if (d.outcome === "released") ctx.move(hold.warehouseId, moved, 1);
-    if (d.outcome === "scrapped") for (const serial of [...hold.serials, ...hold.expectedSerials])
+    if (d.outcome === "scrapped") for (const serial of serials)
       s.serialOccupancy!.push({ itemId: hold.itemId, serial, workOrderId: null });
     receipt(hold.orderId, hold.warehouseId, moved, d.reason, {
-      holdId: hold.id, resolution: d.outcome, externalReference: d.reference,
+      holdId: hold.id, resolution: d.outcome, externalReference: d.reference, holdDisposition: disposition,
     });
     const order = s.orders.find(o => o.id === hold.orderId);
     if (order && ["partial", "completed"].includes(order.status)) order.status = shipmentStatus(s, order);

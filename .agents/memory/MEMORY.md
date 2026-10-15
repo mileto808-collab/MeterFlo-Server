@@ -23,3 +23,4 @@
 - [Unsaved transition safety](unsaved-transition-safety.md) — Discard clears edits only when the requested replacement or close succeeds; failures must keep the editor usable.
 - [Shipment retries](shipment-retry-boundary.md) — unknown outcomes retain identity across saved-draft recovery; atomic unlock prevents late posts; later batches use new identities.
 - [Credential logging boundary](credential-response-boundary.md) — keep generic request logs metadata-only; credential-name filters cannot protect unlabelled secrets.
+- [Shipment quarantine custody](shipment-quarantine-custody.md) — partial dispositions preserve physical receiving evidence; only selected verified units become usable.

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { InventoryItem, InventoryOrder, InventoryState } from "@shared/inventory";
 import type { ShipmentCapture } from "@shared/inventory-shipment-draft-model";
-import { orderLineProgress } from "@shared/inventory-shipment-model";
+import { orderLineProgress, remainingHold } from "@shared/inventory-shipment-model";
 import { AlertTriangle, Check, PackageCheck } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -86,7 +86,7 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
   const unavailableSerialReason = (serial: string) => {
     if (state.stock.some(stock => stock.serials.includes(serial))) return "This serial is already in current stock.";
     if ((state.shipmentHolds ?? []).some(hold => hold.status === "held" &&
-      (hold.serials.includes(serial) || hold.expectedSerials.includes(serial)))) return "This serial is already held for inspection.";
+      (remainingHold(hold).serials.includes(serial) || remainingHold(hold).expectedSerials.includes(serial)))) return "This serial is already held for inspection.";
     if ((state.serialOccupancy ?? []).some(occupancy => occupancy.serial === serial))
       return "This serial is currently installed or occupied by a work order.";
     if (state.returns.some(returned => returned.serial === serial && (returned.status === "pending" || returned.status === "quarantine")))

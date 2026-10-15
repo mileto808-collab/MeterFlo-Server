@@ -96,6 +96,24 @@ test("transactional completion, mobile usage, concurrency, import rollback, and 
     const { rows: shipmentDraftEvents } = await pool.query("SELECT changes FROM public.inventory_movements WHERE project_id=$1 AND action='shipmentDraftSave'", [project.id]);
     assert.equal(shipmentDraftEvents.length, 1);
     assert.ok(!JSON.stringify(shipmentDraftEvents).includes("0000 unfinished"), "save history summarizes buffers rather than repeatedly copying their raw text");
+    await command("order", { id: "inspection-restore", type: "purchase", destinationId: "w", vendorId: "v",
+      lines: [{ itemId: "meter", quantity: 4 }] });
+    await command("release", { orderId: "inspection-restore" });
+    await command("receive", { orderId: "inspection-restore", lines: [], damaged: [{ itemId: "meter", quantity: 4,
+      serials: ["INSPECT-0003", "INSPECT-0004"], unidentifiedQuantity: 2, reason: "Damaged shipment" }] });
+    const inspectedHold = (await inventoryState(project.id)).shipmentHolds!.find(h => h.orderId === "inspection-restore")!;
+    const partialOperation = randomUUID();
+    await command("resolveHold", { id: inspectedHold.id, outcome: "released", quantity: 1, serials: ["INSPECT-0003"],
+      verifiedSerials: ["INSPECT-0003"], reason: "One unit inspected" }, partialOperation);
+    await command("resolveHold", { id: inspectedHold.id, outcome: "returned", quantity: 1, unidentifiedQuantity: 1,
+      reference: "RMA-project", reason: "One unreadable unit returned" });
+    const { rows: inspectionAudit } = await pool.query(
+      "SELECT actor_id,changes FROM meterflo_audit.events WHERE project_id=$1 AND entity_id=$2 AND action='inventory.resolveHold'",
+      [project.id, partialOperation]);
+    assert.equal(inspectionAudit.length, 1);
+    assert.equal(inspectionAudit[0].actor_id, user.id);
+    assert.ok(inspectionAudit[0].changes.some((change: any) =>
+      change.field === `shipmentHolds/${inspectedHold.id}` && change.after.dispositions[0].quantity === 1));
     const before = await inventoryState(project.id), backup = await backupProjectDatabase(schema);
     assert.ok(backup.inventory);
     assert.ok(backup.inventory.state.orders.find(order => order.id === "amend-po")?.archivedAt, "cleared POs remain in portable backups");
@@ -117,6 +135,11 @@ test("transactional completion, mobile usage, concurrency, import rollback, and 
       invalidDraft.inventory!.state.counts[0].draft!.rows[0].itemId = "foreign-item";
       await assert.rejects(restoreProjectDatabase(targetSchema, invalidDraft, { clearExisting: true }), /invalid count draft/);
       assert.deepEqual(await inventoryState(target.id), before, "invalid draft restore leaves existing inventory intact");
+      const invalidDisposition = structuredClone(backup);
+      invalidDisposition.inventory!.state.shipmentHolds![0].dispositions![0].quantity = 4;
+      await assert.rejects(withAuditContext(scope(), () => restoreProjectDatabase(targetSchema, invalidDisposition,
+        { clearExisting: true })), /disposition|serial|held/i);
+      assert.deepEqual(await inventoryState(target.id), before, "invalid partial disposition cannot replace inventory");
       const targetWork = getProjectWorkOrderStorage(targetSchema);
       assert.equal((await targetWork.getWorkOrder(allocatedId))?.newSystemId, "0001");
       const next = await targetWork.createWorkOrder({ customerWoId: "after-restore" } as any);
@@ -135,7 +158,7 @@ test("transactional completion, mobile usage, concurrency, import rollback, and 
     assert.deepEqual(await inventoryState(project.id), before);
     assert.equal((await work.getWorkOrder(allocatedId))?.newSystemId, "0001");
     await command("reconcileWorkOrder", { workOrderId: allocatedId, reason: "Fixture physical return confirmed", restoreUsedStock: true });
-    assert.equal((await inventoryState(project.id)).stock[0].quantity, 2);
+    assert.equal((await inventoryState(project.id)).stock[0].quantity, 3);
     await work.updateWorkOrder(allocatedId, { status: "Open" } as any);
   } finally {
     for (const target of targets) {

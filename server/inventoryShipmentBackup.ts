@@ -1,15 +1,26 @@
 import { z } from "zod";
 import type { InventoryState } from "../shared/inventory";
 import { stockLineSchema } from "../shared/inventory";
-import { damageLineSchema, settledLines, shipmentTotal } from "../shared/inventory-shipment-model";
+import { damageLineSchema, remainingHold, holdStatus, settledLines, shipmentTotal, type ShipmentHold } from "../shared/inventory-shipment-model";
+import { selectHoldDisposition } from "../shared/inventory-hold-disposition";
+import { canonicalInventoryJson } from "../shared/inventory-engine";
 
 const id = z.string().min(1).max(100);
+const dispositionSchema = z.object({
+  operationId: id, actor: id, occurredAt: z.string().datetime(),
+  outcome: z.enum(["released", "returned", "scrapped"]),
+  quantity: z.number().int().positive().max(1000000),
+  serials: z.array(id).max(10000), unidentifiedQuantity: z.number().int().nonnegative().max(1000000),
+  expectedSerials: z.array(id).max(10000), verifiedSerials: z.array(id).max(10000),
+  reason: z.string().trim().min(1).max(1000), reference: z.string().max(500),
+}).strict();
 const holdSchema = damageLineSchema.extend({
   id, orderId: id, receiptId: id, warehouseId: id, actor: id, occurredAt: z.string().datetime(),
-  status: z.enum(["held", "released", "returned", "scrapped"]),
+  status: z.enum(["held", "released", "returned", "scrapped", "resolved"]),
   resolution: z.object({ operationId: id, actor: id, occurredAt: z.string().datetime(),
     reason: z.string().trim().min(1).max(1000), reference: z.string().max(500),
     verifiedSerials: z.array(id).max(10000) }).strict().optional(),
+  dispositions: z.array(dispositionSchema).max(1000000).optional(),
 });
 const closureSchema = z.object({ actor: id, occurredAt: z.string().datetime(), operationId: id,
   reason: z.string().trim().min(1).max(1000), unfulfilled: z.array(stockLineSchema).max(500) }).strict();
@@ -18,6 +29,7 @@ export function validateShipmentBackup(s: InventoryState) {
   const holds = z.array(holdSchema).parse(s.shipmentHolds ?? []);
   if (new Set(holds.map(h => h.id)).size !== holds.length) fail("duplicate hold.");
   const unique = new Set<string>();
+  const dispositionIds = new Set<string>();
   for (const hold of holds) {
     const order = s.orders.find(o => o.id === hold.orderId);
     const origin = s.receipts.find(r => r.id === hold.receiptId && r.reference === hold.orderId);
@@ -34,7 +46,32 @@ export function validateShipmentBackup(s: InventoryState) {
       fail("unverified transfer references mismatch.");
     if (new Set([...hold.serials, ...hold.expectedSerials]).size !== hold.serials.length + hold.expectedSerials.length)
       fail("duplicate held identity.");
-    if ((hold.status === "held") === !!hold.resolution) fail("hold resolution/status mismatch.");
+    if (hold.dispositions !== undefined) {
+      if (hold.resolution) fail("hold mixes legacy and partial disposition history.");
+      const replay: ShipmentHold = { ...hold, status: "held", dispositions: [] };
+      for (const event of hold.dispositions) {
+        if (dispositionIds.has(event.operationId)) fail("duplicate disposition operation.");
+        dispositionIds.add(event.operationId);
+        try {
+          selectHoldDisposition(replay, item!.tracking === "serialized", { ...event, id: hold.id });
+        } catch (error) { fail(error instanceof Error ? error.message : "invalid partial disposition."); }
+        const record = s.receipts.find(r => r.id === event.operationId);
+        const serials = event.outcome === "released" ? event.verifiedSerials : [...event.serials, ...event.expectedSerials];
+        if (!record || record.action !== "resolveHold" || record.holdId !== hold.id || record.reference !== hold.orderId ||
+          record.warehouseId !== hold.warehouseId || record.resolution !== event.outcome || record.actor !== event.actor ||
+          record.occurredAt !== event.occurredAt || record.reason !== event.reason || record.externalReference !== event.reference ||
+          canonicalInventoryJson(record.holdDisposition) !== canonicalInventoryJson(event) ||
+          canonicalInventoryJson(record.lines) !== canonicalInventoryJson([{ itemId: hold.itemId, quantity: event.quantity, serials }]))
+          fail("partial disposition differs from its receipt.");
+        if (event.outcome === "scrapped" && serials.some(serial =>
+          !s.serialOccupancy?.some(x => x.itemId === hold.itemId && x.serial === serial && x.workOrderId === null)))
+          fail("written-off hold identity is not blocked.");
+        replay.dispositions!.push(event);
+      }
+      if (hold.status !== holdStatus(replay)) fail("partial hold status/totals mismatch.");
+    } else {
+      if (hold.status === "resolved" || (hold.status === "held") === !!hold.resolution) fail("hold resolution/status mismatch.");
+    }
     if (hold.resolution) {
       const resolution = s.receipts.find(r => r.id === hold.resolution!.operationId && r.holdId === hold.id &&
         r.reference === hold.orderId && r.resolution === hold.status);
@@ -45,7 +82,7 @@ export function validateShipmentBackup(s: InventoryState) {
           ![...hold.serials, ...hold.expectedSerials].every(x => hold.resolution!.verifiedSerials.includes(x))
         : !!hold.resolution.verifiedSerials.length)) fail("released hold identities invalid.");
     }
-    if (hold.status === "held") for (const serial of [...hold.serials, ...hold.expectedSerials]) {
+    if (hold.status === "held") for (const serial of [...remainingHold(hold).serials, ...remainingHold(hold).expectedSerials]) {
       // These identities are quarantined rather than in the usable stock mirrors.
       const key = JSON.stringify([hold.itemId, serial]);
       if (unique.has(key) || s.stock.some(b => b.itemId === hold.itemId && b.serials.includes(serial)) ||
@@ -53,6 +90,8 @@ export function validateShipmentBackup(s: InventoryState) {
       unique.add(key);
     }
   }
+  for (const receipt of s.receipts) if (receipt.holdDisposition && !dispositionIds.has(receipt.id))
+    fail("orphan partial disposition receipt.");
   for (const order of s.orders) {
     if (order.replacementFor && (!s.orders.some(o => o.id === order.replacementFor && !o.replacementFor) ||
       order.id === order.replacementFor)) fail("replacement order reference invalid.");

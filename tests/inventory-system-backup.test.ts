@@ -49,12 +49,17 @@ test("full-system inventory restore preserves identity IDs, JSON serials, sequen
     // Held units are physically present, but deliberately absent from the usable
     // stock mirror. Exercise real full-system AND project restore with these.
     post("order", { id: "damaged-shipment", type: "purchase", vendorId: "v", destinationId: "w",
-      lines: [{ itemId: "m", quantity: 3 }] });
+      lines: [{ itemId: "m", quantity: 5 }] });
     post("release", { orderId: "damaged-shipment" });
     post("receive", { orderId: "damaged-shipment", lines: [], damaged: [{
-      itemId: "m", quantity: 2, serials: ["QUARANTINE-0003"], unidentifiedQuantity: 1,
+      itemId: "m", quantity: 4, serials: ["QUARANTINE-0003", "QUARANTINE-0004"], unidentifiedQuantity: 2,
       reason: "Damaged carton with one unreadable label",
     }], closeRemainder: true, reason: "Supplier cannot fulfill last unit; keep inspection outstanding" });
+    const holdId = state.shipmentHolds![0].id;
+    post("resolveHold", { id: holdId, outcome: "released", quantity: 1, serials: ["QUARANTINE-0003"],
+      verifiedSerials: ["QUARANTINE-0003"], reason: "One tested unit passed inspection" });
+    post("resolveHold", { id: holdId, outcome: "returned", quantity: 1, unidentifiedQuantity: 1,
+      reason: "One unreadable unit physically returned", reference: "RMA-restore" });
     for (const pending of [false, true]) {
       const orderId = pending ? "saved-pending" : "saved-partial", draftId = randomUUID();
       post("order", { id: orderId, type: "purchase", vendorId: "v", destinationId: "w", lines: [{ itemId: "m", quantity: 2 }] });
@@ -69,7 +74,7 @@ test("full-system inventory restore preserves identity IDs, JSON serials, sequen
     }
     await client.query("INSERT INTO inventory_state VALUES($1,$2)", [42, state]);
     await client.query("INSERT INTO inventory_items VALUES($1,$2,$3,$4)", [42, "m", "M", state.items[0]]);
-    await client.query("INSERT INTO inventory_quantities VALUES($1,$2,$3,$4,$5,$6)", [42, "w", "m", 2, 0, JSON.stringify(["00001", "00002"])]);
+    await client.query("INSERT INTO inventory_quantities VALUES($1,$2,$3,$4,$5,$6)", [42, "w", "m", 3, 0, JSON.stringify(["00001", "00002", "QUARANTINE-0003"])]);
     await client.query("INSERT INTO inventory_movements(id,project_id,operation_id,action,changes) OVERRIDING SYSTEM VALUE VALUES(500,42,$1,'receive',$2)",
       [randomUUID(), { stock: state.stock, entities: [] }]);
     const mainDatabase: Record<string, any[]> = {};
@@ -86,7 +91,7 @@ test("full-system inventory restore preserves identity IDs, JSON serials, sequen
     assert.deepEqual(result.errors, []);
     for (const table of tables) assert.equal(result.mainTablesRestored[table], mainDatabase[table].length);
     assert.deepEqual((await client.query("SELECT state FROM inventory_state")).rows[0].state, backup.mainDatabase.inventory_state[0].state);
-    assert.deepEqual((await client.query("SELECT serials FROM inventory_quantities")).rows[0].serials, ["00001", "00002"]);
+    assert.deepEqual((await client.query("SELECT serials FROM inventory_quantities")).rows[0].serials, ["00001", "00002", "QUARANTINE-0003"]);
     assert.equal((await client.query("SELECT id FROM inventory_movements")).rows[0].id, "500");
     const next = await client.query("INSERT INTO inventory_movements(project_id,operation_id,action,changes) VALUES(42,$1,'test',$2) RETURNING id",
       [randomUUID(), { stock: [], entities: [] }]);
@@ -115,7 +120,7 @@ test("full-system inventory restore preserves identity IDs, JSON serials, sequen
     const full = structuredClone(backup);
     full.mainDatabase.projects = [{ id: 42, name: "Fresh full-system fixture", database_name: workSchema, inventory_enabled: true }];
     full.mainDatabase.inventory_state[0].state = state;
-    full.mainDatabase.inventory_quantities[0] = { ...full.mainDatabase.inventory_quantities[0], quantity: 1, serials: ["00002"] };
+    full.mainDatabase.inventory_quantities[0] = { ...full.mainDatabase.inventory_quantities[0], quantity: 2, serials: ["00002", "QUARANTINE-0003"] };
     const service = `svc_${actor.slice(0, 8)}`, systemType = `sys_${actor}`, moduleType = `mod_${actor}`;
     full.mainDatabase.service_types = [{ id: 601, code: service, label: "Source-only service" }];
     full.mainDatabase.system_types = [{ id: 602, product_id: systemType, product_label: "Source-only meter" }];
@@ -145,7 +150,7 @@ test("full-system inventory restore preserves identity IDs, JSON serials, sequen
     assert.ok(priorAudit.some(e => e.outcome === "success"), "authenticated identity is retained even though it is absent from the snapshot");
     assert.deepEqual((await client.query(`SELECT id FROM "${workSchema}".work_orders ORDER BY id`)).rows.map(r => r.id), [2, 3]);
     assert.deepEqual((await client.query("SELECT state FROM inventory_state WHERE project_id=42")).rows[0].state, state);
-    assert.deepEqual((await client.query("SELECT serials FROM inventory_quantities WHERE project_id=42")).rows[0].serials, ["00002"]);
+    assert.deepEqual((await client.query("SELECT serials FROM inventory_quantities WHERE project_id=42")).rows[0].serials, ["00002", "QUARANTINE-0003"]);
     assert.equal((await client.query(`INSERT INTO "${workSchema}".work_orders(customer_wo_id,created_by) VALUES('after-full',NULL) RETURNING id`)).rows[0].id, 4);
     const savedRows = (await client.query(`SELECT * FROM "${workSchema}".work_orders ORDER BY id`)).rows;
     const savedInventory: Record<string, any[]> = {};

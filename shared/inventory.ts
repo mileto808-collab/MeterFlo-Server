@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { COUNT_MAX_LINES } from "./inventory-count-limits";
-import type { DamageLine, OrderClosure, ShipmentHold } from "./inventory-shipment-model";
+import type { DamageLine, OrderClosure, ShipmentHold, HoldDisposition } from "./inventory-shipment-model";
 import type { SavedShipmentDraft } from "./inventory-shipment-draft-model";
 
 export const inventoryPermissions = {
@@ -78,7 +78,8 @@ export type WorkAllocation = { workOrderId: number; lines: Allocation[]; used: A
 export type InventoryCount = { id: string; warehouseId: string; snapshot: Stock[]; status: "open" | "posted" | "cancelled"; reason?: string; lines?: StockLine[]; draft?: z.infer<typeof savedCountDraftSchema> };
 export type InventoryReceipt = { id: string; action: string; reference: string; warehouseId: string | null;
   lines: StockLine[]; actor: string; occurredAt: string; reason?: string; components?: StockLine[];
-  damaged?: DamageLine[]; holdId?: string; resolution?: string; externalReference?: string; closedShort?: StockLine[] };
+  damaged?: DamageLine[]; holdId?: string; resolution?: string; externalReference?: string; closedShort?: StockLine[];
+  holdDisposition?: HoldDisposition };
 export type EquipmentReturn = Disposition & { id: string; workOrderId: number; status: "pending" | "quarantine" | "released"; itemId?: string };
 export type InventoryState = { warehouses: Warehouse[]; vendors: Vendor[]; items: InventoryItem[]; stock: Stock[];
   orders: InventoryOrder[]; counts: InventoryCount[]; allocations: WorkAllocation[];
