@@ -78,6 +78,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const resourceSaving = useRef(false);
   useEffect(() => { if (resourceError) resourceErrorRef.current?.focus(); }, [resourceError]);
   const [orderType, setOrderType] = useState<"purchase" | "transfer">("purchase");
+  const [orderEditorOpen, setOrderEditorOpen] = useState(false);
   const [orderId, setOrderId] = useState("");
   const [editingOrderId, setEditingOrderId] = useState("");
   const [orderFilters, setOrderFilters] = useState(emptyOrderFilters);
@@ -308,6 +309,21 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   });
   const canSaveOrder = !!orderDestination && !!orderLines.length && orderQuantitiesValid && !orderHasPendingLine &&
     (orderType === "purchase" ? !!orderVendor && can("inventory.purchase") : !!orderSource && can("inventory.transfer"));
+  const resetOrderDraft = () => {
+    const next = { orderType: can("inventory.purchase") ? "purchase" as const : "transfer" as const,
+      orderId: "", orderDestination: "", orderSource: "", orderVendor: "", orderNotes: "", replacementFor: "",
+      orderLines: [] as StockLine[], orderLineQuantities: {}, orderLineItem: "", orderLineQty: "1" };
+    orderAttempt.current = null;
+    setOrderType(next.orderType); setOrderId(next.orderId); setEditingOrderId("");
+    setOrderDestination(next.orderDestination); setOrderSource(next.orderSource); setOrderVendor(next.orderVendor);
+    setOrderNotes(next.orderNotes); setReplacementFor(next.replacementFor); setOrderLines(next.orderLines);
+    setOrderLineQuantities({}); setOrderLineItem(""); setOrderLineQty("1"); setOrderMessage("");
+    setSavedOrderValues(JSON.stringify(next));
+  };
+  const closeOrderEditor = () => requestOrderTransition(() => {
+    resetOrderDraft();
+    setOrderEditorOpen(false);
+  });
   const saveOrderDraft = (afterSave?: () => void) => {
     if (!canSaveOrder || command.isPending || orderSaving.current) return;
     orderSaving.current = true;
@@ -334,7 +350,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
         if (afterSave) {
           setPendingOrderTransition(null);
           completeSavedNavigation(afterSave);
-        }
+        } else setOrderEditorOpen(false);
       },
       onError: () => setOrderMessage("Order draft not saved or not confirmed. Your entries are still here; retry before leaving. An unchanged retry reuses the same order and request IDs."),
       onSettled: () => { orderSaving.current = false; },
@@ -351,7 +367,11 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     setSavedOrderValues(JSON.stringify({ orderType: order.type, orderId: orderReference(order),
       orderDestination: order.destinationId, orderSource: order.sourceId || "", orderVendor: order.vendorId || "",
       orderNotes: order.notes, replacementFor: order.replacementFor ?? "", orderLines: order.lines, orderLineQuantities: {}, orderLineItem: "", orderLineQty: "1" }));
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    setOrderEditorOpen(true);
+  });
+  const startNewOrderDraft = () => requestOrderTransition(() => {
+    resetOrderDraft();
+    setOrderEditorOpen(true);
   });
   const openOrderOperation = (order: InventoryOrder, action: "receive" | "dispatch" | "accept") => {
     setMovementDirty(false);
@@ -399,7 +419,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     setReplacementFor(next.replacementFor); setOrderLines(next.orderLines); setOrderLineQuantities({});
     setOrderLineItem(""); setOrderLineQty("1"); setOrderMessage("");
     setSavedOrderValues(JSON.stringify({ ...next, orderNotes: "", replacementFor: "" }));
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    setOrderEditorOpen(true);
   });
   const confirmCloseOrder = async () => {
     if (!orderToClose || !closeReason.trim() || !can("inventory.closeOrders")) return;
@@ -651,7 +671,27 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       <TabsContent value="orders" className="space-y-4">
         <InventoryShipmentDraftsPanel base={base} state={state} users={data.users} orders={orderItems}
           userId={user?.id} isAdmin={user?.role === "admin"} onResume={(draft, snapshot) => void resumeShipmentDraft(draft, snapshot)} />
-        {can("inventory.purchase") || can("inventory.transfer") ? <Card><CardHeader><CardTitle>{replacementFor ? "Build a linked replacement draft" : "Build an order draft"}</CardTitle><CardDescription>{replacementFor ? `This is a new order linked to ${orderTitle(replacementFor)}; the original quantities and exception history stay unchanged.` : "Plan items and quantities now. Record serials later during receiving or transfer dispatch."}</CardDescription></CardHeader><CardContent><fieldset disabled={command.isPending} className="space-y-4">
+        {can("inventory.purchase") || can("inventory.transfer") ? <>
+          <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div><h2 className="font-medium">Create or update an order draft</h2><p className="text-sm text-muted-foreground">Plan items and quantities. Serial scans are recorded during receiving or transfer dispatch.</p></div>
+            <Button className="w-full shrink-0 sm:w-auto" onClick={startNewOrderDraft}><Plus className="mr-2 h-4 w-4" />Build an order draft</Button>
+          </div>
+          <Dialog open={orderEditorOpen} onOpenChange={open => {
+            if (open) setOrderEditorOpen(true);
+            else if (!orderSaving.current) closeOrderEditor();
+          }}>
+            <DialogContent data-testid="inventory-order-dialog" className="max-h-[90dvh] overflow-y-auto sm:max-w-3xl"
+              onEscapeKeyDown={event => { if (orderSaving.current) event.preventDefault(); }}
+              onPointerDownOutside={event => event.preventDefault()}>
+              <DialogHeader>
+                <DialogTitle>{editingOrderId ? "Edit order draft" : replacementFor ? "Create replacement draft" : "Build an order draft"}</DialogTitle>
+                <DialogDescription>{editingOrderId
+                  ? `Update ${orderTitle(editingOrderId)}. Its generated order number and internal ID stay unchanged.`
+                  : replacementFor
+                  ? `This new order is linked to ${orderTitle(replacementFor)}. The original quantities and exception history stay unchanged.`
+                  : "Plan items and quantities now. Record serials later during receiving or transfer dispatch."}</DialogDescription>
+              </DialogHeader>
+              <fieldset disabled={command.isPending} className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-4">
             <div className="space-y-1"><Label>Order type</Label><Select value={orderType} onValueChange={value => setOrderType(value as "purchase" | "transfer")}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="purchase">Purchase</SelectItem><SelectItem value="transfer">Transfer</SelectItem></SelectContent></Select></div>
             <div className="space-y-1"><Label>Destination</Label><Select value={orderDestination} onValueChange={setOrderDestination}><SelectTrigger><SelectValue placeholder="Choose location" /></SelectTrigger><SelectContent>{activeWarehouses.map(w => <SelectItem value={w.id} key={w.id}>{w.code} · {w.name}</SelectItem>)}</SelectContent></Select></div>
@@ -665,9 +705,16 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           {orderDirty && <p role="status" className="text-sm text-amber-700 dark:text-amber-400">Unsaved order changes. Save the draft to keep your entries.</p>}
           {orderHasPendingLine && <div className="flex flex-wrap items-center gap-2"><p className="text-sm">Add or clear the unfinished line before saving.</p><Button type="button" variant="outline" size="sm" onClick={() => { setOrderLineItem(""); setOrderLineQty("1"); }}>Clear unfinished line</Button></div>}
           {orderMessage && <p role="status" className="text-sm">{orderMessage}</p>}
-          <Button disabled={command.isPending || !canSaveOrder} onClick={() => saveOrderDraft()}><Plus className="mr-2 h-4 w-4" />Save draft</Button>
-        </fieldset></CardContent></Card> : null}
+              </fieldset>
+              <DialogFooter className="flex-col-reverse sm:flex-row">
+                <Button variant="outline" disabled={orderSaving.current} onClick={closeOrderEditor}>Cancel</Button>
+                <Button disabled={command.isPending || !canSaveOrder} onClick={() => saveOrderDraft()}><Plus className="mr-2 h-4 w-4" />Save draft</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </> : null}
         <Card><CardHeader><CardTitle>Purchase & transfer orders</CardTitle><CardDescription>Open the relevant action to scan and post each partial movement.</CardDescription></CardHeader><CardContent>
+          {!orderEditorOpen && orderMessage && <p className="mb-4 rounded-md border border-emerald-700/20 bg-emerald-700/5 px-3 py-2 text-sm" role="status">{orderMessage}</p>}
           <InventoryOrderFilters filters={orderFilters} onChange={setOrderFilters} warehouses={warehouses} vendors={vendors}
             timezone={timezone} resultCount={visibleOrders.length} totalCount={orderItems.filter(order => showClearedOrders || !order.archivedAt).length} />
           {can("inventory.maintain") && orderItems.some(order => uuidOrderId(order.id) && !order.orderNumber) &&
@@ -680,7 +727,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
             const archived = !!order.archivedAt;
             const purchase = order.type === "purchase";
             const unreleaseLocked = ["released", "partial", "completed"].includes(order.status) && isUnreleaseLocked(order);
-            return <div key={order.id} className="rounded-lg border p-4">
+            return <div key={order.id} data-testid="inventory-order-card" className="rounded-lg border p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <div className="flex flex-wrap items-center gap-2 font-medium">{orderLabel(order)}<Badge variant={order.status === "completed" ? "default" : "outline"}>{order.status}</Badge><Badge variant="secondary">{order.type}</Badge>{order.replacementFor && <Badge variant="outline">replacement for {orderTitle(order.replacementFor)}</Badge>}{archived && <Badge variant="secondary">cleared</Badge>}</div>

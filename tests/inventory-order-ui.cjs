@@ -43,7 +43,8 @@ async function main() {
     page.setDefaultTimeout(15000);
     page.on("pageerror", e => errors.push(e.message));
     page.on("request", r => { if (r.url().endsWith(`${endpoint}/commands`)) posted.push(r.postDataJSON()); });
-    const builder = page.locator("fieldset");
+    const editor = page.getByTestId("inventory-order-dialog");
+    const builder = editor;
     const notes = page.getByLabel("Order notes", { exact: true });
     const reference = page.getByLabel("Supplier/customer reference", { exact: true });
     const warning = page.getByRole("dialog", { name: "Unsaved order changes", exact: true });
@@ -59,12 +60,21 @@ async function main() {
       if (name !== "Save draft") await warning.waitFor({ state: "hidden" });
     };
     const ordersTab = () => page.getByRole("tab", { name: "Orders", exact: true }).click();
-    const edit = id => page.locator("div.rounded-lg.border.p-4").filter({ hasText: id }).getByRole("button", { name: "Edit draft", exact: true }).click();
+    const openNew = () => page.getByRole("button", { name: "Build an order draft", exact: true }).click();
+    const cancelEditor = () => editor.getByRole("button", { name: "Cancel", exact: true }).click();
+    const edit = async id => {
+      if (await editor.isVisible()) {
+        await cancelEditor();
+        await editor.waitFor({ state: "hidden" });
+      }
+      await page.locator("div.rounded-lg.border.p-4").filter({ hasText: id }).getByRole("button", { name: "Edit draft", exact: true }).click();
+    };
     const select = async (index, name) => {
       await builder.getByRole("combobox").nth(index).click();
       await page.getByRole("option", { name, exact: true }).click();
     };
     const saved = async () => {
+      await editor.waitFor({ state: "hidden" });
       await page.getByText(/^Order .+ saved as a draft\./).waitFor();
       await unload(false);
     };
@@ -73,11 +83,15 @@ async function main() {
     // PO/transfer on retry, or reuse that identity for a later intentional order.
     await page.goto(inventoryURL);
     await ordersTab();
+    assert.equal(await editor.count(), 0, "Orders initially shows a button, not the draft form");
     for (const type of ["purchase", "transfer"]) {
-      await select(0, type === "purchase" ? "Purchase" : "Transfer");
-      await select(1, type === "purchase" ? "ORDER-MAIN · order-main" : "ORDER-VAN · order-van");
-      await select(2, type === "purchase" ? "Order supplier" : "ORDER-MAIN · order-main");
       const addRetryLine = async () => {
+        if (!(await editor.isVisible())) {
+          await openNew();
+          await select(0, type === "purchase" ? "Purchase" : "Transfer");
+          await select(1, type === "purchase" ? "ORDER-MAIN · order-main" : "ORDER-VAN · order-van");
+          await select(2, type === "purchase" ? "Order supplier" : "ORDER-MAIN · order-main");
+        }
         await select(3, "ORDER-BULK · Order bulk");
         await builder.getByRole("button", { name: "Add line", exact: true }).click();
       };
@@ -140,6 +154,7 @@ async function main() {
     await spa(inventoryURL);
     await ordersTab();
     await unload(false);
+    await openNew();
     await reference.fill("Header only");
     await unload(true);
     await reference.fill("");
@@ -170,30 +185,34 @@ async function main() {
     await choose("Discard");
     await page.waitForURL(`**${otherURL}`);
     await ordersTab();
-    assert.equal(await reference.inputValue(), "");
-    assert.equal(await notes.inputValue(), "");
+    assert.equal(await editor.count(), 0);
     await unload(false);
     await page.goBack();
     await ordersTab();
 
-    // Loading another draft requires a choice, and Discard leaves the saved
-    // record unchanged. Saving before replacement persists only the first.
+    // Close before editing another draft: Stay retains the modal; Discard
+    // leaves the saved record unchanged; Save confirms before closing.
     await edit("ORDER-PO");
     await unload(false);
     await notes.fill("Purchase correction");
-    await edit("ORDER-TR");
+    await cancelEditor();
     await choose("Stay");
     assert.equal(await reference.inputValue(), "ORDER-PO");
     assert.equal(await notes.inputValue(), "Purchase correction");
-    await edit("ORDER-TR");
+    await cancelEditor();
     await choose("Discard");
+    await editor.waitFor({ state: "hidden" });
+    await unload(false);
+    await edit("ORDER-TR");
     assert.equal(await reference.inputValue(), "ORDER-TR");
     await unload(false);
     assert.equal((await state()).orders.find(o => o.id === "ORDER-PO").notes, "ORDER-PO saved notes");
     await notes.fill("Transfer saved before replacement");
-    await edit("ORDER-PO");
+    await cancelEditor();
     await choose("Save draft");
     await warning.waitFor({ state: "hidden" });
+    await editor.waitFor({ state: "hidden" });
+    await edit("ORDER-PO");
     assert.equal(await reference.inputValue(), "ORDER-PO");
     await unload(false);
     assert.equal((await state()).orders.find(o => o.id === "ORDER-TR").notes, "Transfer saved before replacement");
@@ -202,7 +221,7 @@ async function main() {
     // success all retain the fields and the pending destination for a retry.
     for (const type of ["purchase", "transfer"]) {
       const id = type === "purchase" ? "ORDER-PO" : "ORDER-TR";
-      if (await reference.inputValue() !== id) await edit(id);
+      if (!(await editor.isVisible()) || await reference.inputValue() !== id) await edit(id);
       await notes.fill(`${type} retained correction`);
       await reference.fill(id);
       const fail = route => route.request().postDataJSON()?.action === "order"
@@ -236,8 +255,7 @@ async function main() {
       await page.waitForURL(`**${otherURL}`);
       assert.equal(await warning.isVisible(), false);
       await ordersTab();
-      assert.equal(await reference.inputValue(), "");
-      assert.equal(await notes.inputValue(), "");
+      assert.equal(await editor.count(), 0);
       await unload(false);
       assert.equal((await state()).orders.find(o => o.id === id).notes, `${type} retained correction`);
       await page.goBack();
@@ -274,6 +292,7 @@ async function main() {
     assert.equal((await state()).orders.find(o => o.id === "ORDER-PO").status, "draft");
     assert.equal((await state()).orders.find(o => o.id === "ORDER-PO").lines[0].quantity, 3);
     assert.deepEqual((await state()).orders.find(o => o.id === "ORDER-PO").lines[0].serials, []);
+    await edit("ORDER-PO");
     await select(3, "ORDER-BULK · Order bulk");
     await builder.getByRole("button", { name: "Clear unfinished line", exact: true }).click();
     await unload(false);
@@ -299,11 +318,14 @@ async function main() {
 
     // App links and both browser-history directions honor Stay/Discard/Save.
     await notes.fill("Saved before app link");
-    await page.getByRole("link", { name: "Projects", exact: true }).click();
+    await cancelEditor();
     await choose("Save draft");
+    await editor.waitFor({ state: "hidden" });
+    await page.getByRole("link", { name: "Projects", exact: true }).click();
     await page.waitForURL("**/projects");
     await page.goBack();
     await ordersTab();
+    await edit("ORDER-TR");
     await notes.fill("Back edit");
     await page.evaluate(() => window.history.back());
     await choose("Stay");
@@ -316,6 +338,7 @@ async function main() {
     await spa(otherURL);
     await page.goBack();
     await ordersTab();
+    await edit("ORDER-TR");
     await notes.fill("Forward edit");
     await page.evaluate(() => window.history.forward());
     await choose("Stay");
@@ -329,19 +352,19 @@ async function main() {
 
     // Two dirty editors must each get a choice; saving count changes alone
     // never grants permission to discard the order.
-    await edit("ORDER-TR");
-    await notes.fill("Order and count correction");
     await page.getByRole("tab", { name: "Counts & assembly", exact: true }).click();
     await page.getByRole("combobox").first().click();
     await page.getByRole("option", { name: "ORDER-MAIN · order-main", exact: true }).click();
     await page.getByRole("button", { name: "Start count", exact: true }).click();
     await page.getByLabel("Count adjustment reason", { exact: true }).fill("Count and order correction");
+    await ordersTab();
+    await edit("ORDER-TR");
+    await notes.fill("Order and count correction");
     await spa(otherURL);
     await countWarning.getByRole("button", { name: "Save draft", exact: true }).click();
     await warning.waitFor();
     await choose("Stay");
     await unload(true);
-    await ordersTab();
     assert.equal(await notes.inputValue(), "Order and count correction");
     await spa(otherURL);
     await choose("Save draft");
@@ -383,6 +406,8 @@ async function main() {
     await builder.screenshot({ path: "generated-artifacts/inventory/order-lines-mobile.jpg" });
     await page.setViewportSize({ width: 1280, height: 900 });
     assert.deepEqual((await state()).stock, originalStock);
+    await cancelEditor();
+    await editor.waitFor({ state: "hidden" });
 
     // Real PO lifecycle controls: un-release, edit/add a product, re-release,
     // reject receipt-backed reopening, clear with confirmation and restore.
@@ -447,6 +472,46 @@ async function main() {
     assert.deepEqual((await state()).receipts, postedReceipts, "clear/restore never erases receipts");
     await command("order", order("ORDER-RELEASEABLE", "purchase"));
     await command("release", { orderId: "ORDER-RELEASEABLE" });
+    await page.reload();
+    await ordersTab();
+
+    // Replacement creation is a populated modal, not a second inline editor.
+    // Cancel/Stay/Escape/X never create an order; only confirmed Save does.
+    const replacementBefore = await state();
+    const originalForReplacement = replacementBefore.orders.find(o => o.id === "ORDER-RELEASEABLE");
+    const createReplacement = () => poRow("ORDER-RELEASEABLE").getByRole("button", { name: "Create replacement", exact: true }).click();
+    await createReplacement();
+    await editor.getByRole("heading", { name: "Create replacement draft", exact: true }).waitFor();
+    assert.equal(await builder.getByLabel("Quantity for Order bulk", { exact: true }).inputValue(), "2");
+    assert.equal(await reference.inputValue(), "");
+    assert.match(await notes.inputValue(), /^Replacement for order PO-/);
+    await cancelEditor();
+    await choose("Stay");
+    assert.equal(await editor.isVisible(), true);
+    await page.keyboard.press("Escape");
+    await choose("Stay");
+    await editor.getByRole("button", { name: "Close", exact: true }).click();
+    await choose("Discard");
+    await editor.waitFor({ state: "hidden" });
+    await unload(false);
+    assert.equal((await state()).orders.length, replacementBefore.orders.length);
+    await createReplacement();
+    await page.setViewportSize({ width: 390, height: 844 });
+    assert.equal(await editor.evaluate(el => el.scrollWidth <= el.clientWidth), true, "mobile replacement must not clip");
+    await page.screenshot({ path: "generated-artifacts/inventory/replacement-modal-mobile.jpg" });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.screenshot({ path: "generated-artifacts/inventory/replacement-modal-desktop.jpg" });
+    await builder.getByLabel("Quantity for Order bulk", { exact: true }).fill("3");
+    await builder.getByRole("button", { name: "Save draft", exact: true }).click();
+    await saved();
+    await editor.waitFor({ state: "hidden" });
+    const replacementAfter = await state();
+    const replacement = replacementAfter.orders.find(o => o.replacementFor === originalForReplacement.id);
+    assert.ok(replacement);
+    assert.equal(replacement.lines[0].quantity, 3);
+    assert.deepEqual(replacementAfter.orders.find(o => o.id === originalForReplacement.id), originalForReplacement);
+    assert.deepEqual(replacementAfter.stock, replacementBefore.stock);
+    assert.deepEqual(replacementAfter.receipts, replacementBefore.receipts);
 
     // Permissions are granted through normal role administration, not raw DB
     // keys. A warning never enables the other order type's save permission.
@@ -482,7 +547,7 @@ async function main() {
           assert.equal(await viewPage.getByRole("button", { name: "Edit draft", exact: true }).count(), 0);
           continue;
         }
-        const form = viewPage.locator("fieldset");
+        const form = viewPage.getByTestId("inventory-order-dialog");
         const allowedType = permission === "inventory.purchase" ? "purchase" : "transfer";
         const allowedId = allowedType === "purchase" ? "ORDER-PO" : "ORDER-TR";
         await viewPage.locator("div.rounded-lg.border.p-4").filter({ hasText: allowedId }).getByRole("button", { name: "Edit draft", exact: true }).click();

@@ -23,7 +23,8 @@ async function main() {
     page.setDefaultTimeout(15000);
     await page.goto(`/projects/${fixture.projectId}/inventory`);
     await page.getByRole("tab", { name: "Orders", exact: true }).click();
-    const builder = page.locator("fieldset");
+    await page.getByRole("button", { name: "Build an order draft", exact: true }).click();
+    const builder = page.getByTestId("inventory-order-dialog");
     const selectBuilder = async (index, name) => {
       await builder.getByRole("combobox").nth(index).click();
       await page.getByRole("option", { name, exact: true }).click();
@@ -34,6 +35,7 @@ async function main() {
     await selectBuilder(3, "ORDER-BULK · Order bulk");
     await builder.getByRole("button", { name: "Add line", exact: true }).click();
     await builder.getByRole("button", { name: "Save draft", exact: true }).click();
+    await builder.waitFor({ state: "hidden" });
     await page.getByText(/^Order .+Reference DISCOVERY-000042 saved as a draft/).waitFor();
     const created = await snapshot();
     const order = created.state.orders.find(order => order.reference === "DISCOVERY-000042");
@@ -44,9 +46,9 @@ async function main() {
     assert.deepEqual(created.state.stock, before.state.stock);
     const controls = page.getByRole("region", { name: "Filter inventory orders" });
     const search = controls.getByLabel("Search orders", { exact: true });
-    const cards = page.locator("div.rounded-lg.border.p-4");
+    const cards = page.getByTestId("inventory-order-card");
     const count = async expected => {
-      await page.waitForFunction(expected => document.querySelectorAll("div.rounded-lg.border.p-4").length === expected, expected);
+      await page.waitForFunction(expected => document.querySelectorAll('[data-testid="inventory-order-card"]').length === expected, expected);
       assert.equal(await cards.count(), expected);
     };
     for (const term of [order.orderNumber, order.id, "DISCOVERY-000042"]) {
@@ -56,6 +58,7 @@ async function main() {
     await cards.getByRole("button", { name: "Edit draft", exact: true }).click();
     await builder.getByLabel("Supplier/customer reference", { exact: true }).fill("DISCOVERY-000043");
     await builder.getByRole("button", { name: "Save draft", exact: true }).click();
+    await builder.waitFor({ state: "hidden" });
     await page.getByText(/^Order .+Reference DISCOVERY-000043 saved as a draft/).waitFor();
     const edited = await snapshot();
     assert.equal(edited.state.orders.length, created.state.orders.length);

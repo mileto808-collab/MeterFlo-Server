@@ -48,9 +48,10 @@ async function main() {
     await card.getByRole("button", { name: "Un-release to draft", exact: true }).click();
     await card.getByRole("button", { name: "Edit draft", exact: true }).waitFor();
     await card.getByRole("button", { name: "Edit draft", exact: true }).click();
-    const builder = page.locator("fieldset");
+    const builder = page.getByTestId("inventory-order-dialog");
     await builder.getByLabel("Quantity for Transfer seal", { exact: true }).fill("4");
     await builder.getByRole("button", { name: "Save draft", exact: true }).click();
+    await builder.waitFor({ state: "hidden" });
     await page.getByText(/^Order .+ saved as a draft/).waitFor();
     const edited = await snapshot(), changed = edited.orders.find(order => order.id === original.id);
     assert.equal(changed.orderNumber, original.orderNumber);
