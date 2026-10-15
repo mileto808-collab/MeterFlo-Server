@@ -53,7 +53,40 @@ inventory backup/restore. The 10,000-serial receipt/retry phase peaked at 855 ms
 the eight-worker count phase completed in 28,250 ms and the transfer phase in
 34,325 ms, with every existing acceptance gate passing. The owned application,
 PostgreSQL process and temporary files were all removed. These measurements
-describe this Linux run only; Windows results remain pending.
+describe this Linux run only.
+
+### Verified customer Windows results
+
+On 2026-10-14, the customer supplied the standalone Windows evidence archive.
+Its metrics report `passed: true`, Node v24.12.0, and `win32` / `x64` /
+`standalone`. The cleanup report has the same run identity and confirms
+`acceptancePassed`, `cleaned`, `serverStopped`, `postgresStopped` and
+`filesRemoved` are all true. Signed-in desktop, phone and phone activity
+captures are included in the evidence.
+
+The fixture covers 40 warehouses, 100 products, 30 balances per warehouse,
+10,000 prior history entries and a 10,000-serial shipment.
+
+| Measurement | Customer Windows result |
+| --- | --- |
+| Serialized receipt/retry max | 0.743 s |
+| Count start p95 / max | 1.655 / 1.738 s |
+| Eight-worker count phase | 17.112 s |
+| Eight-worker transfer phase | 25.716 s |
+| Mobile download / usage upload max | 0.085 / 0.502 s |
+| Inventory export / restore | 0.064 / 2.459 s |
+| Signed-in load / worst search / activity | 3.507 / 0.055 / 0.054 s |
+| Web snapshot / posting replay response | 3,402,990 bytes each |
+| Inventory backup | 7,429,023 bytes |
+
+All acceptance gates passed for this run. The console reported approximately
+58 seconds for the test process; build and database setup are additional.
+The report's peak RSS is for the test process only, not total server,
+PostgreSQL or browser memory. This verifies the stated synthetic envelope on
+that Windows host, not unlimited scale, a live-customer-data migration, or
+performance guarantees for every customer installation. It does not verify
+the separate Expo inventory interface or full-system backup consistency
+during concurrent writes.
 
 ### Existing Replit development acceptance
 
