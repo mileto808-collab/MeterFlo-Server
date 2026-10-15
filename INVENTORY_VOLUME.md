@@ -2,6 +2,61 @@
 
 ## Reproduce safely
 
+### Standalone Windows acceptance
+
+Use a separate disposable checkout (for example `C:\xampp\htdocs\meterflotest`),
+not the installed MeterFlo directory. PostgreSQL must be installed with
+`initdb.exe`, `pg_ctl.exe` and `postgres.exe` available. Node/npm and Git must
+already be installed. After syncing the completed code, run in PowerShell:
+
+```powershell
+cd "C:\xampp\htdocs\meterflotest"
+git pull --ff-only origin main
+npm.cmd ci
+& ".\node_modules\.bin\playwright.cmd" install chromium
+.\deploy\Test-InventoryVolume.ps1 `
+  -PostgresBin "C:\Program Files\PostgreSQL\18\bin" `
+  -ConfirmDisposableCheckout
+```
+
+Stop if any command fails; never use `git reset --hard` to discard local work.
+The launcher builds this checkout, then starts a **fresh temporary PostgreSQL
+cluster and loopback-only compiled application**. It uses normal local login,
+not an auth bypass. It neither stops PM2 nor connects to your installed app,
+existing PostgreSQL database or Replit preview. Do not copy production `.env`
+into the checkout. The runner supplies its own database/session settings and
+an empty dotenv file; production environment secrets are not inherited.
+
+The database uses local trust authentication only inside the disposable cluster
+bound to `127.0.0.1`, under the synthetic `mf_volume` user on a free port.
+The acceptance test validates an owned temporary configuration and a matching
+database run marker before it creates test fixtures. There is no configurable
+production URL/database target. The browser uses Playwright's installed Chromium
+by default; an explicit `CHROMIUM_PATH` can select an installed executable.
+
+On completion, upload `generated-artifacts/inventory-volume/metrics.json` and
+`cleanup.json`. Metrics include the run identity, platform and standalone mode.
+Cleanup independently reports whether the app, temporary PostgreSQL process and
+temporary files were removed; success requires all three plus passing acceptance
+from that same run (`acceptancePassed: true`, `cleaned: true`, and matching run
+identities in both reports). A failed or interrupted run is not a pass. Forced termination
+or machine shutdown can prevent cleanup; never assume those resources vanished.
+
+For standalone Linux verification, build the disposable checkout, then set
+`INVENTORY_VOLUME_PG_BIN` to its PostgreSQL tools directory and run
+`npm run test:inventory-volume:standalone`. This exercises the same isolation path,
+but a Linux pass is **not evidence of Windows performance or compatibility**.
+
+The standalone Linux path was verified using PostgreSQL 16.10 with real normal
+login, signed-in desktop/phone browser checks, mobile completion/retries and
+inventory backup/restore. The 10,000-serial receipt/retry phase peaked at 855 ms;
+the eight-worker count phase completed in 28,250 ms and the transfer phase in
+34,325 ms, with every existing acceptance gate passing. The owned application,
+PostgreSQL process and temporary files were all removed. These measurements
+describe this Linux run only; Windows results remain pending.
+
+### Existing Replit development acceptance
+
 Use a **development database and its running development preview**, never a
 published server or a production database. The acceptance command requires
 `REPLIT_DEV_DOMAIN` ending in `.replit.dev`; it has no production/base-URL option.

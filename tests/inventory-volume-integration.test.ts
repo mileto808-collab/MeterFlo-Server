@@ -16,13 +16,19 @@ import { initializeAudit } from "../server/auditMigration";
 import { withAuditContext } from "../server/auditContext";
 import { assertInventoryInvariants, volume, volumeState } from "./helpers/inventory-volume";
 import type { InventoryCommand } from "../shared/inventory";
+import { readInventorySandbox } from "./helpers/inventory-sandbox";
 
 // Explicit opt-in: run against the development app only, never a configurable production URL.
 test("isolated inventory volume, sustained contention, sync, restore and signed-in UI", {
   skip: process.env.INVENTORY_VOLUME_ACCEPTANCE !== "1", timeout: 600_000,
 }, async () => {
-  assert.ok(process.env.REPLIT_DEV_DOMAIN?.endsWith(".replit.dev"), "development preview required");
-  const baseURL = `https://${process.env.REPLIT_DEV_DOMAIN}`;
+  const sandbox = process.env.INVENTORY_VOLUME_STANDALONE_CONFIG
+    ? await readInventorySandbox(process.env.INVENTORY_VOLUME_STANDALONE_CONFIG, process.env.DATABASE_URL) : null;
+  if (sandbox) {
+    const { rows } = await pool.query("SELECT run_id FROM public.inventory_volume_sandbox");
+    assert.deepEqual(rows, [{ run_id: sandbox.runId }], "Disposable database ownership marker required");
+  } else assert.ok(process.env.REPLIT_DEV_DOMAIN?.endsWith(".replit.dev"), "development preview required");
+  const baseURL = sandbox?.baseURL ?? `https://${process.env.REPLIT_DEV_DOMAIN}`;
   const samples: Record<string, number[]> = {};
   const bytes: Record<string, number> = {};
   const timed = async <T>(name: string, fn: () => Promise<T>): Promise<T> => {
@@ -215,7 +221,7 @@ test("isolated inventory volume, sustained contention, sync, restore and signed-
       assert.equal(replay.replay, true);
     } catch (e) { await backupClient.query("ROLLBACK"); throw e; }
     finally { backupClient.release(); }
-    browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || "/repl/tools/bin/chromium", args: ["--no-sandbox"] });
+    browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || (sandbox ? undefined : "/repl/tools/bin/chromium"), args: ["--no-sandbox"] });
     const context = await browser.newContext({ baseURL });
     await context.addCookies([{ name: cookie.split("=")[0], value: cookie.slice(cookie.indexOf("=") + 1), url: baseURL, secure: true, httpOnly: true }]);
     const page = await context.newPage(), errors: string[] = [];
@@ -288,6 +294,7 @@ test("isolated inventory volume, sustained contention, sync, restore and signed-
       return [name, { n: sorted.length, p50: sorted[Math.floor((sorted.length - 1) * .5)], p95: sorted[Math.ceil(sorted.length * .95) - 1], max: sorted.at(-1) }];
     }));
     await writeFile(`${output}/metrics.json`, JSON.stringify({ passed, volume, node: process.version,
+      runId: sandbox?.runId, environment: { platform: process.platform, arch: process.arch, mode: sandbox ? "standalone" : "replit-development" },
       maxRssKiB: process.resourceUsage().maxRSS, milliseconds: summary, bytes }, null, 2));
     console.log(JSON.stringify({ milliseconds: summary, bytes }));
     await browser?.close();

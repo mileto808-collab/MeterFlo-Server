@@ -20,16 +20,9 @@ foreach ($tool in @("initdb.exe", "pg_ctl.exe", "postgres.exe")) {
 }
 
 $checkout = Split-Path $PSScriptRoot -Parent
-$acceptance = Join-Path $checkout "tests/inventory-volume-integration.test.ts"
+$acceptance = Join-Path $checkout "script/inventory-volume-standalone.mjs"
 if (-not (Test-Path -LiteralPath $acceptance -PathType Leaf)) {
     throw "The inventory acceptance test is missing. Sync the full checkout before retrying."
-}
-# The old harness only targets a running Replit development preview. Do not
-# pretend that it can produce standalone Windows evidence or use a live server.
-$standaloneSupport = Get-ChildItem -LiteralPath (Join-Path $checkout "tests") -Recurse -Filter "*.ts" |
-    Select-String -SimpleMatch "INVENTORY_VOLUME_PG_BIN" -Quiet
-if (-not ($standaloneSupport -contains $true)) {
-    throw "This checkout does not yet include the standalone Windows acceptance harness. Merge/sync the Windows test harness before running this launcher. Do not point it at the installed app or its database."
 }
 
 $resolvedBin = (Resolve-Path -LiteralPath $PostgresBin).Path
@@ -43,15 +36,17 @@ try {
     if ($LASTEXITCODE -ne 0) {
         throw "Build failed; acceptance did not run."
     }
-    # Invoke tsx directly: the npm script's POSIX VAR=1 prefix is not valid in
-    # Windows cmd.exe. The opt-in variable is set above and restored below.
-    & ".\node_modules\.bin\tsx.cmd" --test "tests/inventory-volume-integration.test.ts"
+    # Node entry point works in Windows cmd.exe as well as PowerShell. It owns
+    # temporary database/server processes; it cannot target an installed app.
+    & node.exe ".\script\inventory-volume-standalone.mjs" --confirm-disposable-checkout
     if ($LASTEXITCODE -ne 0) {
         throw "Acceptance failed. Retain metrics.json and cleanup.json; do not relax the gates."
     }
     $report = Get-Content "generated-artifacts/inventory-volume/metrics.json" -Raw | ConvertFrom-Json
     $cleanup = Get-Content "generated-artifacts/inventory-volume/cleanup.json" -Raw | ConvertFrom-Json
-    if (-not $report.passed -or $report.environment.platform -ne "win32" -or -not $cleanup.cleaned) {
+    if (-not $report.passed -or $report.environment.platform -ne "win32" -or
+        -not $cleanup.acceptancePassed -or -not $cleanup.cleaned -or
+        $report.runId -ne $cleanup.runId) {
         throw "Missing successful Windows measurements or cleanup confirmation."
     }
     Write-Host "Windows acceptance passed. Keep generated-artifacts/inventory-volume together as evidence."
