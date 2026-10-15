@@ -1,0 +1,316 @@
+// Uses only the disposable project/user made by tests/support/inventory-ui-fixture.ts.
+const assert = require("node:assert/strict");
+const fs = require("node:fs/promises");
+const { chromium } = require("playwright");
+
+async function main() {
+  const fixture = JSON.parse(await fs.readFile("/tmp/meterflo-inventory-ui-fixture.json", "utf8"));
+  const baseURL = process.env.INVENTORY_UI_BASE || `https://${process.env.REPLIT_DEV_DOMAIN}`;
+  const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || "/repl/tools/bin/chromium", args: ["--no-sandbox"] });
+  let context, otherProject;
+  try {
+    context = await browser.newContext({ baseURL, viewport: { width: 1280, height: 900 } });
+    assert.equal((await context.request.post("/api/auth/local/login", { data: { username: fixture.username, password: fixture.password } })).status(), 200);
+    const endpoint = `/api/projects/${fixture.projectId}/inventory`;
+    const inventoryURL = `/projects/${fixture.projectId}/inventory`;
+    const state = async () => (await (await context.request.get(endpoint)).json()).state;
+    const command = async (action, data) => {
+      const response = await context.request.post(`${endpoint}/commands`, { data: { operationId: crypto.randomUUID(), action, data } });
+      assert.equal(response.status(), 200, `${action}: ${await response.text()}`);
+      return (await response.json()).state;
+    };
+    for (const id of ["order-main", "order-van"])
+      await command("warehouse", { id, code: id.toUpperCase(), name: id, type: "physical", address: "Fixture only", userIds: [fixture.viewer.id] });
+    await command("vendor", { id: "order-vendor", name: "Order supplier" });
+    await command("item", { id: "order-bulk", sku: "ORDER-BULK", name: "Order bulk", tracking: "regular" });
+    await command("item", { id: "order-serial", sku: "ORDER-SERIAL", name: "Order meter", tracking: "serialized" });
+    const seedId = `ORDER-SEED-${crypto.randomUUID()}`;
+    await command("order", { id: seedId, type: "purchase", destinationId: "order-main", vendorId: "order-vendor",
+      lines: [{ itemId: "order-bulk", quantity: 20 }] });
+    await command("release", { orderId: seedId });
+    await command("receive", { orderId: seedId, lines: [{ itemId: "order-bulk", quantity: 20 }] });
+    const order = (id, type) => ({ id, type, destinationId: type === "purchase" ? "order-main" : "order-van",
+      sourceId: type === "transfer" ? "order-main" : null, vendorId: type === "purchase" ? "order-vendor" : null,
+      lines: [{ itemId: "order-bulk", quantity: 2, serials: [] }], notes: `${id} saved notes` });
+    await command("order", order("ORDER-PO", "purchase"));
+    await command("order", order("ORDER-TR", "transfer"));
+    const originalStock = (await state()).stock;
+    const second = await context.request.post("/api/projects", { data: { name: `Order navigation fixture ${fixture.projectId}`, inventoryEnabled: true } });
+    assert.equal(second.status(), 201);
+    otherProject = (await second.json()).id;
+    const otherURL = `/projects/${otherProject}/inventory`;
+    const page = await context.newPage(), errors = [], posted = [];
+    page.setDefaultTimeout(15000);
+    page.on("pageerror", e => errors.push(e.message));
+    page.on("request", r => { if (r.url().endsWith(`${endpoint}/commands`)) posted.push(r.postDataJSON()); });
+    const builder = page.locator("fieldset");
+    const notes = page.getByLabel("Order notes", { exact: true });
+    const reference = page.getByPlaceholder("e.g. PO-2025-014", { exact: true });
+    const warning = page.getByRole("dialog", { name: "Unsaved order changes", exact: true });
+    const countWarning = page.getByRole("dialog", { name: "Unsaved count changes", exact: true });
+    const spa = url => page.evaluate(url => window.history.pushState({}, "", url), url);
+    const unload = async dirty => assert.equal(await page.evaluate(() => {
+      const event = new Event("beforeunload", { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    }), dirty, "Unload protection matches unsaved values");
+    const choose = async name => {
+      await warning.getByRole("button", { name, exact: true }).click();
+      if (name !== "Save draft") await warning.waitFor({ state: "hidden" });
+    };
+    const ordersTab = () => page.getByRole("tab", { name: "Orders", exact: true }).click();
+    const edit = id => page.locator("div.rounded-lg.border.p-4").filter({ hasText: id }).getByRole("button", { name: "Edit draft", exact: true }).click();
+    const select = async (index, name) => {
+      await builder.getByRole("combobox").nth(index).click();
+      await page.getByRole("option", { name, exact: true }).click();
+    };
+    const saved = async () => {
+      await page.getByText("Order draft saved. Stock has not changed.", { exact: true }).waitFor();
+      await unload(false);
+    };
+
+    // Defaults and fully reverted changes are clean. Header-only and unadded
+    // line edits, including invalid quantities and serial text, are not.
+    await page.goto("/projects");
+    await spa(inventoryURL);
+    await ordersTab();
+    await unload(false);
+    await reference.fill("Header only");
+    await unload(true);
+    await reference.fill("");
+    await notes.fill("Notes only");
+    await unload(true);
+    await notes.fill("");
+    await unload(false);
+    await select(0, "Transfer");
+    await unload(true);
+    await select(0, "Purchase");
+    await select(1, "ORDER-MAIN · order-main");
+    await unload(true);
+    await select(2, "Order supplier");
+    await select(3, "ORDER-SERIAL · Order meter");
+    await builder.locator('input[type="number"]').fill("0");
+    await builder.getByPlaceholder("One serial per line").fill("0000123\nunfinished");
+    const noAutosaves = posted.length;
+    await spa(otherURL);
+    assert.equal(await warning.getByRole("button", { name: "Save draft", exact: true }).isDisabled(), true);
+    await fs.mkdir("generated-artifacts/inventory", { recursive: true });
+    await warning.evaluate(el => Promise.all(el.getAnimations({ subtree: true }).map(animation => animation.finished)));
+    await page.screenshot({ path: "generated-artifacts/inventory/order-warning-desktop.jpg" });
+    await choose("Stay");
+    assert.equal(await builder.locator('input[type="number"]').inputValue(), "0");
+    assert.equal(await builder.getByPlaceholder("One serial per line").inputValue(), "0000123\nunfinished");
+    assert.equal(posted.length, noAutosaves, "Navigation and Stay must not autosave");
+    await spa(otherURL);
+    await choose("Discard");
+    await page.waitForURL(`**${otherURL}`);
+    await ordersTab();
+    assert.equal(await reference.inputValue(), "");
+    assert.equal(await notes.inputValue(), "");
+    await unload(false);
+    await page.goBack();
+    await ordersTab();
+
+    // Loading another draft requires a choice, and Discard leaves the saved
+    // record unchanged. Saving before replacement persists only the first.
+    await edit("ORDER-PO");
+    await unload(false);
+    await notes.fill("Purchase correction");
+    await edit("ORDER-TR");
+    await choose("Stay");
+    assert.equal(await reference.inputValue(), "ORDER-PO");
+    assert.equal(await notes.inputValue(), "Purchase correction");
+    await edit("ORDER-TR");
+    await choose("Discard");
+    assert.equal(await reference.inputValue(), "ORDER-TR");
+    await unload(false);
+    assert.equal((await state()).orders.find(o => o.id === "ORDER-PO").notes, "ORDER-PO saved notes");
+    await notes.fill("Transfer saved before replacement");
+    await edit("ORDER-PO");
+    await choose("Save draft");
+    await warning.waitFor({ state: "hidden" });
+    assert.equal(await reference.inputValue(), "ORDER-PO");
+    await unload(false);
+    assert.equal((await state()).orders.find(o => o.id === "ORDER-TR").notes, "Transfer saved before replacement");
+
+    // An ordinary failed save, HTTP failure, network failure, and unconfirmed
+    // success all retain the fields and the pending destination for a retry.
+    for (const type of ["purchase", "transfer"]) {
+      const id = type === "purchase" ? "ORDER-PO" : "ORDER-TR";
+      if (await reference.inputValue() !== id) await edit(id);
+      await notes.fill(`${type} retained correction`);
+      await reference.fill(id);
+      const fail = route => route.request().postDataJSON()?.action === "order"
+        ? route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ message: "Fixture failure" }) }) : route.continue();
+      await page.route(`**${endpoint}/commands`, fail);
+      await builder.getByRole("button", { name: "Save draft", exact: true }).click();
+      await page.getByText(/Order draft not saved/).waitFor();
+      assert.equal(await notes.inputValue(), `${type} retained correction`);
+      await unload(true);
+      await spa(otherURL);
+      await choose("Save draft");
+      await warning.getByText(/Order draft not saved/).waitFor();
+      assert.ok(page.url().endsWith(inventoryURL));
+      assert.equal(await notes.inputValue(), `${type} retained correction`);
+      await page.unroute(`**${endpoint}/commands`, fail);
+      const abort = route => route.request().postDataJSON()?.action === "order" ? route.abort("failed") : route.continue();
+      await page.route(`**${endpoint}/commands`, abort);
+      await choose("Save draft");
+      await warning.getByRole("button", { name: "Save draft", exact: true }).waitFor({ state: "visible" });
+      await page.waitForFunction(() => !Array.from(document.querySelectorAll('[role="dialog"] button')).find(b => b.textContent === "Save draft")?.disabled);
+      assert.equal(await notes.inputValue(), `${type} retained correction`);
+      await page.unroute(`**${endpoint}/commands`, abort);
+      const unconfirmed = route => route.request().postDataJSON()?.action === "order"
+        ? route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ state: { orders: [] } }) }) : route.continue();
+      await page.route(`**${endpoint}/commands`, unconfirmed);
+      await choose("Save draft");
+      await warning.getByText(/could not be confirmed/).waitFor();
+      await unload(true);
+      await page.unroute(`**${endpoint}/commands`, unconfirmed);
+      await choose("Save draft");
+      await page.waitForURL(`**${otherURL}`);
+      assert.equal(await warning.isVisible(), false);
+      await ordersTab();
+      assert.equal(await reference.inputValue(), "");
+      assert.equal(await notes.inputValue(), "");
+      await unload(false);
+      assert.equal((await state()).orders.find(o => o.id === id).notes, `${type} retained correction`);
+      await page.goBack();
+      await ordersTab();
+    }
+
+    // Existing-line removal, adding a new line and pending serial scans are
+    // covered independently. Saving cannot silently omit an unfinished line.
+    await edit("ORDER-PO");
+    await builder.getByRole("button", { name: "Remove", exact: true }).click();
+    await unload(true);
+    await select(3, "ORDER-SERIAL · Order meter");
+    await builder.locator('input[type="number"]').fill("2");
+    await builder.getByPlaceholder("One serial per line").fill("000010\n000011");
+    await spa(otherURL);
+    assert.equal(await warning.getByRole("button", { name: "Save draft", exact: true }).isDisabled(), true);
+    await choose("Stay");
+    await builder.getByRole("button", { name: "Add line", exact: true }).click();
+    await builder.getByLabel("Serial scans", { exact: true }).fill("000020\n000021");
+    await builder.getByRole("button", { name: "Save draft", exact: true }).click();
+    await saved();
+    assert.equal((await state()).orders.find(o => o.id === "ORDER-PO").status, "draft");
+    await select(3, "ORDER-BULK · Order bulk");
+    await builder.getByRole("button", { name: "Clear unfinished line", exact: true }).click();
+    await unload(false);
+
+    // Refresh/close gets the browser warning; dismissal retains both types.
+    for (const id of ["ORDER-PO", "ORDER-TR"]) {
+      await edit(id);
+      await notes.fill(`${id} local refresh edit`);
+      const dialog = page.waitForEvent("dialog");
+      await page.evaluate(() => { setTimeout(() => window.location.reload(), 0); });
+      const native = await dialog;
+      assert.equal(native.type(), "beforeunload");
+      await native.dismiss();
+      assert.equal(await notes.inputValue(), `${id} local refresh edit`);
+      await spa(otherURL);
+      await choose("Discard");
+      await page.waitForURL(`**${otherURL}`);
+      await page.goBack();
+      await ordersTab();
+      await edit(id);
+      assert.notEqual(await notes.inputValue(), `${id} local refresh edit`);
+    }
+
+    // App links and both browser-history directions honor Stay/Discard/Save.
+    await notes.fill("Saved before app link");
+    await page.getByRole("link", { name: "Projects", exact: true }).click();
+    await choose("Save draft");
+    await page.waitForURL("**/projects");
+    await page.goBack();
+    await ordersTab();
+    await notes.fill("Back edit");
+    await page.evaluate(() => window.history.back());
+    await choose("Stay");
+    assert.equal(await notes.inputValue(), "Back edit");
+    await page.evaluate(() => window.history.back());
+    await choose("Discard");
+    await page.waitForURL("**/projects");
+    await page.goForward();
+    await ordersTab();
+    await spa(otherURL);
+    await page.goBack();
+    await ordersTab();
+    await notes.fill("Forward edit");
+    await page.evaluate(() => window.history.forward());
+    await choose("Stay");
+    assert.equal(await notes.inputValue(), "Forward edit");
+    await page.evaluate(() => window.history.forward());
+    await choose("Discard");
+    await page.waitForURL(`**${otherURL}`);
+    await page.goBack();
+    await ordersTab();
+    await unload(false);
+
+    // Two dirty editors must each get a choice; saving count changes alone
+    // never grants permission to discard the order.
+    await edit("ORDER-TR");
+    await notes.fill("Order and count correction");
+    await page.getByRole("tab", { name: "Counts & assembly", exact: true }).click();
+    await page.getByRole("combobox").first().click();
+    await page.getByRole("option", { name: "ORDER-MAIN · order-main", exact: true }).click();
+    await page.getByRole("button", { name: "Start count", exact: true }).click();
+    await page.getByLabel("Count adjustment reason", { exact: true }).fill("Count and order correction");
+    await spa(otherURL);
+    await countWarning.getByRole("button", { name: "Save draft", exact: true }).click();
+    await warning.waitFor();
+    await choose("Stay");
+    await unload(true);
+    await ordersTab();
+    assert.equal(await notes.inputValue(), "Order and count correction");
+    await spa(otherURL);
+    await choose("Save draft");
+    await page.waitForURL(`**${otherURL}`);
+    assert.equal((await state()).counts.at(-1).draft.reason, "Count and order correction");
+    assert.deepEqual((await state()).stock, originalStock, "Draft saves, discards and navigation must not change stock");
+
+    // Permissions are granted through normal role administration, not raw DB
+    // keys. A warning never enables the other order type's save permission.
+    for (const permission of [null, "inventory.purchase", "inventory.transfer"]) {
+      assert.equal((await context.request.put(`/api/subroles/${fixture.viewerRoleId}/permissions`, { data: {
+        permissions: ["projects.view", "workOrders.view", "inventory.view", ...(permission ? [permission] : [])],
+      } })).status(), 200);
+      const viewer = await browser.newContext({ baseURL });
+      try {
+        assert.equal((await viewer.request.post("/api/auth/local/login", { data: fixture.viewer })).status(), 200);
+        const viewPage = await viewer.newPage();
+        await viewPage.goto(inventoryURL);
+        await viewPage.getByRole("tab", { name: "Orders", exact: true }).click();
+        if (!permission) {
+          assert.equal(await viewPage.locator("fieldset").count(), 0);
+          assert.equal(await viewPage.getByRole("button", { name: "Edit draft", exact: true }).count(), 0);
+          continue;
+        }
+        const form = viewPage.locator("fieldset");
+        const allowedType = permission === "inventory.purchase" ? "purchase" : "transfer";
+        const allowedId = allowedType === "purchase" ? "ORDER-PO" : "ORDER-TR";
+        await viewPage.locator("div.rounded-lg.border.p-4").filter({ hasText: allowedId }).getByRole("button", { name: "Edit draft", exact: true }).click();
+        await form.getByRole("combobox").first().click();
+        await viewPage.getByRole("option", { name: allowedType === "purchase" ? "Transfer" : "Purchase", exact: true }).click();
+        await viewPage.getByLabel("Order notes", { exact: true }).fill("No permission to save this type");
+        await viewPage.evaluate(url => window.history.pushState({}, "", url), "/projects");
+        const denied = viewPage.getByRole("dialog", { name: "Unsaved order changes", exact: true });
+        assert.equal(await denied.getByRole("button", { name: "Save draft", exact: true }).isDisabled(), true);
+        await denied.getByRole("button", { name: "Stay", exact: true }).click();
+        assert.equal(await form.getByRole("button", { name: "Save draft", exact: true }).isDisabled(), true);
+        const res = await viewer.request.post(`${endpoint}/commands`, { data: {
+          operationId: crypto.randomUUID(), action: "order", data: order("ORDER-DENIED", allowedType === "purchase" ? "transfer" : "purchase"),
+        } });
+        assert.equal(res.status(), 403);
+      } finally { await viewer.close(); }
+    }
+    assert.deepEqual(errors, []);
+    console.log("Order warnings: purchase/transfer Stay, Discard, Save, failures, pending lines, refresh, app/history navigation, project isolation, count coexistence, permission gates and unchanged stock passed.");
+  } finally {
+    try {
+      if (context && otherProject) assert.ok([200, 204].includes((await context.request.delete(`/api/projects/${otherProject}`)).status()));
+    } finally { await browser.close(); }
+  }
+}
+main().catch(error => { console.error(error); process.exitCode = 1; });

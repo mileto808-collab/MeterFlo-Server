@@ -20,6 +20,7 @@
     "test:inventory-volume:standalone": "node script/inventory-volume-standalone.mjs --confirm-disposable-checkout",
     "test:inventory-resource:browser": "node tests/inventory-resource-ui.cjs",
     "test:inventory-count:browser": "node tests/inventory-count-ui.cjs",
+    "test:inventory-order:browser": "node tests/inventory-order-ui.cjs",
     "test:inventory-integration": "tsx --test tests/inventory-integration.test.ts",
     "test:inventory-system-backup": "tsx --test tests/inventory-system-backup.test.ts",
     "check:dependency-portability": "node script/check-dependency-portability.mjs",

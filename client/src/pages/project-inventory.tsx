@@ -70,6 +70,22 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [orderVendor, setOrderVendor] = useState("");
   const [orderNotes, setOrderNotes] = useState("");
   const [orderLines, setOrderLines] = useState<StockLine[]>([]);
+  // The order's unadded line is independent of the movement scanner.
+  const [orderLineItem, setOrderLineItem] = useState("");
+  const [orderLineQty, setOrderLineQty] = useState("1");
+  const [orderLineSerials, setOrderLineSerials] = useState("");
+  const orderValues = { orderType, orderId, orderDestination, orderSource, orderVendor, orderNotes, orderLines,
+    orderLineItem, orderLineQty, orderLineSerials };
+  const [savedOrderValues, setSavedOrderValues] = useState(() => JSON.stringify(orderValues));
+  const orderDirty = JSON.stringify(orderValues) !== savedOrderValues;
+  const orderSaving = useRef(false);
+  const [orderMessage, setOrderMessage] = useState("");
+  const [pendingOrderTransition, setPendingOrderTransition] = useState<(() => void) | null>(null);
+  const requestOrderTransition = (transition: () => void) => {
+    if (orderSaving.current || command.isPending) return;
+    if (orderDirty) setPendingOrderTransition(current => current ?? transition);
+    else transition();
+  };
   const [lineItem, setLineItem] = useState("");
   const [lineQty, setLineQty] = useState("1");
   const [lineSerials, setLineSerials] = useState("");
@@ -102,7 +118,10 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     if (countDirty) setPendingCountTransition(current => current ?? transition);
     else transition();
   };
-  const completeSavedCountTransition = useUnsavedNavigation(countDirty, requestCountTransition);
+  // Register a single navigation guard: both editors can have unsaved values.
+  // A count choice must not silently discard an unrelated order draft.
+  const completeSavedNavigation = useUnsavedNavigation(countDirty || orderDirty,
+    transition => requestCountTransition(() => requestOrderTransition(transition)));
   const [assembleItem, setAssembleItem] = useState("");
   const [assembleWarehouse, setAssembleWarehouse] = useState("");
   const [assembleQty, setAssembleQty] = useState("1");
@@ -211,9 +230,9 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     resourceSave.mutate({ action: resource, data: payload, operationId: resourceAttempt.current!.operationId });
   };
   const addLine = (destination: "order" | "operation") => {
-    const item = items.find(value => value.id === lineItem);
-    const quantity = Number(lineQty);
-    const serials = item?.tracking === "serialized" ? csv(lineSerials) : [];
+    const item = items.find(value => value.id === (destination === "order" ? orderLineItem : lineItem));
+    const quantity = Number(destination === "order" ? orderLineQty : lineQty);
+    const serials = item?.tracking === "serialized" ? csv(destination === "order" ? orderLineSerials : lineSerials) : [];
     const requiresSerials = item?.tracking === "serialized" && !(destination === "order" && orderType === "purchase");
     if (!item || !Number.isInteger(quantity) || quantity < 1 || (requiresSerials && serials.length !== quantity)) {
       toast({ title: "Check scanned quantity", description: item?.tracking === "serialized" ? "Scan exactly one distinct serial for each unit." : "Enter a positive whole quantity.", variant: "destructive" }); return;
@@ -224,8 +243,50 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       return match < 0 ? [...current, { itemId: item.id, quantity, serials }] :
         current.map((line, index) => index === match ? { ...line, quantity: line.quantity + quantity, serials: [...line.serials, ...serials] } : line);
     });
-    setLineItem(""); setLineQty("1"); setLineSerials("");
+    if (destination === "order") { setOrderLineItem(""); setOrderLineQty("1"); setOrderLineSerials(""); }
+    else { setLineItem(""); setLineQty("1"); setLineSerials(""); }
   };
+  const orderHasPendingLine = !!orderLineItem || orderLineQty !== "1" || !!orderLineSerials;
+  const canSaveOrder = !!orderDestination && !!orderLines.length && !orderHasPendingLine &&
+    (orderType === "purchase" ? !!orderVendor && can("inventory.purchase") : !!orderSource && can("inventory.transfer"));
+  const saveOrderDraft = (afterSave?: () => void) => {
+    if (!canSaveOrder || command.isPending || orderSaving.current) return;
+    orderSaving.current = true;
+    setOrderMessage("");
+    const id = orderId.trim() || freshId();
+    command.mutate({ action: "order", data: { id, type: orderType, destinationId: orderDestination,
+      sourceId: orderType === "transfer" ? orderSource : null, vendorId: orderType === "purchase" ? orderVendor : null,
+      lines: orderLines.map(line => orderType === "purchase" ? { ...line, serials: [] } : line), notes: orderNotes } }, {
+      onSuccess: result => {
+        const saved = (result.state as InventoryState | undefined)?.orders.find(order => order.id === id);
+        if (!saved) {
+          setOrderMessage("Draft save could not be confirmed. Your entries were kept.");
+          return;
+        }
+        setOrderLines([]); setOrderId(""); setOrderNotes("");
+        setSavedOrderValues(JSON.stringify({ ...orderValues, orderLines: [], orderId: "", orderNotes: "" }));
+        setOrderMessage("Order draft saved. Stock has not changed.");
+        orderSaving.current = false;
+        if (afterSave) {
+          setPendingOrderTransition(null);
+          completeSavedNavigation(afterSave);
+        }
+      },
+      onError: () => setOrderMessage("Order draft not saved. Your entries are still here; retry before leaving."),
+      onSettled: () => { orderSaving.current = false; },
+    });
+  };
+  const editOrderDraft = (order: InventoryOrder) => requestOrderTransition(() => {
+    setOrderId(order.id); setOrderType(order.type); setOrderDestination(order.destinationId);
+    setOrderSource(order.sourceId || ""); setOrderVendor(order.vendorId || "");
+    setOrderLines(order.lines); setOrderNotes(order.notes);
+    setOrderLineItem(""); setOrderLineQty("1"); setOrderLineSerials("");
+    setOrderMessage("");
+    setSavedOrderValues(JSON.stringify({ orderType: order.type, orderId: order.id,
+      orderDestination: order.destinationId, orderSource: order.sourceId || "", orderVendor: order.vendorId || "",
+      orderNotes: order.notes, orderLines: order.lines, orderLineItem: "", orderLineQty: "1", orderLineSerials: "" }));
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
   const openOrderOperation = (order: InventoryOrder, action: "receive" | "dispatch" | "accept") => {
     setOperationOrder(order); setOperation(action); setOperationLines([]); setOperationReason(""); setOperationReview(false);
     const previous = action === "receive" ? order.received : action === "dispatch" ? order.dispatched : order.received;
@@ -310,7 +371,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           countSaving.current = false;
           if (afterSave) {
             setPendingCountTransition(null);
-            completeSavedCountTransition(afterSave);
+            completeSavedNavigation(afterSave);
           }
         } else {
           setCountDraftMessage("Draft save could not be confirmed. Your entries were kept. Reload the saved draft before retrying.");
@@ -361,6 +422,23 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   };
 
   return <main className="mx-auto max-w-7xl space-y-6 p-4 pb-12 md:p-7">
+    <Dialog open={!!pendingOrderTransition} onOpenChange={open => { if (!open && !orderSaving.current) setPendingOrderTransition(null); }}>
+      <DialogContent onEscapeKeyDown={event => { if (orderSaving.current) event.preventDefault(); }} onPointerDownOutside={event => event.preventDefault()}>
+        <DialogHeader><DialogTitle>Unsaved order changes</DialogTitle><DialogDescription>Save this purchase or transfer draft before continuing, discard the unsaved changes, or stay here. Saving a draft does not release an order or change stock.</DialogDescription></DialogHeader>
+        {orderMessage && <p role="status" className="text-sm">{orderMessage}</p>}
+        {!canSaveOrder && <p className="text-sm">Complete the required order fields and add or clear the unfinished line before saving.</p>}
+        <DialogFooter>
+          <Button variant="outline" disabled={command.isPending} onClick={() => setPendingOrderTransition(null)}>Stay</Button>
+          <Button variant="destructive" disabled={command.isPending} onClick={() => {
+            const next = pendingOrderTransition;
+            setPendingOrderTransition(null);
+            // Only the successful replacement/navigation abandons the editor.
+            next?.();
+          }}>Discard</Button>
+          <Button disabled={!canSaveOrder || command.isPending} onClick={() => saveOrderDraft(pendingOrderTransition ?? undefined)}>Save draft</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
     <Dialog open={!!pendingCountTransition} onOpenChange={open => { if (!open && !countSaving.current) setPendingCountTransition(null); }}>
       <DialogContent onEscapeKeyDown={event => { if (countSaving.current) event.preventDefault(); }} onPointerDownOutside={event => event.preventDefault()}>
         <DialogHeader><DialogTitle>Unsaved count changes</DialogTitle><DialogDescription>Save this count draft before continuing, discard changes since the last save, or stay here. Saving a draft does not change stock.</DialogDescription></DialogHeader>
@@ -405,15 +483,16 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       </TabsContent>
 
       <TabsContent value="orders" className="space-y-4">
-        {can("inventory.purchase") || can("inventory.transfer") ? <Card><CardHeader><CardTitle>Build an order draft</CardTitle><CardDescription>Save draft, then release it to enable receiving or field transfer.</CardDescription></CardHeader><CardContent className="space-y-4">
+        {can("inventory.purchase") || can("inventory.transfer") ? <Card><CardHeader><CardTitle>Build an order draft</CardTitle><CardDescription>Save draft, then release it to enable receiving or field transfer.</CardDescription></CardHeader><CardContent><fieldset disabled={command.isPending} className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-4"><div className="space-y-1"><Label>Order type</Label><Select value={orderType} onValueChange={value => setOrderType(value as "purchase" | "transfer")}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="purchase">Purchase</SelectItem><SelectItem value="transfer">Transfer</SelectItem></SelectContent></Select></div><div className="space-y-1"><Label>Destination</Label><Select value={orderDestination} onValueChange={setOrderDestination}><SelectTrigger><SelectValue placeholder="Choose location" /></SelectTrigger><SelectContent>{activeWarehouses.map(w => <SelectItem value={w.id} key={w.id}>{w.code} · {w.name}</SelectItem>)}</SelectContent></Select></div>{orderType === "purchase" ? <div className="space-y-1"><Label>Vendor</Label><Select value={orderVendor} onValueChange={setOrderVendor}><SelectTrigger><SelectValue placeholder="Choose vendor" /></SelectTrigger><SelectContent>{vendors.filter(v => v.active).map(v => <SelectItem value={v.id} key={v.id}>{v.name}</SelectItem>)}</SelectContent></Select></div> : <div className="space-y-1"><Label>Source</Label><Select value={orderSource} onValueChange={setOrderSource}><SelectTrigger><SelectValue placeholder="Choose location" /></SelectTrigger><SelectContent>{activeWarehouses.filter(w => w.id !== orderDestination).map(w => <SelectItem value={w.id} key={w.id}>{w.code} · {w.name}</SelectItem>)}</SelectContent></Select></div>}<div className="space-y-1"><Label>Draft reference</Label><Input value={orderId} onChange={event => setOrderId(event.target.value)} placeholder="e.g. PO-2025-014" /></div></div>
-          <OrderLineEditor items={items} lineItem={lineItem} setLineItem={setLineItem} lineQty={lineQty} setLineQty={setLineQty} lineSerials={lineSerials} setLineSerials={setLineSerials} lines={orderLines} add={() => addLine("order")} remove={index => setOrderLines(value => value.filter((_, i) => i !== index))} updateSerials={(index, serials) => setOrderLines(value => value.map((line, i) => i === index ? { ...line, serials } : line))} />
+          <OrderLineEditor items={items} lineItem={orderLineItem} setLineItem={setOrderLineItem} lineQty={orderLineQty} setLineQty={setOrderLineQty} lineSerials={orderLineSerials} setLineSerials={setOrderLineSerials} lines={orderLines} add={() => addLine("order")} remove={index => setOrderLines(value => value.filter((_, i) => i !== index))} updateSerials={(index, serials) => setOrderLines(value => value.map((line, i) => i === index ? { ...line, serials } : line))} />
           <Textarea aria-label="Order notes" placeholder="Notes for purchasing or the receiving crew" value={orderNotes} onChange={event => setOrderNotes(event.target.value)} />
-          <Button disabled={command.isPending || !orderDestination || !orderLines.length || (orderType === "purchase" ? !orderVendor : !orderSource) || (orderType === "purchase" ? !can("inventory.purchase") : !can("inventory.transfer"))} onClick={() => {
-            command.mutate({ action: "order", data: { id: orderId.trim() || freshId(), type: orderType, destinationId: orderDestination, sourceId: orderType === "transfer" ? orderSource : null, vendorId: orderType === "purchase" ? orderVendor : null, lines: orderLines.map(line => orderType === "purchase" ? { ...line, serials: [] } : line), notes: orderNotes } }, { onSuccess: () => { setOrderLines([]); setOrderId(""); setOrderNotes(""); } });
-          }}><Plus className="mr-2 h-4 w-4" />Save draft</Button>
-        </CardContent></Card> : null}
-        <Card><CardHeader><CardTitle>Purchase & transfer orders</CardTitle><CardDescription>Open the relevant action to scan and post each partial movement.</CardDescription></CardHeader><CardContent><div className="space-y-3">{orderItems.map(order => <div key={order.id} className="rounded-lg border p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2 font-medium">{order.id}<Badge variant={order.status === "completed" ? "default" : "outline"}>{order.status}</Badge><Badge variant="secondary">{order.type}</Badge></div><p className="mt-1 text-sm text-muted-foreground">{order.type === "purchase" ? vendors.find(v => v.id === order.vendorId)?.name : warehouses.find(w => w.id === order.sourceId)?.name} → {warehouses.find(w => w.id === order.destinationId)?.name}</p><p className="text-xs text-muted-foreground">{order.lines.map(line => `${items.find(item => item.id === line.itemId)?.sku ?? line.itemId} × ${line.quantity}`).join(" · ")}</p></div><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => openPrint("order", order.id)}><Printer className="mr-1 h-3.5 w-3.5" />Print</Button>{order.status === "draft" && can(order.type === "purchase" ? "inventory.purchase" : "inventory.transfer") && <><Button size="sm" variant="outline" onClick={() => { setOrderId(order.id); setOrderType(order.type); setOrderDestination(order.destinationId); setOrderSource(order.sourceId || ""); setOrderVendor(order.vendorId || ""); setOrderLines(order.lines); setOrderNotes(order.notes); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Edit draft</Button><Button size="sm" onClick={() => command.mutate({ action: "release", data: { orderId: order.id } })}>Release</Button></>}{!["completed", "cancelled"].includes(order.status) && <Button size="sm" variant="ghost" onClick={() => command.mutate({ action: "cancel", data: { orderId: order.id } })}>Cancel</Button>}{order.status === "released" || order.status === "partial" ? <Button size="sm" onClick={() => openOrderOperation(order, order.type === "purchase" ? "receive" : "dispatch")}>{order.type === "purchase" ? "Receive" : "Dispatch"}</Button> : null}{order.type === "transfer" && ["released", "partial"].includes(order.status) && <Button size="sm" variant="outline" onClick={() => openOrderOperation(order, "accept")}>Accept arrival</Button>}</div></div></div>)}</div>{orderItems.length === 0 && <Empty title="No orders yet" description="Draft a purchase order or a transfer between a stockroom and service vehicle." />}</CardContent></Card>
+          {orderDirty && <p role="status" className="text-sm text-amber-700 dark:text-amber-400">Unsaved order changes. Save the draft to keep your entries.</p>}
+          {orderHasPendingLine && <div className="flex flex-wrap items-center gap-2"><p className="text-sm">Add or clear the unfinished line before saving.</p><Button type="button" variant="outline" size="sm" onClick={() => { setOrderLineItem(""); setOrderLineQty("1"); setOrderLineSerials(""); }}>Clear unfinished line</Button></div>}
+          {orderMessage && <p role="status" className="text-sm">{orderMessage}</p>}
+          <Button disabled={command.isPending || !canSaveOrder} onClick={() => saveOrderDraft()}><Plus className="mr-2 h-4 w-4" />Save draft</Button>
+        </fieldset></CardContent></Card> : null}
+        <Card><CardHeader><CardTitle>Purchase & transfer orders</CardTitle><CardDescription>Open the relevant action to scan and post each partial movement.</CardDescription></CardHeader><CardContent><div className="space-y-3">{orderItems.map(order => <div key={order.id} className="rounded-lg border p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><div className="flex flex-wrap items-center gap-2 font-medium">{order.id}<Badge variant={order.status === "completed" ? "default" : "outline"}>{order.status}</Badge><Badge variant="secondary">{order.type}</Badge></div><p className="mt-1 text-sm text-muted-foreground">{order.type === "purchase" ? vendors.find(v => v.id === order.vendorId)?.name : warehouses.find(w => w.id === order.sourceId)?.name} → {warehouses.find(w => w.id === order.destinationId)?.name}</p><p className="text-xs text-muted-foreground">{order.lines.map(line => `${items.find(item => item.id === line.itemId)?.sku ?? line.itemId} × ${line.quantity}`).join(" · ")}</p></div><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => openPrint("order", order.id)}><Printer className="mr-1 h-3.5 w-3.5" />Print</Button>{order.status === "draft" && can(order.type === "purchase" ? "inventory.purchase" : "inventory.transfer") && <><Button size="sm" variant="outline" onClick={() => editOrderDraft(order)}>Edit draft</Button><Button size="sm" onClick={() => command.mutate({ action: "release", data: { orderId: order.id } })}>Release</Button></>}{!["completed", "cancelled"].includes(order.status) && <Button size="sm" variant="ghost" onClick={() => command.mutate({ action: "cancel", data: { orderId: order.id } })}>Cancel</Button>}{order.status === "released" || order.status === "partial" ? <Button size="sm" onClick={() => openOrderOperation(order, order.type === "purchase" ? "receive" : "dispatch")}>{order.type === "purchase" ? "Receive" : "Dispatch"}</Button> : null}{order.type === "transfer" && ["released", "partial"].includes(order.status) && <Button size="sm" variant="outline" onClick={() => openOrderOperation(order, "accept")}>Accept arrival</Button>}</div></div></div>)}</div>{orderItems.length === 0 && <Empty title="No orders yet" description="Draft a purchase order or a transfer between a stockroom and service vehicle." />}</CardContent></Card>
       </TabsContent>
 
       <TabsContent value="counts" className="space-y-4"><Card><CardHeader><CardTitle>Physical stock count</CardTitle><CardDescription>Start a snapshot, count every item including zero, and post with a reason.</CardDescription></CardHeader><CardContent className="space-y-4"><div className="flex flex-wrap items-end gap-3"><div className="w-full max-w-sm space-y-1"><Label>Warehouse or vehicle</Label><Select value={countWarehouse} onValueChange={setCountWarehouse}><SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger><SelectContent>{activeWarehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.code} · {w.name}</SelectItem>)}</SelectContent></Select></div>{can("inventory.count") && <Button onClick={() => requestCountTransition(startCount)} disabled={!countWarehouse || command.isPending}>Start count</Button>}</div>
