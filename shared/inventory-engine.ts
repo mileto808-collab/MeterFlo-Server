@@ -152,11 +152,13 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
       o.sourceId && o.sourceId !== o.destinationId, "Select a vendor or distinct source warehouse.");
     if (o.sourceId) assert(s.warehouses.some(w => w.id === o.sourceId && w.active), "Choose an active source warehouse in this project.");
     assert(o.type === "transfer" ? !o.vendorId : !o.sourceId, "Purchase orders use a vendor; transfers use a source warehouse.");
-    // Purchase quantities need not have known serials until receiving.
-    if (o.type === "transfer") validateLines(s, o.lines);
-    else {
-      assert(new Set(o.lines.map(l => l.itemId)).size === o.lines.length, "Combine duplicate item lines.");
-      for (const l of o.lines) { item(s, l.itemId); assert(!l.serials.length, "Scan purchase serials when receiving."); }
+    // Orders plan products and quantities. Identify physical units when receiving
+    // or dispatching; older transfer drafts with preselected serials remain valid.
+    assert(new Set(o.lines.map(l => l.itemId)).size === o.lines.length, "Combine duplicate item lines.");
+    for (const l of o.lines) {
+      item(s, l.itemId);
+      if (o.type === "purchase") assert(!l.serials.length, "Scan purchase serials when receiving.");
+      else if (l.serials.length) validateLines(s, [l]);
     }
     const old = s.orders.find(x => x.id === o.id); assert(!old || old.status === "draft", "Only draft orders are editable.");
     if (old) {

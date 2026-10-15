@@ -36,3 +36,9 @@ Clearing cancelled purchase orders means archiving from the operator's list, not
 **Why:** Cancelling the remaining quantity does not undo earlier receipts. Hard deletion or reopening received orders would disconnect stock history from the original order and could allow ambiguous reuse of its reference.
 
 **How to apply:** Preserve recoverable order history when reducing clutter. Once receiving has started, additional purchases should use a new PO rather than resetting the original document's lifecycle.
+
+PO and transfer drafts should plan products and quantities, without capturing physical-unit serials.
+
+**Why:** The user said, “No serials will be added here. We don't know what the serials are until the shipment arrives.”
+
+**How to apply:** Keep serial capture in receiving or actual transfer dispatch/arrival, not order drafting. Planning quantities must not imply that specific physical units have already been selected.

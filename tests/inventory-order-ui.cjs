@@ -45,7 +45,7 @@ async function main() {
     page.on("request", r => { if (r.url().endsWith(`${endpoint}/commands`)) posted.push(r.postDataJSON()); });
     const builder = page.locator("fieldset");
     const notes = page.getByLabel("Order notes", { exact: true });
-    const reference = page.getByPlaceholder("e.g. PO-2025-014", { exact: true });
+    const reference = page.getByLabel("Order ID / reference", { exact: true });
     const warning = page.getByRole("dialog", { name: "Unsaved order changes", exact: true });
     const countWarning = page.getByRole("dialog", { name: "Unsaved count changes", exact: true });
     const spa = url => page.evaluate(url => window.history.pushState({}, "", url), url);
@@ -65,7 +65,7 @@ async function main() {
       await page.getByRole("option", { name, exact: true }).click();
     };
     const saved = async () => {
-      await page.getByText("Order draft saved. Stock has not changed.", { exact: true }).waitFor();
+      await page.getByText(/^Order ID .+ saved as a draft\./).waitFor();
       await unload(false);
     };
 
@@ -90,7 +90,7 @@ async function main() {
     await select(2, "Order supplier");
     await select(3, "ORDER-SERIAL · Order meter");
     await builder.locator('input[type="number"]').fill("0");
-    await builder.getByPlaceholder("One serial per line").fill("0000123\nunfinished");
+    assert.equal(await builder.getByPlaceholder("One serial per line").count(), 0, "PO planning never captures serials");
     const noAutosaves = posted.length;
     await spa(otherURL);
     assert.equal(await warning.getByRole("button", { name: "Save draft", exact: true }).isDisabled(), true);
@@ -99,7 +99,7 @@ async function main() {
     await page.screenshot({ path: "generated-artifacts/inventory/order-warning-desktop.jpg" });
     await choose("Stay");
     assert.equal(await builder.locator('input[type="number"]').inputValue(), "0");
-    assert.equal(await builder.getByPlaceholder("One serial per line").inputValue(), "0000123\nunfinished");
+    assert.equal(await builder.getByPlaceholder("One serial per line").count(), 0);
     assert.equal(posted.length, noAutosaves, "Navigation and Stay must not autosave");
     await spa(otherURL);
     await choose("Discard");
@@ -179,22 +179,36 @@ async function main() {
       await ordersTab();
     }
 
-    // Existing-line removal, adding a new line and pending serial scans are
+    // Existing-line removal and adding a new line are
     // covered independently. Saving cannot silently omit an unfinished line.
     await edit("ORDER-PO");
     await builder.getByRole("button", { name: "Remove", exact: true }).click();
     await unload(true);
     await select(3, "ORDER-SERIAL · Order meter");
     await builder.locator('input[type="number"]').fill("2");
-    await builder.getByPlaceholder("One serial per line").fill("000010\n000011");
+    assert.equal(await builder.getByPlaceholder("One serial per line").count(), 0);
     await spa(otherURL);
     assert.equal(await warning.getByRole("button", { name: "Save draft", exact: true }).isDisabled(), true);
     await choose("Stay");
     await builder.getByRole("button", { name: "Add line", exact: true }).click();
-    await builder.getByLabel("Serial scans", { exact: true }).fill("000020\n000021");
+    assert.equal(await builder.getByLabel("Serial scans", { exact: true }).count(), 0);
+    const inlineQuantity = builder.getByLabel("Quantity for Order meter", { exact: true });
+    await inlineQuantity.fill("");
+    assert.equal(await builder.getByRole("button", { name: "Save draft", exact: true }).isDisabled(), true);
+    await spa(otherURL);
+    assert.equal(await warning.getByRole("button", { name: "Save draft", exact: true }).isDisabled(), true);
+    await choose("Stay");
+    assert.equal(await inlineQuantity.inputValue(), "");
+    for (const value of ["0", "1.5", "1000001"]) {
+      await inlineQuantity.fill(value);
+      assert.equal(await builder.getByRole("button", { name: "Save draft", exact: true }).isDisabled(), true);
+    }
+    await inlineQuantity.fill("3");
     await builder.getByRole("button", { name: "Save draft", exact: true }).click();
     await saved();
     assert.equal((await state()).orders.find(o => o.id === "ORDER-PO").status, "draft");
+    assert.equal((await state()).orders.find(o => o.id === "ORDER-PO").lines[0].quantity, 3);
+    assert.deepEqual((await state()).orders.find(o => o.id === "ORDER-PO").lines[0].serials, []);
     await select(3, "ORDER-BULK · Order bulk");
     await builder.getByRole("button", { name: "Clear unfinished line", exact: true }).click();
     await unload(false);
@@ -270,6 +284,30 @@ async function main() {
     assert.equal((await state()).counts.at(-1).draft.reason, "Count and order correction");
     assert.deepEqual((await state()).stock, originalStock, "Draft saves, discards and navigation must not change stock");
 
+    // Transfer drafts also plan mixed products without physical identities and
+    // keep inline quantities through save/reopen.
+    await page.goto(inventoryURL);
+    await ordersTab();
+    await edit("ORDER-TR");
+    await builder.getByLabel("Quantity for Order bulk", { exact: true }).fill("5");
+    await select(3, "ORDER-SERIAL · Order meter");
+    await builder.getByRole("button", { name: "Add line", exact: true }).click();
+    assert.equal(await builder.getByLabel("Serial scans", { exact: true }).count(), 0);
+    await builder.getByLabel("Quantity for Order meter", { exact: true }).fill("2");
+    await builder.getByRole("button", { name: "Save draft", exact: true }).click();
+    await saved();
+    const plannedTransfer = (await state()).orders.find(o => o.id === "ORDER-TR");
+    assert.deepEqual(plannedTransfer.lines.map(l => [l.quantity, l.serials]), [[5, []], [2, []]]);
+    await edit("ORDER-TR");
+    assert.equal(await builder.getByLabel("Quantity for Order bulk", { exact: true }).inputValue(), "5");
+    assert.equal(await builder.getByLabel("Quantity for Order meter", { exact: true }).inputValue(), "2");
+    await fs.mkdir("generated-artifacts/inventory", { recursive: true });
+    await builder.screenshot({ path: "generated-artifacts/inventory/order-lines-desktop.jpg" });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await builder.screenshot({ path: "generated-artifacts/inventory/order-lines-mobile.jpg" });
+    await page.setViewportSize({ width: 1280, height: 900 });
+    assert.deepEqual((await state()).stock, originalStock);
+
     // Real PO lifecycle controls: un-release, edit/add a product, re-release,
     // reject receipt-backed reopening, clear with confirmation and restore.
     await command("order", order("ORDER-AMEND", "purchase"));
@@ -313,7 +351,15 @@ async function main() {
     assert.equal(await amended.count(), 0, "cleared state persists after reloading");
     await page.getByRole("checkbox", { name: "Show cleared purchase orders", exact: true }).check();
     await amended.getByRole("button", { name: "Restore", exact: true }).waitFor();
-    assert.equal((await context.request.get(`${endpoint}/print/order/ORDER-AMEND`)).status(), 200);
+    const printOrder = await context.request.get(`${endpoint}/print/order/ORDER-AMEND`);
+    assert.equal(printOrder.status(), 200);
+    assert.match(await printOrder.text(), /Order ID \/ reference: ORDER-AMEND/);
+    const orderReceipt = postedReceipts.find(receipt => receipt.reference === "ORDER-AMEND");
+    const printReceipt = await context.request.get(`${endpoint}/print/receipt/${orderReceipt.id}`);
+    assert.equal(printReceipt.status(), 200);
+    const receiptHTML = await printReceipt.text();
+    assert.match(receiptHTML, /Order ID \/ reference: ORDER-AMEND/);
+    assert.ok(receiptHTML.includes(`Receipt ID: ${orderReceipt.id}`));
     await fs.mkdir("generated-artifacts/inventory", { recursive: true });
     await page.screenshot({ path: "generated-artifacts/inventory/purchase-order-controls.jpg", fullPage: true });
     await amended.getByRole("button", { name: "Restore", exact: true }).click();
@@ -378,8 +424,44 @@ async function main() {
         assert.equal(res.status(), 403);
       } finally { await viewer.close(); }
     }
+    // Serial identities are still required and captured on actual transfer
+    // dispatch, then carried to arrival and its printed receipt.
+    await command("order", { ...order("ORDER-SERIAL-SUPPLY", "purchase"),
+      lines: [{ itemId: "order-serial", quantity: 2 }] });
+    await command("release", { orderId: "ORDER-SERIAL-SUPPLY" });
+    await command("receive", { orderId: "ORDER-SERIAL-SUPPLY", lines: [
+      { itemId: "order-serial", quantity: 2, serials: ["000701", "000702"] },
+    ] });
+    await command("order", { ...order("ORDER-SERIAL-MOVE", "transfer"),
+      lines: [{ itemId: "order-serial", quantity: 2 }, { itemId: "order-bulk", quantity: 1 }] });
+    await command("release", { orderId: "ORDER-SERIAL-MOVE" });
+    await page.goto(inventoryURL);
+    await ordersTab();
+    await poRow("ORDER-SERIAL-MOVE").getByRole("button", { name: "Dispatch", exact: true }).click();
+    const dispatchDialog = page.getByRole("dialog", { name: "Dispatch transfer", exact: true });
+    assert.equal(await dispatchDialog.getByLabel("Serial scans", { exact: true }).inputValue(), "");
+    await dispatchDialog.getByLabel("Serial scans", { exact: true }).fill("000701\n000702");
+    await dispatchDialog.getByRole("button", { name: "Review movement", exact: true }).click();
+    await dispatchDialog.getByRole("button", { name: "Post movement", exact: true }).click();
+    await dispatchDialog.waitFor({ state: "hidden" });
+    await poRow("ORDER-SERIAL-MOVE").getByRole("button", { name: "Accept arrival", exact: true }).click();
+    const arrivalDialog = page.getByRole("dialog", { name: "Accept transfer arrival", exact: true });
+    assert.equal(await arrivalDialog.getByLabel("Serial scans", { exact: true }).inputValue(), "000701\n000702");
+    await arrivalDialog.getByRole("button", { name: "Review movement", exact: true }).click();
+    await arrivalDialog.getByRole("button", { name: "Post movement", exact: true }).click();
+    await arrivalDialog.waitFor({ state: "hidden" });
+    const delivered = await state();
+    assert.equal(delivered.orders.find(o => o.id === "ORDER-SERIAL-MOVE").status, "completed");
+    assert.deepEqual(delivered.stock.find(b => b.warehouseId === "order-van" && b.itemId === "order-serial").serials, ["000701", "000702"]);
+    for (const receipt of delivered.receipts.filter(r => r.reference === "ORDER-SERIAL-MOVE")) {
+      const printed = await context.request.get(`${endpoint}/print/receipt/${receipt.id}`);
+      assert.equal(printed.status(), 200);
+      const html = await printed.text();
+      assert.match(html, /Order ID \/ reference: ORDER-SERIAL-MOVE/);
+      assert.ok(html.includes(`Receipt ID: ${receipt.id}`));
+    }
     assert.deepEqual(errors, []);
-    console.log("PO un-release/edit/add/re-release, receipt locking, clear/restore/reload/print, retained stock/receipts and normal-role permission gates passed. Order warning/navigation regressions passed.");
+    console.log("Quantity-only PO/transfer drafts, inline quantity validation/save/reopen, operation-time serial dispatch/acceptance, order/receipt references and PO lifecycle/permission/navigation regressions passed.");
   } finally {
     try {
       if (context && otherProject) assert.ok([200, 204].includes((await context.request.delete(`/api/projects/${otherProject}`)).status()));

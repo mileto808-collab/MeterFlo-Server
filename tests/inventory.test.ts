@@ -90,6 +90,36 @@ test("clearing cancelled POs preserves stock, receipts and IDs and supports rest
   }
 });
 
+test("serialized transfer drafts plan quantities without scans; dispatch and arrival validate actual identities", () => {
+  let s = setup();
+  const before = structuredClone(s.stock);
+  const order = { id: "quantity-transfer", type: "transfer", sourceId: "main", destinationId: "van",
+    lines: [{ itemId: "meter", quantity: 2 }, { itemId: "seal", quantity: 3 }] };
+  s = post(s, "order", order);
+  s = post(s, "order", { ...order, lines: [{ itemId: "meter", quantity: 3 }, { itemId: "seal", quantity: 5 }] });
+  assert.deepEqual(s.stock, before, "inline planning quantity changes must not move stock");
+  assert.deepEqual(s.orders.find(o => o.id === order.id)?.lines.map(l => l.serials), [[], []]);
+  for (const quantity of [0, -1, 1.5, 1000001]) assert.throws(() => post(s, "order", {
+    ...order, lines: [{ itemId: "meter", quantity }],
+  }));
+  s = post(s, "release", { orderId: order.id });
+  assert.throws(() => post(s, "dispatch", { orderId: order.id, lines: [{ itemId: "meter", quantity: 1 }] }), /match scanned serials/);
+  assert.throws(() => post(s, "dispatch", { orderId: order.id, lines: [{ itemId: "meter", quantity: 1, serials: ["FOREIGN"] }] }), /unavailable/);
+  assert.throws(() => post(s, "accept", { orderId: order.id, lines: [{ itemId: "meter", quantity: 1, serials: ["00001"] }] }), /exceeds remaining/);
+  s = post(s, "dispatch", { orderId: order.id, lines: [
+    { itemId: "meter", quantity: 2, serials: ["00001", "00002"] }, { itemId: "seal", quantity: 2 },
+  ] });
+  assert.throws(() => post(s, "accept", { orderId: order.id, lines: [{ itemId: "meter", quantity: 1, serials: ["00003"] }] }), /Unexpected/);
+  const receiptCount = s.receipts.length;
+  s = post(s, "accept", { orderId: order.id, lines: [
+    { itemId: "meter", quantity: 1, serials: ["00001"] }, { itemId: "seal", quantity: 2 },
+  ] });
+  assert.equal(s.receipts.length, receiptCount + 1);
+  assert.equal(s.receipts.at(-1)?.reference, order.id, "movement receipt links back to the unique order reference");
+  assert.deepEqual(s.stock.find(b => b.warehouseId === "van" && b.itemId === "meter")?.serials, ["00001"]);
+  assert.throws(() => post(s, "accept", { orderId: order.id, lines: [{ itemId: "meter", quantity: 1, serials: ["00001"] }] }), /previously received/);
+});
+
 test("count drafts preserve unfinished input, isolate editors and never change the stock snapshot", () => {
   let s = setup();
   s = post(s, "countStart", { id: "draft-count", warehouseId: "main" });

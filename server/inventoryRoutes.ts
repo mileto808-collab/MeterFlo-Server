@@ -30,10 +30,14 @@ export function inventoryPrint(kind: string, record: any, state: InventoryState,
   const lineList = record.lines || record.snapshot?.map((b: any) => ({ ...b, quantity: b.quantity })) || [];
   const warehouse = (id: string) => state.warehouses.find(w => w.id === id)?.name || id || "";
   const reference = kind === "count" ? inventoryCountReference(state.counts, record.id) : record.id;
+  const orderReference = kind === "order" ? record.id :
+    kind === "receipt" ? state.orders.find(order => order.id === record.reference)?.id : undefined;
   return `<!doctype html><html><head><meta charset="utf-8"><title>${escape(kind)} ${escape(reference)}</title><style>
     body{font:14px Arial;margin:30px;color:#111}table{border-collapse:collapse;width:100%;margin-top:20px}th,td{border:1px solid #bbb;padding:8px;text-align:left}button{padding:10px}@media print{button{display:none}}</style></head>
     <body><button onclick="window.print()">Print / Save PDF</button><h1>${escape(project)} — ${escape(kind)}</h1>
-    <p>Reference: ${escape(reference)} · Status: ${escape(record.status || record.action)}</p>
+    <p>${kind === "receipt" ? "Receipt ID" : "Reference"}: ${escape(reference)} · Status: ${escape(record.status || record.action)}</p>
+    ${orderReference ? `<p><strong>Order ID / reference: ${escape(orderReference)}</strong></p>` :
+      kind === "receipt" && record.reference ? `<p>Operation reference: ${escape(record.reference)}</p>` : ""}
     <p>Date: ${escape(record.createdAt || record.occurredAt)} · Actor: ${escape(record.actor)}</p>
     <p>From: ${escape(warehouse(record.sourceId))} · To: ${escape(warehouse(record.destinationId || record.warehouseId))}</p>
     <p>Vendor: ${escape(state.vendors.find(v => v.id === record.vendorId)?.name)} · ${escape(record.reason || record.notes)}</p>

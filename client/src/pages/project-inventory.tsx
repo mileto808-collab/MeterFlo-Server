@@ -70,12 +70,12 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [orderVendor, setOrderVendor] = useState("");
   const [orderNotes, setOrderNotes] = useState("");
   const [orderLines, setOrderLines] = useState<StockLine[]>([]);
+  const [orderLineQuantities, setOrderLineQuantities] = useState<Record<string, string>>({});
   // The order's unadded line is independent of the movement scanner.
   const [orderLineItem, setOrderLineItem] = useState("");
   const [orderLineQty, setOrderLineQty] = useState("1");
-  const [orderLineSerials, setOrderLineSerials] = useState("");
   const orderValues = { orderType, orderId, orderDestination, orderSource, orderVendor, orderNotes, orderLines,
-    orderLineItem, orderLineQty, orderLineSerials };
+    orderLineQuantities, orderLineItem, orderLineQty };
   const [savedOrderValues, setSavedOrderValues] = useState(() => JSON.stringify(orderValues));
   const orderDirty = JSON.stringify(orderValues) !== savedOrderValues;
   const orderSaving = useRef(false);
@@ -235,22 +235,40 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const addLine = (destination: "order" | "operation") => {
     const item = items.find(value => value.id === (destination === "order" ? orderLineItem : lineItem));
     const quantity = Number(destination === "order" ? orderLineQty : lineQty);
-    const serials = item?.tracking === "serialized" ? csv(destination === "order" ? orderLineSerials : lineSerials) : [];
-    const requiresSerials = item?.tracking === "serialized" && !(destination === "order" && orderType === "purchase");
-    if (!item || !Number.isInteger(quantity) || quantity < 1 || (requiresSerials && serials.length !== quantity)) {
-      toast({ title: "Check scanned quantity", description: item?.tracking === "serialized" ? "Scan exactly one distinct serial for each unit." : "Enter a positive whole quantity.", variant: "destructive" }); return;
+    const serials = destination === "order" ? [] : item?.tracking === "serialized" ? csv(lineSerials) : [];
+    if (!item || !Number.isInteger(quantity) || quantity < 1 || quantity > 1000000 ||
+      (destination === "operation" && item.tracking === "serialized" && serials.length !== quantity)) {
+      toast({ title: destination === "order" ? "Check draft quantity" : "Check scanned quantity",
+        description: destination === "operation" && item?.tracking === "serialized" ? "Scan exactly one distinct serial for each unit." : "Enter a whole quantity from 1 to 1,000,000.", variant: "destructive" }); return;
+    }
+    const existingDraftLine = destination === "order" && orderLines.find(line => line.itemId === item.id);
+    if (existingDraftLine && !orderQuantitiesValid) {
+      toast({ title: "Fix draft quantities first", description: "Every added line needs a whole quantity from 1 to 1,000,000.", variant: "destructive" });
+      return;
     }
     const update = destination === "order" ? setOrderLines : setOperationLines;
     update(current => {
       const match = current.findIndex(line => line.itemId === item.id);
       return match < 0 ? [...current, { itemId: item.id, quantity, serials }] :
-        current.map((line, index) => index === match ? { ...line, quantity: line.quantity + quantity, serials: [...line.serials, ...serials] } : line);
+        current.map((line, index) => index === match ? { ...line,
+          quantity: (destination === "order" ? Number(orderLineQuantities[line.itemId] ?? line.quantity) : line.quantity) + quantity,
+          serials: [...line.serials, ...serials] } : line);
     });
-    if (destination === "order") { setOrderLineItem(""); setOrderLineQty("1"); setOrderLineSerials(""); }
+    if (destination === "order") setOrderLineQuantities(current => {
+      const next = { ...current };
+      delete next[item.id];
+      return next;
+    });
+    if (destination === "order") { setOrderLineItem(""); setOrderLineQty("1"); }
     else { setLineItem(""); setLineQty("1"); setLineSerials(""); }
   };
-  const orderHasPendingLine = !!orderLineItem || orderLineQty !== "1" || !!orderLineSerials;
-  const canSaveOrder = !!orderDestination && !!orderLines.length && !orderHasPendingLine &&
+  const orderHasPendingLine = !!orderLineItem || orderLineQty !== "1";
+  const orderQuantitiesValid = orderLines.every(line => {
+    const value = orderLineQuantities[line.itemId] ?? String(line.quantity);
+    const quantity = Number(value);
+    return value.trim() !== "" && Number.isInteger(quantity) && quantity >= 1 && quantity <= 1000000;
+  });
+  const canSaveOrder = !!orderDestination && !!orderLines.length && orderQuantitiesValid && !orderHasPendingLine &&
     (orderType === "purchase" ? !!orderVendor && can("inventory.purchase") : !!orderSource && can("inventory.transfer"));
   const saveOrderDraft = (afterSave?: () => void) => {
     if (!canSaveOrder || command.isPending || orderSaving.current) return;
@@ -259,16 +277,16 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     const id = orderId.trim() || freshId();
     command.mutate({ action: "order", data: { id, type: orderType, destinationId: orderDestination,
       sourceId: orderType === "transfer" ? orderSource : null, vendorId: orderType === "purchase" ? orderVendor : null,
-      lines: orderLines.map(line => orderType === "purchase" ? { ...line, serials: [] } : line), notes: orderNotes } }, {
+      lines: orderLines.map(line => ({ ...line, quantity: Number(orderLineQuantities[line.itemId] ?? line.quantity), serials: [] })), notes: orderNotes } }, {
       onSuccess: result => {
         const saved = (result.state as InventoryState | undefined)?.orders.find(order => order.id === id);
         if (!saved) {
           setOrderMessage("Draft save could not be confirmed. Your entries were kept.");
           return;
         }
-        setOrderLines([]); setOrderId(""); setOrderNotes("");
-        setSavedOrderValues(JSON.stringify({ ...orderValues, orderLines: [], orderId: "", orderNotes: "" }));
-        setOrderMessage("Order draft saved. Stock has not changed.");
+        setOrderLines([]); setOrderLineQuantities({}); setOrderId(""); setOrderNotes("");
+        setSavedOrderValues(JSON.stringify({ ...orderValues, orderLines: [], orderLineQuantities: {}, orderId: "", orderNotes: "" }));
+        setOrderMessage(`Order ID ${saved.id} saved as a draft. Stock has not changed.`);
         orderSaving.current = false;
         if (afterSave) {
           setPendingOrderTransition(null);
@@ -283,11 +301,11 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     setOrderId(order.id); setOrderType(order.type); setOrderDestination(order.destinationId);
     setOrderSource(order.sourceId || ""); setOrderVendor(order.vendorId || "");
     setOrderLines(order.lines); setOrderNotes(order.notes);
-    setOrderLineItem(""); setOrderLineQty("1"); setOrderLineSerials("");
+    setOrderLineItem(""); setOrderLineQty("1"); setOrderLineQuantities({});
     setOrderMessage("");
     setSavedOrderValues(JSON.stringify({ orderType: order.type, orderId: order.id,
       orderDestination: order.destinationId, orderSource: order.sourceId || "", orderVendor: order.vendorId || "",
-      orderNotes: order.notes, orderLines: order.lines, orderLineItem: "", orderLineQty: "1", orderLineSerials: "" }));
+      orderNotes: order.notes, orderLines: order.lines, orderLineQuantities: {}, orderLineItem: "", orderLineQty: "1" }));
     window.scrollTo({ top: 0, behavior: "smooth" });
   });
   const openOrderOperation = (order: InventoryOrder, action: "receive" | "dispatch" | "accept") => {
@@ -510,12 +528,13 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       </TabsContent>
 
       <TabsContent value="orders" className="space-y-4">
-        {can("inventory.purchase") || can("inventory.transfer") ? <Card><CardHeader><CardTitle>Build an order draft</CardTitle><CardDescription>Save draft, then release it to enable receiving or field transfer.</CardDescription></CardHeader><CardContent><fieldset disabled={command.isPending} className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-4"><div className="space-y-1"><Label>Order type</Label><Select value={orderType} onValueChange={value => setOrderType(value as "purchase" | "transfer")}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="purchase">Purchase</SelectItem><SelectItem value="transfer">Transfer</SelectItem></SelectContent></Select></div><div className="space-y-1"><Label>Destination</Label><Select value={orderDestination} onValueChange={setOrderDestination}><SelectTrigger><SelectValue placeholder="Choose location" /></SelectTrigger><SelectContent>{activeWarehouses.map(w => <SelectItem value={w.id} key={w.id}>{w.code} · {w.name}</SelectItem>)}</SelectContent></Select></div>{orderType === "purchase" ? <div className="space-y-1"><Label>Vendor</Label><Select value={orderVendor} onValueChange={setOrderVendor}><SelectTrigger><SelectValue placeholder="Choose vendor" /></SelectTrigger><SelectContent>{vendors.filter(v => v.active).map(v => <SelectItem value={v.id} key={v.id}>{v.name}</SelectItem>)}</SelectContent></Select></div> : <div className="space-y-1"><Label>Source</Label><Select value={orderSource} onValueChange={setOrderSource}><SelectTrigger><SelectValue placeholder="Choose location" /></SelectTrigger><SelectContent>{activeWarehouses.filter(w => w.id !== orderDestination).map(w => <SelectItem value={w.id} key={w.id}>{w.code} · {w.name}</SelectItem>)}</SelectContent></Select></div>}<div className="space-y-1"><Label>Draft reference</Label><Input value={orderId} onChange={event => setOrderId(event.target.value)} placeholder="e.g. PO-2025-014" /></div></div>
-          <OrderLineEditor items={items} lineItem={orderLineItem} setLineItem={setOrderLineItem} lineQty={orderLineQty} setLineQty={setOrderLineQty} lineSerials={orderLineSerials} setLineSerials={setOrderLineSerials} lines={orderLines} add={() => addLine("order")} remove={index => setOrderLines(value => value.filter((_, i) => i !== index))} updateSerials={(index, serials) => setOrderLines(value => value.map((line, i) => i === index ? { ...line, serials } : line))} />
+        {can("inventory.purchase") || can("inventory.transfer") ? <Card><CardHeader><CardTitle>Build an order draft</CardTitle><CardDescription>Plan items and quantities now. Record serials later during receiving or transfer dispatch.</CardDescription></CardHeader><CardContent><fieldset disabled={command.isPending} className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-4"><div className="space-y-1"><Label>Order type</Label><Select value={orderType} onValueChange={value => setOrderType(value as "purchase" | "transfer")}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="purchase">Purchase</SelectItem><SelectItem value="transfer">Transfer</SelectItem></SelectContent></Select></div><div className="space-y-1"><Label>Destination</Label><Select value={orderDestination} onValueChange={setOrderDestination}><SelectTrigger><SelectValue placeholder="Choose location" /></SelectTrigger><SelectContent>{activeWarehouses.map(w => <SelectItem value={w.id} key={w.id}>{w.code} · {w.name}</SelectItem>)}</SelectContent></Select></div>{orderType === "purchase" ? <div className="space-y-1"><Label>Vendor</Label><Select value={orderVendor} onValueChange={setOrderVendor}><SelectTrigger><SelectValue placeholder="Choose vendor" /></SelectTrigger><SelectContent>{vendors.filter(v => v.active).map(v => <SelectItem value={v.id} key={v.id}>{v.name}</SelectItem>)}</SelectContent></Select></div> : <div className="space-y-1"><Label>Source</Label><Select value={orderSource} onValueChange={setOrderSource}><SelectTrigger><SelectValue placeholder="Choose location" /></SelectTrigger><SelectContent>{activeWarehouses.filter(w => w.id !== orderDestination).map(w => <SelectItem value={w.id} key={w.id}>{w.code} · {w.name}</SelectItem>)}</SelectContent></Select></div>}<div className="space-y-1"><Label htmlFor="order-id-reference">Order ID / reference</Label><Input id="order-id-reference" maxLength={100} aria-describedby="order-id-reference-help" value={orderId} onChange={event => setOrderId(event.target.value)} placeholder="Optional reference" /><p id="order-id-reference-help" className="text-xs text-muted-foreground">Leave blank to generate an Order ID. Existing IDs remain visible here while editing.</p></div></div>
+          {orderId && orderItems.some(order => order.id === orderId) && <p className="rounded-md border bg-muted/30 px-3 py-2 text-sm font-medium" role="status">Saved Order ID: <span className="font-mono">{orderId}</span></p>}
+          <OrderLineEditor items={items} draftMode lineItem={orderLineItem} setLineItem={setOrderLineItem} lineQty={orderLineQty} setLineQty={setOrderLineQty} lines={orderLines} quantityValues={orderLineQuantities} setQuantityValue={(itemId, value) => setOrderLineQuantities(current => { const next = { ...current }; const original = orderLines.find(line => line.itemId === itemId); if (original && value === String(original.quantity)) delete next[itemId]; else next[itemId] = value; return next; })} add={() => addLine("order")} remove={index => { const line = orderLines[index]; setOrderLines(value => value.filter((_, i) => i !== index)); if (line) setOrderLineQuantities(current => { const next = { ...current }; delete next[line.itemId]; return next; }); }} />
           <Textarea aria-label="Order notes" placeholder="Notes for purchasing or the receiving crew" value={orderNotes} onChange={event => setOrderNotes(event.target.value)} />
           {orderDirty && <p role="status" className="text-sm text-amber-700 dark:text-amber-400">Unsaved order changes. Save the draft to keep your entries.</p>}
-          {orderHasPendingLine && <div className="flex flex-wrap items-center gap-2"><p className="text-sm">Add or clear the unfinished line before saving.</p><Button type="button" variant="outline" size="sm" onClick={() => { setOrderLineItem(""); setOrderLineQty("1"); setOrderLineSerials(""); }}>Clear unfinished line</Button></div>}
+          {orderHasPendingLine && <div className="flex flex-wrap items-center gap-2"><p className="text-sm">Add or clear the unfinished line before saving.</p><Button type="button" variant="outline" size="sm" onClick={() => { setOrderLineItem(""); setOrderLineQty("1"); }}>Clear unfinished line</Button></div>}
           {orderMessage && <p role="status" className="text-sm">{orderMessage}</p>}
           <Button disabled={command.isPending || !canSaveOrder} onClick={() => saveOrderDraft()}><Plus className="mr-2 h-4 w-4" />Save draft</Button>
         </fieldset></CardContent></Card> : null}
@@ -631,7 +650,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     </DialogContent></Dialog>
 
     <Dialog open={!!operationOrder} onOpenChange={open => !open && setOperationOrder(null)}><DialogContent className="sm:max-w-xl"><DialogHeader><DialogTitle>{operation === "receive" ? "Receive purchase" : operation === "dispatch" ? "Dispatch transfer" : "Accept transfer arrival"}</DialogTitle><DialogDescription>Scan serial identity and post the confirmed quantities for order {operationOrder?.id}.</DialogDescription></DialogHeader>
-      {operationReview ? <div className="space-y-3"><Alert><Package className="h-4 w-4" /><AlertTitle>Review movement before posting</AlertTitle><AlertDescription>Verify each quantity and scanned meter identity. Posting updates the stock ledger immediately.</AlertDescription></Alert>{operationLines.map(line => <div key={line.itemId} className="rounded-md border p-3"><div className="font-medium">{items.find(item => item.id === line.itemId)?.name ?? line.itemId} · {line.quantity} {items.find(item => item.id === line.itemId)?.unit ?? "units"}</div><div className="mt-1 break-all font-mono text-xs text-muted-foreground">{line.serials.join(", ") || "Quantity tracked"}</div></div>)}{operationLines.length === 0 && <Empty title="No movement lines" description="Return to scanning and add at least one item." />}</div> : <div className="space-y-3"><OrderLineEditor items={items} lineItem={lineItem} setLineItem={setLineItem} lineQty={lineQty} setLineQty={setLineQty} lineSerials={lineSerials} setLineSerials={setLineSerials} lines={operationLines} add={() => addLine("operation")} remove={index => setOperationLines(value => value.filter((_, i) => i !== index))} updateSerials={(index, serials) => setOperationLines(value => value.map((line, i) => i === index ? { ...line, serials } : line))} /><div className="space-y-1"><Label>Reason or receiving note</Label><Textarea value={operationReason} onChange={event => setOperationReason(event.target.value)} /></div></div>}
+        {operationReview ? <div className="space-y-3"><Alert><Package className="h-4 w-4" /><AlertTitle>Review movement before posting</AlertTitle><AlertDescription>Verify each quantity and scanned meter identity. Posting updates the stock ledger immediately.</AlertDescription></Alert>{operationLines.map(line => <div key={line.itemId} className="rounded-md border p-3"><div className="font-medium">{items.find(item => item.id === line.itemId)?.name ?? line.itemId} · {line.quantity} {items.find(item => item.id === line.itemId)?.unit ?? "units"}</div><div className="mt-1 break-all font-mono text-xs text-muted-foreground">{line.serials.join(", ") || "Quantity tracked"}</div></div>)}{operationLines.length === 0 && <Empty title="No movement lines" description="Return to scanning and add at least one item." />}</div> : <div className="space-y-3"><OrderLineEditor items={items} lineItem={lineItem} setLineItem={setLineItem} lineQty={lineQty} setLineQty={setLineQty} lineSerials={lineSerials} setLineSerials={setLineSerials} lines={operationLines} add={() => addLine("operation")} remove={index => setOperationLines(value => value.filter((_, i) => i !== index))} updateSerials={(index, serials) => setOperationLines(value => value.map((line, i) => i === index ? { ...line, serials } : line))} /><div className="space-y-1"><Label>Reason or receiving note</Label><Textarea value={operationReason} onChange={event => setOperationReason(event.target.value)} /></div></div>}
       <DialogFooter>{operationReview ? <><Button variant="outline" onClick={() => setOperationReview(false)}>Back to scans</Button><Button disabled={!operationLines.length || command.isPending || !can(operation === "dispatch" ? "inventory.transfer" : "inventory.receive")} onClick={() => { if (!operationOrder) return; command.mutate({ action: operation, data: { orderId: operationOrder.id, lines: operationLines, reason: operationReason } }, { onSuccess: () => setOperationOrder(null) }); }}>Post movement</Button></> : <><Button variant="outline" onClick={() => setOperationOrder(null)}>Cancel</Button><Button disabled={!operationLines.length} onClick={() => setOperationReview(true)}>Review movement</Button></>}</DialogFooter>
     </DialogContent></Dialog>
     {command.isPending && <div className="fixed bottom-4 right-4 flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm shadow-lg"><Loader2 className="h-4 w-4 animate-spin" />Posting inventory update</div>}
@@ -647,13 +666,28 @@ function Field({ label, value, set, type = "text", help, maxLength, required, mi
   const helpId = `${id}-help`;
   return <div className={`space-y-1.5 ${className ?? ""}`}><Label htmlFor={id}>{label}{required && <span aria-hidden="true" className="ml-1 text-destructive">*</span>}</Label><Input id={id} type={type} value={value} onChange={event => set(event.target.value)} aria-describedby={help ? helpId : undefined} required={required} maxLength={maxLength} min={min} step={step} /><div className="flex items-start justify-between gap-2">{help && <p id={helpId} className="text-xs leading-relaxed text-muted-foreground">{help}</p>}{maxLength && <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{value.length}/{maxLength}</span>}</div></div>;
 }
-function OrderLineEditor({ items, lineItem, setLineItem, lineQty, setLineQty, lineSerials, setLineSerials, lines, add, remove, updateSerials }: {
+function OrderLineEditor({ items, lineItem, setLineItem, lineQty, setLineQty, lineSerials, setLineSerials, lines, add, remove, updateSerials, draftMode = false, quantityValues, setQuantityValue }: {
   items: InventoryItem[]; lineItem: string; setLineItem: (id: string) => void; lineQty: string; setLineQty: (qty: string) => void;
-  lineSerials: string; setLineSerials: (serials: string) => void; lines: StockLine[]; add: () => void; remove: (index: number) => void; updateSerials: (index: number, serials: string[]) => void;
+  lineSerials?: string; setLineSerials?: (serials: string) => void; lines: StockLine[]; add: () => void; remove: (index: number) => void; updateSerials?: (index: number, serials: string[]) => void;
+  draftMode?: boolean; quantityValues?: Record<string, string>; setQuantityValue?: (itemId: string, value: string) => void;
 }) {
   const selected = items.find(item => item.id === lineItem);
-  return <div className="space-y-3 rounded-md border p-3"><div className="grid gap-2 sm:grid-cols-[1fr_110px_auto] sm:items-end"><div className="space-y-1"><Label>Item</Label><Select value={lineItem} onValueChange={setLineItem}><SelectTrigger><SelectValue placeholder="Select item" /></SelectTrigger><SelectContent>{items.filter(item => item.active).map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1"><Label>Quantity</Label><Input type="number" min="1" value={lineQty} onChange={event => setLineQty(event.target.value)} /></div><Button type="button" variant="outline" onClick={add}><Plus className="mr-1 h-4 w-4" />Add line</Button></div>
-    {selected?.tracking === "serialized" && <div className="space-y-1"><Label>Serial scans</Label><Textarea value={lineSerials} onChange={event => setLineSerials(event.target.value)} placeholder="One serial per line" /></div>}
-    {lines.map((line, index) => <div key={`${line.itemId}-${index}`} className="grid gap-2 border-t pt-2 sm:grid-cols-[1fr_auto] sm:items-end"><div><div className="text-sm">{items.find(item => item.id === line.itemId)?.name ?? line.itemId} × {line.quantity}</div>{items.find(item => item.id === line.itemId)?.tracking === "serialized" && <div className="mt-1 space-y-1"><Label htmlFor={`line-serial-${index}`}>Serial scans</Label><Textarea id={`line-serial-${index}`} value={line.serials.join("\n")} onChange={event => updateSerials(index, csv(event.target.value))} placeholder="One serial per line" /></div>}</div><Button type="button" size="sm" variant="ghost" onClick={() => remove(index)}>Remove</Button></div>)}
+  return <div className="space-y-3 rounded-md border p-3"><div className="grid gap-2 sm:grid-cols-[1fr_110px_auto] sm:items-end"><div className="space-y-1"><Label htmlFor={draftMode ? "draft-line-item" : "operation-line-item"}>Item</Label><Select value={lineItem} onValueChange={setLineItem}><SelectTrigger id={draftMode ? "draft-line-item" : "operation-line-item"}><SelectValue placeholder="Select item" /></SelectTrigger><SelectContent>{items.filter(item => item.active).map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1"><Label htmlFor={draftMode ? "draft-line-quantity" : "operation-line-quantity"}>Quantity</Label><Input id={draftMode ? "draft-line-quantity" : "operation-line-quantity"} type="number" min="1" max="1000000" step="1" value={lineQty} onChange={event => setLineQty(event.target.value)} /></div><Button type="button" variant="outline" onClick={add}><Plus className="mr-1 h-4 w-4" />Add line</Button></div>
+    {!draftMode && selected?.tracking === "serialized" && <div className="space-y-1"><Label htmlFor="operation-serial-scans">Serial scans</Label><Textarea id="operation-serial-scans" value={lineSerials ?? ""} onChange={event => setLineSerials?.(event.target.value)} placeholder="One serial per line" /></div>}
+    {lines.map((line, index) => {
+      const item = items.find(value => value.id === line.itemId);
+      const quantityValue = quantityValues?.[line.itemId] ?? String(line.quantity);
+      const quantity = Number(quantityValue);
+      const invalidQuantity = draftMode && (quantityValue.trim() === "" || !Number.isInteger(quantity) || quantity < 1 || quantity > 1000000);
+      const quantityId = `draft-line-quantity-${index}`;
+      const quantityHelpId = `${quantityId}-help`;
+      return <div key={`${line.itemId}-${index}`} className="grid gap-2 border-t pt-3 sm:grid-cols-[1fr_130px_auto] sm:items-end">
+        <div className="min-w-0"><div className="text-sm font-medium">{item?.name ?? line.itemId}</div><div className="font-mono text-xs text-muted-foreground">{item?.sku ?? line.itemId} · {item?.unit ?? "units"}</div>
+          {!draftMode && item?.tracking === "serialized" && <div className="mt-1 space-y-1"><Label htmlFor={`line-serial-${index}`}>Serial scans</Label><Textarea id={`line-serial-${index}`} value={line.serials.join("\n")} onChange={event => updateSerials?.(index, csv(event.target.value))} placeholder="One serial per line" /></div>}
+        </div>
+        {draftMode ? <div className="space-y-1"><Label htmlFor={quantityId}>Quantity for {item?.name ?? item?.sku ?? line.itemId}</Label><Input id={quantityId} aria-describedby={quantityHelpId} aria-invalid={invalidQuantity} type="number" min="1" max="1000000" step="1" value={quantityValue} onChange={event => setQuantityValue?.(line.itemId, event.target.value)} /><p id={quantityHelpId} className={`text-xs ${invalidQuantity ? "text-destructive" : "text-muted-foreground"}`}>{invalidQuantity ? "Enter a whole number from 1 to 1,000,000." : "Whole units, 1–1,000,000."}</p></div> : <div className="text-sm tabular-nums">{line.quantity} units</div>}
+        <Button type="button" size="sm" variant="ghost" onClick={() => remove(index)}>Remove</Button>
+      </div>;
+    })}
   </div>;
 }
