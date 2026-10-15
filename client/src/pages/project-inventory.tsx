@@ -13,6 +13,7 @@ import { inventoryCountReference } from "@shared/inventory-count-reference";
 import { COUNT_MAX_LINES, COUNT_PAGE_SIZE } from "@shared/inventory-count-limits";
 import { inventoryCountRows, inventoryCountLines } from "@/lib/inventory-count-form";
 import { inventoryResourceFailure, validateInventoryResource } from "@/lib/inventory-resource-save";
+import { orderSaveAttempt, type OrderSaveAttempt } from "@/lib/inventory-order-save";
 import { shipmentFingerprint, type ShipmentAction } from "@/lib/inventory-shipment-guidance";
 import { InventoryShipmentSession } from "@/components/inventory-shipment-session";
 import { InventoryShipmentDraftsPanel } from "@/components/inventory-shipment-drafts-panel";
@@ -90,6 +91,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [savedOrderValues, setSavedOrderValues] = useState(() => JSON.stringify(orderValues));
   const orderDirty = JSON.stringify(orderValues) !== savedOrderValues;
   const orderSaving = useRef(false);
+  const orderAttempt = useRef<OrderSaveAttempt | null>(null);
   const [orderMessage, setOrderMessage] = useState("");
   const [pendingOrderTransition, setPendingOrderTransition] = useState<(() => void) | null>(null);
   const [pendingMovementTransition, setPendingMovementTransition] = useState<(() => void) | null>(null);
@@ -301,17 +303,21 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     if (!canSaveOrder || command.isPending || orderSaving.current) return;
     orderSaving.current = true;
     setOrderMessage("");
-    const id = orderId.trim() || freshId();
-    command.mutate({ action: "order", data: { id, type: orderType, destinationId: orderDestination,
+    const payload = { type: orderType, destinationId: orderDestination,
       sourceId: orderType === "transfer" ? orderSource : null, vendorId: orderType === "purchase" ? orderVendor : null,
       lines: orderLines.map(line => ({ ...line, quantity: Number(orderLineQuantities[line.itemId] ?? line.quantity), serials: [] })), notes: orderNotes,
-      ...(replacementFor ? { replacementFor } : {}) } }, {
+      ...(replacementFor ? { replacementFor } : {}) };
+    const attempt = orderSaveAttempt(orderAttempt.current, base, orderId, payload, freshId);
+    orderAttempt.current = attempt;
+    const id = attempt.id;
+    command.mutate({ action: "order", data: { ...payload, id }, operationId: attempt.operationId }, {
       onSuccess: result => {
         const saved = (result.state as InventoryState | undefined)?.orders.find(order => order.id === id);
         if (!saved) {
           setOrderMessage("Draft save could not be confirmed. Your entries were kept.");
           return;
         }
+        orderAttempt.current = null;
         setOrderLines([]); setOrderLineQuantities({}); setOrderId(""); setOrderNotes(""); setReplacementFor("");
         setSavedOrderValues(JSON.stringify({ ...orderValues, orderLines: [], orderLineQuantities: {}, orderId: "", orderNotes: "", replacementFor: "" }));
         setOrderMessage(`Order ID ${saved.id} saved as a draft. Stock has not changed.`);
@@ -321,11 +327,12 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           completeSavedNavigation(afterSave);
         }
       },
-      onError: () => setOrderMessage("Order draft not saved. Your entries are still here; retry before leaving."),
+      onError: () => setOrderMessage("Order draft not saved or not confirmed. Your entries are still here; retry before leaving. An unchanged retry reuses the same order and request IDs."),
       onSettled: () => { orderSaving.current = false; },
     });
   };
   const editOrderDraft = (order: InventoryOrder) => requestOrderTransition(() => {
+    orderAttempt.current = null;
     setOrderId(order.id); setOrderType(order.type); setOrderDestination(order.destinationId);
     setOrderSource(order.sourceId || ""); setOrderVendor(order.vendorId || "");
     setReplacementFor(order.replacementFor ?? "");
@@ -377,6 +384,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       orderNotes: `Replacement for order ${order.id}`, replacementFor: order.id,
       orderLines: replacementLines, orderLineQuantities: {}, orderLineItem: "", orderLineQty: "1",
     };
+    orderAttempt.current = null;
     setOrderType(next.orderType); setOrderId(next.orderId); setOrderDestination(next.orderDestination);
     setOrderSource(next.orderSource); setOrderVendor(next.orderVendor); setOrderNotes(next.orderNotes);
     setReplacementFor(next.replacementFor); setOrderLines(next.orderLines); setOrderLineQuantities({});

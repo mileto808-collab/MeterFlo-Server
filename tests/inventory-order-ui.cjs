@@ -69,6 +69,71 @@ async function main() {
       await unload(false);
     };
 
+    // A real commit with a lost HTTP response must not create a second unnamed
+    // PO/transfer on retry, or reuse that identity for a later intentional order.
+    await page.goto(inventoryURL);
+    await ordersTab();
+    for (const type of ["purchase", "transfer"]) {
+      await select(0, type === "purchase" ? "Purchase" : "Transfer");
+      await select(1, type === "purchase" ? "ORDER-MAIN · order-main" : "ORDER-VAN · order-van");
+      await select(2, type === "purchase" ? "Order supplier" : "ORDER-MAIN · order-main");
+      const addRetryLine = async () => {
+        await select(3, "ORDER-BULK · Order bulk");
+        await builder.getByRole("button", { name: "Add line", exact: true }).click();
+      };
+      for (const editAfterLoss of [false, true]) {
+        await addRetryLine();
+        await notes.fill(`${type} unknown response ${editAfterLoss}`);
+        assert.equal(await reference.inputValue(), "");
+        const before = await state();
+        let lost;
+        const loseCommittedResponse = async route => {
+          if (route.request().postDataJSON()?.action !== "order") return route.continue();
+          lost = route.request().postDataJSON();
+          const response = await route.fetch();
+          assert.equal(response.status(), 200);
+          await route.abort("failed");
+        };
+        await page.route(`**${endpoint}/commands`, loseCommittedResponse);
+        await builder.getByRole("button", { name: "Save draft", exact: true }).click();
+        await page.getByText(/Order draft not saved/).waitFor();
+        await page.unroute(`**${endpoint}/commands`, loseCommittedResponse);
+        const committed = await state();
+        assert.equal(committed.orders.length, before.orders.length + 1);
+        assert.ok(committed.orders.some(o => o.id === lost.data.id));
+        assert.equal(await notes.inputValue(), `${type} unknown response ${editAfterLoss}`);
+        await unload(true);
+        if (editAfterLoss) await builder.getByLabel("Quantity for Order bulk", { exact: true }).fill("3");
+        const retryIndex = posted.length;
+        await builder.getByRole("button", { name: "Save draft", exact: true }).click();
+        await saved();
+        const retried = posted.slice(retryIndex).find(command => command.action === "order");
+        const after = await state();
+        assert.equal(retried.data.id, lost.data.id);
+        assert.equal(after.orders.length, committed.orders.length, "retry must not create a second draft");
+        assert.equal(after.orders.find(o => o.id === lost.data.id).lines[0].quantity, editAfterLoss ? 3 : 1);
+        if (editAfterLoss) assert.notEqual(retried.operationId, lost.operationId);
+        else {
+          assert.deepEqual(retried, lost, "unchanged retry sends the exact original command");
+          assert.equal(after.revision, committed.revision, "idempotent replay makes no second ledger write");
+        }
+        assert.deepEqual(after.stock, before.stock);
+        assert.deepEqual(after.allocations, before.allocations);
+        assert.deepEqual(after.receipts, before.receipts);
+        // Same data after confirmation is a deliberate new order, not a retry.
+        await addRetryLine();
+        await notes.fill(`${type} unknown response ${editAfterLoss}`);
+        if (editAfterLoss) await builder.getByLabel("Quantity for Order bulk", { exact: true }).fill("3");
+        const nextIndex = posted.length;
+        await builder.getByRole("button", { name: "Save draft", exact: true }).click();
+        await saved();
+        const next = posted.slice(nextIndex).find(command => command.action === "order");
+        assert.notEqual(next.data.id, lost.data.id);
+        assert.notEqual(next.operationId, lost.operationId);
+        assert.equal((await state()).orders.length, after.orders.length + 1);
+      }
+    }
+
     // Defaults and fully reverted changes are clean. Header-only and unadded
     // line edits, including invalid quantities and serial text, are not.
     await page.goto("/projects");

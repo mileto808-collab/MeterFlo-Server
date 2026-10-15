@@ -114,6 +114,8 @@ Un-release, clear and restore are recorded as `inventory.unrelease`, `inventory.
 
 **Order ID / reference:** every saved PO or transfer has a unique identifier within its project, stored as `id`. Enter your business reference (for example `PO-2026-014` or `TR-2026-008`) or leave the reference blank for an automatically generated UUID. This is the existing order identity, not a separate supplier reference or a globally unique number across customer instances. The saved ID is shown in the order list and save confirmation, and while editing. Printed orders and receiving/dispatch/acceptance receipts show the **Order ID / reference**. Each movement receipt also retains its own separate **Receipt ID**, so multiple partial receipts can be traced to one order.
 
+**Retrying a draft save:** if a save fails or its response is lost, keep the editor open and click **Save draft** again. An unchanged retry reuses the same order and request IDs, even when the reference was blank, so a committed save is confirmed rather than duplicated. Correcting quantities or notes before retrying keeps that order ID but uses a new request to update the draft. After a confirmed save, entering another order creates a new identity. This retry protection belongs to the current open editor; it is not browser-restart recovery. After restarting or intentionally leaving, check the order list before recreating an unconfirmed order. Saving or retrying a draft does not reserve, receive or transfer stock.
+
 Receiving and transfer movement dialogs use the guided scanner described below, not the catalog picker used when drafting an order. Other inventory editors may still accept newline/comma/semicolon-separated lists.
 
 ### Guided receiving and transfer scanning

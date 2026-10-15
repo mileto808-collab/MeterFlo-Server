@@ -26,3 +26,16 @@ Use the same recursive structural canonicalization for checkpoint confirmation a
 **Why:** Server schema parsing can reorder properties inside captured rows without changing their values. Comparing raw JSON strings, or sorting only outer keys, can misclassify a successfully saved checkpoint as a conflicting save after its response is lost.
 
 **How to apply:** Compare nested values rather than object insertion order on save recovery, resume, and baseline reset. A genuine conflicting capture must remain visible locally until the operator explicitly replaces or discards it.
+
+For order-draft retries, distinguish the business order identity from the
+command identity: an unknown outcome retains both for an unchanged retry;
+editing that same draft retains its order identity but requires a new command.
+After confirmed completion, a deliberately new order needs both new identities.
+
+**Why:** Retaining only the command ID cannot prevent duplicates if each retry
+also generates a different unnamed order ID. Reusing a command for edited data
+instead violates server replay checks or confirms an obsolete edit.
+
+**How to apply:** Keep this protection scoped to the current editor and project,
+and distinguish it from durable shipment checkpoints. Do not promise
+browser-restart recovery for unsaved purchase/transfer order drafts.
