@@ -8,3 +8,9 @@ Verify the width of the actual content inside a scroll container, not just the p
 **Why:** A documentation page passed a phone page-width assertion while its scroll area's intrinsic table layout expanded the article beyond the viewport and clipped prose and columns. Hidden overflow made the outer page appear correctly sized.
 
 **How to apply:** When verifying documentation, long tables, or nested scroll areas, check both article/content width and outer-page width. Radix ScrollArea's inner display-table wrapper can propagate intrinsic widths; constrain that layout locally rather than changing every shared scroll area.
+
+Keep persistent page controls outside a bounded content scroller when an ancestor's overflow prevents CSS sticky from following the actual scrolling surface.
+
+**Why:** Inventory's sticky styling passed a static visual check but scrolled off-screen in the authenticated layout; its overflow ancestor was not the surface the visitor was scrolling.
+
+**How to apply:** Verify that real content scrolls and controls retain their viewport position on desktop and phone. Check the scrolled screenshot for content leaking above or behind the header, not just its bounding box.

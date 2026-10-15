@@ -5,6 +5,10 @@ Inventory is optional for each project. An administrator enables **Project inven
 See [INVENTORY_VOLUME.md](INVENTORY_VOLUME.md) for reproducible isolated load
 tests, measured operating limits, concurrency budgets and large-count caveats.
 
+## Inventory page header
+
+The Inventory page keeps its title, permission-available create actions, statistics toggle and inventory tabs in a sticky header while the page content scrolls. Statistics are collapsed by default; use **Show Stats** / **Hide Stats** to reveal or collapse the four inventory summary metrics. The tab menu wraps on narrow screens so the controls remain reachable without horizontal page overflow.
+
 ## Setup and permissions
 
 1. Enable inventory for the project using an administrator account with `inventory.configure` and project-edit permission.

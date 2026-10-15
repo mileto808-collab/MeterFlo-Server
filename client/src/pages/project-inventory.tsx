@@ -34,7 +34,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { AlertTriangle, ArrowLeftRight, Boxes, ClipboardList, Loader2, Package, Plus, Printer, RefreshCw, Search, Warehouse as WarehouseIcon } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, BarChart3, Boxes, ChevronDown, ChevronUp, ClipboardList, Loader2, Package, Plus, Printer, RefreshCw, Search, Warehouse as WarehouseIcon } from "lucide-react";
 
 type Snapshot = { enabled: boolean; timezone: string; state: InventoryState; permissions: string[]; users: Array<{ id: string; username: string }> };
 type ResourceKind = "warehouse" | "vendor" | "item";
@@ -64,6 +64,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const queryKey = [base];
   const { data, isLoading, isError, refetch } = useQuery<Snapshot>({ queryKey, enabled: !!projectId });
   const [search, setSearch] = useState("");
+  const [showInventoryStats, setShowInventoryStats] = useState(false);
   const [stockPage, setStockPage] = useState(0);
   const [activityPage, setActivityPage] = useState(0);
   const [resource, setResource] = useState<ResourceKind | null>(null);
@@ -569,7 +570,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     command.mutate({ action: "countPost", data: { id: activeCount.id, draftRevision: countDraftRevision, lines: countLines, reason: countReason } }, { onSuccess: () => setActiveCount(null) });
   };
 
-  return <main className="mx-auto max-w-7xl space-y-6 p-4 pb-12 md:p-7">
+  return <main className="mx-auto flex h-[calc(100dvh-72px)] min-h-0 w-full max-w-7xl flex-col overflow-hidden p-4 md:p-7" data-testid="inventory-workspace">
     <Dialog open={!!pendingOrderTransition} onOpenChange={open => { if (!open && !orderSaving.current) setPendingOrderTransition(null); }}>
       <DialogContent onEscapeKeyDown={event => { if (orderSaving.current) event.preventDefault(); }} onPointerDownOutside={event => event.preventDefault()}>
         <DialogHeader><DialogTitle>Unsaved order changes</DialogTitle><DialogDescription>Save this purchase or transfer draft before continuing, discard the unsaved changes, or stay here. Saving a draft does not release an order or change stock.</DialogDescription></DialogHeader>
@@ -643,22 +644,59 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       </DialogContent>
     </Dialog>
     {isError && <Alert variant="destructive"><AlertTitle>Inventory refresh failed</AlertTitle><AlertDescription>The last loaded inventory is shown. Your count entries were kept; retry before relying on current stock.</AlertDescription><Button variant="outline" className="mt-2" onClick={() => refetch()}>Retry inventory refresh</Button></Alert>}
-    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-      <div><p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Project operations</p><h1 className="text-3xl font-semibold tracking-tight">Inventory</h1><p className="mt-1 text-sm text-muted-foreground">Know what’s on hand, where it lives, and which serial leaves with each crew.</p></div>
-      <div className="flex flex-wrap gap-2">{can("inventory.maintain") && <Button variant="outline" onClick={() => openResource("warehouse")}><Plus className="mr-2 h-4 w-4" />Location</Button>}{can("inventory.maintain") && <Button onClick={() => openResource("item")}><Plus className="mr-2 h-4 w-4" />New item</Button>}</div>
-    </div>
+    <Tabs defaultValue="stock" className="flex min-h-0 flex-1 flex-col gap-3">
+      <div className="z-10 shrink-0 space-y-3 border-b bg-background pb-3" data-testid="inventory-sticky-header">
+        <div className="flex min-w-0 flex-col justify-between gap-3 sm:flex-row sm:items-center">
+          <div className="min-w-0">
+            <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Project operations</p>
+            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Inventory</h1>
+            <p className="mt-1 hidden text-sm text-muted-foreground sm:block">Know what’s on hand, where it lives, and which serial leaves with each crew.</p>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              variant={showInventoryStats ? "secondary" : "outline"}
+              aria-expanded={showInventoryStats}
+              aria-controls="inventory-stats-region"
+              data-testid="button-toggle-inventory-stats"
+              onClick={() => setShowInventoryStats(value => !value)}
+            >
+              <BarChart3 className="mr-1.5 h-4 w-4" />
+              {showInventoryStats ? "Hide Stats" : "Show Stats"}
+              {showInventoryStats ? <ChevronUp className="ml-1.5 h-4 w-4" /> : <ChevronDown className="ml-1.5 h-4 w-4" />}
+            </Button>
+            {can("inventory.maintain") && <Button size="sm" variant="outline" onClick={() => openResource("warehouse")}><Plus className="mr-1.5 h-4 w-4" />Location</Button>}
+            {can("inventory.maintain") && <Button size="sm" onClick={() => openResource("item")}><Plus className="mr-1.5 h-4 w-4" />New item</Button>}
+          </div>
+        </div>
+        <div
+          id="inventory-stats-region"
+          role="region"
+          aria-label="Inventory statistics"
+          data-testid="inventory-stats-region"
+          hidden={!showInventoryStats}
+          className={showInventoryStats ? "grid min-w-0 grid-cols-2 gap-2 lg:grid-cols-4" : "hidden"}
+        >
+          <Metric label="Active locations" value={activeWarehouses.length} detail={`${warehouses.filter(value => value.type === "vehicle").length} vehicles`} icon={<WarehouseIcon className="h-4 w-4" />} />
+          <Metric label="Catalog items" value={items.filter(item => item.active).length} detail={`${items.filter(item => item.tracking === "serialized").length} serial tracked`} icon={<Package className="h-4 w-4" />} />
+          <Metric label="Open orders" value={orderItems.filter(order => ["draft", "released", "partial"].includes(order.status)).length} detail="Purchases and transfers" icon={<ArrowLeftRight className="h-4 w-4" />} />
+          <Metric label="Open counts" value={state.counts.filter(count => count.status === "open").length} detail={`Ledger revision ${state.revision}`} icon={<ClipboardList className="h-4 w-4" />} />
+        </div>
+        <TabsList className="h-auto w-full flex-wrap justify-start gap-1">
+          <TabsTrigger value="stock">Stock &amp; search</TabsTrigger>
+          <TabsTrigger value="locations">Locations</TabsTrigger>
+          <TabsTrigger value="catalog">Items &amp; vendors</TabsTrigger>
+          <TabsTrigger value="orders">Orders</TabsTrigger>
+          <TabsTrigger value="exceptions">Shipment exceptions</TabsTrigger>
+          <TabsTrigger value="counts">Counts &amp; assembly</TabsTrigger>
+          <TabsTrigger value="returns">Removed Equipment</TabsTrigger>
+          <TabsTrigger value="activity">Activity</TabsTrigger>
+        </TabsList>
+      </div>
 
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-      <Metric label="Active locations" value={activeWarehouses.length} detail={`${warehouses.filter(value => value.type === "vehicle").length} vehicles`} icon={<WarehouseIcon className="h-4 w-4" />} />
-      <Metric label="Catalog items" value={items.filter(item => item.active).length} detail={`${items.filter(item => item.tracking === "serialized").length} serial tracked`} icon={<Package className="h-4 w-4" />} />
-      <Metric label="Open orders" value={orderItems.filter(order => ["draft", "released", "partial"].includes(order.status)).length} detail="Purchases and transfers" icon={<ArrowLeftRight className="h-4 w-4" />} />
-      <Metric label="Open counts" value={state.counts.filter(count => count.status === "open").length} detail={`Ledger revision ${state.revision}`} icon={<ClipboardList className="h-4 w-4" />} />
-    </div>
-
+    <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain pb-8 pr-1" data-testid="inventory-scroll-content" role="region" aria-label="Inventory content" tabIndex={0}>
     {!hasAny && <Alert><Boxes className="h-4 w-4" /><AlertTitle>Set up the first stock location</AlertTitle><AlertDescription>Add a warehouse or service vehicle, then add catalog items and begin receiving meters.</AlertDescription></Alert>}
 
-    <Tabs defaultValue="stock" className="space-y-5">
-      <TabsList className="h-auto flex-wrap justify-start"><TabsTrigger value="stock">Stock & search</TabsTrigger><TabsTrigger value="locations">Locations</TabsTrigger><TabsTrigger value="catalog">Items & vendors</TabsTrigger><TabsTrigger value="orders">Orders</TabsTrigger><TabsTrigger value="exceptions">Shipment exceptions</TabsTrigger><TabsTrigger value="counts">Counts & assembly</TabsTrigger><TabsTrigger value="returns">Removed Equipment</TabsTrigger><TabsTrigger value="activity">Activity</TabsTrigger></TabsList>
       <TabsContent value="stock" className="space-y-4">
         <Card><CardHeader className="pb-3"><div className="flex flex-col justify-between gap-3 md:flex-row md:items-end"><div><CardTitle>On hand by location</CardTitle><CardDescription>Reserved units are excluded from available stock. Serial identity remains attached to its bin.</CardDescription></div><div className="relative w-full md:max-w-sm"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input aria-label="Search inventory" className="pl-9" placeholder="Search SKU, item, location, serial…" value={search} onChange={event => { setSearch(event.target.value); setStockPage(0); }} /></div></div></CardHeader><CardContent>
           {stockRows.length ? <><div className="max-h-[32rem] max-w-full overflow-auto" role="region" aria-label="Stock balances" tabIndex={0}><table className="w-full min-w-[780px] text-sm"><thead><tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground"><th className="pb-3">Item / SKU</th><th className="pb-3">Location</th><th className="pb-3 text-right">On hand</th><th className="pb-3 text-right">Reserved</th><th className="pb-3 text-right">Available</th><th className="pb-3">Serial identity</th></tr></thead><tbody>{visibleStockRows.map(row => <tr key={`${row.warehouseId}/${row.itemId}`} className="border-b align-top last:border-0"><td className="py-3"><div className="font-medium">{row.item?.name}</div><div className="font-mono text-xs text-muted-foreground">{row.item?.sku}</div></td><td className="py-3"><div>{row.warehouse?.name}</div><div className="text-xs text-muted-foreground">{row.warehouse?.code}</div></td><td className="py-3 text-right font-mono">{row.quantity}</td><td className="py-3 text-right font-mono">{row.reserved}</td><td className="py-3 text-right font-mono font-semibold">{row.quantity - row.reserved}</td><td className="max-w-xs py-3 font-mono text-xs text-muted-foreground">{row.serials.length ? <div className="max-h-24 overflow-y-auto break-all" role="region" aria-label={`Serials for ${row.item?.sku} at ${row.warehouse?.code}`} tabIndex={0}>{row.serials.join(", ")}</div> : "—"}</td></tr>)}</tbody></table></div>{stockRows.length > stockPageSize && <nav aria-label="Stock pages" className="mt-4 flex flex-wrap items-center gap-2"><p className="mr-auto text-sm text-muted-foreground" aria-live="polite">{currentStockPage * stockPageSize + 1}–{Math.min((currentStockPage + 1) * stockPageSize, stockRows.length)} of {stockRows.length} balances</p><Button size="sm" variant="outline" aria-label="First stock page" disabled={currentStockPage === 0} onClick={() => setStockPage(0)}>First</Button><Button size="sm" variant="outline" aria-label="Previous stock page" disabled={currentStockPage === 0} onClick={() => setStockPage(currentStockPage - 1)}>Previous</Button><Button size="sm" variant="outline" aria-label="Next stock page" disabled={currentStockPage === lastStockPage} onClick={() => setStockPage(currentStockPage + 1)}>Next</Button><Button size="sm" variant="outline" aria-label="Last stock page" disabled={currentStockPage === lastStockPage} onClick={() => setStockPage(lastStockPage)}>Last</Button></nav>}</> : <Empty title="No stock balances yet" description="Receive a purchase or accept a transfer to see item quantities and scanned serials here." />}</CardContent></Card>
@@ -823,6 +861,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       </TabsContent>
       <TabsContent value="returns"><Card><CardHeader><CardTitle>Removed Equipment</CardTitle><CardDescription>Returned systems and modules enter quarantine first. Release to usable inventory only after inspection.</CardDescription></CardHeader><CardContent><div className="space-y-3">{state.returns.map(returned => <div key={returned.id} className="flex flex-col justify-between gap-3 rounded-lg border p-4 sm:flex-row sm:items-start"><div><div className="flex items-center gap-2 font-medium">{returned.equipment === "system" ? "System" : "Module"} · <span className="font-mono">{returned.serial}</span><Badge variant={returned.status === "released" ? "default" : "outline"}>{returned.status}</Badge></div><div className="mt-1 text-sm text-muted-foreground">Work order #{returned.workOrderId} · Return location: {warehouses.find(w => w.id === returned.warehouseId)?.name ?? "—"}</div></div><div className="flex flex-wrap gap-2">{returned.status === "pending" && can("inventory.receive") && <Button size="sm" onClick={() => command.mutate({ action: "returnAccept", data: { id: returned.id } })}>Accept into quarantine</Button>}{returned.status === "quarantine" && can("inventory.receive") && <div className="flex min-w-0 flex-wrap gap-2"><Select value={returnInspect[returned.id]?.itemId ?? ""} onValueChange={value => setReturnInspect(current => ({ ...current, [returned.id]: { itemId: value, reason: current[returned.id]?.reason ?? "" } }))}><SelectTrigger className="w-48"><SelectValue placeholder="Matching equipment item" /></SelectTrigger><SelectContent>{items.filter(item => item.tracking === "serialized" && item.equipment === returned.equipment).map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select><Input aria-label="Inspection result" placeholder="Inspection note" value={returnInspect[returned.id]?.reason ?? ""} onChange={event => setReturnInspect(current => ({ ...current, [returned.id]: { itemId: current[returned.id]?.itemId ?? "", reason: event.target.value } }))} /><Button size="sm" disabled={!returnInspect[returned.id]?.itemId || !returnInspect[returned.id]?.reason} onClick={() => command.mutate({ action: "returnRelease", data: { id: returned.id, itemId: returnInspect[returned.id].itemId, reason: returnInspect[returned.id].reason } })}>Release to stock</Button></div>}</div></div>)}</div>{state.returns.length === 0 && <Empty title="No returned equipment" description="When technicians record a removed system or module as returned, it will appear here for receiving and inspection." />}</CardContent></Card></TabsContent>
           <TabsContent value="activity"><Card><CardHeader><CardTitle>Stock movement ledger</CardTitle><CardDescription>Good, damaged and short quantities retain their reasons and printable receipt references.</CardDescription></CardHeader><CardContent><div className="space-y-2" data-testid="inventory-activity-entries">{activityReceipts.map(receipt => <div key={receipt.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3"><div className="min-w-0"><div className="font-medium">{receipt.action} · {receipt.action.startsWith("count") ? inventoryCountReference(state.counts, receipt.reference) : receipt.reference}</div><div className="mt-1 text-xs text-muted-foreground">{new Date(receipt.occurredAt).toLocaleString()} · {receipt.actor} · {receiptSummary(receipt)}</div>{receipt.holdId && <p className="mt-1 text-xs">Inspection hold <span className="font-mono">{receipt.holdId}</span></p>}</div><Button size="sm" variant="outline" onClick={() => openPrint(receipt.action.startsWith("count") ? "count" : "receipt", receipt.action.startsWith("count") ? receipt.reference : receipt.id)}><Printer className="mr-2 h-4 w-4" />Print</Button></div>)}</div>{state.receipts.length > activityPageSize && <nav aria-label="Activity pages" className="mt-4 flex flex-wrap items-center gap-2"><p className="mr-auto text-sm text-muted-foreground" aria-live="polite">{currentActivityPage * activityPageSize + 1}–{Math.min((currentActivityPage + 1) * activityPageSize, state.receipts.length)} of {state.receipts.length} movements</p><Button size="sm" variant="outline" aria-label="First activity page" disabled={currentActivityPage === 0} onClick={() => setActivityPage(0)}>First</Button><Button size="sm" variant="outline" aria-label="Previous activity page" disabled={currentActivityPage === 0} onClick={() => setActivityPage(currentActivityPage - 1)}>Previous</Button><Button size="sm" variant="outline" aria-label="Next activity page" disabled={currentActivityPage === lastActivityPage} onClick={() => setActivityPage(currentActivityPage + 1)}>Next</Button><Button size="sm" variant="outline" aria-label="Last activity page" disabled={currentActivityPage === lastActivityPage} onClick={() => setActivityPage(lastActivityPage)}>Last</Button></nav>}{state.receipts.length === 0 && <Empty title="No movement recorded" description="Receiving, transfers, kit assembly, count adjustments and returns appear here." />}</CardContent></Card></TabsContent>
+    </div>
     </Tabs>
 
     <Dialog open={!!resource} onOpenChange={open => { if (!open && !resourceSaving.current && !imageBusy) setResource(null); }}><DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{resource === "warehouse" ? "Location details" : resource === "vendor" ? "Vendor details" : "Item details"}</DialogTitle><DialogDescription>Changes apply only to this project. Keep scanned identities and stock rules intact.</DialogDescription></DialogHeader>
