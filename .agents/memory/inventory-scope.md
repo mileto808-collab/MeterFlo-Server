@@ -42,3 +42,9 @@ PO and transfer drafts should plan products and quantities, without capturing ph
 **Why:** The user said, “No serials will be added here. We don't know what the serials are until the shipment arrives.”
 
 **How to apply:** Keep serial capture in receiving or actual transfer dispatch/arrival, not order drafting. Planning quantities must not imply that specific physical units have already been selected.
+
+Keep PO and transfer draft line items compact, with product, quantity and removal controls aligned together rather than tall per-item form sections.
+
+**Why:** The user rejected the expanded rows: “line items should be closer together. too much wasted space inline.”
+
+**How to apply:** Avoid repeating long visible quantity labels and valid-state guidance on every row. Retain product-specific accessible labels, inline validation and usable mobile controls.

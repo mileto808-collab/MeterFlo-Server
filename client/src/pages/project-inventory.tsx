@@ -674,6 +674,12 @@ function OrderLineEditor({ items, lineItem, setLineItem, lineQty, setLineQty, li
   const selected = items.find(item => item.id === lineItem);
   return <div className="space-y-3 rounded-md border p-3"><div className="grid gap-2 sm:grid-cols-[1fr_110px_auto] sm:items-end"><div className="space-y-1"><Label htmlFor={draftMode ? "draft-line-item" : "operation-line-item"}>Item</Label><Select value={lineItem} onValueChange={setLineItem}><SelectTrigger id={draftMode ? "draft-line-item" : "operation-line-item"}><SelectValue placeholder="Select item" /></SelectTrigger><SelectContent>{items.filter(item => item.active).map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1"><Label htmlFor={draftMode ? "draft-line-quantity" : "operation-line-quantity"}>Quantity</Label><Input id={draftMode ? "draft-line-quantity" : "operation-line-quantity"} type="number" min="1" max="1000000" step="1" value={lineQty} onChange={event => setLineQty(event.target.value)} /></div><Button type="button" variant="outline" onClick={add}><Plus className="mr-1 h-4 w-4" />Add line</Button></div>
     {!draftMode && selected?.tracking === "serialized" && <div className="space-y-1"><Label htmlFor="operation-serial-scans">Serial scans</Label><Textarea id="operation-serial-scans" value={lineSerials ?? ""} onChange={event => setLineSerials?.(event.target.value)} placeholder="One serial per line" /></div>}
+    {draftMode && lines.length > 0 && <div className="mt-1">
+      <div className="grid grid-cols-[minmax(0,1fr)_76px_64px] items-center gap-2 border-b pb-1.5 text-xs font-medium text-muted-foreground sm:grid-cols-[minmax(0,1fr)_88px_72px]">
+        <span>Product</span><span className="text-center">Qty</span><span className="sr-only">Actions</span>
+      </div>
+      <p id="draft-line-quantity-guidance" className="pt-1.5 text-xs text-muted-foreground">Whole quantities · 1–1,000,000</p>
+    </div>}
     {lines.map((line, index) => {
       const item = items.find(value => value.id === line.itemId);
       const quantityValue = quantityValues?.[line.itemId] ?? String(line.quantity);
@@ -681,12 +687,15 @@ function OrderLineEditor({ items, lineItem, setLineItem, lineQty, setLineQty, li
       const invalidQuantity = draftMode && (quantityValue.trim() === "" || !Number.isInteger(quantity) || quantity < 1 || quantity > 1000000);
       const quantityId = `draft-line-quantity-${index}`;
       const quantityHelpId = `${quantityId}-help`;
-      return <div key={`${line.itemId}-${index}`} className="grid gap-2 border-t pt-3 sm:grid-cols-[1fr_130px_auto] sm:items-end">
-        <div className="min-w-0"><div className="text-sm font-medium">{item?.name ?? line.itemId}</div><div className="font-mono text-xs text-muted-foreground">{item?.sku ?? line.itemId} · {item?.unit ?? "units"}</div>
+      return <div key={`${line.itemId}-${index}`} className={draftMode
+        ? "grid grid-cols-[minmax(0,1fr)_76px_64px] items-center gap-2 border-t py-2 first:border-t-0 sm:grid-cols-[minmax(0,1fr)_88px_72px]"
+        : "grid gap-2 border-t pt-3 sm:grid-cols-[1fr_130px_auto] sm:items-end"}>
+        <div className={draftMode ? "min-w-0 py-0.5" : "min-w-0"}><div className={`text-sm font-medium ${draftMode ? "break-words [overflow-wrap:anywhere]" : ""}`}>{item?.name ?? line.itemId}</div><div className={`${draftMode ? "break-words " : ""}font-mono text-xs text-muted-foreground`}>{item?.sku ?? line.itemId}{!draftMode && ` · ${item?.unit ?? "units"}`}</div>
           {!draftMode && item?.tracking === "serialized" && <div className="mt-1 space-y-1"><Label htmlFor={`line-serial-${index}`}>Serial scans</Label><Textarea id={`line-serial-${index}`} value={line.serials.join("\n")} onChange={event => updateSerials?.(index, csv(event.target.value))} placeholder="One serial per line" /></div>}
         </div>
-        {draftMode ? <div className="space-y-1"><Label htmlFor={quantityId}>Quantity for {item?.name ?? item?.sku ?? line.itemId}</Label><Input id={quantityId} aria-describedby={quantityHelpId} aria-invalid={invalidQuantity} type="number" min="1" max="1000000" step="1" value={quantityValue} onChange={event => setQuantityValue?.(line.itemId, event.target.value)} /><p id={quantityHelpId} className={`text-xs ${invalidQuantity ? "text-destructive" : "text-muted-foreground"}`}>{invalidQuantity ? "Enter a whole number from 1 to 1,000,000." : "Whole units, 1–1,000,000."}</p></div> : <div className="text-sm tabular-nums">{line.quantity} units</div>}
-        <Button type="button" size="sm" variant="ghost" onClick={() => remove(index)}>Remove</Button>
+        {draftMode ? <div><Label className="sr-only" htmlFor={quantityId}>Quantity for {item?.name ?? item?.sku ?? line.itemId}</Label><Input className="h-10 px-2 text-center tabular-nums" id={quantityId} aria-describedby={invalidQuantity ? quantityHelpId : "draft-line-quantity-guidance"} aria-invalid={invalidQuantity} type="number" min="1" max="1000000" step="1" value={quantityValue} onChange={event => setQuantityValue?.(line.itemId, event.target.value)} /></div> : <div className="text-sm tabular-nums">{line.quantity} units</div>}
+        <Button type="button" size="sm" className={draftMode ? "h-10 min-w-0 px-2" : undefined} variant="ghost" onClick={() => remove(index)}>Remove</Button>
+        {draftMode && invalidQuantity && <p id={quantityHelpId} className="col-span-full text-xs leading-tight text-destructive" role="alert">Enter a whole number from 1 to 1,000,000.</p>}
       </div>;
     })}
   </div>;

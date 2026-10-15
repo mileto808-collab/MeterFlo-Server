@@ -301,9 +301,20 @@ async function main() {
     await edit("ORDER-TR");
     assert.equal(await builder.getByLabel("Quantity for Order bulk", { exact: true }).inputValue(), "5");
     assert.equal(await builder.getByLabel("Quantity for Order meter", { exact: true }).inputValue(), "2");
+    const assertCompactLines = async () => {
+      // Read both bounds in one browser frame; Edit draft scrolls smoothly.
+      const distance = await builder.evaluate(el => {
+        const rows = [...el.querySelectorAll('input[id^="draft-line-quantity-"]')];
+        return rows.length === 2 ? rows[1].getBoundingClientRect().top - rows[0].getBoundingClientRect().top : null;
+      });
+      assert.ok(distance !== null && distance <= 100, `draft quantity rows should stay compact (spacing: ${distance}px)`);
+      assert.equal(await builder.evaluate(el => el.scrollWidth <= el.clientWidth), true, "compact editor must not clip horizontally");
+    };
+    await assertCompactLines();
     await fs.mkdir("generated-artifacts/inventory", { recursive: true });
     await builder.screenshot({ path: "generated-artifacts/inventory/order-lines-desktop.jpg" });
     await page.setViewportSize({ width: 390, height: 844 });
+    await assertCompactLines();
     await builder.screenshot({ path: "generated-artifacts/inventory/order-lines-mobile.jpg" });
     await page.setViewportSize({ width: 1280, height: 900 });
     assert.deepEqual((await state()).stock, originalStock);
