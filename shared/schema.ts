@@ -1161,6 +1161,8 @@ export const permissionKeys = {
   INVENTORY_COUNT: "inventory.count",
   INVENTORY_ASSIGN: "inventory.assign",
   INVENTORY_ASSEMBLE: "inventory.assemble",
+  INVENTORY_CLOSE_ORDERS: "inventory.closeOrders",
+  INVENTORY_RESOLVE_EXCEPTIONS: "inventory.resolveExceptions",
   AUDIT_VIEW: "audit.view",
   AUDIT_ALL_PROJECTS: "audit.viewAllProjects",
   AUDIT_MANAGE_RETENTION: "audit.manageRetention",

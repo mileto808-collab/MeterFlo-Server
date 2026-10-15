@@ -48,3 +48,9 @@ Keep PO and transfer draft line items compact, with product, quantity and remova
 **Why:** The user rejected the expanded rows: “line items should be closer together. too much wasted space inline.”
 
 **How to apply:** Avoid repeating long visible quantity labels and valid-state guidance on every row. Retain product-specific accessible labels, inline validation and usable mobile controls.
+
+Receiving and transfer movements should show the order's items inline and capture actual quantities, with one physical-unit identity per HID scanner scan.
+
+**Why:** The user specified keyboard-wedge scanners, automatic advancement to the next serial entry, and that scanned identities must match received/transferred quantities. Shortages and damage must allow partial completion or an explicit exception, not invented receipts.
+
+**How to apply:** Keep draft planning quantity-only; capture identities when physical custody changes. Do not replace the guided order rows with a generic item picker or silently treat damage as usable stock.

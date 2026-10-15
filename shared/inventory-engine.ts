@@ -2,8 +2,11 @@ import { z } from "zod";
 import { COUNT_MAX_LINES, COUNT_MAX_SERIALS, countPayloadFits } from "./inventory-count-limits";
 import { allocationSchema, dispositionSchema, itemSchema, stockLineSchema, vendorSchema, warehouseSchema, countDraftSchema,
   type Allocation, type InventoryCommand, type InventoryState, type StockLine, type Stock } from "./inventory";
+import { InventoryError } from "./inventory-errors";
+import { applyShipmentCommand, assertNotHeld, shipmentActions } from "./inventory-shipment-engine";
+import { settledLines } from "./inventory-shipment-model";
 
-export class InventoryError extends Error { status = 409; }
+export { InventoryError } from "./inventory-errors";
 const assert: (ok: unknown, message: string) => asserts ok = (ok, message) => { if (!ok) throw new InventoryError(message); };
 const lines = z.array(stockLineSchema).min(1).max(500);
 const allocations = z.array(allocationSchema).max(500);
@@ -78,11 +81,12 @@ function move(s: InventoryState, warehouseId: string, input: StockLine[], sign: 
       b.serials = b.serials.filter(x => !l.serials.includes(x));
     } else {
       for (const serial of l.serials) {
+        assertNotHeld(s, l.itemId, serial);
         assert(!s.stock.some(b => b.itemId === l.itemId && b.serials.includes(serial)), "Serial already in inventory.");
         assert(!s.orders.some(o => o.type === "transfer" && o.dispatched.some(x => x.itemId === l.itemId && x.serials.includes(serial)) &&
-          !o.received.some(x => x.itemId === l.itemId && x.serials.includes(serial))), "Serial is in transit.");
+          !settledLines(o).some(x => x.itemId === l.itemId && x.serials.includes(serial))), "Serial is in transit.");
         assert(!s.serialOccupancy?.some(x => x.itemId === l.itemId && x.serial === serial),
-          "Serial already installed or contained in an assembled kit.");
+          "Serial already installed, contained in an assembled kit, or unavailable due to loss/disposal.");
         assert(!s.returns.some(r => r.serial === serial && r.status !== "released"), "Serial is pending return/condition review.");
       }
       b.serials.push(...l.serials);
@@ -107,6 +111,8 @@ function kitCycles(s: InventoryState) {
   for (const i of s.items) visit(i.id, []);
 }
 export function applyInventoryCommand(original: InventoryState, command: InventoryCommand, actor: string, admin: boolean, now = new Date().toISOString()) {
+  if (shipmentActions.includes(command.action))
+    assert(new TextEncoder().encode(JSON.stringify(command.data)).length <= 8 * 1024 * 1024, "Shipment data exceeds the 8 MiB limit; no changes were posted.");
   if (command.action === "countSaveDraft" || command.action === "countPost")
     assert(countPayloadFits(command.data), "Count data exceeds the 8 MiB limit; no changes were posted.");
   const fingerprint = canonicalInventoryJson({ action: command.action, data: command.data, actor });
@@ -120,7 +126,10 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
   const receipt = (reference: string, warehouseId: string | null, input: StockLine[], reason?: string, components?: StockLine[]) =>
     s.receipts.push({ id: command.operationId, action: command.action, reference, warehouseId, lines: input, actor, occurredAt: now, reason, components });
   const a = command.action;
-  if (a === "warehouse" || a === "vendor" || a === "item") {
+  if (shipmentActions.includes(a)) {
+    applyShipmentCommand(s, command, actor, now, { access, move: (w, ls, sign) => move(s, w, ls, sign),
+      validate: ls => validateLines(s, ls), within });
+  } else if (a === "warehouse" || a === "vendor" || a === "item") {
     const value = a === "warehouse" ? warehouseSchema.parse(d) : a === "vendor" ? vendorSchema.parse(d) : itemSchema.parse(d);
     const list = (a === "warehouse" ? s.warehouses : a === "vendor" ? s.vendors : s.items) as any[];
     const old = list.find(x => x.id === value.id);
@@ -128,7 +137,8 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
       assert(!s.warehouses.some(w => w.id !== value.id && w.code.toLowerCase() === (value as any).code.toLowerCase()), "Warehouse code already exists.");
       if (old) access(old.id);
       if (!(value as any).active) assert(!s.stock.some(b => b.warehouseId === value.id && b.quantity) &&
-        !s.orders.some(o => [o.sourceId, o.destinationId].includes(value.id) && !["completed", "cancelled"].includes(o.status)) &&
+        !(s.shipmentHolds ?? []).some(h => h.warehouseId === value.id && h.status === "held") &&
+        !s.orders.some(o => [o.sourceId, o.destinationId].includes(value.id) && !["completed", "cancelled", "closed"].includes(o.status)) &&
         !s.returns.some(r => r.warehouseId === value.id && r.status !== "released"), "Warehouse has stock or unresolved operations.");
     }
     if (a === "item") {
@@ -136,9 +146,12 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
       assert(!s.items.some(x => x.id !== i.id && x.sku.toLowerCase() === i.sku.toLowerCase()), "SKU already exists.");
       assert(!i.vendorId || s.vendors.some(v => v.id === i.vendorId && v.active), "Vendor is not active in this project.");
       if (!i.active) assert(!s.stock.some(b => b.itemId === i.id && b.quantity) &&
-        !s.orders.some(o => !["completed", "cancelled"].includes(o.status) && o.lines.some(l => l.itemId === i.id)) &&
+        !(s.shipmentHolds ?? []).some(h => h.itemId === i.id && h.status === "held") &&
+        !s.orders.some(o => !["completed", "cancelled", "closed"].includes(o.status) && o.lines.some(l => l.itemId === i.id)) &&
         !s.allocations.some(a => a.status === "reserved" && a.lines.some(l => l.itemId === i.id)), "Item has stock, reservations or open orders.");
       if (old) assert(old.tracking === i.tracking && same(old.components, i.components) ||
+        !(s.shipmentHolds ?? []).some(h => h.itemId === i.id && h.status === "held") &&
+        !s.orders.some(o => !["completed", "cancelled", "closed"].includes(o.status) && o.lines.some(l => l.itemId === i.id)) &&
         !s.stock.some(b => b.itemId === i.id && b.quantity) && !s.allocations.some(x => x.lines.some(l => l.itemId === i.id)), "Cannot change tracking or kit definition for stock/assigned items.");
     }
     if (old) list[list.indexOf(old)] = value; else list.push(value);
@@ -146,7 +159,10 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
   } else if (a === "order") {
     const o = z.object({ id: identifier, type: z.enum(["purchase", "transfer"]), destinationId: identifier,
       sourceId: identifier.nullable().default(null), vendorId: identifier.nullable().default(null),
+      replacementFor: identifier.optional(),
       lines, notes: z.string().max(2000).default("") }).strict().parse(d);
+    assert(!o.replacementFor || o.replacementFor !== o.id && s.orders.some(x => x.id === o.replacementFor && !x.replacementFor),
+      "Select an existing original order for replacements, not this order or another replacement.");
     access(o.destinationId);
     assert(o.type === "purchase" ? s.vendors.some(v => v.id === o.vendorId && v.active) :
       o.sourceId && o.sourceId !== o.destinationId, "Select a vendor or distinct source warehouse.");
@@ -168,7 +184,7 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     }
     if (old) s.orders[s.orders.indexOf(old)] = { ...old, ...o };
     else s.orders.push({ ...o, received: [], dispatched: [], status: "draft", createdAt: now });
-  } else if (["release", "cancel", "unrelease", "archiveOrder", "restoreOrder", "receive", "dispatch", "accept"].includes(a)) {
+  } else if (["release", "cancel", "unrelease", "archiveOrder", "restoreOrder"].includes(a)) {
     const orderId = identifier.parse(d.orderId), o = s.orders.find(o => o.id === orderId);
     assert(o, "Order not found.");
     if (a === "dispatch" || a === "release" && o.type === "transfer") access(o.sourceId!);
@@ -192,27 +208,11 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
       }
     } else if (a === "release") { assert(o.status === "draft" && !o.archivedAt, "Only draft orders can be released."); o.status = "released"; }
     else if (a === "cancel") {
-      assert(!["cancelled", "completed"].includes(o.status), "Order is already closed.");
+      assert(!["cancelled", "completed", "closed"].includes(o.status), "Order is already closed.");
+      assert(!o.losses?.length && !(s.shipmentHolds ?? []).some(h => h.orderId === o.id),
+        "Use authorized Close with exceptions for shipment discrepancies; cancellation cannot hide damage or loss.");
       assert(o.dispatched.every(l => totals(o.received, l.itemId) >= totals(o.dispatched, l.itemId)), "Receive dispatched stock before cancelling remaining quantities.");
       o.status = "cancelled";
-    } else {
-      assert(["released", "partial"].includes(o.status), "Release an open order before posting.");
-      const input = lines.parse(d.lines); validateLines(s, input);
-      if (a === "receive") {
-        assert(o.type === "purchase", "Purchase order required."); within(input, o.lines, o.received);
-        move(s, o.destinationId, input, 1); o.received.push(...input);
-      } else if (a === "dispatch") {
-        assert(o.type === "transfer" && o.sourceId, "Transfer order required."); within(input, o.lines, o.dispatched);
-        move(s, o.sourceId, input, -1); o.dispatched.push(...input);
-      } else {
-        assert(o.type === "transfer", "Transfer order required.");
-        // Collapse dispatched lines to remaining expected identity/quantity.
-        const dispatched = o.lines.map(l => ({ ...l, quantity: totals(o.dispatched, l.itemId),
-          serials: o.dispatched.filter(x => x.itemId === l.itemId).flatMap(x => x.serials) }));
-        within(input, dispatched, o.received); o.received.push(...input); move(s, o.destinationId, input, 1);
-      }
-      o.status = o.lines.every(l => totals(o.received, l.itemId) === l.quantity) ? "completed" : "partial";
-      receipt(o.id, a === "dispatch" ? o.sourceId : o.destinationId, input, typeof d.reason === "string" ? d.reason.slice(0, 1000) : "");
     }
   } else if (a === "assign") {
     const { workOrderId, lines: input } = z.object({ workOrderId: workId, lines: allocations }).strict().parse(d);

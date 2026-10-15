@@ -3,6 +3,7 @@ import { emptyInventory, warehouseSchema, itemSchema, vendorSchema, allocationSc
 import { z } from "zod";
 import { countPayloadFits } from "../shared/inventory-count-limits";
 import { reserved } from "../shared/inventory-engine";
+import { validateShipmentBackup } from "./inventoryShipmentBackup";
 
 export type InventoryBackup = { state: InventoryState; movements: any[]; enabled: boolean };
 export async function exportInventory(client: PoolClient, schema: string): Promise<InventoryBackup | undefined> {
@@ -40,6 +41,7 @@ export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: n
       b.quantity < 0 || i.tracking === "serialized" && (b.quantity !== b.serials.length || new Set(b.serials).size !== b.serials.length))
       throw new Error("Inventory backup has invalid stock relationships or quantities.");
   }
+  validateShipmentBackup(s);
 }
 export async function restoreInventory(client: PoolClient, schema: string, backup: InventoryBackup) {
   const { rows: [p] } = await client.query("SELECT id FROM public.projects WHERE database_name=$1", [schema]);

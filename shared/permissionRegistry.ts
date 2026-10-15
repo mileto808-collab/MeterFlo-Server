@@ -25,8 +25,11 @@ export interface PermissionDefinition {
 
 export const permissionRegistry: PermissionDefinition[] = [
   ...Object.entries(inventoryPermissions).map(([name, key]): PermissionDefinition => ({
-    key, label: `${name[0].toUpperCase()}${name.slice(1)} Inventory`,
-    category: "Inventory", description: `Permission to ${name} project inventory; project and warehouse access are also required.`,
+    key, label: name === "closeOrders" ? "Close Short Inventory Orders" :
+      name === "resolveExceptions" ? "Resolve Inventory Shipment Exceptions" : `${name[0].toUpperCase()}${name.slice(1)} Inventory`,
+    category: "Inventory", description: name === "closeOrders" ? "Close purchase/transfer orders with unfulfilled quantities and a required reason; cannot erase in-transit stock." :
+      name === "resolveExceptions" ? "Inspect/release quarantined shipment stock, record returns/scrap, or approve confirmed in-transit losses. Project and warehouse access are required." :
+        `Permission to ${name} project inventory; project and warehouse access are also required.`,
     defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
   })),
   { key:"audit.view",label:"View Audit Logs",category:"Maintenance",description:"Read audit events for assigned projects; does not grant settings or cleanup access.",

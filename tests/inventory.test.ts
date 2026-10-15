@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { emptyInventory, commandPermission, inventoryPermissions, inventoryCommandSchema, type InventoryState, type InventoryCommand } from "../shared/inventory";
 import { applyInventoryCommand, completeInventoryWorkOrder, reserved } from "../shared/inventory-engine";
+import { validateInventoryBackup } from "../server/inventoryBackup";
+import { orderLineProgress } from "../shared/inventory-shipment-model";
 
 const actor = "admin";
 function post(s: InventoryState, action: InventoryCommand["action"], data: Record<string, unknown>, operationId = randomUUID()) {
@@ -260,4 +262,151 @@ test("warehouse scoping, required vehicle fields and failed mutations leave stat
   assert.throws(() => post(s, "warehouse", { id: "bad", code: "bad", name: "bad", type: "vehicle" }), /VIN|Plate/);
   assert.throws(() => post(s, "assign", { workOrderId: 1, lines: [{ warehouseId: "main", itemId: "seal", quantity: 100 }] }), /Insufficient/);
   assert.equal(JSON.stringify(s), serialized);
+});
+
+const shipmentPO = (s: InventoryState, id = "shipment", quantity = 4) => {
+  s = post(s, "order", { id, type: "purchase", destinationId: "main", vendorId: "vendor",
+    lines: [{ itemId: "meter", quantity }, { itemId: "seal", quantity }] });
+  return post(s, "release", { orderId: id });
+};
+const damage = (itemId: string, quantity: number, serials: string[] = [], unidentifiedQuantity = 0, expectedSerials: string[] = []) =>
+  ({ itemId, quantity, serials, unidentifiedQuantity, expectedSerials, reason: "Crushed shipping carton; inspection required" });
+
+test("good, damaged and unidentified physical receipts stay separate; inspection and short closure preserve evidence", () => {
+  let s = shipmentPO(setup());
+  const id = randomUUID(), data = { orderId: "shipment",
+    lines: [{ itemId: "meter", quantity: 1, serials: ["00010"] }, { itemId: "seal", quantity: 1 }],
+    damaged: [damage("meter", 2, ["00011"], 1), damage("seal", 2)] };
+  s = post(s, "receive", data, id);
+  assert.deepEqual(post(s, "receive", data, id), s, "retry never creates duplicate physical receipt or holds");
+  assert.equal(s.stock.find(b => b.itemId === "meter")!.quantity, 4);
+  assert.equal(s.stock.find(b => b.itemId === "seal")!.quantity, 11);
+  const order = s.orders.find(o => o.id === "shipment")!;
+  assert.deepEqual(orderLineProgress(s, order, "meter"), {
+    ordered: 4, dispatched: 0, received: 3, damaged: 2, held: 2, usable: 1, lost: 0, closedShort: 0, inTransit: 0, remaining: 1,
+  });
+  assert.equal(order.status, "partial");
+  const hold = s.shipmentHolds!.find(h => h.itemId === "meter")!;
+  const held = structuredClone(s);
+  assert.throws(() => post(s, "warehouse", { ...s.warehouses[0], active: false }), /stock or unresolved/);
+  assert.throws(() => post(s, "item", { ...s.items[0], tracking: "regular" }), /Cannot change tracking/);
+  assert.throws(() => post(s, "resolveHold", { id: hold.id, outcome: "released", reason: "Inspection",
+    verifiedSerials: ["00011"] }), /match scanned serials/);
+  assert.throws(() => post(s, "resolveHold", { id: hold.id, outcome: "released", reason: "Inspection",
+    verifiedSerials: ["BAD", "00012"] }), /Keep every/);
+  assert.throws(() => post(s, "resolveHold", { id: hold.id, outcome: "returned", reason: "Vendor return" }), /destination/);
+  assert.throws(() => applyInventoryCommand(s, { action: "resolveHold", operationId: randomUUID(),
+    data: { id: hold.id, outcome: "scrapped", reason: "Inspection" } }, "outsider", false), /Warehouse access/);
+  assert.deepEqual(s, held, "failures preserve balances, scans and custody");
+  // Ordinary stock counts must not fabricate the verified quarantined identity.
+  let counted = post(s, "countStart", { id: "held-count", warehouseId: "main" });
+  assert.throws(() => post(counted, "countPost", { id: "held-count", reason: "Attempted bypass",
+    lines: counted.stock.map(b => ({ itemId: b.itemId, quantity: b.quantity + (b.itemId === "meter" ? 1 : 0),
+      serials: b.itemId === "meter" ? [...b.serials, "00011"] : b.serials })) }), /quarantined/);
+  const resolution = { id: hold.id, outcome: "released", reason: "Inspected, read and verified both labels",
+    verifiedSerials: ["00011", "00012"] };
+  const resolutionId = randomUUID();
+  s = post(s, "resolveHold", resolution, resolutionId);
+  assert.deepEqual(post(s, "resolveHold", resolution, resolutionId), s);
+  assert.throws(() => post(s, "resolveHold", resolution), /Open shipment hold/);
+  assert.equal(s.stock.find(b => b.itemId === "meter")!.quantity, 6);
+  assert.ok(s.stock.find(b => b.itemId === "meter")!.serials.includes("00012"));
+  const sealHold = s.shipmentHolds!.find(h => h.itemId === "seal")!;
+  s = post(s, "resolveHold", { id: sealHold.id, outcome: "returned", reason: "Return damaged seals",
+    reference: "Supplier dock; RMA-123 / carrier tracking" });
+  assert.equal(s.stock.find(b => b.itemId === "seal")!.quantity, 11, "returning quarantine never reduces good stock");
+  const closeId = randomUUID(), closeData = { orderId: "shipment", reason: "Vendor cannot supply remaining units" };
+  s = post(s, "closeOrder", closeData, closeId);
+  assert.deepEqual(post(s, "closeOrder", closeData, closeId), s);
+  assert.equal(s.orders.find(o => o.id === "shipment")!.status, "closed");
+  assert.deepEqual(s.orders.find(o => o.id === "shipment")!.closure!.unfulfilled.map(l => l.quantity), [1, 1]);
+  assert.deepEqual(s.orders.find(o => o.id === "shipment")!.lines.map(l => l.quantity), [4, 4]);
+  assert.throws(() => post(s, "receive", data), /Release an open/);
+  validateInventoryBackup({ state: JSON.parse(JSON.stringify(s)), enabled: true, movements: [] }, []);
+  for (const corrupt of [
+    (copy: InventoryState) => { copy.shipmentHolds![0].receiptId = "missing"; },
+    (copy: InventoryState) => { copy.orders.find(o => o.id === "shipment")!.closure!.unfulfilled[0].quantity++; },
+  ]) { const copy = structuredClone(s); corrupt(copy); assert.throws(() => validateInventoryBackup({ state: copy, enabled: true, movements: [] }, []), /shipment backup/); }
+});
+
+test("damage identity validation, reservations and transactional close reject mismatches without mutation", () => {
+  let s = shipmentPO(setup());
+  const before = structuredClone(s);
+  for (const damaged of [
+    [damage("meter", 2, ["DUP", "DUP"])],
+    [damage("meter", 2, ["ONE"])],
+    [damage("seal", 1, [], 1)],
+    [damage("meter", 1, ["00001"])],
+    [damage("meter", 1, ["NEW"], 0, ["UNEXPECTED"])],
+  ]) assert.throws(() => post(s, "receive", { orderId: "shipment", lines: [], damaged }));
+  assert.throws(() => post(s, "receive", { orderId: "shipment",
+    lines: [{ itemId: "meter", quantity: 1, serials: ["DUP"] }], damaged: [damage("meter", 1, ["DUP"])] }), /Duplicate/);
+  assert.throws(() => post(s, "receive", { orderId: "shipment", lines: [], damaged: [damage("seal", 5)] }), /remaining/);
+  assert.throws(() => post(s, "receive", { orderId: "shipment", lines: [], closeRemainder: true }), /reason/);
+  assert.deepEqual(s, before);
+  s = post(s, "receive", { orderId: "shipment", lines: [], damaged: [damage("meter", 1, ["HELD"])],
+    closeRemainder: true, reason: "Accept damaged carton, close short remainder" });
+  const hold = s.shipmentHolds![0];
+  assert.equal(s.orders.find(o => o.id === "shipment")!.status, "closed");
+  assert.equal(hold.status, "held", "closing the order never deletes its pending inspection");
+  assert.throws(() => post(s, "assign", { workOrderId: 1,
+    lines: [{ itemId: "meter", warehouseId: "main", quantity: 1, serials: ["HELD"] }] }), /unavailable/);
+  s = post(s, "resolveHold", { id: hold.id, outcome: "scrapped", reason: "Confirmed unrepairable" });
+  assert.equal(s.stock.find(b => b.itemId === "meter")!.quantity, 3);
+  assert.ok(s.serialOccupancy!.some(x => x.serial === "HELD"));
+  assert.equal(s.orders.find(o => o.id === "shipment")!.status, "closed");
+  // A zero-arrival closure is evidence, not a movement with invented zero units.
+  s = shipmentPO(s, "never-arrived", 1);
+  const stock = structuredClone(s.stock);
+  s = post(s, "closeOrder", { orderId: "never-arrived", reason: "Shipment cancelled by supplier" });
+  assert.deepEqual(s.stock, stock);
+  assert.deepEqual(s.receipts.at(-1)!.lines, []);
+});
+
+test("transfers require physical arrival scans or explicit loss, preserving transit and quarantine custody", () => {
+  let s = setup();
+  s = post(s, "order", { id: "transfer-ex", type: "transfer", sourceId: "main", destinationId: "van",
+    lines: [{ itemId: "meter", quantity: 3 }, { itemId: "seal", quantity: 5 }] });
+  s = post(s, "release", { orderId: "transfer-ex" });
+  s = post(s, "dispatch", { orderId: "transfer-ex", lines: [
+    { itemId: "meter", quantity: 3, serials: ["00001", "00002", "00003"] }, { itemId: "seal", quantity: 2 },
+  ] });
+  assert.throws(() => post(s, "closeOrder", { orderId: "transfer-ex", reason: "Do not erase transit" }), /still in transit/);
+  assert.throws(() => post(s, "accept", { orderId: "transfer-ex", lines: [], damaged: [damage("meter", 1, [], 1)] }), /Unidentified/);
+  assert.throws(() => post(s, "accept", { orderId: "transfer-ex", lines: [], damaged: [damage("meter", 1, [], 1, ["OTHER"])] }), /Unexpected/);
+  s = post(s, "accept", { orderId: "transfer-ex",
+    lines: [{ itemId: "meter", quantity: 1, serials: ["00001"] }, { itemId: "seal", quantity: 2 }],
+    damaged: [damage("meter", 1, [], 1, ["00002"])] });
+  assert.equal(s.stock.find(b => b.warehouseId === "van" && b.itemId === "meter")!.quantity, 1);
+  let order = s.orders.find(o => o.id === "transfer-ex")!;
+  assert.equal(orderLineProgress(s, order, "meter").inTransit, 1);
+  assert.throws(() => post(s, "resolveTransit", { orderId: order.id, lines: [{ itemId: "meter", quantity: 1, serials: ["00002"] }],
+    reason: "Already physically held" }), /previously received/);
+  const lostData = { orderId: order.id, lines: [{ itemId: "meter", quantity: 1, serials: ["00003"] }],
+    reason: "Carrier confirmed missing carton; supervisor reviewed evidence" }, lostId = randomUUID();
+  const stock = structuredClone(s.stock);
+  s = post(s, "resolveTransit", lostData, lostId);
+  assert.deepEqual(s.stock, stock, "a transit loss is not an arrival and never restocks the source");
+  assert.deepEqual(post(s, "resolveTransit", lostData, lostId), s);
+  assert.throws(() => post(s, "resolveTransit", lostData), /remaining|previously/);
+  assert.throws(() => post(s, "cancel", { orderId: order.id }), /Close with exceptions/);
+  s = post(s, "closeOrder", { orderId: order.id, reason: "Close carrier loss and unshipped seals; create replacement" });
+  order = s.orders.find(o => o.id === order.id)!;
+  assert.deepEqual(order.closure!.unfulfilled.map(l => l.quantity), [1, 3]);
+  assert.equal(orderLineProgress(s, order, "meter").inTransit, 0);
+  const hold = s.shipmentHolds![0];
+  assert.throws(() => post(s, "resolveHold", { id: hold.id, outcome: "released", reason: "Wrong identity",
+    verifiedSerials: ["WRONG"] }), /must match/);
+  s = post(s, "resolveHold", { id: hold.id, outcome: "released", reason: "Confirmed damaged label identity, unit tested",
+    verifiedSerials: ["00002"] });
+  assert.deepEqual(s.stock.find(b => b.warehouseId === "van" && b.itemId === "meter")!.serials, ["00001", "00002"]);
+  validateInventoryBackup({ state: JSON.parse(JSON.stringify(s)), enabled: true, movements: [] }, []);
+  s = post(s, "order", { id: "replacement", type: "transfer", replacementFor: order.id,
+    sourceId: "main", destinationId: "van", lines: [{ itemId: "meter", quantity: 1 }] });
+  assert.equal(s.orders.at(-1)!.replacementFor, order.id);
+  assert.throws(() => post(s, "order", { id: "self", type: "purchase", replacementFor: "self",
+    destinationId: "main", vendorId: "vendor", lines: [{ itemId: "seal", quantity: 1 }] }), /original order/);
+  assert.equal(commandPermission("closeOrder"), inventoryPermissions.closeOrders);
+  assert.equal(commandPermission("resolveTransit"), inventoryPermissions.resolveExceptions);
+  assert.equal(commandPermission("resolveHold"), inventoryPermissions.resolveExceptions);
 });

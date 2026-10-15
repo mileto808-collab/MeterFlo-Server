@@ -45,6 +45,15 @@ test("full-system inventory restore preserves identity IDs, JSON serials, sequen
     post("countStart", { id: "unfinished", warehouseId: "w" });
     post("countSaveDraft", { id: "unfinished", revision: 0, reason: "Resume after full restore",
       rows: [{ itemId: "m", quantity: "", serials: "00001\npartial" }] });
+    // Held units are physically present, but deliberately absent from the usable
+    // stock mirror. Exercise real full-system AND project restore with these.
+    post("order", { id: "damaged-shipment", type: "purchase", vendorId: "v", destinationId: "w",
+      lines: [{ itemId: "m", quantity: 3 }] });
+    post("release", { orderId: "damaged-shipment" });
+    post("receive", { orderId: "damaged-shipment", lines: [], damaged: [{
+      itemId: "m", quantity: 2, serials: ["QUARANTINE-0003"], unidentifiedQuantity: 1,
+      reason: "Damaged carton with one unreadable label",
+    }], closeRemainder: true, reason: "Supplier cannot fulfill last unit; keep inspection outstanding" });
     await client.query("INSERT INTO inventory_state VALUES($1,$2)", [42, state]);
     await client.query("INSERT INTO inventory_items VALUES($1,$2,$3,$4)", [42, "m", "M", state.items[0]]);
     await client.query("INSERT INTO inventory_quantities VALUES($1,$2,$3,$4,$5,$6)", [42, "w", "m", 2, 0, JSON.stringify(["00001", "00002"])]);

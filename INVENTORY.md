@@ -21,6 +21,8 @@ tests, measured operating limits, concurrency budgets and large-count caveats.
 | `inventory.purchase` | Purchase-order drafts, release and cancellation | Order 100 meters from a vendor |
 | `inventory.transfer` | Transfer requests, release/cancellation and dispatch | Request 10 meters from Main for Van 12 |
 | `inventory.receive` | Receive purchases, accept transfers and inspect/release returns | Scan incoming meter serials |
+| `inventory.closeOrders` | Close short purchase/transfer orders with a mandatory reason | Close an order after the supplier confirms the remaining two meters will not ship |
+| `inventory.resolveExceptions` | Inspect/release shipment quarantine, record its return/scrap, approve confirmed transit losses | Release a tested held meter, or record a carrier-confirmed missing carton |
 | `inventory.count` | Counts, adjustments and completed-work inventory reconciliation | Correct an explicitly counted shortage |
 | `inventory.assign` | Reserve work-order items and review actual use | Allocate meter `0000456` to a technician's work order |
 | `inventory.assemble` | Build kits from stock | Assemble a meter and two seals |
@@ -112,7 +114,90 @@ Un-release, clear and restore are recorded as `inventory.unrelease`, `inventory.
 
 **Order ID / reference:** every saved PO or transfer has a unique identifier within its project, stored as `id`. Enter your business reference (for example `PO-2026-014` or `TR-2026-008`) or leave the reference blank for an automatically generated UUID. This is the existing order identity, not a separate supplier reference or a globally unique number across customer instances. The saved ID is shown in the order list and save confirmation, and while editing. Printed orders and receiving/dispatch/acceptance receipts show the **Order ID / reference**. Each movement receipt also retains its own separate **Receipt ID**, so multiple partial receipts can be traced to one order.
 
-Scan inputs accept newline/comma/semicolon-separated serials. A keyboard-wedge scanner can scan consecutive serials into the same list. Review serials and quantities before posting. Ordinary and serialized lines are posted together; the server validates the entire command before committing any stock change.
+Receiving and transfer movement dialogs use the guided scanner described below, not the catalog picker used when drafting an order. Other inventory editors may still accept newline/comma/semicolon-separated lists.
+
+### Guided receiving and transfer scanning
+
+Open **Receive**, **Dispatch**, or **Accept arrival** on the relevant order. Only its eligible outstanding products appear. The order ID, SKU, requested/dispatched quantities, earlier receipts, usable acceptance, damage and remaining amounts identify what you are processing. Zero means **skip this product on this posting**. The same posting can contain both quantity-tracked and serialized products.
+
+| Field / option | How to use it | Example |
+| --- | --- | --- |
+| Good | Enter usable units physically received, or units physically leaving the transfer source | `8` good meters |
+| Known damaged | Enter damaged physical units with a readable identity; for quantity-tracked supplies this is simply the damaged quantity | `1` meter with serial `000803`, or `2` broken seals |
+| Unreadable | Serialized receipts only: damaged physical units whose serial cannot yet be verified. These are not missing units and are never usable stock | `1` meter with an unreadable label |
+| Good / Known damaged serial scanner | Set quantities first. Focus the appropriate scanner input, scan/type one unit identity, then commit with Enter or a nonempty Tab. The button beside the input commits a manually typed identity | Scan `000801`, press Enter, then `000802`, press Enter |
+| Unidentified damage references | Transfer arrivals only: select exactly one unresolved **actually dispatched** identity for each unreadable physical unit. This records unverified custody references, not a claimed physical label reading | Dispatch showed `000804`; select that reference after documenting why the arrived unit cannot be read |
+| Damage condition / reason | Required for each product with damaged/unreadable units. Describe actual condition, not just “short” | `Carton crushed; register glass broken; label scraped on one unit` |
+| Movement note / exception reason | Optional for an ordinary movement; required when closing its remainder. Include delivery slip or receiving context | `Delivery slip DN-204; supplier confirmed remainder cancelled` |
+| Review movement | Check good/damaged identities and quantities before posting; Back to entries retains scans | Verify 8 good + 2 held = 10 physically arrived |
+| Post movement | Post only this batch and leave any remaining quantities or inspection exceptions open | Receive 6 of 10 today; receive the other 4 later |
+| Close the order remainder | Permission-gated receiving choice, with required reason and confirmation; no outstanding transfer transit may remain | Close the final 2 unshipped units because the supplier discontinued the item |
+
+Configure the HID scanner as a keyboard-wedge device with an **Enter suffix** (Tab suffix is also supported). Use a plain text test field to check its output first: it must transmit the unit serial, including leading zeros, rather than a product barcode. No camera or manufacturer SDK is needed. Each successful scan is recorded on its own numbered line and focus stays ready for the next unit. After the required count, focus advances to the next needed damaged/good serial input or next serialized product. It never posts the movement automatically. Empty Tab follows ordinary keyboard focus. An invalid/duplicate scan stays in the input for correction; it does not advance. Use **Remove serial …** to correct a committed identity.
+
+For example, a PO contains 3 meters and 20 seals. Enter Good `2` and Known damaged `1` for meters; scan `000801`, `000802` as good and `000803` as damaged. Enter Good `18`, Known damaged `2` for seals and describe their condition. Review and post once. Only two meters and 18 seals become usable; one meter and two seals enter shipment quarantine. If there is no damage and only two meters arrived, enter Good `2` and leave other quantities at zero—the third meter stays expected.
+
+The number of committed serials must equal each serialized quantity. Reducing a quantity does not silently discard scans: remove/correct the excess explicitly. Transfer dispatch checks available unreserved source identities, including restrictions on older orders with preselected serials; arrivals require fresh physical scans from that transfer's unresolved dispatched identities. A new supplier serial cannot generally be identified as the wrong SKU without external product-label verification; verify the product on the receiving line. Known unavailable identities and all server stock/serial constraints remain enforced.
+
+Cancel, Escape, outside dismissal and application/browser navigation protect unfinished movement quantities, committed scans and raw scanner text with a Stay/Discard choice. Review does not omit an unfinished scan. Failed or unconfirmed posting retains the form and its operation identity: retry **unchanged** to confirm the same posting. Do not start a different receipt merely because the response was lost. Closing/reopening for a new physical batch creates a new business operation even if its quantity equals the previous batch.
+
+**Limits:** up to 500 product lines per movement; whole-unit quantities up to 1,000,000 per combined product line; at most 10,000 combined known/unverified serial references per product line; serials 1–100 characters; condition/reason text up to 1,000 characters; shipment command `data` up to 8 MiB encoded JSON. Smaller batches are recommended for very large serial shipments. Over-limit submissions fail without partial posting. These are enforced limits, not a claim of physical scanner throughput. Automated Chromium tests simulate keyboard-wedge Enter/Tab input; actual scanner hardware and all customer OS/browser combinations require separate acceptance.
+
+### Partials, shortages and damaged stock
+
+- **Leave partial:** post actual units and leave the balance expected. Unshipped transfer quantities remain at source; dispatched but unreceived units remain in transit.
+- **Close with exceptions:** a user with `inventory.closeOrders` and destination warehouse access supplies a reason and confirms the exact outstanding amounts. The order becomes `closed`, not falsely `completed`; original ordered quantities and all earlier receipts remain intact. An order with zero arrivals can be closed without inventing a stock receipt. A physically received damaged unit is not counted as missing. Closure does not erase pending inspection.
+- **Transit loss:** use **Resolve transit loss** only after investigation establishes that dispatched units will not arrive. `inventory.resolveExceptions` plus destination warehouse access is required. Select exact lost quantities and identities, give the evidence/reason, review and confirm. No destination stock is added and source stock is not automatically returned. Losses settle only those in-transit units, are blocked against duplicate inventory resurrection, and leave the order open until an explicit closure. Ordinary cancellation cannot erase unresolved transit.
+- **Replacement order:** use **Create linked replacement** to make a new draft linked by `replacementFor`. Review its suggested quantities against any open supplier obligations before saving/releasing it. Damaged units already count as physically received, so ordinary receipt capacity on the original order is not silently increased. Only original orders can be replacement parents; a replacement cannot point to itself or chain to another replacement.
+
+**Shipment exceptions** is separate from **Removed equipment** (the latter concerns old devices removed on work orders). Search by product/serial/order/receipt or filter by warehouse. Each shipment hold retains its original receipt, location, actor, observed condition, known identities and explicitly unidentified count. Usable stock search, reservations, work-order consumption, dispatch and assembly exclude these held units. Normal stock counts count **usable stock only**; keep quarantine physically segregated and reconcile it through the exception workflow, not through a discovery count.
+
+Authorized inspectors use **Resolve** on a held batch:
+
+| Disposition | Required input / effect | Example |
+| --- | --- | --- |
+| Release after inspection | Reason, and every verified physical identity for serialized products. Keep known IDs; unverified transfer references must match after inspection. The entire batch moves to usable stock exactly once | Identify `000803` and unreadable `000804`, bench-test both, then enter those two verified serials |
+| Record physical return | Reason and a return destination/shipment reference. The entire held batch leaves quarantine; usable stock does not change | `Return to Supplier dock, RMA-204, tracking ABC123` |
+| Scrap / write off | Approval reason. The entire batch leaves quarantine; known/expected serialized identities remain blocked, not returned to available stock | `Supervisor approved destruction; failed electrical safety test` |
+
+Resolutions apply to the **whole recorded hold batch**, not part of it. If units need different dispositions, post separately identified receiving batches/holds before resolving them. An unreadable unit can never be released as usable serialized stock until its exact physical identity is verified. A transfer identity mismatch requires investigation, not guessing another serial. Returns are physical custody records, not automatic supplier credits, carrier claims or vendor accounting.
+
+Order printouts show ordered, dispatched, physically received, usable accepted, damaged, still-held, lost, in-transit, still-expected and approved closed-short quantities. “Usable accepted” is historical acceptance/release, not today's remaining on-hand stock. Receipts show only their specific movement/disposition, including damaged/unidentified units, order and receipt IDs, reasons and external return references. Closed orders retain their exception records.
+
+### Shipment command examples
+
+Use the existing authenticated command endpoint with a fresh operation UUID for a new posting and the **same UUID and unchanged data/actor on retry**. Successful responses include the posted `operationId` and a refreshed snapshot; internal operation fingerprints are not exposed by snapshots.
+
+```json
+{
+  "operationId": "63e456d2-3778-45cf-95b1-d990467113b1",
+  "action": "receive",
+  "data": {
+    "orderId": "PO-204",
+    "lines": [{"itemId": "meter-id", "quantity": 2, "serials": ["000801", "000802"]}],
+    "damaged": [{
+      "itemId": "meter-id", "quantity": 2, "serials": ["000803"],
+      "unidentifiedQuantity": 1, "expectedSerials": [],
+      "reason": "Crushed carton; one unreadable label"
+    }],
+    "reason": "Delivery DN-204; leave remaining order open",
+    "closeRemainder": false
+  }
+}
+```
+
+`lines` contains **good units only**; `damaged` contains damaged physical units separately, so never also put those units in `lines`. For serialized damage, `quantity = serials.length + unidentifiedQuantity`. For ordinary products, use no serials/unidentified count. Transfer `accept` uses the same shape; its unidentified damaged units also require `expectedSerials` matching unresolved dispatched identities. `dispatch` uses good `lines` only. Ordinary receiving still accepts legacy `{orderId,lines,reason}` payloads.
+
+| Action | `data` example | Result |
+| --- | --- | --- |
+| `closeOrder` | `{"orderId":"PO-204","reason":"Supplier cancelled the last two units"}` | Preserve original quantities, store `closure.unfulfilled`, actor/time/reason, mark `closed`. No stock added |
+| `resolveTransit` | `{"orderId":"TR-204","lines":[{"itemId":"meter-id","quantity":1,"serials":["000805"]}],"reason":"Carrier confirmed loss; supervisor approved"}` | Append loss evidence and settle only the stated transit identities; no destination receipt stock |
+| `resolveHold` release | `{"id":"hold-id","outcome":"released","reason":"Labels verified and tested","reference":"","verifiedSerials":["000803","000804"]}` | Resolve whole hold and add inspected units to usable stock |
+| `resolveHold` return | `{"id":"hold-id","outcome":"returned","reason":"Supplier accepted return","reference":"Supplier dock / RMA-204","verifiedSerials":[]}` | Resolve whole held batch as physically returned |
+| `resolveHold` scrap | `{"id":"hold-id","outcome":"scrapped","reason":"Approved unsafe equipment destruction","reference":"","verifiedSerials":[]}` | Resolve whole batch as scrapped and block known identities |
+| `order` replacement | Existing order-draft data plus `"replacementFor":"PO-204"` | Create a new order, retaining a link to the original; does not reset original receipts |
+
+For `closeRemainder:true` on `receive`/`accept`, the receiver additionally needs `inventory.closeOrders`; an ordinary receiving grant cannot bypass that requirement. Empty `lines` are allowed for damaged-only receiving or an authorized closure, never for an unexplained empty posting. An atomic failure posts none of the good/damaged/closure data.
 
 Draft order edits, release and cancellation do not add stock. Dispatch deducts source stock; acceptance adds destination stock. Reserving items for work orders does not reduce on-hand quantities, but does reduce available quantities.
 
@@ -214,13 +299,15 @@ Mobile sync of an inventory-enabled project requires `inventory.view` as well as
 
 Historical consumption is retained after a return. It does not permanently block reusing a meter: after a later changeout records its removal, a warehouse accepts it into quarantine and releases it following inspection. The same serial can then be reserved and installed again. A previous inspection never authorizes receiving another copy while that serial is currently installed or inside a kit.
 
-Authenticated inventory commands use `POST /api/projects/:projectId/inventory/commands` with `{operationId:UUID,action,data}`. Actions are `warehouse`, `vendor`, `item`, `order`, `release`, `cancel`, `unrelease`, `archiveOrder`, `restoreOrder`, `receive`, `dispatch`, `accept`, `assemble`, `countStart`, `countSaveDraft`, `countCancel`, `countPost`, `assign`, `prepareUse`, `returnAccept`, `returnRelease`, `reconcileWorkOrder`. Every action requires its registered permission; stock posting also requires warehouse access. The purchase-only `unrelease`, `archiveOrder`, and `restoreOrder` actions take `data: {"orderId":"PO-2026-014"}` and require `inventory.purchase`. A cleared order retains status `cancelled` and an ISO `archivedAt` timestamp; restoring visibility removes that timestamp. Retries must reuse the same operation UUID and identical data/actor; reused UUIDs with different content are rejected. The UI posts commands through review forms rather than a JSON editor.
+Authenticated inventory commands use `POST /api/projects/:projectId/inventory/commands` with `{operationId:UUID,action,data}`. Actions are `warehouse`, `vendor`, `item`, `order`, `release`, `cancel`, `unrelease`, `archiveOrder`, `restoreOrder`, `receive`, `dispatch`, `accept`, `closeOrder`, `resolveTransit`, `resolveHold`, `assemble`, `countStart`, `countSaveDraft`, `countCancel`, `countPost`, `assign`, `prepareUse`, `returnAccept`, `returnRelease`, `reconcileWorkOrder`. Every action requires its registered permission; stock posting also requires warehouse access. The purchase-only `unrelease`, `archiveOrder`, and `restoreOrder` actions take `data: {"orderId":"PO-2026-014"}` and require `inventory.purchase`. A cleared order retains status `cancelled` and an ISO `archivedAt` timestamp; restoring visibility removes that timestamp. Retries must reuse the same operation UUID and identical data/actor; reused UUIDs with different content are rejected. The UI posts commands through review forms rather than a JSON editor.
 
 For example, `countSaveDraft` data is `{"id":"count-id","revision":0,"rows":[{"itemId":"meter-id","quantity":"","serials":"0000456\npartial"}],"reason":"Still scanning"}`. Use revision `0` before the first save; subsequent saves send the returned `draft.revision`. The snapshot's count includes `draft: {revision,rows,reason,savedBy,savedAt}` only for authorized count operators with warehouse access. `countPost` includes `draftRevision` matching the loaded draft (for example `1` after the first save), plus its normal validated `lines` and `reason`. Older clients omitting `draftRevision` can post counts with no saved draft, but cannot overwrite a count with a saved draft. Conflicts return HTTP 409; reload/reconcile rather than blindly retrying an old revision.
 
 Customer API Push includes an additive `inventory` snapshot when enabled: allocation/use/dispositions and the referenced catalog items. It shares the existing delivery/retry process. It is a snapshot of the posted work order, not a command for the customer's backend to change MeterFlo stock.
 
 ## Audit, backups and operations
+
+Shipment damage, unidentified custody, explicit order closure, confirmed transit loss, linked replacements and inspection/return/scrap dispositions are persisted in the same project inventory aggregate and audited transaction as stock movements. Project and full-system JSON restores retain these records, receipt links and blocked identities; validation rejects broken exception references before replacement. Older snapshots without these additive fields remain supported. No Replit-specific storage/service is required for this warehouse workflow on Windows or Linux.
 
 Committed inventory commands record actor, time, action, project, stock/reservation/serial changes and changed catalog/order/allocation/count/return records. Failed posting attempts are logged as failed when audit logging is available. Work-order completion and inventory posting are atomic. Browsing or unposted scan text is not a stock mutation.
 

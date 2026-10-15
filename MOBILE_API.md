@@ -10,6 +10,8 @@ Completion uploads can include `inventoryUsage:{operationId:UUID,revision,mode,u
 
 See **Project Inventory Control** in Documentation, or [INVENTORY.md](INVENTORY.md), for complete examples, permissions, receiving/transfer commands, imports and backup rules. The separate Expo app must implement this contract; adding server fields alone does not add native inventory UI.
 
+Shipment quarantine is separate from usable inventory and from removed-device returns. Held/unidentified, scrapped and unresolved in-transit units cannot be allocated or consumed by mobile completion. Warehouse receiving, shipment inspection and short-close UI are implemented in the web app, not automatically in Expo. The existing sync allocation/catalog contract is unchanged; do not derive usable availability from original ordered or physically received quantities. See the guided receiving and shipment-exception examples in `INVENTORY.md`.
+
 Complete REST API reference for building the MeterFlo mobile application.
 
 This reference documents the HTTP contract. For workflow configuration, wizard behavior, offline retry strategy, and upload decision rules, see the separate **MeterFlo Mobile App Synchronization Guide** on the Documentation page.

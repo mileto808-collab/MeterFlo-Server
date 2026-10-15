@@ -14,6 +14,7 @@ import { getProjectFilesPath } from "./fileStorage";
 import { insertAuditEvent } from "./auditService";
 import { auditingEnabled } from "./auditContext";
 import { inventoryCountReference } from "../shared/inventory-count-reference";
+import { shipmentPrint } from "./inventoryShipmentPrint";
 
 export function inventoryVisibleState(state: InventoryState, actor: string, admin: boolean, canCount = true) {
   // Project-level view permits finding stock at other locations and requesting
@@ -45,6 +46,7 @@ export function inventoryPrint(kind: string, record: any, state: InventoryState,
     ${lineList.map((l: any) => `<tr><td>${escape(state.items.find(i => i.id === l.itemId)?.sku)}</td><td>${escape(state.items.find(i => i.id === l.itemId)?.name)}</td>
     <td>${escape(l.quantity)}</td><td>${escape((l.serials || []).join(", "))}</td><td>${escape((record.dispatched || []).filter((x: any) => x.itemId === l.itemId).reduce((n: number, x: any) => n + x.quantity, 0))}</td>
     <td>${escape((record.received || []).filter((x: any) => x.itemId === l.itemId).reduce((n: number, x: any) => n + x.quantity, 0))}</td></tr>`).join("")}</tbody></table>
+    ${shipmentPrint(kind, record, state)}
     ${record.components ? `<h2>Components</h2><p>${escape(record.components.map((l: any) => `${l.itemId}: ${l.quantity} (${l.serials.join(", ")})`).join("; "))}</p>` : ""}</body></html>`;
 }
 export function registerInventoryRoutes(app: Express) {
@@ -91,6 +93,8 @@ export function registerInventoryRoutes(app: Express) {
       permission = type === "purchase" ? inventoryPermissions.purchase : inventoryPermissions.transfer;
     }
     if (!c.permissions.includes(permission)) throw Object.assign(new InventoryError("Inventory action permission required."), { status: 403 });
+    if (command.data.closeRemainder === true && !c.permissions.includes(inventoryPermissions.closeOrders))
+      throw Object.assign(new InventoryError("Close short orders permission required."), { status: 403 });
     if (["receive", "accept", "dispatch"].includes(command.action)) {
       const required = command.action === "dispatch" ? inventoryPermissions.transfer : inventoryPermissions.receive;
       if (!c.permissions.includes(required)) throw Object.assign(new InventoryError("Posting permission required."), { status: 403 });
@@ -101,7 +105,7 @@ export function registerInventoryRoutes(app: Express) {
         throw new InventoryError("Use images uploaded to this project.");
     }
     await postInventory(c.project.id, command, c.user.id, c.admin);
-    return snapshot(res);
+    return { ...await snapshot(res), operationId: command.operationId };
   }));
   app.get(`${base}/print/:kind/:id`, handler(async (req, res) => {
     const c = res.locals.inventory, state = inventoryVisibleState(await inventoryState(c.project.id), c.user.id, c.admin);

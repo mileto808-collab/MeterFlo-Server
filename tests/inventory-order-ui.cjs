@@ -449,15 +449,21 @@ async function main() {
     await page.goto(inventoryURL);
     await ordersTab();
     await poRow("ORDER-SERIAL-MOVE").getByRole("button", { name: "Dispatch", exact: true }).click();
-    const dispatchDialog = page.getByRole("dialog", { name: "Dispatch transfer", exact: true });
-    assert.equal(await dispatchDialog.getByLabel("Serial scans", { exact: true }).inputValue(), "");
-    await dispatchDialog.getByLabel("Serial scans", { exact: true }).fill("000701\n000702");
+    const dispatchDialog = page.getByRole("dialog", { name: /^Dispatch transfer/ });
+    await dispatchDialog.locator("#order-serial-goodQuantity").fill("2");
+    await dispatchDialog.locator("#order-bulk-goodQuantity").fill("1");
+    const dispatchScanner = dispatchDialog.getByRole("textbox", { name: "Good serial scanner for Order meter", exact: true });
+    for (const serial of ["000701", "000702"]) { await dispatchScanner.fill(serial); await dispatchScanner.press("Enter"); }
     await dispatchDialog.getByRole("button", { name: "Review movement", exact: true }).click();
     await dispatchDialog.getByRole("button", { name: "Post movement", exact: true }).click();
     await dispatchDialog.waitFor({ state: "hidden" });
     await poRow("ORDER-SERIAL-MOVE").getByRole("button", { name: "Accept arrival", exact: true }).click();
-    const arrivalDialog = page.getByRole("dialog", { name: "Accept transfer arrival", exact: true });
-    assert.equal(await arrivalDialog.getByLabel("Serial scans", { exact: true }).inputValue(), "000701\n000702");
+    const arrivalDialog = page.getByRole("dialog", { name: /^Accept transfer arrival/ });
+    await arrivalDialog.locator("#order-serial-goodQuantity").fill("2");
+    await arrivalDialog.locator("#order-bulk-goodQuantity").fill("1");
+    const arrivalScanner = arrivalDialog.getByRole("textbox", { name: "Good serial scanner for Order meter", exact: true });
+    assert.equal(await arrivalScanner.inputValue(), "", "expected dispatched identities are not proof of a physical arrival scan");
+    for (const serial of ["000701", "000702"]) { await arrivalScanner.fill(serial); await arrivalScanner.press("Enter"); }
     await arrivalDialog.getByRole("button", { name: "Review movement", exact: true }).click();
     await arrivalDialog.getByRole("button", { name: "Post movement", exact: true }).click();
     await arrivalDialog.waitFor({ state: "hidden" });

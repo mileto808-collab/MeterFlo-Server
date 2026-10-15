@@ -8,6 +8,8 @@ Fetch `inventoryEnabled` with the existing project settings. If true, persist ea
 
 Send `inventoryUsage` with the completed work order: a stable operation UUID, downloaded allocation revision, mode, used allocation lines and dispositions. Preserve leading zeros. Do not silently discard pending work on `INVENTORY_CONFLICT`; keep it queued, refresh stock/assignment data and require reconciliation. A retry does not authorize a different posting under the same UUID. Inventory-disabled projects retain their current mobile flow.
 
+Shipment-held/damaged or unidentified goods and in-transit units are not usable stock. Do not infer availability from PO/transfer ordered or physically received totals, or offer those identities for offline assignment. The server excludes them from allocation/consumption and enforces inspection/discrepancy resolution. Guided receiving, short closure and shipment-hold resolution currently belong to the web warehouse workflow; this does not add native Expo screens or change the existing completion-upload contract. Operator/API examples are in `INVENTORY.md`.
+
 Read [INVENTORY.md](INVENTORY.md) for the exact JSON example and server endpoints before implementing this in the separately maintained Expo app.
 
 This document provides comprehensive instructions for updating the mobile application to synchronize with the web application's workflow configuration, search methods, time tracking, file uploads, and other features.
