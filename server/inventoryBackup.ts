@@ -4,6 +4,8 @@ import { z } from "zod";
 import { countPayloadFits } from "../shared/inventory-count-limits";
 import { reserved } from "../shared/inventory-engine";
 import { validateShipmentBackup } from "./inventoryShipmentBackup";
+import { savedShipmentDraftSchema } from "../shared/inventory-shipment-draft-model";
+import { draftWarehouse } from "../shared/inventory-shipment-drafts";
 
 export type InventoryBackup = { state: InventoryState; movements: any[]; enabled: boolean };
 export async function exportInventory(client: PoolClient, schema: string): Promise<InventoryBackup | undefined> {
@@ -15,6 +17,22 @@ export async function exportInventory(client: PoolClient, schema: string): Promi
   return { state: r.state, movements: rows, enabled: !!p.inventory_enabled };
 }
 export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: number[]) {
+  const drafts = z.array(savedShipmentDraftSchema).max(100).parse(backup.state.shipmentDrafts ?? []);
+  if (new TextEncoder().encode(JSON.stringify(drafts)).length > 32 * 1024 * 1024)
+    throw new Error("Saved shipment drafts exceed the project's 32 MiB limit.");
+  if (new Set(drafts.map(d => d.id)).size !== drafts.length ||
+    new Set(drafts.map(d => JSON.stringify([d.orderId, d.stage]))).size !== drafts.length)
+    throw new Error("Inventory backup contains duplicate shipment drafts.");
+  for (const draft of drafts) {
+    if (!backup.state.warehouses.some(w => w.id === draftWarehouse(backup.state, draft.orderId, draft.stage)) ||
+      new TextEncoder().encode(JSON.stringify(draft)).length > 16 * 1024 * 1024 ||
+      draft.pending && (draft.pending.payload.orderId !== draft.orderId ||
+        draft.pending.payload.draftId !== undefined || draft.pending.payload.draftRevision !== undefined))
+      throw new Error("Inventory backup has an invalid shipment draft.");
+    const receipt = draft.pending && backup.state.receipts.find(r => r.id === draft.pending!.operationId);
+    if (receipt && (receipt.action !== draft.stage || receipt.reference !== draft.orderId))
+      throw new Error("Saved shipment draft references an unrelated receipt.");
+  }
   const s = backup.state;
   z.array(warehouseSchema).parse(s.warehouses); z.array(itemSchema).parse(s.items); z.array(vendorSchema).parse(s.vendors);
   if (!Array.isArray(s.stock) || !Array.isArray(s.allocations) || !Array.isArray(s.orders) || !Array.isArray(s.receipts) ||

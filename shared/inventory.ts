@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { COUNT_MAX_LINES } from "./inventory-count-limits";
 import type { DamageLine, OrderClosure, ShipmentHold } from "./inventory-shipment-model";
+import type { SavedShipmentDraft } from "./inventory-shipment-draft-model";
 
 export const inventoryPermissions = {
   configure: "inventory.configure", view: "inventory.view", maintain: "inventory.maintain",
@@ -57,7 +58,8 @@ export const savedCountDraftSchema = countDraftSchema.extend({
 export const inventoryCommandSchema = z.object({
   operationId: z.string().uuid(), action: z.enum(["warehouse", "vendor", "item", "order", "release",
     "cancel", "unrelease", "archiveOrder", "restoreOrder", "receive", "dispatch", "accept", "assemble", "countStart", "countPost", "countCancel", "countSaveDraft",
-    "assign", "prepareUse", "returnAccept", "returnRelease", "reconcileWorkOrder", "closeOrder", "resolveTransit", "resolveHold"]),
+    "assign", "prepareUse", "returnAccept", "returnRelease", "reconcileWorkOrder", "closeOrder", "resolveTransit", "resolveHold",
+    "shipmentDraftSave", "shipmentDraftPrepare", "shipmentDraftUnlock", "shipmentDraftDelete", "shipmentDraftClaim"]),
   data: z.record(z.unknown()),
 }).strict();
 export type Warehouse = z.infer<typeof warehouseSchema>;
@@ -82,7 +84,7 @@ export type InventoryState = { warehouses: Warehouse[]; vendors: Vendor[]; items
   orders: InventoryOrder[]; counts: InventoryCount[]; allocations: WorkAllocation[];
   receipts: InventoryReceipt[]; returns: EquipmentReturn[]; operations: Record<string, string>; revision: number;
   serialOccupancy?: { itemId: string; serial: string; workOrderId: number | null }[];
-  shipmentHolds?: ShipmentHold[] };
+  shipmentHolds?: ShipmentHold[]; shipmentDrafts?: SavedShipmentDraft[] };
 export const emptyInventory = (): InventoryState => ({ warehouses: [], vendors: [], items: [], stock: [], orders: [],
   counts: [], allocations: [], receipts: [], returns: [], operations: {}, revision: 0, serialOccupancy: [], shipmentHolds: [] });
 export const commandPermission = (action: InventoryCommand["action"]) =>

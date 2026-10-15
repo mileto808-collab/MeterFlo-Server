@@ -12,7 +12,7 @@
     "activate:customer-release": "tsx script/customer-release-cli.ts activate",
     "test:customer-updates": "tsx --test tests/customer-updates.test.ts",
     "test:customer-updates-integration": "tsx --test tests/customer-updates-integration.test.ts",
-    "test:inventory": "tsx --test tests/inventory.test.ts tests/inventory-count-form.test.ts tests/inventory-count-reference.test.ts tests/inventory-resource-save.test.ts",
+    "test:inventory": "tsx --test tests/inventory.test.ts tests/inventory-count-form.test.ts tests/inventory-count-reference.test.ts tests/inventory-resource-save.test.ts tests/inventory-shipment-drafts.test.ts",
     "test:inventory-volume": "tsx --test tests/inventory-volume.test.ts tests/inventory-persistence.test.ts tests/inventory-sandbox.test.ts tests/inventory-volume-harness.test.ts",
     "test:inventory-volume:acceptance": "node script/inventory-volume-acceptance.mjs",
     "test:inventory-volume:development": "INVENTORY_VOLUME_ACCEPTANCE=1 tsx --test tests/inventory-volume-integration.test.ts",

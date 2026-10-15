@@ -124,16 +124,17 @@ async function main() {
     let failedOperation;
     const failPost = async route => {
       const body = route.request().postDataJSON();
+      if (body.action !== "receive") return route.continue();
       failedOperation = body.operationId;
       await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ message: "Temporary fixture failure" }) });
     };
     await page.route(`**${endpoint}/commands`, failPost);
     await dialog.getByRole("button", { name: "Post movement", exact: true }).click();
-    await dialog.getByText("Posting not confirmed", { exact: true }).waitFor();
+    const recovery = page.getByRole("dialog", { name: "Recover prepared shipment", exact: true });
+    await recovery.waitFor();
     await page.unroute(`**${endpoint}/commands`, failPost);
-    const afterFailure = await openScans(dialog, "ship-meter", true);
-    await afterFailure.getByRole("button", { name: "Close", exact: true }).first().click();
-    await afterFailure.waitFor({ state: "hidden" });
+    assert.deepEqual((await state()).shipmentDrafts.find(d => d.pending?.operationId === failedOperation).capture.entries["ship-meter"].goodSerials, ["000501", "000502"]);
+    await recovery.getByRole("button", { name: "Check status", exact: true }).click();
     // Let server commit, then lose its success response. Retry identical UUID.
     let lostOperation;
     const lose = async route => {
@@ -146,16 +147,15 @@ async function main() {
       await route.abort("failed");
     };
     await page.route(`**${endpoint}/commands`, lose);
-    await dialog.getByRole("button", { name: "Post movement", exact: true }).click();
-    await dialog.getByText("Posting not confirmed", { exact: true }).waitFor();
+    await recovery.getByRole("button", { name: "Retry unchanged", exact: true }).click();
+    await recovery.getByText(/Retry response was lost/).waitFor();
     const committed = await state();
     assert.equal(committed.orders.find(o => o.id === "SHIP-PO").received.find(l => l.itemId === "ship-meter").quantity, 4);
     assert.equal(committed.shipmentHolds.filter(h => h.orderId === "SHIP-PO").length, 2);
     await page.unroute(`**${endpoint}/commands`, lose);
-    const retry = page.waitForRequest(request => request.url().endsWith(`${endpoint}/commands`) && request.postDataJSON()?.action === "receive");
-    await dialog.getByRole("button", { name: "Post movement", exact: true }).click();
-    assert.equal((await retry).postDataJSON().operationId, lostOperation);
-    await dialog.waitFor({ state: "hidden" });
+    await recovery.getByRole("button", { name: "Check status", exact: true }).click();
+    await recovery.getByRole("button", { name: "Confirm receipt and close", exact: true }).click();
+    await recovery.waitFor({ state: "hidden" });
     assert.deepEqual((await state()).stock, committed.stock, "lost-response retry cannot receive twice");
     assert.equal((await state()).receipts.filter(r => r.id === lostOperation).length, 1);
     // Large captures stay inside a bounded, paginated child; no child action posts.

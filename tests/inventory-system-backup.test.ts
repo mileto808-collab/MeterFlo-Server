@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { pool } from "../server/db";
 import { restoreFullSystem, restoreFullSystemData, type FullSystemBackup } from "../server/systemBackup";
 import { emptyInventory } from "../shared/inventory";
+import { blankShipmentCapture } from "../shared/inventory-shipment-draft-model";
 import { applyInventoryCommand, completeInventoryWorkOrder } from "../shared/inventory-engine";
 import { createProjectSchema } from "../server/projectDb";
 import { initializeAudit } from "../server/auditMigration";
@@ -54,6 +55,18 @@ test("full-system inventory restore preserves identity IDs, JSON serials, sequen
       itemId: "m", quantity: 2, serials: ["QUARANTINE-0003"], unidentifiedQuantity: 1,
       reason: "Damaged carton with one unreadable label",
     }], closeRemainder: true, reason: "Supplier cannot fulfill last unit; keep inspection outstanding" });
+    for (const pending of [false, true]) {
+      const orderId = pending ? "saved-pending" : "saved-partial", draftId = randomUUID();
+      post("order", { id: orderId, type: "purchase", vendorId: "v", destinationId: "w", lines: [{ itemId: "m", quantity: 2 }] });
+      post("release", { orderId });
+      post("shipmentDraftSave", { id: draftId, revision: 0, orderId, stage: "receive", capture: {
+        ...blankShipmentCapture(), entries: { m: { itemId: "m", goodQuantity: "1", damagedQuantity: "0",
+          unreadableQuantity: "0", damageReason: "", goodSerials: ["RESTORE-0006"], damagedSerials: [], expectedSerials: [] } },
+        scanBuffers: pending ? {} : { "m-goodSerials": "0000 unfinished " },
+      } });
+      if (pending) post("shipmentDraftPrepare", { id: draftId, revision: 1, postingId: randomUUID(),
+        payload: { orderId, lines: [{ itemId: "m", quantity: 1, serials: ["RESTORE-0006"] }], damaged: [], reason: "" } });
+    }
     await client.query("INSERT INTO inventory_state VALUES($1,$2)", [42, state]);
     await client.query("INSERT INTO inventory_items VALUES($1,$2,$3,$4)", [42, "m", "M", state.items[0]]);
     await client.query("INSERT INTO inventory_quantities VALUES($1,$2,$3,$4,$5,$6)", [42, "w", "m", 2, 0, JSON.stringify(["00001", "00002"])]);

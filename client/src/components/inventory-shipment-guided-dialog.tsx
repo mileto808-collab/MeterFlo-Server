@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { InventoryItem, InventoryOrder, InventoryState } from "@shared/inventory";
+import { canonicalInventoryJson } from "@shared/inventory-engine";
+import type { ShipmentCapture } from "@shared/inventory-shipment-draft-model";
 import { orderLineProgress } from "@shared/inventory-shipment-model";
 import { AlertTriangle, Check, PackageCheck } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -15,39 +17,72 @@ import { InventoryShipmentSerialDialog } from "@/components/inventory-shipment-s
 type Props = {
   state: InventoryState; order: InventoryOrder; action: ShipmentAction; items: InventoryItem[];
   canCloseRemainder: boolean; busy?: boolean;
-  onPost: (data: Record<string, unknown>) => Promise<boolean>;
+  initialCapture?: ShipmentCapture; savedFingerprint?: string;
+  onSaveDraft?: (capture: ShipmentCapture) => Promise<boolean>;
+  externalMessage?: string;
+  onPost: (data: Record<string, unknown>, capture?: ShipmentCapture) => Promise<boolean>;
   onClose: () => void; onDirtyChange: (dirty: boolean) => void;
 };
 
-export function InventoryShipmentGuidedDialog({ state: openingState, order, action, items, canCloseRemainder, busy = false, onPost, onClose, onDirtyChange }: Props) {
+export function InventoryShipmentGuidedDialog({ state: openingState, order, action, items, canCloseRemainder, busy = false, initialCapture, savedFingerprint, onSaveDraft, onPost, onClose, onDirtyChange, externalMessage }: Props) {
   // A lost response may refresh stock after the server committed. Keep this
   // editor's opening snapshot so client-side availability does not block its
   // same-operation retry; the server still validates every fresh posting.
   const [state] = useState(openingState);
-  const eligible = useMemo(() => order.lines.filter(line => shipmentCapacity(state, order, action, line.itemId) > 0)
-    .map(line => items.find(item => item.id === line.itemId)).filter((item): item is InventoryItem => !!item), [state, order, action, items]);
-  const [entries, setEntries] = useState<Record<string, ShipmentEntry>>({});
-  const [reason, setReason] = useState("");
+  const initialEntries = initialCapture?.entries ?? {};
+  const initialBuffers = initialCapture?.scanBuffers ?? {};
+  const [entries, setEntries] = useState<Record<string, ShipmentEntry>>(() => initialCapture?.entries ?? {});
+  const [reason, setReason] = useState(initialCapture?.reason ?? "");
   const [review, setReview] = useState(false);
-  const [closeRemainder, setCloseRemainder] = useState(false);
+  const [closeRemainder, setCloseRemainder] = useState(initialCapture?.closeRemainder ?? false);
   const [validation, setValidation] = useState("");
   const [error, setError] = useState("");
   const [discard, setDiscard] = useState(false);
-  const [scanBuffers, setScanBuffers] = useState<Record<string, string>>({});
+  const [scanBuffers, setScanBuffers] = useState<Record<string, string>>(initialCapture?.scanBuffers ?? {});
+  const [savedBase, setSavedBase] = useState(savedFingerprint ?? canonicalInventoryJson({
+    entries: Object.fromEntries(Object.entries(initialEntries).sort(([a], [b]) => a.localeCompare(b))),
+    scanBuffers: Object.fromEntries(Object.entries(initialBuffers).sort(([a], [b]) => a.localeCompare(b))),
+    reason: initialCapture?.reason ?? "", closeRemainder: initialCapture?.closeRemainder ?? false,
+  }));
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [draftMessage, setDraftMessage] = useState("");
+  const eligible = useMemo(() => {
+    const ids = new Set(order.lines.map(line => line.itemId));
+    Object.entries(entries).forEach(([id, row]) => {
+      if (row.goodQuantity !== "0" || row.damagedQuantity !== "0" || row.unreadableQuantity !== "0" ||
+        row.goodSerials.length || row.damagedSerials.length || row.expectedSerials.length || row.damageReason ||
+        Object.entries(scanBuffers).some(([key, value]) => key.startsWith(`${id}-`) && !!value)) ids.add(id);
+    });
+    Object.entries(scanBuffers).forEach(([key, value]) => {
+      const id = key.endsWith("-goodSerials") ? key.slice(0, -"-goodSerials".length) :
+        key.endsWith("-damagedSerials") ? key.slice(0, -"-damagedSerials".length) : "";
+      if (id && value) ids.add(id);
+    });
+    return [...ids].map(id => items.find(item => item.id === id)).filter((item): item is InventoryItem => !!item);
+  }, [order, items, entries, scanBuffers]);
+  const missingSavedItems = useMemo(() => Object.keys(entries).filter(id => !items.some(item => item.id === id) &&
+    (entries[id].goodQuantity !== "0" || entries[id].damagedQuantity !== "0" || entries[id].unreadableQuantity !== "0" ||
+      entries[id].goodSerials.length || entries[id].damagedSerials.length || entries[id].expectedSerials.length ||
+      entries[id].damageReason || Object.entries(scanBuffers).some(([key, value]) => key.startsWith(`${id}-`) && !!value))),
+    [entries, items, scanBuffers]);
+  const missingBufferItems = useMemo(() => Object.entries(scanBuffers).filter(([, value]) => !!value).map(([key]) =>
+    key.endsWith("-goodSerials") ? key.slice(0, -"-goodSerials".length) :
+      key.endsWith("-damagedSerials") ? key.slice(0, -"-damagedSerials".length) : "").filter(id => !!id && !items.some(item => item.id === id)),
+    [scanBuffers, items]);
+  const capture: ShipmentCapture = { entries, scanBuffers, reason, closeRemainder };
+  const fingerprint = canonicalInventoryJson(capture);
   const [serialDialog, setSerialDialog] = useState<{ itemId: string; viewOnly: boolean } | null>(null);
   const serialDialogOpenRef = useRef(false);
   serialDialogOpenRef.current = !!serialDialog;
   const serialOpenerRef = useRef<HTMLElement | null>(null);
-  const dirty = Object.values(entries).some(entry => entry.goodQuantity !== "0" || entry.damagedQuantity !== "0" ||
-    entry.unreadableQuantity !== "0" || entry.goodSerials.length || entry.damagedSerials.length ||
-    entry.expectedSerials.length || !!entry.damageReason) || Object.values(scanBuffers).some(Boolean) || !!reason || closeRemainder;
+  const dirty = fingerprint !== savedBase;
   useEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
   const values = (itemId: string) => entries[itemId] ?? blankShipmentEntry(itemId);
   const patch = (itemId: string, change: Partial<ShipmentEntry>) => {
     setEntries(current => ({ ...current, [itemId]: { ...values(itemId), ...change } }));
     setValidation("");
   };
-  const close = () => { if (dirty) setDiscard(true); else onClose(); };
+  const close = () => { if (busy || savingDraft) return; if (dirty) setDiscard(true); else onClose(); };
   const scannedTotal = Object.values(entries).reduce((sum, row) => sum + row.goodSerials.length + row.damagedSerials.length, 0);
   const unavailableSerialReason = (serial: string) => {
     if (state.stock.some(stock => stock.serials.includes(serial))) return "This serial is already in current stock.";
@@ -107,6 +142,11 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
     return !!target?.closest?.("[data-serial-child-dialog]");
   };
   const validateAll = () => {
+    if (missingSavedItems.length || missingBufferItems.length) {
+      setValidation(`Saved product identities are unavailable: ${[...new Set([...missingSavedItems, ...missingBufferItems])].join(", ")}. Restore the product/order line or discard the saved draft.`);
+      setReview(false);
+      return false;
+    }
     if (Object.values(scanBuffers).some(buffer => buffer.length > 0)) {
       setValidation("Commit each scanner entry with Enter / Tab, or clear the raw scanner text before review.");
       setReview(false);
@@ -118,6 +158,26 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
       const issue = validateShipmentEntry(row, item.tracking === "serialized", action,
         action === "accept" ? unresolvedTransferSerials(state, order, item.id) : []);
       if (issue) { setValidation(`${item.name} (${item.sku}): ${issue}`); setReview(false); return false; }
+      const capturedSerials = [...row.goodSerials, ...row.damagedSerials];
+      if ((capturedSerials.length || Number(row.goodQuantity) || Number(row.damagedQuantity)) && !item.active) {
+        setValidation(`${item.name}: this product is inactive. Reactivate it or correct the saved entry; scans have been retained.`);
+        setReview(false); return false;
+      }
+      for (const serial of capturedSerials) {
+        let conflict = "";
+        if (action === "dispatch") {
+          const reservedSerials = state.allocations.filter(a => a.status === "reserved")
+            .flatMap(a => a.lines.filter(l => l.warehouseId === order.sourceId && l.itemId === item.id).flatMap(l => l.serials));
+          const onHand = state.stock.some(b => b.warehouseId === order.sourceId && b.itemId === item.id && b.serials.includes(serial));
+          const restricted = order.lines.find(l => l.itemId === item.id)?.serials ?? [];
+          if (!onHand || reservedSerials.includes(serial)) conflict = "This identity is no longer available and unreserved at the source.";
+          else if (restricted.length && !restricted.includes(serial)) conflict = "This identity is not allowed by the order's serial restriction.";
+        } else conflict = unavailableSerialReason(serial);
+        if (conflict) {
+          setValidation(`${item.name} · ${serial}: ${conflict} Correct this saved scan before posting.`);
+          setReview(false); return false;
+        }
+      }
       const total = Number(row.goodQuantity) + Number(row.damagedQuantity) + Number(row.unreadableQuantity);
       if (total > shipmentCapacity(state, order, action, item.id)) {
         setValidation(`${item.name}: movement quantity is above the remaining amount.`); setReview(false); return false;
@@ -155,7 +215,7 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
     const payload = buildShipmentPayload(eligible.map(item => values(item.id)), action);
     setError("");
     try {
-      const confirmed = await onPost({ orderId: order.id, lines: payload.lines, damaged: payload.damaged, reason: reason.trim(), ...(closeRemainder ? { closeRemainder: true } : {}) });
+      const confirmed = await onPost({ orderId: order.id, lines: payload.lines, damaged: payload.damaged, reason: reason.trim(), ...(closeRemainder ? { closeRemainder: true } : {}) }, capture);
       if (confirmed) { onDirtyChange(false); onClose(); }
       else setError("The posting was not confirmed. Your quantities and scans are still here; retry without changing them.");
     } catch (cause) {
@@ -168,6 +228,7 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
         onEscapeKeyDown={event => { event.preventDefault(); if (!serialDialogOpenRef.current) close(); }}
         onPointerDownOutside={event => { event.preventDefault(); if (!serialDialogOpenRef.current && !isChildPortalEvent(event)) close(); }}
         onInteractOutside={event => { if (serialDialogOpenRef.current || isChildPortalEvent(event)) event.preventDefault(); }}>
+      <fieldset disabled={busy || savingDraft} className="contents">
       <DialogHeader><DialogTitle>{heading} · <span className="font-mono">{order.id}</span></DialogTitle><DialogDescription>
         {action === "dispatch" ? "Scan actual serialized identities leaving the source location." : action === "accept" ? "Scan newly received identities. Unreadable damaged units must reference unresolved dispatched identities." : "Record physical units received. Damaged units are held for inspection, not available stock."}
       </DialogDescription></DialogHeader>
@@ -176,13 +237,15 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
           <div className="rounded border p-2"><span className="text-muted-foreground">Order</span><p className="font-mono font-medium">{order.id}</p></div>
           <div className="rounded border p-2"><span className="text-muted-foreground">Movement</span><p className="font-medium">{heading}</p></div>
           <div className="rounded border p-2"><span className="text-muted-foreground">Scan count</span><p className="font-mono font-medium" aria-live="polite">{scannedTotal} committed</p></div>
-          <div className="rounded border p-2"><span className="text-muted-foreground">Rows</span><p className="font-mono font-medium">{eligible.length} eligible</p></div>
+          <div className="rounded border p-2"><span className="text-muted-foreground">Rows</span><p className="font-mono font-medium">{eligible.length} retained</p></div>
         </div>
+        {(missingSavedItems.length > 0 || missingBufferItems.length > 0) && <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Saved product is missing</AlertTitle><AlertDescription>Restore the missing product or order line before posting, or discard the saved draft: {[...new Set([...missingSavedItems, ...missingBufferItems])].join(", ")}. Captured quantities and scans remain stored.</AlertDescription></Alert>}
         {!eligible.length ? <Alert><PackageCheck className="h-4 w-4" /><AlertTitle>No remaining lines</AlertTitle><AlertDescription>All lines are settled for this movement.</AlertDescription></Alert> :
           review ? <div className="max-h-[44dvh] space-y-2 overflow-y-auto pr-1" aria-label="Movement review">
             {eligible.filter(item => {
               const row = values(item.id);
-              return Number(row.goodQuantity) || Number(row.damagedQuantity) || Number(row.unreadableQuantity);
+              return Number(row.goodQuantity) || Number(row.damagedQuantity) || Number(row.unreadableQuantity) ||
+                row.goodSerials.length || row.damagedSerials.length || row.expectedSerials.length || !!row.damageReason;
             }).map(item => {
               const row = values(item.id);
               return <section key={item.id} className="rounded-md border p-3">
@@ -240,13 +303,24 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
         {canCloseRemainder && action !== "dispatch" && <label className="flex items-start gap-2 rounded-md border p-3 text-sm"><input type="checkbox" className="mt-1" checked={closeRemainder} disabled={review} onChange={event => setCloseRemainder(event.target.checked)} /><span><span className="font-medium">Close the order remainder</span><span className="mt-0.5 block text-xs text-muted-foreground">Explicitly close outstanding quantities as unfulfilled; this does not record stock. A reason and confirmation are required.</span></span></label>}
         {validation && <p className="text-sm text-destructive" role="alert">{validation}</p>}
         {error && <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Posting not confirmed</AlertTitle><AlertDescription>{error}</AlertDescription></Alert>}
+        {draftMessage && <p className="text-sm" role="status">{draftMessage}</p>}
+        {externalMessage && <p className="text-sm" role="status">{externalMessage}</p>}
         <DialogFooter className="flex-col sm:flex-row">
           <Button variant="outline" disabled={busy} onClick={close}>Cancel</Button>
+          {onSaveDraft && <Button variant="outline" disabled={busy || savingDraft || !dirty} onClick={async () => {
+            setSavingDraft(true); setDraftMessage("");
+            try {
+              const ok = await onSaveDraft(capture);
+              if (ok) { setSavedBase(fingerprint); setDraftMessage("Draft saved. You can cancel and resume it later."); }
+              else setDraftMessage("Draft save was not confirmed. Your local capture is still open.");
+            } finally { setSavingDraft(false); }
+          }}>{savingDraft ? "Saving draft…" : "Save draft"}</Button>}
           {!review ? <Button disabled={busy || !eligible.length} onClick={() => { if (validateAll()) setReview(true); }}>Review movement</Button> :
             <><Button variant="outline" disabled={busy} onClick={() => setReview(false)}>Back to entries</Button>
             <Button disabled={busy} onClick={() => closeRemainder && !window.confirm(`Close order ${order.id} with the outstanding amounts shown? This cannot be undone.`) ? undefined : void submit()}>{busy ? "Posting…" : closeRemainder ? "Confirm & post close" : "Post movement"}</Button></>}
         </DialogFooter>
       </>}
+      </fieldset>
     </DialogContent>
     {serialDialog && (() => {
       const item = items.find(value => value.id === serialDialog.itemId);

@@ -3,16 +3,20 @@ import { useRoute } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useUnsavedNavigation } from "@/hooks/use-unsaved-navigation";
 import type { InventoryCommand, InventoryCount, InventoryItem, InventoryOrder, InventoryState, StockLine, Vendor, Warehouse } from "@shared/inventory";
+import type { SavedShipmentDraft } from "@shared/inventory-shipment-draft-model";
 import { orderLineProgress } from "@shared/inventory-shipment-model";
 import { inventoryCountReference } from "@shared/inventory-count-reference";
 import { COUNT_MAX_LINES, COUNT_PAGE_SIZE } from "@shared/inventory-count-limits";
 import { inventoryCountRows, inventoryCountLines } from "@/lib/inventory-count-form";
 import { inventoryResourceFailure, validateInventoryResource } from "@/lib/inventory-resource-save";
 import { shipmentFingerprint, type ShipmentAction } from "@/lib/inventory-shipment-guidance";
-import { InventoryShipmentGuidedDialog } from "@/components/inventory-shipment-guided-dialog";
+import { InventoryShipmentSession } from "@/components/inventory-shipment-session";
+import { InventoryShipmentDraftsPanel } from "@/components/inventory-shipment-drafts-panel";
+import { refreshShipmentInventory } from "@/components/inventory-shipment-draft-api";
 import { InventoryShipmentExceptions } from "@/components/inventory-shipment-exceptions";
 import { InventoryShipmentTransitDialog } from "@/components/inventory-shipment-transit-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -50,6 +54,7 @@ export default function ProjectInventory() {
 
 function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const { hasPermission } = usePermissions();
+  const { user } = useAuth();
   const { toast } = useToast();
   const base = `/api/projects/${projectId}/inventory`;
   const queryKey = [base];
@@ -105,6 +110,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     else transition();
   };
   const [operationOrder, setOperationOrder] = useState<InventoryOrder | null>(null);
+  const [sessionState, setSessionState] = useState<InventoryState | null>(null);
+  const [sessionDraft, setSessionDraft] = useState<SavedShipmentDraft | undefined>();
   const [transitOrder, setTransitOrder] = useState<InventoryOrder | null>(null);
   const [operation, setOperation] = useState<"receive" | "dispatch" | "accept">("receive");
   const [countWarehouse, setCountWarehouse] = useState("");
@@ -332,7 +339,28 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   });
   const openOrderOperation = (order: InventoryOrder, action: "receive" | "dispatch" | "accept") => {
     setMovementDirty(false);
+    setSessionState(state);
+    setSessionDraft(undefined);
     setOperationOrder(order); setOperation(action);
+  };
+  const resumeShipmentDraft = async (draft: SavedShipmentDraft, snapshot?: InventoryState) => {
+    try {
+      const freshState = snapshot ?? (await refreshShipmentInventory(base)).state;
+      const order = freshState.orders.find(value => value.id === draft.orderId);
+      if (!order) {
+        toast({ title: "Order unavailable", description: "Restore the order before resuming this saved capture.", variant: "destructive" });
+        return;
+      }
+      setMovementDirty(false);
+      setSessionState(freshState);
+      const currentDraft = freshState.shipmentDrafts?.find(value => value.id === draft.id);
+      if (!currentDraft) throw new Error("Saved shipment draft is no longer available to your account. Refresh inventory.");
+      setSessionDraft(currentDraft);
+      setOperation(draft.stage);
+      setOperationOrder(order);
+    } catch (error) {
+      toast({ title: "Could not refresh shipment draft", description: error instanceof Error ? error.message : "Reconnect and retry.", variant: "destructive" });
+    }
   };
   const startReplacementOrder = (order: InventoryOrder) => requestOrderTransition(() => {
     const replacementLines = order.lines.map(line => {
@@ -603,6 +631,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       </TabsContent>
 
       <TabsContent value="orders" className="space-y-4">
+        <InventoryShipmentDraftsPanel base={base} state={state} users={data.users} orders={orderItems}
+          userId={user?.id} isAdmin={user?.role === "admin"} onResume={(draft, snapshot) => void resumeShipmentDraft(draft, snapshot)} />
         {can("inventory.purchase") || can("inventory.transfer") ? <Card><CardHeader><CardTitle>{replacementFor ? "Build a linked replacement draft" : "Build an order draft"}</CardTitle><CardDescription>{replacementFor ? `This is a new order linked to ${replacementFor}; the original quantities and exception history stay unchanged.` : "Plan items and quantities now. Record serials later during receiving or transfer dispatch."}</CardDescription></CardHeader><CardContent><fieldset disabled={command.isPending} className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-4"><div className="space-y-1"><Label>Order type</Label><Select value={orderType} onValueChange={value => setOrderType(value as "purchase" | "transfer")}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="purchase">Purchase</SelectItem><SelectItem value="transfer">Transfer</SelectItem></SelectContent></Select></div><div className="space-y-1"><Label>Destination</Label><Select value={orderDestination} onValueChange={setOrderDestination}><SelectTrigger><SelectValue placeholder="Choose location" /></SelectTrigger><SelectContent>{activeWarehouses.map(w => <SelectItem value={w.id} key={w.id}>{w.code} · {w.name}</SelectItem>)}</SelectContent></Select></div>{orderType === "purchase" ? <div className="space-y-1"><Label>Vendor</Label><Select value={orderVendor} onValueChange={setOrderVendor}><SelectTrigger><SelectValue placeholder="Choose vendor" /></SelectTrigger><SelectContent>{vendors.filter(v => v.active).map(v => <SelectItem value={v.id} key={v.id}>{v.name}</SelectItem>)}</SelectContent></Select></div> : <div className="space-y-1"><Label>Source</Label><Select value={orderSource} onValueChange={setOrderSource}><SelectTrigger><SelectValue placeholder="Choose location" /></SelectTrigger><SelectContent>{activeWarehouses.filter(w => w.id !== orderDestination).map(w => <SelectItem value={w.id} key={w.id}>{w.code} · {w.name}</SelectItem>)}</SelectContent></Select></div>}<div className="space-y-1"><Label htmlFor="order-id-reference">Order ID / reference</Label><Input id="order-id-reference" maxLength={100} aria-describedby="order-id-reference-help" value={orderId} onChange={event => setOrderId(event.target.value)} placeholder="Optional reference" /><p id="order-id-reference-help" className="text-xs text-muted-foreground">Leave blank to generate an Order ID. Existing IDs remain visible here while editing.</p></div></div>
           {orderId && orderItems.some(order => order.id === orderId) && <p className="rounded-md border bg-muted/30 px-3 py-2 text-sm font-medium" role="status">Saved Order ID: <span className="font-mono">{orderId}</span></p>}
@@ -757,11 +787,10 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       <DialogFooter><Button variant="outline" disabled={resourceBusy} onClick={() => setResource(null)}>Cancel</Button><Button onClick={saveResource} disabled={resourceBusy || command.isPending || !can("inventory.maintain")}>{resourceSave.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{resourceSave.isPending ? "Saving..." : "Save changes"}</Button></DialogFooter>
     </DialogContent></Dialog>
 
-    {operationOrder && <InventoryShipmentGuidedDialog state={state} order={operationOrder} action={operation as ShipmentAction} items={items}
+    {operationOrder && <InventoryShipmentSession base={base} state={sessionState ?? state} order={operationOrder} action={operation as ShipmentAction} items={items} draft={sessionDraft} ownerId={user?.id}
       canCloseRemainder={can("inventory.closeOrders") && !(operationOrder.type === "transfer" && operationOrder.lines.some(line => orderLineProgress(state, operationOrder, line.itemId).inTransit > 0))} busy={command.isPending}
       onDirtyChange={setMovementDirty}
-      onPost={payload => postWithStableIdentity(operation, payload)}
-      onClose={() => { setOperationOrder(null); setMovementDirty(false); }} />}
+      onClose={() => { setOperationOrder(null); setSessionDraft(undefined); setSessionState(null); setMovementDirty(false); }} />}
     {transitOrder && <InventoryShipmentTransitDialog state={state} order={transitOrder} items={items} busy={command.isPending}
       onPost={payload => postWithStableIdentity("resolveTransit", payload)}
       onDirtyChange={setMovementDirty}

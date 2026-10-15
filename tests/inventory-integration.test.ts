@@ -10,6 +10,7 @@ import { createProjectSchema, getProjectWorkOrderStorage, backupProjectDatabase,
 import { inventoryState, postInventory } from "../server/inventoryService";
 import { withAuditContext } from "../server/auditContext";
 import type { InventoryCommand } from "../shared/inventory";
+import { blankShipmentCapture } from "../shared/inventory-shipment-draft-model";
 import { initializeAudit } from "../server/auditMigration";
 
 test("transactional completion, mobile usage, concurrency, import rollback, and inventory-aware restore", async () => {
@@ -86,6 +87,15 @@ test("transactional completion, mobile usage, concurrency, import rollback, and 
     const { rows: draftMovements } = await pool.query(
       "SELECT actor_id FROM public.inventory_movements WHERE project_id=$1 AND action='countSaveDraft'", [project.id]);
     assert.deepEqual(draftMovements.map(row => row.actor_id), [user.id], "one deliberate draft save records its actor");
+    await command("order", { id: "saved-shipment", type: "purchase", destinationId: "w", vendorId: "v",
+      lines: [{ itemId: "meter", quantity: 2 }] });
+    await command("release", { orderId: "saved-shipment" });
+    await command("shipmentDraftSave", { id: randomUUID(), revision: 0, orderId: "saved-shipment", stage: "receive", capture: {
+      ...blankShipmentCapture(), scanBuffers: { "meter-goodSerials": "0000 unfinished " },
+    } });
+    const { rows: shipmentDraftEvents } = await pool.query("SELECT changes FROM public.inventory_movements WHERE project_id=$1 AND action='shipmentDraftSave'", [project.id]);
+    assert.equal(shipmentDraftEvents.length, 1);
+    assert.ok(!JSON.stringify(shipmentDraftEvents).includes("0000 unfinished"), "save history summarizes buffers rather than repeatedly copying their raw text");
     const before = await inventoryState(project.id), backup = await backupProjectDatabase(schema);
     assert.ok(backup.inventory);
     assert.ok(backup.inventory.state.orders.find(order => order.id === "amend-po")?.archivedAt, "cleared POs remain in portable backups");

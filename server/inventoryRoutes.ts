@@ -15,11 +15,17 @@ import { insertAuditEvent } from "./auditService";
 import { auditingEnabled } from "./auditContext";
 import { inventoryCountReference } from "../shared/inventory-count-reference";
 import { shipmentPrint } from "./inventoryShipmentPrint";
+import { draftWarehouse, isShipmentDraftAction } from "../shared/inventory-shipment-drafts";
 
-export function inventoryVisibleState(state: InventoryState, actor: string, admin: boolean, canCount = true) {
+export function inventoryVisibleState(state: InventoryState, actor: string, admin: boolean, canCount = true, permissions?: string[]) {
   // Project-level view permits finding stock at other locations and requesting
   // transfers. Posting still requires the acting warehouse's access grant.
-  return { ...state, operations: {}, counts: state.counts.map(count => {
+  return { ...state, operations: {}, shipmentDrafts: (state.shipmentDrafts ?? []).filter(draft => {
+    if (!admin && draft.ownerId !== actor) return false;
+    if (permissions && !permissions.includes(draft.stage === "dispatch" ? inventoryPermissions.transfer : inventoryPermissions.receive)) return false;
+    const warehouse = state.warehouses.find(w => w.id === draftWarehouse(state, draft.orderId, draft.stage));
+    return !!warehouse?.active && (admin || warehouse.assignedUserId === actor || warehouse.userIds.includes(actor));
+  }), counts: state.counts.map(count => {
     const warehouse = state.warehouses.find(w => w.id === count.warehouseId);
     if (canCount && (admin || warehouse?.assignedUserId === actor || warehouse?.userIds.includes(actor))) return count;
     const { draft, ...visible } = count;
@@ -74,7 +80,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   };
   const snapshot = async (res: any) => {
-    const c = res.locals.inventory, state = inventoryVisibleState(await inventoryState(c.project.id), c.user.id, c.admin, c.permissions.includes(inventoryPermissions.count));
+    const c = res.locals.inventory, state = inventoryVisibleState(await inventoryState(c.project.id), c.user.id, c.admin, c.permissions.includes(inventoryPermissions.count), c.permissions);
     const { rows: users } = await pool.query(`SELECT u.id,u.username FROM public.users u
       WHERE NOT coalesce(u.is_locked,false) AND
       (EXISTS(SELECT 1 FROM public.user_projects up WHERE up.user_id=u.id AND up.project_id=$1)
@@ -87,7 +93,20 @@ export function registerInventoryRoutes(app: Express) {
   app.post(`${base}/commands`, handler(async (req, res) => {
     const c = res.locals.inventory, command = inventoryCommandSchema.parse(req.body);
     let permission = commandPermission(command.action);
-    if (!permission) {
+    if (isShipmentDraftAction(command.action)) {
+      const state = await inventoryState(c.project.id);
+      const stage = command.action === "shipmentDraftSave" ? command.data.stage :
+        state.shipmentDrafts?.find(d => d.id === command.data.id)?.stage;
+      if (!stage) throw new InventoryError("Saved shipment draft not found or invalid stage.");
+      permission = stage === "dispatch" ? inventoryPermissions.transfer : inventoryPermissions.receive;
+      if (command.action === "shipmentDraftClaim" && !c.admin)
+        throw Object.assign(new InventoryError("Administrator access required to take ownership."), { status: 403 });
+      const pendingPayload = command.data.payload as Record<string, unknown> | undefined;
+      if ((command.data.capture as any)?.closeRemainder || pendingPayload?.closeRemainder) {
+        if (!c.permissions.includes(inventoryPermissions.closeOrders))
+          throw Object.assign(new InventoryError("Close short orders permission required."), { status: 403 });
+      }
+    } else if (!permission) {
       const state = await inventoryState(c.project.id);
       const type = command.action === "order" ? command.data.type : state.orders.find(o => o.id === command.data.orderId)?.type;
       permission = type === "purchase" ? inventoryPermissions.purchase : inventoryPermissions.transfer;

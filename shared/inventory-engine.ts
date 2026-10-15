@@ -5,6 +5,7 @@ import { allocationSchema, dispositionSchema, itemSchema, stockLineSchema, vendo
 import { InventoryError } from "./inventory-errors";
 import { applyShipmentCommand, assertNotHeld, shipmentActions } from "./inventory-shipment-engine";
 import { settledLines } from "./inventory-shipment-model";
+import { applyShipmentDraftCommand, isShipmentDraftAction, validateDraftPosting, draftFingerprintCommand, validateDraftReplay } from "./inventory-shipment-drafts";
 
 export { InventoryError } from "./inventory-errors";
 const assert: (ok: unknown, message: string) => asserts ok = (ok, message) => { if (!ok) throw new InventoryError(message); };
@@ -115,9 +116,11 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     assert(new TextEncoder().encode(JSON.stringify(command.data)).length <= 8 * 1024 * 1024, "Shipment data exceeds the 8 MiB limit; no changes were posted.");
   if (command.action === "countSaveDraft" || command.action === "countPost")
     assert(countPayloadFits(command.data), "Count data exceeds the 8 MiB limit; no changes were posted.");
-  const fingerprint = canonicalInventoryJson({ action: command.action, data: command.data, actor });
+  const fingerprint = canonicalInventoryJson({ action: command.action,
+    data: isShipmentDraftAction(command.action) ? draftFingerprintCommand(command) : command.data, actor });
   if (original.operations[command.operationId]) {
     assert(original.operations[command.operationId] === fingerprint, "Posting identifier was already used for a different operation.");
+    if (isShipmentDraftAction(command.action)) validateDraftReplay(original, command, actor, canonicalInventoryJson);
     return { state: original, replay: true };
   }
   const s = structuredClone(original), d = command.data;
@@ -126,8 +129,13 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
   const receipt = (reference: string, warehouseId: string | null, input: StockLine[], reason?: string, components?: StockLine[]) =>
     s.receipts.push({ id: command.operationId, action: command.action, reference, warehouseId, lines: input, actor, occurredAt: now, reason, components });
   const a = command.action;
-  if (shipmentActions.includes(a)) {
-    applyShipmentCommand(s, command, actor, now, { access, move: (w, ls, sign) => move(s, w, ls, sign),
+  if (isShipmentDraftAction(a)) {
+    applyShipmentDraftCommand(s, command, actor, now, access, admin);
+    assert(new TextEncoder().encode(JSON.stringify(s.shipmentDrafts)).length <= 32 * 1024 * 1024,
+      "Saved shipment drafts exceed the project's 32 MiB limit. Finish or discard older drafts first.");
+  } else if (shipmentActions.includes(a)) {
+    const posting = validateDraftPosting(s, command, actor, canonicalInventoryJson);
+    applyShipmentCommand(s, posting, actor, now, { access, move: (w, ls, sign) => move(s, w, ls, sign),
       validate: ls => validateLines(s, ls), within });
   } else if (a === "warehouse" || a === "vendor" || a === "item") {
     const value = a === "warehouse" ? warehouseSchema.parse(d) : a === "vendor" ? vendorSchema.parse(d) : itemSchema.parse(d);
@@ -139,7 +147,10 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
       if (!(value as any).active) assert(!s.stock.some(b => b.warehouseId === value.id && b.quantity) &&
         !(s.shipmentHolds ?? []).some(h => h.warehouseId === value.id && h.status === "held") &&
         !s.orders.some(o => [o.sourceId, o.destinationId].includes(value.id) && !["completed", "cancelled", "closed"].includes(o.status)) &&
-        !s.returns.some(r => r.warehouseId === value.id && r.status !== "released"), "Warehouse has stock or unresolved operations.");
+        !s.returns.some(r => r.warehouseId === value.id && r.status !== "released") &&
+        !(s.shipmentDrafts ?? []).some(draft => s.orders.some(order => order.id === draft.orderId &&
+          (draft.stage === "dispatch" ? order.sourceId : order.destinationId) === value.id)),
+        "Warehouse has stock or unresolved operations, including saved shipment drafts. Finish or discard them first.");
     }
     if (a === "item") {
       const i = value as any;

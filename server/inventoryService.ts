@@ -6,6 +6,22 @@ import { applyInventoryCommand, canonicalInventoryJson, completeInventoryWorkOrd
 import { emptyInventory, allocationSchema, dispositionSchema, inventoryImportSchema, inventoryPermissions, type InventoryState, type InventoryCommand } from "../shared/inventory";
 import { storage } from "./storage";
 import { z } from "zod";
+import type { SavedShipmentDraft } from "../shared/inventory-shipment-draft-model";
+
+// Saved captures are temporary editing state, not another physical-stock
+// ledger. Record useful changes without duplicating every scan on every save.
+function shipmentDraftAudit(value: SavedShipmentDraft | undefined) {
+  if (!value) return null;
+  return { id: value.id, orderId: value.orderId, stage: value.stage, ownerId: value.ownerId,
+    savedAt: value.savedAt, revision: value.revision, pendingOperationId: value.pending?.operationId ?? null,
+    reason: value.capture.reason, closeRemainder: value.capture.closeRemainder,
+    lines: Object.values(value.capture.entries).map(row => ({ itemId: row.itemId,
+      goodQuantity: row.goodQuantity, damagedQuantity: row.damagedQuantity, unreadableQuantity: row.unreadableQuantity,
+      damageReason: row.damageReason, goodSerialCount: row.goodSerials.length,
+      damagedSerialCount: row.damagedSerials.length, expectedReferenceCount: row.expectedSerials.length })),
+    unfinishedBuffers: Object.entries(value.capture.scanBuffers).filter(([, text]) => !!text).map(([field, text]) => ({ field, characters: text.length })),
+  };
+}
 
 export async function inventoryState(projectId: number, client: Pick<PoolClient, "query"> = pool): Promise<InventoryState> {
   const { rows: [r] } = await client.query("SELECT state FROM public.inventory_state WHERE project_id=$1", [projectId]);
@@ -36,13 +52,20 @@ export async function saveInventory(client: PoolClient, projectId: number, befor
         serialsBefore: prior?.serials || [], serialsAfter: b.serials };
     }).filter(b => b.before !== b.after || b.reservedBefore !== b.reservedAfter || JSON.stringify(b.serialsBefore) !== JSON.stringify(b.serialsAfter)),
   ];
-  const entityChanges = (["warehouses", "vendors", "items", "orders", "allocations", "counts", "returns", "shipmentHolds"] as const).flatMap(kind => {
+  const entityChanges = (["warehouses", "vendors", "items", "orders", "allocations", "counts", "returns", "shipmentHolds", "shipmentDrafts"] as const).flatMap(kind => {
     const previous = new Map((before[kind] ?? []).map(value => [((value as any).id ?? (value as any).workOrderId), value]));
-    return (after[kind] ?? []).flatMap(value => {
+    const updates = (after[kind] ?? []).flatMap(value => {
       const id = (value as any).id ?? (value as any).workOrderId;
       const prior = previous.get(id);
-      return JSON.stringify(value) === JSON.stringify(prior) ? [] : [{ field: `${kind}/${id}`, before: prior || null, after: value }];
+      return JSON.stringify(value) === JSON.stringify(prior) ? [] : [{ field: `${kind}/${id}`,
+        before: kind === "shipmentDrafts" ? shipmentDraftAudit(prior as SavedShipmentDraft | undefined) : prior || null,
+        after: kind === "shipmentDrafts" ? shipmentDraftAudit(value as SavedShipmentDraft) : value }];
     });
+    if (kind === "shipmentDrafts") for (const [id, prior] of previous) {
+      if (!(after.shipmentDrafts ?? []).some(d => d.id === id))
+        updates.push({ field: `${kind}/${id}`, before: shipmentDraftAudit(prior as SavedShipmentDraft), after: null as any });
+    }
+    return updates;
   });
   await client.query("UPDATE public.inventory_state SET state=$2,updated_at=now() WHERE project_id=$1", [projectId, JSON.stringify(after)]);
   // These tables mirror the locked JSON state. Only changed rows need writes;
