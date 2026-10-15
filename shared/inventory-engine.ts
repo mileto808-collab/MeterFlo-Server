@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { allocationSchema, dispositionSchema, itemSchema, stockLineSchema, vendorSchema, warehouseSchema,
+import { allocationSchema, dispositionSchema, itemSchema, stockLineSchema, vendorSchema, warehouseSchema, countDraftSchema,
   type Allocation, type InventoryCommand, type InventoryState, type StockLine, type Stock } from "./inventory";
 
 export class InventoryError extends Error { status = 409; }
@@ -230,14 +230,23 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     const { id, warehouseId } = z.object({ id: identifier, warehouseId: identifier }).strict().parse(d);
     access(warehouseId); assert(!s.counts.some(c => c.id === id), "Count identifier already exists.");
     s.counts.push({ id, warehouseId, snapshot: structuredClone(s.stock.filter(b => b.warehouseId === warehouseId)), status: "open" });
+  } else if (a === "countSaveDraft") {
+    const { id, ...draft } = countDraftSchema.extend({ id: identifier }).parse(d);
+    const c = s.counts.find(c => c.id === id); assert(c && c.status === "open", "Open count required."); access(c.warehouseId);
+    assert(draft.revision === (c.draft?.revision ?? 0), "Count draft changed. Reload saved draft before saving or posting.");
+    assert(new Set(draft.rows.map(row => row.itemId)).size === draft.rows.length, "Duplicate draft item.");
+    assert(draft.rows.every(row => s.items.some(item => item.id === row.itemId)), "Draft item is not in this project.");
+    c.draft = { ...draft, revision: draft.revision + 1, savedBy: actor, savedAt: now };
   } else if (a === "countCancel") {
     const { id, reason } = z.object({ id: identifier, reason: z.string().trim().min(1).max(1000) }).strict().parse(d);
     const c = s.counts.find(c => c.id === id); assert(c && c.status === "open", "Open count required."); access(c.warehouseId);
-    c.status = "cancelled"; c.reason = reason;
+    c.status = "cancelled"; c.reason = reason; delete c.draft;
   } else if (a === "countPost") {
-    const { id, lines: input, reason } = z.object({ id: identifier, lines: z.array(stockLineSchema.extend({ quantity: z.number().int().nonnegative().max(1000000) })).max(500),
+    const { id, lines: input, reason, draftRevision } = z.object({ id: identifier, draftRevision: z.number().int().nonnegative().optional(), lines: z.array(stockLineSchema.extend({ quantity: z.number().int().nonnegative().max(1000000) })).max(500),
       reason: z.string().trim().min(1).max(1000) }).strict().parse(d);
     const c = s.counts.find(c => c.id === id); assert(c && c.status === "open", "Open count required."); access(c.warehouseId);
+    assert(!c.draft && draftRevision === undefined || (draftRevision ?? 0) === (c.draft?.revision ?? 0),
+      "Count draft changed. Reload saved draft before saving or posting.");
     assert(same(c.snapshot, s.stock.filter(b => b.warehouseId === c.warehouseId)), "Stock moved since counting began; start a new count.");
     validateLines(s, input);
     assert(c.snapshot.every(b => input.some(l => l.itemId === b.itemId)), "Enter every item in this warehouse count, including zero quantities.");
@@ -251,7 +260,7 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
         if (added.length) move(s, c.warehouseId, [{ itemId: l.itemId, quantity: added.length, serials: added }], 1);
       } else if (delta) move(s, c.warehouseId, [{ ...l, quantity: Math.abs(delta) }], delta > 0 ? 1 : -1);
     }
-    c.status = "posted"; c.reason = reason; c.lines = input; receipt(c.id, c.warehouseId, input, reason);
+    c.status = "posted"; c.reason = reason; c.lines = input; delete c.draft; receipt(c.id, c.warehouseId, input, reason);
   } else if (a === "reconcileWorkOrder") {
     const input = z.object({ workOrderId: workId, reason: z.string().trim().min(1).max(1000),
       restoreUsedStock: z.boolean() }).strict().parse(d);

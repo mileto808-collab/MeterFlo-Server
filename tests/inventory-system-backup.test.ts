@@ -42,6 +42,9 @@ test("full-system inventory restore preserves identity IDs, JSON serials, sequen
     post("order", { id: "po", type: "purchase", vendorId: "v", destinationId: "w", lines: [{ itemId: "m", quantity: 2 }] });
     post("release", { orderId: "po" });
     post("receive", { orderId: "po", lines: [{ itemId: "m", quantity: 2, serials: ["00001", "00002"] }] });
+    post("countStart", { id: "unfinished", warehouseId: "w" });
+    post("countSaveDraft", { id: "unfinished", revision: 0, reason: "Resume after full restore",
+      rows: [{ itemId: "m", quantity: "", serials: "00001\npartial" }] });
     await client.query("INSERT INTO inventory_state VALUES($1,$2)", [42, state]);
     await client.query("INSERT INTO inventory_items VALUES($1,$2,$3,$4)", [42, "m", "M", state.items[0]]);
     await client.query("INSERT INTO inventory_quantities VALUES($1,$2,$3,$4,$5,$6)", [42, "w", "m", 2, 0, JSON.stringify(["00001", "00002"])]);

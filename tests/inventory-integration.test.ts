@@ -55,6 +55,17 @@ test("transactional completion, mobile usage, concurrency, import rollback, and 
     await assert.rejects(work.updateWorkOrder(allocatedId, { status: "Open" } as any), /cannot be reset/);
     await assert.rejects(withAuditContext(scope(), () => work.createWorkOrder({ customerWoId: "bad-import", inventoryItems: JSON.stringify([{ warehouseId: "w", itemId: "meter", quantity: 1, serials: ["MISSING"] }]) } as any)), /unavailable/);
     assert.equal(await work.getWorkOrderByCustomerWoId("bad-import"), undefined);
+    await command("countStart", { id: "saved-draft", warehouseId: "w" });
+    const draftData = { id: "saved-draft", revision: 0, reason: "Resume after restore",
+      rows: [{ itemId: "meter", quantity: "", serials: "0002\npartial" }] };
+    const competingDrafts = await Promise.allSettled([
+      command("countSaveDraft", draftData), command("countSaveDraft", draftData),
+    ]);
+    assert.equal(competingDrafts.filter(result => result.status === "fulfilled").length, 1, "only one concurrent editor wins");
+    assert.equal((await inventoryState(project.id)).counts[0].draft?.revision, 1);
+    const { rows: draftMovements } = await pool.query(
+      "SELECT actor_id FROM public.inventory_movements WHERE project_id=$1 AND action='countSaveDraft'", [project.id]);
+    assert.deepEqual(draftMovements.map(row => row.actor_id), [user.id], "one deliberate draft save records its actor");
     const before = await inventoryState(project.id), backup = await backupProjectDatabase(schema);
     assert.ok(backup.inventory);
     assert.deepEqual(backup.workOrders.map(w => w.id), [2, 3], "ordered IDs expose the fresh-sequence collision");
@@ -71,6 +82,10 @@ test("transactional completion, mobile usage, concurrency, import rollback, and 
       const restored = await withAuditContext(scope(), () => restoreProjectDatabase(targetSchema, backup, { clearExisting: true }));
       assert.equal(restored.restored, 2);
       assert.deepEqual(await inventoryState(target.id), before, "posted serialized allocations, balances and operations survive");
+      const invalidDraft = structuredClone(backup);
+      invalidDraft.inventory!.state.counts[0].draft!.rows[0].itemId = "foreign-item";
+      await assert.rejects(restoreProjectDatabase(targetSchema, invalidDraft, { clearExisting: true }), /invalid count draft/);
+      assert.deepEqual(await inventoryState(target.id), before, "invalid draft restore leaves existing inventory intact");
       const targetWork = getProjectWorkOrderStorage(targetSchema);
       assert.equal((await targetWork.getWorkOrder(allocatedId))?.newSystemId, "0001");
       const next = await targetWork.createWorkOrder({ customerWoId: "after-restore" } as any);

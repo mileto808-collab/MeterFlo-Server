@@ -82,6 +82,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [countSerials, setCountSerials] = useState<Record<string, string>>({});
   const [countReason, setCountReason] = useState("");
   const [countDraftId, setCountDraftId] = useState<string | null>(null);
+  const [countDraftRevision, setCountDraftRevision] = useState(0);
+  const [countDraftMessage, setCountDraftMessage] = useState("");
   const [assembleItem, setAssembleItem] = useState("");
   const [assembleWarehouse, setAssembleWarehouse] = useState("");
   const [assembleQty, setAssembleQty] = useState("1");
@@ -237,17 +239,43 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     finally { setImageBusy(false); }
   };
 
-  const openCount = (count: InventoryCount) => {
-    if (countDraftId !== count.id) {
-      setCountQuantities({});
-      setCountSerials({});
-      setCountReason("");
+  const openCount = (count: InventoryCount, reload = false) => {
+    if (countDraftId !== count.id || reload) {
+      setCountQuantities(Object.fromEntries(count.draft?.rows.map(row => [row.itemId, row.quantity]) ?? []));
+      setCountSerials(Object.fromEntries(count.draft?.rows.map(row => [row.itemId, row.serials]) ?? []));
+      setCountReason(count.draft?.reason ?? "");
+      setCountDraftRevision(count.draft?.revision ?? 0);
+      setCountDraftMessage(count.draft ? `Loaded saved draft revision ${count.draft.revision}.` : "");
       setCountDraftId(count.id);
     }
     setActiveCount(count);
     setCountWarehouse(count.warehouseId);
   };
   const countRows = activeCount ? inventoryCountRows(activeCount, items, countQuantities, countSerials) : [];
+  const saveCountDraft = () => {
+    if (!activeCount || command.isPending) return;
+    command.mutate({ action: "countSaveDraft", data: {
+      id: activeCount.id, revision: countDraftRevision, reason: countReason,
+      rows: countRows.map(row => ({ itemId: row.itemId, quantity: row.quantity, serials: row.serials })),
+    } }, {
+      onSuccess: result => {
+        const saved = (result.state as InventoryState).counts.find(count => count.id === activeCount.id);
+        if (saved?.draft) {
+          setActiveCount(saved);
+          setCountDraftRevision(saved.draft.revision);
+          setCountDraftMessage(`Draft saved, revision ${saved.draft.revision}. Stock has not changed.`);
+        }
+      },
+      onError: () => setCountDraftMessage("Draft not saved. Your entries are still here. If another operator saved changes, reload the saved draft before retrying."),
+    });
+  };
+  const reloadCountDraft = async () => {
+    if (!activeCount || !window.confirm("Replace your unsaved entries with the latest saved draft?")) return;
+    const latest = await refetch();
+    const count = latest.data?.state.counts.find(count => count.id === activeCount.id);
+    if (!latest.isError && count?.status === "open") openCount(count, true);
+    else setCountDraftMessage("The saved draft could not be loaded, or the count is no longer open. Your entries were kept.");
+  };
   const startCount = () => {
     if (!countWarehouse) return;
     const id = freshId();
@@ -268,7 +296,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       toast({ title: "Check count entries", description: error instanceof Error ? error.message : "Review every counted item.", variant: "destructive" });
       return;
     }
-    command.mutate({ action: "countPost", data: { id: activeCount.id, lines: countLines, reason: countReason } }, { onSuccess: () => setActiveCount(null) });
+    command.mutate({ action: "countPost", data: { id: activeCount.id, draftRevision: countDraftRevision, lines: countLines, reason: countReason } }, { onSuccess: () => setActiveCount(null) });
   };
 
   return <main className="mx-auto max-w-7xl space-y-6 p-4 pb-12 md:p-7">
@@ -312,7 +340,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       <TabsContent value="counts" className="space-y-4"><Card><CardHeader><CardTitle>Physical stock count</CardTitle><CardDescription>Start a snapshot, count every item including zero, and post with a reason.</CardDescription></CardHeader><CardContent className="space-y-4"><div className="flex flex-wrap items-end gap-3"><div className="w-full max-w-sm space-y-1"><Label>Warehouse or vehicle</Label><Select value={countWarehouse} onValueChange={setCountWarehouse}><SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger><SelectContent>{activeWarehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.code} · {w.name}</SelectItem>)}</SelectContent></Select></div>{can("inventory.count") && <Button onClick={startCount} disabled={!countWarehouse || command.isPending}>Start count</Button>}</div>
           {state.counts.map(count => <div key={count.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3"><div><span className="font-medium">{warehouses.find(w => w.id === count.warehouseId)?.name ?? "Location unavailable"}</span><span className="ml-2 text-sm text-muted-foreground">{inventoryCountReference(state.counts, count.id)}</span><Badge className="ml-2" variant={count.status === "open" ? "outline" : "secondary"}>{count.status}</Badge></div>{count.status === "open" && <div className="flex gap-2"><Button size="sm" variant="outline" disabled={command.isPending} onClick={() => openCount(count)}>Continue count</Button><Button size="sm" variant="outline" disabled={!can("inventory.count") || command.isPending} onClick={() => command.mutate({ action: "countCancel", data: { id: count.id, reason: "Operator cancelled stale or unfinished count" } }, { onSuccess: () => { if (activeCount?.id === count.id) setActiveCount(null); } })}>Cancel count</Button></div>}{count.status === "posted" && <Button size="sm" variant="ghost" onClick={() => openPrint("count", count.id)}>Print</Button>}</div>)}
           {activeCount && <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
-            <div><h3 className="font-medium">{inventoryCountReference(state.counts, activeCount.id)} · {warehouses.find(w => w.id === activeCount.warehouseId)?.name}</h3><p className="text-xs text-muted-foreground">Verify every displayed quantity and serial before posting. Existing values come from the starting snapshot; newly discovered stock starts at zero. Clear serials when counting zero. Closing keeps this draft on this page; switching counts discards it.</p></div>
+            <div><h3 className="font-medium">{inventoryCountReference(state.counts, activeCount.id)} · {warehouses.find(w => w.id === activeCount.warehouseId)?.name}</h3><p className="text-xs text-muted-foreground">Verify every quantity and serial before posting. Save count draft before refreshing, switching counts or leaving this page. Saving does not adjust stock. Clear serials when counting zero.</p></div>
+            <p role="status" className="text-sm">{countDraftMessage || "Unsaved entries remain only on this page until you save the draft."}</p>
             {countRows.map(row => {
               const { itemId: id, item } = row;
               if (!item) return <Alert key={id} variant="destructive"><AlertTitle>Count item unavailable</AlertTitle><AlertDescription>Item {id} is no longer in the catalog. Resolve it before posting; it will not be silently omitted.</AlertDescription></Alert>;
@@ -324,7 +353,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
               </div>;
             })}
             <div className="space-y-1"><Label htmlFor="count-reason">Count adjustment reason</Label><Input id="count-reason" maxLength={1000} disabled={command.isPending} value={countReason} onChange={event => setCountReason(event.target.value)} placeholder="Required audit note" /></div>
-            <div className="flex gap-2"><Button onClick={postCount} disabled={!can("inventory.count") || !countReason.trim() || command.isPending}>Post count</Button><Button variant="outline" disabled={command.isPending} onClick={() => setActiveCount(null)}>Close</Button></div>
+            <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={saveCountDraft} disabled={!can("inventory.count") || command.isPending}>Save count draft</Button><Button variant="outline" onClick={reloadCountDraft} disabled={!can("inventory.count") || command.isPending}>Reload saved draft</Button><Button onClick={postCount} disabled={!can("inventory.count") || !countReason.trim() || command.isPending}>Post count</Button><Button variant="outline" disabled={command.isPending} onClick={() => setActiveCount(null)}>Close</Button></div>
           </div>}
         </CardContent></Card>
         <Card><CardHeader><CardTitle>Assemble a kit</CardTitle><CardDescription>Select a defined kit; scan components from the selected location and record its finished serial identity.</CardDescription></CardHeader><CardContent className="space-y-4"><div className="grid gap-3 sm:grid-cols-3"><div className="space-y-1"><Label>Kit item</Label><Select value={assembleItem} onValueChange={value => { setAssembleItem(value); setComponentScan({}); }}><SelectTrigger><SelectValue placeholder="Select kit" /></SelectTrigger><SelectContent>{items.filter(item => item.active && item.components.length).map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1"><Label>Build location</Label><Select value={assembleWarehouse} onValueChange={setAssembleWarehouse}><SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger><SelectContent>{activeWarehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.code} · {w.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1"><Label>Build quantity</Label><Input type="number" min="1" value={assembleQty} onChange={event => setAssembleQty(event.target.value)} /></div></div>{items.find(item => item.id === assembleItem)?.components.map(component => { const item = items.find(value => value.id === component.itemId); return <div key={component.itemId} className="grid gap-2 sm:grid-cols-[1fr_2fr] sm:items-center"><Label>{item?.sku} · {item?.name} — {component.quantity * Number(assembleQty || 1)} required</Label><Input aria-label={`Scan ${item?.name ?? "component"} serials`} value={componentScan[component.itemId] ?? ""} onChange={event => setComponentScan(current => ({ ...current, [component.itemId]: event.target.value }))} placeholder={item?.tracking === "serialized" ? "Scan component serials" : "Quantity is taken from this location"} /></div>; })}{items.find(item => item.id === assembleItem)?.tracking === "serialized" && <div className="space-y-1"><Label>Finished kit serials</Label><Input value={assembleSerials} onChange={event => setAssembleSerials(event.target.value)} placeholder="Scan each finished unit" /></div>}<Button disabled={!can("inventory.assemble") || !assembleItem || !assembleWarehouse || command.isPending} onClick={() => { const kit = items.find(item => item.id === assembleItem); if (!kit) return; const quantity = Number(assembleQty); const components = kit.components.map(component => { const componentItem = items.find(item => item.id === component.itemId); const serialList = componentItem?.tracking === "serialized" ? csv(componentScan[component.itemId] ?? "") : []; return { itemId: component.itemId, quantity: componentItem?.tracking === "serialized" ? serialList.length : component.quantity * quantity, serials: serialList }; }); command.mutate({ action: "assemble", data: { warehouseId: assembleWarehouse, itemId: kit.id, quantity, serials: kit.tracking === "serialized" ? csv(assembleSerials) : [], components } }); }}>Assemble kit</Button></CardContent></Card>

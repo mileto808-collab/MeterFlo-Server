@@ -24,6 +24,43 @@ function setup() {
   return s;
 }
 
+test("count drafts preserve unfinished input, isolate editors and never change the stock snapshot", () => {
+  let s = setup();
+  s = post(s, "countStart", { id: "draft-count", warehouseId: "main" });
+  const stock = structuredClone(s.stock), snapshot = structuredClone(s.counts[0].snapshot);
+  const data = { id: "draft-count", revision: 0, reason: "Half scanned", rows: [
+    { itemId: "meter", quantity: "", serials: "00001\n00001\nunfinished" },
+    { itemId: "seal", quantity: "007", serials: "" },
+  ] };
+  const operationId = randomUUID();
+  s = post(s, "countSaveDraft", data, operationId);
+  assert.deepEqual(s.stock, stock);
+  assert.deepEqual(s.counts[0].snapshot, snapshot);
+  assert.deepEqual(s.counts[0].draft?.rows, data.rows);
+  assert.equal(s.counts[0].draft?.savedBy, actor);
+  assert.equal(s.counts[0].draft?.revision, 1);
+  assert.deepEqual(post(s, "countSaveDraft", data, operationId), s, "identical network retry is idempotent");
+  const restored: InventoryState = JSON.parse(JSON.stringify(s));
+  assert.deepEqual(restored.counts[0].draft, s.counts[0].draft);
+  assert.throws(() => post(s, "countSaveDraft", data), /Count draft changed/);
+  assert.throws(() => applyInventoryCommand(s, { action: "countSaveDraft", operationId: randomUUID(),
+    data: { ...data, revision: 1 } }, "unauthorized", false), /Warehouse access/);
+  assert.throws(() => post(s, "countSaveDraft", { ...data, revision: 1, rows: [{ itemId: "foreign", quantity: "1", serials: "" }] }), /not in this project/);
+  const lines = snapshot.map(b => ({ itemId: b.itemId, quantity: b.quantity, serials: b.serials }));
+  assert.throws(() => post(s, "countPost", { id: "draft-count", lines, reason: "Older editor", draftRevision: 0 }), /Count draft changed/);
+  assert.throws(() => post(s, "countPost", { id: "draft-count", lines, reason: "Legacy editor" }), /Count draft changed/);
+  const posted = post(s, "countPost", { id: "draft-count", lines, reason: "Verified", draftRevision: 1 });
+  assert.equal(posted.counts[0].status, "posted");
+  assert.equal(posted.counts[0].draft, undefined);
+  const moved = post(s, "countStart", { id: "other", warehouseId: "main" });
+  const changed = post(moved, "countPost", { id: "other", reason: "Stock correction",
+    lines: lines.map(l => l.itemId === "seal" ? { ...l, quantity: 11 } : l) });
+  assert.throws(() => post(changed, "countPost", { id: "draft-count", lines, reason: "Stale snapshot", draftRevision: 1 }), /Stock moved/);
+  const cancelled = post(s, "countCancel", { id: "draft-count", reason: "Restart" });
+  assert.equal(cancelled.counts[0].draft, undefined);
+  assert.throws(() => post(cancelled, "countSaveDraft", { ...data, revision: 1 }), /Open count/);
+});
+
 test("installed serials can be removed, inspected, reinstalled and returned again without erasing history", () => {
   let s = setup();
   const install = (id: number, serial: string, removed?: string) => {

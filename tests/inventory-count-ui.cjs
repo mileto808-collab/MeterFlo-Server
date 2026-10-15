@@ -122,6 +122,40 @@ async function main() {
     assert.equal(await page.getByLabel("Count adjustment reason").inputValue(), "Keep this draft");
     page.off("request", recordPost);
 
+    // Persist incomplete scans and blank quantities, reload/resume, then reject
+    // a second editor instead of silently replacing their saved work.
+    const saveDraft = async status => {
+      const response = page.waitForResponse(r => r.url().endsWith(`${endpoint}/commands`) &&
+        r.request().postDataJSON()?.action === "countSaveDraft");
+      await page.getByRole("button", { name: "Save count draft", exact: true }).click();
+      const res = await response;
+      assert.equal(res.status(), status);
+      if (status === 200) await page.getByText(/Draft saved, revision/).waitFor();
+    };
+    await page.locator("#countserial-serial").fill("000001\npartial-scan");
+    const stockBeforeDraft = (await state()).stock;
+    await saveDraft(200);
+    assert.deepEqual((await state()).stock, stockBeforeDraft);
+    await page.reload();
+    await page.getByRole("tab", { name: "Counts & assembly", exact: true }).click();
+    await continueCount(4);
+    assert.equal(await page.locator("#count-bulk").inputValue(), "");
+    assert.equal(await page.locator("#countserial-serial").inputValue(), "000001\npartial-scan");
+    assert.equal(await page.getByLabel("Count adjustment reason").inputValue(), "Keep this draft");
+    const savedCount = (await state()).counts.find(count => count.draft?.reason === "Keep this draft");
+    assert.ok(savedCount?.draft, "saved draft belongs to the resumed count");
+    await command("countSaveDraft", { id: savedCount.id, revision: savedCount.draft.revision,
+      rows: savedCount.draft.rows, reason: "Other operator saved" });
+    await page.getByLabel("Count adjustment reason").fill("Unsaved local correction");
+    await saveDraft(409);
+    assert.equal(await page.getByLabel("Count adjustment reason").inputValue(), "Unsaved local correction");
+    page.once("dialog", dialog => dialog.accept());
+    await page.getByRole("button", { name: "Reload saved draft", exact: true }).click();
+    await page.getByText("Loaded saved draft revision 2.", { exact: true }).waitFor();
+    assert.equal(await page.getByLabel("Count adjustment reason").inputValue(), "Other operator saved");
+    await page.getByLabel("Count adjustment reason").fill("Keep this draft");
+    await page.locator("#countserial-serial").fill("000001\n000002");
+
     // Server reservation safeguards still reject without changing stock/draft.
     const woRes = await context.request.post(`/api/projects/${fixture.projectId}/work-orders`, { data: {
       customerWoId: "COUNT-WO", customerId: "COUNT-CUSTOMER", customerName: "Fixture only", address: "Test only", serviceType: "Electric",
@@ -161,12 +195,19 @@ async function main() {
     assert.deepEqual((await state()).stock, movedBefore);
     assert.equal(await page.getByLabel("Count adjustment reason").inputValue(), "Stale attempt");
 
+    const handoffCount = (await state()).counts.at(-1);
+    await command("countSaveDraft", { id: handoffCount.id, revision: 0,
+      rows: [{ itemId: "bulk", quantity: "", serials: "" }], reason: "Authorized handoff" });
     // Normal role management grants read access, not counting permission.
     const grant = await context.request.put(`/api/subroles/${fixture.viewerRoleId}/permissions`, { data: { permissions: ["projects.view", "workOrders.view", "inventory.view"] } });
     assert.equal(grant.status(), 200);
     const viewer = await browser.newContext({ baseURL });
     assert.equal((await viewer.request.post("/api/auth/local/login", { data: fixture.viewer })).status(), 200);
     assert.equal((await viewer.request.get(endpoint)).status(), 200);
+    const visible = (await (await viewer.request.get(endpoint)).json()).state;
+    assert.equal(visible.counts.find(c => c.id === handoffCount.id).draft, undefined);
+    assert.equal((await viewer.request.post(`${endpoint}/commands`, { data: { operationId: crypto.randomUUID(),
+      action: "countSaveDraft", data: { id: handoffCount.id, revision: 1, rows: [], reason: "Unauthorized" } } })).status(), 403);
     assert.equal((await viewer.request.post(`${endpoint}/commands`, { data: { operationId: crypto.randomUUID(), action: "countPost", data: {
       id: (await state()).counts.at(-1).id, lines: stale.submitted.lines, reason: "Unauthorized attempt",
     } } })).status(), 403);
@@ -175,6 +216,21 @@ async function main() {
     await readPage.getByRole("tab", { name: "Counts & assembly", exact: true }).click();
     await readPage.getByRole("button", { name: "Continue count", exact: true }).click();
     assert.equal(await readPage.getByRole("button", { name: "Post count", exact: true }).isDisabled(), true);
+    assert.equal(await readPage.getByRole("button", { name: "Save count draft", exact: true }).isDisabled(), true);
+    // Count permission alone is not warehouse access; grant it through normal role management.
+    assert.equal((await context.request.put(`/api/subroles/${fixture.viewerRoleId}/permissions`, { data: {
+      permissions: ["projects.view", "workOrders.view", "inventory.view", "inventory.count"],
+    } })).status(), 200);
+    assert.equal((await (await viewer.request.get(endpoint)).json()).state.counts.find(c => c.id === handoffCount.id).draft, undefined);
+    assert.equal((await viewer.request.post(`${endpoint}/commands`, { data: { operationId: crypto.randomUUID(),
+      action: "countSaveDraft", data: { id: handoffCount.id, revision: 1, rows: [], reason: "No warehouse access" } } })).status(), 409);
+    const handoffWarehouse = (await state()).warehouses.find(w => w.id === handoffCount.warehouseId);
+    await command("warehouse", { ...handoffWarehouse, userIds: [...handoffWarehouse.userIds, fixture.viewer.id] });
+    const resumed = (await (await viewer.request.get(endpoint)).json()).state.counts.find(c => c.id === handoffCount.id);
+    assert.equal(resumed.draft.reason, "Authorized handoff");
+    assert.equal((await viewer.request.post(`${endpoint}/commands`, { data: { operationId: crypto.randomUUID(),
+      action: "countSaveDraft", data: { id: resumed.id, revision: resumed.draft.revision,
+        rows: resumed.draft.rows, reason: "Warehouse operator resumed" } } })).status(), 200);
     await viewer.close();
 
     await fs.mkdir("generated-artifacts/inventory-counts", { recursive: true });
@@ -196,7 +252,7 @@ async function main() {
     assert.equal(await page.getByLabel("Count adjustment reason").count(), 0);
     assert.equal(await page.getByRole("button", { name: "Post count", exact: true }).count(), 0);
     assert.deepEqual(errors, []);
-    console.log("Real stock-count UI passed: discoveries, late catalog items, untouched defaults, zero, count/warehouse/project draft isolation, blank rejection, reservations, stale receipts and normal role permissions.");
+    console.log("Real stock-count UI passed: discoveries, defaults, zero, save/reload/resume, conflicting editors, authorized handoff, project/warehouse/permission isolation, blank rejection, reservations and stale snapshots.");
   } finally {
     try {
       if (navigationProjectId) {

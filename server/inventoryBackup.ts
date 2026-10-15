@@ -1,5 +1,5 @@
 import type { PoolClient } from "pg";
-import { emptyInventory, warehouseSchema, itemSchema, vendorSchema, allocationSchema, type InventoryState } from "../shared/inventory";
+import { emptyInventory, warehouseSchema, itemSchema, vendorSchema, allocationSchema, savedCountDraftSchema, type InventoryState } from "../shared/inventory";
 import { z } from "zod";
 import { reserved } from "../shared/inventory-engine";
 
@@ -20,6 +20,13 @@ export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: n
   for (const a of s.allocations) {
     if (!workOrderIds.includes(a.workOrderId)) throw new Error("Inventory backup refers to a missing work order.");
     z.array(allocationSchema).parse(a.lines); z.array(allocationSchema).parse(a.used);
+  }
+  for (const count of s.counts) if (count.draft) {
+    const draft = savedCountDraftSchema.parse(count.draft);
+    if (count.status !== "open" || !s.warehouses.some(w => w.id === count.warehouseId) ||
+      new Set(draft.rows.map(row => row.itemId)).size !== draft.rows.length ||
+      draft.rows.some(row => !s.items.some(item => item.id === row.itemId)))
+      throw new Error("Inventory backup has an invalid count draft.");
   }
   for (const b of s.stock) {
     const i = s.items.find(i => i.id === b.itemId);

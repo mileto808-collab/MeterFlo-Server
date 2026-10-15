@@ -15,10 +15,15 @@ import { insertAuditEvent } from "./auditService";
 import { auditingEnabled } from "./auditContext";
 import { inventoryCountReference } from "../shared/inventory-count-reference";
 
-export function inventoryVisibleState(state: InventoryState, actor: string, admin: boolean) {
+export function inventoryVisibleState(state: InventoryState, actor: string, admin: boolean, canCount = true) {
   // Project-level view permits finding stock at other locations and requesting
   // transfers. Posting still requires the acting warehouse's access grant.
-  return { ...state, operations: {} };
+  return { ...state, operations: {}, counts: state.counts.map(count => {
+    const warehouse = state.warehouses.find(w => w.id === count.warehouseId);
+    if (canCount && (admin || warehouse?.assignedUserId === actor || warehouse?.userIds.includes(actor))) return count;
+    const { draft, ...visible } = count;
+    return visible;
+  }) };
 }
 const escape = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 export function inventoryPrint(kind: string, record: any, state: InventoryState, project: string) {
@@ -63,7 +68,7 @@ export function registerInventoryRoutes(app: Express) {
     }
   };
   const snapshot = async (res: any) => {
-    const c = res.locals.inventory, state = inventoryVisibleState(await inventoryState(c.project.id), c.user.id, c.admin);
+    const c = res.locals.inventory, state = inventoryVisibleState(await inventoryState(c.project.id), c.user.id, c.admin, c.permissions.includes(inventoryPermissions.count));
     const { rows: users } = await pool.query(`SELECT u.id,u.username FROM public.users u
       WHERE NOT coalesce(u.is_locked,false) AND
       (EXISTS(SELECT 1 FROM public.user_projects up WHERE up.user_id=u.id AND up.project_id=$1)

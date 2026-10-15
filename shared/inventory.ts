@@ -42,9 +42,18 @@ export const inventoryImportSchema = z.preprocess(value => {
 }, z.array(allocationSchema).max(500));
 export const dispositionSchema = z.object({ equipment: z.enum(["system", "module"]), serial: id,
   disposition: z.enum(["returned", "scrapped", "left_onsite"]), warehouseId: id.nullable().default(null) }).strict();
+// Preserve unfinished input verbatim; stock validation happens only when posting.
+export const countDraftSchema = z.object({
+  revision: z.number().int().nonnegative(),
+  rows: z.array(z.object({ itemId: id, quantity: z.string().max(30), serials: z.string().max(1010000) }).strict()).max(500),
+  reason: z.string().max(1000),
+}).strict();
+export const savedCountDraftSchema = countDraftSchema.extend({
+  savedBy: id, savedAt: z.string().datetime(),
+});
 export const inventoryCommandSchema = z.object({
   operationId: z.string().uuid(), action: z.enum(["warehouse", "vendor", "item", "order", "release",
-    "cancel", "receive", "dispatch", "accept", "assemble", "countStart", "countPost", "countCancel",
+    "cancel", "receive", "dispatch", "accept", "assemble", "countStart", "countPost", "countCancel", "countSaveDraft",
     "assign", "prepareUse", "returnAccept", "returnRelease", "reconcileWorkOrder"]),
   data: z.record(z.unknown()),
 }).strict();
@@ -60,7 +69,7 @@ export type InventoryOrder = { id: string; type: "purchase" | "transfer"; vendor
   destinationId: string; lines: StockLine[]; received: StockLine[]; dispatched: StockLine[]; status: "draft" | "released" | "partial" | "completed" | "cancelled"; notes: string; createdAt: string };
 export type WorkAllocation = { workOrderId: number; lines: Allocation[]; used: Allocation[]; dispositions: Disposition[];
   mode: "changeout" | "reading_only" | null; status: "reserved" | "consumed" | "released"; revision: number };
-export type InventoryCount = { id: string; warehouseId: string; snapshot: Stock[]; status: "open" | "posted" | "cancelled"; reason?: string; lines?: StockLine[] };
+export type InventoryCount = { id: string; warehouseId: string; snapshot: Stock[]; status: "open" | "posted" | "cancelled"; reason?: string; lines?: StockLine[]; draft?: z.infer<typeof savedCountDraftSchema> };
 export type InventoryReceipt = { id: string; action: string; reference: string; warehouseId: string | null;
   lines: StockLine[]; actor: string; occurredAt: string; reason?: string; components?: StockLine[] };
 export type EquipmentReturn = Disposition & { id: string; workOrderId: number; status: "pending" | "quarantine" | "released"; itemId?: string };
