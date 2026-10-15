@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.json",
+  "include": [
+    "inventory-volume*.test.ts",
+    "inventory-persistence.test.ts",
+    "inventory-sandbox.test.ts",
+    "helpers/inventory-sandbox.ts",
+    "helpers/inventory-volume*.ts"
+  ],
+  "exclude": [],
+  "compilerOptions": {
+    "incremental": false
+  }
+}

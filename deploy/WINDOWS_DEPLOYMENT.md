@@ -1788,3 +1788,16 @@ For an explicitly approved one-time reset of PM2 output:
 Do not run blanket `pm2 flush` on a shared host: it can clear other applications'
 diagnostics. Proxy, Windows and PostgreSQL logs require their own operator-owned
 retention policies. Never paste credentials into tracked deployment configuration.
+
+## Isolated inventory volume acceptance
+
+Use a separate clean checkout, not the live installation directory. See
+[`../INVENTORY_VOLUME.md`](../INVENTORY_VOLUME.md) for prerequisites, exact
+workloads, unchanged performance gates and evidence requirements.
+`Test-InventoryVolume.ps1 -PostgresBin 'C:\Program Files\PostgreSQL\16\bin' -ConfirmDisposableCheckout`
+builds that checkout and starts a throwaway loopback-only standalone application
+and a new PostgreSQL cluster. It never connects to the installed database, loads
+its `.env`, changes the Windows service or uses a published URL. It checks normal
+signed-in desktop/phone inventory, concurrent operations and backup/restore.
+Both `metrics.json` (`passed: true`, platform `win32`) and `cleanup.json`
+(`cleaned: true`) are required. Linux results are not Windows certification.

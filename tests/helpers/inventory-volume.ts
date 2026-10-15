@@ -3,7 +3,8 @@ import { emptyInventory, itemSchema, vendorSchema, warehouseSchema, type Invento
 import { reserved } from "../../shared/inventory-engine";
 
 // Synthetic historical data, never copied from a customer project.
-export const volume = { warehouses: 40, items: 100, balancesPerWarehouse: 30, history: 10_000, shipment: 10_000 };
+export const volume = { warehouses: 40, items: 100, balancesPerWarehouse: 30, history: 10_000, shipment: 10_000,
+  workers: 8, countRounds: 6, transferRounds: 4 };
 export function volumeState(history = volume.history): InventoryState {
   const s = emptyInventory();
   s.vendors = [vendorSchema.parse({ id: "vendor", name: "Synthetic supplier" })];

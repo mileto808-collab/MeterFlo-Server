@@ -99,6 +99,12 @@ try {
     await new Promise(resolve => setTimeout(resolve, 500));
   }
   if (!ready) throw new Error("Disposable application startup timed out.");
+  stage = "Engine boundaries and persistence";
+  await run(process.execPath, ["--import", "tsx", "--test", "tests/inventory-volume.test.ts", "tests/inventory-persistence.test.ts"],
+    { cwd: checkout, visible: true });
+  stage = "Full-system backup restoration";
+  await run(process.execPath, ["--import", "tsx", "--test", "tests/inventory-system-backup.test.ts"],
+    { cwd: checkout, visible: true });
   stage = "Inventory acceptance";
   console.log("Running the real signed-in workload against the disposable server.");
   await run(process.execPath, ["--import", "tsx", "--test", "tests/inventory-volume-integration.test.ts"],

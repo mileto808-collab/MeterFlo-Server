@@ -9,6 +9,12 @@ Standalone acceptance must own a newly initialized PostgreSQL cluster and applic
 
 **How to apply:** Supply the disposable database and session configuration before starting child Node processes, exclude inherited production configuration, and validate matching ownership before fixture writes. Keep Windows measurements separate from Linux harness verification.
 
+A separately named database on an installed cluster is not the same safety boundary as an owned temporary cluster.
+
+**Why:** Reusing the installed cluster's administration credentials still grants access to production data even when the fixtures have different names.
+
+**How to apply:** Generate local endpoints and keep inherited configuration minimal; never use installed administration credentials as a shortcut for customer acceptance.
+
 On Linux, temporary PostgreSQL clusters must use their own Unix-socket directory rather than assuming the packaged default exists.
 
 **Why:** The Nix PostgreSQL binary defaulted to `/run/postgresql`, which was absent; it opened TCP and then failed startup when creating the socket lock.

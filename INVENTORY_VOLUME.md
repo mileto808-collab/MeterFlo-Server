@@ -46,6 +46,12 @@ For standalone Linux verification, build the disposable checkout, then set
 `INVENTORY_VOLUME_PG_BIN` to its PostgreSQL tools directory and run
 `npm run test:inventory-volume:standalone`. This exercises the same isolation path,
 but a Linux pass is **not evidence of Windows performance or compatibility**.
+`npm run test:inventory-volume:acceptance` is a portable alias for this same
+owned-cluster runner and also requires `INVENTORY_VOLUME_PG_BIN`. Both entry points
+now include the engine boundary/persistence checks and separate fresh-destination
+full-system restore regression inside the disposable cluster before the volume
+workload. The customer Windows results below describe the supplied run, not a
+new Windows execution of these supplementary checks.
 
 The standalone Linux path was verified using PostgreSQL 16.10 with real normal
 login, signed-in desktop/phone browser checks, mobile completion/retries and
@@ -99,7 +105,7 @@ permissions, not an authentication bypass. No credentials are printed or saved.
 ```sh
 npm run dev                         # existing Start application workflow
 npm run test:inventory-volume       # engine boundaries + persistence write regression
-npm run test:inventory-volume:acceptance
+npm run test:inventory-volume:development
 ```
 
 `DATABASE_URL` must be configured normally for development. Chromium must be

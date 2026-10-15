@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { mkdir, writeFile } from "node:fs/promises";
+import { cpus, release, totalmem } from "node:os";
 import bcrypt from "bcryptjs";
 import { chromium, expect } from "@playwright/test";
 import { pool } from "../server/db";
@@ -110,8 +111,8 @@ test("isolated inventory volume, sustained contention, sync, restore and signed-
     assert.ok(contention.filter(r => r.status === "rejected").every(r => /reserved/.test(String(r.reason))));
     // Eight workers, six rounds, distinct locations: verify project-wide locking loses no writes.
     const revisionBefore = (await inventoryState(p.id)).revision;
-    await timed("parallel.wall", () => Promise.all(Array.from({ length: 8 }, async (_, worker) => {
-      for (let round = 0; round < 6; round++) {
+    await timed("parallel.wall", () => Promise.all(Array.from({ length: volume.workers }, async (_, worker) => {
+      for (let round = 0; round < volume.countRounds; round++) {
         const id = `parallel-${worker}-${round}`;
         await command("countStart", { id, warehouseId: `w${worker + 1}` });
         await command("countCancel", { id, reason: "Synthetic concurrent activity" });
@@ -120,8 +121,8 @@ test("isolated inventory volume, sustained contention, sync, restore and signed-
     const afterCounts = await inventoryState(p.id);
     assert.equal(afterCounts.revision, revisionBefore + 96, "all parallel writes survive");
     assert.equal(afterCounts.counts.filter(c => c.id.startsWith("parallel-") && c.status === "cancelled").length, 48);
-    await timed("parallel.transfers", () => Promise.all(Array.from({ length: 8 }, async (_, worker) => {
-      for (let round = 0; round < 4; round++) {
+    await timed("parallel.transfers", () => Promise.all(Array.from({ length: volume.workers }, async (_, worker) => {
+      for (let round = 0; round < volume.transferRounds; round++) {
         const id = `transfer-${worker}-${round}`, lines = [{ itemId: "i1", quantity: 1, serials: [] }];
         await command("order", { id, type: "transfer", sourceId: `w${worker + 1}`, destinationId: `w${worker + 9}`, lines });
         await command("release", { orderId: id });
@@ -293,8 +294,9 @@ test("isolated inventory volume, sustained contention, sync, restore and signed-
       const sorted = [...values].sort((a, b) => a - b);
       return [name, { n: sorted.length, p50: sorted[Math.floor((sorted.length - 1) * .5)], p95: sorted[Math.ceil(sorted.length * .95) - 1], max: sorted.at(-1) }];
     }));
-    await writeFile(`${output}/metrics.json`, JSON.stringify({ passed, volume, node: process.version,
-      runId: sandbox?.runId, environment: { platform: process.platform, arch: process.arch, mode: sandbox ? "standalone" : "replit-development" },
+    await writeFile(`${output}/metrics.json`, JSON.stringify({ passed, measuredAt: new Date().toISOString(), volume, node: process.version,
+      runId: sandbox?.runId, environment: { platform: process.platform, arch: process.arch, mode: sandbox ? "standalone" : "replit-development",
+        release: release(), cpus: cpus().length, cpuModel: cpus()[0]?.model, totalMemoryBytes: totalmem(), browser: browser?.version() ?? null },
       maxRssKiB: process.resourceUsage().maxRSS, milliseconds: summary, bytes }, null, 2));
     console.log(JSON.stringify({ milliseconds: summary, bytes }));
     await browser?.close();
