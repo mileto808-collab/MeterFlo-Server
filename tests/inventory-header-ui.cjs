@@ -72,7 +72,7 @@ async function main() {
       assert.equal(await page.locator('[role="tab"][aria-selected="true"]').textContent(), "Orders", "Header shortcut opens Orders from another tab");
       await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
       await dialog.waitFor({ state: "hidden" });
-      assert.equal(await page.getByRole("button", { name: "Build an order draft", exact: true }).count(), 1, "Orders content does not duplicate the header action");
+      assert.equal(await page.getByTestId("inventory-orders-subheader").getByRole("button", { name: "Build an order draft", exact: true }).count(), 1, "Orders subheader has its own draft action");
       await page.reload();
       await toggle.waitFor();
       assert.equal(await toggle.getAttribute("aria-expanded"), "false", "Fresh visits start collapsed");

@@ -60,7 +60,7 @@ async function main() {
       if (name !== "Save draft") await warning.waitFor({ state: "hidden" });
     };
     const ordersTab = () => page.getByRole("tab", { name: "Orders", exact: true }).click();
-    const openNew = () => page.getByRole("button", { name: "Build an order draft", exact: true }).click();
+    const openNew = () => page.getByTestId("inventory-sticky-header").getByRole("button", { name: "Build an order draft", exact: true }).click();
     const cancelEditor = () => editor.getByRole("button", { name: "Cancel", exact: true }).click();
     const edit = async id => {
       if (await editor.isVisible()) {

@@ -45,6 +45,26 @@ async function main() {
         }
       }
       await page.setViewportSize({ width: 390, height: 720 });
+      if (kind === "orders") {
+        const create = page.getByTestId("inventory-orders-subheader").getByRole("button", { name: "Build an order draft", exact: true });
+        await expect(create).toBeVisible();
+        assert.equal((await create.innerText()).trim(), "", "Phone draft action is icon-only");
+        const box = await create.boundingBox();
+        assert.ok(box.width >= 40 && box.height >= 40, "Draft action is touch-sized");
+        await create.click();
+        await expect(page.getByRole("dialog", { name: "Build an order draft", exact: true })).toBeVisible();
+        await page.getByRole("dialog").getByRole("button", { name: "Cancel", exact: true }).click();
+        await expect(page.getByRole("dialog")).toBeHidden();
+        await page.setViewportSize({ width: 844, height: 390 });
+        await expect(create).toBeVisible();
+        assert.equal((await create.innerText()).trim(), "", "Rotated phone draft action stays icon-only");
+        await create.click();
+        await expect(page.getByRole("dialog", { name: "Build an order draft", exact: true })).toBeVisible();
+        await page.getByRole("dialog").getByRole("button", { name: "Cancel", exact: true }).click();
+        await expect(page.getByRole("dialog")).toBeHidden();
+        await page.screenshot({ path: `${out}/orders-landscape-draft-action.jpg` });
+        await page.setViewportSize({ width: 390, height: 720 });
+      }
       await page.screenshot({ path: `${out}/${kind}.jpg` });
       await toggle.click();
       await expect(tools).toBeVisible();
@@ -74,6 +94,12 @@ async function main() {
     await expect(page.getByRole("dialog", { name: "Build an order draft", exact: true })).toBeVisible();
     await page.keyboard.press("Escape");
     await page.setViewportSize({ width: 1440, height: 1000 });
+    const desktopCreate = page.getByTestId("inventory-orders-subheader").getByRole("button", { name: "Build an order draft", exact: true });
+    await expect(desktopCreate).toHaveText("Build an order draft");
+    await desktopCreate.click();
+    await expect(page.getByRole("dialog", { name: "Build an order draft", exact: true })).toBeVisible();
+    await page.getByRole("dialog").getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(page.getByRole("dialog")).toBeHidden();
     await expect(page.getByRole("tab", { name: "Locations", exact: true })).toBeVisible();
     await page.getByRole("tab", { name: "Locations", exact: true }).click();
     await expect(page.getByRole("searchbox", { name: "Search locations", exact: true })).toBeVisible();

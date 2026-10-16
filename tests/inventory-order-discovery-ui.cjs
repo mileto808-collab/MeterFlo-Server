@@ -23,7 +23,7 @@ async function main() {
     page.setDefaultTimeout(15000);
     await page.goto(`/projects/${fixture.projectId}/inventory`);
     await page.getByRole("tab", { name: "Orders", exact: true }).click();
-    await page.getByRole("button", { name: "Build an order draft", exact: true }).click();
+    await page.getByTestId("inventory-sticky-header").getByRole("button", { name: "Build an order draft", exact: true }).click();
     const builder = page.getByTestId("inventory-order-dialog");
     const selectBuilder = async (index, name) => {
       await builder.getByRole("combobox").nth(index).click();

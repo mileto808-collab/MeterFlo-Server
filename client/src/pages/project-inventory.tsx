@@ -940,11 +940,12 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
         </Dialog>
         <section className="flex min-h-0 flex-1 flex-col" aria-label="Purchase and transfer orders">
           <header className="z-10 shrink-0 border-b bg-background px-1 pb-2 sm:pb-3" data-testid="inventory-orders-subheader">
-            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-              <div className="min-w-0">
-                <h2 className="text-base font-semibold tracking-tight sm:text-lg">Purchase &amp; transfer orders</h2>
+            <div className="flex flex-nowrap items-center justify-between gap-x-2 sm:gap-x-4">
+              <div className="min-w-0 flex-1">
+                <h2 className="truncate whitespace-nowrap text-base font-semibold tracking-tight sm:text-lg">Purchase &amp; transfer orders</h2>
                 <p className="hidden text-xs text-muted-foreground sm:block">Review orders, capture movements, and follow exceptions.</p>
               </div>
+              {(can("inventory.purchase") || can("inventory.transfer")) && <Button size="sm" className="inventory-order-draft-action h-10 min-w-10 shrink-0 px-3" aria-label="Build an order draft" title="Build an order draft" onClick={() => { setInventoryTab("orders"); startNewOrderDraft(); }}><Plus className="h-4 w-4 sm:mr-1.5" /><span className="hidden whitespace-nowrap sm:inline">Build an order draft</span></Button>}
             </div>
             <InventoryMobileTools tab="orders">
               <div className="mt-1 space-y-2 rounded-md border bg-card p-2 md:rounded-none md:border-0 md:bg-transparent md:p-0">
