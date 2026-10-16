@@ -60,13 +60,18 @@ async function main() {
         assert.ok(box.x >= 0 && box.x + box.width <= viewport.width + 1, "Every menu tab fits the viewport");
       }
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      const build = page.getByTestId("inventory-sticky-header").getByRole("button", { name: "Build an order draft", exact: true });
+      assert.equal(await build.count(), 1, "Order draft action lives in the persistent header");
+      const buildBox = await build.boundingBox();
+      assert.ok(buildBox.y >= 0 && buildBox.y + buildBox.height <= viewport.height, "Order draft action stays visible after scrolling");
       await page.screenshot({ path: `generated-artifacts/inventory-header/${viewport.width}-collapsed-scrolled.jpg` });
-      await page.getByRole("tab", { name: "Orders", exact: true }).click();
-      await page.getByRole("button", { name: "Build an order draft", exact: true }).click();
+      await build.click();
       const dialog = page.getByTestId("inventory-order-dialog");
       await dialog.waitFor();
+      assert.equal(await page.locator('[role="tab"][aria-selected="true"]').textContent(), "Orders", "Header shortcut opens Orders from another tab");
       await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
       await dialog.waitFor({ state: "hidden" });
+      assert.equal(await page.getByRole("button", { name: "Build an order draft", exact: true }).count(), 1, "Orders content does not duplicate the header action");
       await page.reload();
       await toggle.waitFor();
       assert.equal(await toggle.getAttribute("aria-expanded"), "false", "Fresh visits start collapsed");

@@ -67,6 +67,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const { data, isLoading, isError, refetch } = useQuery<Snapshot>({ queryKey, enabled: !!projectId });
   const [search, setSearch] = useState("");
   const [showInventoryStats, setShowInventoryStats] = useState(false);
+  const [inventoryTab, setInventoryTab] = useState("stock");
   const [stockPage, setStockPage] = useState(0);
   const [selectedStockKey, setSelectedStockKey] = useState<string | null>(null);
   const [activityPage, setActivityPage] = useState(0);
@@ -654,7 +655,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       </DialogContent>
     </Dialog>
     {isError && <Alert variant="destructive"><AlertTitle>Inventory refresh failed</AlertTitle><AlertDescription>The last loaded inventory is shown. Your count entries were kept; retry before relying on current stock.</AlertDescription><Button variant="outline" className="mt-2" onClick={() => refetch()}>Retry inventory refresh</Button></Alert>}
-    <Tabs defaultValue="stock" className="flex min-h-0 flex-1 flex-col gap-3">
+    <Tabs value={inventoryTab} onValueChange={setInventoryTab} className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="z-10 shrink-0 space-y-3 border-b bg-background pb-3" data-testid="inventory-sticky-header">
         <div className="flex min-w-0 flex-col justify-between gap-3 sm:flex-row sm:items-center">
           <div className="min-w-0">
@@ -677,6 +678,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
             </Button>
             {can("inventory.maintain") && <Button size="sm" variant="outline" onClick={() => openResource("warehouse")}><Plus className="mr-1.5 h-4 w-4" />Location</Button>}
             {can("inventory.maintain") && <Button size="sm" onClick={() => openResource("item")}><Plus className="mr-1.5 h-4 w-4" />New item</Button>}
+            {(can("inventory.purchase") || can("inventory.transfer")) && <Button size="sm" onClick={() => { setInventoryTab("orders"); startNewOrderDraft(); }}><Plus className="mr-1.5 h-4 w-4" />Build an order draft</Button>}
           </div>
         </div>
         <div
@@ -720,10 +722,6 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
         <InventoryShipmentDraftsPanel base={base} state={state} users={data.users} orders={orderItems}
           userId={user?.id} isAdmin={user?.role === "admin"} onResume={(draft, snapshot) => void resumeShipmentDraft(draft, snapshot)} />
         {can("inventory.purchase") || can("inventory.transfer") ? <>
-          <div className="flex flex-col gap-3 rounded-lg border bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div><h2 className="font-medium">Create or update an order draft</h2><p className="text-sm text-muted-foreground">Plan items and quantities. Serial scans are recorded during receiving or transfer dispatch.</p></div>
-            <Button className="w-full shrink-0 sm:w-auto" onClick={startNewOrderDraft}><Plus className="mr-2 h-4 w-4" />Build an order draft</Button>
-          </div>
           <Dialog open={orderEditorOpen} onOpenChange={open => {
             if (open) setOrderEditorOpen(true);
             else if (!orderSaving.current) closeOrderEditor();
