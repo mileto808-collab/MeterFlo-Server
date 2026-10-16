@@ -77,8 +77,16 @@ async function main() {
       assert.equal(await result.failure(), null);
       return file;
     }
-    const filteredTxt = await download("TXT", "txt");
-    assert.equal(await fs.readFile(filteredTxt, "utf8"), filtered.join("\r\n") + "\r\n", "Filtered export covers all matches, not just visible page");
+    const readCsvSerials = async file => {
+      const text = await fs.readFile(file, "utf8");
+      assert.ok(text.startsWith('\uFEFF"Serial"\r\n'), "CSV has UTF-8 BOM and column heading");
+      const book = XLSX.read(text.slice(1), { type: "string", raw: true });
+      const rows = XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]], { header: 1, raw: true });
+      assert.deepEqual(rows[0], ["Serial"]);
+      return rows.slice(1).map(row => row[0]);
+    };
+    const filteredCsv = await download("CSV", "csv");
+    assert.deepEqual(await readCsvSerials(filteredCsv), filtered, "Filtered export covers all matches, not just visible page");
     await dialog.getByLabel("Export scope", { exact: true }).selectOption("all");
     const allXlsx = await download("Excel", "xlsx");
     const workbook = XLSX.readFile(allXlsx, { cellNF: true });
@@ -89,8 +97,8 @@ async function main() {
     }
     assert.ok(!JSON.stringify(sheet).includes("OTHER-LOCATION-ONLY"));
     assert.notEqual(sheet.B1.v, String(fixture.projectId), "Project export uses a readable project name");
-    const allTxt = await download("TXT", "txt");
-    assert.equal(await fs.readFile(allTxt, "utf8"), serials.join("\r\n") + "\r\n");
+    const allCsv = await download("CSV", "csv");
+    assert.deepEqual(await readCsvSerials(allCsv), serials.map(value => /^[\s\uFEFF]*[=+\-@]/.test(value) ? `'${value}` : value));
     const popupPromise = page.waitForEvent("popup");
     await dialog.getByRole("button", { name: "PDF / Print", exact: true }).click();
     const popup = await popupPromise;
@@ -113,7 +121,7 @@ async function main() {
     await popup.close();
     await dialog.getByRole("textbox", { name: "Search serials", exact: true }).fill("no-matches-expected");
     await dialog.getByLabel("Export scope", { exact: true }).selectOption("filtered");
-    for (const name of ["Excel", "TXT", "PDF / Print"])
+    for (const name of ["Excel", "CSV", "PDF / Print"])
       assert.equal(await dialog.getByRole("button", { name, exact: true }).isDisabled(), true);
     await dialog.getByRole("textbox", { name: "Search serials", exact: true }).fill("aBc-009");
     assert.equal(await list.locator("code").first().innerText(), "AbC-009", "Search ignores case but identity text does not");
@@ -185,7 +193,7 @@ async function main() {
     assert.equal((await viewer.request.get(endpoint)).status(), 403, "Existing inventory permission blocks unauthorized stock access");
     await viewer.close();
     assert.deepEqual(errors, []);
-    console.log("Stock serial viewer passed: 1,517 identities, scoped search/paging, exact all/filtered XLSX/TXT, Letter/A4 PDF, mobile bounds, permissions and no stock mutation.");
+    console.log("Stock serial viewer passed: 1,517 identities, scoped search/paging, all/filtered XLSX/CSV, formula safety, Letter/A4 PDF, mobile bounds, permissions and no stock mutation.");
   } finally { await browser.close(); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

@@ -16,7 +16,7 @@ type ExportContext = {
   locationCode: string;
 };
 
-type ExportFormat = "xlsx" | "txt" | "pdf";
+type ExportFormat = "xlsx" | "csv" | "pdf";
 type ExportScope = "all" | "filtered";
 
 type InventoryStockSerialDialogProps = {
@@ -189,8 +189,8 @@ export function InventoryStockSerialDialog({
               <Button variant="outline" onClick={() => void exportFile("xlsx")} disabled={exporting !== null || exportSerials.length === 0}>
                 <FileSpreadsheet className="mr-2 h-4 w-4" />{exporting === "xlsx" ? "Preparing…" : "Excel"}
               </Button>
-              <Button variant="outline" onClick={() => void exportFile("txt")} disabled={exporting !== null || exportSerials.length === 0}>
-                <FileText className="mr-2 h-4 w-4" />{exporting === "txt" ? "Preparing…" : "TXT"}
+              <Button variant="outline" onClick={() => void exportFile("csv")} disabled={exporting !== null || exportSerials.length === 0}>
+                <Download className="mr-2 h-4 w-4" />{exporting === "csv" ? "Preparing…" : "CSV"}
               </Button>
               <Button variant="outline" onClick={() => void exportFile("pdf")} disabled={exporting !== null || exportSerials.length === 0}>
                 <Printer className="mr-2 h-4 w-4" />{exporting === "pdf" ? "Preparing…" : "PDF / Print"}

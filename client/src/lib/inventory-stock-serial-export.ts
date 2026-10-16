@@ -15,9 +15,13 @@ export function stockSerialFilename(context: StockSerialExportContext, extension
   return `${stem}-serials.${extension}`;
 }
 
-export function stockSerialText(serials: readonly string[]) {
-  // Do not parse as numbers or add spreadsheet-style quoting to raw identities.
-  return serials.join("\r\n") + (serials.length ? "\r\n" : "");
+export function stockSerialCsv(serials: readonly string[]) {
+  // Match the other Inventory CSV exports: quoted text, UTF-8, and formula protection.
+  const quote = (value: string) => {
+    const safe = /^[\s\uFEFF]*[=+\-@]/.test(value) ? `'${value}` : value;
+    return `"${safe.replace(/"/g, '""')}"`;
+  };
+  return "\uFEFF" + ["Serial", ...serials].map(quote).join("\r\n") + "\r\n";
 }
 
 export async function stockSerialWorkbook(context: StockSerialExportContext, serials: readonly string[]) {
@@ -77,7 +81,7 @@ function saveBlob(blob: Blob, filename: string) {
 }
 
 export async function downloadStockSerials(
-  format: "xlsx" | "txt" | "pdf",
+  format: "xlsx" | "csv" | "pdf",
   context: StockSerialExportContext,
   serials: readonly string[],
 ) {
@@ -94,9 +98,9 @@ export async function downloadStockSerials(
     popup.document.close();
     return;
   }
-  if (format === "txt") {
-    saveBlob(new Blob([stockSerialText(selected)], { type: "text/plain;charset=utf-8" }),
-      stockSerialFilename(context, "txt"));
+  if (format === "csv") {
+    saveBlob(new Blob([stockSerialCsv(selected)], { type: "text/csv;charset=utf-8" }),
+      stockSerialFilename(context, "csv"));
     return;
   }
   const XLSX = await import("xlsx");
