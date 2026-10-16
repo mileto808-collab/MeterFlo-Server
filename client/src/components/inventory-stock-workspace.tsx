@@ -30,7 +30,6 @@ export function InventoryStockWorkspace({ base, projectName, timezone, onRefresh
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(1);
-  const [exportScope, setExportScope] = useState<"all" | "filtered" | "page">("filtered");
   const [exporting, setExporting] = useState(false);
   const [optionSearch, setOptionSearch] = useState("");
   const [resultsElement, setResultsElement] = useState<HTMLDivElement | null>(null);
@@ -53,7 +52,7 @@ export function InventoryStockWorkspace({ base, projectName, timezone, onRefresh
   const lastPage = Math.max(0, Math.ceil(matchingCount / rowsPerPage) - 1);
   const currentPage = stock.data ? Math.floor(stock.data.offset / rowsPerPage) : page;
   const pageCount = Math.max(1, Math.ceil(matchingCount / rowsPerPage));
-  const exportCount = exportScope === "all" ? total : exportScope === "page" ? visibleRows.length : matchingCount;
+  const exportCount = matchingCount;
   const activeFilterCount = Number(filters.warehouse !== "all") + Number(filters.category !== "all") +
     Number(filters.tracking !== "all") + Number(filters.availability !== "all") + Number(filters.sort !== "item-asc");
 
@@ -194,8 +193,7 @@ export function InventoryStockWorkspace({ base, projectName, timezone, onRefresh
     try {
       if (format === "pdf" && !printWindow) throw new Error("Allow pop-ups to open the printable view.");
       if (printWindow) { printWindow.opener = null; printWindow.document.body.textContent = "Preparing stock export…"; }
-      const rows = exportScope === "page" ? visibleRows : await collectStockExport(
-        base, "", exportScope === "all" ? { sort: filters.sort } : { q: query, ...filters }, "rows");
+      const rows = await collectStockExport(base, "", { q: query, ...filters }, "rows");
       await downloadInventoryStock(format, { project: projectName, timezone }, rows, printWindow ?? undefined);
     } catch (error) {
       printWindow?.close();
@@ -281,11 +279,6 @@ export function InventoryStockWorkspace({ base, projectName, timezone, onRefresh
               <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="PDF / Print" title="PDF / Print" disabled={!exportCount || exporting || !stock.data} onClick={() => void exportFile("pdf")}><FileText className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">PDF / Print</span></Button>
               <p className="ml-auto whitespace-nowrap text-xs text-muted-foreground" aria-live="polite">{matchingCount} {matchingCount === 1 ? "balance" : "balances"}</p>
             </div>
-            <select className={selectClass} aria-label="Stock export scope" value={exportScope} onChange={event => setExportScope(event.target.value as typeof exportScope)}>
-              <option value="all">All balances ({total})</option>
-              <option value="filtered">Filtered matches ({matchingCount})</option>
-              <option value="page">Current page ({visibleRows.length})</option>
-            </select>
             <div className="flex min-w-0 items-center gap-2">
               <div className="relative min-w-0 flex-1">
                 <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

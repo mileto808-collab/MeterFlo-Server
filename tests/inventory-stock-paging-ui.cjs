@@ -32,7 +32,7 @@ async function main() {
       lines.push({ itemId: id, quantity: 1, serials: serialized ? [`SERIAL-${i}`] : [] });
     }
     await command("order", { id: "density-order", type: "purchase", vendorId: "density-vendor",
-      destinationId: "density", lines });
+      destinationId: "density", lines: lines.map(({ serials, ...line }) => line) });
     await command("release", { orderId: "density-order" });
     await command("receive", { orderId: "density-order", lines });
     const page = await context.newPage(), errors = [], requests = [], pending = new Set();
@@ -99,6 +99,34 @@ async function main() {
     }
     await fs.mkdir("generated-artifacts/stock-paging", { recursive: true });
     await page.screenshot({ path: "generated-artifacts/stock-paging/desktop.png" });
+    const header = page.getByTestId("inventory-stock-subheader");
+    assert.equal(await header.getByLabel("Stock export scope").count(), 0, "no space-consuming export scope row");
+    const csvDownload = page.waitForEvent("download");
+    await header.getByRole("button", { name: "CSV", exact: true }).click();
+    const csv = await fs.readFile(await (await csvDownload).path(), "utf8");
+    assert.equal(csv.split("\r\n").filter(Boolean).length, 19, "CSV includes all 18 matches, not just this page");
+    const excelDownload = page.waitForEvent("download");
+    await header.getByRole("button", { name: "Excel", exact: true }).click();
+    const XLSX = require("xlsx");
+    const workbook = XLSX.read(await fs.readFile(await (await excelDownload).path()), { type: "buffer" });
+    assert.equal(XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]).length, 18);
+    const popupEvent = page.waitForEvent("popup");
+    await header.getByRole("button", { name: "PDF / Print", exact: true }).click();
+    const popup = await popupEvent;
+    await expect(popup.locator("tbody tr")).toHaveCount(18);
+    await popup.close();
+    await header.getByRole("searchbox", { name: "Search inventory" }).fill("with a longer serialized");
+    await expect(pager).toContainText("of 3 balances");
+    const filteredDownload = page.waitForEvent("download");
+    await header.getByRole("button", { name: "CSV", exact: true }).click();
+    const filteredCsv = await fs.readFile(await (await filteredDownload).path(), "utf8");
+    assert.equal(filteredCsv.split("\r\n").filter(Boolean).length, 4);
+    await header.getByRole("searchbox", { name: "Search inventory" }).fill("no-matching-record");
+    await expect(header.getByRole("button", { name: "CSV", exact: true })).toBeDisabled();
+    await expect(header.getByRole("button", { name: "Excel", exact: true })).toBeDisabled();
+    await expect(header.getByRole("button", { name: "PDF / Print", exact: true })).toBeDisabled();
+    await header.getByRole("searchbox", { name: "Search inventory" }).fill("");
+    await settle();
     await page.getByRole("button", { name: "Next stock page" }).click();
     await expect(pager).toContainText("Page 2");
     await page.setViewportSize({ width: 1440, height: 1100 });
@@ -118,11 +146,13 @@ async function main() {
     if (await toggle.getAttribute("aria-expanded") === "true") await toggle.click();
     await settle();
     const compactCapacity = await capacity();
+    const compactHeight = (await metrics()).height;
     assert.ok(compactCapacity > 1, "collapsed phone tools leave space for multiple records");
     await page.screenshot({ path: "generated-artifacts/stock-paging/phone.png" });
     await toggle.click();
-    await expect.poll(capacity).toBeLessThan(compactCapacity);
     await settle();
+    assert.ok((await metrics()).height < compactHeight, "expanded tools consume record space");
+    assert.ok(await capacity() <= compactCapacity, "expanded tools cannot increase record capacity");
     await toggle.click();
     await expect.poll(capacity).toBe(compactCapacity);
     await settle();

@@ -52,3 +52,15 @@ Repeated project badges are also an unreliable basis for compact row capacity.
 **How to apply:** Include users with zero, one, and several long project
 assignments in density checks. Measure actual remaining space and row bounds;
 keep multi-valued project lists in their read-only viewer rather than tall rows.
+
+Server pagination needs stable page boundaries during ordinary Next/Previous
+navigation. Reflow from page one when viewport or header geometry changes,
+rather than changing the limit under a later page.
+
+**Why:** A taller record on a later page can change the measured limit and thus
+the offset, making Previous return fewer or different records. Treating temporary
+scrollbar widths as viewport changes can also restart measurement/loading loops.
+
+**How to apply:** Distinguish real layout geometry changes from scrollbar
+appearance. Verify idle request stability and exact first-page record identities
+after navigating through mixed-height later pages, not just an initial screenshot.

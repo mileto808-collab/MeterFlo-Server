@@ -77,12 +77,25 @@ location/category choices only when Filters opens, up to 200 of each per search.
 Search to find choices outside that bound. Indexes scope stock item/location reads,
 sorts and serial bin/position lookups by project; no extension is required.
 
-Balance and serial exports offer All, Filtered and Current page. All/filtered
-exports fetch only that explicitly selected dataset in bounded chunks on demand,
-not a whole project snapshot. A revision/count change between chunks aborts with
-a retry message instead of mixing stock revisions. A zero-match filtered scope
-stays selected and disables downloads. CSV/Excel/PDF preserve serial text and
-existing formula-safety rules; printable windows open during the click gesture.
+Balance CSV/Excel/PDF exports always include every record matching the current
+search and filters, across all pages; clearing filters exports all stock. The
+stock header has no separate export-scope dropdown. Serial viewers still offer
+All, Filtered and Current page. Exports collect the relevant dataset in bounded
+chunks on demand, not a whole project snapshot. A revision/count change between
+chunks aborts with a retry message instead of mixing stock revisions. Zero
+matches disable downloads rather than silently exporting all records.
+CSV/Excel/PDF preserve serial text and existing formula-safety rules; printable
+windows open during the click gesture.
+
+Stock page capacity settles from actual rendered row bounds on the first page.
+Ordinary Next/Previous navigation keeps the server limit fixed, so taller rows
+on another page cannot change offsets or shrink the first page. Resizing or
+showing/hiding tools or statistics returns to page one to recalculate capacity.
+Overshoot is settled once; transient scrollbar widths do not invalidate the
+measurement and restart a loading loop. Tall later-page rows remain scrollable.
+With a disposable UI fixture, `npm run test:inventory-stock-paging:browser`
+checks stable idle requests, mixed-height page roundtrips, viewport/stats/tool
+changes, touch portrait/landscape, and all-matching CSV/Excel/PDF exports.
 
 Verification:
 
