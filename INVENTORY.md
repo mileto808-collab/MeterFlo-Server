@@ -146,6 +146,19 @@ Each continuation table repeats the project, readable order/receipt number, prod
 
 Automated checks: `npm run test:inventory-print` verifies evidence scope and display; `npm run test:inventory-print:browser` generates isolated fixtures and Chromium Letter/A4 PDFs under ignored `generated-artifacts/inventory-serial-print/`. The browser check requires Chromium (or `CHROMIUM_PATH`) and Poppler's `pdftotext`. It checks exact serial preservation, category duplicates, repeated page identifiers/headings, printable bounds, no empty appendix pages and offline rendering, including a 1,510-serial receipt. Actual browser print engines and printer settings can affect page counts; Firefox/Safari and physical printers are not verified by this Chromium check. Order and count serial layouts are unchanged.
 
+### Locations, Shipment exceptions, Removed Equipment and Activity
+
+These tabs use the same persistent search/filter/refresh/CSV/Excel/PDF toolbar and screen-size-aware pagination as Stock, Orders, Items and Vendors. The results scroll locally while the toolbar and page navigation stay available. Exports contain **all matching records in the selected sort order**, not just the current page; no-result exports are disabled.
+
+- **Locations:** search names, codes, addresses, VIN/plate, contacts and assigned users; filter by location type, active status and user assignment.
+- **Shipment exceptions:** search readable orders/receipts, products, serials and locations; filter by location, hold status, tracking and receiving user. Sort by date, item or remaining held quantity. Known identities and disposition history expand separately. Inspection, partial disposition, receipt printing and unsaved-edit protection are retained.
+- **Removed Equipment:** search exact serials, work orders and return locations; filter by equipment type, status, return location and disposition. Existing quarantine acceptance and inspected stock-release actions retain their permissions and validation.
+- **Activity:** search receipts, readable order/count/operation references, users, products, serials and reasons; filter by action, location and user. Newest/oldest ordering follows the append-only ledger sequence. Existing movement printing remains available.
+
+CSV/Excel include detailed fields, preserve leading-zero text values and protect spreadsheet formula-like text. PDF / Print opens a landscape summary with repeated project/timezone/column headings for browser Print / Save PDF. Shipment summaries use serial counts rather than inserting potentially thousands of serials; Removed Equipment exports preserve each record's serial. Names/readable references are exported instead of internal user/order UUIDs. Export data comes from the already permission-scoped project snapshot and does not expand access to other warehouses.
+
+Verification: `npm run test:inventory-operations`. Browser coverage uses only a disposable fixture: `npx tsx tests/support/inventory-ui-fixture.ts --operations`, `npm run test:inventory-operations:browser`, then `npx tsx tests/support/inventory-ui-fixture.ts cleanup`. Do not create acceptance fixtures in a customer database.
+
 ### Items and Vendors workspaces
 
 **Items** and **Vendors** are separate project tabs. Each has a persistent search/filter/refresh/export toolbar, a bounded results area and fixed page navigation. Page capacity adapts to available screen space, including changes to the statistics header and phone layouts. Add/Edit continues to use the existing validated resource forms and requires inventory maintenance permission.

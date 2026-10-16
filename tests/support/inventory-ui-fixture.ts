@@ -9,7 +9,7 @@ import { initializeInventory } from "../../server/inventoryMigration";
 import { getProjectFilesPath } from "../../server/fileStorage";
 import path from "node:path";
 import { enableAuditing } from "../../server/auditContext";
-import { emptyInventory, itemSchema, warehouseSchema } from "../../shared/inventory";
+import { emptyInventory, itemSchema, warehouseSchema, vendorSchema } from "../../shared/inventory";
 import { saveInventory } from "../../server/inventoryService";
 const file = "/tmp/meterflo-inventory-ui-fixture.json";
 async function main() {
@@ -40,13 +40,42 @@ async function main() {
   const schema = await createProjectSchema(project.name, project.id);
   await pool.query("UPDATE public.projects SET database_name=$2 WHERE id=$1", [project.id, schema]);
   await storage.assignUserToProject(user.id, project.id);
-  if (process.argv.includes("--large-counts")) {
+  if (process.argv.includes("--large-counts") || process.argv.includes("--operations")) {
     const state = emptyInventory();
     state.warehouses.push(warehouseSchema.parse({ id: "large", code: "LARGE", name: "large fixture", type: "physical", address: "Test only" }));
     state.items = Array.from({ length: 3000 }, (_, n) => itemSchema.parse({
       id: `capacity-${n}`, sku: `CAP-${String(n).padStart(4, "0")}`, name: `Capacity product ${n}`, tracking: "regular",
     }));
     state.stock = state.items.slice(0, 600).map(item => ({ warehouseId: "large", itemId: item.id, quantity: 2, serials: [], revision: 0 }));
+    if (process.argv.includes("--operations")) {
+      state.items = [
+        itemSchema.parse({ id: "ops-meter", sku: "000001", name: "Operations meter", tracking: "serialized", equipment: "system" }),
+        itemSchema.parse({ id: "ops-bulk", sku: "000002", name: "Operations seals", tracking: "regular" }),
+      ];
+      state.stock = [];
+      state.vendors = [vendorSchema.parse({ id: "ops-vendor", name: "Operations supplier" })];
+      state.warehouses = Array.from({ length: 45 }, (_, n) => warehouseSchema.parse({
+        id: `ops-location-${n}`, code: `LOC-${String(n).padStart(3, "0")}`, name: `Operations location ${String(n).padStart(3, "0")}`,
+        type: n % 2 ? "vehicle" : "physical", address: "100 Fixture Way", city: "Test city", active: n !== 44,
+        vin: n % 2 ? "1HGCM82633A004352" : "", plate: n % 2 ? `000${n}` : "", plateState: n % 2 ? "CO" : "",
+        assignedUserId: n % 2 ? user.id : null,
+      }));
+      for (let n = 0; n < 45; n++) {
+        const id = String(n).padStart(3, "0"), orderId = `ops-order-${n}`, receiptId = `ops-receipt-${n}`;
+        const warehouseId = `ops-location-${n}`;
+        const occurredAt = new Date(Date.UTC(2026, 9, 1, 0, n)).toISOString();
+        state.orders.push({ id: orderId, type: "purchase", orderNumber: `PO-2026-${id}`, vendorId: "ops-vendor",
+          sourceId: null, destinationId: warehouseId, status: "partial", lines: [{ itemId: "ops-meter", quantity: 3, serials: [] }],
+          received: [{ itemId: "ops-meter", quantity: 3, serials: [] }], dispatched: [], notes: "Fixture", createdAt: occurredAt });
+        state.receipts.push({ id: receiptId, action: n % 2 ? "receive" : "accept", reference: orderId, warehouseId,
+          lines: [{ itemId: "ops-meter", quantity: 3, serials: [`HOLD-${id}`] }], actor: user.id, occurredAt, reason: `Fixture movement ${id}` });
+        state.shipmentHolds!.push({ id: `ops-hold-${n}`, itemId: "ops-meter", orderId, receiptId, warehouseId, quantity: 3,
+          serials: [`HOLD-${id}`], unidentifiedQuantity: 2, expectedSerials: [], reason: `Fixture damage ${id}`,
+          status: "held", actor: user.id, occurredAt, dispositions: [] });
+        state.returns.push({ id: `ops-return-${n}`, workOrderId: 1000 + n, equipment: n % 2 ? "module" : "system",
+          serial: `0000${id}`, disposition: "returned", warehouseId, status: n % 2 ? "pending" : "quarantine" });
+      }
+    }
     const client = await pool.connect();
     try {
       await client.query("BEGIN");

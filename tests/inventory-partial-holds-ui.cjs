@@ -45,7 +45,12 @@ async function main() {
     await page.getByRole("tab", { name: "Shipment exceptions", exact: true }).click();
     const card = id => page.getByTestId(`shipment-hold-${id}`);
     const dialog = page.getByRole("dialog", { name: "Resolve shipment hold", exact: true });
-    const open = async id => { await card(id).getByRole("button", { name: "Resolve", exact: true }).click(); };
+    const open = async id => {
+      const hold = (await snapshot()).shipmentHolds.find(h => h.id === id);
+      await page.getByRole("searchbox", { name: "Search exceptions", exact: true }).fill(
+        hold.itemId === "partial-bulk" ? "partial-bulk" : hold.orderId === "PARTIAL-TR" ? "PARTIAL-TR" : "Crushed meters");
+      await card(id).getByRole("button", { name: "Resolve", exact: true }).click();
+    };
     const quantity = value => dialog.locator("#shipment-disposition-quantity").fill(String(value));
     const unknown = value => dialog.locator("#shipment-unidentified-quantity").fill(String(value));
     const reason = value => dialog.getByLabel("Resolution reason", { exact: true }).fill(value);
@@ -131,7 +136,8 @@ async function main() {
     assert.ok(html.includes("Remaining quarantined: 0"));
     assert.ok(html.includes("Vendor RMA-101"));
     for (const event of current.shipmentHolds.find(h => h.id === hold.id).dispositions) {
-      assert.ok(html.includes(event.operationId));
+      const receiptNumber = current.receipts.findIndex(receipt => receipt.id === event.operationId) + 1;
+      assert.ok(html.includes(`Disposition Receipt #${receiptNumber}`), "Print uses the readable disposition receipt reference");
       const receiptPrint = await context.request.get(`${base}/print/receipt/${event.operationId}`);
       assert.equal(receiptPrint.status(), 200);
       assert.ok((await receiptPrint.text()).includes("covers 1 units only"));

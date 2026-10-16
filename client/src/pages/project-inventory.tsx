@@ -6,7 +6,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useUnsavedNavigation } from "@/hooks/use-unsaved-navigation";
-import type { InventoryCommand, InventoryCount, InventoryItem, InventoryOrder, InventoryState, StockLine, Vendor, Warehouse } from "@shared/inventory";
+import { emptyInventory, type InventoryCommand, type InventoryCount, type InventoryItem, type InventoryOrder, type InventoryState, type StockLine, type Vendor, type Warehouse } from "@shared/inventory";
 import type { SavedShipmentDraft } from "@shared/inventory-shipment-draft-model";
 import { orderLineProgress } from "@shared/inventory-shipment-model";
 import { inventoryCountReference } from "@shared/inventory-count-reference";
@@ -28,6 +28,8 @@ import { InventoryShipmentTransitDialog } from "@/components/inventory-shipment-
 import { InventoryStockSerialDialog } from "@/components/inventory-stock-serial-dialog";
 import { InventoryStockWorkspace } from "@/components/inventory-stock-workspace";
 import { InventoryCatalogWorkspace } from "@/components/inventory-catalog-workspace";
+import { InventoryRecordsWorkspace } from "@/components/inventory-records-workspace";
+import { buildOperationsDataset } from "@/lib/inventory-operations-data";
 import type { StockBalanceRow } from "@/lib/inventory-stock-export";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -72,7 +74,6 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [showInventoryStats, setShowInventoryStats] = useState(false);
   const [inventoryTab, setInventoryTab] = useState("stock");
   const [selectedStockKey, setSelectedStockKey] = useState<string | null>(null);
-  const [activityPage, setActivityPage] = useState(0);
   const [resource, setResource] = useState<ResourceKind | null>(null);
   const [warehouseForm, setWarehouseForm] = useState<Warehouse>(blankWarehouse());
   const [vendorForm, setVendorForm] = useState<Vendor>(blankVendor());
@@ -174,6 +175,9 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [returnInspect, setReturnInspect] = useState<Record<string, { itemId: string; reason: string }>>({});
 
   const state = data?.state;
+  const locationsDataset = useMemo(() => buildOperationsDataset("locations", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone), [state, data?.actors, data?.users, timezone]);
+  const returnsDataset = useMemo(() => buildOperationsDataset("returns", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone), [state, data?.actors, data?.users, timezone]);
+  const activityDataset = useMemo(() => buildOperationsDataset("activity", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone), [state, data?.actors, data?.users, timezone]);
   const can = (permission: string) => hasPermission(permission);
   const command = useMutation({
     mutationFn: async ({ action, data: payload, operationId }: { action: InventoryCommand["action"]; data: Record<string, unknown>; operationId?: string }) => {
@@ -296,13 +300,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const orderPageCount = Math.max(1, Math.ceil(visibleOrders.length / orderRowsPerPage));
   const currentOrderPage = Math.min(orderPage, orderPageCount - 1);
   const pagedOrders = visibleOrders.slice(currentOrderPage * orderRowsPerPage, (currentOrderPage + 1) * orderRowsPerPage);
-  const orderTitle = (id: string) => { const order = orderItems.find(order => order.id === id); return order ? orderLabel(order) : id; };
-  const activityPageSize = 100;
-  const lastActivityPage = Math.max(0, Math.ceil((state?.receipts.length ?? 0) / activityPageSize) - 1);
-  const currentActivityPage = Math.min(activityPage, lastActivityPage);
-  const activityEnd = Math.max(0, (state?.receipts.length ?? 0) - currentActivityPage * activityPageSize);
-  const activityStart = Math.max(0, activityEnd - activityPageSize);
-  const activityReceipts = state?.receipts.slice(activityStart, activityEnd).reverse() ?? [];
+  const orderTitle = (id: string) => { const order = orderItems.find(order => order.id === id); return order ? orderLabel(order) : "Order reference unavailable"; };
   const activeWarehouses = warehouses.filter(value => value.active);
   const allStockRows = useMemo<StockBalanceRow[]>(() => (state?.stock ?? []).map(stock => ({
     ...stock, item: items.find(value => value.id === stock.itemId), warehouse: warehouses.find(value => value.id === stock.warehouseId),
@@ -775,14 +773,27 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
         </TabsList>
       </div>
 
-    <div className={`min-h-0 flex-1 ${["orders", "stock", "items", "vendors"].includes(inventoryTab) ? "flex flex-col overflow-hidden" : "space-y-5 overflow-y-auto overscroll-contain pb-8 pr-1"}`} data-testid="inventory-scroll-content" role="region" aria-label="Inventory content" tabIndex={0}>
+    <div className={`min-h-0 flex-1 ${["orders", "stock", "items", "vendors", "locations", "exceptions", "returns", "activity"].includes(inventoryTab) ? "flex flex-col overflow-hidden" : "space-y-5 overflow-y-auto overscroll-contain pb-8 pr-1"}`} data-testid="inventory-scroll-content" role="region" aria-label="Inventory content" tabIndex={0}>
     {!hasAny && <Alert hidden={["orders", "stock", "items", "vendors"].includes(inventoryTab)}><Boxes className="h-4 w-4" /><AlertTitle>Set up the first stock location</AlertTitle><AlertDescription>Add a warehouse or service vehicle, then add catalog items and begin receiving meters.</AlertDescription></Alert>}
 
       <TabsContent value="stock" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         <InventoryStockWorkspace rows={allStockRows} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
           onViewSerials={row => setSelectedStockKey(`${row.itemId}/${row.warehouseId}`)} />
       </TabsContent>
-      <TabsContent value="locations"><Card><CardHeader><div className="flex items-center justify-between"><div><CardTitle>Warehouses & vehicles</CardTitle><CardDescription>Access is enforced by the project inventory service for every operation.</CardDescription></div>{can("inventory.maintain") && <Button onClick={() => openResource("warehouse")}><Plus className="mr-2 h-4 w-4" />Add location</Button>}</div></CardHeader><CardContent><div className="grid gap-3 lg:grid-cols-2">{warehouses.map(warehouse => <div key={warehouse.id} className="rounded-lg border p-4"><div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2 font-medium">{warehouse.name}<Badge variant="outline">{warehouse.type === "vehicle" ? "Vehicle" : "Warehouse"}</Badge>{!warehouse.active && <Badge variant="secondary">Inactive</Badge>}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{warehouse.code}</div></div>{can("inventory.maintain") && <Button size="sm" variant="outline" onClick={() => openResource("warehouse", warehouse)}>Edit</Button>}</div><p className="mt-3 text-sm text-muted-foreground">{warehouse.type === "vehicle" ? `${warehouse.make} ${warehouse.model} · ${warehouse.plate} ${warehouse.plateState}` : [warehouse.address, warehouse.city, warehouse.state, warehouse.zip].filter(Boolean).join(", ")}</p><p className="mt-2 text-xs text-muted-foreground">{warehouse.assignedUserId ? `Assigned user ${data.users.find(user => user.id === warehouse.assignedUserId)?.username ?? warehouse.assignedUserId}` : "Assigned: None"} · {warehouse.userIds.length} additional authorized</p></div>)}</div>{warehouses.length === 0 && <Empty title="No locations configured" description="Create a warehouse or field vehicle to establish the first stock location." />}</CardContent></Card></TabsContent>
+      <TabsContent value="locations" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
+        <InventoryRecordsWorkspace kind="locations" title="Warehouses & vehicles" description="Access is enforced by the project inventory service for every operation." dataset={locationsDataset} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
+          headerAction={can("inventory.maintain") && <Button size="sm" onClick={() => openResource("warehouse")}><Plus className="mr-1.5 h-4 w-4" />Add location</Button>}
+          renderRow={row => { const warehouse = warehouses.find(value => value.id === row.id); if (!warehouse) return null;
+            const assigned = data.users.find(user => user.id === warehouse.assignedUserId)?.username ?? (warehouse.assignedUserId ? inventoryActorLabel(warehouse.assignedUserId, data.actors ?? data.users) : "None");
+            const authorized = warehouse.userIds.map(id => data.users.find(user => user.id === id)?.username ?? inventoryActorLabel(id, data.actors ?? data.users));
+            return <article className="min-w-0 rounded-md border bg-card px-3 py-3 sm:px-4"><div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0"><div className="flex flex-wrap items-center gap-2 font-medium"><h3 className="break-words">{warehouse.name}</h3><Badge variant="outline">{warehouse.type === "vehicle" ? "Vehicle" : "Warehouse"}</Badge>{!warehouse.active && <Badge variant="secondary">Inactive</Badge>}</div>
+                <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{warehouse.code}</p>
+                <p className="mt-2 break-words text-sm text-muted-foreground">{warehouse.type === "vehicle" ? [warehouse.make, warehouse.model, warehouse.year, warehouse.plate && `${warehouse.plate} ${warehouse.plateState}`].filter(Boolean).join(" · ") : [warehouse.address, warehouse.city, warehouse.state, warehouse.zip].filter(Boolean).join(", ") || "Address not recorded"}</p>
+                <p className="mt-1 break-words text-xs text-muted-foreground">Assigned: {assigned} · {warehouse.userIds.length} additional authorized{authorized.length ? ` · ${authorized.join(", ")}` : ""}</p>
+              </div>{can("inventory.maintain") && <Button size="sm" variant="outline" onClick={() => openResource("warehouse", warehouse)}>Edit</Button>}</div></article>;
+          }} />
+      </TabsContent>
       <TabsContent value="items" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         <InventoryCatalogWorkspace kind="items" items={items} vendors={vendors} projectName={data.projectName} timezone={timezone}
           canMaintain={can("inventory.maintain")} onRefresh={() => void refetch()} onAdd={() => openResource("item")}
@@ -957,11 +968,12 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           </nav>
         </section>
       </TabsContent>
-      <TabsContent value="exceptions">
+      <TabsContent value="exceptions" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         <InventoryShipmentExceptions state={state} items={items} orders={orderItems} canResolve={can("inventory.resolveExceptions")}
           onDirtyChange={setMovementDirty}
           busy={command.isPending} onPrintOrder={id => openPrint("order", id)} onPrintReceipt={id => openPrint("receipt", id)}
-          onResolve={payload => postWithStableIdentity("resolveHold", payload)} />
+          onResolve={payload => postWithStableIdentity("resolveHold", payload)} projectName={data.projectName} timezone={timezone}
+          actors={data.actors ?? []} users={data.users} onRefresh={() => void refetch()} />
       </TabsContent>
 
       <TabsContent value="counts" className="space-y-4"><Card><CardHeader><CardTitle>Physical stock count</CardTitle><CardDescription>Start a snapshot, count every item including zero, and post with a reason.</CardDescription></CardHeader><CardContent className="space-y-4"><div className="flex flex-wrap items-end gap-3"><div className="w-full max-w-sm space-y-1"><Label>Warehouse or vehicle</Label><Select value={countWarehouse} onValueChange={setCountWarehouse}><SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger><SelectContent>{activeWarehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.code} · {w.name}</SelectItem>)}</SelectContent></Select></div>{can("inventory.count") && <Button onClick={() => requestCountTransition(startCount)} disabled={!countWarehouse || command.isPending}>Start count</Button>}</div>
@@ -999,26 +1011,28 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
         </CardContent></Card>
         <Card><CardHeader><CardTitle>Assemble a kit</CardTitle><CardDescription>Select a defined kit; scan components from the selected location and record its finished serial identity.</CardDescription></CardHeader><CardContent className="space-y-4"><div className="grid gap-3 sm:grid-cols-3"><div className="space-y-1"><Label>Kit item</Label><Select value={assembleItem} onValueChange={value => { setAssembleItem(value); setComponentScan({}); }}><SelectTrigger><SelectValue placeholder="Select kit" /></SelectTrigger><SelectContent>{items.filter(item => item.active && item.components.length).map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1"><Label>Build location</Label><Select value={assembleWarehouse} onValueChange={setAssembleWarehouse}><SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger><SelectContent>{activeWarehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.code} · {w.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1"><Label>Build quantity</Label><Input type="number" min="1" value={assembleQty} onChange={event => setAssembleQty(event.target.value)} /></div></div>{items.find(item => item.id === assembleItem)?.components.map(component => { const item = items.find(value => value.id === component.itemId); return <div key={component.itemId} className="grid gap-2 sm:grid-cols-[1fr_2fr] sm:items-center"><Label>{item?.sku} · {item?.name} — {component.quantity * Number(assembleQty || 1)} required</Label><Input aria-label={`Scan ${item?.name ?? "component"} serials`} value={componentScan[component.itemId] ?? ""} onChange={event => setComponentScan(current => ({ ...current, [component.itemId]: event.target.value }))} placeholder={item?.tracking === "serialized" ? "Scan component serials" : "Quantity is taken from this location"} /></div>; })}{items.find(item => item.id === assembleItem)?.tracking === "serialized" && <div className="space-y-1"><Label>Finished kit serials</Label><Input value={assembleSerials} onChange={event => setAssembleSerials(event.target.value)} placeholder="Scan each finished unit" /></div>}<Button disabled={!can("inventory.assemble") || !assembleItem || !assembleWarehouse || command.isPending} onClick={() => { const kit = items.find(item => item.id === assembleItem); if (!kit) return; const quantity = Number(assembleQty); const components = kit.components.map(component => { const componentItem = items.find(item => item.id === component.itemId); const serialList = componentItem?.tracking === "serialized" ? csv(componentScan[component.itemId] ?? "") : []; return { itemId: component.itemId, quantity: componentItem?.tracking === "serialized" ? serialList.length : component.quantity * quantity, serials: serialList }; }); command.mutate({ action: "assemble", data: { warehouseId: assembleWarehouse, itemId: kit.id, quantity, serials: kit.tracking === "serialized" ? csv(assembleSerials) : [], components } }); }}>Assemble kit</Button></CardContent></Card>
       </TabsContent>
-      <TabsContent value="returns"><Card><CardHeader><CardTitle>Removed Equipment</CardTitle><CardDescription>Returned systems and modules enter quarantine first. Release to usable inventory only after inspection.</CardDescription></CardHeader><CardContent><div className="space-y-3">{state.returns.map(returned => <div key={returned.id} className="flex flex-col justify-between gap-3 rounded-lg border p-4 sm:flex-row sm:items-start"><div><div className="flex items-center gap-2 font-medium">{returned.equipment === "system" ? "System" : "Module"} · <span className="font-mono">{returned.serial}</span><Badge variant={returned.status === "released" ? "default" : "outline"}>{returned.status}</Badge></div><div className="mt-1 text-sm text-muted-foreground">Work order #{returned.workOrderId} · Return location: {warehouses.find(w => w.id === returned.warehouseId)?.name ?? "—"}</div></div><div className="flex flex-wrap gap-2">{returned.status === "pending" && can("inventory.receive") && <Button size="sm" onClick={() => command.mutate({ action: "returnAccept", data: { id: returned.id } })}>Accept into quarantine</Button>}{returned.status === "quarantine" && can("inventory.receive") && <div className="flex min-w-0 flex-wrap gap-2"><Select value={returnInspect[returned.id]?.itemId ?? ""} onValueChange={value => setReturnInspect(current => ({ ...current, [returned.id]: { itemId: value, reason: current[returned.id]?.reason ?? "" } }))}><SelectTrigger className="w-48"><SelectValue placeholder="Matching equipment item" /></SelectTrigger><SelectContent>{items.filter(item => item.tracking === "serialized" && item.equipment === returned.equipment).map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select><Input aria-label="Inspection result" placeholder="Inspection note" value={returnInspect[returned.id]?.reason ?? ""} onChange={event => setReturnInspect(current => ({ ...current, [returned.id]: { itemId: current[returned.id]?.itemId ?? "", reason: event.target.value } }))} /><Button size="sm" disabled={!returnInspect[returned.id]?.itemId || !returnInspect[returned.id]?.reason} onClick={() => command.mutate({ action: "returnRelease", data: { id: returned.id, itemId: returnInspect[returned.id].itemId, reason: returnInspect[returned.id].reason } })}>Release to stock</Button></div>}</div></div>)}</div>{state.returns.length === 0 && <Empty title="No returned equipment" description="When technicians record a removed system or module as returned, it will appear here for receiving and inspection." />}</CardContent></Card></TabsContent>
-          <TabsContent value="activity">
-            <Card>
-              <CardHeader><CardTitle>Stock movement ledger</CardTitle><CardDescription>Good, damaged and short quantities retain their reasons and printable receipt references.</CardDescription></CardHeader>
-              <CardContent>
-                <div className="space-y-2" data-testid="inventory-activity-entries">
-                  {activityReceipts.map(receipt => <div key={receipt.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
-                    <div className="min-w-0">
-                      <div className="font-medium" data-testid="inventory-activity-title">{receipt.action} · {receipt.action.startsWith("count") ? inventoryCountReference(state.counts, receipt.reference) : orderTitle(receipt.reference)}</div>
-                      <div className="mt-1 text-xs text-muted-foreground">{new Date(receipt.occurredAt).toLocaleString()} · {inventoryActorLabel(receipt.actor, data.actors ?? data.users)} · {receiptSummary(receipt)}</div>
-                      {receipt.holdId && <p className="mt-1 text-xs">{inventoryHoldLabel(state.shipmentHolds ?? [], receipt.holdId)}</p>}
-                    </div>
-                    <Button size="sm" variant="outline" onClick={() => openPrint(receipt.action.startsWith("count") ? "count" : "receipt", receipt.action.startsWith("count") ? receipt.reference : receipt.id)}><Printer className="mr-2 h-4 w-4" />Print</Button>
-                  </div>)}
-                </div>
-                {state.receipts.length > activityPageSize && <nav aria-label="Activity pages" className="mt-4 flex flex-wrap items-center gap-2"><p className="mr-auto text-sm text-muted-foreground" aria-live="polite">{currentActivityPage * activityPageSize + 1}–{Math.min((currentActivityPage + 1) * activityPageSize, state.receipts.length)} of {state.receipts.length} movements</p><Button size="sm" variant="outline" aria-label="First activity page" disabled={currentActivityPage === 0} onClick={() => setActivityPage(0)}>First</Button><Button size="sm" variant="outline" aria-label="Previous activity page" disabled={currentActivityPage === 0} onClick={() => setActivityPage(currentActivityPage - 1)}>Previous</Button><Button size="sm" variant="outline" aria-label="Next activity page" disabled={currentActivityPage === lastActivityPage} onClick={() => setActivityPage(currentActivityPage + 1)}>Next</Button><Button size="sm" variant="outline" aria-label="Last activity page" disabled={currentActivityPage === lastActivityPage} onClick={() => setActivityPage(lastActivityPage)}>Last</Button></nav>}
-                {state.receipts.length === 0 && <Empty title="No movement recorded" description="Receiving, transfers, kit assembly, count adjustments and returns appear here." />}
-              </CardContent>
-            </Card>
-          </TabsContent>
+      <TabsContent value="returns" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
+        <InventoryRecordsWorkspace kind="returns" title="Removed Equipment" description="Returned systems and modules enter quarantine first. Release to usable inventory only after inspection." dataset={returnsDataset} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
+          renderRow={row => { const returned = state.returns.find(value => value.id === row.id); if (!returned) return null;
+            return <article className="flex min-w-0 flex-col justify-between gap-3 rounded-md border bg-card px-3 py-3 sm:flex-row sm:items-start sm:px-4">
+              <div className="min-w-0"><div className="flex flex-wrap items-center gap-2 font-medium"><span>{returned.equipment === "system" ? "System" : "Module"}</span><span className="break-all font-mono text-sm">{returned.serial}</span><Badge variant={returned.status === "released" ? "default" : "outline"}>{returned.status}</Badge></div>
+                <div className="mt-1 text-sm text-muted-foreground">Work order #{returned.workOrderId} · Return location: {warehouses.find(w => w.id === returned.warehouseId)?.name ?? "Location unavailable"}</div>
+              </div><div className="flex min-w-0 flex-wrap gap-2">{returned.status === "pending" && can("inventory.receive") && <Button size="sm" disabled={command.isPending} onClick={() => command.mutate({ action: "returnAccept", data: { id: returned.id } })}>Accept into quarantine</Button>}
+                {returned.status === "quarantine" && can("inventory.receive") && <div className="flex min-w-0 flex-wrap gap-2"><Select value={returnInspect[returned.id]?.itemId ?? ""} onValueChange={value => setReturnInspect(current => ({ ...current, [returned.id]: { itemId: value, reason: current[returned.id]?.reason ?? "" } }))}><SelectTrigger className="w-48"><SelectValue placeholder="Matching equipment item" /></SelectTrigger><SelectContent>{items.filter(item => item.tracking === "serialized" && item.equipment === returned.equipment).map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select><Input aria-label="Inspection result" placeholder="Inspection note" value={returnInspect[returned.id]?.reason ?? ""} onChange={event => setReturnInspect(current => ({ ...current, [returned.id]: { itemId: current[returned.id]?.itemId ?? "", reason: event.target.value } }))} /><Button size="sm" disabled={command.isPending || !returnInspect[returned.id]?.itemId || !returnInspect[returned.id]?.reason} onClick={() => command.mutate({ action: "returnRelease", data: { id: returned.id, itemId: returnInspect[returned.id].itemId, reason: returnInspect[returned.id].reason } })}>Release to stock</Button></div>}
+              </div></article>;
+          }} />
+      </TabsContent>
+      <TabsContent value="activity" data-testid="inventory-activity-entries" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
+        <InventoryRecordsWorkspace kind="activity" title="Stock movement ledger" description="Good, damaged and short quantities retain their reasons and printable receipt references." dataset={activityDataset} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
+          renderRow={row => { const receipt = state.receipts.find(value => value.id === row.id); if (!receipt) return null;
+            return <article className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-md border bg-card px-3 py-3 sm:px-4">
+              <div className="min-w-0"><div className="break-words font-medium" data-testid="inventory-activity-title">{receipt.action} · {row.cells.reference}</div>
+                <div className="mt-1 break-words text-xs text-muted-foreground">{row.cells.date} · {row.cells.actor} · {receiptSummary(receipt)}</div>
+                {receipt.holdId && <p className="mt-1 text-xs">{inventoryHoldLabel(state.shipmentHolds ?? [], receipt.holdId)}</p>}
+              </div><Button size="sm" variant="outline" onClick={() => openPrint(receipt.action.startsWith("count") ? "count" : "receipt", receipt.action.startsWith("count") ? receipt.reference : receipt.id)}><Printer className="mr-2 h-4 w-4" />Print</Button>
+            </article>;
+          }} />
+      </TabsContent>
     </div>
     </Tabs>
     {selectedStockRow && can("inventory.view") && (
