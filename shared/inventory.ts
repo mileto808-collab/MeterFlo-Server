@@ -2,6 +2,7 @@ import { z } from "zod";
 import { COUNT_MAX_LINES } from "./inventory-count-limits";
 import type { DamageLine, OrderClosure, ShipmentHold, HoldDisposition } from "./inventory-shipment-model";
 import type { SavedShipmentDraft } from "./inventory-shipment-draft-model";
+import type { InventoryCategory } from "./inventory-categories";
 
 export const inventoryPermissions = {
   configure: "inventory.configure", view: "inventory.view", maintain: "inventory.maintain",
@@ -29,7 +30,7 @@ export const vendorSchema = z.object({ id, name: label, contact: optional, addre
 export const categoryNameSchema = z.string().trim().min(1, "Enter a category name.").max(500);
 export const categoryKey = (name: string) => name.trim().toLowerCase();
 export const itemSchema = z.object({
-  id, sku: label, name: label, description: optional, category: optional, unit: label.default("each"),
+  id, sku: label, name: label, description: optional, category: optional, categoryId: z.string().uuid().nullable().optional(), unit: label.default("each"),
   tracking: z.enum(["regular", "serialized"]), equipment: z.enum(["none", "system", "module"]).default("none"),
   barcode: optional, manufacturer: optional, model: optional, vendorId: id.nullable().default(null),
   cost: z.number().finite().nonnegative().default(0), reorderPoint: z.number().finite().nonnegative().default(0),
@@ -86,6 +87,7 @@ export type InventoryReceipt = { id: string; action: string; reference: string; 
 export type EquipmentReturn = Disposition & { id: string; workOrderId: number; status: "pending" | "quarantine" | "released"; itemId?: string };
 export type InventoryState = { warehouses: Warehouse[]; vendors: Vendor[]; items: InventoryItem[]; stock: Stock[];
   categories?: string[];
+  categoryCatalog?: InventoryCategory[];
   orderNumberCounters?: Record<string, number>;
   orders: InventoryOrder[]; counts: InventoryCount[]; allocations: WorkAllocation[];
   receipts: InventoryReceipt[]; returns: EquipmentReturn[]; operations: Record<string, string>; revision: number;
@@ -104,7 +106,8 @@ export const commandPermission = (action: InventoryCommand["action"]) =>
   ["assign", "prepareUse"].includes(action) ? inventoryPermissions.assign : null;
 
 // Legacy free-text category values remain selectable without a destructive migration.
-export function inventoryCategoryNames(state: Pick<InventoryState, "categories" | "items">): string[] {
+export function inventoryCategoryNames(state: Pick<InventoryState, "categories" | "categoryCatalog" | "items">): string[] {
+  if (state.categoryCatalog !== undefined) return state.categoryCatalog.map(c => c.name).sort((a, b) => a.localeCompare(b));
   const names = new Map<string, string>();
   for (const name of [...(state.categories ?? []), ...state.items.map(item => item.category)]) {
     const key = categoryKey(name);
