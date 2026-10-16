@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { stockLineSchema, type InventoryState } from "../shared/inventory";
-import { kitRecoverySchema, kitDisassemblyContents } from "../shared/inventory-kits";
+import { kitRecoverySchema, kitDisassemblyContents, selectKitHold, remainingKitHold, kitHoldStatus, type KitHold } from "../shared/inventory-kits";
 
 const id = z.string().min(1).max(250);
 const quantity = z.number().int().positive().max(1000000);
@@ -15,10 +15,12 @@ const assemblySchema = z.object({
 }).strict();
 const holdSchema = z.object({
   id, assemblyId: id, receiptId: id, itemId: id, warehouseId: id, quantity, serials,
-  reason: z.string().trim().min(1).max(1000), status: z.enum(["held", "released", "scrapped"]),
+  reason: z.string().trim().min(1).max(1000), status: z.enum(["held", "released", "scrapped", "resolved"]),
   actor: id, occurredAt: z.string().datetime(),
   resolution: z.object({ operationId: id, actor: id, occurredAt: z.string().datetime(),
     reason: z.string().trim().min(1).max(1000) }).strict().optional(),
+  dispositions: z.array(z.object({ operationId: id, actor: id, occurredAt: z.string().datetime(),
+    reason: z.string().trim().min(1).max(1000), outcome: z.enum(["released", "scrapped"]), quantity, serials }).strict()).optional(),
 }).strict();
 const fail: (ok: unknown, message: string) => asserts ok = (ok, message) => {
   if (!ok) throw new Error(`Invalid kit backup: ${message}`);
@@ -92,21 +94,53 @@ export function validateKitBackup(state: InventoryState) {
       fail(equal(receipt.components, usable), "usable component evidence differs");
     }
   }
+  const dispositionIds = new Set<string>();
   for (const hold of holds) {
     fail(assemblies.some(a => a.id === hold.assemblyId) &&
       state.receipts.some(r => r.id === hold.receiptId && r.kitConversion?.assemblyId === hold.assemblyId) &&
       state.warehouses.some(w => w.id === hold.warehouseId) && state.items.some(i => i.id === hold.itemId), "invalid hold relationship");
-    fail(hold.status === "held" ? !hold.resolution : hold.resolution &&
+    const item = state.items.find(i => i.id === hold.itemId)!;
+    fail(item.tracking === "serialized" ? hold.serials.length === hold.quantity &&
+      new Set(hold.serials).size === hold.quantity : !hold.serials.length, "invalid held component identities");
+    const original = state.receipts.find(r => r.id === hold.receiptId)?.kitConversion?.recovered.find(c => c.itemId === hold.itemId);
+    fail(original && original.damagedQuantity === hold.quantity && equal(original.damagedSerials, hold.serials) &&
+      original.reason === hold.reason, "hold differs from original damaged components");
+    if (hold.dispositions !== undefined) {
+      fail(!hold.resolution, "mixed legacy and partial inspection history");
+      const replay: KitHold = { ...hold, status: "held", dispositions: [] };
+      for (const event of hold.dispositions) {
+        fail(!dispositionIds.has(event.operationId), "duplicate inspection disposition");
+        dispositionIds.add(event.operationId);
+        selectKitHold(replay, item.tracking === "serialized", { ...event, id: hold.id });
+        const receipt = state.receipts.find(r => r.id === event.operationId);
+        const selected = { itemId: hold.itemId, quantity: event.quantity, serials: event.serials };
+        fail(receipt?.action === "resolveKitHold" && receipt.kitHoldId === hold.id &&
+          receipt.reference === hold.itemId && receipt.warehouseId === hold.warehouseId &&
+          receipt.actor === event.actor && receipt.occurredAt === event.occurredAt &&
+          receipt.reason === event.reason && receipt.resolution === event.outcome &&
+          equal(receipt.kitInspection, selected) &&
+          equal(receipt.lines, event.outcome === "released" ? [selected] : []), "inspection disposition differs from receipt");
+        replay.dispositions!.push(event);
+        replay.status = kitHoldStatus(replay);
+      }
+      fail(hold.status === kitHoldStatus(replay), "inspection status differs from remaining custody");
+    } else fail(hold.status === "held" ? !hold.resolution : hold.resolution &&
       state.receipts.some(r => r.id === hold.resolution!.operationId && r.kitHoldId === hold.id && r.resolution === hold.status),
       "inspection resolution differs from receipt");
     const resolution = state.receipts.find(r => r.id === hold.resolution?.operationId);
     if (resolution?.kitInspection) fail(resolution.kitInspection.itemId === hold.itemId &&
       resolution.kitInspection.quantity === hold.quantity && equal(resolution.kitInspection.serials, hold.serials),
       "inspection receipt differs from original held components");
-    if (hold.status !== "released") for (const serial of hold.serials) fail(
+    const blocked = hold.dispositions !== undefined
+      ? [...remainingKitHold(hold).serials, ...hold.dispositions.filter(e => e.outcome === "scrapped").flatMap(e => e.serials)]
+      : hold.status === "released" ? [] : hold.serials;
+    for (const serial of blocked) fail(
       !state.stock.some(b => b.itemId === hold.itemId && b.serials.includes(serial)) &&
       state.serialOccupancy?.some(o => o.itemId === hold.itemId && o.serial === serial), "held/scrapped component identity became usable");
   }
+  for (const receipt of state.receipts.filter(r => r.action === "resolveKitHold")) fail(
+    dispositionIds.has(receipt.id) || holds.some(h => h.resolution?.operationId === receipt.id),
+    "orphan inspection receipt");
   for (const stock of state.stock) {
     const positioned = assemblies.flatMap(a => a.itemId === stock.itemId ? a.positions.filter(p =>
       p.kind === "stock" && p.id === stock.warehouseId) : []);

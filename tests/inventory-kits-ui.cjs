@@ -50,8 +50,8 @@ async function main() {
     await dialog.getByLabel("Stock location", { exact: true }).selectOption("kits-w");
     await dialog.getByLabel("Kit item", { exact: true }).selectOption("kits-regular");
     await dialog.getByLabel("Recorded source assembly").selectOption(assemblyId);
-    await dialog.getByLabel("usable", { exact: true }).fill("1");
-    await dialog.getByLabel("damaged", { exact: true }).fill("1");
+    await dialog.getByLabel("usable", { exact: true }).fill("0");
+    await dialog.getByLabel("damaged", { exact: true }).fill("2");
     await dialog.getByLabel("Damage / shortage reason").fill("One component bent");
     await dialog.getByLabel("Disassembly reason", { exact: true }).fill("Recover warehouse stock");
     await dialog.getByRole("button", { name: "Review operation", exact: true }).click();
@@ -72,7 +72,7 @@ async function main() {
     state = await snapshot();
     assert.equal(state.stock.find(b => b.itemId === "kits-regular").quantity, 2);
     assert.equal(state.receipts.filter(r => r.action === "disassemble").length, 1);
-    assert.equal(state.kitHolds.find(h => h.itemId === "kits-part").quantity, 1);
+    assert.equal(state.kitHolds.find(h => h.itemId === "kits-part").quantity, 2);
     // A definite validation rejection must keep the editor usable.
     await header.getByRole("button", { name: "Assemble kit", exact: true }).click();
     dialog = page.getByRole("dialog", { name: "Assemble kit", exact: true });
@@ -144,6 +144,7 @@ async function main() {
     await header.getByRole("button", { name: "Inspect kit holds", exact: true }).click();
     dialog = page.getByRole("dialog", { name: "Kit batch inspection", exact: true });
     await dialog.getByLabel("Inspection resolution reason", { exact: true }).fill("Inspected component is usable");
+    await dialog.getByLabel(/^Quantity to decide for hold /).fill("1");
     const inspectionIds = [];
     await page.route(`**${endpoint}/commands`, async route => {
       const body = route.request().postDataJSON();
@@ -157,7 +158,7 @@ async function main() {
         body: JSON.stringify({ message: "Acceptance: temporary permission rejection" }) });
       await route.continue();
     });
-    await dialog.getByRole("button", { name: "Release usable", exact: true }).click();
+    await dialog.getByRole("button", { name: "Release selected to stock", exact: true }).click();
     await expect(dialog.getByRole("alert")).toContainText("inspection confirmation lost");
     const retryInspection = dialog.getByRole("button", { name: "Retry hold resolution", exact: true });
     await retryInspection.click();
@@ -171,9 +172,61 @@ async function main() {
     assert.equal(new Set(inspectionIds).size, 1);
     state = await snapshot();
     assert.equal(state.receipts.filter(r => r.action === "resolveKitHold").length, 1);
-    assert.equal(state.kitHolds.find(h => h.itemId === "kits-part").status, "released");
-    assert.equal(state.stock.find(b => b.itemId === "kits-part").quantity, 16);
+    assert.equal(state.kitHolds.find(h => h.itemId === "kits-part").status, "held");
+    assert.equal(state.stock.find(b => b.itemId === "kits-part").quantity, 15);
+    await dialog.getByLabel("Inspection resolution reason", { exact: true }).fill("Remaining damaged component scrapped");
+    await dialog.getByLabel(/^Quantity to decide for hold /).fill("1");
+    await dialog.getByRole("button", { name: "Scrap selected", exact: true }).click();
+    await expect(dialog.getByText("Remaining damaged component scrapped", { exact: true })).toBeVisible();
+    state = await snapshot();
+    assert.equal(state.kitHolds.find(h => h.itemId === "kits-part").status, "resolved");
+    assert.equal(state.kitHolds.find(h => h.itemId === "kits-part").dispositions.length, 2);
+    assert.equal(state.stock.find(b => b.itemId === "kits-part").quantity, 15);
     await page.unroute(`**${endpoint}/commands`);
+    await dialog.getByRole("button", { name: "Close", exact: true }).last().click();
+    await expect(dialog).toBeHidden();
+    await post("item", { id: "kits-multi", sku: "KIT-MULTI", name: "Multi serial recovery kit", tracking: "serialized",
+      components: [{ itemId: "kits-meter", quantity: 3 }] });
+    const multi = await post("assemble", { warehouseId: "kits-w", itemId: "kits-multi", quantity: 1, serials: ["MULTI1"],
+      components: [{ itemId: "kits-meter", quantity: 3, serials: ["M1", "M2", "M3"] }] });
+    await post("disassemble", { warehouseId: "kits-w", assemblyId: multi.state.receipts.at(-1).id, quantity: 1, serials: ["MULTI1"],
+      components: [{ itemId: "kits-meter", usableQuantity: 0, usableSerials: [], damagedQuantity: 2,
+        damagedSerials: ["M1", "M2"], missingQuantity: 1, missingSerials: ["M3"], reason: "Two damaged, one missing" }] });
+    for (const [index, viewport] of [{ width: 390, height: 760 }, { width: 844, height: 390 }].entries()) {
+      await page.setViewportSize(viewport);
+      await page.reload();
+      if (await page.evaluate(() => matchMedia("(max-width: 767px), (orientation: landscape) and (pointer: coarse) and (max-height: 600px) and (max-width: 960px)").matches)) {
+        await page.getByTestId("inventory-mobile-menu").click();
+        await page.getByTestId("inventory-mobile-menu-item-items").click();
+        await page.getByTestId("inventory-mobile-tools-items-toggle").click();
+      } else await page.getByRole("tab", { name: "Items", exact: true }).click();
+      await page.getByRole("button", { name: "Inspect kit holds", exact: true }).click();
+      dialog = page.getByRole("dialog", { name: "Kit batch inspection", exact: true });
+      const serial = index ? "M2" : "M1";
+      await expect(dialog.getByRole("checkbox", { name: /^Select serial M3 / })).toHaveCount(0);
+      await dialog.getByRole("checkbox", { name: new RegExp(`^Select serial ${serial} `) }).check();
+      await dialog.getByRole("button", { name: "Close", exact: true }).last().click();
+      const discard = page.getByRole("dialog", { name: "Discard kit operation draft?", exact: true });
+      await expect(discard).toBeVisible();
+      await discard.getByRole("button", { name: /keep/i }).click();
+      await dialog.getByLabel("Inspection resolution reason", { exact: true }).fill(`Phone ${serial} inspected`);
+      const button = dialog.getByRole("button", { name: index ? "Scrap selected" : "Release selected to stock", exact: true });
+      await button.scrollIntoViewIfNeeded();
+      const overflow = await dialog.evaluate(element => [element, ...element.querySelectorAll("article, fieldset, label, section")].some(node => node.scrollWidth > node.clientWidth + 2));
+      assert.equal(overflow, false, "inspection contents fit the phone viewport");
+      await page.screenshot({ path: `${out}/phone-inspection-${viewport.width}.jpg` });
+      await button.click();
+      await expect(dialog.getByText(`Phone ${serial} inspected`, { exact: true })).toBeVisible();
+      await dialog.getByRole("button", { name: "Close", exact: true }).last().click();
+      await expect(dialog).toBeHidden();
+    }
+    state = await snapshot();
+    const multiHold = state.kitHolds.find(h => h.itemId === "kits-meter");
+    assert.equal(multiHold.status, "resolved");
+    assert.deepEqual(multiHold.serials, ["M1", "M2"]);
+    assert.deepEqual(multiHold.dispositions.map(d => d.serials), [["M1"], ["M2"]]);
+    assert.deepEqual(state.stock.find(b => b.itemId === "kits-meter").serials, ["M1"]);
+    await page.setViewportSize({ width: 1440, height: 1000 });
     // Grant through normal role management, not direct table seeding.
     const viewer = await browser.newContext({ baseURL: `https://${process.env.REPLIT_DEV_DOMAIN}` });
     assert.equal((await viewer.request.post("/api/auth/local/login", { data: fixture.viewer })).status(), 200);

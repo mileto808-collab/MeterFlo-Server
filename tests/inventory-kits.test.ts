@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { emptyInventory, commandPermission, type InventoryState, type InventoryCommand, type StockLine } from "../shared/inventory";
 import { applyInventoryCommand, completeInventoryWorkOrder } from "../shared/inventory-engine";
-import { kitAssemblyOptions, kitDisassemblyContents, kitSerialContents } from "../shared/inventory-kits";
+import { kitAssemblyOptions, kitDisassemblyContents, kitSerialContents, remainingKitHold } from "../shared/inventory-kits";
+import { extractReceiptSerialEvidence } from "../server/inventoryReceiptSerials";
+import { buildOperationsDataset } from "../client/src/lib/inventory-operations-data";
+import { operationsCsv } from "../client/src/lib/inventory-operations-export";
 import { validateInventoryBackup } from "../server/inventoryBackup";
 import { inventoryPrint } from "../server/inventoryPrint";
 
@@ -39,6 +42,76 @@ function breakdown(s: InventoryState, assemblyId: string, quantity: number, seri
 }
 const qty = (s: InventoryState, itemId: string, warehouseId = "w") => s.stock.find(b => b.itemId === itemId && b.warehouseId === warehouseId)?.quantity ?? 0;
 const backup = (s: InventoryState) => validateInventoryBackup({ enabled: true, movements: [], state: JSON.parse(JSON.stringify(s)) }, s.allocations.map(a => a.workOrderId));
+
+test("partial regular decisions preserve evidence, reject over-selection, retry and finish mixed custody", () => {
+  let s = assemble(setup());
+  const data = breakdown(s, s.receipts.at(-1)!.id, 3);
+  data.components[0] = recovery("part", 0, [], 3);
+  s = post(s, "disassemble", data);
+  const original = structuredClone(s.receipts.at(-1)), hold = structuredClone(s.kitHolds![0]);
+  const operationId = randomUUID();
+  const decision = { id: hold.id, outcome: "released", quantity: 1, serials: [], reason: "One passed" };
+  s = post(s, "resolveKitHold", decision, operationId);
+  assert.equal(qty(s, "part"), 4);
+  assert.deepEqual(remainingKitHold(s.kitHolds![0]), { quantity: 2, serials: [] });
+  backup(s);
+  assert.deepEqual(post(s, "resolveKitHold", decision, operationId), s);
+  assert.throws(() => post(s, "resolveKitHold", { ...decision, quantity: 2 }, operationId), /different operation/);
+  const before = structuredClone(s);
+  for (const quantity of [0, -1, 1.5, 3]) assert.throws(() => post(s, "resolveKitHold", { ...decision, quantity }));
+  assert.throws(() => post(s, "resolveKitHold", { ...decision, reason: " " }));
+  assert.throws(() => applyInventoryCommand(s, { action: "resolveKitHold", operationId: randomUUID(), data: decision },
+    "warehouse-user", false), /location|access/i);
+  assert.deepEqual(s, before);
+  s = post(s, "resolveKitHold", { ...decision, outcome: "scrapped", reason: "One failed" });
+  backup(s);
+  s = post(s, "resolveKitHold", { ...decision, reason: "Final passed" });
+  assert.equal(s.kitHolds![0].status, "resolved");
+  assert.equal(s.kitHolds![0].dispositions!.length, 3);
+  assert.equal(qty(s, "part"), 5);
+  assert.deepEqual(s.receipts.find(r => r.id === original!.id), original);
+  assert.deepEqual({ ...s.kitHolds![0], status: hold.status, dispositions: undefined }, { ...hold, dispositions: undefined });
+  assert.throws(() => post(s, "resolveKitHold", decision), /open/);
+  backup(s);
+});
+
+test("exact serial subsets never release missing or already decided identities and exports describe selected scrap", () => {
+  let s = post(setup(true), "item", { id: "batch", sku: "BATCH", name: "Batch kit", tracking: "serialized",
+    components: [{ itemId: "part", quantity: 4 }] });
+  s = post(s, "assemble", { warehouseId: "w", itemId: "batch", quantity: 1, serials: ["B1"],
+    components: [line("part", 4, ["P1", "P2", "P3", "P4"])] });
+  const data = breakdown(s, s.receipts.at(-1)!.id, 1, ["B1"]);
+  data.components = [recovery("part", 0, [], 3, ["P1", "P2", "P3"], 1, ["P4"])];
+  s = post(s, "disassemble", data);
+  const id = s.kitHolds![0].id;
+  const decision = { id, quantity: 1, serials: ["P2"], outcome: "released", reason: "Passed test" };
+  s = post(s, "resolveKitHold", decision);
+  assert.deepEqual(remainingKitHold(s.kitHolds![0]).serials, ["P1", "P3"]);
+  backup(s);
+  for (const serials of [["P2"], ["P4"], ["UNKNOWN"], ["P1", "P1"], []])
+    assert.throws(() => post(s, "resolveKitHold", { ...decision, serials }));
+  s = post(s, "resolveKitHold", { ...decision, outcome: "scrapped", serials: ["P1"], reason: "Failed pressure test" });
+  const receipt = s.receipts.at(-1)!;
+  assert.deepEqual(extractReceiptSerialEvidence(receipt, s).flatMap(e => e.serials), ["P1"]);
+  const html = inventoryPrint("receipt", receipt, s, "Fixture");
+  assert.ok(html.includes("Selected quantity: 1") && html.includes('data-serial-category="kit-inspection"'));
+  const dataset = buildOperationsDataset("activity", s);
+  const csv = operationsCsv(dataset, dataset.rows.filter(r => r.id === receipt.id));
+  assert.ok(csv.includes("P1") && csv.includes("Failed pressure test") && csv.includes("PART"));
+  assert.ok(!csv.includes("P3"));
+  backup(s);
+  for (const corrupt of [
+    (c: InventoryState) => { c.kitHolds![0].dispositions![0].serials = ["P4"]; },
+    (c: InventoryState) => { c.kitHolds![0].dispositions![0].reason = "Changed"; },
+    (c: InventoryState) => { c.kitHolds![0].status = "released"; },
+    (c: InventoryState) => { c.kitHolds![0].dispositions!.pop(); },
+  ]) { const copy = structuredClone(s); corrupt(copy); assert.throws(() => backup(copy)); }
+  s = post(s, "resolveKitHold", { ...decision, serials: ["P3"] });
+  assert.equal(s.kitHolds![0].status, "resolved");
+  assert.ok(s.serialOccupancy!.some(o => o.serial === "P1"));
+  assert.ok(s.serialOccupancy!.some(o => o.serial === "P4"));
+  backup(s);
+});
 
 test("regular partial disassembly uses recorded recipe, balances stock, and is replay-safe", () => {
   let s = assemble(setup()), id = s.receipts.at(-1)!.id;
@@ -85,6 +158,21 @@ test("serialized breakdown, damage inspection, missing identities and reassembly
   assert.deepEqual(kitSerialContents(s, "kit", "K1"), []);
   assert.ok(s.stock.find(b => b.itemId === "part")!.serials.includes("P2"));
   backup(s);
+});
+
+test("legacy whole-hold receipts remain restorable without inventing partial history", () => {
+  for (const outcome of ["released", "scrapped"] as const) {
+    let s = assemble(setup(true), 1, ["K1"], ["P1"]);
+    const data = breakdown(s, s.receipts.at(-1)!.id, 1, ["K1"]);
+    data.components[0] = recovery("part", 0, [], 1, ["P1"]);
+    s = post(s, "disassemble", data);
+    s = post(s, "resolveKitHold", { id: s.kitHolds![0].id, outcome, reason: "Legacy inspection" });
+    const hold = s.kitHolds![0], event = hold.dispositions![0];
+    hold.resolution = { operationId: event.operationId, actor: event.actor, occurredAt: event.occurredAt, reason: event.reason };
+    delete hold.dispositions;
+    assert.deepEqual(remainingKitHold(hold), { quantity: 0, serials: [] });
+    backup(s);
+  }
 });
 
 test("transfers preserve regular batch and serialized kit provenance at destination, never in transit", () => {

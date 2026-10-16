@@ -148,6 +148,47 @@ test("transactional completion, mobile usage, concurrency, import rollback, and 
     const { rows: kitAudit } = await pool.query("SELECT changes FROM meterflo_audit.events WHERE project_id=$1 AND action='inventory.disassemble' AND outcome='success'", [project.id]);
     assert.equal(kitAudit.length, 1);
     assert.ok(kitAudit[0].changes.some((c: any) => c.field.startsWith("kitAssemblies/")));
+    const kitHoldId = kitState.kitHolds![0].id;
+    const inspection = { id: kitHoldId, quantity: 1, serials: [], outcome: "released", reason: "Concurrent inspection" };
+    const inspectionId = randomUUID();
+    const competingInspections = await Promise.allSettled([
+      command("resolveKitHold", inspection, inspectionId),
+      command("resolveKitHold", { ...inspection, outcome: "scrapped" }),
+    ]);
+    assert.equal(competingInspections.filter(r => r.status === "fulfilled").length, 1);
+    const inspected = await inventoryState(project.id);
+    assert.equal(inspected.kitHolds![0].dispositions!.length, 1, "concurrent decisions cannot duplicate held custody");
+    if (competingInspections[0].status === "fulfilled") {
+      await command("resolveKitHold", inspection, inspectionId);
+      assert.deepEqual(await inventoryState(project.id), inspected, "confirmed retry is unchanged");
+    }
+    await command("item", { id: "serial-part", sku: "SERIAL-PART", name: "Serial component", tracking: "serialized" });
+    await command("item", { id: "serial-kit", sku: "SERIAL-KIT", name: "Serial kit", tracking: "serialized",
+      components: [{ itemId: "serial-part", quantity: 3 }] });
+    await command("order", { id: "serial-po", type: "purchase", vendorId: "v", destinationId: "w",
+      lines: [{ itemId: "serial-part", quantity: 3 }] });
+    await command("release", { orderId: "serial-po" });
+    await command("receive", { orderId: "serial-po", lines: [{ itemId: "serial-part", quantity: 3, serials: ["SP1", "SP2", "SP3"] }] });
+    const serialAssemblyId = randomUUID();
+    await command("assemble", { warehouseId: "w", itemId: "serial-kit", quantity: 1, serials: ["SK1"],
+      components: [{ itemId: "serial-part", quantity: 3, serials: ["SP1", "SP2", "SP3"] }] }, serialAssemblyId);
+    await command("disassemble", { warehouseId: "w", assemblyId: serialAssemblyId, quantity: 1, serials: ["SK1"],
+      components: [{ itemId: "serial-part", usableQuantity: 0, usableSerials: [], damagedQuantity: 3,
+        damagedSerials: ["SP1", "SP2", "SP3"], missingQuantity: 0, missingSerials: [], reason: "Inspect exact components" }] });
+    const serialHoldId = (await inventoryState(project.id)).kitHolds!.find(h => h.itemId === "serial-part")!.id;
+    const serialDecision = { id: serialHoldId, quantity: 1, serials: ["SP1"], outcome: "released", reason: "Exact serial decision" };
+    const serialRace = await Promise.allSettled([
+      command("resolveKitHold", serialDecision),
+      command("resolveKitHold", { ...serialDecision, outcome: "scrapped" }),
+    ]);
+    assert.equal(serialRace.filter(r => r.status === "fulfilled").length, 1, "one decision owns the contested serial");
+    await Promise.all([
+      command("resolveKitHold", { ...serialDecision, serials: ["SP2"] }),
+      command("resolveKitHold", { ...serialDecision, serials: ["SP3"], outcome: "scrapped" }),
+    ]);
+    const serialHold = (await inventoryState(project.id)).kitHolds!.find(h => h.id === serialHoldId)!;
+    assert.equal(serialHold.dispositions!.length, 3, "disjoint concurrent selections both commit without overwriting history");
+    assert.equal(serialHold.status, "resolved");
     const before = await inventoryState(project.id), backup = await backupProjectDatabase(schema);
     assert.ok(backup.inventory);
     assert.ok(backup.inventory.state.orders.find(order => order.id === "amend-po")?.archivedAt, "cleared POs remain in portable backups");

@@ -149,24 +149,26 @@ export function buildOperationsDataset(
         receipt: inventoryReceiptLabel(state.receipts, r.id), sequence: index + 1, action: r.action, reference,
         orderReference: order ? orderReference(order) : "", location: locationName(r.warehouseId), actor: inventoryActorLabel(r.actor, people),
         date: displayTime(r.occurredAt, timezone), occurredAt: r.occurredAt,
-        items: r.lines.map(l => `${items.get(l.itemId)?.sku ?? "Unavailable item"} · ${items.get(l.itemId)?.name ?? ""} × ${l.quantity}`).join("; "),
-        quantity: r.lines.reduce((n, l) => n + l.quantity, 0), damaged: (r.damaged ?? []).reduce((n, l) => n + l.quantity, 0) +
+        items: (r.kitInspection ? [r.kitInspection] : r.lines).map(l => `${items.get(l.itemId)?.sku ?? "Unavailable item"} · ${items.get(l.itemId)?.name ?? ""} × ${l.quantity}`).join("; "),
+        quantity: r.kitInspection?.quantity ?? r.lines.reduce((n, l) => n + l.quantity, 0), damaged: (r.damaged ?? []).reduce((n, l) => n + l.quantity, 0) +
           (r.kitConversion?.recovered ?? []).reduce((n, l) => n + l.damagedQuantity, 0),
         componentsOut: r.action === "assemble" ? (r.components ?? []).map(l => `${items.get(l.itemId)?.sku ?? "Unavailable item"} × ${l.quantity}`).join("; ") : "",
         componentsIn: r.action === "disassemble" ? (r.components ?? []).map(l => `${items.get(l.itemId)?.sku ?? "Unavailable item"} × ${l.quantity}`).join("; ") : "",
         missingComponents: (r.kitConversion?.recovered ?? []).filter(l => l.missingQuantity).map(l => `${items.get(l.itemId)?.sku ?? "Unavailable item"} × ${l.missingQuantity}`).join("; "),
-        sourceAssembly: r.kitConversion ? inventoryReceiptLabel(state.receipts, r.kitConversion.assemblyId) : "",
+        sourceAssembly: r.kitConversion ? inventoryReceiptLabel(state.receipts, r.kitConversion.assemblyId) :
+          r.kitHoldId ? inventoryReceiptLabel(state.receipts, state.kitHolds?.find(h => h.id === r.kitHoldId)?.assemblyId ?? "") : "",
+        inspectionSerials: r.kitInspection?.serials.join("; ") ?? "",
         reason: r.reason ?? "", resolution: r.resolution ?? "", externalReference: r.externalReference ?? "",
       }, facets: { action: r.action, warehouse: r.warehouseId ?? "none", actor: r.actor } },
       [r.reference, r.id, ...r.lines.flatMap(l => [items.get(l.itemId)?.sku, ...l.serials]),
-        ...(r.components ?? []).flatMap(l => [items.get(l.itemId)?.sku, ...l.serials]),
+        ...(r.components ?? []).flatMap(l => [items.get(l.itemId)?.sku, ...l.serials]), ...(r.kitInspection?.serials ?? []),
         ...(r.kitConversion?.recovered ?? []).flatMap(l => [items.get(l.itemId)?.sku, l.reason, ...l.damagedSerials, ...l.missingSerials])]);
     });
     cols = columns([["receipt", "Receipt"], ["action", "Action"], ["reference", "Order / operation"], ["orderReference", "Order reference"],
       ["location", "Location"], ["actor", "User"], ["date", `Date (${timezone})`], ["items", "Items"], ["quantity", "Quantity"],
       ["damaged", "Damaged quantity"], ["reason", "Reason"], ["resolution", "Resolution"], ["externalReference", "External reference"]]);
     cols.push(...columns([["componentsOut", "Components consumed"], ["componentsIn", "Usable components returned"],
-      ["missingComponents", "Missing components"], ["sourceAssembly", "Original assembly"]]));
+      ["missingComponents", "Missing components"], ["sourceAssembly", "Original assembly"], ["inspectionSerials", "Inspection serials"]]));
     filterKeys = [["action", "Action"], ["warehouse", "Location"], ["actor", "User"]];
     sorts = [{ key: "sequence:desc", label: "Newest first" }, { key: "sequence:asc", label: "Oldest first" },
       { key: "action:asc", label: "Action · A–Z" }];

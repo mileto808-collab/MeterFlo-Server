@@ -45,3 +45,16 @@ test("delta persistence updates changed relations only and never writes the shar
   assert.equal(queries.some(query => query.includes("INSERT INTO public.inventory_quantities ")), false);
   assert.equal(queries.some(query => /UPDATE public.inventory_state/.test(query)), false);
 });
+
+test("releasing an early occupied serial deletes shifted identities before unique-key upserts", async () => {
+  const before = volumeState(1);
+  before.serialOccupancy = ["P1", "P2", "P3"].map(serial => ({ itemId: "i1", serial, workOrderId: null }));
+  const after = structuredClone(before);
+  after.serialOccupancy!.shift();
+  const queries: Array<{ sql: string; values: any[] }> = [];
+  await writeRelationalInventory({ query: async (sql: string, values: any[]) => { queries.push({ sql, values }); return { rows: [] }; } } as any, 1, after, before);
+  const remove = queries.findIndex(q => q.sql.startsWith("DELETE FROM public.inventory_serial_occupancy "));
+  const insert = queries.findIndex(q => q.sql.startsWith("INSERT INTO public.inventory_serial_occupancy "));
+  assert.ok(remove >= 0 && insert > remove);
+  assert.equal(JSON.parse(queries[remove].values[1]).length, 3, "all conflicting positional keys are removed first");
+});

@@ -9,12 +9,48 @@ export type KitAssembly = {
   warehouseId: string; occurredAt: string; positions: KitPosition[];
   disassembledQuantity: number; disassembledSerials: string[];
 };
+export type KitHoldDisposition = {
+  operationId: string; actor: string; occurredAt: string; reason: string;
+  outcome: "released" | "scrapped"; quantity: number; serials: string[];
+};
 export type KitHold = {
   id: string; assemblyId: string; receiptId: string; itemId: string; warehouseId: string;
-  quantity: number; serials: string[]; reason: string; status: "held" | "released" | "scrapped";
+  quantity: number; serials: string[]; reason: string; status: "held" | "released" | "scrapped" | "resolved";
   actor: string; occurredAt: string;
   resolution?: { operationId: string; actor: string; occurredAt: string; reason: string };
+  dispositions?: KitHoldDisposition[];
 };
+export function remainingKitHold(hold: KitHold) {
+  if (hold.resolution) return { quantity: 0, serials: [] as string[] };
+  const events = hold.dispositions ?? [];
+  const selected = new Set(events.flatMap(event => event.serials));
+  return { quantity: hold.quantity - events.reduce((n, event) => n + event.quantity, 0),
+    serials: hold.serials.filter(serial => !selected.has(serial)) };
+}
+export function kitHoldStatus(hold: KitHold): KitHold["status"] {
+  if (remainingKitHold(hold).quantity > 0) return "held";
+  const outcomes = new Set(hold.dispositions?.map(event => event.outcome));
+  return outcomes.size === 1 ? hold.dispositions![0].outcome : "resolved";
+}
+export const kitHoldSelectionSchema = z.object({
+  id: z.string().trim().min(1).max(250), outcome: z.enum(["released", "scrapped"]),
+  reason: z.string().trim().min(1).max(1000),
+  quantity: z.number().int().positive().max(1000000).optional(),
+  serials: z.array(z.string().trim().min(1).max(100)).max(10000).optional(),
+}).strict();
+export function selectKitHold(hold: KitHold, serialized: boolean, data: z.infer<typeof kitHoldSelectionSchema>) {
+  fail(hold.status === "held" && !hold.resolution, "Choose an open kit component inspection hold.");
+  const remaining = remainingKitHold(hold);
+  // Old whole-batch clients remain safe: an omitted selection means all remaining custody.
+  const serials = data.serials ?? (data.quantity === undefined ? remaining.serials : []);
+  const quantity = data.quantity ?? (data.serials === undefined ? remaining.quantity : serials.length);
+  fail(Number.isSafeInteger(quantity) && quantity > 0 && quantity <= remaining.quantity,
+    "Select a positive quantity no greater than the remaining held quantity.");
+  fail(serialized ? serials.length === quantity && new Set(serials).size === quantity &&
+    serials.every(serial => remaining.serials.includes(serial)) : serials.length === 0,
+    "Select only exact known serials still held for inspection.");
+  return { quantity, serials: [...serials] };
+}
 export type KitFlow = { from?: KitOwner | null; to?: KitOwner | null; assemblyId?: string };
 const fail: (condition: unknown, message: string) => asserts condition = (condition, message) => {
   if (!condition) throw new InventoryError(message);
@@ -241,18 +277,23 @@ export function applyKitDisassembly(state: InventoryState, raw: unknown, operati
 }
 
 export function applyKitHoldResolution(state: InventoryState, raw: unknown, operationId: string, actor: string, now: string, hooks: Hooks) {
-  const data = z.object({ id: identifier.max(250), outcome: z.enum(["released", "scrapped"]),
-    reason: z.string().trim().min(1).max(1000) }).strict().parse(raw);
+  const data = kitHoldSelectionSchema.parse(raw);
   const hold = state.kitHolds!.find(h => h.id === data.id);
   fail(hold?.status === "held", "Choose an open kit component inspection hold.");
   hooks.access(hold.warehouseId);
-  hold.status = data.outcome; hold.resolution = { operationId, actor, occurredAt: now, reason: data.reason };
+  const item = state.items.find(item => item.id === hold.itemId);
+  fail(item, "The held component item is unavailable.");
+  const selection = selectKitHold(hold, item.tracking === "serialized", data);
+  const selected = line(hold.itemId, selection.quantity, selection.serials);
+  hold.dispositions ??= [];
+  hold.dispositions.push({ ...selection, operationId, actor, occurredAt: now, reason: data.reason, outcome: data.outcome });
+  hold.status = kitHoldStatus(hold);
   if (data.outcome === "released") {
-    state.serialOccupancy = (state.serialOccupancy ?? []).filter(o => o.itemId !== hold.itemId || !hold.serials.includes(o.serial));
-    hooks.move(hold.warehouseId, [line(hold.itemId, hold.quantity, hold.serials)], 1, { from: { kind: "hold", id: hold.id } });
-  } else moveKitProvenance(state, hold.warehouseId, [hold], -1,
+    state.serialOccupancy = (state.serialOccupancy ?? []).filter(o => o.itemId !== hold.itemId || !selected.serials.includes(o.serial));
+    hooks.move(hold.warehouseId, [selected], 1, { from: { kind: "hold", id: hold.id } });
+  } else moveKitProvenance(state, hold.warehouseId, [selected], -1,
     { from: { kind: "hold", id: hold.id }, to: { kind: "retired", id: operationId } });
   state.receipts.push({ id: operationId, action: "resolveKitHold", reference: hold.itemId, warehouseId: hold.warehouseId,
-    lines: data.outcome === "released" ? [line(hold.itemId, hold.quantity, hold.serials)] : [], actor, occurredAt: now,
-    reason: data.reason, kitHoldId: hold.id, kitInspection: line(hold.itemId, hold.quantity, [...hold.serials]), resolution: data.outcome });
+    lines: data.outcome === "released" ? [selected] : [], actor, occurredAt: now,
+    reason: data.reason, kitHoldId: hold.id, kitInspection: selected, resolution: data.outcome });
 }

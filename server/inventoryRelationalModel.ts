@@ -41,7 +41,7 @@ export const relationalEntities: EntityModel[] = [
       { name: "inventory_kit_contents", paths: ["components"], columns: line, arrays: ["serials"] },
       { name: "inventory_kit_positions", paths: ["positions"], columns: { ...text("kind", "id"), quantity: "integer" }, arrays: ["serials"] },
     ] },
-  { name: "inventory_kit_holds", field: "kitHolds", columns: { ...text("id", "assemblyId", "receiptId", "itemId", "warehouseId", "reason", "status", "actor", "occurredAt"), quantity: "integer" }, arrays: ["serials"], json: ["resolution"] },
+  { name: "inventory_kit_holds", field: "kitHolds", columns: { ...text("id", "assemblyId", "receiptId", "itemId", "warehouseId", "reason", "status", "actor", "occurredAt"), quantity: "integer" }, arrays: ["serials"], json: ["resolution", "dispositions"] },
   { name: "inventory_serial_occupancy", field: "serialOccupancy", key: "_position", columns: { itemId: "text", serial: "text", workOrderId: "integer" } },
 ];
 export const columnName = (field: string) => field.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);

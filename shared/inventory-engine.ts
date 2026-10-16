@@ -10,7 +10,7 @@ import { InventoryError } from "./inventory-errors";
 import { applyShipmentCommand, assertNotHeld, shipmentActions } from "./inventory-shipment-engine";
 import { settledLines } from "./inventory-shipment-model";
 import { applyShipmentDraftCommand, isShipmentDraftAction, validateDraftPosting, draftFingerprintCommand, validateDraftReplay } from "./inventory-shipment-drafts";
-import { ensureKitProvenance, kitSerialContents, moveKitProvenance, recordKitAssembly,
+import { ensureKitProvenance, kitSerialContents, moveKitProvenance, recordKitAssembly, remainingKitHold,
   applyKitDisassembly, applyKitHoldResolution, type KitFlow } from "./inventory-kits";
 
 export { InventoryError } from "./inventory-errors";
@@ -88,7 +88,7 @@ function move(s: InventoryState, warehouseId: string, input: StockLine[], sign: 
     } else {
       for (const serial of l.serials) {
         assertNotHeld(s, l.itemId, serial);
-        assert(!(s.kitHolds ?? []).some(h => h.status === "held" && h.itemId === l.itemId && h.serials.includes(serial)),
+        assert(!(s.kitHolds ?? []).some(h => h.status === "held" && h.itemId === l.itemId && remainingKitHold(h).serials.includes(serial)),
           "Serial is held for kit component inspection.");
         assert(!s.stock.some(b => b.itemId === l.itemId && b.serials.includes(serial)), "Serial already in inventory.");
         assert(!s.orders.some(o => o.type === "transfer" && o.dispatched.some(x => x.itemId === l.itemId && x.serials.includes(serial)) &&

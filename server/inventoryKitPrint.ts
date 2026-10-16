@@ -22,5 +22,7 @@ export function inventoryKitPrint(receipt: InventoryReceipt, state: InventorySta
   const hold = state.kitHolds?.find(h => h.id === receipt.kitHoldId);
   return `<h2>Kit component inspection</h2><p>${escape(itemName(hold?.itemId ?? receipt.reference))}:
     ${escape(receipt.resolution)}. ${receipt.resolution === "released" ? "Inspected components added to usable stock." : "Scrapped components were not added to usable stock."}
-    ${hold ? `Original assembly: ${escape(inventoryReceiptLabel(state.receipts, hold.assemblyId))}. Quantity: ${hold.quantity}.` : ""}</p>`;
+    Selected quantity: ${receipt.kitInspection?.quantity ?? hold?.quantity ?? 0}.
+    ${hold ? `Original assembly: ${escape(inventoryReceiptLabel(state.receipts, hold.assemblyId))}. Original held quantity: ${hold.quantity}.` : ""}
+    Unselected components remain in their existing custody.</p>`;
 }

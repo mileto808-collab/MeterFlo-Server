@@ -192,7 +192,17 @@ export async function writeRelationalInventory(client: Pick<PoolClient, "query">
   for (const [name, table] of [...next].reverse()) {
     const prior = previous?.get(name);
     const nextKeys = new Set(table.rows.map(row => keyOf(row, table.keys)));
-    const deleted = prior?.rows.filter(row => !nextKeys.has(keyOf(row, table.keys)));
+    // Occupancy uses positional row keys for lossless legacy ordering, but also
+    // has a unique item/serial identity. Removing an early entry shifts later
+    // identities into existing keys: delete those changed keys before upserting,
+    // or an intermediate UPDATE collides with a later, not-yet-shifted row.
+    const nextRows = name === "inventory_serial_occupancy"
+      ? new Map(table.rows.map(row => [keyOf(row, table.keys), row])) : undefined;
+    const deleted = prior?.rows.filter(row => {
+      const replacement = nextRows?.get(keyOf(row, table.keys));
+      return !nextKeys.has(keyOf(row, table.keys)) || replacement &&
+        (replacement.item_id !== row.item_id || replacement.serial !== row.serial);
+    });
     if (previous && !deleted?.length) continue;
     const keys = table.keys.map(key => `"${key}"`);
     const match = table.keys.map(key => `saved."${key}"=existing."${key}"`).join(" AND ");
@@ -201,6 +211,8 @@ export async function writeRelationalInventory(client: Pick<PoolClient, "query">
       await client.query(`DELETE FROM public.${name} existing WHERE project_id=$1 AND EXISTS
         (SELECT 1 FROM jsonb_to_recordset($2::jsonb) AS saved(${definitions}) WHERE ${match})`,
       [projectId, JSON.stringify(deleted)]);
+    } else if (name === "inventory_serial_occupancy") {
+      await client.query(`DELETE FROM public.${name} WHERE project_id=$1`, [projectId]);
     } else {
       await client.query(`DELETE FROM public.${name} existing WHERE project_id=$1 AND NOT EXISTS
         (SELECT 1 FROM jsonb_to_recordset($2::jsonb) AS saved(${definitions}) WHERE ${match})`,

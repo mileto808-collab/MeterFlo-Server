@@ -15,6 +15,12 @@ Keep phone navigation compact in landscape too; a wide but short touch screen mu
 
 **How to apply:** Test portrait → landscape → portrait on the same page, including the app sidebar and real hosting chrome. Verify menu hit targets do not overlap stats, and that hiding tools or statistics increases page capacity whenever another record fits. Do not let expanded evidence permanently inflate the normal row-height estimate.
 
+Phone browser fixtures must use touch/coarse-pointer behavior when testing landscape, including fresh page loads with tools initially collapsed.
+
+**Why:** A wide landscape phone deliberately retains mobile navigation; a test that selects navigation only by viewport width can wait for desktop controls that are correctly absent.
+
+**How to apply:** Follow the actual mobile media query or visible navigation, open Search & Tools before using its actions, and measure nested dialog content as well as page width.
+
 Opening the stock serial viewer on mobile must not focus Search serials or summon the keyboard; search starts when the user taps the field.
 
 **Why:** The user wants to inspect serials without a keyboard covering the list.

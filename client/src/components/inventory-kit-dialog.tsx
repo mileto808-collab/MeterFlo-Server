@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { InventoryItem, InventoryState, StockLine } from "@shared/inventory";
-import { kitAssemblyOptions, kitAvailable, kitDisassemblyContents } from "@shared/inventory-kits";
+import { kitAssemblyOptions, kitAvailable, kitDisassemblyContents, remainingKitHold } from "@shared/inventory-kits";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,14 @@ import { Check, ChevronLeft, ChevronRight, PackageCheck, ScanLine, Trash2 } from
 type Mode = "assemble" | "disassemble" | "inspect";
 type Props = { state: InventoryState; projectId: string; mode: Mode; canResolve: boolean; onClose: () => void; onSaved: () => Promise<unknown>; onDirtyChange?: (dirty: boolean) => void; onOperationPending?: (pending: boolean) => void };
 type RecoveryDraft = { usable: string; damaged: string; missing: string; usableSerials: string[]; damagedSerials: string[]; missingSerials: string[]; reason: string };
+type HoldSelection = { quantity: string; serials: string[] };
+type InspectionHold = {
+  id: string; assemblyId: string; receiptId: string; itemId: string; warehouseId: string;
+  quantity: number; serials: string[]; reason: string; status: "held" | "released" | "scrapped" | "resolved";
+  actor: string; occurredAt: string;
+  resolution?: { operationId: string; actor: string; occurredAt: string; reason: string };
+  dispositions?: { operationId: string; actor: string; occurredAt: string; reason: string; outcome: "released" | "scrapped"; quantity: number; serials: string[] }[];
+};
 const newId = () => crypto.randomUUID();
 const validCount = (value: string, minimum = 0) => value.trim() !== "" && Number.isSafeInteger(Number(value)) && Number(value) >= minimum && Number(value) <= 1_000_000;
 const unique = (values: string[]) => new Set(values).size === values.length;
@@ -100,6 +108,7 @@ export function InventoryKitDialog({ state, projectId, mode, canResolve, onClose
   const [discardOpen, setDiscardOpen] = useState(false);
   const [scannerPending, setScannerPending] = useState(false);
   const [holdReason, setHoldReason] = useState("");
+  const [holdSelections, setHoldSelections] = useState<Record<string, HoldSelection>>({});
   const [operationNotice, setOperationNotice] = useState("");
   const [refreshWarning, setRefreshWarning] = useState("");
   const [pendingFieldChange, setPendingFieldChange] = useState<{ field: "warehouse" | "item" | "assembly" | "quantity"; value: string } | null>(null);
@@ -119,13 +128,15 @@ export function InventoryKitDialog({ state, projectId, mode, canResolve, onClose
     try { return kitDisassemblyContents(state, assemblyId, Number(quantity), kitSerials); } catch { return []; }
   }, [mode, state, source, assemblyId, quantity, kitSerials]);
   const isDirty = scannerPending || !!(warehouseId || itemId || assemblyId || reason || holdReason || kitSerials.length ||
-    Object.values(componentSerials).some(values => values.length) || Object.keys(recovery).length || quantity !== "1");
+    Object.values(componentSerials).some(values => values.length) || Object.keys(recovery).length || quantity !== "1") ||
+    Object.values(holdSelections).some(value => value.quantity !== "" || value.serials.length > 0);
   useEffect(() => { onDirtyChange?.(isDirty); }, [isDirty, onDirtyChange]);
   useEffect(() => () => { onDirtyChange?.(false); onOperationPending?.(false); }, [onDirtyChange, onOperationPending]);
   const serialsDuplicated = !unique(kitSerials) || Object.values(componentSerials).some(values => !unique(values)) ||
     Object.values(recovery).some(value => !unique([...value.usableSerials, ...value.damagedSerials, ...value.missingSerials]));
   const capturedDraft = scannerPending || !!reason || !!holdReason || kitSerials.length > 0 ||
-    Object.values(componentSerials).some(values => values.length > 0) || Object.keys(recovery).length > 0;
+    Object.values(componentSerials).some(values => values.length > 0) || Object.keys(recovery).length > 0 ||
+    Object.values(holdSelections).some(value => value.quantity !== "" || value.serials.length > 0);
   const setRecoveryLine = (line: StockLine, patch: Partial<RecoveryDraft>) => setRecovery(current => ({
     ...current, [line.itemId]: { ...(current[line.itemId] ?? recoveryFor(line)), ...patch },
   }));
@@ -202,7 +213,7 @@ export function InventoryKitDialog({ state, projectId, mode, canResolve, onClose
   };
 
   const post = async (action: string, payload: Record<string, unknown>, closeOnReceipt = true) => {
-    if (busyRef.current) return;
+    if (busyRef.current || refreshWarning) return;
     const fingerprint = JSON.stringify({ action, payload });
     const selected = attempt?.fingerprint === fingerprint ? attempt : { fingerprint, operationId: newId(), payload, action };
     setAttempt(selected); onOperationPending?.(true); busyRef.current = true; setBusy(true); setError(""); setRefreshWarning(""); setOperationNotice("");
@@ -229,6 +240,11 @@ export function InventoryKitDialog({ state, projectId, mode, canResolve, onClose
       if (!confirmed) throw new Error("No receipt confirmed this operation. Retry the unchanged operation; do not submit a new one.");
       setAttempt(null);
       onOperationPending?.(false);
+      if (action === "resolveKitHold") {
+        const resolvedId = String(selected.payload.id ?? "");
+        setHoldSelections(current => { const next = { ...current }; delete next[resolvedId]; return next; });
+        setHoldReason("");
+      }
       try {
         const refreshed = await onSaved() as { isError?: boolean };
         if (refreshed?.isError) throw new Error("Refresh request failed.");
@@ -257,33 +273,99 @@ export function InventoryKitDialog({ state, projectId, mode, canResolve, onClose
     } catch { setRefreshWarning("Receipt confirmed. Inventory refresh still failed; close and verify the ledger before continuing."); }
     finally { setBusy(false); }
   };
-  const resolveHold = (holdId: string, outcome: "released" | "scrapped") => {
-    if (holdReason.trim()) void post("resolveKitHold", { id: holdId, outcome, reason: holdReason.trim() }, false);
+  const resolveHold = (hold: InspectionHold, outcome: "released" | "scrapped", remainingQuantity: number, remainingSerials: string[]) => {
+    if (refreshWarning) return;
+    const product = state.items.find(item => item.id === hold.itemId);
+    const selection = holdSelections[hold.id] ?? { quantity: "", serials: [] };
+    if (!holdReason.trim()) { setError("Enter an inspection resolution reason."); return; }
+    if (product?.tracking === "serialized") {
+      if (remainingSerials.length !== remainingQuantity) {
+        setError("This hold does not have a complete known serial set. No unidentified or missing serials can be selected.");
+        return;
+      }
+      const serials = selection.serials.filter(serial => remainingSerials.includes(serial));
+      if (!serials.length) { setError("Select at least one known remaining serial."); return; }
+      void post("resolveKitHold", { id: hold.id, outcome, reason: holdReason.trim(), quantity: serials.length, serials }, false);
+      return;
+    }
+    if (!validCount(selection.quantity, 1) || Number(selection.quantity) > remainingQuantity) {
+      setError(`Select a whole quantity from 1 to ${remainingQuantity}.`);
+      return;
+    }
+    void post("resolveKitHold", { id: hold.id, outcome, reason: holdReason.trim(), quantity: Number(selection.quantity), serials: [] }, false);
   };
-  const holds = mode !== "assemble" ? (state.kitHolds ?? []).filter(hold =>
-    hold.status === "held" && (mode === "inspect" || !assemblyId || hold.assemblyId === assemblyId)) : [];
+  const holds = mode !== "assemble" ? ((state.kitHolds ?? []) as unknown as InspectionHold[]).filter(hold =>
+    mode === "inspect" || (hold.status === "held" && (!assemblyId || hold.assemblyId === assemblyId))) : [];
 
   return <Dialog open onOpenChange={open => { if (!open) close(); }}>
     <DialogContent className="flex max-h-[min(94dvh,860px)] w-[calc(100vw-1rem)] max-w-3xl flex-col gap-3 overflow-hidden p-3 sm:p-6" onOpenAutoFocus={event => event.preventDefault()} onEscapeKeyDown={event => { event.preventDefault(); close(); }} onPointerDownOutside={event => event.preventDefault()}>
       <DialogHeader className="shrink-0 text-left"><DialogTitle>{mode === "assemble" ? "Assemble kit" : mode === "inspect" ? "Kit batch inspection" : "Disassemble kit"}</DialogTitle><DialogDescription>{mode === "assemble" ? "Scan exact component custody and finished kit identity." : mode === "inspect" ? "Review damaged recovered components and resolve held stock." : "Use trusted assembly provenance and account for every original component."}</DialogDescription></DialogHeader>
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
-        {holds.length > 0 && <section className="space-y-2 rounded-md border border-amber-500/40 bg-amber-50/40 p-3 dark:bg-amber-950/10" aria-label="Whole-batch kit inspection">
-          <div><h3 className="font-medium">Kit inspection · whole batch</h3><p className="text-xs text-muted-foreground">Damaged recovered components remain held pending an authorized decision.</p></div>
-          {canResolve && <div className="space-y-1"><Label htmlFor="kit-hold-reason">Inspection resolution reason</Label><Input id="kit-hold-reason" value={holdReason} disabled={busy || !!attempt} onChange={event => setHoldReason(event.target.value)} placeholder="Required audit reason" /></div>}
+        {holds.length > 0 && <section className="min-w-0 space-y-2 rounded-md border border-amber-500/40 bg-amber-50/40 p-3 dark:bg-amber-950/10" aria-label="Kit component inspection holds">
+          <div><h3 className="font-medium">Kit inspection · component custody</h3><p className="text-xs text-muted-foreground">Select only known components still held. Each decision is recorded as an append-only inspection event.</p></div>
+          {canResolve && holds.some(hold => hold.status === "held") && <div className="space-y-1"><Label htmlFor="kit-hold-reason">Inspection resolution reason</Label><Input id="kit-hold-reason" aria-label="Inspection resolution reason" value={holdReason} disabled={busy || !!attempt} onChange={event => { setHoldReason(event.target.value); setError(""); }} placeholder="Required audit reason" maxLength={1000} /></div>}
           {holds.map(hold => {
+            let remaining: { quantity: number; serials: string[] };
+            try { remaining = remainingKitHold(hold as Parameters<typeof remainingKitHold>[0]); }
+            catch { remaining = { quantity: hold.status === "held" ? hold.quantity : 0, serials: hold.status === "held" ? hold.serials : [] }; }
             const product = state.items.find(item => item.id === hold.itemId);
             const location = state.warehouses.find(value => value.id === hold.warehouseId);
             const assembly = state.kitAssemblies?.find(value => value.id === hold.assemblyId);
             const assemblyItem = assembly ? state.items.find(value => value.id === assembly.itemId) : undefined;
             const assemblyReceipt = state.receipts.find(receipt => receipt.id === hold.assemblyId);
             const assemblyNumber = assemblyReceipt ? `#${state.receipts.indexOf(assemblyReceipt) + 1}` : hold.assemblyId.slice(0, 12);
-            return <div key={hold.id} className="flex flex-wrap items-start justify-between gap-2 rounded border bg-background p-2 text-sm">
-              <div className="min-w-0"><p className="font-medium">{product?.sku} · {product?.name ?? hold.itemId} · {hold.quantity} held</p>
-                <p className="text-xs text-muted-foreground">{location?.code} · {location?.name ?? hold.warehouseId} · From {assemblyItem?.sku} {assemblyItem?.name ?? "source kit"} · Assembly {assemblyNumber}{assembly ? ` · ${assembly.occurredAt.slice(0, 10)}` : ""}</p>
-                <p className="mt-1 break-words text-xs">{hold.reason}</p><p className="font-mono text-[11px] text-muted-foreground">{hold.id}</p>
+            const selection = holdSelections[hold.id] ?? { quantity: "", serials: [] };
+            const open = hold.status === "held" && remaining.quantity > 0;
+            const history = hold.dispositions?.length ? hold.dispositions : hold.resolution ? [{
+              ...hold.resolution, outcome: hold.status === "scrapped" ? "scrapped" as const : "released" as const,
+              quantity: hold.quantity, serials: hold.serials,
+            }] : [];
+            return <article key={hold.id} className="min-w-0 space-y-2 rounded border bg-background p-2 text-sm">
+              <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0 flex-1"><p className="break-words font-medium">{product?.sku} · {product?.name ?? hold.itemId}</p>
+                  <p className="text-xs text-muted-foreground">Original quantity <span className="font-mono">{hold.quantity}</span> · Remaining held <span className="font-mono">{remaining.quantity}</span></p>
+                  <p className="break-words text-xs text-muted-foreground">{location?.code} · {location?.name ?? hold.warehouseId} · From {assemblyItem?.sku} {assemblyItem?.name ?? "source kit"} · Assembly {assemblyNumber}{assembly ? ` · ${assembly.occurredAt.slice(0, 10)}` : ""}</p>
+                  <p className="mt-1 break-words text-xs">{hold.reason}</p><p className="break-all font-mono text-[11px] text-muted-foreground">{hold.id}</p>
+                </div>
+                <Badge variant={open ? "outline" : "secondary"}>{remaining.quantity === hold.quantity && open ? "Held" : remaining.quantity ? "Partially resolved" : "Resolved"}</Badge>
               </div>
-              {canResolve ? <div className="flex shrink-0 gap-2"><Button size="sm" variant="outline" disabled={busy || !!attempt || !holdReason.trim()} onClick={() => resolveHold(hold.id, "released")}>Release usable</Button><Button size="sm" variant="destructive" disabled={busy || !!attempt || !holdReason.trim()} onClick={() => resolveHold(hold.id, "scrapped")}>Scrap</Button></div> : <span className="text-xs text-muted-foreground">Resolution permission required</span>}
-            </div>;
+              {open && canResolve && !refreshWarning && <div className="min-w-0 space-y-2 rounded-md border border-dashed p-2">
+                {product?.tracking === "serialized" ? <fieldset className="min-w-0 space-y-1">
+                  <legend className="text-xs font-medium">Select known remaining serials · {selection.serials.length} selected</legend>
+                  {remaining.serials.length === remaining.quantity ? <div className="max-h-48 overflow-y-auto rounded border">
+                    {remaining.serials.map(serial => {
+                      const checked = selection.serials.includes(serial);
+                      return <label key={serial} className="flex min-h-10 min-w-0 items-center gap-2 border-b px-2 py-1 last:border-0">
+                        <input type="checkbox" className="h-4 w-4 shrink-0" aria-label={`Select serial ${serial} from hold ${hold.id}`} checked={checked} disabled={busy || !!attempt} onChange={event => {
+                          setHoldSelections(current => ({ ...current, [hold.id]: { quantity: "", serials: event.target.checked ? [...selection.serials, serial] : selection.serials.filter(value => value !== serial) } }));
+                          setError("");
+                        }} />
+                        <span className="min-w-0 break-all font-mono text-xs">{serial}</span>
+                      </label>;
+                    })}
+                  </div> : <p role="alert" className="break-words text-xs text-destructive">Known serial custody is incomplete; no unidentified or missing serials may be selected.</p>}
+                </fieldset> : <div className="max-w-xs space-y-1">
+                  <Label htmlFor={`hold-quantity-${hold.id}`}>Quantity to decide (1–{remaining.quantity})</Label>
+                  <Input id={`hold-quantity-${hold.id}`} aria-label={`Quantity to decide for hold ${hold.id}`} type="number" inputMode="numeric" min="1" max={remaining.quantity} step="1" value={selection.quantity} disabled={busy || !!attempt} onChange={event => { setHoldSelections(current => ({ ...current, [hold.id]: { ...selection, quantity: event.target.value } })); setError(""); }} />
+                </div>}
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <Button type="button" variant="outline" className="w-full" disabled={busy || !!attempt || !holdReason.trim() || (product?.tracking === "serialized" ? selection.serials.length === 0 || remaining.serials.length !== remaining.quantity : !validCount(selection.quantity, 1) || Number(selection.quantity) > remaining.quantity)} onClick={() => resolveHold(hold, "released", remaining.quantity, remaining.serials)}>Release selected to stock</Button>
+                  <Button type="button" variant="destructive" className="w-full" disabled={busy || !!attempt || !holdReason.trim() || (product?.tracking === "serialized" ? selection.serials.length === 0 || remaining.serials.length !== remaining.quantity : !validCount(selection.quantity, 1) || Number(selection.quantity) > remaining.quantity)} onClick={() => resolveHold(hold, "scrapped", remaining.quantity, remaining.serials)}>Scrap selected</Button>
+                </div>
+              </div>}
+              {open && !canResolve && <p className="text-xs text-muted-foreground">Resolution permission required.</p>}
+              {!!history.length && <section className="min-w-0 rounded bg-muted/30 p-2" aria-label={`Resolution history for hold ${hold.id}`}>
+                <h4 className="mb-1 text-xs font-semibold">Inspection history</h4>
+                <ol className="space-y-2">
+                  {history.map((entry, index) => <li key={`${entry.operationId}-${index}`} className="min-w-0 border-t pt-2 first:border-0 first:pt-0">
+                    <p className="break-words text-xs"><strong>{entry.outcome === "released" ? "Released" : "Scrapped"}</strong> · {entry.quantity} · {new Date(entry.occurredAt).toLocaleString()} · {entry.actor}</p>
+                    <p className="break-words text-xs text-muted-foreground">{entry.reason}</p>
+                    {!!entry.serials.length && <p className="break-all font-mono text-[11px] text-muted-foreground" aria-label="Resolved serials">{entry.serials.join(", ")}</p>}
+                    <p className="break-all font-mono text-[10px] text-muted-foreground">{entry.operationId}</p>
+                  </li>)}
+                </ol>
+              </section>}
+            </article>;
           })}
         </section>}
         {mode === "inspect" && holds.length === 0 && <div className="grid min-h-32 place-items-center rounded-md border border-dashed p-4 text-center"><div><h3 className="font-medium">No held kit components</h3><p className="text-sm text-muted-foreground">Damaged recovered components from kit batches will appear here.</p></div></div>}

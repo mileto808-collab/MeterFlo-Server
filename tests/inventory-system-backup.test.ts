@@ -84,9 +84,28 @@ test("full-system inventory restore preserves identity IDs, JSON serials, sequen
     post("assemble", { warehouseId: "w", itemId: "kit", quantity: 3, serials: [],
       components: [{ itemId: "kit-part", quantity: 3, serials: [] }] });
     const assemblyId = state.receipts.at(-1)!.id;
-    post("disassemble", { warehouseId: "w", assemblyId, quantity: 1, serials: [], reason: "Breakdown fixture",
-      components: [{ itemId: "kit-part", usableQuantity: 0, damagedQuantity: 1, missingQuantity: 0,
+    post("disassemble", { warehouseId: "w", assemblyId, quantity: 3, serials: [], reason: "Breakdown fixture",
+      components: [{ itemId: "kit-part", usableQuantity: 0, damagedQuantity: 3, missingQuantity: 0,
         usableSerials: [], damagedSerials: [], missingSerials: [], reason: "Damaged component" }] });
+    const kitHoldId = state.kitHolds![0].id;
+    post("resolveKitHold", { id: kitHoldId, quantity: 1, serials: [], outcome: "released", reason: "Passed inspection" });
+    post("resolveKitHold", { id: kitHoldId, quantity: 1, serials: [], outcome: "scrapped", reason: "Failed inspection" });
+    post("item", { id: "serial-part", sku: "SERIAL-PART", name: "Serialized kit component", tracking: "serialized" });
+    post("item", { id: "serial-kit", sku: "SERIAL-KIT", name: "Serialized recovery kit", tracking: "serialized",
+      components: [{ itemId: "serial-part", quantity: 5 }] });
+    post("order", { id: "serial-kit-po", type: "purchase", vendorId: "v", destinationId: "w",
+      lines: [{ itemId: "serial-part", quantity: 5 }] });
+    post("release", { orderId: "serial-kit-po" });
+    post("receive", { orderId: "serial-kit-po", lines: [{ itemId: "serial-part", quantity: 5, serials: ["S1", "S2", "S3", "S4", "S5"] }] });
+    post("assemble", { warehouseId: "w", itemId: "serial-kit", quantity: 1, serials: ["SK1"],
+      components: [{ itemId: "serial-part", quantity: 5, serials: ["S1", "S2", "S3", "S4", "S5"] }] });
+    const serialAssemblyId = state.receipts.at(-1)!.id;
+    post("disassemble", { warehouseId: "w", assemblyId: serialAssemblyId, quantity: 1, serials: ["SK1"],
+      components: [{ itemId: "serial-part", usableQuantity: 0, usableSerials: [], damagedQuantity: 4,
+        damagedSerials: ["S1", "S2", "S3", "S4"], missingQuantity: 1, missingSerials: ["S5"], reason: "Physical inspection fixture" }] });
+    const serialHoldId = state.kitHolds!.find(h => h.itemId === "serial-part")!.id;
+    post("resolveKitHold", { id: serialHoldId, quantity: 1, serials: ["S2"], outcome: "released", reason: "S2 passed" });
+    post("resolveKitHold", { id: serialHoldId, quantity: 1, serials: ["S1"], outcome: "scrapped", reason: "S1 failed" });
     await client.query("INSERT INTO inventory_state VALUES($1,$2)", [42, state]);
     await client.query("INSERT INTO inventory_categories(project_id,id,name,active) VALUES($1,$2,$3,true)", [42, categoryId, "Meters"]);
     for (const item of state.items) await client.query("INSERT INTO inventory_items(project_id,id,sku,data,category_id) VALUES($1,$2,$3,$4,$5)", [42, item.id, item.sku, item, item.categoryId]);
