@@ -29,3 +29,14 @@ and keep expanded-detail height separate from normal collapsed-row capacity.
 Also check usable results height: a pager can fit while a wrapped sticky toolbar
 leaves almost no room for records. Compact redundant mobile toolbar content
 instead of treating a merely nonzero scroll area as sufficient.
+
+Invalidate cached row-height estimates when data, sorting, or visible columns
+change, and re-observe replacement rows even if the record count stays the same.
+
+**Why:** A container resize observer alone cannot detect every same-size row
+replacement. Retaining an old tall-row estimate can leave avoidable empty space
+after columns or records change.
+
+**How to apply:** Include the data and presentation inputs in measurement
+lifecycle dependencies, rather than tying remeasurement only to item counts or
+viewport dimensions.

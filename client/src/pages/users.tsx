@@ -1,9 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { ColumnSelector, type ColumnConfig } from "@/components/column-selector";
 import { useColumnPreferences } from "@/hooks/use-column-preferences";
 import { FilterSelector, type FilterConfig } from "@/components/filter-selector";
@@ -24,6 +24,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { useTimezone } from "@/hooks/use-timezone";
 import { useAuth } from "@/hooks/useAuth";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import type { User, Project, Subrole, UserGroup } from "@shared/schema";
@@ -95,6 +96,7 @@ export default function Users() {
   const { toast } = useToast();
   const { formatDateTime, formatCustom } = useTimezone();
   const { user } = useAuth();
+  const isMobile = useIsMobile();
   const isAdmin = user?.role === "admin";
 
   const { data: userPermissions = [] } = useQuery<string[]>({
@@ -147,6 +149,14 @@ export default function Users() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [lockReason, setLockReason] = useState("");
   const [showFilters, setShowFilters] = useState(false);
+  const [showMobileTools, setShowMobileTools] = useState(() =>
+    typeof window !== "undefined" && !window.matchMedia("(max-width: 767px), (orientation: landscape) and (pointer: coarse) and (max-height: 600px) and (max-width: 960px)").matches
+  );
+  const [usersResultsElement, setUsersResultsElement] = useState<HTMLDivElement | null>(null);
+  const [usersPage, setUsersPage] = useState(0);
+  const [usersPageSize, setUsersPageSize] = useState(1);
+  const usersRowHeightRef = useRef(0);
+  const usersContainerSizeRef = useRef({ width: 0, height: 0 });
   const [inlineNewPassword, setInlineNewPassword] = useState("");
   const [inlineConfirmPassword, setInlineConfirmPassword] = useState("");
 
@@ -567,6 +577,78 @@ export default function Users() {
     }
     return 0;
   });
+
+  useEffect(() => {
+    setShowMobileTools(!isMobile);
+  }, [isMobile]);
+
+  useEffect(() => {
+    const container = usersResultsElement;
+    const workspace = container?.closest<HTMLElement>('[data-testid="users-workspace"]');
+    if (!container || !workspace) return;
+    const previousHeight = workspace.style.height;
+    const previousOverflow = workspace.style.overflow;
+    workspace.style.overflow = "hidden";
+    const fitWorkspace = () => {
+      const viewport = window.visualViewport;
+      const height = viewport?.height ?? window.innerHeight;
+      const top = workspace.getBoundingClientRect().top - (viewport?.offsetTop ?? 0);
+      workspace.style.height = `${Math.max(0, height - Math.max(0, top))}px`;
+    };
+    const fitRows = () => {
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+      if (Math.abs(width - usersContainerSizeRef.current.width) > 2 ||
+          Math.abs(height - usersContainerSizeRef.current.height) > 2) usersRowHeightRef.current = 0;
+      usersContainerSizeRef.current = { width, height };
+      const tableHeader = container.querySelector<HTMLElement>("thead")?.getBoundingClientRect().height ?? 0;
+      const rows = [...container.querySelectorAll<HTMLElement>("[data-users-row]")];
+      const measured = rows.reduce((maximum, row) => Math.max(maximum, row.getBoundingClientRect().height), 0);
+      if (measured > 0) usersRowHeightRef.current = Math.max(usersRowHeightRef.current, measured);
+      const rowHeight = usersRowHeightRef.current || (isMobile ? 42 : 48);
+      const usable = Math.max(0, height - tableHeader - 12);
+      const next = Math.max(1, Math.min(100, Math.floor(usable / rowHeight)));
+      setUsersPageSize(current => current === next ? current : next);
+    };
+    let frame = 0;
+    const scheduleMeasure = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(fitRows);
+    };
+    const observer = new ResizeObserver(() => { fitWorkspace(); scheduleMeasure(); });
+    observer.observe(workspace);
+    observer.observe(container);
+    container.querySelectorAll("[data-users-row]").forEach(row => observer.observe(row));
+    window.addEventListener("resize", fitWorkspace);
+    window.visualViewport?.addEventListener("resize", fitWorkspace);
+    window.visualViewport?.addEventListener("scroll", fitWorkspace);
+    fitWorkspace();
+    scheduleMeasure();
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener("resize", fitWorkspace);
+      window.visualViewport?.removeEventListener("resize", fitWorkspace);
+      window.visualViewport?.removeEventListener("scroll", fitWorkspace);
+      workspace.style.height = previousHeight;
+      workspace.style.overflow = previousOverflow;
+    };
+  }, [usersResultsElement, isMobile, showMobileTools, showFilters, usersPage, usersPageSize, filteredUsers?.length, visibleColumns, sortCriteria, users]);
+
+  useEffect(() => {
+    setUsersPage(0);
+    usersRowHeightRef.current = 0;
+  }, [
+    searchQuery, roleFilter, statusFilter, subroleFilter, filterUsername, filterEmail, filterFirstName, filterLastName,
+    filterProjects, filterIsLocked, filterLockedReason, filterLastLoginFrom, filterLastLoginTo, filterAddress, filterCity,
+    filterState, filterZip, filterPhone, filterWebsite, visibleColumns, sortCriteria, users,
+  ]);
+  const usersPageCount = Math.max(1, Math.ceil((filteredUsers?.length ?? 0) / usersPageSize));
+  const currentUsersPage = Math.min(usersPage, usersPageCount - 1);
+  const visibleUsers = (filteredUsers ?? []).slice(currentUsersPage * usersPageSize, (currentUsersPage + 1) * usersPageSize);
+  useEffect(() => {
+    setUsersPage(page => Math.min(page, usersPageCount - 1));
+  }, [usersPageCount]);
 
   const handleSort = (field: SortField, event: React.MouseEvent) => {
     const existingIndex = sortCriteria.findIndex(sc => sc.field === field);
@@ -1064,7 +1146,7 @@ export default function Users() {
 
   if (isCreatingUser) {
     return (
-      <div className="p-6 max-w-3xl mx-auto">
+      <div className="mx-auto min-h-[100dvh] w-full max-w-3xl overflow-y-auto p-3 sm:p-6">
         <div className="mb-6">
           <Button 
             variant="ghost" 
@@ -1111,7 +1193,7 @@ export default function Users() {
                     </FormItem>
                   )}
                 />
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
                   <FormField
                     control={createForm.control}
                     name="firstName"
@@ -1374,7 +1456,7 @@ export default function Users() {
                         </FormItem>
                       )}
                     />
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
                       <FormField
                         control={createForm.control}
                         name="city"
@@ -1450,7 +1532,7 @@ export default function Users() {
 
   if (editingUser) {
     return (
-      <div className="p-6 max-w-3xl mx-auto">
+      <div className="mx-auto min-h-[100dvh] w-full max-w-3xl overflow-y-auto p-3 sm:p-6">
         <div className="mb-6">
           <Button 
             variant="ghost" 
@@ -1485,7 +1567,7 @@ export default function Users() {
                     </FormItem>
                   )}
                 />
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
                   <FormField
                     control={editForm.control}
                     name="firstName"
@@ -1671,7 +1753,7 @@ export default function Users() {
                         </FormItem>
                       )}
                     />
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 sm:gap-4">
                       <FormField
                         control={editForm.control}
                         name="city"
@@ -1958,26 +2040,31 @@ export default function Users() {
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="mb-6 flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-3xl font-bold" data-testid="text-users-title">Users</h1>
-          <p className="text-muted-foreground mt-1">Manage user accounts and permissions</p>
+    <main className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col overflow-hidden px-2 sm:px-4" data-testid="users-workspace">
+      <header className="sticky top-0 z-20 shrink-0 border-b bg-background py-2" data-testid="users-sticky-header">
+        <div className="flex min-h-9 items-center justify-between gap-2">
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold leading-tight sm:text-2xl" data-testid="text-users-title">Users</h1>
+            {!isMobile && <p className="text-xs text-muted-foreground">Manage user accounts and permissions</p>}
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {canCreateUser && <Button size="sm" className="h-9" aria-label="Add User" title="Add User" onClick={() => setIsCreatingUser(true)} data-testid="button-create-user">
+              <Plus className="mr-1.5 h-4 w-4" /><span className="hidden min-[400px]:inline">Add User</span>
+            </Button>}
+            {isMobile && <Button size="sm" variant="outline" className="h-9" aria-expanded={showMobileTools}
+              aria-controls="users-search-tools" data-testid="users-search-tools-toggle"
+              onClick={() => setShowMobileTools(open => !open)}>
+              {showMobileTools ? "Hide Search & Tools" : "Show Search & Tools"}
+            </Button>}
+          </div>
         </div>
-{canCreateUser && (
-        <Button onClick={() => setIsCreatingUser(true)} data-testid="button-create-user">
-          <Plus className="h-4 w-4 mr-2" />
-          Add User
-        </Button>
-        )}
-      </div>
-
-      <Card>
-        <CardHeader className="pb-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="relative flex-1 min-w-[200px] max-w-md">
+      </header>
+      <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border bg-card" aria-label="User records">
+        {(!isMobile || showMobileTools) && <div id="users-search-tools" className="max-h-[38dvh] shrink-0 overflow-y-auto overscroll-contain border-b bg-background p-2 sm:p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-0 flex-1 basis-40">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Search users..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9" data-testid="input-search-users" />
+              <Input aria-label="Search users" placeholder="Search users..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="h-9 pl-9" data-testid="input-search-users" />
             </div>
             <Button 
               variant={showFilters ? "secondary" : "outline"} 
@@ -2000,7 +2087,7 @@ export default function Users() {
                 Clear Sort ({sortCriteria.length})
               </Button>
             )}
-            <div className="flex-1" />
+            <div className="flex-1 basis-full sm:basis-0" />
             <FilterSelector
               allFilters={userFilters}
               visibleFilters={visibleFilters}
@@ -2014,15 +2101,15 @@ export default function Users() {
               disabled={columnPrefsLoading}
               orderedColumns={orderedColumns}
             />
-            <Button variant="outline" size="sm" onClick={exportToCSV} data-testid="button-export-csv">
+            <Button variant="outline" size="sm" className="h-9" onClick={exportToCSV} data-testid="button-export-csv">
               <Download className="h-4 w-4 mr-2" />
               CSV
             </Button>
-            <Button variant="outline" size="sm" onClick={exportToExcel} data-testid="button-export-excel">
+            <Button variant="outline" size="sm" className="h-9" onClick={exportToExcel} data-testid="button-export-excel">
               <FileSpreadsheet className="h-4 w-4 mr-2" />
               Excel
             </Button>
-            <Button variant="outline" size="sm" onClick={exportToPDF} data-testid="button-export-pdf">
+            <Button variant="outline" size="sm" className="h-9" onClick={exportToPDF} data-testid="button-export-pdf">
               <FileText className="h-4 w-4 mr-2" />
               PDF
             </Button>
@@ -2145,40 +2232,37 @@ export default function Users() {
               <span>Showing {filteredUsers?.length || 0} of {users?.length || 0} users</span>
             </div>
           )}
-        </CardHeader>
-        <CardContent>
+        </div>}
+        <div ref={setUsersResultsElement} className="min-h-0 flex-1 overflow-auto overscroll-contain" data-testid="users-results" data-page-size={usersPageSize} role="region" aria-label="Users results" tabIndex={0}>
           {isLoading ? (
-            <div className="space-y-4">
+            <div className="space-y-2 p-2" aria-label="Loading users">
               {[...Array(5)].map((_, i) => (
-                <div key={i} className="flex items-center gap-4 p-4 border rounded-md">
-                  <Skeleton className="h-10 w-10 rounded-full" />
-                  <div className="flex-1 space-y-2">
-                    <Skeleton className="h-4 w-3/4" />
-                    <Skeleton className="h-3 w-1/2" />
-                  </div>
+                <div key={i} className="flex h-10 items-center gap-3 border-b px-2">
+                  <Skeleton className="h-4 w-28" /><Skeleton className="h-4 w-36" /><Skeleton className="h-4 w-20" />
                 </div>
               ))}
             </div>
-          ) : filteredUsers && filteredUsers.length > 0 ? (
-            <div className="rounded-md border">
-              <Table>
+          ) : visibleUsers.length > 0 ? (
+            <div className="w-full overflow-x-auto" role="region" aria-label="Users table; scroll horizontally to view all columns" tabIndex={0}>
+              <Table className="min-w-max text-xs [&_th]:sticky [&_th]:top-0 [&_th]:z-10 [&_th]:whitespace-nowrap [&_th]:bg-muted [&_th]:px-2 [&_th]:py-1.5 [&_td]:whitespace-nowrap [&_td]:px-2 [&_td]:py-1.5">
                 <TableHeader>
                   <TableRow>
                     {orderedColumns.map(col => renderHeaderCell(col.key))}
-                    <TableHead className="w-[80px]">Actions</TableHead>
+                    <TableHead className="w-[72px]">Actions</TableHead>
                     <TableHead className="w-8"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredUsers.map((user) => {
+                  {visibleUsers.map((user) => {
                     const isTargetAdmin = user.role === "admin";
                     const canModifyAdminTarget = isAdmin || !isTargetAdmin;
                     
                     return (
                     <TableRow 
                       key={user.id} 
+                      data-users-row
                       data-testid={`row-user-${user.id}`}
-                      className={canEditUser && canModifyAdminTarget ? "cursor-pointer hover-elevate" : ""}
+                      className={`h-10 ${canEditUser && canModifyAdminTarget ? "cursor-pointer hover-elevate" : ""}`}
                       onClick={(e) => {
                         if (!canEditUser || !canModifyAdminTarget) return;
                         const target = e.target as HTMLElement;
@@ -2190,7 +2274,7 @@ export default function Users() {
                       <TableCell>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" data-testid={`button-actions-${user.id}`}>
+                              <Button variant="ghost" size="icon" className="h-8 w-8" aria-label={`Actions for ${user.username || user.email || "user"}`} data-testid={`button-actions-${user.id}`}>
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
@@ -2253,28 +2337,41 @@ export default function Users() {
               </Table>
             </div>
           ) : (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <div className="h-16 w-16 rounded-full bg-muted flex items-center justify-center mb-4">
-                <UsersIcon className="h-8 w-8 text-muted-foreground" />
+            <div className="grid min-h-40 place-items-center px-4 py-8 text-center">
+              <div className="max-w-md">
+              <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full bg-muted">
+                <UsersIcon className="h-6 w-6 text-muted-foreground" />
               </div>
-              <h3 className="text-lg font-medium mb-1">No users found</h3>
-              <p className="text-sm text-muted-foreground mb-4">
-                {searchQuery ? "Try adjusting your search" : "Get started by adding your first user"}
+              <h3 className="mb-1 text-base font-medium">No users found</h3>
+              <p className="mb-3 text-sm text-muted-foreground">
+                {users?.length && hasActiveFilters ? "Try adjusting your search or filters." : "Get started by adding your first user."}
               </p>
-              {!searchQuery && canCreateUser && (
+              {!users?.length && canCreateUser && (
                 <Button onClick={() => setIsCreatingUser(true)}>
                   <Plus className="h-4 w-4 mr-2" />
                   Add User
                 </Button>
               )}
+              {users?.length && hasActiveFilters && <Button size="sm" variant="outline" onClick={() => { clearFilters(); setShowFilters(false); }}>Clear search and filters</Button>}
+              </div>
             </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+        <nav className="flex shrink-0 flex-wrap items-center gap-2 border-t bg-background px-2 py-2" data-testid="users-pagination" aria-label="Users pages">
+          <p className="mr-auto text-xs text-muted-foreground" aria-live="polite">
+            {filteredUsers?.length ? `${currentUsersPage * usersPageSize + 1}–${Math.min(filteredUsers.length, (currentUsersPage + 1) * usersPageSize)} of ${filteredUsers.length} users` : "0 users"}
+          </p>
+          <Button size="sm" variant="outline" aria-label="Previous users page" disabled={currentUsersPage === 0}
+            onClick={() => { setUsersPage(Math.max(0, currentUsersPage - 1)); usersResultsElement?.scrollTo({ top: 0, left: 0 }); }}>Previous</Button>
+          <span className="min-w-16 text-center text-xs tabular-nums">Page {currentUsersPage + 1} / {usersPageCount}</span>
+          <Button size="sm" variant="outline" aria-label="Next users page" disabled={currentUsersPage >= usersPageCount - 1}
+            onClick={() => { setUsersPage(currentUsersPage + 1); usersResultsElement?.scrollTo({ top: 0, left: 0 }); }}>Next</Button>
+        </nav>
+      </section>
 
       {/* Reset Password Dialog */}
       <Dialog open={resetPasswordDialogOpen} onOpenChange={setResetPasswordDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Reset Password</DialogTitle>
             <DialogDescription>Set a new password for {selectedUser?.username || selectedUser?.email}</DialogDescription>
@@ -2320,7 +2417,7 @@ export default function Users() {
 
       {/* Lock User Dialog */}
       <AlertDialog open={lockDialogOpen} onOpenChange={setLockDialogOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent className="max-h-[90dvh] overflow-y-auto">
           <AlertDialogHeader>
             <AlertDialogTitle>Lock User Account</AlertDialogTitle>
             <AlertDialogDescription>
@@ -2352,7 +2449,7 @@ export default function Users() {
 
       {/* Delete User Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent className="max-h-[90dvh] overflow-y-auto">
           <AlertDialogHeader>
             <AlertDialogTitle>Delete User</AlertDialogTitle>
             <AlertDialogDescription>
@@ -2378,7 +2475,7 @@ export default function Users() {
 
       {/* Assign Projects Dialog */}
       <Dialog open={assignProjectDialogOpen} onOpenChange={setAssignProjectDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Manage Project Assignments</DialogTitle>
             <DialogDescription>Manage project access for {selectedUser?.username || selectedUser?.email}</DialogDescription>
@@ -2466,6 +2563,6 @@ export default function Users() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </main>
   );
 }
