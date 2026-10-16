@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, Download, FileSpreadsheet, FileText, Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { downloadStockSerials } from "@/lib/inventory-stock-serial-export";
+import { MOBILE_MEDIA_QUERY } from "@/hooks/use-mobile";
 
 type ExportContext = {
   project: string;
@@ -46,6 +47,7 @@ export function InventoryStockSerialDialog({
   const [scope, setScope] = useState<ExportScope>("all");
   const [exporting, setExporting] = useState<ExportFormat | null>(null);
   const [exportError, setExportError] = useState("");
+  const titleRef = useRef<HTMLHeadingElement>(null);
   const { toast } = useToast();
 
   const filteredSerials = useMemo(() => {
@@ -89,9 +91,16 @@ export function InventoryStockSerialDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[min(92dvh,52rem)] w-[calc(100%-1rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0 sm:w-full">
+      <DialogContent className="flex max-h-[min(92dvh,52rem)] w-[calc(100%-1rem)] max-w-2xl flex-col gap-0 overflow-hidden p-0 sm:w-full"
+        onOpenAutoFocus={event => {
+          if (window.matchMedia(MOBILE_MEDIA_QUERY).matches || window.matchMedia("(pointer: coarse)").matches) {
+            // Keep focus inside the dialog without opening a touch keyboard.
+            event.preventDefault();
+            titleRef.current?.focus({ preventScroll: true });
+          }
+        }}>
         <DialogHeader className="shrink-0 border-b px-5 py-5 pr-12 sm:px-6">
-          <DialogTitle>Stock serials</DialogTitle>
+          <DialogTitle ref={titleRef} tabIndex={-1}>Stock serials</DialogTitle>
           <DialogDescription className="mt-2 space-y-1 text-left">
             <span className="block font-medium text-foreground">{itemName}</span>
             <span className="block font-mono text-xs">{sku}</span>

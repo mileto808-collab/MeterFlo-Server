@@ -58,6 +58,7 @@ async function main() {
     await stock.getByRole("button", { name: `View serials (${serials.length}) for SER-MTR at SERIAL-MAIN`, exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Stock serials", exact: true });
     await dialog.waitFor();
+    assert.equal(await dialog.getByRole("textbox", { name: "Search serials", exact: true }).evaluate(el => document.activeElement === el), true, "Desktop search autofocus is preserved");
     assert.ok((await dialog.innerText()).includes("Main serial warehouse"));
     const list = dialog.getByRole("list", { name: "Stock serial list" });
     assert.equal(await list.locator("li").count(), 50, "Only one serial page is rendered");
@@ -130,6 +131,34 @@ async function main() {
     await stock.getByRole("button", { name: "View serials (1) for SER-MTR at SERIAL-OTHER", exact: true }).click();
     assert.deepEqual(await dialog.locator("code").allTextContents(), ["OTHER-LOCATION-ONLY"], "Reopening is scoped to the new location and resets search");
     await page.keyboard.press("Escape");
+    const touch = await browser.newContext({ baseURL: `https://${process.env.REPLIT_DEV_DOMAIN}`,
+      viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+    assert.equal((await touch.request.post("/api/auth/local/login", { data: fixture })).status(), 200);
+    const phone = await touch.newPage();
+    await phone.goto(`/projects/${fixture.projectId}/inventory`);
+    await phone.getByTestId("inventory-mobile-tools-stock-toggle").click();
+    await phone.getByRole("searchbox", { name: "Search inventory", exact: true }).fill("OTHER-LOCATION-ONLY");
+    await phone.getByTestId("inventory-mobile-tools-stock-toggle").click();
+    const trigger = phone.getByRole("button", { name: "View serials (1) for SER-MTR at SERIAL-OTHER", exact: true });
+    for (const viewport of [{ width: 390, height: 844 }, { width: 844, height: 390 }]) {
+      await phone.setViewportSize(viewport);
+      await trigger.tap();
+      const phoneDialog = phone.getByRole("dialog", { name: "Stock serials", exact: true });
+      await phoneDialog.waitFor();
+      await phone.waitForFunction(() => document.activeElement?.textContent === "Stock serials");
+      assert.equal(await phoneDialog.getByRole("heading", { name: "Stock serials", exact: true }).evaluate(el => document.activeElement === el), true,
+        "Touch opening focuses the title, not an editable control");
+      const search = phoneDialog.getByRole("textbox", { name: "Search serials", exact: true });
+      await search.tap();
+      assert.equal(await search.evaluate(el => document.activeElement === el), true, "Search focuses only after user taps");
+      await search.fill("OTHER");
+      assert.deepEqual(await phoneDialog.locator("code").allTextContents(), ["OTHER-LOCATION-ONLY"]);
+      await phoneDialog.getByRole("button", { name: "Close", exact: true }).tap();
+      await phoneDialog.waitFor({ state: "hidden" });
+      assert.equal(await phone.evaluate(() => document.activeElement?.id === "stock-serial-search"), false,
+        "Closing the viewer does not leave search focused");
+    }
+    await touch.close();
     assert.deepEqual((await (await context.request.get(endpoint)).json()).state, before, "Viewing and exporting never mutate inventory");
     const viewer = await browser.newContext({ baseURL: `https://${process.env.REPLIT_DEV_DOMAIN}` });
     assert.equal((await viewer.request.post("/api/auth/local/login", { data: fixture.viewer })).status(), 200);
