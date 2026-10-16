@@ -287,12 +287,43 @@
   }
 }
 
+.inventory-stock-serial-action-mobile {
+  display: none;
+}
+
+@media (max-width: 639px) {
+  .inventory-stock-location:has(.inventory-stock-serial-action-mobile) {
+    position: relative;
+    min-height: 2.75rem;
+    padding-right: 3.25rem;
+  }
+  .inventory-stock-serial-action-mobile {
+    display: block;
+    position: absolute;
+    top: 0;
+    right: 0;
+  }
+  .inventory-stock-serial-action-legacy {
+    display: none;
+  }
+}
+
 /*
  * Rotated field phones often cross Tailwind's md breakpoint despite still
  * having a short, touch-first viewport. Keep inventory navigation in its
  * compact mode and let opened toolbars scroll within the remaining height.
  */
 @media (orientation: landscape) and (pointer: coarse) and (max-height: 600px) and (max-width: 960px) {
+  .inventory-stock-serial-action-mobile {
+    display: none;
+  }
+  .inventory-stock-serial-action-legacy {
+    display: block;
+  }
+  .inventory-stock-location:has(.inventory-stock-serial-action-mobile) {
+    min-height: 0;
+    padding-right: 0;
+  }
   .inventory-workspace-shell {
     padding: 0.5rem !important;
   }

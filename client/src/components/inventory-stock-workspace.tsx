@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Download, FileSpreadsheet, FileText, Filter, RefreshCw, Search } from "lucide-react";
+import { Download, FileSpreadsheet, FileText, Filter, ListOrdered, RefreshCw, Search } from "lucide-react";
 import { InventoryMobileTools } from "@/components/inventory-mobile-tools";
 import type { StockBalanceRow } from "@/lib/inventory-stock-export";
 import { downloadInventoryStock } from "@/lib/inventory-stock-export";
@@ -214,6 +214,13 @@ export function InventoryStockWorkspace({ rows, projectName, timezone, onRefresh
                 <div className="inventory-stock-location min-w-0 sm:border-l sm:pl-4">
                   <p className="break-words text-sm">{row.warehouse.name}</p>
                   <p className="break-all font-mono text-xs text-muted-foreground">{row.warehouse.code}</p>
+                  {row.serials.length > 0 && <div className="inventory-stock-serial-action-mobile">
+                    <Button className="h-11 w-11 p-0 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" size="icon" variant="outline"
+                      aria-label={`View serials (${row.serials.length}) for ${row.item.sku} at ${row.warehouse.code}`}
+                      title={`View serials (${row.serials.length})`} onClick={() => onViewSerials(row)}>
+                      <ListOrdered aria-hidden="true" className="h-4 w-4" />
+                    </Button>
+                  </div>}
                 </div>
                 <div className="inventory-stock-quantity min-w-0">
                   <div className="inventory-stock-quantity-values grid grid-cols-3 gap-2 border-t pt-2 text-left sm:min-w-48 sm:border-0 sm:pt-0">
@@ -221,8 +228,9 @@ export function InventoryStockWorkspace({ rows, projectName, timezone, onRefresh
                     <div><p className="text-[10px] uppercase tracking-wide text-muted-foreground">Reserved</p><p className="font-mono tabular-nums">{row.reserved}</p></div>
                     <div><p className="text-[10px] uppercase tracking-wide text-muted-foreground">Available</p><p className="font-mono font-semibold tabular-nums">{available}</p></div>
                   </div>
-                  {row.serials.length > 0 && <div className="inventory-stock-serial-action mt-2 border-t pt-2 sm:mt-3">
-                    <Button size="sm" variant="outline" aria-label={`View serials (${row.serials.length}) for ${row.item.sku} at ${row.warehouse.code}`} onClick={() => onViewSerials(row)}>
+                  {row.serials.length > 0 && <div className="inventory-stock-serial-action inventory-stock-serial-action-legacy mt-2 border-t pt-2 sm:mt-3">
+                    <Button size="sm" variant="outline" aria-label={`View serials (${row.serials.length}) for ${row.item.sku} at ${row.warehouse.code}`}
+                      title={`View serials (${row.serials.length})`} onClick={() => onViewSerials(row)}>
                       View serials ({row.serials.length})
                     </Button>
                   </div>}

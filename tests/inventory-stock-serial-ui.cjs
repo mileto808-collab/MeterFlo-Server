@@ -142,6 +142,26 @@ async function main() {
     const trigger = phone.getByRole("button", { name: "View serials (1) for SER-MTR at SERIAL-OTHER", exact: true });
     for (const viewport of [{ width: 390, height: 844 }, { width: 844, height: 390 }]) {
       await phone.setViewportSize(viewport);
+      if (viewport.width < 640) {
+        const layout = await trigger.evaluate(button => {
+          const card = button.closest("[data-stock-row]");
+          const totals = card.querySelector(".inventory-stock-quantity-values");
+          const location = card.querySelector(".inventory-stock-location");
+          return {
+            button: button.getBoundingClientRect().toJSON(),
+            totals: totals.getBoundingClientRect().toJSON(),
+            location: location.getBoundingClientRect().toJSON(),
+            iconCount: button.querySelectorAll("svg").length,
+            visibleText: button.innerText.trim(),
+          };
+        });
+        assert.equal(layout.iconCount, 1, "Phone serial action has a recognizable icon");
+        assert.equal(layout.visibleText, "", "Phone serial action is icon-only");
+        assert.ok(layout.button.bottom <= layout.totals.top, "Serial icon sits above quantity totals");
+        assert.ok(layout.button.left >= layout.location.left, "Serial icon is on the right of the location area");
+        assert.ok(layout.button.width >= 40 && layout.button.height >= 40, "Phone action has an adequate touch target");
+        await phone.screenshot({ path: `${out}/phone-serial-icon.jpg` });
+      }
       await trigger.tap();
       const phoneDialog = phone.getByRole("dialog", { name: "Stock serials", exact: true });
       await phoneDialog.waitFor();
