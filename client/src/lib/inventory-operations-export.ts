@@ -1,7 +1,7 @@
 import type { OperationsDataset, OperationsKind, OperationsRow } from "./inventory-operations-data";
 
 type Context = { project: string; timezone: string };
-const titles: Record<OperationsKind, string> = { locations: "Locations", exceptions: "Shipment exceptions", returns: "Removed Equipment", activity: "Activity" };
+const titles: Record<OperationsKind, string> = { locations: "Locations", exceptions: "Shipment exceptions", returns: "Removed Equipment", activity: "Activity", categories: "Categories" };
 const escape = (value: string | number) => String(value).replace(/[&<>"']/g, c =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 export const operationsExportRows = (dataset: OperationsDataset, rows: readonly OperationsRow[]) =>
@@ -38,6 +38,7 @@ export function operationsPrintHtml(context: Context, kind: OperationsKind, data
     exceptions: ["reference", "order", "sku", "location", "status", "held", "actor", "date", "reason"],
     returns: ["equipment", "serial", "status", "workOrder", "location", "sku"],
     activity: ["receipt", "action", "reference", "location", "actor", "date", "items", "reason"],
+    categories: ["name", "itemCount"],
   };
   const cols = dataset.columns.filter(c => printKeys[kind].includes(c.key));
   return `<!doctype html><html><head><meta charset="utf-8"><title>${escape(context.project)} — ${titles[kind]}</title>

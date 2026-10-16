@@ -6,7 +6,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useUnsavedNavigation } from "@/hooks/use-unsaved-navigation";
-import { emptyInventory, type InventoryCommand, type InventoryCount, type InventoryItem, type InventoryOrder, type InventoryState, type StockLine, type Vendor, type Warehouse } from "@shared/inventory";
+import { emptyInventory, inventoryCategoryNames, type InventoryCommand, type InventoryCount, type InventoryItem, type InventoryOrder, type InventoryState, type StockLine, type Vendor, type Warehouse } from "@shared/inventory";
 import type { SavedShipmentDraft } from "@shared/inventory-shipment-draft-model";
 import { orderLineProgress } from "@shared/inventory-shipment-model";
 import { inventoryCountReference } from "@shared/inventory-count-reference";
@@ -29,6 +29,7 @@ import { InventoryStockSerialDialog } from "@/components/inventory-stock-serial-
 import { InventoryStockWorkspace } from "@/components/inventory-stock-workspace";
 import { InventoryCatalogWorkspace } from "@/components/inventory-catalog-workspace";
 import { InventoryRecordsWorkspace } from "@/components/inventory-records-workspace";
+import { InventoryCategoryCreateAction } from "@/components/inventory-category-create-action";
 import { InventoryMobileTools } from "@/components/inventory-mobile-tools";
 import { buildOperationsDataset } from "@/lib/inventory-operations-data";
 import type { StockBalanceRow } from "@/lib/inventory-stock-export";
@@ -57,6 +58,7 @@ const inventoryTabs = [
   { value: "stock", label: "Stock & search" },
   { value: "locations", label: "Locations" },
   { value: "items", label: "Items" },
+  { value: "categories", label: "Categories" },
   { value: "vendors", label: "Vendors" },
   { value: "orders", label: "Orders" },
   { value: "exceptions", label: "Shipment exceptions" },
@@ -193,6 +195,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const locationsDataset = useMemo(() => buildOperationsDataset("locations", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone), [state, data?.actors, data?.users, timezone]);
   const returnsDataset = useMemo(() => buildOperationsDataset("returns", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone), [state, data?.actors, data?.users, timezone]);
   const activityDataset = useMemo(() => buildOperationsDataset("activity", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone), [state, data?.actors, data?.users, timezone]);
+  const categoriesDataset = useMemo(() => buildOperationsDataset("categories", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone), [state]);
+  const categories = useMemo(() => inventoryCategoryNames(state ?? emptyInventory()), [state]);
   const can = (permission: string) => hasPermission(permission);
   const command = useMutation({
     mutationFn: async ({ action, data: payload, operationId }: { action: InventoryCommand["action"]; data: Record<string, unknown>; operationId?: string }) => {
@@ -827,6 +831,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
             <DropdownMenuContent align="start" className="max-h-[min(70dvh,30rem)] w-[var(--radix-dropdown-menu-trigger-width)] overflow-y-auto">
               {can("inventory.maintain") && <DropdownMenuItem onSelect={() => openResource("warehouse")}>Add location</DropdownMenuItem>}
               {can("inventory.maintain") && <DropdownMenuItem onSelect={() => openResource("item")}>Add new item</DropdownMenuItem>}
+              {can("inventory.maintain") && <DropdownMenuItem onSelect={() => setInventoryTab("categories")}>Manage categories</DropdownMenuItem>}
               {(can("inventory.purchase") || can("inventory.transfer")) && <DropdownMenuItem onSelect={() => { setInventoryTab("orders"); startNewOrderDraft(); }}>Build an order draft</DropdownMenuItem>}
               {inventoryTabs.map(tab => <DropdownMenuItem key={tab.value} aria-label={tab.label} data-testid={`inventory-mobile-menu-item-${tab.value}`} onSelect={() => setInventoryTab(tab.value)}>
                 {tab.label}
@@ -838,6 +843,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           <TabsTrigger value="stock">Stock &amp; search</TabsTrigger>
           <TabsTrigger value="locations">Locations</TabsTrigger>
           <TabsTrigger value="items">Items</TabsTrigger>
+          <TabsTrigger value="categories">Categories</TabsTrigger>
           <TabsTrigger value="vendors">Vendors</TabsTrigger>
           <TabsTrigger value="orders">Orders</TabsTrigger>
           <TabsTrigger value="exceptions">Shipment exceptions</TabsTrigger>
@@ -847,8 +853,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
         </TabsList>
       </div>
 
-    <div className={`min-h-0 flex-1 ${["orders", "stock", "items", "vendors", "locations", "exceptions", "returns", "activity"].includes(inventoryTab) ? "flex flex-col overflow-hidden" : "space-y-5 overflow-y-auto overscroll-contain pb-8 pr-1"}`} data-testid="inventory-scroll-content" role="region" aria-label="Inventory content" tabIndex={0}>
-    {!hasAny && <Alert hidden={["orders", "stock", "items", "vendors"].includes(inventoryTab)}><Boxes className="h-4 w-4" /><AlertTitle>Set up the first stock location</AlertTitle><AlertDescription>Add a warehouse or service vehicle, then add catalog items and begin receiving meters.</AlertDescription></Alert>}
+    <div className={`min-h-0 flex-1 ${["orders", "stock", "items", "vendors", "categories", "locations", "exceptions", "returns", "activity"].includes(inventoryTab) ? "flex flex-col overflow-hidden" : "space-y-5 overflow-y-auto overscroll-contain pb-8 pr-1"}`} data-testid="inventory-scroll-content" role="region" aria-label="Inventory content" tabIndex={0}>
+    {!hasAny && <Alert hidden={["orders", "stock", "items", "vendors", "categories"].includes(inventoryTab)}><Boxes className="h-4 w-4" /><AlertTitle>Set up the first stock location</AlertTitle><AlertDescription>Add a warehouse or service vehicle, then add catalog items and begin receiving meters.</AlertDescription></Alert>}
 
       <TabsContent value="stock" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         <InventoryStockWorkspace rows={allStockRows} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
@@ -883,6 +889,16 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
         <InventoryCatalogWorkspace kind="vendors" items={items} vendors={vendors} projectName={data.projectName} timezone={timezone}
           canMaintain={can("inventory.maintain")} onRefresh={() => void refetch()} onAdd={() => openResource("vendor")}
           onEditItem={item => openResource("item", item)} onEditVendor={vendor => openResource("vendor", vendor)} />
+      </TabsContent>
+      <TabsContent value="categories" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
+        <InventoryRecordsWorkspace kind="categories" title="Item categories" description="Project-wide catalog groups. Existing item categories are included automatically."
+          dataset={categoriesDataset} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
+          headerAction={<InventoryCategoryCreateAction canMaintain={can("inventory.maintain")} pending={command.isPending}
+            onCreate={(name, operationId) => command.mutateAsync({ action: "category", data: { name }, operationId })} />}
+          renderRow={row => <article className="flex min-w-0 items-center justify-between gap-3 rounded-md border bg-card px-3 py-2.5">
+            <div className="min-w-0"><h3 className="break-words text-sm font-medium">{String(row.cells.name ?? "")}</h3></div>
+            <Badge variant="secondary" className="shrink-0">{Number(row.cells.itemCount ?? 0)} {Number(row.cells.itemCount ?? 0) === 1 ? "item" : "items"}</Badge>
+          </article>} />
       </TabsContent>
 
       <TabsContent value="orders" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -1158,7 +1174,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
         <Field label="Product ID (SKU)" required maxLength={200} value={itemForm.sku} set={value => setItemForm(form => ({ ...form, sku: value }))} help="Use the Product ID from the System Type or Module Type table, entered manually. Required and unique within this project (case-insensitive), up to 200 characters. Example: E460. Not an individual unit's serial number." />
         <Field label="Product Label (Name)" required maxLength={200} value={itemForm.name} set={value => setItemForm(form => ({ ...form, name: value }))} help="Use the Product Label from the System Type or Module Type table, entered manually. Required recognizable name, up to 200 characters. Example: Electric meter E460." />
         <Field label="Product Description" maxLength={500} value={itemForm.description} set={value => setItemForm(form => ({ ...form, description: value }))} help="Corresponds to Product Description in the System Type or Module Type table. Optional details, up to 500 characters. Example: Three-phase electric meter." className="sm:col-span-2" />
-        <Field label="Category" maxLength={500} value={itemForm.category} set={value => setItemForm(form => ({ ...form, category: value }))} help="Optional catalog grouping, up to 500 characters. Example: Water meters, fittings, or repair kits. Category does not select System or Module; use Equipment for that." />
+        <div className="space-y-1.5"><Label htmlFor="item-category">Category</Label><select id="item-category" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" value={itemForm.category} onChange={event => setItemForm(form => ({ ...form, category: event.target.value }))}><option value="">None</option>{[...new Set([...categories, itemForm.category].filter(Boolean))].map(category => <option key={category} value={category}>{category.trim().toLowerCase() === "none" ? `${category} (category)` : category}</option>)}</select><p className="text-xs leading-relaxed text-muted-foreground">Optional project category. To add a category, use the Categories tab.</p></div>
         <Field label="Unit" required maxLength={200} value={itemForm.unit} set={value => setItemForm(form => ({ ...form, unit: value }))} help="Required unit name, up to 200 characters. Defaults to each. Example: each for a meter or box for supplies. Inventory postings use whole-number quantities, even for units such as ft." />
         <Field label="Barcode" maxLength={500} value={itemForm.barcode} set={value => setItemForm(form => ({ ...form, barcode: value }))} help="Optional catalog barcode for identifying this product, up to 500 characters (example: 012345678905). A barcode identifies the product; it is not an individual unit's serial number." />
         <Field label="Manufacturer" maxLength={500} value={itemForm.manufacturer} set={value => setItemForm(form => ({ ...form, manufacturer: value }))} help="Optional maker name, up to 500 characters. Example: Acme Meter Works." />

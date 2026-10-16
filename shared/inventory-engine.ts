@@ -2,6 +2,7 @@ import { z } from "zod";
 import { allocateOrderNumber, uuidOrderId } from "./inventory-order-labels";
 import { COUNT_MAX_LINES, COUNT_MAX_SERIALS, countPayloadFits } from "./inventory-count-limits";
 import { allocationSchema, dispositionSchema, itemSchema, stockLineSchema, vendorSchema, warehouseSchema, countDraftSchema,
+  categoryNameSchema, categoryKey, inventoryCategoryNames,
   type Allocation, type InventoryCommand, type InventoryState, type StockLine, type Stock } from "./inventory";
 import { InventoryError } from "./inventory-errors";
 import { applyShipmentCommand, assertNotHeld, shipmentActions } from "./inventory-shipment-engine";
@@ -138,6 +139,10 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     const posting = validateDraftPosting(s, command, actor, canonicalInventoryJson);
     applyShipmentCommand(s, posting, actor, now, { access, move: (w, ls, sign) => move(s, w, ls, sign),
       validate: ls => validateLines(s, ls), within });
+  } else if (a === "category") {
+    const name = categoryNameSchema.parse(d.name);
+    assert(!inventoryCategoryNames(s).some(existing => categoryKey(existing) === categoryKey(name)), "Category already exists in this project.");
+    s.categories = [...inventoryCategoryNames(s), name];
   } else if (a === "warehouse" || a === "vendor" || a === "item") {
     const value = a === "warehouse" ? warehouseSchema.parse(d) : a === "vendor" ? vendorSchema.parse(d) : itemSchema.parse(d);
     const list = (a === "warehouse" ? s.warehouses : a === "vendor" ? s.vendors : s.items) as any[];
@@ -155,6 +160,14 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     }
     if (a === "item") {
       const i = value as any;
+      // Retain legacy categories even when their final item is set to None.
+      s.categories = inventoryCategoryNames(s);
+      if (i.category.trim()) {
+        const category = inventoryCategoryNames(s).find(name => categoryKey(name) === categoryKey(i.category));
+        assert(category !== undefined, "Choose an existing category from this project, or None.");
+        // Keep an existing item's historical spelling until explicitly changed.
+        if (!old || old.category !== i.category) i.category = category;
+      } else i.category = "";
       assert(!s.items.some(x => x.id !== i.id && x.sku.toLowerCase() === i.sku.toLowerCase()), "SKU already exists.");
       assert(!i.vendorId || s.vendors.some(v => v.id === i.vendorId && v.active), "Vendor is not active in this project.");
       if (!i.active) assert(!s.stock.some(b => b.itemId === i.id && b.quantity) &&

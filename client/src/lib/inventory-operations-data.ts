@@ -1,10 +1,10 @@
-import type { InventoryState } from "@shared/inventory";
+import { inventoryCategoryNames, type InventoryState } from "@shared/inventory";
 import { inventoryActorLabel, inventoryHoldLabel, inventoryReceiptLabel, type InventoryActorLabel } from "@shared/inventory-display-labels";
 import { inventoryCountReference } from "@shared/inventory-count-reference";
 import { orderLabel, orderReference, uuidOrderId } from "@shared/inventory-order-labels";
 import { holdStatus, remainingHold } from "@shared/inventory-shipment-model";
 
-export type OperationsKind = "locations" | "exceptions" | "returns" | "activity";
+export type OperationsKind = "locations" | "exceptions" | "returns" | "activity" | "categories";
 export type OperationsRow = { id: string; search: string; cells: Record<string, string | number>; facets: Record<string, string> };
 export type OperationsDataset = {
   rows: OperationsRow[];
@@ -38,7 +38,21 @@ export function buildOperationsDataset(
   let cols: OperationsDataset["columns"];
   let filterKeys: [string, string][];
   let sorts: OperationsDataset["sorts"];
-  if (kind === "locations") {
+  if (kind === "categories") {
+    const categoryNames = inventoryCategoryNames(state);
+    rows = categoryNames.map(name => {
+      const itemCount = state.items.filter(item => item.category.trim().toLowerCase() === name.trim().toLowerCase()).length;
+      return textSearch({
+        id: name,
+        cells: { name, itemCount },
+        facets: { usage: itemCount > 0 ? "In use" : "Unused" },
+      });
+    });
+    cols = columns([["name", "Category"], ["itemCount", "Items"]]);
+    filterKeys = [["usage", "Usage"]];
+    sorts = [{ key: "name:asc", label: "Name · A–Z" }, { key: "name:desc", label: "Name · Z–A" },
+      { key: "itemCount:desc", label: "Most items" }, { key: "itemCount:asc", label: "Fewest items" }];
+  } else if (kind === "locations") {
     rows = state.warehouses.map(w => textSearch({
       id: w.id, cells: {
         code: w.code, name: w.name, type: w.type === "vehicle" ? "Vehicle" : "Warehouse",

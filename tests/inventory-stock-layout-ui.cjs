@@ -22,6 +22,7 @@ async function main() {
     };
     await command("warehouse", { id: "stock-layout", code: "00099", name: "Secondary store", type: "physical", address: "Disposable fixture" });
     await command("vendor", { id: "stock-layout-vendor", name: "Layout vendor" });
+    for (const name of ["Meters", "Supplies"]) await command("category", { name });
     await command("item", { id: "stock-layout-meter", sku: "00001111", name: "000 Serial meter", category: "Meters", tracking: "serialized" });
     await command("item", { id: "stock-layout-seal", sku: "00002222", name: "000 Seal", category: "Supplies", tracking: "regular" });
     const orderId = crypto.randomUUID();

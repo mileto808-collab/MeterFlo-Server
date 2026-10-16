@@ -25,6 +25,7 @@ async function main() {
       contact: n % 2 ? "Buyer" : "", phone: n % 2 ? "0000123" : "", reference: `000${n}`,
       active: n !== 44,
     });
+    await command("category", { name: "Meters" });
     await command("item", { id: "catalog-special", sku: "000099", name: "000 Test meter",
       tracking: "serialized", equipment: "system", category: " Meters ", vendorId: "catalog-vendor-1",
       barcode: "00000009", manufacturer: "Test maker", reorderPoint: 4 });

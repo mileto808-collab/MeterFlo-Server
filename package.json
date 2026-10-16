@@ -30,6 +30,8 @@
     "test:inventory-stock-exports": "tsx --test tests/inventory-stock-export.test.ts",
     "test:inventory-catalog-exports": "tsx --test tests/inventory-catalog-export.test.ts",
     "test:inventory-operations": "tsx --test tests/inventory-operations.test.ts",
+    "test:inventory-categories": "tsx --test tests/inventory-categories.test.ts",
+    "test:inventory-categories:browser": "node tests/inventory-categories-ui.cjs",
     "test:inventory-operations:browser": "node tests/inventory-operations-ui.cjs",
     "test:inventory-catalog:browser": "node tests/inventory-catalog-layout-ui.cjs",
     "test:inventory-stock-layout:browser": "node tests/inventory-stock-layout-ui.cjs",

@@ -52,7 +52,7 @@ export async function saveInventory(client: PoolClient, projectId: number, befor
         serialsBefore: prior?.serials || [], serialsAfter: b.serials };
     }).filter(b => b.before !== b.after || b.reservedBefore !== b.reservedAfter || JSON.stringify(b.serialsBefore) !== JSON.stringify(b.serialsAfter)),
   ];
-  const entityChanges = (["warehouses", "vendors", "items", "orders", "allocations", "counts", "returns", "shipmentHolds", "shipmentDrafts"] as const).flatMap(kind => {
+  const entityChanges: Array<{ field: string; before: unknown; after: unknown }> = (["warehouses", "vendors", "items", "orders", "allocations", "counts", "returns", "shipmentHolds", "shipmentDrafts"] as const).flatMap(kind => {
     const previous = new Map((before[kind] ?? []).map(value => [((value as any).id ?? (value as any).workOrderId), value]));
     const updates = (after[kind] ?? []).flatMap(value => {
       const id = (value as any).id ?? (value as any).workOrderId;
@@ -67,6 +67,8 @@ export async function saveInventory(client: PoolClient, projectId: number, befor
     }
     return updates;
   });
+  if (JSON.stringify(before.categories ?? []) !== JSON.stringify(after.categories ?? []))
+    entityChanges.push({ field: "categories", before: before.categories ?? [], after: after.categories ?? [] });
   await client.query("UPDATE public.inventory_state SET state=$2,updated_at=now() WHERE project_id=$1", [projectId, JSON.stringify(after)]);
   // These tables mirror the locked JSON state. Only changed rows need writes;
   // count/order metadata changes must not rewrite every warehouse's balances.

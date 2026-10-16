@@ -1,5 +1,5 @@
 import type { PoolClient } from "pg";
-import { emptyInventory, warehouseSchema, itemSchema, vendorSchema, allocationSchema, savedCountDraftSchema, type InventoryState } from "../shared/inventory";
+import { emptyInventory, warehouseSchema, itemSchema, vendorSchema, allocationSchema, savedCountDraftSchema, categoryNameSchema, categoryKey, type InventoryState } from "../shared/inventory";
 import { z } from "zod";
 import { mergeOrderHighWater, validateOrderNumbers } from "../shared/inventory-order-labels";
 import { countPayloadFits } from "../shared/inventory-count-limits";
@@ -36,6 +36,8 @@ export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: n
   }
   const s = backup.state;
   z.array(warehouseSchema).parse(s.warehouses); z.array(itemSchema).parse(s.items); z.array(vendorSchema).parse(s.vendors);
+  const categories = z.array(categoryNameSchema).parse(s.categories ?? []);
+  if (new Set(categories.map(categoryKey)).size !== categories.length) throw new Error("Duplicate inventory categories in backup.");
   if (!Array.isArray(s.stock) || !Array.isArray(s.allocations) || !Array.isArray(s.orders) || !Array.isArray(s.receipts) ||
     !Array.isArray(s.returns) || !Array.isArray(s.counts) || typeof s.operations !== "object") throw new Error("Incomplete inventory backup.");
   for (const a of s.allocations) {

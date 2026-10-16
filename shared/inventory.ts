@@ -26,6 +26,8 @@ export const warehouseSchema = z.object({
 });
 export const vendorSchema = z.object({ id, name: label, contact: optional, address: optional, phone: optional,
   email: z.string().email().or(z.literal("")).default(""), reference: optional, active: z.boolean().default(true) });
+export const categoryNameSchema = z.string().trim().min(1, "Enter a category name.").max(500);
+export const categoryKey = (name: string) => name.trim().toLowerCase();
 export const itemSchema = z.object({
   id, sku: label, name: label, description: optional, category: optional, unit: label.default("each"),
   tracking: z.enum(["regular", "serialized"]), equipment: z.enum(["none", "system", "module"]).default("none"),
@@ -56,7 +58,7 @@ export const savedCountDraftSchema = countDraftSchema.extend({
   savedBy: id, savedAt: z.string().datetime(),
 });
 export const inventoryCommandSchema = z.object({
-  operationId: z.string().uuid(), action: z.enum(["warehouse", "vendor", "item", "order", "release",
+  operationId: z.string().uuid(), action: z.enum(["warehouse", "vendor", "item", "category", "order", "release",
     "cancel", "unrelease", "archiveOrder", "restoreOrder", "numberOrders", "receive", "dispatch", "accept", "assemble", "countStart", "countPost", "countCancel", "countSaveDraft",
     "assign", "prepareUse", "returnAccept", "returnRelease", "reconcileWorkOrder", "closeOrder", "resolveTransit", "resolveHold",
     "shipmentDraftSave", "shipmentDraftPrepare", "shipmentDraftUnlock", "shipmentDraftDelete", "shipmentDraftClaim"]),
@@ -83,19 +85,30 @@ export type InventoryReceipt = { id: string; action: string; reference: string; 
   holdDisposition?: HoldDisposition };
 export type EquipmentReturn = Disposition & { id: string; workOrderId: number; status: "pending" | "quarantine" | "released"; itemId?: string };
 export type InventoryState = { warehouses: Warehouse[]; vendors: Vendor[]; items: InventoryItem[]; stock: Stock[];
+  categories?: string[];
   orderNumberCounters?: Record<string, number>;
   orders: InventoryOrder[]; counts: InventoryCount[]; allocations: WorkAllocation[];
   receipts: InventoryReceipt[]; returns: EquipmentReturn[]; operations: Record<string, string>; revision: number;
   serialOccupancy?: { itemId: string; serial: string; workOrderId: number | null }[];
   shipmentHolds?: ShipmentHold[]; shipmentDrafts?: SavedShipmentDraft[] };
-export const emptyInventory = (): InventoryState => ({ warehouses: [], vendors: [], items: [], stock: [], orders: [],
+export const emptyInventory = (): InventoryState => ({ warehouses: [], vendors: [], categories: [], items: [], stock: [], orders: [],
   counts: [], allocations: [], receipts: [], returns: [], operations: {}, revision: 0, serialOccupancy: [], shipmentHolds: [] });
 export const commandPermission = (action: InventoryCommand["action"]) =>
   action === "closeOrder" ? inventoryPermissions.closeOrders :
   ["resolveTransit", "resolveHold"].includes(action) ? inventoryPermissions.resolveExceptions :
   ["archiveOrder", "restoreOrder"].includes(action) ? inventoryPermissions.purchase :
-  ["warehouse", "vendor", "item", "numberOrders"].includes(action) ? inventoryPermissions.maintain :
+  ["warehouse", "vendor", "item", "category", "numberOrders"].includes(action) ? inventoryPermissions.maintain :
   ["receive", "accept", "returnAccept", "returnRelease"].includes(action) ? inventoryPermissions.receive :
   action === "assemble" ? inventoryPermissions.assemble : action.startsWith("count") ? inventoryPermissions.count :
   action === "reconcileWorkOrder" ? inventoryPermissions.count :
   ["assign", "prepareUse"].includes(action) ? inventoryPermissions.assign : null;
+
+// Legacy free-text category values remain selectable without a destructive migration.
+export function inventoryCategoryNames(state: Pick<InventoryState, "categories" | "items">): string[] {
+  const names = new Map<string, string>();
+  for (const name of [...(state.categories ?? []), ...state.items.map(item => item.category)]) {
+    const key = categoryKey(name);
+    if (key && !names.has(key)) names.set(key, name);
+  }
+  return [...names.values()].sort((a, b) => a.localeCompare(b));
+}

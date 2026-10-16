@@ -429,6 +429,14 @@ For enabled projects the file/JSON, external-database and Customer API Import pa
 
 Use IDs from the project's inventory, not warehouse names or SKUs. Serialized quantities must equal serial count. Omitting the field leaves assignments unchanged; sending `[]` releases existing open assignments. Invalid or unavailable assignments roll back that work-order row. Completed consumption cannot be overwritten by an import. The importing user needs assign permission and warehouse access. Scheduled file/DB imports require an authorized `file_import` account; configure its role, project membership and warehouse access before importing allocations. API Import safe updates intentionally do not overwrite inventory assignments; assign only during creation.
 
+## Item categories
+
+The **Categories** tab lists project-specific category names and item usage counts, with the same search, filters, adaptive pagination, and CSV/Excel/PDF tools as the other inventory lists. Users with **Maintain inventory** (`inventory.maintain`) can create categories; users with view access can browse them.
+
+Item details uses a category dropdown. **None** stores an empty category; category names must already exist in this project. Existing free-text classifications remain available and are retained when an item's category is cleared. Category creation trims surrounding whitespace and rejects case-insensitive duplicates. Categories persist in inventory JSON backups, including categories not yet assigned to any items. Older backups without a category registry remain compatible.
+
+Checks: `npm run test:inventory-categories`. For the browser check, create a disposable fixture with `npx tsx tests/support/inventory-ui-fixture.ts create`, run `npm run test:inventory-categories:browser`, then clean up with `npx tsx tests/support/inventory-ui-fixture.ts cleanup`.
+
 ## API and mobile contract
 
 `GET /api/projects/:projectId` includes `inventoryEnabled` (default false). `GET /api/projects/:projectId/mobile/sync/download` adds `inventoryAllocation` to downloaded work orders and a top-level `inventory` object: `{contractVersion:1,enabled,items,warehouses}`. Catalog and authorized warehouse data accompany the assignments. Warehouse IDs and item IDs are project-scoped.
