@@ -45,6 +45,7 @@ export function InventoryCatalogWorkspace({ kind, items, vendors, projectName, t
   const [resultsElement, setResultsElement] = useState<HTMLDivElement | null>(null);
   const rowHeightRef = useRef(0);
   const containerWidthRef = useRef(0);
+  const containerHeightRef = useRef(0);
   const isItems = kind === "items";
   const categories = useMemo(() => [...new Set(items.map(item => item.category.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [items]);
   const matchingItems = useMemo(() => {
@@ -119,8 +120,10 @@ export function InventoryCatalogWorkspace({ kind, items, vendors, projectName, t
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         const width = container.clientWidth;
-        if (containerWidthRef.current && Math.abs(width - containerWidthRef.current) > 2) rowHeightRef.current = 0;
+        if (Math.abs(width - containerWidthRef.current) > 2 ||
+            Math.abs(container.clientHeight - containerHeightRef.current) > 2) rowHeightRef.current = 0;
         containerWidthRef.current = width;
+        containerHeightRef.current = container.clientHeight;
         const mountedRows = [...container.querySelectorAll<HTMLElement>("[data-catalog-row]")];
         const height = mountedRows.reduce((maximum, row) => Math.max(maximum, row.getBoundingClientRect().height), 0);
         if (height > 0) rowHeightRef.current = Math.max(rowHeightRef.current, height);

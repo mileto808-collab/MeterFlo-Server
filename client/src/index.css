@@ -286,3 +286,214 @@
     inset: -1px;
   }
 }
+
+/*
+ * Rotated field phones often cross Tailwind's md breakpoint despite still
+ * having a short, touch-first viewport. Keep inventory navigation in its
+ * compact mode and let opened toolbars scroll within the remaining height.
+ */
+@media (orientation: landscape) and (pointer: coarse) and (max-height: 600px) and (max-width: 960px) {
+  .inventory-workspace-shell {
+    padding: 0.5rem !important;
+  }
+
+  .inventory-sticky-header {
+    padding-bottom: 0.5rem !important;
+  }
+
+  .inventory-sticky-header > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 0.25rem;
+  }
+
+  .inventory-desktop-heading,
+  .inventory-desktop-action,
+  .inventory-desktop-tabs {
+    display: none !important;
+  }
+
+  [data-testid="button-toggle-inventory-stats"] {
+    width: 2.25rem;
+    padding-inline: 0;
+  }
+
+  [data-testid="button-toggle-inventory-stats"] > span,
+  [data-testid="button-toggle-inventory-stats"] > svg:not(:first-child) {
+    display: none !important;
+  }
+
+  [data-testid="button-toggle-inventory-stats"] > svg:first-child {
+    margin-right: 0;
+  }
+
+  .inventory-mobile-menu {
+    display: block !important;
+    right: 3rem;
+  }
+
+  .inventory-mobile-tools-toggle {
+    display: flex !important;
+  }
+
+  .inventory-mobile-tools-content[data-open="false"] {
+    display: none !important;
+  }
+
+  .inventory-mobile-tools-content[data-open="true"] {
+    display: block !important;
+    max-height: min(38dvh, 10rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-bottom: 0.25rem;
+    scrollbar-width: thin;
+  }
+
+  /* Keep each workspace title and its collapsed tools affordance on one row. */
+  [data-testid$="-subheader"] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: 0.5rem;
+    padding-bottom: 0.25rem !important;
+  }
+
+  [data-testid$="-subheader"] > div:first-child {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+  }
+
+  [data-testid$="-subheader"] > div:first-child p.hidden {
+    display: none !important;
+  }
+
+  [data-testid$="-subheader"] > .inventory-mobile-tools {
+    display: contents;
+  }
+
+  [data-testid$="-subheader"] .inventory-mobile-tools-toggle {
+    grid-column: 2;
+    grid-row: 1;
+    width: auto !important;
+    min-width: 2.5rem;
+    margin: 0 !important;
+    justify-content: center;
+    padding-inline: 0.5rem;
+  }
+
+  [data-testid$="-subheader"] .inventory-mobile-tools-toggle > span:first-child {
+    gap: 0;
+    font-size: 0;
+  }
+
+  [data-testid$="-subheader"] .inventory-mobile-tools-content {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+
+  [data-testid$="-subheader"]:has(.inventory-mobile-tools-content[data-open="true"]) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  [data-testid$="-subheader"]:has(.inventory-mobile-tools-content[data-open="true"]) > div:first-child {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  [data-testid$="-subheader"]:has(.inventory-mobile-tools-content[data-open="true"]) .inventory-mobile-tools-toggle {
+    grid-column: 1;
+    grid-row: 2;
+    justify-self: start;
+  }
+
+  [data-testid$="-subheader"] .inventory-mobile-tools-content[data-open="true"] {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    max-height: min(25dvh, 6rem);
+  }
+
+  .inventory-stock-card {
+    display: grid;
+    grid-template-columns: minmax(7rem, 1.05fr) minmax(6rem, 0.85fr) minmax(17rem, 1.8fr);
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem 0.5rem;
+  }
+
+  .inventory-stock-card-layout {
+    display: contents;
+  }
+
+  .inventory-stock-item,
+  .inventory-stock-location {
+    min-width: 0;
+  }
+
+  .inventory-stock-item h3,
+  .inventory-stock-location > p:first-child {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .inventory-stock-item > div:first-child {
+    min-width: 0;
+    flex-wrap: nowrap;
+  }
+
+  .inventory-stock-item h3 {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .inventory-stock-serial-badge {
+    flex-shrink: 0;
+    white-space: nowrap;
+    padding-inline: 0.35rem;
+    font-size: 0.65rem;
+  }
+
+  .inventory-stock-item > p,
+  .inventory-stock-location > p + p {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    overflow-wrap: normal;
+  }
+
+  .inventory-stock-category {
+    display: none;
+  }
+
+  .inventory-stock-location {
+    border-left: 1px solid hsl(var(--border));
+    padding-left: 0.5rem;
+  }
+
+  .inventory-stock-quantity {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .inventory-stock-quantity-values {
+    min-width: 0;
+    gap: 0.5rem;
+    border-top: 0;
+    padding-top: 0;
+  }
+
+  .inventory-stock-serial-action {
+    margin-top: 0;
+    border-top: 0;
+    padding-top: 0;
+  }
+
+  .inventory-stock-serial-action button {
+    height: 2rem;
+    white-space: nowrap;
+    padding-inline: 0.5rem;
+    font-size: 0.75rem;
+  }
+}

@@ -136,6 +136,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [orderResultsElement, setOrderResultsElement] = useState<HTMLDivElement | null>(null);
   const orderRowHeightRef = useRef(0);
   const orderContainerWidthRef = useRef(0);
+  const orderContainerHeightRef = useRef(0);
   const [orderRowsPerPage, setOrderRowsPerPage] = useState(1);
   const [orderToClear, setOrderToClear] = useState<InventoryOrder | null>(null);
   const requestOrderTransition = (transition: () => void) => {
@@ -285,10 +286,12 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         const width = container.clientWidth;
-        if (orderContainerWidthRef.current && Math.abs(width - orderContainerWidthRef.current) > 2) {
+        if (Math.abs(width - orderContainerWidthRef.current) > 2 ||
+            Math.abs(container.clientHeight - orderContainerHeightRef.current) > 2) {
           orderRowHeightRef.current = 0;
         }
         orderContainerWidthRef.current = width;
+        orderContainerHeightRef.current = container.clientHeight;
         const rows = [...container.querySelectorAll<HTMLElement>("[data-order-id]")];
         const rowHeight = rows.reduce((height, row) => {
           const details = row.querySelector<HTMLDetailsElement>("details[open]");
@@ -334,8 +337,17 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   useEffect(() => {
     const main = inventoryMainRef.current;
     if (!main) return;
+    // Inventory owns its record scrollers. Letting the app-level scroller move
+    // as a phone rotates can strand the section menu above the viewport.
+    const host = main.parentElement;
+    const previousOverflow = host?.style.overflow;
+    if (host) {
+      host.scrollTop = 0;
+      host.style.overflow = "hidden";
+    }
     const viewport = window.visualViewport;
     const fit = () => {
+      if (host) host.scrollTop = 0;
       const height = viewport?.height ?? window.innerHeight;
       const viewportTop = viewport?.offsetTop ?? 0;
       const actualTop = main.getBoundingClientRect().top;
@@ -352,6 +364,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       window.removeEventListener("resize", fit);
       viewport?.removeEventListener("resize", fit);
       viewport?.removeEventListener("scroll", fit);
+      if (host) host.style.overflow = previousOverflow ?? "";
     };
   }, [isLoading]);
 
@@ -688,7 +701,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     command.mutate({ action: "countPost", data: { id: activeCount.id, draftRevision: countDraftRevision, lines: countLines, reason: countReason } }, { onSuccess: () => setActiveCount(null) });
   };
 
-  return <main ref={inventoryMainRef} className="mx-auto flex h-[calc(100dvh-72px)] min-h-0 w-full max-w-7xl flex-col overflow-hidden p-2 sm:p-4 md:p-7" data-testid="inventory-workspace">
+  return <main ref={inventoryMainRef} className="inventory-workspace-shell mx-auto flex h-[calc(100dvh-72px)] min-h-0 w-full max-w-7xl flex-col overflow-hidden p-2 sm:p-4 md:p-7" data-testid="inventory-workspace">
     <Dialog open={!!pendingOrderTransition} onOpenChange={open => { if (!open && !orderSaving.current) setPendingOrderTransition(null); }}>
       <DialogContent onEscapeKeyDown={event => { if (orderSaving.current) event.preventDefault(); }} onPointerDownOutside={event => event.preventDefault()}>
         <DialogHeader><DialogTitle>Unsaved order changes</DialogTitle><DialogDescription>Save this purchase or transfer draft before continuing, discard the unsaved changes, or stay here. Saving a draft does not release an order or change stock.</DialogDescription></DialogHeader>
@@ -763,9 +776,9 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     </Dialog>
     {isError && <Alert variant="destructive"><AlertTitle>Inventory refresh failed</AlertTitle><AlertDescription>The last loaded inventory is shown. Your count entries were kept; retry before relying on current stock.</AlertDescription><Button variant="outline" className="mt-2" onClick={() => refetch()}>Retry inventory refresh</Button></Alert>}
     <Tabs value={inventoryTab} onValueChange={setInventoryTab} className="flex min-h-0 flex-1 flex-col gap-1.5 sm:gap-3 [&>[role=tabpanel]]:mt-0 md:[&>[role=tabpanel]]:mt-2">
-      <div className="relative z-10 shrink-0 space-y-2 border-b bg-background pb-2 sm:space-y-3 sm:pb-3" data-testid="inventory-sticky-header">
+      <div className="inventory-sticky-header relative z-10 shrink-0 space-y-2 border-b bg-background pb-2 sm:space-y-3 sm:pb-3" data-testid="inventory-sticky-header">
         <div className="flex min-w-0 items-center justify-between gap-2 sm:items-center">
-          <div className="hidden min-w-0 md:block">
+          <div className="inventory-desktop-heading hidden min-w-0 md:block">
             <p className="mb-0.5 hidden text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground sm:block">Project operations</p>
             <h1 className="text-xl font-semibold tracking-tight sm:text-3xl">Inventory</h1>
             <p className="mt-1 hidden text-sm text-muted-foreground sm:block">Know what’s on hand, where it lives, and which serial leaves with each crew.</p>
@@ -785,9 +798,9 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
               <span className="hidden sm:inline">{showInventoryStats ? "Hide Stats" : "Show Stats"}</span>
               {showInventoryStats ? <ChevronUp className="ml-1 hidden h-4 w-4 sm:block" /> : <ChevronDown className="ml-1 hidden h-4 w-4 sm:block" />}
             </Button>
-            {can("inventory.maintain") && <Button size="sm" variant="outline" className="hidden h-9 px-3 md:inline-flex" aria-label="Add location" onClick={() => openResource("warehouse")}><Plus className="mr-1.5 h-4 w-4" />Location</Button>}
-            {can("inventory.maintain") && <Button size="sm" className="hidden h-9 px-3 md:inline-flex" aria-label="Add new item" onClick={() => openResource("item")}><Plus className="mr-1.5 h-4 w-4" />New item</Button>}
-            {(can("inventory.purchase") || can("inventory.transfer")) && <Button size="sm" className="hidden h-9 px-3 md:inline-flex" aria-label="Build an order draft" onClick={() => { setInventoryTab("orders"); startNewOrderDraft(); }}><Plus className="mr-1.5 h-4 w-4" />Build an order draft</Button>}
+            {can("inventory.maintain") && <Button size="sm" variant="outline" className="inventory-desktop-action hidden h-9 px-3 md:inline-flex" aria-label="Add location" onClick={() => openResource("warehouse")}><Plus className="mr-1.5 h-4 w-4" />Location</Button>}
+            {can("inventory.maintain") && <Button size="sm" className="inventory-desktop-action hidden h-9 px-3 md:inline-flex" aria-label="Add new item" onClick={() => openResource("item")}><Plus className="mr-1.5 h-4 w-4" />New item</Button>}
+            {(can("inventory.purchase") || can("inventory.transfer")) && <Button size="sm" className="inventory-desktop-action hidden h-9 px-3 md:inline-flex" aria-label="Build an order draft" onClick={() => { setInventoryTab("orders"); startNewOrderDraft(); }}><Plus className="mr-1.5 h-4 w-4" />Build an order draft</Button>}
           </div>
         </div>
         <div
@@ -803,7 +816,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           <Metric label="Open orders" value={orderItems.filter(order => ["draft", "released", "partial"].includes(order.status)).length} detail="Purchases and transfers" icon={<ArrowLeftRight className="h-4 w-4" />} />
           <Metric label="Open counts" value={state.counts.filter(count => count.status === "open").length} detail={`Ledger revision ${state.revision}`} icon={<ClipboardList className="h-4 w-4" />} />
         </div>
-        <div className="!mt-0 absolute left-0 right-12 top-0 md:hidden">
+        <div className="inventory-mobile-menu !mt-0 absolute left-0 right-12 top-0 md:hidden">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button type="button" variant="outline" className="h-9 w-full justify-between" aria-label={`Inventory sections, current: ${inventoryTabs.find(tab => tab.value === inventoryTab)?.label ?? "Stock & search"}`} data-testid="inventory-mobile-menu">
@@ -821,7 +834,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        <TabsList className="hidden h-auto w-full flex-wrap justify-start gap-1 md:flex">
+        <TabsList className="inventory-desktop-tabs hidden h-auto w-full flex-wrap justify-start gap-1 md:flex">
           <TabsTrigger value="stock">Stock &amp; search</TabsTrigger>
           <TabsTrigger value="locations">Locations</TabsTrigger>
           <TabsTrigger value="items">Items</TabsTrigger>

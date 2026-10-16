@@ -35,6 +35,7 @@ export function InventoryRecordsWorkspace({ kind, title, description, dataset, p
   const [resultsElement, setResultsElement] = useState<HTMLDivElement | null>(null);
   const rowHeightRef = useRef(0);
   const containerWidthRef = useRef(0);
+  const containerHeightRef = useRef(0);
   const matchingRows = useMemo(() => filterOperationsRows(dataset, query, selected, sort), [dataset, query, selected, sort]);
   const activeFilterCount = dataset.filters.reduce((count, filter) => count + Number(!!selected[filter.key] && selected[filter.key] !== "all"), 0) +
     Number(sort !== dataset.defaultSort);
@@ -73,10 +74,19 @@ export function InventoryRecordsWorkspace({ kind, title, description, dataset, p
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         const width = container.clientWidth;
-        if (containerWidthRef.current && Math.abs(width - containerWidthRef.current) > 2) rowHeightRef.current = 0;
+        if (Math.abs(width - containerWidthRef.current) > 2 ||
+            Math.abs(container.clientHeight - containerHeightRef.current) > 2) rowHeightRef.current = 0;
         containerWidthRef.current = width;
+        containerHeightRef.current = container.clientHeight;
         const rows = [...container.querySelectorAll<HTMLElement>("[data-operations-row]")];
-        const height = rows.reduce((maximum, row) => Math.max(maximum, row.getBoundingClientRect().height), 0);
+        const height = rows.reduce((maximum, row) => {
+          // Expanded evidence stays scrollable without permanently reducing page capacity.
+          const expanded = [...row.querySelectorAll<HTMLDetailsElement>("details[open]")]
+            .filter(detail => !detail.parentElement?.closest("details[open]"))
+            .reduce((total, detail) => total + Math.max(0, detail.getBoundingClientRect().height -
+              (detail.querySelector("summary")?.getBoundingClientRect().height ?? 0)), 0);
+          return Math.max(maximum, row.getBoundingClientRect().height - expanded);
+        }, 0);
         if (height > 0) rowHeightRef.current = Math.max(rowHeightRef.current, height);
         const next = Math.max(1, Math.min(100, Math.floor((container.clientHeight - 8) / ((rowHeightRef.current || 112) + 8))));
         setRowsPerPage(current => current === next ? current : next);

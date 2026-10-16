@@ -30,6 +30,7 @@ export function InventoryStockWorkspace({ rows, projectName, timezone, onRefresh
   const [resultsElement, setResultsElement] = useState<HTMLDivElement | null>(null);
   const rowHeightRef = useRef(0);
   const containerWidthRef = useRef(0);
+  const containerHeightRef = useRef(0);
 
   const categories = useMemo(() => [...new Set(rows.map(row => row.item.category.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [rows]);
   const warehouses = useMemo(() => [...new Map(rows.map(row => [row.warehouse.id, row.warehouse])).values()].sort((a, b) => a.name.localeCompare(b.name)), [rows]);
@@ -80,8 +81,10 @@ export function InventoryStockWorkspace({ rows, projectName, timezone, onRefresh
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         const width = container.clientWidth;
-        if (containerWidthRef.current && Math.abs(width - containerWidthRef.current) > 2) rowHeightRef.current = 0;
+        if (Math.abs(width - containerWidthRef.current) > 2 ||
+            Math.abs(container.clientHeight - containerHeightRef.current) > 2) rowHeightRef.current = 0;
         containerWidthRef.current = width;
+        containerHeightRef.current = container.clientHeight;
         const mountedRows = [...container.querySelectorAll<HTMLElement>("[data-stock-row]")];
         const height = mountedRows.reduce((maximum, row) => Math.max(maximum, row.getBoundingClientRect().height), 0);
         if (height > 0) rowHeightRef.current = Math.max(rowHeightRef.current, height);
@@ -198,31 +201,33 @@ export function InventoryStockWorkspace({ rows, projectName, timezone, onRefresh
         {visibleRows.length ? <div className="space-y-2">
           {visibleRows.map(row => {
             const available = row.quantity - row.reserved;
-            return <article key={`${row.warehouseId}/${row.itemId}`} data-stock-row data-stock-key={`${row.warehouseId}/${row.itemId}`} className="min-w-0 rounded-md border bg-card px-2.5 py-2 sm:px-4 sm:py-3">
-              <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_auto] sm:items-center sm:gap-3">
-                <div className="min-w-0">
+            return <article key={`${row.warehouseId}/${row.itemId}`} data-stock-row data-stock-key={`${row.warehouseId}/${row.itemId}`} className="inventory-stock-card min-w-0 rounded-md border bg-card px-2.5 py-2 sm:px-4 sm:py-3">
+              <div className="inventory-stock-card-layout grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_auto] sm:items-center sm:gap-3">
+                <div className="inventory-stock-item min-w-0">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <h3 className="break-words font-medium">{row.item.name}</h3>
-                    {row.item.tracking === "serialized" && <Badge variant="outline">Serial tracked</Badge>}
+                    {row.item.tracking === "serialized" && <Badge variant="outline" className="inventory-stock-serial-badge">Serial tracked</Badge>}
                   </div>
                   <p className="mt-0.5 break-all font-mono text-xs text-muted-foreground">{row.item.sku}</p>
-              {row.item.category && <p className="mt-1 break-words text-xs text-muted-foreground">{row.item.category}</p>}
+                  {row.item.category && <p className="inventory-stock-category mt-1 break-words text-xs text-muted-foreground">{row.item.category}</p>}
                 </div>
-                <div className="min-w-0 sm:border-l sm:pl-4">
+                <div className="inventory-stock-location min-w-0 sm:border-l sm:pl-4">
                   <p className="break-words text-sm">{row.warehouse.name}</p>
                   <p className="break-all font-mono text-xs text-muted-foreground">{row.warehouse.code}</p>
                 </div>
-                <div className="grid grid-cols-3 gap-2 border-t pt-2 text-left sm:min-w-48 sm:border-0 sm:pt-0">
-                  <div><p className="text-[10px] uppercase tracking-wide text-muted-foreground">On hand</p><p className="font-mono tabular-nums">{row.quantity}</p></div>
-                  <div><p className="text-[10px] uppercase tracking-wide text-muted-foreground">Reserved</p><p className="font-mono tabular-nums">{row.reserved}</p></div>
-                  <div><p className="text-[10px] uppercase tracking-wide text-muted-foreground">Available</p><p className="font-mono font-semibold tabular-nums">{available}</p></div>
+                <div className="inventory-stock-quantity min-w-0">
+                  <div className="inventory-stock-quantity-values grid grid-cols-3 gap-2 border-t pt-2 text-left sm:min-w-48 sm:border-0 sm:pt-0">
+                    <div><p className="text-[10px] uppercase tracking-wide text-muted-foreground">On hand</p><p className="font-mono tabular-nums">{row.quantity}</p></div>
+                    <div><p className="text-[10px] uppercase tracking-wide text-muted-foreground">Reserved</p><p className="font-mono tabular-nums">{row.reserved}</p></div>
+                    <div><p className="text-[10px] uppercase tracking-wide text-muted-foreground">Available</p><p className="font-mono font-semibold tabular-nums">{available}</p></div>
+                  </div>
+                  {row.serials.length > 0 && <div className="inventory-stock-serial-action mt-2 border-t pt-2 sm:mt-3">
+                    <Button size="sm" variant="outline" aria-label={`View serials (${row.serials.length}) for ${row.item.sku} at ${row.warehouse.code}`} onClick={() => onViewSerials(row)}>
+                      View serials ({row.serials.length})
+                    </Button>
+                  </div>}
                 </div>
               </div>
-              {row.serials.length > 0 && <div className="mt-2 border-t pt-2 sm:mt-3">
-                <Button size="sm" variant="outline" aria-label={`View serials (${row.serials.length}) for ${row.item.sku} at ${row.warehouse.code}`} onClick={() => onViewSerials(row)}>
-                  View serials ({row.serials.length})
-                </Button>
-              </div>}
             </article>;
           })}
         </div> : <div className="grid min-h-40 place-items-center rounded-md border border-dashed bg-muted/15 px-4 py-8 text-center" role="status">

@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { ChevronDown, ChevronUp, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { MOBILE_MEDIA_QUERY } from "@/hooks/use-mobile";
 
 type InventoryMobileToolsProps = {
   children: ReactNode;
@@ -9,15 +10,18 @@ type InventoryMobileToolsProps = {
 };
 
 export function InventoryMobileTools({ children, label = "Search & Tools", tab }: InventoryMobileToolsProps) {
-  const [open, setOpen] = useState(() => typeof window !== "undefined" && window.innerWidth >= 768);
+  const [open, setOpen] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return !window.matchMedia(MOBILE_MEDIA_QUERY).matches;
+  });
 
   return (
-    <div className="shrink-0">
+    <div className="inventory-mobile-tools shrink-0">
       <Button
         type="button"
         variant="outline"
         size="sm"
-        className="mb-2 flex h-9 w-full justify-between md:hidden"
+        className="inventory-mobile-tools-toggle mb-2 flex h-9 w-full justify-between md:hidden"
         aria-expanded={open}
         aria-controls={`inventory-mobile-tools-${tab}`}
         data-testid={`inventory-mobile-tools-${tab}-toggle`}
@@ -30,7 +34,14 @@ export function InventoryMobileTools({ children, label = "Search & Tools", tab }
         {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
       </Button>
       {/* Keep controls mounted while collapsed so filters, focus, and draft inputs survive. */}
-      <div id={`inventory-mobile-tools-${tab}`} data-testid={`inventory-mobile-tools-${tab}`} className={`${open ? "block" : "hidden"} md:block`}>{children}</div>
+      <div
+        id={`inventory-mobile-tools-${tab}`}
+        data-testid={`inventory-mobile-tools-${tab}`}
+        data-open={open}
+        className={`inventory-mobile-tools-content ${open ? "block" : "hidden"} md:block`}
+      >
+        {children}
+      </div>
     </div>
   );
 }

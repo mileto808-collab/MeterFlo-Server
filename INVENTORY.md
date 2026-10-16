@@ -11,6 +11,8 @@ On phones and narrow tablets, Inventory sections are selected from a compact men
 
 Phone layout regression: create the disposable operations fixture with `npx tsx tests/support/inventory-ui-fixture.ts create --operations`, run `node tests/inventory-phone-layout-ui.cjs`, then clean up with `npx tsx tests/support/inventory-ui-fixture.ts cleanup`. The check covers all nine sections at 360, 390 and 430 pixel widths.
 
+Landscape phones retain the section menu and collapsible tools rather than switching to desktop navigation or sidebar. Expanded landscape tools scroll within a bounded panel. Page capacity recalculates when the record area changes size, including when statistics or search/tools are hidden. Rotation regression: run `node tests/inventory-rotation-ui.cjs` with the disposable operations fixture; it seeds test stock only in that fixture and verifies all nine sections across portrait and 740×360, 844×390 and 915×412 landscape layouts.
+
 The Inventory page keeps its title, permission-available create actions, statistics toggle and inventory tabs in a sticky header while the page content scrolls. Statistics are collapsed by default; use **Show Stats** / **Hide Stats** to reveal or collapse the four inventory summary metrics. The tab menu wraps on narrow screens so the controls remain reachable without horizontal page overflow.
 
 ## Setup and permissions
