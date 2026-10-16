@@ -6,6 +6,7 @@ import { pool } from "../../server/db";
 import { storage } from "../../server/storage";
 import { createProjectSchema } from "../../server/projectDb";
 import { initializeInventory } from "../../server/inventoryMigration";
+import { applyInventoryCategorySchema } from "../../server/inventoryCategoryMigration";
 import { getProjectFilesPath } from "../../server/fileStorage";
 import path from "node:path";
 import { enableAuditing } from "../../server/auditContext";
@@ -33,6 +34,7 @@ async function main() {
   // registered at creation, not only during the server's startup scan.
   enableAuditing();
   await initializeInventory(pool);
+  await applyInventoryCategorySchema(pool);
   const suffix = randomUUID().slice(0, 8), password = `Fixture-${randomUUID()}!`;
   const admin = await storage.ensureAdministratorSubrole();
   const user = await storage.createLocalUser(`inventory-ui-${suffix}`, await bcrypt.hash(password, 4), "admin", "Inventory", "Fixture", null, admin.id);

@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 import { pool } from "../server/db";
 import { storage } from "../server/storage";
 import { initializeInventory } from "../server/inventoryMigration";
+import { applyInventoryCategorySchema } from "../server/inventoryCategoryMigration";
 import { createProjectSchema, getProjectWorkOrderStorage, backupProjectDatabase, restoreProjectDatabase } from "../server/projectDb";
 import { inventoryState, postInventory } from "../server/inventoryService";
 import { withAuditContext } from "../server/auditContext";
@@ -15,6 +16,7 @@ import { initializeAudit } from "../server/auditMigration";
 
 test("transactional completion, mobile usage, concurrency, import rollback, and inventory-aware restore", async () => {
   await initializeInventory(pool);
+  await applyInventoryCategorySchema(pool);
   await initializeAudit(pool);
   const suffix = randomUUID().slice(0, 8);
   const administrator = await storage.ensureAdministratorSubrole();
@@ -30,7 +32,11 @@ test("transactional completion, mobile usage, concurrency, import rollback, and 
   try {
     await command("warehouse", { id: "w", code: "w", name: "Main", type: "physical", address: "Test location" });
     await command("vendor", { id: "v", name: "Vendor" });
-    await command("item", { id: "meter", sku: "meter", name: "Meter", tracking: "serialized", equipment: "system" });
+    const categoryId = randomUUID();
+    await command("category", { name: "Meters" }, categoryId);
+    await command("item", { id: "meter", sku: "meter", name: "Meter", tracking: "serialized", equipment: "system", categoryId });
+    await command("categoryRename", { id: categoryId, newName: "Electric meters" });
+    assert.equal((await inventoryState(project.id)).items[0].categoryId, categoryId);
     await command("order", { id: "po", type: "purchase", destinationId: "w", vendorId: "v", lines: [{ itemId: "meter", quantity: 2 }] });
     await command("release", { orderId: "po" });
     const receiveId = randomUUID();

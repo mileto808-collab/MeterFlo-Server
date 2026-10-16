@@ -431,9 +431,38 @@ Use IDs from the project's inventory, not warehouse names or SKUs. Serialized qu
 
 ## Item categories
 
-The **Categories** tab lists project-specific category names and item usage counts, with the same search, filters, adaptive pagination, and CSV/Excel/PDF tools as the other inventory lists. Users with **Maintain inventory** (`inventory.maintain`) can create categories or use each row's **Edit** action; users with view access can browse them. Renaming updates all matching current item assignments and the category registry in one locked inventory transaction, including legacy case/whitespace variants. This is an application-level update, not a foreign-key cascade. Stock quantities and historical movement receipts remain unchanged; normal inventory audit records capture the changed category and item classifications.
+The **Categories** tab lists project-specific category names and item usage counts, with the same search, filters, adaptive pagination, and CSV/Excel/PDF tools as the other inventory lists. Users with **Maintain inventory** (`inventory.maintain`) can create categories or use each row's **Edit** action; users with view access can browse them. Categories have permanent UUIDs in `public.inventory_categories`. Items reference them through the nullable `inventory_items.category_id` column and a composite `(project_id, category_id)` foreign key. The database rejects nonexistent/cross-project assignments and deletion of assigned categories; category names are unique within each project regardless of capitalization.
 
-Item details uses a category dropdown. **None** stores an empty category; category names must already exist in this project. Existing free-text classifications remain available and are retained when an item's category is cleared. Category creation trims surrounding whitespace and rejects case-insensitive duplicates. Categories persist in inventory JSON backups, including categories not yet assigned to any items. Older backups without a category registry remain compatible.
+Item details selects category IDs while displaying names. **None** stores `NULL`; a real category named “None” is a distinct selectable category. Renaming updates the category record, inventory snapshot, and audit record atomically under the existing inventory lock. It does not rewrite item relationships or stock. API responses derive `item.category` labels for existing clients; persisted relationships use `categoryId`, not text. Older clients that omit `categoryId` may still select an existing name; invalid names cannot create categories implicitly. Inactive definitions retain existing assignments but cannot be newly assigned.
+
+Inventory JSON retains a portable `categoryCatalog` snapshot with IDs, names, and active status, plus item category IDs. The relational category table and foreign-key column are authoritative when reading inventory; snapshot/mirror writes remain in the same transaction. Project/full-system backups preserve IDs and unused categories. Restoring an older name-only backup builds category IDs, combining case/whitespace variants without losing item assignments. Stock, orders, receipts, and historical movement evidence are not rewritten by migration.
+
+### Applying the category-ID schema update
+
+This is schema revision **2**, not a same-schema code-only update. Prepare and test the candidate before stopping a standalone installation, and retain a verified database/files backup. Do not activate old compiled code against migrated category data.
+
+- **This Replit development workspace:** `npm run migrate:inventory-categories -- --development` applies `migrations/inventory-category-ids.sql` and backfills existing inventories. This has already been applied here.
+- **Replit-managed production:** publish the tested update and review the additive schema changes in Publish. Do not run the standalone maintenance command against the managed production database. Existing legacy inventory data upgrades transactionally when first accessed after the schema is present.
+- **Standalone Windows/Linux:** during an authorized maintenance window, stop the application, back up the database/files using the deployment guide, and use the new candidate with the installation's protected configuration. Run `npm.cmd run migrate:inventory-categories -- --standalone` in Windows PowerShell (use `npm` on Linux). The command applies the schema and backfills all project inventories without changing stock or receipts. Build with `npm.cmd run build`, record/review schema revision 2 through the controlled release process, then restart using the existing deployment procedure.
+- Verify **Categories**, an assigned item's category, a category rename, and a backup/restore in staging before rolling the update out to customer installations. Native Windows/PM2 execution still requires that environment; Linux development tests do not establish Windows acceptance.
+
+The maintenance command is repeatable and verifies existing IDs without reissuing them. The release manifest declares the core-owned `core.inventory-category-ids` migration and its checksum. After staging verification and controlled database maintenance, the operator records the matching migration approval and installed schema revision through the existing release process; approval alone does not execute SQL. Application startup never executes this new schema DDL. Backfills from legacy data and old backups use locked transactions.
+
+Before restarting a migrated standalone installation, merge these fields into its protected, ignored root `meterflo.instance.json` (copy `deploy/meterflo.instance.example.json` first if none exists). Preserve all existing extension declarations, core-source/baseline settings, and other migration approvals:
+
+```json
+{
+  "installedSchemaVersion": 2,
+  "approvedMigrations": [
+    {
+      "id": "core.inventory-category-ids",
+      "sha256": "69e17e824e3b2f6fff0e3e2f653b339f0159bb5c21f8deb37ebfab49bc22d6ba"
+    }
+  ]
+}
+```
+
+Do not record approval before the schema/data migration and verification succeed. Missing/mismatched approval deliberately blocks startup. This development workspace has recorded approval after successful migration and tests. For managed production, include the reviewed instance metadata needed by the published build while retaining the schema application through Publish; do not run standalone DDL against managed production.
 
 Checks: `npm run test:inventory-categories`. For the browser check, create a disposable fixture with `npx tsx tests/support/inventory-ui-fixture.ts create`, run `npm run test:inventory-categories:browser`, then clean up with `npx tsx tests/support/inventory-ui-fixture.ts cleanup`.
 

@@ -47,6 +47,7 @@ const TABLE_PRIMARY_KEYS: Record<string, string[]> = {
   file_import_history: ["id"],
   external_database_configs: ["id"],
   inventory_state: ["project_id"],
+  inventory_categories: ["project_id", "id"],
   inventory_items: ["project_id", "id"],
   inventory_quantities: ["project_id", "warehouse_id", "item_id"],
   inventory_movements: ["id"],
@@ -78,6 +79,7 @@ const TABLE_RESTORE_ORDER = [
   "file_import_history",
   "external_database_configs",
   "inventory_state",
+  "inventory_categories",
   "inventory_items",
   "inventory_quantities",
   "inventory_movements",
@@ -327,7 +329,7 @@ export async function restoreFullSystemData(
       if (project.database_name && !schemas.has(project.database_name))
         throw new Error(`Project ${project.name}: work-order snapshot is missing.`);
     }
-    for (const table of ["inventory_state", "inventory_items", "inventory_quantities", "inventory_movements"]) {
+    for (const table of ["inventory_state", "inventory_categories", "inventory_items", "inventory_quantities", "inventory_movements"]) {
       for (const row of backupData.mainDatabase[table] ?? []) {
         const project = backupData.mainDatabase.projects?.find(p => p.id === row.project_id);
         if (!project) throw new Error(`Inventory backup has no project configuration for project ${row.project_id}.`);

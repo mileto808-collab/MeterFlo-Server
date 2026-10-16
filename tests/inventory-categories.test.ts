@@ -1,128 +1,129 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { emptyInventory, inventoryCategoryNames, itemSchema, commandPermission, inventoryCommandSchema, type InventoryState, type InventoryCommand } from "../shared/inventory";
+import { emptyInventory, inventoryCategoryNames, itemSchema, commandPermission, type InventoryState, type InventoryCommand } from "../shared/inventory";
 import { applyInventoryCommand } from "../shared/inventory-engine";
+import { normalizeInventoryCategories, inventoryCategoryLabels } from "../shared/inventory-categories";
 import { validateInventoryBackup } from "../server/inventoryBackup";
 import { buildOperationsDataset, filterOperationsRows } from "../client/src/lib/inventory-operations-data";
 import { operationsCsv } from "../client/src/lib/inventory-operations-export";
 
-const post = (s: InventoryState, action: InventoryCommand["action"], data: Record<string, unknown>, operationId = randomUUID()) =>
-  applyInventoryCommand(s, { action, data, operationId }, "test-maintainer", true).state;
+const post = (state: InventoryState, action: InventoryCommand["action"], data: Record<string, unknown>, operationId = randomUUID()) =>
+  applyInventoryCommand(state, { action, data, operationId }, "test-maintainer", true).state;
 const item = { id: "meter", sku: "MTR", name: "Meter", tracking: "regular" };
 
-test("category commands require maintain permission, validate names, and replay without duplicating", () => {
+test("categories have stable IDs, maintain permission, project scope, and idempotent creation", () => {
   assert.equal(commandPermission("category"), "inventory.maintain");
-  assert.equal(inventoryCommandSchema.parse({ operationId: randomUUID(), action: "category", data: { name: "Meters" } }).action, "category");
-  const initial = emptyInventory();
-  const operationId = randomUUID();
-  const saved = post(initial, "category", { name: "  Meters  " }, operationId);
-  assert.deepEqual(saved.categories, ["Meters"]);
+  assert.equal(commandPermission("categoryRename"), "inventory.maintain");
+  const initial = emptyInventory(), id = randomUUID();
+  const saved = post(initial, "category", { name: " Meters " }, id);
+  assert.deepEqual(saved.categoryCatalog, [{ id, name: "Meters", active: true }]);
+  assert.equal(saved.categories, undefined);
   assert.deepEqual(initial.categories, []);
-  assert.deepEqual(post(saved, "category", { name: "  Meters  " }, operationId), saved);
+  assert.deepEqual(post(saved, "category", { name: " Meters " }, id), saved);
   assert.throws(() => post(saved, "category", { name: "meters" }), /already exists/);
-  for (const name of ["", "  ", "x".repeat(501)])
-    assert.throws(() => post(saved, "category", { name }));
-  const other = post(emptyInventory(), "category", { name: "Meters" });
-  assert.deepEqual(other.categories, ["Meters"], "Categories are project-scoped");
+  for (const name of ["", "  ", "x".repeat(501)]) assert.throws(() => post(saved, "category", { name }));
+  assert.deepEqual(inventoryCategoryNames(post(emptyInventory(), "category", { name: "Meters" })), ["Meters"]);
 });
 
-test("item category must be selected from project categories, and None is an empty string", () => {
-  let state = post(emptyInventory(), "category", { name: "Meters" });
-  state = post(state, "item", { ...item, category: "meters" });
-  assert.equal(state.items[0].category, "Meters");
-  assert.throws(() => post(state, "item", { ...item, category: "Unregistered" }), /existing category/);
-  state = post(state, "item", { ...item, category: "" });
+test("items select project category IDs and None is null, distinct from a category named None", () => {
+  let state = post(emptyInventory(), "category", { name: "None" });
+  const id = state.categoryCatalog![0].id;
+  state = post(state, "item", { ...item, categoryId: id });
+  assert.equal(state.items[0].categoryId, id);
+  assert.equal(state.items[0].category, "None");
+  assert.throws(() => post(state, "item", { ...item, categoryId: randomUUID() }), /existing category/);
+  state = post(state, "item", { ...state.items[0], categoryId: null });
+  assert.equal(state.items[0].categoryId, null);
   assert.equal(state.items[0].category, "");
-  state = post(state, "item", item);
-  assert.equal(state.items[0].category, "");
+  assert.equal(state.categoryCatalog!.length, 1);
   assert.deepEqual(state.stock, []);
 });
 
-test("legacy category values are retained and available without migrating historical items", () => {
-  const old = emptyInventory();
-  delete old.categories;
-  old.items.push(itemSchema.parse({ ...item, category: " Legacy Meter Category " }));
-  const before = structuredClone(old);
-  assert.deepEqual(inventoryCategoryNames(old), [" Legacy Meter Category "]);
-  assert.deepEqual(old, before);
-  assert.throws(() => post(old, "category", { name: "legacy meter category" }), /already exists/);
-  const updated = post(old, "item", { ...old.items[0], description: "Updated" });
-  assert.equal(updated.items[0].category, old.items[0].category);
-  const added = post(old, "item", { ...item, id: "second", sku: "MTR2", category: " Legacy Meter Category " });
-  assert.equal(added.items[1].category, " Legacy Meter Category ");
-  const cleared = post(old, "item", { ...old.items[0], category: "" });
-  assert.deepEqual(inventoryCategoryNames(cleared), [" Legacy Meter Category "]);
-});
-
-test("backups accept old inventories and preserve unused registry categories", () => {
-  const state = post(emptyInventory(), "category", { name: "Unused category" });
-  const restored = JSON.parse(JSON.stringify({ state, movements: [], enabled: true }));
-  validateInventoryBackup(restored, []);
-  assert.deepEqual(inventoryCategoryNames(restored.state), ["Unused category"]);
-  delete restored.state.categories;
-  validateInventoryBackup(restored, []);
-  restored.state.categories = ["Meters", "meters"];
-  assert.throws(() => validateInventoryBackup(restored, []), /Duplicate inventory categories/);
-});
-
-test("category records combine legacy spellings, count usage, filter, and escape CSV", () => {
-  const state = emptyInventory();
-  state.categories = ["Meters", 'Unused, "supplies"', "=1+2"];
-  state.items = [
-    itemSchema.parse({ ...item, category: " meters " }),
-    itemSchema.parse({ ...item, id: "two", sku: "TWO", category: "METERS" }),
+test("legacy names migrate without losing unused categories or case/whitespace variant assignments", () => {
+  const legacy = emptyInventory();
+  legacy.categories = ["Unused"];
+  legacy.items = [
+    itemSchema.parse({ ...item, category: " Legacy meters " }),
+    itemSchema.parse({ ...item, id: "two", sku: "TWO", category: "LEGACY METERS" }),
+    itemSchema.parse({ ...item, id: "three", sku: "THREE", category: "" }),
   ];
-  const before = structuredClone(state);
-  const dataset = buildOperationsDataset("categories", state);
-  assert.equal(dataset.rows.length, 3);
-  assert.equal(dataset.rows.find(row => row.cells.name === "Meters")?.cells.itemCount, 2);
-  assert.equal(filterOperationsRows(dataset, "METERS", {}, dataset.defaultSort).length, 1);
-  assert.equal(filterOperationsRows(dataset, "", { usage: "Unused" }, dataset.defaultSort).length, 2);
-  const csv = operationsCsv(dataset, dataset.rows);
-  assert.ok(csv.includes('"Unused, ""supplies"""'));
-  assert.ok(csv.includes("\"'=1+2\""));
-  assert.deepEqual(state, before);
+  const before = structuredClone(legacy), migrated = normalizeInventoryCategories(legacy);
+  assert.deepEqual(legacy, before);
+  assert.deepEqual(inventoryCategoryNames(migrated), ["Legacy meters", "Unused"]);
+  assert.equal(migrated.items[0].categoryId, migrated.items[1].categoryId);
+  assert.equal(migrated.items[2].categoryId, null);
+  assert.ok(migrated.items.every(value => value.category === ""), "Labels are not persisted as relationships");
+  assert.deepEqual(normalizeInventoryCategories(migrated), migrated, "Migration does not reissue IDs");
+  const compatible = post(inventoryCategoryLabels(migrated), "item", { ...item, category: "legacy meters" });
+  assert.equal(compatible.items[0].categoryId, migrated.items[0].categoryId, "Older clients can select known names");
 });
 
-test("category rename updates every assigned item and registry atomically without changing stock", () => {
-  assert.equal(commandPermission("categoryRename"), "inventory.maintain");
+test("renaming changes only the catalog record; item IDs, stock, and historical records stay unchanged", () => {
   let state = post(emptyInventory(), "category", { name: "Meters" });
-  state.items = [
-    itemSchema.parse({ ...item, category: "Meters" }),
-    itemSchema.parse({ ...item, id: "second", sku: "SECOND", category: " METERS " }),
-    itemSchema.parse({ ...item, id: "third", sku: "THIRD", category: "" }),
-  ];
-  state.stock = [{ warehouseId: "main", itemId: "meter", quantity: 5, serials: [], revision: 1 }];
+  const id = state.categoryCatalog![0].id;
+  state = post(state, "item", { ...item, categoryId: id });
+  state.stock = [{ warehouseId: "warehouse", itemId: "meter", quantity: 5, serials: [] }];
   const before = structuredClone(state), operationId = randomUUID();
-  const updated = post(state, "categoryRename", { name: "Meters", newName: " Electric meters " }, operationId);
-  assert.deepEqual(updated.categories, ["Electric meters"]);
-  assert.deepEqual(updated.items.map(value => value.category), ["Electric meters", "Electric meters", ""]);
+  const updated = post(state, "categoryRename", { id, newName: " Electric meters " }, operationId);
+  assert.deepEqual(updated.categoryCatalog, [{ id, name: "Electric meters", active: true }]);
+  assert.equal(updated.items[0].category, "Electric meters");
+  assert.deepEqual(normalizeInventoryCategories(updated).items, normalizeInventoryCategories(before).items);
   assert.deepEqual(updated.stock, before.stock);
-  assert.deepEqual(updated.receipts, before.receipts);
   assert.deepEqual(updated.orders, before.orders);
+  assert.deepEqual(updated.receipts, before.receipts);
   assert.deepEqual(state, before);
-  assert.deepEqual(post(updated, "categoryRename", { name: "Meters", newName: " Electric meters " }, operationId), updated);
-  const caseOnly = post(updated, "categoryRename", { name: "Electric meters", newName: "ELECTRIC METERS" });
-  assert.equal(caseOnly.items[0].category, "ELECTRIC METERS");
+  assert.deepEqual(post(updated, "categoryRename", { id, newName: " Electric meters " }, operationId), updated);
+  assert.equal(post(updated, "categoryRename", { id, newName: "ELECTRIC METERS" }).items[0].categoryId, id);
 });
 
-test("renaming unused or legacy categories works while invalid and conflicting names leave state unchanged", () => {
-  let state = post(emptyInventory(), "category", { name: "Unused" });
-  state.items = [itemSchema.parse({ ...item, category: " Legacy " })];
-  state = post(state, "categoryRename", { name: "unused", newName: "Supplies" });
-  assert.deepEqual(inventoryCategoryNames(state), [" Legacy ", "Supplies"]);
-  state = post(state, "categoryRename", { name: "Legacy", newName: "Legacy meters" });
-  assert.equal(state.items[0].category, "Legacy meters");
-  const before = structuredClone(state);
+test("rename rejects duplicate/invalid names and missing IDs without changing state", () => {
+  let state = post(emptyInventory(), "category", { name: "Meters" });
+  state = post(state, "category", { name: "Supplies" });
+  const before = structuredClone(state), id = state.categoryCatalog![0].id;
   for (const data of [
-    { name: "Legacy meters", newName: " SUPPLIES " },
-    { name: "Legacy meters", newName: "" },
-    { name: "Legacy meters", newName: "x".repeat(501) },
-    { name: "Legacy", newName: "Stale rename" },
+    { id, newName: " SUPPLIES " }, { id, newName: "" }, { id, newName: "x".repeat(501) },
+    { id: randomUUID(), newName: "Other" }, { name: "Meters", newName: "Other" },
   ]) assert.throws(() => post(state, "categoryRename", data));
   assert.deepEqual(state, before);
-  const backup = JSON.parse(JSON.stringify({ state, movements: [], enabled: true }));
+});
+
+test("portable backups retain category IDs and validate dangling references and duplicate catalogs", () => {
+  let state = post(emptyInventory(), "category", { name: "Meters" });
+  state = post(state, "item", { ...item, categoryId: state.categoryCatalog![0].id });
+  const backup = { state: normalizeInventoryCategories(state), enabled: true, movements: [] };
   validateInventoryBackup(backup, []);
-  assert.deepEqual(backup.state.categories, ["Legacy meters", "Supplies"]);
+  const restored = JSON.parse(JSON.stringify(backup));
+  assert.deepEqual(normalizeInventoryCategories(restored.state), backup.state);
+  restored.state.items[0].categoryId = randomUUID();
+  assert.throws(() => validateInventoryBackup(restored, []), /missing category/);
+  const duplicate = structuredClone(backup);
+  duplicate.state.categoryCatalog!.push({ id: randomUUID(), name: "meters", active: true });
+  assert.throws(() => validateInventoryBackup(duplicate, []), /Duplicate/);
+  const old = { state: emptyInventory(), enabled: true, movements: [] };
+  old.state.items = [itemSchema.parse({ ...item, category: "Old category" })];
+  validateInventoryBackup(old, []);
+  assert.equal(normalizeInventoryCategories(old.state).categoryCatalog![0].name, "Old category");
+});
+
+test("category records count by ID and retain search, usage filters, and escaped CSV", () => {
+  let state = post(emptyInventory(), "category", { name: 'Unused, "supplies"' });
+  state = post(state, "category", { name: "Meters" });
+  const id = state.categoryCatalog!.find(c => c.name === "Meters")!.id;
+  state = post(state, "item", { ...item, categoryId: id });
+  const dataset = buildOperationsDataset("categories", state);
+  assert.equal(dataset.rows.find(row => row.id === id)!.cells.itemCount, 1);
+  assert.equal(filterOperationsRows(dataset, "meters", {}, dataset.defaultSort).length, 1);
+  assert.equal(filterOperationsRows(dataset, "", { usage: "Unused" }, dataset.defaultSort).length, 1);
+  assert.match(operationsCsv(dataset, dataset.rows), /"Unused, ""supplies"""/);
+});
+
+test("inactive category assignments survive unrelated edits, but cannot be newly assigned", () => {
+  let state = post(emptyInventory(), "category", { name: "Meters" });
+  const id = state.categoryCatalog![0].id;
+  state = post(state, "item", { ...item, categoryId: id });
+  state.categoryCatalog![0].active = false;
+  state = post(state, "item", { ...state.items[0], description: "Changed" });
+  assert.equal(state.items[0].categoryId, id);
+  assert.throws(() => post(state, "item", { ...item, id: "two", sku: "TWO", categoryId: id }), /active category/);
 });

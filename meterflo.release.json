@@ -1,5 +1,13 @@
 {
   "extensionApiVersion": 1,
-  "schemaVersion": 1,
-  "migrations": []
+  "schemaVersion": 2,
+  "migrations": [
+    {
+      "id": "core.inventory-category-ids",
+      "file": "migrations/inventory-category-ids.sql",
+      "sha256": "69e17e824e3b2f6fff0e3e2f653b339f0159bb5c21f8deb37ebfab49bc22d6ba",
+      "ownership": "core",
+      "reversible": false
+    }
+  ]
 }

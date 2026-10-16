@@ -9,11 +9,12 @@ type Props = {
   canMaintain: boolean;
   pending: boolean;
   onCreate?: (name: string, operationId: string) => Promise<unknown>;
+  categoryId?: string;
   categoryName?: string;
-  onRename?: (name: string, newName: string, operationId: string) => Promise<unknown>;
+  onRename?: (id: string, newName: string, operationId: string) => Promise<unknown>;
 };
 
-export function InventoryCategoryCreateAction({ canMaintain, pending, onCreate, categoryName, onRename }: Props) {
+export function InventoryCategoryCreateAction({ canMaintain, pending, onCreate, categoryId, categoryName, onRename }: Props) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -22,17 +23,17 @@ export function InventoryCategoryCreateAction({ canMaintain, pending, onCreate, 
   const saving = useRef(false);
   const attempt = useRef<{ fingerprint: string; operationId: string } | null>(null);
   const trimmedName = name.trim();
-  const editing = categoryName !== undefined && onRename !== undefined;
+  const editing = categoryId !== undefined && categoryName !== undefined && onRename !== undefined;
   const save = async () => {
     if (!canMaintain || pending || busy || saving.current || !trimmedName) return;
     saving.current = true;
     setBusy(true);
     setError("");
     try {
-      const fingerprint = editing ? JSON.stringify([categoryName, trimmedName]) : trimmedName;
+      const fingerprint = editing ? JSON.stringify([categoryId, trimmedName]) : trimmedName;
       if (attempt.current?.fingerprint !== fingerprint)
         attempt.current = { fingerprint, operationId: crypto.randomUUID() };
-      if (editing) await onRename(categoryName, trimmedName, attempt.current.operationId);
+      if (editing) await onRename(categoryId, trimmedName, attempt.current.operationId);
       else if (onCreate) await onCreate(trimmedName, attempt.current.operationId);
       else throw new Error("The category could not be saved. Try again.");
       attempt.current = null;
@@ -63,7 +64,7 @@ export function InventoryCategoryCreateAction({ canMaintain, pending, onCreate, 
         <DialogHeader>
           <DialogTitle>{editing ? "Edit category" : "Add category"}</DialogTitle>
           <DialogDescription>{editing
-            ? "Rename this project-wide category. Assigned items will update to the new name; stock quantities will not change."
+            ? "Rename this project-wide category. Assigned items keep their category, and the displayed name updates."
             : "Create a project-wide category for organizing catalog items."}</DialogDescription>
         </DialogHeader>
         <div className="space-y-2">

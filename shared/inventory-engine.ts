@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeInventoryCategories, inventoryCategoryLabels } from "./inventory-categories";
 import { allocateOrderNumber, uuidOrderId } from "./inventory-order-labels";
 import { COUNT_MAX_LINES, COUNT_MAX_SERIALS, countPayloadFits } from "./inventory-count-limits";
 import { allocationSchema, dispositionSchema, itemSchema, stockLineSchema, vendorSchema, warehouseSchema, countDraftSchema,
@@ -125,7 +126,7 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     if (isShipmentDraftAction(command.action)) validateDraftReplay(original, command, actor, canonicalInventoryJson);
     return { state: original, replay: true };
   }
-  const s = structuredClone(original), d = command.data;
+  const s = inventoryCategoryLabels(normalizeInventoryCategories(original)), d = command.data;
   ensureSerialOccupancy(s);
   const access = (id: string) => warehouseAccess(s, id, actor, admin);
   const receipt = (reference: string, warehouseId: string | null, input: StockLine[], reason?: string, components?: StockLine[]) =>
@@ -142,16 +143,14 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
   } else if (a === "category") {
     const name = categoryNameSchema.parse(d.name);
     assert(!inventoryCategoryNames(s).some(existing => categoryKey(existing) === categoryKey(name)), "Category already exists in this project.");
-    s.categories = [...inventoryCategoryNames(s), name];
+    s.categoryCatalog!.push({ id: command.operationId, name, active: true });
   } else if (a === "categoryRename") {
-    const { name, newName } = z.object({ name: categoryNameSchema, newName: categoryNameSchema }).strict().parse(d);
-    const source = categoryKey(name);
-    const categories = inventoryCategoryNames(s);
-    assert(categories.some(existing => categoryKey(existing) === source), "Category no longer exists. Refresh the category list and try again.");
-    assert(!categories.some(existing => categoryKey(existing) !== source && categoryKey(existing) === categoryKey(newName)),
+    const { id, newName } = z.object({ id: z.string().uuid(), newName: categoryNameSchema }).strict().parse(d);
+    const category = s.categoryCatalog!.find(existing => existing.id === id);
+    assert(category, "Category no longer exists. Refresh the category list and try again.");
+    assert(!s.categoryCatalog!.some(existing => existing.id !== id && categoryKey(existing.name) === categoryKey(newName)),
       "Category already exists in this project. Choose a different name.");
-    s.categories = categories.map(existing => categoryKey(existing) === source ? newName : existing);
-    s.items = s.items.map(item => categoryKey(item.category) === source ? { ...item, category: newName } : item);
+    category.name = newName;
   } else if (a === "warehouse" || a === "vendor" || a === "item") {
     const value = a === "warehouse" ? warehouseSchema.parse(d) : a === "vendor" ? vendorSchema.parse(d) : itemSchema.parse(d);
     const list = (a === "warehouse" ? s.warehouses : a === "vendor" ? s.vendors : s.items) as any[];
@@ -169,14 +168,16 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     }
     if (a === "item") {
       const i = value as any;
-      // Retain legacy categories even when their final item is set to None.
-      s.categories = inventoryCategoryNames(s);
-      if (i.category.trim()) {
-        const category = inventoryCategoryNames(s).find(name => categoryKey(name) === categoryKey(i.category));
-        assert(category !== undefined, "Choose an existing category from this project, or None.");
-        // Keep an existing item's historical spelling until explicitly changed.
-        if (!old || old.category !== i.category) i.category = category;
-      } else i.category = "";
+      // New clients submit an ID; accept names only from older clients that omit it.
+      const category = i.categoryId === undefined
+        ? s.categoryCatalog!.find(c => categoryKey(c.name) === categoryKey(i.category))
+        : s.categoryCatalog!.find(c => c.id === i.categoryId);
+      if (i.categoryId || i.categoryId === undefined && i.category.trim()) {
+        assert(category, "Choose an existing category from this project, or None.");
+        assert(category.active || old?.categoryId === category.id, "Choose an active category from this project.");
+        i.categoryId = category.id;
+        i.category = category.name;
+      } else { i.categoryId = null; i.category = ""; }
       assert(!s.items.some(x => x.id !== i.id && x.sku.toLowerCase() === i.sku.toLowerCase()), "SKU already exists.");
       assert(!i.vendorId || s.vendors.some(v => v.id === i.vendorId && v.active), "Vendor is not active in this project.");
       if (!i.active) assert(!s.stock.some(b => b.itemId === i.id && b.quantity) &&
@@ -375,7 +376,7 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     }
   }
   s.operations[command.operationId] = fingerprint; s.revision++;
-  return { state: s, replay: false };
+  return { state: inventoryCategoryLabels(s), replay: false };
 }
 
 // Called inside the same database transaction as the work-order status update.

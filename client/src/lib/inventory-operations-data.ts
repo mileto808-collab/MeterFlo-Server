@@ -39,11 +39,21 @@ export function buildOperationsDataset(
   let filterKeys: [string, string][];
   let sorts: OperationsDataset["sorts"];
   if (kind === "categories") {
-    const categoryNames = inventoryCategoryNames(state);
-    rows = categoryNames.map(name => {
-      const itemCount = state.items.filter(item => item.category.trim().toLowerCase() === name.trim().toLowerCase()).length;
-      return textSearch({
+    const catalog = state.categoryCatalog;
+    const categoryRows = catalog !== undefined
+      ? catalog.map(category => ({
+        id: category.id,
+        name: category.name,
+        itemCount: state.items.filter(item => item.categoryId === category.id).length,
+      }))
+      : inventoryCategoryNames(state).map(name => ({
         id: name,
+        name,
+        itemCount: state.items.filter(item => item.category.trim().toLowerCase() === name.trim().toLowerCase()).length,
+      }));
+    rows = categoryRows.map(({ id, name, itemCount }) => {
+      return textSearch({
+        id,
         cells: { name, itemCount },
         facets: { usage: itemCount > 0 ? "In use" : "Unused" },
       });

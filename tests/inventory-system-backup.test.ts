@@ -9,6 +9,7 @@ import { applyInventoryCommand, completeInventoryWorkOrder } from "../shared/inv
 import { createProjectSchema } from "../server/projectDb";
 import { initializeAudit } from "../server/auditMigration";
 import { withAuditContext } from "../server/auditContext";
+import { storedCategoryState } from "../server/inventoryCategories";
 
 test("full-system inventory restore preserves identity IDs, JSON serials, sequences and merge safety", async () => {
   await initializeAudit(pool);
@@ -16,7 +17,7 @@ test("full-system inventory restore preserves identity IDs, JSON serials, sequen
   const scope = () => ({ actorId: actor, actorLabel: "Full restore fixture", actorKind: "user" as const, source: "restore-test", operationId: randomUUID() });
   const schema = `inventory_backup_fixture_${randomUUID().replaceAll("-", "")}`;
   const client = await pool.connect();
-  const tables = ["inventory_state", "inventory_items", "inventory_quantities", "inventory_movements"];
+  const tables = ["inventory_state", "inventory_categories", "inventory_items", "inventory_quantities", "inventory_movements"];
   const catalogs = ["service_types", "system_types", "module_types", "project_service_types", "system_type_projects", "module_type_projects"];
   const projectSchemas: string[] = [];
   try {
@@ -39,7 +40,9 @@ test("full-system inventory restore preserves identity IDs, JSON serials, sequen
     };
     post("warehouse", { id: "w", code: "W", name: "Warehouse", type: "physical", address: "Test address" });
     post("vendor", { id: "v", name: "Supplier" });
-    post("item", { id: "m", sku: "M", name: "Meter", tracking: "serialized", equipment: "system" });
+    post("category", { name: "Meters" });
+    const categoryId = state.categoryCatalog![0].id;
+    post("item", { id: "m", sku: "M", name: "Meter", tracking: "serialized", equipment: "system", categoryId });
     post("order", { id: "po", type: "purchase", vendorId: "v", destinationId: "w", lines: [{ itemId: "m", quantity: 2 }] });
     post("release", { orderId: "po" });
     post("receive", { orderId: "po", lines: [{ itemId: "m", quantity: 2, serials: ["00001", "00002"] }] });
@@ -73,7 +76,8 @@ test("full-system inventory restore preserves identity IDs, JSON serials, sequen
         payload: { orderId, lines: [{ itemId: "m", quantity: 1, serials: ["RESTORE-0006"] }], damaged: [], reason: "" } });
     }
     await client.query("INSERT INTO inventory_state VALUES($1,$2)", [42, state]);
-    await client.query("INSERT INTO inventory_items VALUES($1,$2,$3,$4)", [42, "m", "M", state.items[0]]);
+    await client.query("INSERT INTO inventory_categories(project_id,id,name,active) VALUES($1,$2,$3,true)", [42, categoryId, "Meters"]);
+    await client.query("INSERT INTO inventory_items(project_id,id,sku,data,category_id) VALUES($1,$2,$3,$4,$5)", [42, "m", "M", state.items[0], categoryId]);
     await client.query("INSERT INTO inventory_quantities VALUES($1,$2,$3,$4,$5,$6)", [42, "w", "m", 3, 0, JSON.stringify(["00001", "00002", "QUARANTINE-0003"])]);
     await client.query("INSERT INTO inventory_movements(id,project_id,operation_id,action,changes) OVERRIDING SYSTEM VALUE VALUES(500,42,$1,'receive',$2)",
       [randomUUID(), { stock: state.stock, entities: [] }]);
@@ -108,7 +112,7 @@ test("full-system inventory restore preserves identity IDs, JSON serials, sequen
     const transactional = { connect: async () => ({
       query: (sql: string, values?: any[]) => client.query(
         sql.replace("schemaname = 'public'", `schemaname = '${schema}'`)
-          .replace(/public\.(projects|inventory_state|inventory_items|inventory_quantities|inventory_movements|service_types|system_types|module_types|project_service_types|system_type_projects|module_type_projects)\b/g, `"${schema}".$1`), values),
+          .replace(/public\.(projects|inventory_state|inventory_categories|inventory_items|inventory_quantities|inventory_movements|service_types|system_types|module_types|project_service_types|system_type_projects|module_type_projects)\b/g, `"${schema}".$1`), values),
       release: () => {},
     }) } as any;
     const workSchema = await createProjectSchema(`Full backup ${schema}`, 42);
@@ -152,7 +156,9 @@ test("full-system inventory restore preserves identity IDs, JSON serials, sequen
     assert.ok(priorAudit.some(e => e.outcome === "started"));
     assert.ok(priorAudit.some(e => e.outcome === "success"), "authenticated identity is retained even though it is absent from the snapshot");
     assert.deepEqual((await client.query(`SELECT id FROM "${workSchema}".work_orders ORDER BY id`)).rows.map(r => r.id), [2, 3]);
-    assert.deepEqual((await client.query("SELECT state FROM inventory_state WHERE project_id=42")).rows[0].state, { ...state, orderNumberCounters: advancedCounters });
+    assert.deepEqual((await client.query("SELECT state FROM inventory_state WHERE project_id=42")).rows[0].state, storedCategoryState({ ...state, orderNumberCounters: advancedCounters }));
+    assert.equal((await client.query("SELECT category_id FROM inventory_items WHERE project_id=42")).rows[0].category_id, categoryId);
+    assert.equal((await client.query("SELECT name FROM inventory_categories WHERE project_id=42 AND id=$1", [categoryId])).rows[0].name, "Meters");
     assert.deepEqual((await client.query("SELECT serials FROM inventory_quantities WHERE project_id=42")).rows[0].serials, ["00002", "QUARANTINE-0003"]);
     assert.equal((await client.query(`INSERT INTO "${workSchema}".work_orders(customer_wo_id,created_by) VALUES('after-full',NULL) RETURNING id`)).rows[0].id, 4);
     const savedRows = (await client.query(`SELECT * FROM "${workSchema}".work_orders ORDER BY id`)).rows;

@@ -99,6 +99,12 @@ try {
     await new Promise(resolve => setTimeout(resolve, 500));
   }
   if (!ready) throw new Error("Disposable application startup timed out.");
+  stage = "Disposable category schema";
+  const categoryClient = new pg.Client({ connectionString: env.DATABASE_URL });
+  try {
+    await categoryClient.connect();
+    await categoryClient.query(await readFile(path.join(checkout, "migrations/inventory-category-ids.sql"), "utf8"));
+  } finally { await categoryClient.end(); }
   stage = "Engine boundaries and persistence";
   await run(process.execPath, ["--import", "tsx", "--test", "tests/inventory-volume.test.ts", "tests/inventory-persistence.test.ts"],
     { cwd: checkout, visible: true });

@@ -465,6 +465,7 @@ const CLEAN_TABLES_TO_CLEAR = [
   "inventory_movements",
   "inventory_quantities",
   "inventory_items",
+  "inventory_categories",
   "inventory_state",
   "api_import_versions",
   "api_import_runs",

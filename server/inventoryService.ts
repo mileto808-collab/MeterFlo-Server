@@ -7,6 +7,7 @@ import { emptyInventory, allocationSchema, dispositionSchema, inventoryImportSch
 import { storage } from "./storage";
 import { z } from "zod";
 import type { SavedShipmentDraft } from "../shared/inventory-shipment-draft-model";
+import { readInventoryCategories, storedCategoryState, writeInventoryCategories, writeInventoryCategoryItem } from "./inventoryCategories";
 
 // Saved captures are temporary editing state, not another physical-stock
 // ledger. Record useful changes without duplicating every scan on every save.
@@ -24,15 +25,28 @@ function shipmentDraftAudit(value: SavedShipmentDraft | undefined) {
 }
 
 export async function inventoryState(projectId: number, client: Pick<PoolClient, "query"> = pool): Promise<InventoryState> {
-  const { rows: [r] } = await client.query("SELECT state FROM public.inventory_state WHERE project_id=$1", [projectId]);
-  return r?.state || emptyInventory();
+  if (client !== pool) {
+    const { rows: [r] } = await client.query("SELECT state FROM public.inventory_state WHERE project_id=$1 FOR UPDATE", [projectId]);
+    return r ? readInventoryCategories(client, projectId, r.state) : emptyInventory();
+  }
+  const connection = await pool.connect();
+  try {
+    await connection.query("BEGIN");
+    const state = await inventoryState(projectId, connection);
+    await connection.query("COMMIT");
+    return state;
+  } catch (error) { await connection.query("ROLLBACK"); throw error; }
+  finally { connection.release(); }
 }
 export async function lockInventory(client: PoolClient, projectId: number) {
   await client.query("INSERT INTO public.inventory_state(project_id,state) VALUES($1,$2) ON CONFLICT DO NOTHING", [projectId, JSON.stringify(emptyInventory())]);
   const { rows: [r] } = await client.query("SELECT state FROM public.inventory_state WHERE project_id=$1 FOR UPDATE", [projectId]);
-  return r.state as InventoryState;
+  return readInventoryCategories(client, projectId, r.state);
 }
 export async function saveInventory(client: PoolClient, projectId: number, before: InventoryState, after: InventoryState, operationId: string, action: string) {
+  // Display labels never participate in item persistence or item-change audits.
+  before = storedCategoryState(before);
+  after = storedCategoryState(after);
   const actor = auditContext.getStore()?.actorId || null;
   const stockKey = (b: { warehouseId: string; itemId: string }) => JSON.stringify([b.warehouseId, b.itemId]);
   const priorStock = new Map(before.stock.map(b => [stockKey(b), b]));
@@ -67,14 +81,14 @@ export async function saveInventory(client: PoolClient, projectId: number, befor
     }
     return updates;
   });
-  if (JSON.stringify(before.categories ?? []) !== JSON.stringify(after.categories ?? []))
-    entityChanges.push({ field: "categories", before: before.categories ?? [], after: after.categories ?? [] });
+  if (JSON.stringify(before.categoryCatalog ?? []) !== JSON.stringify(after.categoryCatalog ?? []))
+    entityChanges.push({ field: "categoryCatalog", before: before.categoryCatalog ?? [], after: after.categoryCatalog ?? [] });
+  await writeInventoryCategories(client, projectId, after);
   await client.query("UPDATE public.inventory_state SET state=$2,updated_at=now() WHERE project_id=$1", [projectId, JSON.stringify(after)]);
   // These tables mirror the locked JSON state. Only changed rows need writes;
   // count/order metadata changes must not rewrite every warehouse's balances.
   const previousItems = new Map(before.items.map(i => [i.id, JSON.stringify(i)]));
-  for (const i of after.items.filter(i => previousItems.get(i.id) !== JSON.stringify(i))) await client.query(`INSERT INTO public.inventory_items(project_id,id,sku,data) VALUES($1,$2,$3,$4)
-    ON CONFLICT(project_id,id) DO UPDATE SET sku=EXCLUDED.sku,data=EXCLUDED.data`, [projectId, i.id, i.sku, JSON.stringify(i)]);
+  for (const i of after.items.filter(i => previousItems.get(i.id) !== JSON.stringify(i))) await writeInventoryCategoryItem(client, projectId, i);
   const changedStock = new Set(changes.map(stockKey));
   for (const b of after.stock.filter(b => !priorStock.has(stockKey(b)) || changedStock.has(stockKey(b)))) await client.query(`INSERT INTO public.inventory_quantities(project_id,warehouse_id,item_id,quantity,reserved,serials)
     VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(project_id,warehouse_id,item_id) DO UPDATE SET quantity=EXCLUDED.quantity,reserved=EXCLUDED.reserved,serials=EXCLUDED.serials`,

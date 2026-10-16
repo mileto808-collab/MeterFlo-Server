@@ -56,10 +56,13 @@ async function main() {
       await page.getByTestId("inventory-items-subheader").getByRole("button", { name: "Add item", exact: true }).click();
       const itemDialog = page.getByRole("dialog", { name: "Item details", exact: true });
       await expect(itemDialog.getByLabel("Category", { exact: true })).toHaveValue("");
-      await expect(itemDialog.locator('#item-category option[value="None"]')).toHaveText("None (category)");
+      const catalog = (await state()).categoryCatalog;
+      const namedNoneId = catalog.find(category => category.name === "None").id;
+      await expect(itemDialog.locator(`#item-category option[value="${namedNoneId}"]`)).toHaveText("None (category)");
       await itemDialog.getByLabel(/^Product ID \(SKU\)/).fill(`CAT-${value || "EMPTY"}`);
       await itemDialog.getByLabel(/^Product Label \(Name\)/).fill(`Category item ${value || "none"}`);
-      await itemDialog.getByLabel("Category", { exact: true }).selectOption({ value });
+      const categoryId = value ? catalog.find(category => category.name === value).id : "";
+      await itemDialog.getByLabel("Category", { exact: true }).selectOption({ value: categoryId });
       await itemDialog.getByRole("button", { name: "Save changes", exact: true }).click();
       await expect(itemDialog).toBeHidden();
       return (await state()).items.find(item => item.sku === `CAT-${value || "EMPTY"}`);
@@ -70,7 +73,9 @@ async function main() {
     assert.equal(none.category, "");
     const namedNone = await select("None");
     assert.equal(namedNone.category, "None");
-    const invalid = await post("item", { ...meter, category: "Unknown category" });
+    assert.ok(meter.categoryId);
+    assert.equal(none.categoryId, null);
+    const invalid = await post("item", { ...meter, categoryId: crypto.randomUUID() });
     assert.equal(invalid.status(), 409);
     await page.getByRole("tab", { name: "Categories", exact: true }).click();
     await page.getByRole("button", { name: "Edit category Meters", exact: true }).click();
@@ -86,13 +91,14 @@ async function main() {
     await expect(dialog).toBeHidden();
     await expect(page.getByRole("button", { name: "Edit category Electric meters", exact: true })).toBeVisible();
     assert.equal((await state()).items.find(item => item.id === meter.id).category, "Electric meters");
+    assert.equal((await state()).items.find(item => item.id === meter.id).categoryId, meter.categoryId);
     await page.screenshot({ path: `${out}/desktop-edit.jpg` });
     await page.reload();
     await page.getByRole("tab", { name: "Items", exact: true }).click();
     const card = page.locator("article").filter({ has: page.getByRole("heading", { name: "Category item Meters", exact: true }) });
     await card.getByRole("button", { name: /Edit/ }).click();
     dialog = page.getByRole("dialog", { name: "Item details", exact: true });
-    await expect(dialog.getByLabel("Category", { exact: true })).toHaveValue("Electric meters");
+    await expect(dialog.getByLabel("Category", { exact: true })).toHaveValue(meter.categoryId);
     await dialog.getByLabel("Category", { exact: true }).selectOption("");
     await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
     await expect(dialog).toBeHidden();
@@ -121,7 +127,7 @@ async function main() {
     });
     assert.equal(denied.status(), 403);
     const deniedRename = await readonly.request.post(`${endpoint}/commands`, {
-      data: { action: "categoryRename", operationId: crypto.randomUUID(), data: { name: "Electric meters", newName: "Forbidden rename" } },
+      data: { action: "categoryRename", operationId: crypto.randomUUID(), data: { id: meter.categoryId, newName: "Forbidden rename" } },
     });
     assert.equal(deniedRename.status(), 403);
     const reader = await readonly.newPage();
@@ -158,7 +164,7 @@ async function main() {
     await phoneContext.close();
     assert.deepEqual(errors, []);
     assert.deepEqual((await state()).stock, []);
-    console.log("PASS: create/edit categories, atomic item rename, duplicate retention, dropdown/None, clear/reopen, scoped permissions, CSV, portrait and landscape.");
+    console.log("PASS: stable category IDs, rename without reassignment, duplicate retention, dropdown/None, clear/reopen, scoped permissions, CSV, portrait and landscape.");
   } finally { await browser.close(); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

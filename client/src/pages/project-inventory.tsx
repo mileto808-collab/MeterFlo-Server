@@ -6,7 +6,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useUnsavedNavigation } from "@/hooks/use-unsaved-navigation";
-import { emptyInventory, inventoryCategoryNames, type InventoryCommand, type InventoryCount, type InventoryItem, type InventoryOrder, type InventoryState, type StockLine, type Vendor, type Warehouse } from "@shared/inventory";
+import { emptyInventory, type InventoryCommand, type InventoryCount, type InventoryItem, type InventoryOrder, type InventoryState, type StockLine, type Vendor, type Warehouse } from "@shared/inventory";
 import type { SavedShipmentDraft } from "@shared/inventory-shipment-draft-model";
 import { orderLineProgress } from "@shared/inventory-shipment-model";
 import { inventoryCountReference } from "@shared/inventory-count-reference";
@@ -51,7 +51,7 @@ type Snapshot = { enabled: boolean; projectName: string; timezone: string; state
 type ResourceKind = "warehouse" | "vendor" | "item";
 const blankWarehouse = (): Warehouse => ({ id: "", code: "", name: "", type: "physical", active: true, address: "", city: "", state: "", zip: "", contact: "", phone: "", location: "", vin: "", plate: "", plateState: "", make: "", model: "", year: null, assignedUserId: null, userIds: [] });
 const blankVendor = (): Vendor => ({ id: "", name: "", contact: "", address: "", phone: "", email: "", reference: "", active: true });
-const blankItem = (): InventoryItem => ({ id: "", sku: "", name: "", description: "", category: "", unit: "each", tracking: "regular", equipment: "none", barcode: "", manufacturer: "", model: "", vendorId: null, cost: 0, reorderPoint: 0, active: true, images: [], components: [] });
+const blankItem = (): InventoryItem => ({ id: "", sku: "", name: "", description: "", category: "", categoryId: null, unit: "each", tracking: "regular", equipment: "none", barcode: "", manufacturer: "", model: "", vendorId: null, cost: 0, reorderPoint: 0, active: true, images: [], components: [] });
 const freshId = () => crypto.randomUUID();
 const csv = (value: string) => value.split(/[\n,;]/).map(part => part.trim()).filter(Boolean);
 const inventoryTabs = [
@@ -196,7 +196,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const returnsDataset = useMemo(() => buildOperationsDataset("returns", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone), [state, data?.actors, data?.users, timezone]);
   const activityDataset = useMemo(() => buildOperationsDataset("activity", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone), [state, data?.actors, data?.users, timezone]);
   const categoriesDataset = useMemo(() => buildOperationsDataset("categories", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone), [state]);
-  const categories = useMemo(() => inventoryCategoryNames(state ?? emptyInventory()), [state]);
+  const categoryCatalog = state?.categoryCatalog ?? [];
   const can = (permission: string) => hasPermission(permission);
   const command = useMutation({
     mutationFn: async ({ action, data: payload, operationId }: { action: InventoryCommand["action"]; data: Record<string, unknown>; operationId?: string }) => {
@@ -902,9 +902,10 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
               <div className="flex shrink-0 items-center gap-2">
                 <Badge variant="secondary">{Number(row.cells.itemCount ?? 0)} {Number(row.cells.itemCount ?? 0) === 1 ? "item" : "items"}</Badge>
                 <InventoryCategoryCreateAction canMaintain={can("inventory.maintain")} pending={command.isPending}
+                  categoryId={row.id}
                   categoryName={categoryName}
-                  onRename={(name, newName, operationId) => command.mutateAsync({
-                    action: "categoryRename", data: { name, newName }, operationId,
+                  onRename={(id, newName, operationId) => command.mutateAsync({
+                    action: "categoryRename", data: { id, newName }, operationId,
                   })} />
               </div>
             </article>;
@@ -1184,7 +1185,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
         <Field label="Product ID (SKU)" required maxLength={200} value={itemForm.sku} set={value => setItemForm(form => ({ ...form, sku: value }))} help="Use the Product ID from the System Type or Module Type table, entered manually. Required and unique within this project (case-insensitive), up to 200 characters. Example: E460. Not an individual unit's serial number." />
         <Field label="Product Label (Name)" required maxLength={200} value={itemForm.name} set={value => setItemForm(form => ({ ...form, name: value }))} help="Use the Product Label from the System Type or Module Type table, entered manually. Required recognizable name, up to 200 characters. Example: Electric meter E460." />
         <Field label="Product Description" maxLength={500} value={itemForm.description} set={value => setItemForm(form => ({ ...form, description: value }))} help="Corresponds to Product Description in the System Type or Module Type table. Optional details, up to 500 characters. Example: Three-phase electric meter." className="sm:col-span-2" />
-        <div className="space-y-1.5"><Label htmlFor="item-category">Category</Label><select id="item-category" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" value={itemForm.category} onChange={event => setItemForm(form => ({ ...form, category: event.target.value }))}><option value="">None</option>{[...new Set([...categories, itemForm.category].filter(Boolean))].map(category => <option key={category} value={category}>{category.trim().toLowerCase() === "none" ? `${category} (category)` : category}</option>)}</select><p className="text-xs leading-relaxed text-muted-foreground">Optional project category. To add a category, use the Categories tab.</p></div>
+        <div className="space-y-1.5"><Label htmlFor="item-category">Category</Label><select id="item-category" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" value={itemForm.categoryId === undefined ? categoryCatalog.find(category => category.name.trim().toLocaleLowerCase() === itemForm.category.trim().toLocaleLowerCase())?.id ?? "" : itemForm.categoryId ?? ""} onChange={event => setItemForm(form => ({ ...form, categoryId: event.target.value || null }))}><option value="">None</option>{categoryCatalog.filter(category => category.active || category.id === itemForm.categoryId || (itemForm.categoryId === undefined && category.name.trim().toLocaleLowerCase() === itemForm.category.trim().toLocaleLowerCase())).map(category => <option key={category.id} value={category.id}>{category.name.trim().toLowerCase() === "none" ? `${category.name} (category)` : category.name}</option>)}</select><p className="text-xs leading-relaxed text-muted-foreground">Optional project category. To add a category, use the Categories tab.</p></div>
         <Field label="Unit" required maxLength={200} value={itemForm.unit} set={value => setItemForm(form => ({ ...form, unit: value }))} help="Required unit name, up to 200 characters. Defaults to each. Example: each for a meter or box for supplies. Inventory postings use whole-number quantities, even for units such as ft." />
         <Field label="Barcode" maxLength={500} value={itemForm.barcode} set={value => setItemForm(form => ({ ...form, barcode: value }))} help="Optional catalog barcode for identifying this product, up to 500 characters (example: 012345678905). A barcode identifies the product; it is not an individual unit's serial number." />
         <Field label="Manufacturer" maxLength={500} value={itemForm.manufacturer} set={value => setItemForm(form => ({ ...form, manufacturer: value }))} help="Optional maker name, up to 500 characters. Example: Acme Meter Works." />

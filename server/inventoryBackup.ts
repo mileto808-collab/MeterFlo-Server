@@ -7,15 +7,17 @@ import { reserved } from "../shared/inventory-engine";
 import { validateShipmentBackup } from "./inventoryShipmentBackup";
 import { savedShipmentDraftSchema } from "../shared/inventory-shipment-draft-model";
 import { draftWarehouse } from "../shared/inventory-shipment-drafts";
+import { readInventoryCategories, storedCategoryState, writeInventoryCategories, writeInventoryCategoryItem } from "./inventoryCategories";
 
 export type InventoryBackup = { state: InventoryState; movements: any[]; enabled: boolean };
 export async function exportInventory(client: PoolClient, schema: string): Promise<InventoryBackup | undefined> {
   const { rows: [p] } = await client.query("SELECT id,inventory_enabled FROM public.projects WHERE database_name=$1", [schema]);
   if (!p) return;
-  const { rows: [r] } = await client.query("SELECT state FROM public.inventory_state WHERE project_id=$1", [p.id]);
+  const { rows: [r] } = await client.query("SELECT state FROM public.inventory_state WHERE project_id=$1 FOR UPDATE", [p.id]);
   if (!r) return;
+  const state = storedCategoryState(await readInventoryCategories(client, p.id, r.state));
   const { rows } = await client.query("SELECT operation_id,action,actor_id,occurred_at,changes FROM public.inventory_movements WHERE project_id=$1 ORDER BY id", [p.id]);
-  return { state: r.state, movements: rows, enabled: !!p.inventory_enabled };
+  return { state, movements: rows, enabled: !!p.inventory_enabled };
 }
 export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: number[]) {
   const drafts = z.array(savedShipmentDraftSchema).max(100).parse(backup.state.shipmentDrafts ?? []);
@@ -38,6 +40,7 @@ export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: n
   z.array(warehouseSchema).parse(s.warehouses); z.array(itemSchema).parse(s.items); z.array(vendorSchema).parse(s.vendors);
   const categories = z.array(categoryNameSchema).parse(s.categories ?? []);
   if (new Set(categories.map(categoryKey)).size !== categories.length) throw new Error("Duplicate inventory categories in backup.");
+  storedCategoryState(s);
   if (!Array.isArray(s.stock) || !Array.isArray(s.allocations) || !Array.isArray(s.orders) || !Array.isArray(s.receipts) ||
     !Array.isArray(s.returns) || !Array.isArray(s.counts) || typeof s.operations !== "object") throw new Error("Incomplete inventory backup.");
   for (const a of s.allocations) {
@@ -71,11 +74,13 @@ export async function restoreInventory(client: PoolClient, schema: string, backu
   const { rows: ids } = await client.query(`SELECT id FROM "${schema}".work_orders`);
   validateInventoryBackup(backup, ids.map(x => x.id));
   const { rows: [local] } = await client.query("SELECT state FROM public.inventory_state WHERE project_id=$1 FOR UPDATE", [p.id]);
-  backup = { ...backup, state: mergeOrderHighWater(backup.state, local?.state) };
+  backup = { ...backup, state: storedCategoryState(mergeOrderHighWater(backup.state, local?.state)) };
   await client.query("INSERT INTO public.inventory_state(project_id,state) VALUES($1,$2) ON CONFLICT(project_id) DO UPDATE SET state=EXCLUDED.state,updated_at=now()", [p.id, JSON.stringify(backup.state || emptyInventory())]);
   await client.query("DELETE FROM public.inventory_quantities WHERE project_id=$1", [p.id]);
   await client.query("DELETE FROM public.inventory_items WHERE project_id=$1", [p.id]);
-  for (const i of backup.state.items) await client.query("INSERT INTO public.inventory_items(project_id,id,sku,data) VALUES($1,$2,$3,$4)", [p.id, i.id, i.sku, JSON.stringify(i)]);
+  await client.query("DELETE FROM public.inventory_categories WHERE project_id=$1", [p.id]);
+  await writeInventoryCategories(client, p.id, backup.state);
+  for (const i of backup.state.items) await writeInventoryCategoryItem(client, p.id, i);
   for (const b of backup.state.stock) await client.query("INSERT INTO public.inventory_quantities(project_id,warehouse_id,item_id,quantity,reserved,serials) VALUES($1,$2,$3,$4,$5,$6)",
     [p.id, b.warehouseId, b.itemId, b.quantity, reserved(backup.state, b.warehouseId, b.itemId), JSON.stringify(b.serials)]);
   await client.query("DELETE FROM public.inventory_movements WHERE project_id=$1", [p.id]);
