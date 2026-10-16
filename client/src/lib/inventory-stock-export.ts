@@ -1,6 +1,10 @@
 import type { InventoryItem, Stock, Warehouse } from "../../../shared/inventory";
 
-export type StockBalanceRow = Stock & { item: InventoryItem; warehouse: Warehouse; reserved: number };
+export type StockBalanceRow = Stock & {
+  item: Pick<InventoryItem, "id" | "sku" | "name" | "category" | "unit" | "tracking">;
+  warehouse: Pick<Warehouse, "id" | "name" | "code" | "type">;
+  reserved: number; serialCount?: number;
+};
 export type StockExportContext = { project: string; timezone: string };
 type Cell = string | number;
 const headers = ["SKU", "Item", "Category", "Unit", "Tracking", "Location code", "Location",
@@ -11,7 +15,7 @@ const escape = (value: Cell) => String(value).replace(/[&<>"']/g, char =>
 export function stockBalanceExportRows(rows: readonly StockBalanceRow[]): Cell[][] {
   return rows.map(row => [row.item.sku, row.item.name, row.item.category, row.item.unit, row.item.tracking,
     row.warehouse.code, row.warehouse.name, row.warehouse.type, row.quantity, row.reserved,
-    row.quantity - row.reserved, row.serials.length]);
+    row.quantity - row.reserved, row.serialCount ?? row.serials.length]);
 }
 
 export function stockBalanceCsv(rows: readonly StockBalanceRow[]) {
@@ -59,15 +63,16 @@ table{width:100%;table-layout:fixed;border-collapse:collapse}th,td{border:1px so
 ${rows.map(row => `<tr><td>${escape(row.item.name)}<br>${escape(row.item.sku)}</td><td>${escape(row.warehouse.name)}<br>${escape(row.warehouse.code)}</td>
 <td>${escape(row.item.category)}<br>${escape(row.item.tracking)}</td>
 <td class="number">${row.quantity}</td><td class="number">${row.reserved}</td><td class="number">${row.quantity - row.reserved}</td>
-<td class="number">${row.serials.length}</td></tr>`).join("")}</tbody></table></body></html>`;
+<td class="number">${row.serialCount ?? row.serials.length}</td></tr>`).join("")}</tbody></table></body></html>`;
 }
 
 export async function downloadInventoryStock(
   format: "csv" | "xlsx" | "pdf", context: StockExportContext, rows: readonly StockBalanceRow[],
+  printWindow?: Window,
 ) {
   if (!rows.length) throw new Error("No matching stock balances to export.");
   if (format === "pdf") {
-    const popup = window.open("", "_blank");
+    const popup = printWindow ?? window.open("", "_blank");
     if (!popup) throw new Error("The browser blocked the print window. Allow pop-ups and try again.");
     popup.opener = null;
     popup.document.open(); popup.document.write(stockBalancePrintHtml(context, rows)); popup.document.close();

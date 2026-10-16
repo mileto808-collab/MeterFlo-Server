@@ -1,0 +1,10 @@
+{
+  "extends": "../tsconfig.json",
+  "include": [
+    "inventory-stock-query.test.ts",
+    "inventory-stock-query-integration.test.ts",
+    "helpers/inventory-sandbox.ts"
+  ],
+  "exclude": [],
+  "compilerOptions": { "incremental": false }
+}

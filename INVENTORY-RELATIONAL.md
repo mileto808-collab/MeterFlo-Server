@@ -45,8 +45,63 @@ and generated identities. Older backup shapes remain supported.
 
 The command engine still validates a complete project inventory in memory under
 the project-wide lock. This retains cross-location movement, revision, count and
-retry guarantees. Persistence writes changed rows, but this release does not add
-fine-grained command locking or server-paged list endpoints.
+retry guarantees. Persistence writes changed rows. Stock browsing now uses separate
+read-only relational queries without taking that command lock; it is not safe to
+reduce command locking until commands have independent read/write sets and shared
+revision/replay merge rules.
+
+## Bounded Stock & Search
+
+Stock & Search no longer subscribes to the legacy aggregate snapshot. It requests
+`GET /api/projects/:projectId/inventory/stock/context` for project metadata and
+summary counts, and `/stock` for a viewport-adaptive page (1–100 balances).
+The page contains serial counts, not serial identities or catalog image/recipe data.
+Switching to another tab or opening an editing dialog loads its aggregate
+dependencies on demand. Catalog, serial and kit UI modules are also lazy loaded.
+Legacy and mobile snapshot consumers and command responses are unchanged.
+
+All query routes use the existing authenticated project/inventory-view permission
+checks and no-store responses. Parameters are validated and SQL values are bound.
+The stock page accepts `q`, `warehouse`, `category`, `tracking`, `availability`,
+`sort`, `offset`, and `limit`. Sort choices match the UI; ties use stable location
+and item IDs. The response includes total/filtered counts, filtered quantity and
+reserved summaries, effective offset, project revision, and bounded rows.
+Counts and page rows use one repeatable-read snapshot. An unmigrated project is
+backfilled once through the existing locked migration before query-only reads.
+
+`/stock/serials` accepts `warehouse`, `item`, `q`, `offset`, and `limit` (max 100).
+It returns exact, unmodified serial text, total/filtered counts and revision;
+the viewer requests 50 at a time. Searches are case-insensitive literal substring
+matches, including `%`, `_` and backslashes. `/stock/options?q=…` loads searchable
+location/category choices only when Filters opens, up to 200 of each per search.
+Search to find choices outside that bound. Indexes scope stock item/location reads,
+sorts and serial bin/position lookups by project; no extension is required.
+
+Balance and serial exports offer All, Filtered and Current page. All/filtered
+exports fetch only that explicitly selected dataset in bounded chunks on demand,
+not a whole project snapshot. A revision/count change between chunks aborts with
+a retry message instead of mixing stock revisions. A zero-match filtered scope
+stays selected and disables downloads. CSV/Excel/PDF preserve serial text and
+existing formula-safety rules; printable windows open during the click gesture.
+
+Verification:
+
+```sh
+npm run check
+npm run check:inventory-stock-queries
+npm run test:inventory-stock-queries
+npm run build
+INVENTORY_VOLUME_PG_BIN=/absolute/path/to/postgresql/bin npm run test:inventory-stock-queries:acceptance
+```
+
+The last command owns a fresh PostgreSQL cluster and application process, seeds
+10,000 balances and 119,900 serial identities (including a 20,000-serial bin),
+exercises real signed-in query/UI/export/permission paths, and destroys the cluster,
+sessions and files on success or failure. It never accepts a database/base-URL
+override. Metrics, screenshots and independent cleanup evidence go under
+`generated-artifacts/inventory-stock-queries/` (excluded from Git/deployment).
+These are Linux browser/server measurements, not physical scanner or Windows
+server acceptance.
 
 ## Deleting unused records
 

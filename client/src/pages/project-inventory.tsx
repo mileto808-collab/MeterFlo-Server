@@ -26,17 +26,16 @@ import { InventoryShipmentDraftsPanel } from "@/components/inventory-shipment-dr
 import { refreshShipmentInventory } from "@/components/inventory-shipment-draft-api";
 import { InventoryShipmentExceptions } from "@/components/inventory-shipment-exceptions";
 import { InventoryShipmentTransitDialog } from "@/components/inventory-shipment-transit-dialog";
-import { InventoryStockSerialDialog } from "@/components/inventory-stock-serial-dialog";
+import { InventoryStockSerialDialog, InventoryCatalogWorkspace, InventoryKitDialog } from "@/components/inventory-lazy-tools";
 import { InventoryStockWorkspace } from "@/components/inventory-stock-workspace";
-import { InventoryCatalogWorkspace } from "@/components/inventory-catalog-workspace";
 import { copyInventoryItem } from "@/lib/inventory-item-copy";
-import { InventoryKitDialog } from "@/components/inventory-kit-dialog";
 import { InventoryRecordsWorkspace } from "@/components/inventory-records-workspace";
 import { InventoryCategoryCreateAction } from "@/components/inventory-category-create-action";
 import { InventoryDeleteAction } from "@/components/inventory-delete-action";
 import { InventoryMobileTools } from "@/components/inventory-mobile-tools";
 import { buildOperationsDataset } from "@/lib/inventory-operations-data";
 import type { StockBalanceRow } from "@/lib/inventory-stock-export";
+import { fetchStock, type StockSummary } from "@/lib/inventory-stock-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -89,12 +88,24 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const { toast } = useToast();
   const base = `/api/projects/${projectId}/inventory`;
   const queryKey = [base];
-  const { data, isLoading, isError, refetch } = useQuery<Snapshot>({ queryKey, enabled: !!projectId });
   const [showInventoryStats, setShowInventoryStats] = useState(false);
   const [inventoryTab, setInventoryTab] = useState("stock");
   const inventoryMainRef = useRef<HTMLElement>(null);
-  const [selectedStockKey, setSelectedStockKey] = useState<string | null>(null);
+  const [selectedStockRow, setSelectedStockRow] = useState<StockBalanceRow | null>(null);
   const [resource, setResource] = useState<ResourceKind | null>(null);
+  const stockContext = useQuery<Omit<Snapshot, "state" | "users"> & { summary: StockSummary }>({
+    queryKey: [base, "stock", "context"], queryFn: () => fetchStock(`${base}/stock/context`),
+    enabled: inventoryTab === "stock",
+  });
+  // Other tabs/editors retain the legacy contract; stock never subscribes to it in the background.
+  const snapshotQuery = useQuery<Snapshot>({ queryKey, enabled: inventoryTab !== "stock" || !!resource });
+  const stockSnapshot = useMemo<Snapshot | undefined>(() => stockContext.data ? {
+    ...stockContext.data, state: emptyInventory(), users: [],
+  } : undefined, [stockContext.data]);
+  const data = inventoryTab === "stock" && !resource ? stockSnapshot : snapshotQuery.data;
+  const { isLoading, isError } = inventoryTab === "stock" && !resource ? stockContext : snapshotQuery;
+  const refetch = () => inventoryTab === "stock" && !resource ? stockContext.refetch() : snapshotQuery.refetch();
+  const summary = inventoryTab === "stock" ? stockContext.data?.summary : undefined;
   const [warehouseForm, setWarehouseForm] = useState<Warehouse>(blankWarehouse());
   const [vendorForm, setVendorForm] = useState<Vendor>(blankVendor());
   const [itemForm, setItemForm] = useState<InventoryItem>(blankItem());
@@ -342,17 +353,9 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const pagedOrders = visibleOrders.slice(currentOrderPage * orderRowsPerPage, (currentOrderPage + 1) * orderRowsPerPage);
   const orderTitle = (id: string) => { const order = orderItems.find(order => order.id === id); return order ? orderLabel(order) : "Order reference unavailable"; };
   const activeWarehouses = warehouses.filter(value => value.active);
-  const allStockRows = useMemo<StockBalanceRow[]>(() => (state?.stock ?? []).map(stock => ({
-    ...stock, item: items.find(value => value.id === stock.itemId), warehouse: warehouses.find(value => value.id === stock.warehouseId),
-    reserved: state?.allocations.filter(allocation => allocation.status === "reserved").flatMap(allocation => allocation.lines)
-      .filter(line => line.itemId === stock.itemId && line.warehouseId === stock.warehouseId).reduce((total, line) => total + line.quantity, 0) ?? 0,
-  })).filter((row): row is StockBalanceRow => !!row.item && !!row.warehouse), [state, items, warehouses]);
-  const selectedStockRow = selectedStockKey
-    ? allStockRows.find(row => `${row.itemId}/${row.warehouseId}` === selectedStockKey)
-    : undefined;
   useEffect(() => {
-    if (selectedStockKey && (!can("inventory.view") || !selectedStockRow)) setSelectedStockKey(null);
-  }, [selectedStockKey, selectedStockRow, hasPermission]);
+    if (!can("inventory.view") || inventoryTab !== "stock") setSelectedStockRow(null);
+  }, [inventoryTab, hasPermission]);
   useEffect(() => {
     const main = inventoryMainRef.current;
     if (!main) return;
@@ -767,7 +770,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   };
   const reloadCountDraft = async () => {
     if (!activeCount) return;
-    const latest = await refetch();
+    const latest = await snapshotQuery.refetch();
     const count = latest.data?.state.counts.find(count => count.id === activeCount.id);
     if (!latest.isError && count?.status === "open") openCount(count, true);
     else setCountDraftMessage("The saved draft could not be loaded, or the count is no longer open. Your entries were kept.");
@@ -926,10 +929,10 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           hidden={!showInventoryStats}
           className={showInventoryStats ? "grid min-w-0 grid-cols-2 gap-2 lg:grid-cols-4" : "hidden"}
         >
-          <Metric label="Active locations" value={activeWarehouses.length} detail={`${warehouses.filter(value => value.type === "vehicle").length} vehicles`} icon={<WarehouseIcon className="h-4 w-4" />} />
-          <Metric label="Catalog items" value={items.filter(item => item.active).length} detail={`${items.filter(item => item.tracking === "serialized").length} serial tracked`} icon={<Package className="h-4 w-4" />} />
-          <Metric label="Open orders" value={orderItems.filter(order => ["draft", "released", "partial"].includes(order.status)).length} detail="Purchases and transfers" icon={<ArrowLeftRight className="h-4 w-4" />} />
-          <Metric label="Open counts" value={state.counts.filter(count => count.status === "open").length} detail={`Ledger revision ${state.revision}`} icon={<ClipboardList className="h-4 w-4" />} />
+          <Metric label="Active locations" value={summary?.locations ?? activeWarehouses.length} detail={`${summary?.vehicles ?? warehouses.filter(value => value.type === "vehicle").length} vehicles`} icon={<WarehouseIcon className="h-4 w-4" />} />
+          <Metric label="Catalog items" value={summary?.items ?? items.filter(item => item.active).length} detail={`${summary?.serialized ?? items.filter(item => item.tracking === "serialized").length} serial tracked`} icon={<Package className="h-4 w-4" />} />
+          <Metric label="Open orders" value={summary?.orders ?? orderItems.filter(order => ["draft", "released", "partial"].includes(order.status)).length} detail="Purchases and transfers" icon={<ArrowLeftRight className="h-4 w-4" />} />
+          <Metric label="Open counts" value={summary?.counts ?? state.counts.filter(count => count.status === "open").length} detail={summary ? "Snapshots awaiting a post" : `Ledger revision ${state.revision}`} icon={<ClipboardList className="h-4 w-4" />} />
         </div>
         <div className="inventory-mobile-menu !mt-0 absolute left-0 right-12 top-0 md:hidden">
           <DropdownMenu>
@@ -968,8 +971,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     {!hasAny && <Alert hidden={["orders", "stock", "items", "vendors", "categories"].includes(inventoryTab)}><Boxes className="h-4 w-4" /><AlertTitle>Set up the first stock location</AlertTitle><AlertDescription>Add a warehouse or service vehicle, then add catalog items and begin receiving meters.</AlertDescription></Alert>}
 
       <TabsContent value="stock" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
-        <InventoryStockWorkspace rows={allStockRows} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
-          onViewSerials={row => setSelectedStockKey(`${row.itemId}/${row.warehouseId}`)} />
+        <InventoryStockWorkspace base={base} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
+          onViewSerials={setSelectedStockRow} />
       </TabsContent>
       <TabsContent value="locations" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         <InventoryRecordsWorkspace kind="locations" title="Warehouses & vehicles" description="Access is enforced by the project inventory service for every operation." dataset={locationsDataset} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
@@ -1348,15 +1351,18 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       onSaved={async () => { await queryClient.invalidateQueries({ queryKey }); return refetch(); }} />}
     {selectedStockRow && can("inventory.view") && (
       <InventoryStockSerialDialog
-        key={selectedStockKey}
+        key={`${selectedStockRow.itemId}/${selectedStockRow.warehouseId}`}
         open
-        onOpenChange={open => { if (!open) setSelectedStockKey(null); }}
+        onOpenChange={open => { if (!open) setSelectedStockRow(null); }}
         itemName={selectedStockRow.item?.name ?? ""}
         sku={selectedStockRow.item?.sku ?? ""}
         locationName={selectedStockRow.warehouse?.name ?? ""}
         locationCode={selectedStockRow.warehouse?.code ?? ""}
         project={data.projectName}
         serials={selectedStockRow.serials}
+        base={base}
+        itemId={selectedStockRow.itemId}
+        warehouseId={selectedStockRow.warehouseId}
       />
     )}
 

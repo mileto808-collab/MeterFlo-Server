@@ -84,13 +84,14 @@ export async function downloadStockSerials(
   format: "xlsx" | "csv" | "pdf",
   context: StockSerialExportContext,
   serials: readonly string[],
+  printWindow?: Window,
 ) {
   if (!serials.length) throw new Error("There are no serials to export.");
   // Snapshot the selected scope before any asynchronous workbook work.
   const selected = [...serials];
   if (format === "pdf") {
     // Open synchronously in the click gesture so popup blocking is detectable.
-    const popup = window.open("", "_blank");
+    const popup = printWindow ?? window.open("", "_blank");
     if (!popup) throw new Error("Allow popups for this site to open the printable PDF view.");
     popup.opener = null;
     popup.document.open();

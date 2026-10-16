@@ -16,6 +16,8 @@ import { auditingEnabled } from "./auditContext";
 import { inventoryPrint } from "./inventoryPrint";
 export { inventoryPrint } from "./inventoryPrint";
 import { draftWarehouse, isShipmentDraftAction } from "../shared/inventory-shipment-drafts";
+import { serialQuerySchema, stockQuerySchema } from "../shared/inventory-stock-query";
+import { prepareStockQueries, queryStock, queryStockSerials, stockOptions, stockSummary } from "./inventoryStockQueries";
 
 export function inventoryVisibleState(state: InventoryState, actor: string, admin: boolean, canCount = true, permissions?: string[]) {
   // Project-level view permits finding stock at other locations and requesting
@@ -71,6 +73,36 @@ export function registerInventoryRoutes(app: Express) {
   };
   app.use(base, isAuthenticated, auth);
   app.get(base, handler((_req, res) => snapshot(res)));
+  // Query-only reads never load the aggregate after cutover. Migration, when
+  // needed, retains the existing project lock; page/count reads share one MVCC snapshot.
+  const stockRead = (fn: (client: import("pg").PoolClient, req: any, res: any) => Promise<any>) =>
+    handler(async (req, res) => {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await prepareStockQueries(client, res.locals.inventory.project.id);
+        await client.query("COMMIT");
+        await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+        const result = await fn(client, req, res);
+        await client.query("COMMIT");
+        return result;
+      } catch (error) { await client.query("ROLLBACK"); throw error; }
+      finally { client.release(); }
+    });
+  app.get(`${base}/stock`, stockRead((client, req, res) =>
+    queryStock(client, res.locals.inventory.project.id, stockQuerySchema.parse(req.query))));
+  app.get(`${base}/stock/serials`, stockRead((client, req, res) =>
+    queryStockSerials(client, res.locals.inventory.project.id, serialQuerySchema.parse(req.query))));
+  app.get(`${base}/stock/options`, stockRead((client, req, res) =>
+    stockOptions(client, res.locals.inventory.project.id, z.string().max(300).default("").parse(req.query.q))));
+  app.get(`${base}/stock/context`, stockRead(async (client, _req, res) => {
+    const c = res.locals.inventory;
+    const [timezone, timezoneEnabled, summary] = await Promise.all([
+      storage.getSetting("default_timezone"), storage.getSetting("timezone_enabled"), stockSummary(client, c.project.id),
+    ]);
+    return { enabled: !!c.project.inventoryEnabled, projectName: c.project.name,
+      timezone: timezoneEnabled === "false" ? "UTC" : timezone || "America/Denver", permissions: c.permissions, summary };
+  }));
   app.post(`${base}/commands`, handler(async (req, res) => {
     const c = res.locals.inventory, command = inventoryCommandSchema.parse(req.body);
     let permission = commandPermission(command.action);

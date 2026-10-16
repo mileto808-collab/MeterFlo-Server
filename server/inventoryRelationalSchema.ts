@@ -99,6 +99,14 @@ export async function applyInventoryRelationalSchema(pool: Pool) {
     ON public.inventory_orders(project_id,order_number) WHERE order_number IS NOT NULL AND order_number<>''`);
   statements.push(`CREATE UNIQUE INDEX IF NOT EXISTS inventory_serial_occupancy_unique
     ON public.inventory_serial_occupancy(project_id,item_id,serial)`);
+  statements.push(`CREATE INDEX IF NOT EXISTS inventory_stock_serial_bin_position
+    ON public.inventory_stock_serials(project_id,warehouse_id,item_id,_position,serial)`);
+  statements.push(`CREATE INDEX IF NOT EXISTS inventory_stock_item_location
+    ON public.inventory_quantities(project_id,item_id,warehouse_id)`);
+  statements.push(`CREATE INDEX IF NOT EXISTS inventory_stock_item_sort
+    ON public.inventory_items(project_id,name,sku,id)`);
+  statements.push(`CREATE INDEX IF NOT EXISTS inventory_stock_location_sort
+    ON public.inventory_warehouses(project_id,name,code,id)`);
   const client = await pool.connect();
   await client.query("BEGIN");
   try {

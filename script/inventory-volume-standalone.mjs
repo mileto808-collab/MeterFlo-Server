@@ -10,7 +10,8 @@ import pg from "pg";
 
 const checkout = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
-if (args.length !== 1 || args[0] !== "--confirm-disposable-checkout")
+const stockOnly = args.includes("--stock-queries-only");
+if (args[0] !== "--confirm-disposable-checkout" || args.length !== (stockOnly ? 2 : 1))
   throw new Error("Use --confirm-disposable-checkout only in a separate test checkout.");
 const bin = process.env.INVENTORY_VOLUME_PG_BIN;
 if (!bin || !path.isAbsolute(bin)) throw new Error("Set INVENTORY_VOLUME_PG_BIN to the PostgreSQL bin directory.");
@@ -18,7 +19,7 @@ const tool = name => path.join(bin, name + (process.platform === "win32" ? ".exe
 for (const name of ["initdb", "pg_ctl", "postgres"]) await access(tool(name));
 await access(path.join(checkout, "dist/index.cjs"));
 await access(path.join(checkout, "node_modules/drizzle-kit/bin.cjs"));
-const output = path.join(checkout, "generated-artifacts/inventory-volume");
+const output = path.join(checkout, stockOnly ? "generated-artifacts/inventory-stock-queries" : "generated-artifacts/inventory-volume");
 await mkdir(output, { recursive: true });
 for (const name of ["metrics.json", "cleanup.json"]) await rm(path.join(output, name), { force: true });
 const root = await mkdtemp(path.join(os.tmpdir(), "meterflo-volume-"));
@@ -108,6 +109,7 @@ try {
   stage = "Disposable relational inventory schema";
   await run(process.execPath, ["--import", "tsx", "script/migrate-inventory-relational.ts", "--standalone"],
     { cwd: checkout, visible: true });
+  if (!stockOnly) {
   stage = "Engine boundaries and persistence";
   await run(process.execPath, ["--import", "tsx", "--test", "tests/inventory-volume.test.ts", "tests/inventory-persistence.test.ts"],
     { cwd: checkout, visible: true });
@@ -118,6 +120,11 @@ try {
   console.log("Running the real signed-in workload against the disposable server.");
   await run(process.execPath, ["--import", "tsx", "--test", "tests/inventory-volume-integration.test.ts"],
     { cwd: checkout, visible: true, timeout: 660_000 });
+  } else {
+    stage = "Bounded stock query acceptance";
+    await run(process.execPath, ["--import", "tsx", "--test", "tests/inventory-stock-query-integration.test.ts"],
+      { cwd: checkout, visible: true, timeout: 660_000 });
+  }
   const metrics = JSON.parse(await readFile(path.join(output, "metrics.json"), "utf8"));
   if (!metrics.passed || metrics.runId !== runId || metrics.environment?.platform !== process.platform)
     throw new Error("Current-run acceptance evidence is missing or failed.");
