@@ -21,6 +21,8 @@
     "test:inventory-resource:browser": "node tests/inventory-resource-ui.cjs",
     "test:inventory-count:browser": "node tests/inventory-count-ui.cjs",
     "test:inventory-order:browser": "node tests/inventory-order-ui.cjs",
+    "test:inventory-order-exports": "tsx --test tests/inventory-order-export.test.ts",
+    "test:inventory-orders-layout:browser": "node tests/inventory-orders-layout-ui.cjs",
     "test:inventory-order-discovery": "tsx --test tests/inventory-order-discovery.test.ts",
     "test:inventory-print": "tsx --test tests/inventory-print-labels.test.ts",
     "test:inventory-print:browser": "node tests/inventory-serial-print-ui.cjs",

@@ -14,6 +14,7 @@ type InventoryOrderFiltersProps = {
   timezone: string;
   resultCount: number;
   totalCount: number;
+  showSearch?: boolean;
 };
 
 const ALL = "__all__";
@@ -26,6 +27,7 @@ export function InventoryOrderFilters({
   timezone,
   resultCount,
   totalCount,
+  showSearch = true,
 }: InventoryOrderFiltersProps) {
   const invalidDateRange = !!filters.from && !!filters.to && filters.from > filters.to;
   const update = (values: Partial<OrderFilters>) => onChange({ ...filters, ...values });
@@ -34,7 +36,7 @@ export function InventoryOrderFilters({
   return (
     <section aria-label="Filter inventory orders" className="space-y-3 rounded-md border bg-card p-3 sm:p-4">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="space-y-1.5 sm:col-span-2 lg:col-span-4">
+        {showSearch && <div className="space-y-1.5 sm:col-span-2 lg:col-span-4">
           <Label htmlFor="inventory-order-search">Search orders</Label>
           <div className="relative">
             <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -48,7 +50,7 @@ export function InventoryOrderFilters({
               autoComplete="off"
             />
           </div>
-        </div>
+        </div>}
 
         <div className="space-y-1.5">
           <Label htmlFor="inventory-order-type">Order type</Label>

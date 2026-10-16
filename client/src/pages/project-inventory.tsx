@@ -14,6 +14,7 @@ import { orderLabel, orderReference, uuidOrderId } from "@shared/inventory-order
 import { inventoryActorLabel, inventoryHoldLabel, type InventoryActorLabel } from "@shared/inventory-display-labels";
 import { emptyOrderFilters, searchOrders } from "@shared/inventory-order-search";
 import { InventoryOrderFilters } from "@/components/inventory-order-filters";
+import { downloadInventoryOrders } from "@/lib/inventory-order-export";
 import { COUNT_MAX_LINES, COUNT_PAGE_SIZE } from "@shared/inventory-count-limits";
 import { inventoryCountRows, inventoryCountLines } from "@/lib/inventory-count-form";
 import { inventoryResourceFailure, validateInventoryResource } from "@/lib/inventory-resource-save";
@@ -36,7 +37,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { AlertTriangle, ArrowLeftRight, BarChart3, Boxes, ChevronDown, ChevronUp, ClipboardList, Loader2, Package, Plus, Printer, RefreshCw, Search, Warehouse as WarehouseIcon } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, BarChart3, Boxes, ChevronDown, ChevronUp, ClipboardList, Download, FileSpreadsheet, FileText, Filter, Loader2, Package, Plus, Printer, RefreshCw, Search, Warehouse as WarehouseIcon } from "lucide-react";
 
 type Snapshot = { enabled: boolean; projectName: string; timezone: string; state: InventoryState; permissions: string[]; users: Array<{ id: string; username: string }>; actors?: InventoryActorLabel[] };
 type ResourceKind = "warehouse" | "vendor" | "item";
@@ -113,6 +114,13 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [orderToClose, setOrderToClose] = useState<InventoryOrder | null>(null);
   const [closeReason, setCloseReason] = useState("");
   const [showClearedOrders, setShowClearedOrders] = useState(false);
+  const [orderFiltersOpen, setOrderFiltersOpen] = useState(false);
+  const [shipmentDraftsOpen, setShipmentDraftsOpen] = useState(false);
+  const [orderPage, setOrderPage] = useState(0);
+  const [orderResultsElement, setOrderResultsElement] = useState<HTMLDivElement | null>(null);
+  const orderRowHeightRef = useRef(0);
+  const orderContainerWidthRef = useRef(0);
+  const [orderRowsPerPage, setOrderRowsPerPage] = useState(1);
   const [orderToClear, setOrderToClear] = useState<InventoryOrder | null>(null);
   const requestOrderTransition = (transition: () => void) => {
     if (orderSaving.current || command.isPending) return;
@@ -223,6 +231,70 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const orderItems = state?.orders ?? [];
   const visibleOrders = useMemo(() => state ? searchOrders(state, orderFilters, showClearedOrders, timezone) : [],
     [state, orderFilters, showClearedOrders, timezone]);
+  useEffect(() => { setOrderPage(0); orderRowHeightRef.current = 0; }, [orderFilters, showClearedOrders]);
+  useEffect(() => {
+    const main = orderResultsElement?.closest("main");
+    if (!main) return;
+    const previousHeight = main.style.height;
+    const fit = () => {
+      // The real top includes app chrome and any hosting preview banner.
+      // A fixed viewport subtraction can put the pager below the screen.
+      const available = Math.max(0, window.innerHeight - Math.max(0, main.getBoundingClientRect().top));
+      main.style.height = `${available}px`;
+    };
+    const observer = new ResizeObserver(fit);
+    if (main.parentElement) observer.observe(main.parentElement);
+    window.addEventListener("resize", fit);
+    window.visualViewport?.addEventListener("resize", fit);
+    fit();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", fit);
+      window.visualViewport?.removeEventListener("resize", fit);
+      main.style.height = previousHeight;
+    };
+  }, [orderResultsElement]);
+  useEffect(() => {
+    const container = orderResultsElement;
+    if (!container) return;
+    let frame = 0;
+    const measure = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const width = container.clientWidth;
+        if (orderContainerWidthRef.current && Math.abs(width - orderContainerWidthRef.current) > 2) {
+          orderRowHeightRef.current = 0;
+        }
+        orderContainerWidthRef.current = width;
+        const rows = [...container.querySelectorAll<HTMLElement>("[data-order-id]")];
+        const rowHeight = rows.reduce((height, row) => {
+          const details = row.querySelector<HTMLDetailsElement>("details[open]");
+          const expanded = details ? details.getBoundingClientRect().height -
+            (details.querySelector("summary")?.getBoundingClientRect().height ?? 0) - 7 : 0;
+          return Math.max(height, row.getBoundingClientRect().height - Math.max(0, expanded));
+        }, 0);
+        if (rowHeight > 0) orderRowHeightRef.current = Math.max(orderRowHeightRef.current, rowHeight);
+        const measuredRow = orderRowHeightRef.current || 72;
+        // Account for results padding and the gap between collapsed records.
+        // Expanded details scroll locally, rather than permanently reducing capacity.
+        const next = Math.max(1, Math.min(100, Math.floor((container.clientHeight - 8) / (measuredRow + 8))));
+        setOrderRowsPerPage(current => current === next ? current : next);
+      });
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(container);
+    container.querySelectorAll("[data-order-id]").forEach(row => observer.observe(row));
+    window.addEventListener("resize", measure);
+    measure();
+    return () => { cancelAnimationFrame(frame); observer.disconnect(); window.removeEventListener("resize", measure); };
+  }, [orderResultsElement, inventoryTab, showInventoryStats, orderFiltersOpen, visibleOrders.length, orderPage, orderRowsPerPage]);
+  useEffect(() => {
+    const lastPage = Math.max(0, Math.ceil(visibleOrders.length / orderRowsPerPage) - 1);
+    setOrderPage(current => Math.min(current, lastPage));
+  }, [visibleOrders.length, orderRowsPerPage]);
+  const orderPageCount = Math.max(1, Math.ceil(visibleOrders.length / orderRowsPerPage));
+  const currentOrderPage = Math.min(orderPage, orderPageCount - 1);
+  const pagedOrders = visibleOrders.slice(currentOrderPage * orderRowsPerPage, (currentOrderPage + 1) * orderRowsPerPage);
   const orderTitle = (id: string) => { const order = orderItems.find(order => order.id === id); return order ? orderLabel(order) : id; };
   const activityPageSize = 100;
   const lastActivityPage = Math.max(0, Math.ceil((state?.receipts.length ?? 0) / activityPageSize) - 1);
@@ -391,23 +463,26 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     setSessionDraft(undefined);
     setOperationOrder(order); setOperation(action);
   };
-  const resumeShipmentDraft = async (draft: SavedShipmentDraft, snapshot?: InventoryState) => {
+  const resumeShipmentDraft = async (draft: SavedShipmentDraft, snapshot?: InventoryState): Promise<boolean> => {
     try {
       const freshState = snapshot ?? (await refreshShipmentInventory(base)).state;
       const order = freshState.orders.find(value => value.id === draft.orderId);
       if (!order) {
         toast({ title: "Order unavailable", description: "Restore the order before resuming this saved capture.", variant: "destructive" });
-        return;
+        return false;
       }
-      setMovementDirty(false);
-      setSessionState(freshState);
       const currentDraft = freshState.shipmentDrafts?.find(value => value.id === draft.id);
       if (!currentDraft) throw new Error("Saved shipment draft is no longer available to your account. Refresh inventory.");
+      setShipmentDraftsOpen(false);
+      setMovementDirty(false);
+      setSessionState(freshState);
       setSessionDraft(currentDraft);
       setOperation(draft.stage);
       setOperationOrder(order);
+      return true;
     } catch (error) {
       toast({ title: "Could not refresh shipment draft", description: error instanceof Error ? error.message : "Reconnect and retry.", variant: "destructive" });
+      return false;
     }
   };
   const startReplacementOrder = (order: InventoryOrder) => requestOrderTransition(() => {
@@ -706,8 +781,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
         </TabsList>
       </div>
 
-    <div className="min-h-0 flex-1 space-y-5 overflow-y-auto overscroll-contain pb-8 pr-1" data-testid="inventory-scroll-content" role="region" aria-label="Inventory content" tabIndex={0}>
-    {!hasAny && <Alert><Boxes className="h-4 w-4" /><AlertTitle>Set up the first stock location</AlertTitle><AlertDescription>Add a warehouse or service vehicle, then add catalog items and begin receiving meters.</AlertDescription></Alert>}
+    <div className={`min-h-0 flex-1 ${inventoryTab === "orders" ? "flex flex-col overflow-hidden" : "space-y-5 overflow-y-auto overscroll-contain pb-8 pr-1"}`} data-testid="inventory-scroll-content" role="region" aria-label="Inventory content" tabIndex={0}>
+    {!hasAny && <Alert hidden={inventoryTab === "orders"}><Boxes className="h-4 w-4" /><AlertTitle>Set up the first stock location</AlertTitle><AlertDescription>Add a warehouse or service vehicle, then add catalog items and begin receiving meters.</AlertDescription></Alert>}
 
       <TabsContent value="stock" className="space-y-4">
         <Card><CardHeader className="pb-3"><div className="flex flex-col justify-between gap-3 md:flex-row md:items-end"><div><CardTitle>On hand by location</CardTitle><CardDescription>Reserved units are excluded from available stock. Serial identity remains attached to its bin.</CardDescription></div><div className="relative w-full md:max-w-sm"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input aria-label="Search inventory" className="pl-9" placeholder="Search SKU, item, location, serial…" value={search} onChange={event => { setSearch(event.target.value); setStockPage(0); }} /></div></div></CardHeader><CardContent>
@@ -718,9 +793,14 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
         <Card><CardHeader><div className="flex items-center justify-between"><div><CardTitle>Vendors</CardTitle><CardDescription>Vendor details are project-specific.</CardDescription></div>{can("inventory.maintain") && <Button variant="outline" onClick={() => openResource("vendor")}><Plus className="mr-2 h-4 w-4" />Add vendor</Button>}</div></CardHeader><CardContent><div className="grid gap-2 sm:grid-cols-2">{vendors.map(vendor => <div key={vendor.id} className="rounded-md border p-3"><div className="flex justify-between gap-2"><span className="font-medium">{vendor.name}</span>{can("inventory.maintain") && <Button size="sm" variant="ghost" onClick={() => openResource("vendor", vendor)}>Edit</Button>}</div><p className="text-sm text-muted-foreground">{vendor.contact} {vendor.phone && `· ${vendor.phone}`}</p><p className="text-xs text-muted-foreground">{vendor.email || vendor.reference}</p></div>)}</div>{vendors.length === 0 && <Empty title="No vendors added" description="Vendor details are optional for internal stock moves and required when creating purchase orders." />}</CardContent></Card>
       </TabsContent>
 
-      <TabsContent value="orders" className="space-y-4">
-        <InventoryShipmentDraftsPanel base={base} state={state} users={data.users} orders={orderItems}
-          userId={user?.id} isAdmin={user?.role === "admin"} onResume={(draft, snapshot) => void resumeShipmentDraft(draft, snapshot)} />
+      <TabsContent value="orders" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
+        <Dialog open={shipmentDraftsOpen} onOpenChange={setShipmentDraftsOpen}>
+          <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-3xl">
+            <DialogHeader><DialogTitle>Saved shipment drafts</DialogTitle><DialogDescription>Continue a saved receiving, dispatch, or arrival capture. Access remains owner-only, except administrators may take ownership.</DialogDescription></DialogHeader>
+            <InventoryShipmentDraftsPanel base={base} state={state} users={data.users} orders={orderItems}
+              userId={user?.id} isAdmin={user?.role === "admin"} onResume={(draft, snapshot) => void resumeShipmentDraft(draft, snapshot)} />
+          </DialogContent>
+        </Dialog>
         {can("inventory.purchase") || can("inventory.transfer") ? <>
           <Dialog open={orderEditorOpen} onOpenChange={open => {
             if (open) setOrderEditorOpen(true);
@@ -759,30 +839,68 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
             </DialogContent>
           </Dialog>
         </> : null}
-        <Card><CardHeader><CardTitle>Purchase & transfer orders</CardTitle><CardDescription>Open the relevant action to scan and post each partial movement.</CardDescription></CardHeader><CardContent>
-          {!orderEditorOpen && orderMessage && <p className="mb-4 rounded-md border border-emerald-700/20 bg-emerald-700/5 px-3 py-2 text-sm" role="status">{orderMessage}</p>}
-          <InventoryOrderFilters filters={orderFilters} onChange={setOrderFilters} warehouses={warehouses} vendors={vendors}
-            timezone={timezone} resultCount={visibleOrders.length} totalCount={orderItems.filter(order => showClearedOrders || !order.archivedAt).length} />
-          {can("inventory.maintain") && orderItems.some(order => uuidOrderId(order.id) && !order.orderNumber) &&
-            <div className="mb-4 rounded-md border p-3 text-sm"><p>Older orders can receive readable numbers without changing their internal IDs or history. This requires access to their warehouses.</p><Button className="mt-2" size="sm" variant="outline" disabled={command.isPending} onClick={() => command.mutate({ action: "numberOrders", data: {} })}>Assign legacy order numbers</Button></div>}
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/20 p-3">
-            <div><Label htmlFor="show-cleared-orders" className="cursor-pointer">Show cleared POs</Label><p className="text-xs text-muted-foreground">Cleared orders are hidden by default; turn this on to restore them.</p></div>
-            <Checkbox id="show-cleared-orders" checked={showClearedOrders} onCheckedChange={checked => setShowClearedOrders(checked === true)} aria-label="Show cleared purchase orders" />
-          </div>
-          <div className="space-y-3">{visibleOrders.map(order => {
+        <Dialog open={orderFiltersOpen} onOpenChange={setOrderFiltersOpen}>
+          <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-3xl">
+            <DialogHeader><DialogTitle>Filter orders</DialogTitle><DialogDescription>Refine the order list by type, status, locations, vendor, date, and sort order.</DialogDescription></DialogHeader>
+            <InventoryOrderFilters filters={orderFilters} onChange={setOrderFilters} warehouses={warehouses} vendors={vendors}
+              timezone={timezone} resultCount={visibleOrders.length} totalCount={orderItems.filter(order => showClearedOrders || !order.archivedAt).length} showSearch={false} />
+          </DialogContent>
+        </Dialog>
+        <section className="flex min-h-0 flex-1 flex-col" aria-label="Purchase and transfer orders">
+          <header className="z-10 shrink-0 border-b bg-background px-1 pb-3" data-testid="inventory-orders-subheader">
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+              <div className="min-w-0">
+                <h2 className="text-lg font-semibold tracking-tight">Purchase &amp; transfer orders</h2>
+                <p className="text-xs text-muted-foreground">Review orders, capture movements, and follow exceptions.</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Button size="sm" variant="outline" aria-label="Refresh orders" onClick={() => void refetch()}><RefreshCw className="mr-1.5 h-4 w-4" />Refresh</Button>
+                <Button size="sm" variant="outline" aria-label="Saved shipment drafts" onClick={() => setShipmentDraftsOpen(true)}><ClipboardList className="mr-1.5 h-4 w-4" />Saved shipment drafts</Button>
+                <Button size="sm" variant="outline" aria-label="CSV" disabled={!visibleOrders.length} onClick={async () => {
+                  try { await downloadInventoryOrders("csv", { project: data.projectName, timezone }, visibleOrders, state); }
+                  catch (error) { toast({ title: "CSV export failed", description: error instanceof Error ? error.message : "Try again.", variant: "destructive" }); }
+                }}><Download className="mr-1.5 h-4 w-4" />CSV</Button>
+                <Button size="sm" variant="outline" aria-label="Excel" disabled={!visibleOrders.length} onClick={async () => {
+                  try { await downloadInventoryOrders("xlsx", { project: data.projectName, timezone }, visibleOrders, state); }
+                  catch (error) { toast({ title: "Excel export failed", description: error instanceof Error ? error.message : "Try again.", variant: "destructive" }); }
+                }}><FileSpreadsheet className="mr-1.5 h-4 w-4" />Excel</Button>
+                <Button size="sm" variant="outline" aria-label="PDF / Print" disabled={!visibleOrders.length} onClick={async () => {
+                  try { await downloadInventoryOrders("pdf", { project: data.projectName, timezone }, visibleOrders, state); }
+                  catch (error) { toast({ title: "PDF export failed", description: error instanceof Error ? error.message : "Try again.", variant: "destructive" }); }
+                }}><FileText className="mr-1.5 h-4 w-4" />PDF / Print</Button>
+              </div>
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <div className="relative w-full min-w-0 sm:min-w-64 sm:flex-1">
+                <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input aria-label="Search orders" className="h-9 pl-9" type="search" autoComplete="off"
+                  placeholder="Order number, reference, ID, product, vendor or location"
+                  value={orderFilters.query} onChange={event => setOrderFilters(current => ({ ...current, query: event.target.value }))} />
+              </div>
+              <Button size="sm" variant="outline" aria-label="Filters" aria-expanded={orderFiltersOpen} onClick={() => setOrderFiltersOpen(true)}><Filter className="mr-1.5 h-4 w-4" />Filters</Button>
+              <div className="flex items-center gap-2 rounded-md border px-2.5 py-1.5">
+                <Checkbox id="show-cleared-orders" checked={showClearedOrders} onCheckedChange={checked => setShowClearedOrders(checked === true)} aria-label="Show cleared purchase orders" />
+                <Label htmlFor="show-cleared-orders" className="cursor-pointer text-xs">Show cleared POs</Label>
+              </div>
+              {can("inventory.maintain") && orderItems.some(order => uuidOrderId(order.id) && !order.orderNumber) &&
+                <Button size="sm" variant="outline" disabled={command.isPending} onClick={() => command.mutate({ action: "numberOrders", data: {} })}>Assign legacy order numbers</Button>}
+            </div>
+            {!orderEditorOpen && orderMessage && <p className="mt-2 rounded-md border border-emerald-700/20 bg-emerald-700/5 px-3 py-2 text-sm" role="status">{orderMessage}</p>}
+          </header>
+          <div ref={setOrderResultsElement} className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-2" data-testid="inventory-order-results" data-page-size={orderRowsPerPage} role="region" aria-label="Order results" tabIndex={0}>
+          <div className="space-y-2">
+          {pagedOrders.map(order => {
             const archived = !!order.archivedAt;
             const purchase = order.type === "purchase";
             const unreleaseLocked = ["released", "partial", "completed"].includes(order.status) && isUnreleaseLocked(order);
-            return <div key={order.id} data-testid="inventory-order-card" className="rounded-lg border p-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2 font-medium">{orderLabel(order)}<Badge variant={order.status === "completed" ? "default" : "outline"}>{order.status}</Badge><Badge variant="secondary">{order.type}</Badge>{order.replacementFor && <Badge variant="outline">replacement for {orderTitle(order.replacementFor)}</Badge>}{archived && <Badge variant="secondary">cleared</Badge>}</div>
-                  {orderReference(order) && <p className="mt-1 text-sm">Reference: {orderReference(order)}</p>}
-                  <details className="mt-1 text-xs text-muted-foreground"><summary className="cursor-pointer">Internal ID / copy</summary><div className="mt-1 flex flex-wrap items-center gap-2"><span className="break-all font-mono">{order.id}</span><Button size="sm" variant="ghost" onClick={() => navigator.clipboard.writeText(order.id).catch(() => toast({ title: "Copy unavailable", description: "Select and copy the displayed internal ID." }))}>Copy internal ID</Button></div></details>
-                  <p className="mt-1 text-sm text-muted-foreground">{purchase ? vendors.find(v => v.id === order.vendorId)?.name : warehouses.find(w => w.id === order.sourceId)?.name} → {warehouses.find(w => w.id === order.destinationId)?.name}</p>
-                  <p className="text-xs text-muted-foreground">{order.lines.map(line => `${items.find(item => item.id === line.itemId)?.sku ?? line.itemId} × ${line.quantity}`).join(" · ")}</p>
+            return <article key={order.id} data-testid="inventory-order-card" data-order-id={order.id} className="min-w-0 rounded-md border bg-card px-3 py-2.5">
+              <div className="flex min-w-0 flex-col justify-between gap-2 lg:flex-row lg:items-center">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-1.5 font-medium"><span className="font-mono">{orderLabel(order)}</span><Badge variant={order.status === "completed" ? "default" : "outline"}>{order.status}</Badge><Badge variant="secondary">{order.type}</Badge>{order.replacementFor && <Badge variant="outline">replacement for {orderTitle(order.replacementFor)}</Badge>}{archived && <Badge variant="secondary">cleared</Badge>}</div>
+                  <p className="mt-1 break-words text-sm text-muted-foreground">{purchase ? vendors.find(v => v.id === order.vendorId)?.name : warehouses.find(w => w.id === order.sourceId)?.name} → {warehouses.find(w => w.id === order.destinationId)?.name}{orderReference(order) ? ` · Ref ${orderReference(order)}` : ""}</p>
+                  <p className="text-xs text-muted-foreground">{order.lines.length} {order.lines.length === 1 ? "item" : "items"} · created {new Date(order.createdAt).toLocaleDateString(undefined, { timeZone: timezone })}</p>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                   <Button size="sm" variant="outline" onClick={() => openPrint("order", order.id)}><Printer className="mr-1 h-3.5 w-3.5" />Print</Button>
                   {order.status === "draft" && can(purchase ? "inventory.purchase" : "inventory.transfer") && <><Button size="sm" variant="outline" onClick={() => editOrderDraft(order)}>Edit draft</Button><Button size="sm" disabled={command.isPending} onClick={() => command.mutate({ action: "release", data: { orderId: order.id } })}>Release</Button></>}
                   {!["completed", "cancelled", "closed"].includes(order.status) && can(purchase ? "inventory.purchase" : "inventory.transfer") && <Button size="sm" variant="ghost" disabled={command.isPending} onClick={() => command.mutate({ action: "cancel", data: { orderId: order.id } })}>Cancel</Button>}
@@ -806,8 +924,12 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
                   {purchase && order.status === "cancelled" && archived && can("inventory.purchase") && <Button size="sm" variant="outline" disabled={command.isPending} onClick={() => requestOrderTransition(() => runOrderCommand("restoreOrder", order))}>Restore</Button>}
                 </div>
               </div>
-              {unreleaseLocked && <p className="mt-3 text-xs text-muted-foreground" role="note">{(state.shipmentDrafts ?? []).some(draft => draft.orderId === order.id) ? "Resume or discard the saved shipment capture before un-releasing this order." : "This order has posted shipment activity and cannot return to draft. Dispatches and receipts must remain attached to the order."}</p>}
-              <div className="mt-3 grid gap-1 border-t pt-2">{order.lines.map(line => {
+              <details className="mt-2 border-t pt-1.5 text-xs">
+                <summary className="w-fit cursor-pointer text-muted-foreground">Order details · lines, progress, and internal ID</summary>
+                <div className="mt-2 space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-2 text-muted-foreground"><span className="break-all font-mono">{order.id}</span><Button size="sm" variant="ghost" onClick={() => navigator.clipboard.writeText(order.id).catch(() => toast({ title: "Copy unavailable", description: "Select and copy the displayed internal ID." }))}>Copy internal ID</Button></div>
+                  {unreleaseLocked && <p className="text-muted-foreground" role="note">{(state.shipmentDrafts ?? []).some(draft => draft.orderId === order.id) ? "Resume or discard the saved shipment capture before un-releasing this order." : "This order has posted shipment activity and cannot return to draft. Dispatches and receipts must remain attached to the order."}</p>}
+                  <div className="grid gap-1 border-t pt-2">{order.lines.map(line => {
                 const item = items.find(value => value.id === line.itemId);
                 const p = orderLineProgress(state, order, line.itemId);
                 return <p key={line.itemId} className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
@@ -818,12 +940,21 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
                   {p.lost > 0 && <span>loss {p.lost}</span>}{p.remaining > 0 && <span>remaining {p.remaining}</span>}
                   {p.closedShort > 0 && <span>closed short {p.closedShort}</span>}
                 </p>;
-              })}</div>
-              {order.closure && <p className="mt-2 rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">Closed by {order.closure.actor} · {new Date(order.closure.occurredAt).toLocaleString()} · {order.closure.reason}</p>}
-            </div>;
+                  })}</div>
+                  {order.closure && <p className="rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">Closed by {order.closure.actor} · {new Date(order.closure.occurredAt).toLocaleString()} · {order.closure.reason}</p>}
+                </div>
+              </details>
+            </article>;
           })}</div>
-          {visibleOrders.length === 0 && <Empty title={orderItems.length ? "No matching orders" : "No orders yet"} description={orderItems.length ? "Clear search or reset filters; enable Show cleared POs to include cleared purchase orders." : "Draft a purchase order or a transfer between a stockroom and service vehicle."} />}
-        </CardContent></Card>
+          {visibleOrders.length === 0 && <div className="grid min-h-36 place-items-center"><Empty title={orderItems.length ? "No matching orders" : "No orders yet"} description={orderItems.length ? "Clear search or reset filters; enable Show cleared POs to include cleared purchase orders." : "Draft a purchase order or a transfer between a stockroom and service vehicle."} /></div>}
+          </div>
+          <nav className="flex shrink-0 flex-wrap items-center gap-2 border-t px-1 py-2" data-testid="inventory-orders-pagination" aria-label="Order pages">
+            <p className="mr-auto text-xs text-muted-foreground" aria-live="polite">{visibleOrders.length ? `${currentOrderPage * orderRowsPerPage + 1}–${Math.min(visibleOrders.length, (currentOrderPage + 1) * orderRowsPerPage)} of ${visibleOrders.length}` : "0 orders"}</p>
+            <Button size="sm" variant="outline" aria-label="Previous order page" disabled={currentOrderPage === 0} onClick={() => { setOrderPage(Math.max(0, currentOrderPage - 1)); orderResultsElement?.scrollTo({ top: 0 }); }}>Previous</Button>
+            <span className="min-w-16 text-center text-xs tabular-nums">Page {currentOrderPage + 1} / {orderPageCount}</span>
+            <Button size="sm" variant="outline" aria-label="Next order page" disabled={currentOrderPage >= orderPageCount - 1} onClick={() => { setOrderPage(currentOrderPage + 1); orderResultsElement?.scrollTo({ top: 0 }); }}>Next</Button>
+          </nav>
+        </section>
       </TabsContent>
       <TabsContent value="exceptions">
         <InventoryShipmentExceptions state={state} items={items} orders={orderItems} canResolve={can("inventory.resolveExceptions")}
