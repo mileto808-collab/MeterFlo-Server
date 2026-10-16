@@ -314,20 +314,6 @@
  * compact mode and let opened toolbars scroll within the remaining height.
  */
 @media (orientation: landscape) and (pointer: coarse) and (max-height: 600px) and (max-width: 960px) {
-  .inventory-order-draft-action {
-    width: 2.5rem;
-    min-width: 2.5rem;
-    padding-inline: 0;
-  }
-
-  .inventory-order-draft-action > span {
-    display: none !important;
-  }
-
-  .inventory-order-draft-action > svg {
-    margin-right: 0 !important;
-  }
-
   .inventory-stock-serial-action-mobile {
     display: none;
   }

@@ -856,7 +856,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       </TabsContent>
       <TabsContent value="locations" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         <InventoryRecordsWorkspace kind="locations" title="Warehouses & vehicles" description="Access is enforced by the project inventory service for every operation." dataset={locationsDataset} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
-          headerAction={can("inventory.maintain") && <Button size="sm" onClick={() => openResource("warehouse")}><Plus className="mr-1.5 h-4 w-4" />Add location</Button>}
+          headerAction={can("inventory.maintain") && <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" aria-label="Add location" title="Add location" onClick={() => openResource("warehouse")}><Plus className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Add location</span></Button>}
           renderRow={row => { const warehouse = warehouses.find(value => value.id === row.id); if (!warehouse) return null;
             const assigned = data.users.find(user => user.id === warehouse.assignedUserId)?.username ?? (warehouse.assignedUserId ? inventoryActorLabel(warehouse.assignedUserId, data.actors ?? data.users) : "None");
             const authorized = warehouse.userIds.map(id => data.users.find(user => user.id === id)?.username ?? inventoryActorLabel(id, data.actors ?? data.users));
@@ -945,11 +945,11 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
                 <h2 className="truncate whitespace-nowrap text-base font-semibold tracking-tight sm:text-lg">Purchase &amp; transfer orders</h2>
                 <p className="hidden text-xs text-muted-foreground sm:block">Review orders, capture movements, and follow exceptions.</p>
               </div>
-              {(can("inventory.purchase") || can("inventory.transfer")) && <Button size="sm" className="inventory-order-draft-action h-10 min-w-10 shrink-0 px-3" aria-label="Build an order draft" title="Build an order draft" onClick={() => { setInventoryTab("orders"); startNewOrderDraft(); }}><Plus className="h-4 w-4 sm:mr-1.5" /><span className="hidden whitespace-nowrap sm:inline">Build an order draft</span></Button>}
             </div>
             <InventoryMobileTools tab="orders">
               <div className="mt-1 space-y-2 rounded-md border bg-card p-2 md:rounded-none md:border-0 md:bg-transparent md:p-0">
               <div className="flex items-center gap-1.5">
+                {(can("inventory.purchase") || can("inventory.transfer")) && <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" aria-label="Build an order draft" title="Build an order draft" onClick={() => { setInventoryTab("orders"); startNewOrderDraft(); }}><Plus className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Build an order draft</span></Button>}
                 <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="Refresh orders" title="Refresh orders" onClick={() => void refetch()}><RefreshCw className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Refresh</span></Button>
                 <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="Saved shipment drafts" title="Saved shipment drafts" onClick={() => setShipmentDraftsOpen(true)}><ClipboardList className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Saved shipment drafts</span></Button>
                 <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="CSV" title="CSV" disabled={!visibleOrders.length} onClick={async () => {

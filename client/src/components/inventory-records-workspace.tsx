@@ -132,11 +132,12 @@ export function InventoryRecordsWorkspace({ kind, title, description, dataset, p
     </Dialog>
     <header className="sticky top-0 z-10 shrink-0 border-b bg-background px-1 pb-2 sm:pb-3" data-testid={`inventory-${kind}-subheader`}>
       <div className="flex min-h-8 items-center justify-between gap-2">
-        <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="text-base font-semibold tracking-tight sm:text-lg">{title}</h2>{headerAction}</div><p className="hidden text-xs text-muted-foreground sm:block">{description}</p></div>
+        <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="text-base font-semibold tracking-tight sm:text-lg">{title}</h2></div><p className="hidden text-xs text-muted-foreground sm:block">{description}</p></div>
       </div>
       <InventoryMobileTools tab={kind}>
         <div className="space-y-2 rounded-md border bg-card p-2 md:rounded-none md:border-0 md:bg-transparent md:p-0">
           <div className="flex items-center gap-1.5">
+            {headerAction}
             <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label={`Refresh ${nouns[kind]}`} title={`Refresh ${nouns[kind]}`} onClick={onRefresh}><RefreshCw className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Refresh</span></Button>
             <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="CSV" title="CSV" disabled={!matchingRows.length} onClick={() => void exportFile("csv")}><Download className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">CSV</span></Button>
             <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="Excel" title="Excel" disabled={!matchingRows.length} onClick={() => void exportFile("xlsx")}><FileSpreadsheet className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Excel</span></Button>
