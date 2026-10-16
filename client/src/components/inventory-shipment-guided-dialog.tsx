@@ -118,8 +118,8 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
       return "This serial is currently installed or occupied by a work order.";
     if (state.returns.some(returned => returned.serial === serial && (returned.status === "pending" || returned.status === "quarantine")))
       return "This serial is part of a pending equipment return.";
-    if (state.receipts.some(receipt => receipt.action === "assemble" && receipt.components?.some(line => line.serials.includes(serial))))
-      return "This serial is already recorded as a kit component.";
+    if ((state.kitHolds ?? []).some(hold => hold.status === "held" && hold.serials.includes(serial)))
+      return "This serial is held for kit component inspection.";
     const foreignTransit = state.orders.some(other => other.id !== order.id && other.type === "transfer" &&
       other.dispatched.some(line => line.serials.includes(serial) && unresolvedTransferSerials(state, other, line.itemId).includes(serial)));
     if (foreignTransit) return "This serial is unresolved in another transfer.";

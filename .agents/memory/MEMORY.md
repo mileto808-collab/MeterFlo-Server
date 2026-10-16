@@ -28,3 +28,4 @@
 - [Export scope safety](export-scope-safety.md) — keep empty filtered scopes selectable; disable downloads rather than leaving users on an unintended all-records export.
 - [Inventory phone density](inventory-phone-density.md) — prioritize records across every tab; use compact section navigation and collapsed Search & Tools like Work Orders.
 - [Category compatibility](inventory-category-compatibility.md) — project categories must preserve legacy item classifications, including after the last item is cleared.
+- [Kit custody](inventory-kit-custody.md) — recover original assembled contents, never today's recipe; current custody governs reuse and ambiguous legacy lineage must not be invented.

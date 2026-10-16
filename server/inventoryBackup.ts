@@ -8,6 +8,7 @@ import { validateShipmentBackup } from "./inventoryShipmentBackup";
 import { savedShipmentDraftSchema } from "../shared/inventory-shipment-draft-model";
 import { draftWarehouse } from "../shared/inventory-shipment-drafts";
 import { readInventoryCategories, storedCategoryState, writeInventoryCategories, writeInventoryCategoryItem } from "./inventoryCategories";
+import { validateKitBackup } from "./inventoryKitBackup";
 
 export type InventoryBackup = { state: InventoryState; movements: any[]; enabled: boolean };
 export async function exportInventory(client: PoolClient, schema: string): Promise<InventoryBackup | undefined> {
@@ -67,6 +68,7 @@ export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: n
       throw new Error("Inventory backup has invalid stock relationships or quantities.");
   }
   validateShipmentBackup(s);
+  validateKitBackup(s);
 }
 export async function restoreInventory(client: PoolClient, schema: string, backup: InventoryBackup) {
   const { rows: [p] } = await client.query("SELECT id FROM public.projects WHERE database_name=$1", [schema]);

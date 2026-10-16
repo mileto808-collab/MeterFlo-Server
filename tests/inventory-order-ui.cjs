@@ -352,7 +352,7 @@ async function main() {
 
     // Two dirty editors must each get a choice; saving count changes alone
     // never grants permission to discard the order.
-    await page.getByRole("tab", { name: "Counts & assembly", exact: true }).click();
+    await page.getByRole("tab", { name: "Cycle counts", exact: true }).click();
     await page.getByRole("combobox").first().click();
     await page.getByRole("option", { name: "ORDER-MAIN · order-main", exact: true }).click();
     await page.getByRole("button", { name: "Start count", exact: true }).click();

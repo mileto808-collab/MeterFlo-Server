@@ -5,6 +5,7 @@ import { orderLabel, orderReference as customerOrderReference } from "../shared/
 import { inventoryBarcode } from "./inventoryBarcode";
 import { shipmentPrint } from "./inventoryShipmentPrint";
 import { receiptSerialAppendix, receiptSerialSummary } from "./inventoryReceiptSerials";
+import { inventoryKitPrint } from "./inventoryKitPrint";
 
 const escape = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 export function inventoryPrint(kind: string, record: any, state: InventoryState, project: string, actors: readonly InventoryActorLabel[] = []) {
@@ -16,6 +17,8 @@ export function inventoryPrint(kind: string, record: any, state: InventoryState,
   const orderReference = linkedOrder ? `${orderLabel(linkedOrder)}${customerOrderReference(linkedOrder) ? ` · Reference: ${customerOrderReference(linkedOrder)}` : ""}` : undefined;
   const actorLabel = (id: string) => inventoryActorLabel(id, actors);
   const origin = linkedOrder || record;
+  const kitReceipt = kind === "receipt" && ["assemble", "disassemble", "resolveKitHold"].includes(record.action);
+  const kitItem = kitReceipt ? state.items.find(i => i.id === record.reference) : undefined;
   return `<!doctype html><html><head><meta charset="utf-8"><title>${escape(reference)}</title><style>
      body{font:14px Arial;margin:30px;color:#111}table{border-collapse:collapse;width:100%;margin-top:20px}th,td{border:1px solid #bbb;padding:8px;text-align:left}button{padding:10px}
     .internal-barcode{margin:12px 0;break-inside:avoid;page-break-inside:avoid}.internal-barcode figcaption{font-size:12px;font-weight:bold;margin-bottom:4px}.internal-barcode svg{display:block;width:135mm;max-width:100%;height:auto}
@@ -29,6 +32,7 @@ export function inventoryPrint(kind: string, record: any, state: InventoryState,
     <body><button onclick="window.print()">Print / Save PDF</button><h1>${escape(project)} — ${escape(kind)}</h1>
     <p>${escape(reference)} · Status: ${escape(record.status || record.action)}</p>
     ${orderReference ? `<p><strong>Order number / reference: ${escape(orderReference)}</strong></p>` :
+      kitReceipt ? `<p>Kit / component: ${escape(kitItem ? `${kitItem.sku} · ${kitItem.name}` : "Unavailable product")}</p>` :
       kind === "receipt" && record.reference ? `<p>Operation reference: ${escape(record.reference)}</p>` : ""}
     <p>Date: ${escape(record.createdAt || record.occurredAt)} · Actor: ${escape(actorLabel(record.actor))}</p>
     <p>From: ${escape(warehouse(origin.sourceId))} · To: ${escape(warehouse(origin.destinationId || record.warehouseId))}</p>
@@ -40,6 +44,6 @@ export function inventoryPrint(kind: string, record: any, state: InventoryState,
      <td>${escape(l.quantity)}</td><td>${kind === "receipt" ? receiptSerialSummary(l) : escape((l.serials || []).join(", "))}</td><td>${escape((record.dispatched || []).filter((x: any) => x.itemId === l.itemId).reduce((n: number, x: any) => n + x.quantity, 0))}</td>
     <td>${escape((record.received || []).filter((x: any) => x.itemId === l.itemId).reduce((n: number, x: any) => n + x.quantity, 0))}</td></tr>`).join("")}</tbody></table>
     ${shipmentPrint(kind, record, state, actorLabel)}
-     ${record.components ? `<h2>Components</h2><p>${kind === "receipt" ? record.components.map((l: any) => `${escape(l.itemId)}: ${escape(l.quantity)} (${receiptSerialSummary(l)})`).join("; ") : escape(record.components.map((l: any) => `${l.itemId}: ${l.quantity} (${(l.serials || []).join(", ")})`).join("; "))}</p>` : ""}
+      ${kitReceipt ? inventoryKitPrint(record, state) : record.components ? `<h2>Components</h2><p>${kind === "receipt" ? record.components.map((l: any) => `${escape(l.itemId)}: ${escape(l.quantity)} (${receiptSerialSummary(l)})`).join("; ") : escape(record.components.map((l: any) => `${l.itemId}: ${l.quantity} (${(l.serials || []).join(", ")})`).join("; "))}</p>` : ""}
      ${kind === "receipt" ? receiptSerialAppendix(record, state, project) : ""}</body></html>`;
 }

@@ -75,10 +75,21 @@ test("full-system inventory restore preserves identity IDs, JSON serials, sequen
       if (pending) post("shipmentDraftPrepare", { id: draftId, revision: 1, postingId: randomUUID(),
         payload: { orderId, lines: [{ itemId: "m", quantity: 1, serials: ["RESTORE-0006"] }], damaged: [], reason: "" } });
     }
+    post("item", { id: "kit-part", sku: "KIT-PART", name: "Kit component", tracking: "regular" });
+    post("item", { id: "kit", sku: "KIT", name: "Kit", tracking: "regular", components: [{ itemId: "kit-part", quantity: 1 }] });
+    post("order", { id: "kit-po", type: "purchase", vendorId: "v", destinationId: "w", lines: [{ itemId: "kit-part", quantity: 8 }] });
+    post("release", { orderId: "kit-po" });
+    post("receive", { orderId: "kit-po", lines: [{ itemId: "kit-part", quantity: 8 }] });
+    post("assemble", { warehouseId: "w", itemId: "kit", quantity: 3, serials: [],
+      components: [{ itemId: "kit-part", quantity: 3, serials: [] }] });
+    const assemblyId = state.receipts.at(-1)!.id;
+    post("disassemble", { warehouseId: "w", assemblyId, quantity: 1, serials: [], reason: "Breakdown fixture",
+      components: [{ itemId: "kit-part", usableQuantity: 0, damagedQuantity: 1, missingQuantity: 0,
+        usableSerials: [], damagedSerials: [], missingSerials: [], reason: "Damaged component" }] });
     await client.query("INSERT INTO inventory_state VALUES($1,$2)", [42, state]);
     await client.query("INSERT INTO inventory_categories(project_id,id,name,active) VALUES($1,$2,$3,true)", [42, categoryId, "Meters"]);
-    await client.query("INSERT INTO inventory_items(project_id,id,sku,data,category_id) VALUES($1,$2,$3,$4,$5)", [42, "m", "M", state.items[0], categoryId]);
-    await client.query("INSERT INTO inventory_quantities VALUES($1,$2,$3,$4,$5,$6)", [42, "w", "m", 3, 0, JSON.stringify(["00001", "00002", "QUARANTINE-0003"])]);
+    for (const item of state.items) await client.query("INSERT INTO inventory_items(project_id,id,sku,data,category_id) VALUES($1,$2,$3,$4,$5)", [42, item.id, item.sku, item, item.categoryId]);
+    for (const b of state.stock) await client.query("INSERT INTO inventory_quantities VALUES($1,$2,$3,$4,$5,$6)", [42, b.warehouseId, b.itemId, b.quantity, 0, JSON.stringify(b.serials)]);
     await client.query("INSERT INTO inventory_movements(id,project_id,operation_id,action,changes) OVERRIDING SYSTEM VALUE VALUES(500,42,$1,'receive',$2)",
       [randomUUID(), { stock: state.stock, entities: [] }]);
     const mainDatabase: Record<string, any[]> = {};

@@ -127,7 +127,7 @@ async function main() {
     await moduleRow.getByRole("button", { name: "Release to stock" }).click();
     await moduleRow.getByText("released", { exact: true }).waitFor();
 
-    await page.getByRole("tab", { name: "Counts & assembly", exact: true }).click();
+    await page.getByRole("tab", { name: "Cycle counts", exact: true }).click();
     await page.getByText("Count #1", { exact: true }).waitFor();
     assert.doesNotMatch(await page.locator("main").last().innerText(), new RegExp(legacyId));
     await page.getByRole("button", { name: "Continue count", exact: true }).click();
@@ -160,7 +160,7 @@ async function main() {
     await printPage.getByText("Reference: Count #2", { exact: false }).waitFor();
     await printPage.close();
     await page.reload();
-    await page.getByRole("tab", { name: "Counts & assembly", exact: true }).click();
+    await page.getByRole("tab", { name: "Cycle counts", exact: true }).click();
     await page.getByText("Count #2", { exact: true }).waitFor();
     await page.getByRole("tab", { name: "Activity", exact: true }).click();
     await page.getByText("countPost · Count #2", { exact: true }).waitFor();

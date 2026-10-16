@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Download, FileSpreadsheet, FileText, Filter, Plus, RefreshCw, Search } from "lucide-react";
+import { Download, Eye, FileSpreadsheet, FileText, Filter, PackageCheck, PackageMinus, Plus, RefreshCw, Search } from "lucide-react";
 import { InventoryMobileTools } from "@/components/inventory-mobile-tools";
 import type { InventoryItem, Vendor } from "@shared/inventory";
 import { downloadInventoryCatalog } from "@/lib/inventory-catalog-export";
@@ -18,8 +18,13 @@ type Props = {
   projectName: string;
   timezone: string;
   canMaintain: boolean;
+  canAssemble?: boolean;
+  canInspectKits?: boolean;
   onRefresh: () => void;
   onAdd: () => void;
+  onAssemble?: () => void;
+  onDisassemble?: () => void;
+  onInspectKits?: () => void;
   onEditItem: (item: InventoryItem) => void;
   onEditVendor: (vendor: Vendor) => void;
 };
@@ -34,7 +39,7 @@ const sameOriginImage = (value: string) => {
   catch { return null; }
 };
 
-export function InventoryCatalogWorkspace({ kind, items, vendors, projectName, timezone, canMaintain, onRefresh, onAdd, onEditItem, onEditVendor }: Props) {
+export function InventoryCatalogWorkspace({ kind, items, vendors, projectName, timezone, canMaintain, canAssemble = false, canInspectKits = false, onRefresh, onAdd, onAssemble, onDisassemble, onInspectKits, onEditItem, onEditVendor }: Props) {
   const { toast } = useToast();
   const [query, setQuery] = useState("");
   const [itemFilters, setItemFilters] = useState<ItemFilters>(initialItemFilters);
@@ -176,13 +181,15 @@ export function InventoryCatalogWorkspace({ kind, items, vendors, projectName, t
       </div>
       <InventoryMobileTools tab={kind}>
         <div className="space-y-2 rounded-md border bg-card p-2 md:rounded-none md:border-0 md:bg-transparent md:p-0">
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             {canMaintain && <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" aria-label={`Add ${isItems ? "item" : "vendor"}`} title={`Add ${isItems ? "item" : "vendor"}`} onClick={onAdd}><Plus className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Add {isItems ? "item" : "vendor"}</span></Button>}
+            {isItems && canAssemble && <><Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="Assemble kit" title="Assemble kit" onClick={onAssemble}><PackageCheck className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Assemble kit</span></Button><Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="Disassemble kit" title="Disassemble kit" onClick={onDisassemble}><PackageMinus className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Disassemble kit</span></Button></>}
+            {isItems && canInspectKits && <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="Inspect kit holds" title="Inspect kit holds" onClick={onInspectKits}><Eye className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Inspect kits</span></Button>}
             <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label={`Refresh ${kind}`} title={`Refresh ${kind}`} onClick={onRefresh}><RefreshCw className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Refresh</span></Button>
             <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="CSV" title="CSV" disabled={!matchingRows.length} onClick={() => void exportFile("csv")}><Download className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">CSV</span></Button>
             <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="Excel" title="Excel" disabled={!matchingRows.length} onClick={() => void exportFile("xlsx")}><FileSpreadsheet className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Excel</span></Button>
             <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="PDF / Print" title="PDF / Print" disabled={!matchingRows.length} onClick={() => void exportFile("pdf")}><FileText className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">PDF / Print</span></Button>
-            <p className="ml-auto whitespace-nowrap text-xs text-muted-foreground" aria-live="polite">{matchingRows.length} {kind}</p>
+            <p className="ml-auto basis-full shrink-0 text-right text-xs text-muted-foreground sm:basis-auto" aria-live="polite">{matchingRows.length} {kind}</p>
           </div>
           <div className="flex min-w-0 items-center gap-2">
             <div className="relative min-w-0 flex-1"><Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input aria-label={`Search ${kind}`} className="h-9 pl-9" type="search" autoComplete="off" placeholder={isItems ? "Name, SKU, barcode, maker or vendor" : "Vendor, contact, phone, email or reference"} value={query} onChange={event => setQuery(event.target.value)} /></div>

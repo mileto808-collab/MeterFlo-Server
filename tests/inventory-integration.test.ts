@@ -13,6 +13,7 @@ import { withAuditContext } from "../server/auditContext";
 import type { InventoryCommand } from "../shared/inventory";
 import { blankShipmentCapture } from "../shared/inventory-shipment-draft-model";
 import { initializeAudit } from "../server/auditMigration";
+import { kitAssemblyOptions } from "../shared/inventory-kits";
 
 test("transactional completion, mobile usage, concurrency, import rollback, and inventory-aware restore", async () => {
   await initializeInventory(pool);
@@ -127,6 +128,25 @@ test("transactional completion, mobile usage, concurrency, import rollback, and 
     assert.equal(inspectionAudit[0].actor_id, user.id);
     assert.ok(inspectionAudit[0].changes.some((change: any) =>
       change.field === `shipmentHolds/${inspectedHold.id}` && change.after.dispositions[0].quantity === 1));
+    await command("item", { id: "kit-part", sku: "KIT-PART", name: "Kit component", tracking: "regular" });
+    await command("item", { id: "kit", sku: "KIT", name: "Kit", tracking: "regular", components: [{ itemId: "kit-part", quantity: 1 }] });
+    await command("order", { id: "kit-po", type: "purchase", vendorId: "v", destinationId: "w", lines: [{ itemId: "kit-part", quantity: 8 }] });
+    await command("release", { orderId: "kit-po" });
+    await command("receive", { orderId: "kit-po", lines: [{ itemId: "kit-part", quantity: 8 }] });
+    const assemblyId = randomUUID();
+    await command("assemble", { warehouseId: "w", itemId: "kit", quantity: 3, serials: [],
+      components: [{ itemId: "kit-part", quantity: 3, serials: [] }] }, assemblyId);
+    const disassembly = { warehouseId: "w", assemblyId, quantity: 2, serials: [], reason: "Break down stock",
+      components: [{ itemId: "kit-part", usableQuantity: 1, damagedQuantity: 1, missingQuantity: 0,
+        usableSerials: [], damagedSerials: [], missingSerials: [], reason: "One bent component" }] };
+    const competingBreakdowns = await Promise.allSettled([command("disassemble", disassembly), command("disassemble", disassembly)]);
+    assert.equal(competingBreakdowns.filter(r => r.status === "fulfilled").length, 1, "one atomic conversion wins; the other cannot duplicate recovery");
+    const kitState = await inventoryState(project.id);
+    assert.equal(kitAssemblyOptions(kitState, "w", "kit")[0].availableQuantity, 1);
+    assert.equal(kitState.kitHolds![0].quantity, 1);
+    const { rows: kitAudit } = await pool.query("SELECT changes FROM meterflo_audit.events WHERE project_id=$1 AND action='inventory.disassemble' AND outcome='success'", [project.id]);
+    assert.equal(kitAudit.length, 1);
+    assert.ok(kitAudit[0].changes.some((c: any) => c.field.startsWith("kitAssemblies/")));
     const before = await inventoryState(project.id), backup = await backupProjectDatabase(schema);
     assert.ok(backup.inventory);
     assert.ok(backup.inventory.state.orders.find(order => order.id === "amend-po")?.archivedAt, "cleared POs remain in portable backups");

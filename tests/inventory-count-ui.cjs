@@ -41,7 +41,7 @@ async function main() {
       return event.defaultPrevented;
     }), dirty, "beforeunload reflects only unsaved count values");
     await page.goto(`/projects/${fixture.projectId}/inventory`);
-    await page.getByRole("tab", { name: "Counts & assembly", exact: true }).click();
+    await page.getByRole("tab", { name: "Cycle counts", exact: true }).click();
     const addProduct = async id => {
       await page.getByLabel("Find discovery product", { exact: true }).fill(id);
       await page.getByRole("combobox", { name: "Discovery product", exact: true }).click();
@@ -93,7 +93,7 @@ async function main() {
     assert.equal(await page.getByLabel("Count adjustment reason").inputValue(), "");
     await command("item", { id: "late", sku: "LATE", name: "Late discovery", tracking: "regular" });
     await page.reload();
-    await page.getByRole("tab", { name: "Counts & assembly", exact: true }).click();
+    await page.getByRole("tab", { name: "Cycle counts", exact: true }).click();
     await continueCount(2);
     await addProduct("zero");
     await addProduct("late");
@@ -183,7 +183,7 @@ async function main() {
     await saveDraft(200);
     assert.deepEqual((await state()).stock, stockBeforeDraft);
     await page.reload();
-    await page.getByRole("tab", { name: "Counts & assembly", exact: true }).click();
+    await page.getByRole("tab", { name: "Cycle counts", exact: true }).click();
     await continueCount(4);
     assert.equal(await page.locator("#count-bulk").inputValue(), "");
     assert.equal(await page.locator("#countserial-serial").inputValue(), "000001\npartial-scan");

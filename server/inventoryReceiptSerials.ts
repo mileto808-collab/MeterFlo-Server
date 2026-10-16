@@ -12,7 +12,8 @@ export type ReceiptSerialEvidenceCategory =
   | "verified-release"
   | "disposition-movement"
   | "disposition-known"
-  | "transit-loss";
+  | "transit-loss"
+  | "assembled-kit" | "disassembled-kit" | "assembly-consumed" | "recovered" | "kit-missing" | "kit-inspection";
 
 export type ReceiptSerialEvidence = {
   itemId: string;
@@ -48,10 +49,16 @@ export function extractReceiptSerialEvidence(receipt: InventoryReceipt, state?: 
     });
   };
 
-  const lineCategory = receipt.action === "resolveTransit" ? "transit-loss" :
+  const lineCategory = receipt.action === "assemble" ? "assembled-kit" : receipt.action === "disassemble" ? "disassembled-kit" :
+    receipt.action === "resolveTransit" ? "transit-loss" :
     receipt.action === "resolveHold" ? "disposition-movement" : "confirmed";
   for (const line of receipt.lines ?? []) addLine(line, lineCategory);
-  for (const line of receipt.components ?? []) addLine(line, "confirmed");
+  for (const line of receipt.components ?? []) addLine(line, receipt.action === "assemble" ? "assembly-consumed" : receipt.kitConversion ? "recovered" : "confirmed");
+  for (const recovery of receipt.kitConversion?.recovered ?? []) {
+    addLine({ itemId: recovery.itemId, quantity: recovery.damagedQuantity, serials: recovery.damagedSerials }, "damaged");
+    addLine({ itemId: recovery.itemId, quantity: recovery.missingQuantity, serials: recovery.missingSerials }, "kit-missing");
+  }
+  if (receipt.kitInspection) addLine(receipt.kitInspection, "kit-inspection");
   for (const line of receipt.damaged ?? []) {
     addLine(line, "damaged", { unidentifiedQuantity: line.unidentifiedQuantity });
     addLine({ itemId: line.itemId, quantity: line.quantity, serials: line.expectedSerials ?? [] }, "dispatch-reference");
@@ -81,6 +88,12 @@ const categoryLabels: Record<ReceiptSerialEvidenceCategory, string> = {
   "disposition-movement": "Disposition movement identities (may include unverified references)",
   "disposition-known": "Disposition-selected known identities",
   "transit-loss": "Confirmed transit loss references (not physically received)",
+  "assembled-kit": "Finished kits added to stock",
+  "disassembled-kit": "Finished kits removed for disassembly",
+  "assembly-consumed": "Components consumed by assembly",
+  recovered: "Usable components returned to stock",
+  "kit-missing": "Missing component references (not recovered stock)",
+  "kit-inspection": "Components selected for inspection disposition",
 };
 
 function receiptContext(receipt: InventoryReceipt, state: InventoryState) {

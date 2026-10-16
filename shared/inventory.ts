@@ -3,6 +3,7 @@ import { COUNT_MAX_LINES } from "./inventory-count-limits";
 import type { DamageLine, OrderClosure, ShipmentHold, HoldDisposition } from "./inventory-shipment-model";
 import type { SavedShipmentDraft } from "./inventory-shipment-draft-model";
 import type { InventoryCategory } from "./inventory-categories";
+import type { KitAssembly, KitHold } from "./inventory-kits";
 
 export const inventoryPermissions = {
   configure: "inventory.configure", view: "inventory.view", maintain: "inventory.maintain",
@@ -60,7 +61,7 @@ export const savedCountDraftSchema = countDraftSchema.extend({
 });
 export const inventoryCommandSchema = z.object({
   operationId: z.string().uuid(), action: z.enum(["warehouse", "vendor", "item", "category", "categoryRename", "order", "release",
-    "cancel", "unrelease", "archiveOrder", "restoreOrder", "numberOrders", "receive", "dispatch", "accept", "assemble", "countStart", "countPost", "countCancel", "countSaveDraft",
+    "cancel", "unrelease", "archiveOrder", "restoreOrder", "numberOrders", "receive", "dispatch", "accept", "assemble", "disassemble", "resolveKitHold", "countStart", "countPost", "countCancel", "countSaveDraft",
     "assign", "prepareUse", "returnAccept", "returnRelease", "reconcileWorkOrder", "closeOrder", "resolveTransit", "resolveHold",
     "shipmentDraftSave", "shipmentDraftPrepare", "shipmentDraftUnlock", "shipmentDraftDelete", "shipmentDraftClaim"]),
   data: z.record(z.unknown()),
@@ -83,7 +84,8 @@ export type InventoryCount = { id: string; warehouseId: string; snapshot: Stock[
 export type InventoryReceipt = { id: string; action: string; reference: string; warehouseId: string | null;
   lines: StockLine[]; actor: string; occurredAt: string; reason?: string; components?: StockLine[];
   damaged?: DamageLine[]; holdId?: string; resolution?: string; externalReference?: string; closedShort?: StockLine[];
-  holdDisposition?: HoldDisposition };
+  holdDisposition?: HoldDisposition; kitHoldId?: string; kitInspection?: StockLine;
+  kitConversion?: { assemblyId: string; recovered: Array<import("./inventory-kits").KitRecovery> } };
 export type EquipmentReturn = Disposition & { id: string; workOrderId: number; status: "pending" | "quarantine" | "released"; itemId?: string };
 export type InventoryState = { warehouses: Warehouse[]; vendors: Vendor[]; items: InventoryItem[]; stock: Stock[];
   categories?: string[];
@@ -92,16 +94,17 @@ export type InventoryState = { warehouses: Warehouse[]; vendors: Vendor[]; items
   orders: InventoryOrder[]; counts: InventoryCount[]; allocations: WorkAllocation[];
   receipts: InventoryReceipt[]; returns: EquipmentReturn[]; operations: Record<string, string>; revision: number;
   serialOccupancy?: { itemId: string; serial: string; workOrderId: number | null }[];
-  shipmentHolds?: ShipmentHold[]; shipmentDrafts?: SavedShipmentDraft[] };
+  shipmentHolds?: ShipmentHold[]; shipmentDrafts?: SavedShipmentDraft[];
+  kitAssemblies?: KitAssembly[]; kitHolds?: KitHold[] };
 export const emptyInventory = (): InventoryState => ({ warehouses: [], vendors: [], categories: [], items: [], stock: [], orders: [],
   counts: [], allocations: [], receipts: [], returns: [], operations: {}, revision: 0, serialOccupancy: [], shipmentHolds: [] });
 export const commandPermission = (action: InventoryCommand["action"]) =>
   action === "closeOrder" ? inventoryPermissions.closeOrders :
-  ["resolveTransit", "resolveHold"].includes(action) ? inventoryPermissions.resolveExceptions :
+  ["resolveTransit", "resolveHold", "resolveKitHold"].includes(action) ? inventoryPermissions.resolveExceptions :
   ["archiveOrder", "restoreOrder"].includes(action) ? inventoryPermissions.purchase :
   ["warehouse", "vendor", "item", "category", "categoryRename", "numberOrders"].includes(action) ? inventoryPermissions.maintain :
   ["receive", "accept", "returnAccept", "returnRelease"].includes(action) ? inventoryPermissions.receive :
-  action === "assemble" ? inventoryPermissions.assemble : action.startsWith("count") ? inventoryPermissions.count :
+  ["assemble", "disassemble"].includes(action) ? inventoryPermissions.assemble : action.startsWith("count") ? inventoryPermissions.count :
   action === "reconcileWorkOrder" ? inventoryPermissions.count :
   ["assign", "prepareUse"].includes(action) ? inventoryPermissions.assign : null;
 

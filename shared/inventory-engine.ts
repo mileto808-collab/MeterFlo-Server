@@ -9,6 +9,8 @@ import { InventoryError } from "./inventory-errors";
 import { applyShipmentCommand, assertNotHeld, shipmentActions } from "./inventory-shipment-engine";
 import { settledLines } from "./inventory-shipment-model";
 import { applyShipmentDraftCommand, isShipmentDraftAction, validateDraftPosting, draftFingerprintCommand, validateDraftReplay } from "./inventory-shipment-drafts";
+import { ensureKitProvenance, kitSerialContents, moveKitProvenance, recordKitAssembly,
+  applyKitDisassembly, applyKitHoldResolution, type KitFlow } from "./inventory-kits";
 
 export { InventoryError } from "./inventory-errors";
 const assert: (ok: unknown, message: string) => asserts ok = (ok, message) => { if (!ok) throw new InventoryError(message); };
@@ -50,8 +52,7 @@ function balance(s: InventoryState, warehouseId: string, itemId: string): Stock 
 // Historical allocations remain immutable evidence, not permanent ownership.
 function serialFootprint(s: InventoryState, input: StockLine[], ancestors: string[] = []): { itemId: string; serial: string }[] {
   return input.flatMap(l => l.serials.flatMap(serial => {
-    const contents = !ancestors.includes(l.itemId) && s.items.find(i => i.id === l.itemId)?.components.length
-      ? [...s.receipts].reverse().find(r => r.action === "assemble" && r.lines.some(x => x.itemId === l.itemId && x.serials.includes(serial)))?.components : undefined;
+    const contents = !ancestors.includes(l.itemId) ? kitSerialContents(s, l.itemId, serial) : undefined;
     return [{ itemId: l.itemId, serial }, ...(contents ? serialFootprint(s, contents, [...ancestors, l.itemId]) : [])];
   }));
 }
@@ -73,7 +74,7 @@ function occupy(s: InventoryState, input: StockLine[], workOrderId: number | nul
     s.serialOccupancy.push({ ...x, workOrderId });
   }
 }
-function move(s: InventoryState, warehouseId: string, input: StockLine[], sign: 1 | -1, except?: number) {
+function move(s: InventoryState, warehouseId: string, input: StockLine[], sign: 1 | -1, except?: number, flow?: KitFlow) {
   validateLines(s, input);
   for (const l of input) {
     const b = balance(s, warehouseId, l.itemId);
@@ -86,6 +87,8 @@ function move(s: InventoryState, warehouseId: string, input: StockLine[], sign: 
     } else {
       for (const serial of l.serials) {
         assertNotHeld(s, l.itemId, serial);
+        assert(!(s.kitHolds ?? []).some(h => h.status === "held" && h.itemId === l.itemId && h.serials.includes(serial)),
+          "Serial is held for kit component inspection.");
         assert(!s.stock.some(b => b.itemId === l.itemId && b.serials.includes(serial)), "Serial already in inventory.");
         assert(!s.orders.some(o => o.type === "transfer" && o.dispatched.some(x => x.itemId === l.itemId && x.serials.includes(serial)) &&
           !settledLines(o).some(x => x.itemId === l.itemId && x.serials.includes(serial))), "Serial is in transit.");
@@ -97,6 +100,7 @@ function move(s: InventoryState, warehouseId: string, input: StockLine[], sign: 
     }
     b.quantity += sign * l.quantity; b.revision++;
   }
+  moveKitProvenance(s, warehouseId, input, sign, flow);
 }
 function totals(input: StockLine[], itemId: string) { return input.filter(l => l.itemId === itemId).reduce((n, l) => n + l.quantity, 0); }
 function within(input: StockLine[], expected: StockLine[], prior: StockLine[]) {
@@ -115,7 +119,7 @@ function kitCycles(s: InventoryState) {
   for (const i of s.items) visit(i.id, []);
 }
 export function applyInventoryCommand(original: InventoryState, command: InventoryCommand, actor: string, admin: boolean, now = new Date().toISOString()) {
-  if (shipmentActions.includes(command.action))
+  if (shipmentActions.includes(command.action) || ["assemble", "disassemble", "resolveKitHold"].includes(command.action))
     assert(new TextEncoder().encode(JSON.stringify(command.data)).length <= 8 * 1024 * 1024, "Shipment data exceeds the 8 MiB limit; no changes were posted.");
   if (command.action === "countSaveDraft" || command.action === "countPost")
     assert(countPayloadFits(command.data), "Count data exceeds the 8 MiB limit; no changes were posted.");
@@ -127,6 +131,7 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     return { state: original, replay: true };
   }
   const s = inventoryCategoryLabels(normalizeInventoryCategories(original)), d = command.data;
+  ensureKitProvenance(s);
   ensureSerialOccupancy(s);
   const access = (id: string) => warehouseAccess(s, id, actor, admin);
   const receipt = (reference: string, warehouseId: string | null, input: StockLine[], reason?: string, components?: StockLine[]) =>
@@ -138,8 +143,30 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
       "Saved shipment drafts exceed the project's 32 MiB limit. Finish or discard older drafts first.");
   } else if (shipmentActions.includes(a)) {
     const posting = validateDraftPosting(s, command, actor, canonicalInventoryJson);
-    applyShipmentCommand(s, posting, actor, now, { access, move: (w, ls, sign) => move(s, w, ls, sign),
+    const flow: KitFlow = a === "dispatch" ? { to: { kind: "transit", id: String(d.orderId) } } :
+      a === "accept" ? { from: { kind: "transit", id: String(d.orderId) } } :
+      a === "resolveHold" ? { from: { kind: "hold", id: String(d.id) } } : {};
+    applyShipmentCommand(s, posting, actor, now, { access, move: (w, ls, sign) => move(s, w, ls, sign, undefined, flow),
       validate: ls => validateLines(s, ls), within });
+    for (const hold of (s.shipmentHolds ?? []).filter(h => h.receiptId === command.operationId)) {
+      if (a === "accept") moveKitProvenance(s, hold.warehouseId,
+        [{ itemId: hold.itemId, quantity: hold.quantity, serials: [...hold.serials, ...hold.expectedSerials] }], -1,
+        { from: { kind: "transit", id: hold.orderId }, to: { kind: "hold", id: hold.id } });
+    }
+    if (a === "resolveTransit") {
+      const r = s.receipts.find(r => r.id === command.operationId);
+      if (r) moveKitProvenance(s, r.warehouseId ?? "", r.lines, -1,
+        { from: { kind: "transit", id: String(d.orderId) }, to: { kind: "retired", id: command.operationId } });
+    }
+    if (a === "resolveHold") {
+      const r = s.receipts.find(r => r.id === command.operationId), disposition = r?.holdDisposition;
+      if (disposition && disposition.outcome !== "released") {
+        const hold = s.shipmentHolds!.find(h => h.id === d.id)!;
+        moveKitProvenance(s, hold.warehouseId, [{ itemId: hold.itemId, quantity: disposition.quantity,
+          serials: [...disposition.serials, ...disposition.expectedSerials] }], -1,
+          { from: { kind: "hold", id: hold.id }, to: { kind: "retired", id: command.operationId } });
+      }
+    }
   } else if (a === "category") {
     const name = categoryNameSchema.parse(d.name);
     assert(!inventoryCategoryNames(s).some(existing => categoryKey(existing) === categoryKey(name)), "Category already exists in this project.");
@@ -159,6 +186,7 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
       assert(!s.warehouses.some(w => w.id !== value.id && w.code.toLowerCase() === (value as any).code.toLowerCase()), "Warehouse code already exists.");
       if (old) access(old.id);
       if (!(value as any).active) assert(!s.stock.some(b => b.warehouseId === value.id && b.quantity) &&
+        !(s.kitHolds ?? []).some(h => h.warehouseId === value.id && h.status === "held") &&
         !(s.shipmentHolds ?? []).some(h => h.warehouseId === value.id && h.status === "held") &&
         !s.orders.some(o => [o.sourceId, o.destinationId].includes(value.id) && !["completed", "cancelled", "closed"].includes(o.status)) &&
         !s.returns.some(r => r.warehouseId === value.id && r.status !== "released") &&
@@ -181,13 +209,20 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
       assert(!s.items.some(x => x.id !== i.id && x.sku.toLowerCase() === i.sku.toLowerCase()), "SKU already exists.");
       assert(!i.vendorId || s.vendors.some(v => v.id === i.vendorId && v.active), "Vendor is not active in this project.");
       if (!i.active) assert(!s.stock.some(b => b.itemId === i.id && b.quantity) &&
+        !(s.kitHolds ?? []).some(h => h.itemId === i.id && h.status === "held") &&
         !(s.shipmentHolds ?? []).some(h => h.itemId === i.id && h.status === "held") &&
         !s.orders.some(o => !["completed", "cancelled", "closed"].includes(o.status) && o.lines.some(l => l.itemId === i.id)) &&
         !s.allocations.some(a => a.status === "reserved" && a.lines.some(l => l.itemId === i.id)), "Item has stock, reservations or open orders.");
       if (old) assert(old.tracking === i.tracking && same(old.components, i.components) ||
+        !(s.kitHolds ?? []).some(h => h.itemId === i.id && h.status === "held") &&
         !(s.shipmentHolds ?? []).some(h => h.itemId === i.id && h.status === "held") &&
         !s.orders.some(o => !["completed", "cancelled", "closed"].includes(o.status) && o.lines.some(l => l.itemId === i.id)) &&
         !s.stock.some(b => b.itemId === i.id && b.quantity) && !s.allocations.some(x => x.lines.some(l => l.itemId === i.id)), "Cannot change tracking or kit definition for stock/assigned items.");
+      if (old && old.tracking !== i.tracking) assert(
+        !s.serialOccupancy!.some(o => o.itemId === i.id) &&
+        !s.kitAssemblies!.some(a => a.positions.some(p => p.kind !== "retired") &&
+          (a.itemId === i.id || a.components.some(c => c.itemId === i.id))),
+        "Tracking cannot change while this item belongs to an assembled kit or occupied serial custody.");
     }
     if (old) list[list.indexOf(old)] = value; else list.push(value);
     if (a === "item") kitCycles(s);
@@ -296,10 +331,15 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     if (components.some(c => c.serials.length))
       assert(kit.tracking === "serialized" && quantity === 1, "Kits containing serialized units require a kit serial and one-kit-at-a-time assembly for traceability.");
     assert(components.length === kit.components.length && kit.components.every(c => totals(components, c.itemId) === c.quantity * quantity), "Scanned components must match the kit definition.");
-    move(s, warehouseId, components, -1);
+    move(s, warehouseId, components, -1, undefined, { to: { kind: "assembly", id: command.operationId } });
     const output = [{ itemId, quantity, serials }]; move(s, warehouseId, output, 1);
     receipt(itemId, warehouseId, output, "Kit assembly", components);
+    recordKitAssembly(s, command.operationId, warehouseId, output[0], components, now);
     occupy(s, components, null);
+  } else if (a === "disassemble" || a === "resolveKitHold") {
+    const hooks = { access, move: (w: string, ls: StockLine[], sign: 1 | -1, flow?: KitFlow) => move(s, w, ls, sign, undefined, flow) };
+    if (a === "disassemble") applyKitDisassembly(s, d, command.operationId, actor, now, hooks);
+    else applyKitHoldResolution(s, d, command.operationId, actor, now, hooks);
   } else if (a === "countStart") {
     const { id, warehouseId } = z.object({ id: identifier, warehouseId: identifier }).strict().parse(d);
     access(warehouseId); assert(!s.counts.some(c => c.id === id), "Count identifier already exists.");
@@ -355,7 +395,7 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
       const groups = new Map<string, StockLine[]>();
       for (const l of used) groups.set(l.warehouseId, [...(groups.get(l.warehouseId) || []), l]);
       s.serialOccupancy = s.serialOccupancy!.filter(x => x.workOrderId !== input.workOrderId);
-      for (const [w, ls] of groups) move(s, w, ls, 1);
+      for (const [w, ls] of groups) move(s, w, ls, 1, undefined, { from: { kind: "work", id: String(input.workOrderId) } });
       for (const l of used.filter(l => s.items.find(i => i.id === l.itemId)?.components.length)) {
         for (const x of serialFootprint(s, [l]).filter(x => x.itemId !== l.itemId)) s.serialOccupancy!.push({ ...x, workOrderId: null });
       }
@@ -382,6 +422,7 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
 // Called inside the same database transaction as the work-order status update.
 export function completeInventoryWorkOrder(original: InventoryState, workOrderId: number, readingOnly: boolean) {
   const s = structuredClone(original), a = s.allocations.find(a => a.workOrderId === workOrderId);
+  ensureKitProvenance(s);
   ensureSerialOccupancy(s);
   assert(a && a.mode, "Review inventory use and removed-equipment disposition before completing this work order.");
   if (a.status === "consumed" || a.status === "released") return original;
@@ -389,7 +430,7 @@ export function completeInventoryWorkOrder(original: InventoryState, workOrderId
   if (a.mode === "changeout") {
     const groups = new Map<string, Allocation[]>();
     for (const l of a.used) groups.set(l.warehouseId, [...(groups.get(l.warehouseId) || []), l]);
-    for (const [w, ls] of groups) move(s, w, ls, -1, workOrderId);
+    for (const [w, ls] of groups) move(s, w, ls, -1, workOrderId, { to: { kind: "work", id: String(workOrderId) } });
     for (const d of a.dispositions) s.serialOccupancy = s.serialOccupancy!.filter(x =>
       x.serial !== d.serial || s.items.find(i => i.id === x.itemId)?.equipment !== d.equipment);
     occupy(s, a.used, workOrderId);

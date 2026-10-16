@@ -28,6 +28,7 @@ import { InventoryShipmentTransitDialog } from "@/components/inventory-shipment-
 import { InventoryStockSerialDialog } from "@/components/inventory-stock-serial-dialog";
 import { InventoryStockWorkspace } from "@/components/inventory-stock-workspace";
 import { InventoryCatalogWorkspace } from "@/components/inventory-catalog-workspace";
+import { InventoryKitDialog } from "@/components/inventory-kit-dialog";
 import { InventoryRecordsWorkspace } from "@/components/inventory-records-workspace";
 import { InventoryCategoryCreateAction } from "@/components/inventory-category-create-action";
 import { InventoryMobileTools } from "@/components/inventory-mobile-tools";
@@ -62,7 +63,7 @@ const inventoryTabs = [
   { value: "vendors", label: "Vendors" },
   { value: "orders", label: "Orders" },
   { value: "exceptions", label: "Shipment exceptions" },
-  { value: "counts", label: "Counts & assembly" },
+  { value: "counts", label: "Cycle counts" },
   { value: "returns", label: "Removed Equipment" },
   { value: "activity", label: "Activity" },
 ];
@@ -128,6 +129,10 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [pendingMovementTransition, setPendingMovementTransition] = useState<(() => void) | null>(null);
   const [movementDirty, setMovementDirty] = useState(false);
   const [movementCheckpointBusy, setMovementCheckpointBusy] = useState(false);
+  const [kitDialogMode, setKitDialogMode] = useState<"assemble" | "disassemble" | "inspect" | null>(null);
+  const [kitDirty, setKitDirty] = useState(false);
+  const [kitOperationPending, setKitOperationPending] = useState(false);
+  const [pendingKitTransition, setPendingKitTransition] = useState<(() => void) | null>(null);
   const movementAttempts = useRef(new Map<string, string>());
   const [orderToClose, setOrderToClose] = useState<InventoryOrder | null>(null);
   const [closeReason, setCloseReason] = useState("");
@@ -150,6 +155,12 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     if (command.isPending) return;
     if (movementDirty || movementCheckpointBusy) setPendingMovementTransition(current => current ?? transition);
     else transition();
+  };
+  const requestKitTransition = (transition: () => void) => {
+    if (command.isPending || kitOperationPending) return;
+    const leaveKit = () => { setKitDirty(false); setKitDialogMode(null); transition(); };
+    if (kitDirty) setPendingKitTransition(current => current ?? leaveKit);
+    else leaveKit();
   };
   const [operationOrder, setOperationOrder] = useState<InventoryOrder | null>(null);
   const [sessionState, setSessionState] = useState<InventoryState | null>(null);
@@ -182,13 +193,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   };
   // Register a single navigation guard: both editors can have unsaved values.
   // A count choice must not silently discard an unrelated order draft.
-  const completeSavedNavigation = useUnsavedNavigation(countDirty || orderDirty || movementDirty || movementCheckpointBusy,
-    transition => requestCountTransition(() => requestOrderTransition(() => requestMovementTransition(transition))));
-  const [assembleItem, setAssembleItem] = useState("");
-  const [assembleWarehouse, setAssembleWarehouse] = useState("");
-  const [assembleQty, setAssembleQty] = useState("1");
-  const [assembleSerials, setAssembleSerials] = useState("");
-  const [componentScan, setComponentScan] = useState<Record<string, string>>({});
+  const completeSavedNavigation = useUnsavedNavigation(countDirty || orderDirty || movementDirty || movementCheckpointBusy || kitDirty,
+    transition => requestCountTransition(() => requestOrderTransition(() => requestMovementTransition(() => requestKitTransition(transition)))));
   const [returnInspect, setReturnInspect] = useState<Record<string, { itemId: string; reason: string }>>({});
 
   const state = data?.state;
@@ -750,6 +756,16 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
         }}>Discard movement</Button></DialogFooter>
       </DialogContent>
     </Dialog>
+    <Dialog open={!!pendingKitTransition} onOpenChange={open => { if (!open && !command.isPending) setPendingKitTransition(null); }}>
+      <DialogContent onEscapeKeyDown={event => event.preventDefault()} onPointerDownOutside={event => event.preventDefault()}>
+        <DialogHeader><DialogTitle>Unsaved kit operation</DialogTitle><DialogDescription>Scanned serial custody and dispositions have not been posted. Stay here or discard the local draft before navigating.</DialogDescription></DialogHeader>
+        <DialogFooter><Button variant="outline" disabled={command.isPending} onClick={() => setPendingKitTransition(null)}>Keep editing</Button><Button variant="destructive" disabled={command.isPending} onClick={() => {
+          const next = pendingKitTransition;
+          setPendingKitTransition(null);
+          next?.();
+        }}>Discard draft</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
     <Dialog open={!!orderToClear} onOpenChange={open => { if (!open && !command.isPending) setOrderToClear(null); }}>
       <DialogContent onEscapeKeyDown={event => { if (command.isPending) event.preventDefault(); }} onPointerDownOutside={event => { if (command.isPending) event.preventDefault(); }}>
         <DialogHeader>
@@ -779,7 +795,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       </DialogContent>
     </Dialog>
     {isError && <Alert variant="destructive"><AlertTitle>Inventory refresh failed</AlertTitle><AlertDescription>The last loaded inventory is shown. Your count entries were kept; retry before relying on current stock.</AlertDescription><Button variant="outline" className="mt-2" onClick={() => refetch()}>Retry inventory refresh</Button></Alert>}
-    <Tabs value={inventoryTab} onValueChange={setInventoryTab} className="flex min-h-0 flex-1 flex-col gap-1.5 sm:gap-3 [&>[role=tabpanel]]:mt-0 md:[&>[role=tabpanel]]:mt-2">
+    <Tabs value={inventoryTab} onValueChange={value => requestCountTransition(() => requestOrderTransition(() => requestMovementTransition(() => requestKitTransition(() => setInventoryTab(value)))))} className="flex min-h-0 flex-1 flex-col gap-1.5 sm:gap-3 [&>[role=tabpanel]]:mt-0 md:[&>[role=tabpanel]]:mt-2">
       <div className="inventory-sticky-header relative z-10 shrink-0 space-y-2 border-b bg-background pb-2 sm:space-y-3 sm:pb-3" data-testid="inventory-sticky-header">
         <div className="flex min-w-0 items-center justify-between gap-2 sm:items-center">
           <div className="inventory-desktop-heading hidden min-w-0 md:block">
@@ -847,7 +863,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           <TabsTrigger value="vendors">Vendors</TabsTrigger>
           <TabsTrigger value="orders">Orders</TabsTrigger>
           <TabsTrigger value="exceptions">Shipment exceptions</TabsTrigger>
-          <TabsTrigger value="counts">Counts &amp; assembly</TabsTrigger>
+          <TabsTrigger value="counts">Cycle counts</TabsTrigger>
           <TabsTrigger value="returns">Removed Equipment</TabsTrigger>
           <TabsTrigger value="activity">Activity</TabsTrigger>
         </TabsList>
@@ -882,7 +898,9 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       </TabsContent>
       <TabsContent value="items" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         <InventoryCatalogWorkspace kind="items" items={items} vendors={vendors} projectName={data.projectName} timezone={timezone}
-          canMaintain={can("inventory.maintain")} onRefresh={() => void refetch()} onAdd={() => openResource("item")}
+          canMaintain={can("inventory.maintain")} canAssemble={can("inventory.assemble")} canInspectKits={can("inventory.resolveExceptions")}
+          onAssemble={() => setKitDialogMode("assemble")} onDisassemble={() => setKitDialogMode("disassemble")} onInspectKits={() => setKitDialogMode("inspect")}
+          onRefresh={() => void refetch()} onAdd={() => openResource("item")}
           onEditItem={item => openResource("item", item)} onEditVendor={vendor => openResource("vendor", vendor)} />
       </TabsContent>
       <TabsContent value="vendors" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -1125,7 +1143,6 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
             <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => saveCountDraft()} disabled={!can("inventory.count") || command.isPending}>Save count draft</Button><Button variant="outline" onClick={() => requestCountTransition(reloadCountDraft)} disabled={!can("inventory.count") || command.isPending}>Reload saved draft</Button><Button onClick={postCount} disabled={!can("inventory.count") || !countReason.trim() || command.isPending}>Post count</Button><Button variant="outline" disabled={command.isPending} onClick={() => requestCountTransition(closeCount)}>Close</Button></div>
           </div>}
         </CardContent></Card>
-        <Card><CardHeader className="space-y-1 px-3 py-3 sm:px-6 sm:py-6"><CardTitle className="text-base sm:text-lg">Assemble a kit</CardTitle><CardDescription>Select a defined kit; scan components from the selected location and record its finished serial identity.</CardDescription></CardHeader><CardContent className="space-y-3 px-3 pb-3 sm:space-y-4 sm:px-6 sm:pb-6"><div className="grid gap-2 sm:grid-cols-3 sm:gap-3"><div className="space-y-1"><Label>Kit item</Label><Select value={assembleItem} onValueChange={value => { setAssembleItem(value); setComponentScan({}); }}><SelectTrigger><SelectValue placeholder="Select kit" /></SelectTrigger><SelectContent>{items.filter(item => item.active && item.components.length).map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1"><Label>Build location</Label><Select value={assembleWarehouse} onValueChange={setAssembleWarehouse}><SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger><SelectContent>{activeWarehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.code} · {w.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1"><Label>Build quantity</Label><Input type="number" min="1" value={assembleQty} onChange={event => setAssembleQty(event.target.value)} /></div></div>{items.find(item => item.id === assembleItem)?.components.map(component => { const item = items.find(value => value.id === component.itemId); return <div key={component.itemId} className="grid gap-2 sm:grid-cols-[1fr_2fr] sm:items-center"><Label>{item?.sku} · {item?.name} — {component.quantity * Number(assembleQty || 1)} required</Label><Input aria-label={`Scan ${item?.name ?? "component"} serials`} value={componentScan[component.itemId] ?? ""} onChange={event => setComponentScan(current => ({ ...current, [component.itemId]: event.target.value }))} placeholder={item?.tracking === "serialized" ? "Scan component serials" : "Quantity is taken from this location"} /></div>; })}{items.find(item => item.id === assembleItem)?.tracking === "serialized" && <div className="space-y-1"><Label>Finished kit serials</Label><Input value={assembleSerials} onChange={event => setAssembleSerials(event.target.value)} placeholder="Scan each finished unit" /></div>}<Button disabled={!can("inventory.assemble") || !assembleItem || !assembleWarehouse || command.isPending} onClick={() => { const kit = items.find(item => item.id === assembleItem); if (!kit) return; const quantity = Number(assembleQty); const components = kit.components.map(component => { const componentItem = items.find(item => item.id === component.itemId); const serialList = componentItem?.tracking === "serialized" ? csv(componentScan[component.itemId] ?? "") : []; return { itemId: component.itemId, quantity: componentItem?.tracking === "serialized" ? serialList.length : component.quantity * quantity, serials: serialList }; }); command.mutate({ action: "assemble", data: { warehouseId: assembleWarehouse, itemId: kit.id, quantity, serials: kit.tracking === "serialized" ? csv(assembleSerials) : [], components } }); }}>Assemble kit</Button></CardContent></Card>
       </TabsContent>
       <TabsContent value="returns" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         <InventoryRecordsWorkspace kind="returns" title="Removed Equipment" description="Returned systems and modules enter quarantine first. Release to usable inventory only after inspection." dataset={returnsDataset} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
@@ -1151,6 +1168,10 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       </TabsContent>
     </div>
     </Tabs>
+    {kitDialogMode && <InventoryKitDialog key={kitDialogMode} state={state} projectId={projectId} mode={kitDialogMode}
+      canResolve={can("inventory.resolveExceptions")} onDirtyChange={setKitDirty} onOperationPending={setKitOperationPending}
+      onClose={() => { setKitDialogMode(null); setKitDirty(false); setKitOperationPending(false); }}
+      onSaved={async () => { await queryClient.invalidateQueries({ queryKey }); return refetch(); }} />}
     {selectedStockRow && can("inventory.view") && (
       <InventoryStockSerialDialog
         key={selectedStockKey}

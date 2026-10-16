@@ -8,6 +8,7 @@ import { storage } from "./storage";
 import { z } from "zod";
 import type { SavedShipmentDraft } from "../shared/inventory-shipment-draft-model";
 import { readInventoryCategories, storedCategoryState, writeInventoryCategories, writeInventoryCategoryItem } from "./inventoryCategories";
+import { kitSerialContents } from "../shared/inventory-kits";
 
 // Saved captures are temporary editing state, not another physical-stock
 // ledger. Record useful changes without duplicating every scan on every save.
@@ -66,7 +67,7 @@ export async function saveInventory(client: PoolClient, projectId: number, befor
         serialsBefore: prior?.serials || [], serialsAfter: b.serials };
     }).filter(b => b.before !== b.after || b.reservedBefore !== b.reservedAfter || JSON.stringify(b.serialsBefore) !== JSON.stringify(b.serialsAfter)),
   ];
-  const entityChanges: Array<{ field: string; before: unknown; after: unknown }> = (["warehouses", "vendors", "items", "orders", "allocations", "counts", "returns", "shipmentHolds", "shipmentDrafts"] as const).flatMap(kind => {
+  const entityChanges: Array<{ field: string; before: unknown; after: unknown }> = (["warehouses", "vendors", "items", "orders", "allocations", "counts", "returns", "shipmentHolds", "shipmentDrafts", "kitAssemblies", "kitHolds"] as const).flatMap(kind => {
     const previous = new Map((before[kind] ?? []).map(value => [((value as any).id ?? (value as any).workOrderId), value]));
     const updates = (after[kind] ?? []).flatMap(value => {
       const id = (value as any).id ?? (value as any).workOrderId;
@@ -224,10 +225,7 @@ export async function inventoryWorkOrderChange(client: PoolClient, schema: strin
           throw new InventoryError(`Record the removed ${equipment} disposition.`);
         const expandedUse = (input: any[], ancestors: string[] = []): any[] => input.flatMap(l => {
           if (ancestors.includes(l.itemId)) return [];
-          const kit = state.items.find(i => i.id === l.itemId);
-          const contents = kit?.components.length ? l.serials.flatMap((serial: string) =>
-            [...state.receipts].reverse().find(r => r.action === "assemble" &&
-              r.lines.some(b => b.itemId === l.itemId && b.serials.includes(serial)))?.components || []) : [];
+          const contents = l.serials.flatMap((serial: string) => kitSerialContents(state, l.itemId, serial));
           return [l, ...expandedUse(contents, [...ancestors, l.itemId])];
         });
         const serialized = expandedUse(allocation.used).filter(l => state.items.find(i => i.id === l.itemId)?.equipment === equipment).flatMap(l => l.serials);

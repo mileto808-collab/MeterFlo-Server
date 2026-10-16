@@ -364,6 +364,26 @@ Draft order edits, release and cancellation do not add stock. Dispatch deducts s
 
 Use the Print controls on orders, receipts and counts. They open escaped, printer-friendly records; use the browser's Print / Save as PDF option. Records include IDs, item quantities and serials; receipt records include their action, reference, timestamp and actor.
 
+## Kit assembly and disassembly
+
+The Items subheader opens **Assemble kit** and **Disassemble kit** dialogs. These are stock conversions, not cycle counts. Defining an item recipe never changes stock. Assembly consumes the required usable, unreserved components at one authorized location and adds the finished kit there; serialized components require a serialized kit and one-kit-at-a-time assembly.
+
+Each assembly records its original contents and output provenance. Transfers, nesting in another kit, and work-order use retain that provenance without making the contents individually available. Disassembly selects a recorded assembly and removes finished-kit stock at the selected location; it returns only explicitly usable recovered components. Quantities can be split across multiple breakdowns, but each recorded output can be broken down only once. Serialized identities must match the original assembly, not today's recipe. A nested kit is returned intact with its own contents still occupied; disassemble it separately to recover those contents.
+
+Account for every component as usable, damaged, or missing. Reasons are required for damage/shortage. Damaged recovered components enter separate **kit inspection** custody, not a fictitious purchase/transfer shipment. Users with `inventory.resolveExceptions` can release a whole inspected batch to stock or scrap it with a reason. Missing and scrapped identities remain unavailable; neither outcome adds usable stock. This initial inspection workflow resolves entire held component batches, not subsets.
+
+Assembly/disassembly require `inventory.assemble`, normal project membership, an active project, and access to the acting location. Inspection requires `inventory.resolveExceptions` and location access. `inventory.maintain` is not required merely to convert existing items. Reservations, transit, installation, quarantine, and unavailable serials are enforced again on the server at posting time.
+
+The command API uses the existing `/api/projects/:projectId/inventory/commands` endpoint and UUID retry identity:
+
+- `assemble`: existing `{warehouseId,itemId,quantity,serials,components:[{itemId,quantity,serials}]}`.
+- `disassemble`: `{warehouseId,assemblyId,quantity,serials,reason,components:[{itemId,usableQuantity,damagedQuantity,missingQuantity,usableSerials,damagedSerials,missingSerials,reason}]}`. Each component's three quantities must equal its original quantity, and the identity arrays must partition its original serials exactly.
+- `resolveKitHold`: `{id,outcome:"released"|"scrapped",reason}`.
+
+All conversions are atomic under the existing project aggregate lock, with immutable receipts, audit changes, and stable posting identities. Unchanged retries return the original result rather than repeating stock changes. Activity exports and receipts distinguish components consumed, components returned, damage, shortages, and the readable original assembly receipt. Serial evidence remains in the printable appendix.
+
+`kitAssemblies`, `kitHolds`, and conversion receipt details travel in the existing inventory JSON snapshot, so no new database tables or schema revision are required. Project and full-system restores validate provenance and custody before replacing stock. Legacy serialized assemblies require uninterrupted identity custody from their assembly receipt to current stock, allowing exact recorded transfers but rejecting uncertain counts, replacement receipts, or unsupported custody transitions. A matching serial label alone is not proof of the original contents. Quantity-only legacy assemblies are admitted only when their original location/quantity is unambiguous. Purchased/imported kits or ambiguous historical output cannot silently acquire fabricated component provenance.
+
 ## Cycle counts and returns
 
 Start a count for a warehouse. Enter every stocked item, including **zero** for an absent item, and scan the actual serialized identities. A reason is required to post. Counts cannot remove reserved units/serials; resolve the reservation first. If stock moves after the count starts, posting rejects the stale snapshot—start another count instead of overwriting newer movements.
