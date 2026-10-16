@@ -35,8 +35,9 @@ async function main() {
       await page.getByRole("option", { name: option, exact: true }).click();
     };
     const editBase = async () => {
-      await page.getByRole("tab", { name: "Items & vendors", exact: true }).click();
-      await page.getByText("Base stocked", { exact: false }).first().locator("../../..").getByRole("button", { name: "Edit", exact: true }).click();
+      await page.getByRole("tab", { name: "Items", exact: true }).click();
+      await page.getByRole("searchbox", { name: "Search items" }).fill("BASE");
+      await page.locator("[data-catalog-row]").filter({ hasText: "Base stocked" }).getByRole("button", { name: "Edit", exact: true }).click();
     };
 
     // Required fields: local error, accessible focus, same open dialog.
@@ -111,7 +112,7 @@ async function main() {
     await save(200);
     assert.equal((await state()).warehouses.find(w => w.code === "VAN").plate, "TEST-1");
 
-    await page.getByRole("tab", { name: "Items & vendors", exact: true }).click();
+    await page.getByRole("tab", { name: "Vendors", exact: true }).click();
     await page.getByRole("button", { name: "Add vendor", exact: true }).click();
     await page.getByLabel("Name", { exact: true }).fill("Network supplier");
     await page.getByLabel("Email", { exact: true }).fill("invalid");
@@ -182,8 +183,11 @@ async function main() {
       } })).status(), 403);
       const readPage = await viewer.newPage();
       await readPage.goto(`/projects/${fixture.projectId}/inventory`);
-      await readPage.getByRole("tab", { name: "Items & vendors", exact: true }).click();
+      await readPage.getByRole("tab", { name: "Items", exact: true }).click();
       assert.equal(await readPage.getByRole("button", { name: "Add item", exact: true }).count(), 0);
+      assert.equal(await readPage.getByRole("button", { name: "Add vendor", exact: true }).count(), 0);
+      assert.equal(await readPage.getByRole("button", { name: "Edit", exact: true }).count(), 0);
+      await readPage.getByRole("tab", { name: "Vendors", exact: true }).click();
       assert.equal(await readPage.getByRole("button", { name: "Add vendor", exact: true }).count(), 0);
       assert.equal(await readPage.getByRole("button", { name: "Edit", exact: true }).count(), 0);
       assert.equal((await state()).items.some(i => i.id === "denied"), false);

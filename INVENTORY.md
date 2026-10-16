@@ -146,6 +146,16 @@ Each continuation table repeats the project, readable order/receipt number, prod
 
 Automated checks: `npm run test:inventory-print` verifies evidence scope and display; `npm run test:inventory-print:browser` generates isolated fixtures and Chromium Letter/A4 PDFs under ignored `generated-artifacts/inventory-serial-print/`. The browser check requires Chromium (or `CHROMIUM_PATH`) and Poppler's `pdftotext`. It checks exact serial preservation, category duplicates, repeated page identifiers/headings, printable bounds, no empty appendix pages and offline rendering, including a 1,510-serial receipt. Actual browser print engines and printer settings can affect page counts; Firefox/Safari and physical printers are not verified by this Chromium check. Order and count serial layouts are unchanged.
 
+### Items and Vendors workspaces
+
+**Items** and **Vendors** are separate project tabs. Each has a persistent search/filter/refresh/export toolbar, a bounded results area and fixed page navigation. Page capacity adapts to available screen space, including changes to the statistics header and phone layouts. Add/Edit continues to use the existing validated resource forms and requires inventory maintenance permission.
+
+Items can be searched by product name/SKU, description, barcode, manufacturer/model or vendor, and filtered by active status, category, tracking, equipment, vendor and kit definition. Sort by name, SKU or category. Vendors can be searched by name, contact, address, phone, email or reference, filtered by status/contact availability and sorted by name.
+
+CSV, Excel and PDF / Print include **all matching records in the selected sort order**, not only the displayed page. Zero-match exports are disabled. CSV protects formula-like text; Excel preserves exact leading-zero identifiers and phone/reference values as text. CSV/Excel include the full catalog scalar fields, kit component counts and image URLs; PDF uses a compact readable summary with repeating headings and opens the browser's Print / Save PDF view. Exporting does not modify inventory.
+
+Checks: `npm run test:inventory-catalog-exports`. Browser coverage: create the disposable fixture with `npx tsx tests/support/inventory-ui-fixture.ts --large-counts`, run `npm run test:inventory-catalog:browser`, then remove it with `npx tsx tests/support/inventory-ui-fixture.ts cleanup`. Never run fixture creation against a customer database.
+
 ### Stock serial viewer and exports
 
 Stock & search uses the same bounded workspace pattern as Orders. **On hand by location** remains visible below the Inventory header, with search, Filters, Refresh, CSV, Excel and PDF / Print. The results area scrolls separately from the toolbar and pager; page capacity is measured from available viewport space and row height, including changes from showing/hiding statistics. Compact responsive balance records keep item/SKU, location, on-hand, reserved and available quantities accessible on phones. If a single record is taller than the available area, it scrolls locally.

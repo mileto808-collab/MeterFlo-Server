@@ -55,7 +55,8 @@ async function main() {
       await select("Tracking", "Serialized — scan each unit");
       await select("Equipment", equipment);
       await page.getByRole("button", { name: "Save changes", exact: true }).click();
-      await page.getByRole("tab", { name: "Items & vendors", exact: true }).click();
+      await page.getByRole("tab", { name: "Items", exact: true }).click();
+      await page.getByRole("searchbox", { name: "Search items" }).fill(sku);
       await page.getByText(name, { exact: false }).first().waitFor();
       const state = await snapshot(), item = state.items.find(i => i.sku === sku);
       assert.equal(item.name, name);
@@ -67,7 +68,8 @@ async function main() {
     let state = await snapshot();
     const meter = state.items.find(i => i.sku === "METER-UI"), module = state.items.find(i => i.sku === "RADIO-UI");
     // Edit a persisted item through the actual UI and verify unchanged identity.
-    await page.getByText("System fixture", { exact: false }).first().locator("../../..").getByRole("button", { name: "Edit", exact: true }).click();
+    await page.getByRole("searchbox", { name: "Search items" }).fill("METER-UI");
+    await page.locator("[data-catalog-row]").filter({ hasText: "System fixture" }).getByRole("button", { name: "Edit", exact: true }).click();
     await page.getByLabel("Product Description", { exact: true }).fill("Updated fixture description");
     await page.getByLabel("Cost", { exact: true }).fill("18.75");
     await page.getByLabel("Reorder point", { exact: true }).fill("6");

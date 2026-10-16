@@ -27,6 +27,7 @@ import { InventoryShipmentExceptions } from "@/components/inventory-shipment-exc
 import { InventoryShipmentTransitDialog } from "@/components/inventory-shipment-transit-dialog";
 import { InventoryStockSerialDialog } from "@/components/inventory-stock-serial-dialog";
 import { InventoryStockWorkspace } from "@/components/inventory-stock-workspace";
+import { InventoryCatalogWorkspace } from "@/components/inventory-catalog-workspace";
 import type { StockBalanceRow } from "@/lib/inventory-stock-export";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -764,7 +765,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
         <TabsList className="h-auto w-full flex-wrap justify-start gap-1">
           <TabsTrigger value="stock">Stock &amp; search</TabsTrigger>
           <TabsTrigger value="locations">Locations</TabsTrigger>
-          <TabsTrigger value="catalog">Items &amp; vendors</TabsTrigger>
+          <TabsTrigger value="items">Items</TabsTrigger>
+          <TabsTrigger value="vendors">Vendors</TabsTrigger>
           <TabsTrigger value="orders">Orders</TabsTrigger>
           <TabsTrigger value="exceptions">Shipment exceptions</TabsTrigger>
           <TabsTrigger value="counts">Counts &amp; assembly</TabsTrigger>
@@ -773,16 +775,23 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
         </TabsList>
       </div>
 
-    <div className={`min-h-0 flex-1 ${inventoryTab === "orders" || inventoryTab === "stock" ? "flex flex-col overflow-hidden" : "space-y-5 overflow-y-auto overscroll-contain pb-8 pr-1"}`} data-testid="inventory-scroll-content" role="region" aria-label="Inventory content" tabIndex={0}>
-    {!hasAny && <Alert hidden={inventoryTab === "orders" || inventoryTab === "stock"}><Boxes className="h-4 w-4" /><AlertTitle>Set up the first stock location</AlertTitle><AlertDescription>Add a warehouse or service vehicle, then add catalog items and begin receiving meters.</AlertDescription></Alert>}
+    <div className={`min-h-0 flex-1 ${["orders", "stock", "items", "vendors"].includes(inventoryTab) ? "flex flex-col overflow-hidden" : "space-y-5 overflow-y-auto overscroll-contain pb-8 pr-1"}`} data-testid="inventory-scroll-content" role="region" aria-label="Inventory content" tabIndex={0}>
+    {!hasAny && <Alert hidden={["orders", "stock", "items", "vendors"].includes(inventoryTab)}><Boxes className="h-4 w-4" /><AlertTitle>Set up the first stock location</AlertTitle><AlertDescription>Add a warehouse or service vehicle, then add catalog items and begin receiving meters.</AlertDescription></Alert>}
 
       <TabsContent value="stock" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         <InventoryStockWorkspace rows={allStockRows} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
           onViewSerials={row => setSelectedStockKey(`${row.itemId}/${row.warehouseId}`)} />
       </TabsContent>
       <TabsContent value="locations"><Card><CardHeader><div className="flex items-center justify-between"><div><CardTitle>Warehouses & vehicles</CardTitle><CardDescription>Access is enforced by the project inventory service for every operation.</CardDescription></div>{can("inventory.maintain") && <Button onClick={() => openResource("warehouse")}><Plus className="mr-2 h-4 w-4" />Add location</Button>}</div></CardHeader><CardContent><div className="grid gap-3 lg:grid-cols-2">{warehouses.map(warehouse => <div key={warehouse.id} className="rounded-lg border p-4"><div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2 font-medium">{warehouse.name}<Badge variant="outline">{warehouse.type === "vehicle" ? "Vehicle" : "Warehouse"}</Badge>{!warehouse.active && <Badge variant="secondary">Inactive</Badge>}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{warehouse.code}</div></div>{can("inventory.maintain") && <Button size="sm" variant="outline" onClick={() => openResource("warehouse", warehouse)}>Edit</Button>}</div><p className="mt-3 text-sm text-muted-foreground">{warehouse.type === "vehicle" ? `${warehouse.make} ${warehouse.model} · ${warehouse.plate} ${warehouse.plateState}` : [warehouse.address, warehouse.city, warehouse.state, warehouse.zip].filter(Boolean).join(", ")}</p><p className="mt-2 text-xs text-muted-foreground">{warehouse.assignedUserId ? `Assigned user ${data.users.find(user => user.id === warehouse.assignedUserId)?.username ?? warehouse.assignedUserId}` : "Assigned: None"} · {warehouse.userIds.length} additional authorized</p></div>)}</div>{warehouses.length === 0 && <Empty title="No locations configured" description="Create a warehouse or field vehicle to establish the first stock location." />}</CardContent></Card></TabsContent>
-      <TabsContent value="catalog" className="space-y-4"><Card><CardHeader><div className="flex items-center justify-between"><div><CardTitle>Item catalog</CardTitle><CardDescription>Serialized meters require a scan for each quantity; kits list their component recipe.</CardDescription></div>{can("inventory.maintain") && <Button onClick={() => openResource("item")}><Plus className="mr-2 h-4 w-4" />Add item</Button>}</div></CardHeader><CardContent><div className="space-y-2">{items.map(item => <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3"><div className="flex items-center gap-3">{item.images[0] && sameOriginImage(item.images[0]) && <img src={sameOriginImage(item.images[0]) ?? undefined} alt="" className="h-12 w-12 rounded object-cover" />}<div><div className="font-medium">{item.name} <span className="font-mono text-xs text-muted-foreground">{item.sku}</span></div><div className="text-xs text-muted-foreground">{item.category || "Uncategorized"} · {item.tracking} · {item.unit}{item.components.length ? ` · Kit of ${item.components.length}` : ""}</div></div></div><div className="flex items-center gap-2">{item.reorderPoint > 0 && <Badge variant="outline">Reorder at {item.reorderPoint}</Badge>}{!item.active && <Badge variant="secondary">Inactive</Badge>}{can("inventory.maintain") && <Button size="sm" variant="outline" onClick={() => openResource("item", item)}>Edit</Button>}</div></div>)}</div>{items.length === 0 && <Empty title="No items in this project" description="Add the meter catalog, barcode identifiers, tracking type, and kit recipes." />}</CardContent></Card>
-        <Card><CardHeader><div className="flex items-center justify-between"><div><CardTitle>Vendors</CardTitle><CardDescription>Vendor details are project-specific.</CardDescription></div>{can("inventory.maintain") && <Button variant="outline" onClick={() => openResource("vendor")}><Plus className="mr-2 h-4 w-4" />Add vendor</Button>}</div></CardHeader><CardContent><div className="grid gap-2 sm:grid-cols-2">{vendors.map(vendor => <div key={vendor.id} className="rounded-md border p-3"><div className="flex justify-between gap-2"><span className="font-medium">{vendor.name}</span>{can("inventory.maintain") && <Button size="sm" variant="ghost" onClick={() => openResource("vendor", vendor)}>Edit</Button>}</div><p className="text-sm text-muted-foreground">{vendor.contact} {vendor.phone && `· ${vendor.phone}`}</p><p className="text-xs text-muted-foreground">{vendor.email || vendor.reference}</p></div>)}</div>{vendors.length === 0 && <Empty title="No vendors added" description="Vendor details are optional for internal stock moves and required when creating purchase orders." />}</CardContent></Card>
+      <TabsContent value="items" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
+        <InventoryCatalogWorkspace kind="items" items={items} vendors={vendors} projectName={data.projectName} timezone={timezone}
+          canMaintain={can("inventory.maintain")} onRefresh={() => void refetch()} onAdd={() => openResource("item")}
+          onEditItem={item => openResource("item", item)} onEditVendor={vendor => openResource("vendor", vendor)} />
+      </TabsContent>
+      <TabsContent value="vendors" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
+        <InventoryCatalogWorkspace kind="vendors" items={items} vendors={vendors} projectName={data.projectName} timezone={timezone}
+          canMaintain={can("inventory.maintain")} onRefresh={() => void refetch()} onAdd={() => openResource("vendor")}
+          onEditItem={item => openResource("item", item)} onEditVendor={vendor => openResource("vendor", vendor)} />
       </TabsContent>
 
       <TabsContent value="orders" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
