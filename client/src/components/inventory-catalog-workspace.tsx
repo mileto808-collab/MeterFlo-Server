@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Download, FileSpreadsheet, FileText, Filter, Plus, RefreshCw, Search } from "lucide-react";
+import { InventoryMobileTools } from "@/components/inventory-mobile-tools";
 import type { InventoryItem, Vendor } from "@shared/inventory";
 import { downloadInventoryCatalog } from "@/lib/inventory-catalog-export";
 import { useToast } from "@/hooks/use-toast";
@@ -91,16 +92,22 @@ export function InventoryCatalogWorkspace({ kind, items, vendors, projectName, t
     const main = resultsElement?.closest("main");
     if (!main) return;
     const previousHeight = main.style.height;
-    const fit = () => { main.style.height = `${Math.max(0, window.innerHeight - Math.max(0, main.getBoundingClientRect().top))}px`; };
+    const fit = () => {
+      const viewport = window.visualViewport;
+      main.style.height = `${Math.max(0, (viewport?.height ?? window.innerHeight) -
+        Math.max(0, main.getBoundingClientRect().top - (viewport?.offsetTop ?? 0)))}px`;
+    };
     const observer = new ResizeObserver(fit);
     if (main.parentElement) observer.observe(main.parentElement);
     window.addEventListener("resize", fit);
     window.visualViewport?.addEventListener("resize", fit);
+    window.visualViewport?.addEventListener("scroll", fit);
     fit();
     return () => {
       observer.disconnect();
       window.removeEventListener("resize", fit);
       window.visualViewport?.removeEventListener("resize", fit);
+      window.visualViewport?.removeEventListener("scroll", fit);
       main.style.height = previousHeight;
     };
   }, [resultsElement]);
@@ -159,29 +166,34 @@ export function InventoryCatalogWorkspace({ kind, items, vendors, projectName, t
         <DialogFooter className="flex-row justify-between sm:justify-between"><Button variant="ghost" onClick={resetFilters}>Clear filters</Button><Button onClick={() => setFiltersOpen(false)}>Show {matchingRows.length} {kind}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
-    <header className="sticky top-0 z-10 shrink-0 border-b bg-background px-1 pb-3" data-testid={`inventory-${kind}-subheader`}>
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <div className="min-w-0"><h2 className="text-lg font-semibold tracking-tight">{isItems ? "Item catalog" : "Project vendors"}</h2><p className="hidden text-xs text-muted-foreground sm:block">{isItems ? "Serialized meters, kit recipes, and reorder points for this project." : "Vendor contacts and purchasing references for this project."}</p></div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          {canMaintain && <Button size="sm" aria-label={`Add ${isItems ? "item" : "vendor"}`} onClick={onAdd}><Plus className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Add {isItems ? "item" : "vendor"}</span></Button>}
-          <Button size="sm" variant="outline" aria-label={`Refresh ${kind}`} onClick={onRefresh}><RefreshCw className="mr-1.5 hidden h-4 w-4 sm:block" />Refresh</Button>
-          <Button size="sm" variant="outline" aria-label="CSV" disabled={!matchingRows.length} onClick={() => void exportFile("csv")}><Download className="mr-1.5 hidden h-4 w-4 sm:block" />CSV</Button>
-          <Button size="sm" variant="outline" aria-label="Excel" disabled={!matchingRows.length} onClick={() => void exportFile("xlsx")}><FileSpreadsheet className="mr-1.5 hidden h-4 w-4 sm:block" />Excel</Button>
-          <Button size="sm" variant="outline" aria-label="PDF / Print" disabled={!matchingRows.length} onClick={() => void exportFile("pdf")}><FileText className="mr-1.5 hidden h-4 w-4 sm:block" />PDF / Print</Button>
+    <header className="sticky top-0 z-10 shrink-0 border-b bg-background px-1 pb-2 sm:pb-3" data-testid={`inventory-${kind}-subheader`}>
+      <div className="min-h-8">
+        <h2 className="text-base font-semibold tracking-tight sm:text-lg">{isItems ? "Item catalog" : "Project vendors"}</h2>
+        <p className="hidden text-xs text-muted-foreground sm:block">{isItems ? "Serialized meters, kit recipes, and reorder points for this project." : "Vendor contacts and purchasing references for this project."}</p>
+      </div>
+      <InventoryMobileTools tab={kind}>
+        <div className="space-y-2 rounded-md border bg-card p-2 md:rounded-none md:border-0 md:bg-transparent md:p-0">
+          <div className="flex items-center gap-1.5">
+            {canMaintain && <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" aria-label={`Add ${isItems ? "item" : "vendor"}`} title={`Add ${isItems ? "item" : "vendor"}`} onClick={onAdd}><Plus className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Add {isItems ? "item" : "vendor"}</span></Button>}
+            <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label={`Refresh ${kind}`} title={`Refresh ${kind}`} onClick={onRefresh}><RefreshCw className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Refresh</span></Button>
+            <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="CSV" title="CSV" disabled={!matchingRows.length} onClick={() => void exportFile("csv")}><Download className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">CSV</span></Button>
+            <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="Excel" title="Excel" disabled={!matchingRows.length} onClick={() => void exportFile("xlsx")}><FileSpreadsheet className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Excel</span></Button>
+            <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="PDF / Print" title="PDF / Print" disabled={!matchingRows.length} onClick={() => void exportFile("pdf")}><FileText className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">PDF / Print</span></Button>
+            <p className="ml-auto whitespace-nowrap text-xs text-muted-foreground" aria-live="polite">{matchingRows.length} {kind}</p>
+          </div>
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="relative min-w-0 flex-1"><Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input aria-label={`Search ${kind}`} className="h-9 pl-9" type="search" autoComplete="off" placeholder={isItems ? "Name, SKU, barcode, maker or vendor" : "Vendor, contact, phone, email or reference"} value={query} onChange={event => setQuery(event.target.value)} /></div>
+            <Button size="sm" variant="outline" aria-label={`Filter ${kind}`} aria-expanded={filtersOpen} onClick={() => setFiltersOpen(true)}><Filter className="mr-1.5 h-4 w-4" />Filters{activeFilterCount > 0 && <Badge variant="secondary" className="ml-1">{activeFilterCount}</Badge>}</Button>
+          </div>
         </div>
-      </div>
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <div className="relative min-w-0 flex-1 sm:min-w-64"><Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><Input aria-label={`Search ${kind}`} className="h-9 pl-9" type="search" autoComplete="off" placeholder={isItems ? "Name, SKU, barcode, maker or vendor" : "Vendor, contact, phone, email or reference"} value={query} onChange={event => setQuery(event.target.value)} /></div>
-        <Button size="sm" variant="outline" aria-label={`Filter ${kind}`} aria-expanded={filtersOpen} onClick={() => setFiltersOpen(true)}><Filter className="mr-1.5 h-4 w-4" />Filters{activeFilterCount > 0 && <Badge variant="secondary" className="ml-1">{activeFilterCount}</Badge>}</Button>
-        <p className="hidden text-xs text-muted-foreground sm:block" aria-live="polite">{matchingRows.length} {kind}</p>
-      </div>
+      </InventoryMobileTools>
     </header>
     <div ref={setResultsElement} className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-2" data-testid={`inventory-${kind}-results`} data-page-size={rowsPerPage} role="region" aria-label={isItems ? "Catalog items" : "Vendors"} tabIndex={0}>
       {visibleRows.length ? <div className="space-y-2">{isItems ? (visibleRows as InventoryItem[]).map(item => {
         const image = item.images[0] ? sameOriginImage(item.images[0]) : null;
         const vendor = vendors.find(value => value.id === item.vendorId);
-        return <article key={item.id} data-catalog-row className="min-w-0 rounded-md border bg-card px-3 py-3 sm:px-4">
-          <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+        return <article key={item.id} data-catalog-row className="min-w-0 rounded-md border bg-card px-2.5 py-2 sm:px-4 sm:py-3">
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 sm:gap-3">
             <div className="flex min-w-0 items-center gap-3">{image && <img src={image} alt="" className="h-12 w-12 shrink-0 rounded object-cover" />}
               <div className="min-w-0"><div className="flex flex-wrap items-center gap-1.5"><h3 className="break-words font-medium">{item.name}</h3><span className="break-all font-mono text-xs text-muted-foreground">{item.sku}</span>{!item.active && <Badge variant="secondary">Inactive</Badge>}</div>
                 <p className="mt-0.5 break-words text-xs text-muted-foreground">{item.category || "Uncategorized"} · {item.tracking === "serialized" ? "Serial tracked" : "Quantity tracked"} · {item.unit}{item.equipment !== "none" ? ` · ${item.equipment}` : ""}{item.components.length ? ` · Kit of ${item.components.length}` : ""}</p>
@@ -191,7 +203,7 @@ export function InventoryCatalogWorkspace({ kind, items, vendors, projectName, t
             <div className="flex flex-wrap items-center gap-2">{item.reorderPoint > 0 && <Badge variant="outline">Reorder at {item.reorderPoint}</Badge>}{canMaintain && <Button size="sm" variant="outline" onClick={() => onEditItem(item)}>Edit</Button>}</div>
           </div>
         </article>;
-      }) : (visibleRows as Vendor[]).map(vendor => <article key={vendor.id} data-catalog-row className="min-w-0 rounded-md border bg-card px-3 py-3 sm:px-4">
+      }) : (visibleRows as Vendor[]).map(vendor => <article key={vendor.id} data-catalog-row className="min-w-0 rounded-md border bg-card px-2.5 py-2 sm:px-4 sm:py-3">
         <div className="flex min-w-0 flex-wrap items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h3 className="break-words font-medium">{vendor.name}</h3>{!vendor.active && <Badge variant="secondary">Inactive</Badge>}</div>
           <p className="mt-1 break-words text-sm text-muted-foreground">{vendor.contact || "No contact name"}{vendor.phone ? ` · ${vendor.phone}` : ""}{vendor.email ? ` · ${vendor.email}` : ""}</p>
           <p className="mt-1 break-words text-xs text-muted-foreground">{vendor.address || "No address"}{vendor.reference ? ` · Reference ${vendor.reference}` : ""}</p>

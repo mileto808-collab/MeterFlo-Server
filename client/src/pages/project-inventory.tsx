@@ -29,6 +29,7 @@ import { InventoryStockSerialDialog } from "@/components/inventory-stock-serial-
 import { InventoryStockWorkspace } from "@/components/inventory-stock-workspace";
 import { InventoryCatalogWorkspace } from "@/components/inventory-catalog-workspace";
 import { InventoryRecordsWorkspace } from "@/components/inventory-records-workspace";
+import { InventoryMobileTools } from "@/components/inventory-mobile-tools";
 import { buildOperationsDataset } from "@/lib/inventory-operations-data";
 import type { StockBalanceRow } from "@/lib/inventory-stock-export";
 import { Badge } from "@/components/ui/badge";
@@ -38,11 +39,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { AlertTriangle, ArrowLeftRight, BarChart3, Boxes, ChevronDown, ChevronUp, ClipboardList, Download, FileSpreadsheet, FileText, Filter, Loader2, Package, Plus, Printer, RefreshCw, Search, Warehouse as WarehouseIcon } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, BarChart3, Boxes, ChevronDown, ChevronUp, ClipboardList, Download, FileSpreadsheet, FileText, Filter, Loader2, Menu, Package, Plus, Printer, RefreshCw, Search, Warehouse as WarehouseIcon } from "lucide-react";
 
 type Snapshot = { enabled: boolean; projectName: string; timezone: string; state: InventoryState; permissions: string[]; users: Array<{ id: string; username: string }>; actors?: InventoryActorLabel[] };
 type ResourceKind = "warehouse" | "vendor" | "item";
@@ -51,6 +53,17 @@ const blankVendor = (): Vendor => ({ id: "", name: "", contact: "", address: "",
 const blankItem = (): InventoryItem => ({ id: "", sku: "", name: "", description: "", category: "", unit: "each", tracking: "regular", equipment: "none", barcode: "", manufacturer: "", model: "", vendorId: null, cost: 0, reorderPoint: 0, active: true, images: [], components: [] });
 const freshId = () => crypto.randomUUID();
 const csv = (value: string) => value.split(/[\n,;]/).map(part => part.trim()).filter(Boolean);
+const inventoryTabs = [
+  { value: "stock", label: "Stock & search" },
+  { value: "locations", label: "Locations" },
+  { value: "items", label: "Items" },
+  { value: "vendors", label: "Vendors" },
+  { value: "orders", label: "Orders" },
+  { value: "exceptions", label: "Shipment exceptions" },
+  { value: "counts", label: "Counts & assembly" },
+  { value: "returns", label: "Removed Equipment" },
+  { value: "activity", label: "Activity" },
+];
 const sameOriginImage = (value: string) => {
   try { return new URL(value, window.location.origin).origin === window.location.origin ? value : null; }
   catch { return null; }
@@ -73,6 +86,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const { data, isLoading, isError, refetch } = useQuery<Snapshot>({ queryKey, enabled: !!projectId });
   const [showInventoryStats, setShowInventoryStats] = useState(false);
   const [inventoryTab, setInventoryTab] = useState("stock");
+  const inventoryMainRef = useRef<HTMLElement>(null);
   const [selectedStockKey, setSelectedStockKey] = useState<string | null>(null);
   const [resource, setResource] = useState<ResourceKind | null>(null);
   const [warehouseForm, setWarehouseForm] = useState<Warehouse>(blankWarehouse());
@@ -244,18 +258,22 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     const fit = () => {
       // The real top includes app chrome and any hosting preview banner.
       // A fixed viewport subtraction can put the pager below the screen.
-      const available = Math.max(0, window.innerHeight - Math.max(0, main.getBoundingClientRect().top));
+      const viewport = window.visualViewport;
+      const available = Math.max(0, (viewport?.height ?? window.innerHeight) -
+        Math.max(0, main.getBoundingClientRect().top - (viewport?.offsetTop ?? 0)));
       main.style.height = `${available}px`;
     };
     const observer = new ResizeObserver(fit);
     if (main.parentElement) observer.observe(main.parentElement);
     window.addEventListener("resize", fit);
     window.visualViewport?.addEventListener("resize", fit);
+    window.visualViewport?.addEventListener("scroll", fit);
     fit();
     return () => {
       observer.disconnect();
       window.removeEventListener("resize", fit);
       window.visualViewport?.removeEventListener("resize", fit);
+      window.visualViewport?.removeEventListener("scroll", fit);
       main.style.height = previousHeight;
     };
   }, [orderResultsElement]);
@@ -313,6 +331,29 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   useEffect(() => {
     if (selectedStockKey && (!can("inventory.view") || !selectedStockRow)) setSelectedStockKey(null);
   }, [selectedStockKey, selectedStockRow, hasPermission]);
+  useEffect(() => {
+    const main = inventoryMainRef.current;
+    if (!main) return;
+    const viewport = window.visualViewport;
+    const fit = () => {
+      const height = viewport?.height ?? window.innerHeight;
+      const viewportTop = viewport?.offsetTop ?? 0;
+      const actualTop = main.getBoundingClientRect().top;
+      main.style.height = `${Math.max(0, height - Math.max(0, actualTop - viewportTop))}px`;
+    };
+    const observer = new ResizeObserver(fit);
+    if (main.parentElement) observer.observe(main.parentElement);
+    window.addEventListener("resize", fit);
+    viewport?.addEventListener("resize", fit);
+    viewport?.addEventListener("scroll", fit);
+    fit();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", fit);
+      viewport?.removeEventListener("resize", fit);
+      viewport?.removeEventListener("scroll", fit);
+    };
+  }, [isLoading]);
 
   if (!projectId) return <div className="p-6">Project not found.</div>;
   if (isLoading) return <main className="mx-auto max-w-7xl p-4 md:p-7 space-y-5"><div className="h-8 w-64 animate-pulse rounded bg-muted" /><div className="grid gap-4 md:grid-cols-3">{[1, 2, 3].map(i => <div key={i} className="h-28 animate-pulse rounded-lg bg-muted" />)}</div><div className="h-80 animate-pulse rounded-lg bg-muted" /></main>;
@@ -647,7 +688,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     command.mutate({ action: "countPost", data: { id: activeCount.id, draftRevision: countDraftRevision, lines: countLines, reason: countReason } }, { onSuccess: () => setActiveCount(null) });
   };
 
-  return <main className="mx-auto flex h-[calc(100dvh-72px)] min-h-0 w-full max-w-7xl flex-col overflow-hidden p-4 md:p-7" data-testid="inventory-workspace">
+  return <main ref={inventoryMainRef} className="mx-auto flex h-[calc(100dvh-72px)] min-h-0 w-full max-w-7xl flex-col overflow-hidden p-2 sm:p-4 md:p-7" data-testid="inventory-workspace">
     <Dialog open={!!pendingOrderTransition} onOpenChange={open => { if (!open && !orderSaving.current) setPendingOrderTransition(null); }}>
       <DialogContent onEscapeKeyDown={event => { if (orderSaving.current) event.preventDefault(); }} onPointerDownOutside={event => event.preventDefault()}>
         <DialogHeader><DialogTitle>Unsaved order changes</DialogTitle><DialogDescription>Save this purchase or transfer draft before continuing, discard the unsaved changes, or stay here. Saving a draft does not release an order or change stock.</DialogDescription></DialogHeader>
@@ -721,30 +762,32 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       </DialogContent>
     </Dialog>
     {isError && <Alert variant="destructive"><AlertTitle>Inventory refresh failed</AlertTitle><AlertDescription>The last loaded inventory is shown. Your count entries were kept; retry before relying on current stock.</AlertDescription><Button variant="outline" className="mt-2" onClick={() => refetch()}>Retry inventory refresh</Button></Alert>}
-    <Tabs value={inventoryTab} onValueChange={setInventoryTab} className="flex min-h-0 flex-1 flex-col gap-3">
-      <div className="z-10 shrink-0 space-y-3 border-b bg-background pb-3" data-testid="inventory-sticky-header">
-        <div className="flex min-w-0 flex-col justify-between gap-3 sm:flex-row sm:items-center">
-          <div className="min-w-0">
-            <p className="mb-1 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Project operations</p>
-            <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Inventory</h1>
+    <Tabs value={inventoryTab} onValueChange={setInventoryTab} className="flex min-h-0 flex-1 flex-col gap-1.5 sm:gap-3 [&>[role=tabpanel]]:mt-0 md:[&>[role=tabpanel]]:mt-2">
+      <div className="relative z-10 shrink-0 space-y-2 border-b bg-background pb-2 sm:space-y-3 sm:pb-3" data-testid="inventory-sticky-header">
+        <div className="flex min-w-0 items-center justify-between gap-2 sm:items-center">
+          <div className="hidden min-w-0 md:block">
+            <p className="mb-0.5 hidden text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground sm:block">Project operations</p>
+            <h1 className="text-xl font-semibold tracking-tight sm:text-3xl">Inventory</h1>
             <p className="mt-1 hidden text-sm text-muted-foreground sm:block">Know what’s on hand, where it lives, and which serial leaves with each crew.</p>
           </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-1 sm:flex-wrap sm:gap-2">
             <Button
               size="sm"
               variant={showInventoryStats ? "secondary" : "outline"}
+              className="h-9 px-2 sm:px-3"
               aria-expanded={showInventoryStats}
               aria-controls="inventory-stats-region"
               data-testid="button-toggle-inventory-stats"
+              aria-label={showInventoryStats ? "Hide inventory stats" : "Show inventory stats"}
               onClick={() => setShowInventoryStats(value => !value)}
             >
-              <BarChart3 className="mr-1.5 h-4 w-4" />
-              {showInventoryStats ? "Hide Stats" : "Show Stats"}
-              {showInventoryStats ? <ChevronUp className="ml-1.5 h-4 w-4" /> : <ChevronDown className="ml-1.5 h-4 w-4" />}
+              <BarChart3 className="h-4 w-4 sm:mr-1.5" />
+              <span className="hidden sm:inline">{showInventoryStats ? "Hide Stats" : "Show Stats"}</span>
+              {showInventoryStats ? <ChevronUp className="ml-1 hidden h-4 w-4 sm:block" /> : <ChevronDown className="ml-1 hidden h-4 w-4 sm:block" />}
             </Button>
-            {can("inventory.maintain") && <Button size="sm" variant="outline" onClick={() => openResource("warehouse")}><Plus className="mr-1.5 h-4 w-4" />Location</Button>}
-            {can("inventory.maintain") && <Button size="sm" onClick={() => openResource("item")}><Plus className="mr-1.5 h-4 w-4" />New item</Button>}
-            {(can("inventory.purchase") || can("inventory.transfer")) && <Button size="sm" onClick={() => { setInventoryTab("orders"); startNewOrderDraft(); }}><Plus className="mr-1.5 h-4 w-4" />Build an order draft</Button>}
+            {can("inventory.maintain") && <Button size="sm" variant="outline" className="hidden h-9 px-3 md:inline-flex" aria-label="Add location" onClick={() => openResource("warehouse")}><Plus className="mr-1.5 h-4 w-4" />Location</Button>}
+            {can("inventory.maintain") && <Button size="sm" className="hidden h-9 px-3 md:inline-flex" aria-label="Add new item" onClick={() => openResource("item")}><Plus className="mr-1.5 h-4 w-4" />New item</Button>}
+            {(can("inventory.purchase") || can("inventory.transfer")) && <Button size="sm" className="hidden h-9 px-3 md:inline-flex" aria-label="Build an order draft" onClick={() => { setInventoryTab("orders"); startNewOrderDraft(); }}><Plus className="mr-1.5 h-4 w-4" />Build an order draft</Button>}
           </div>
         </div>
         <div
@@ -760,7 +803,25 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           <Metric label="Open orders" value={orderItems.filter(order => ["draft", "released", "partial"].includes(order.status)).length} detail="Purchases and transfers" icon={<ArrowLeftRight className="h-4 w-4" />} />
           <Metric label="Open counts" value={state.counts.filter(count => count.status === "open").length} detail={`Ledger revision ${state.revision}`} icon={<ClipboardList className="h-4 w-4" />} />
         </div>
-        <TabsList className="h-auto w-full flex-wrap justify-start gap-1">
+        <div className="!mt-0 absolute left-0 right-12 top-0 md:hidden">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="outline" className="h-9 w-full justify-between" aria-label={`Inventory sections, current: ${inventoryTabs.find(tab => tab.value === inventoryTab)?.label ?? "Stock & search"}`} data-testid="inventory-mobile-menu">
+                <span className="flex min-w-0 items-center gap-2"><Menu className="h-4 w-4 shrink-0" /><span className="truncate">{inventoryTabs.find(tab => tab.value === inventoryTab)?.label ?? "Stock & search"}</span></span>
+                <ChevronDown className="h-4 w-4 shrink-0" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="max-h-[min(70dvh,30rem)] w-[var(--radix-dropdown-menu-trigger-width)] overflow-y-auto">
+              {can("inventory.maintain") && <DropdownMenuItem onSelect={() => openResource("warehouse")}>Add location</DropdownMenuItem>}
+              {can("inventory.maintain") && <DropdownMenuItem onSelect={() => openResource("item")}>Add new item</DropdownMenuItem>}
+              {(can("inventory.purchase") || can("inventory.transfer")) && <DropdownMenuItem onSelect={() => { setInventoryTab("orders"); startNewOrderDraft(); }}>Build an order draft</DropdownMenuItem>}
+              {inventoryTabs.map(tab => <DropdownMenuItem key={tab.value} aria-label={tab.label} data-testid={`inventory-mobile-menu-item-${tab.value}`} onSelect={() => setInventoryTab(tab.value)}>
+                {tab.label}
+              </DropdownMenuItem>)}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+        <TabsList className="hidden h-auto w-full flex-wrap justify-start gap-1 md:flex">
           <TabsTrigger value="stock">Stock &amp; search</TabsTrigger>
           <TabsTrigger value="locations">Locations</TabsTrigger>
           <TabsTrigger value="items">Items</TabsTrigger>
@@ -786,11 +847,17 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           renderRow={row => { const warehouse = warehouses.find(value => value.id === row.id); if (!warehouse) return null;
             const assigned = data.users.find(user => user.id === warehouse.assignedUserId)?.username ?? (warehouse.assignedUserId ? inventoryActorLabel(warehouse.assignedUserId, data.actors ?? data.users) : "None");
             const authorized = warehouse.userIds.map(id => data.users.find(user => user.id === id)?.username ?? inventoryActorLabel(id, data.actors ?? data.users));
-            return <article className="min-w-0 rounded-md border bg-card px-3 py-3 sm:px-4"><div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0"><div className="flex flex-wrap items-center gap-2 font-medium"><h3 className="break-words">{warehouse.name}</h3><Badge variant="outline">{warehouse.type === "vehicle" ? "Vehicle" : "Warehouse"}</Badge>{!warehouse.active && <Badge variant="secondary">Inactive</Badge>}</div>
+            return <article className="min-w-0 rounded-md border bg-card px-3 py-2 sm:px-4 sm:py-3"><div className="flex min-w-0 items-start justify-between gap-2 sm:gap-3">
+              <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2 font-medium"><h3 className="break-words">{warehouse.name}</h3><Badge variant="outline">{warehouse.type === "vehicle" ? "Vehicle" : "Warehouse"}</Badge>{!warehouse.active && <Badge variant="secondary">Inactive</Badge>}</div>
                 <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{warehouse.code}</p>
+                <div className="hidden md:block">
+                  <p className="mt-2 break-words text-sm text-muted-foreground">{warehouse.type === "vehicle" ? [warehouse.make, warehouse.model, warehouse.year, warehouse.plate && `${warehouse.plate} ${warehouse.plateState}`].filter(Boolean).join(" · ") : [warehouse.address, warehouse.city, warehouse.state, warehouse.zip].filter(Boolean).join(", ") || "Address not recorded"}</p>
+                  <p className="mt-1 break-words text-xs text-muted-foreground">Assigned: {assigned} · {warehouse.userIds.length} additional authorized{authorized.length ? ` · ${authorized.join(", ")}` : ""}</p>
+                </div>
+                <details className="md:hidden"><summary className="mt-1 cursor-pointer text-xs text-muted-foreground">Location details</summary><div>
                 <p className="mt-2 break-words text-sm text-muted-foreground">{warehouse.type === "vehicle" ? [warehouse.make, warehouse.model, warehouse.year, warehouse.plate && `${warehouse.plate} ${warehouse.plateState}`].filter(Boolean).join(" · ") : [warehouse.address, warehouse.city, warehouse.state, warehouse.zip].filter(Boolean).join(", ") || "Address not recorded"}</p>
                 <p className="mt-1 break-words text-xs text-muted-foreground">Assigned: {assigned} · {warehouse.userIds.length} additional authorized{authorized.length ? ` · ${authorized.join(", ")}` : ""}</p>
+                </div></details>
               </div>{can("inventory.maintain") && <Button size="sm" variant="outline" onClick={() => openResource("warehouse", warehouse)}>Edit</Button>}</div></article>;
           }} />
       </TabsContent>
@@ -859,44 +926,48 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           </DialogContent>
         </Dialog>
         <section className="flex min-h-0 flex-1 flex-col" aria-label="Purchase and transfer orders">
-          <header className="z-10 shrink-0 border-b bg-background px-1 pb-3" data-testid="inventory-orders-subheader">
+          <header className="z-10 shrink-0 border-b bg-background px-1 pb-2 sm:pb-3" data-testid="inventory-orders-subheader">
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
               <div className="min-w-0">
-                <h2 className="text-lg font-semibold tracking-tight">Purchase &amp; transfer orders</h2>
-                <p className="text-xs text-muted-foreground">Review orders, capture movements, and follow exceptions.</p>
-              </div>
-              <div className="flex flex-wrap items-center gap-1.5">
-                <Button size="sm" variant="outline" aria-label="Refresh orders" onClick={() => void refetch()}><RefreshCw className="mr-1.5 h-4 w-4" />Refresh</Button>
-                <Button size="sm" variant="outline" aria-label="Saved shipment drafts" onClick={() => setShipmentDraftsOpen(true)}><ClipboardList className="mr-1.5 h-4 w-4" />Saved shipment drafts</Button>
-                <Button size="sm" variant="outline" aria-label="CSV" disabled={!visibleOrders.length} onClick={async () => {
-                  try { await downloadInventoryOrders("csv", { project: data.projectName, timezone }, visibleOrders, state); }
-                  catch (error) { toast({ title: "CSV export failed", description: error instanceof Error ? error.message : "Try again.", variant: "destructive" }); }
-                }}><Download className="mr-1.5 h-4 w-4" />CSV</Button>
-                <Button size="sm" variant="outline" aria-label="Excel" disabled={!visibleOrders.length} onClick={async () => {
-                  try { await downloadInventoryOrders("xlsx", { project: data.projectName, timezone }, visibleOrders, state); }
-                  catch (error) { toast({ title: "Excel export failed", description: error instanceof Error ? error.message : "Try again.", variant: "destructive" }); }
-                }}><FileSpreadsheet className="mr-1.5 h-4 w-4" />Excel</Button>
-                <Button size="sm" variant="outline" aria-label="PDF / Print" disabled={!visibleOrders.length} onClick={async () => {
-                  try { await downloadInventoryOrders("pdf", { project: data.projectName, timezone }, visibleOrders, state); }
-                  catch (error) { toast({ title: "PDF export failed", description: error instanceof Error ? error.message : "Try again.", variant: "destructive" }); }
-                }}><FileText className="mr-1.5 h-4 w-4" />PDF / Print</Button>
+                <h2 className="text-base font-semibold tracking-tight sm:text-lg">Purchase &amp; transfer orders</h2>
+                <p className="hidden text-xs text-muted-foreground sm:block">Review orders, capture movements, and follow exceptions.</p>
               </div>
             </div>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <div className="relative w-full min-w-0 sm:min-w-64 sm:flex-1">
-                <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input aria-label="Search orders" className="h-9 pl-9" type="search" autoComplete="off"
-                  placeholder="Order number, reference, ID, product, vendor or location"
-                  value={orderFilters.query} onChange={event => setOrderFilters(current => ({ ...current, query: event.target.value }))} />
+            <InventoryMobileTools tab="orders">
+              <div className="mt-1 space-y-2 rounded-md border bg-card p-2 md:rounded-none md:border-0 md:bg-transparent md:p-0">
+              <div className="flex items-center gap-1.5">
+                <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="Refresh orders" title="Refresh orders" onClick={() => void refetch()}><RefreshCw className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Refresh</span></Button>
+                <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="Saved shipment drafts" title="Saved shipment drafts" onClick={() => setShipmentDraftsOpen(true)}><ClipboardList className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Saved shipment drafts</span></Button>
+                <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="CSV" title="CSV" disabled={!visibleOrders.length} onClick={async () => {
+                  try { await downloadInventoryOrders("csv", { project: data.projectName, timezone }, visibleOrders, state); }
+                  catch (error) { toast({ title: "CSV export failed", description: error instanceof Error ? error.message : "Try again.", variant: "destructive" }); }
+                }}><Download className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">CSV</span></Button>
+                <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="Excel" title="Excel" disabled={!visibleOrders.length} onClick={async () => {
+                  try { await downloadInventoryOrders("xlsx", { project: data.projectName, timezone }, visibleOrders, state); }
+                  catch (error) { toast({ title: "Excel export failed", description: error instanceof Error ? error.message : "Try again.", variant: "destructive" }); }
+                }}><FileSpreadsheet className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Excel</span></Button>
+                <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="PDF / Print" title="PDF / Print" disabled={!visibleOrders.length} onClick={async () => {
+                  try { await downloadInventoryOrders("pdf", { project: data.projectName, timezone }, visibleOrders, state); }
+                  catch (error) { toast({ title: "PDF export failed", description: error instanceof Error ? error.message : "Try again.", variant: "destructive" }); }
+                }}><FileText className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">PDF / Print</span></Button>
               </div>
-              <Button size="sm" variant="outline" aria-label="Filters" aria-expanded={orderFiltersOpen} onClick={() => setOrderFiltersOpen(true)}><Filter className="mr-1.5 h-4 w-4" />Filters</Button>
-              <div className="flex items-center gap-2 rounded-md border px-2.5 py-1.5">
-                <Checkbox id="show-cleared-orders" checked={showClearedOrders} onCheckedChange={checked => setShowClearedOrders(checked === true)} aria-label="Show cleared purchase orders" />
-                <Label htmlFor="show-cleared-orders" className="cursor-pointer text-xs">Show cleared POs</Label>
+              <div className="flex min-w-0 items-center gap-2">
+                <div className="relative min-w-0 flex-1">
+                  <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input aria-label="Search orders" className="h-9 pl-9" type="search" autoComplete="off"
+                    placeholder="Order number, reference, ID, product, vendor or location"
+                    value={orderFilters.query} onChange={event => setOrderFilters(current => ({ ...current, query: event.target.value }))} />
+                </div>
+                <Button size="sm" variant="outline" aria-label="Filters" aria-expanded={orderFiltersOpen} onClick={() => setOrderFiltersOpen(true)}><Filter className="mr-1.5 h-4 w-4" />Filters</Button>
+                <div className="flex shrink-0 items-center gap-2 rounded-md border px-2 py-1.5">
+                  <Checkbox id="show-cleared-orders" checked={showClearedOrders} onCheckedChange={checked => setShowClearedOrders(checked === true)} aria-label="Show cleared purchase orders" />
+                  <Label htmlFor="show-cleared-orders" className="cursor-pointer text-xs">Cleared</Label>
+                </div>
               </div>
               {can("inventory.maintain") && orderItems.some(order => uuidOrderId(order.id) && !order.orderNumber) &&
                 <Button size="sm" variant="outline" disabled={command.isPending} onClick={() => command.mutate({ action: "numberOrders", data: {} })}>Assign legacy order numbers</Button>}
-            </div>
+              </div>
+            </InventoryMobileTools>
             {!orderEditorOpen && orderMessage && <p className="mt-2 rounded-md border border-emerald-700/20 bg-emerald-700/5 px-3 py-2 text-sm" role="status">{orderMessage}</p>}
           </header>
           <div ref={setOrderResultsElement} className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-2" data-testid="inventory-order-results" data-page-size={orderRowsPerPage} role="region" aria-label="Order results" tabIndex={0}>
@@ -909,10 +980,10 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
               <div className="flex min-w-0 flex-col justify-between gap-2 lg:flex-row lg:items-center">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-1.5 font-medium"><span className="font-mono">{orderLabel(order)}</span><Badge variant={order.status === "completed" ? "default" : "outline"}>{order.status}</Badge><Badge variant="secondary">{order.type}</Badge>{order.replacementFor && <Badge variant="outline">replacement for {orderTitle(order.replacementFor)}</Badge>}{archived && <Badge variant="secondary">cleared</Badge>}</div>
-                  <p className="mt-1 break-words text-sm text-muted-foreground">{purchase ? vendors.find(v => v.id === order.vendorId)?.name : warehouses.find(w => w.id === order.sourceId)?.name} → {warehouses.find(w => w.id === order.destinationId)?.name}{orderReference(order) ? ` · Ref ${orderReference(order)}` : ""}</p>
+                  <p className="mt-1 truncate text-xs text-muted-foreground md:whitespace-normal md:break-words md:text-sm">{purchase ? vendors.find(v => v.id === order.vendorId)?.name : warehouses.find(w => w.id === order.sourceId)?.name} → {warehouses.find(w => w.id === order.destinationId)?.name}{orderReference(order) ? ` · Ref ${orderReference(order)}` : ""}</p>
                   <p className="text-xs text-muted-foreground">{order.lines.length} {order.lines.length === 1 ? "item" : "items"} · created {new Date(order.createdAt).toLocaleDateString(undefined, { timeZone: timezone })}</p>
                 </div>
-                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5 max-md:[&>button]:h-7 max-md:[&>button]:min-h-7 max-md:[&>button]:px-2 max-md:[&>button]:text-xs">
                   <Button size="sm" variant="outline" onClick={() => openPrint("order", order.id)}><Printer className="mr-1 h-3.5 w-3.5" />Print</Button>
                   {order.status === "draft" && can(purchase ? "inventory.purchase" : "inventory.transfer") && <><Button size="sm" variant="outline" onClick={() => editOrderDraft(order)}>Edit draft</Button><Button size="sm" disabled={command.isPending} onClick={() => command.mutate({ action: "release", data: { orderId: order.id } })}>Release</Button></>}
                   {!["completed", "cancelled", "closed"].includes(order.status) && can(purchase ? "inventory.purchase" : "inventory.transfer") && <Button size="sm" variant="ghost" disabled={command.isPending} onClick={() => command.mutate({ action: "cancel", data: { orderId: order.id } })}>Cancel</Button>}
@@ -939,6 +1010,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
               <details className="mt-2 border-t pt-1.5 text-xs">
                 <summary className="w-fit cursor-pointer text-muted-foreground">Order details · lines, progress, and internal ID</summary>
                 <div className="mt-2 space-y-1.5">
+                  <p className="break-words md:hidden">{purchase ? vendors.find(v => v.id === order.vendorId)?.name : warehouses.find(w => w.id === order.sourceId)?.name} → {warehouses.find(w => w.id === order.destinationId)?.name}{orderReference(order) ? ` · Ref ${orderReference(order)}` : ""}</p>
                   <div className="flex flex-wrap items-center gap-2 text-muted-foreground"><span className="break-all font-mono">{order.id}</span><Button size="sm" variant="ghost" onClick={() => navigator.clipboard.writeText(order.id).catch(() => toast({ title: "Copy unavailable", description: "Select and copy the displayed internal ID." }))}>Copy internal ID</Button></div>
                   {unreleaseLocked && <p className="text-muted-foreground" role="note">{(state.shipmentDrafts ?? []).some(draft => draft.orderId === order.id) ? "Resume or discard the saved shipment capture before un-releasing this order." : "This order has posted shipment activity and cannot return to draft. Dispatches and receipts must remain attached to the order."}</p>}
                   <div className="grid gap-1 border-t pt-2">{order.lines.map(line => {
@@ -976,9 +1048,12 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           actors={data.actors ?? []} users={data.users} onRefresh={() => void refetch()} />
       </TabsContent>
 
-      <TabsContent value="counts" className="space-y-4"><Card><CardHeader><CardTitle>Physical stock count</CardTitle><CardDescription>Start a snapshot, count every item including zero, and post with a reason.</CardDescription></CardHeader><CardContent className="space-y-4"><div className="flex flex-wrap items-end gap-3"><div className="w-full max-w-sm space-y-1"><Label>Warehouse or vehicle</Label><Select value={countWarehouse} onValueChange={setCountWarehouse}><SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger><SelectContent>{activeWarehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.code} · {w.name}</SelectItem>)}</SelectContent></Select></div>{can("inventory.count") && <Button onClick={() => requestCountTransition(startCount)} disabled={!countWarehouse || command.isPending}>Start count</Button>}</div>
-          {state.counts.map(count => <div key={count.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3"><div><span className="font-medium">{warehouses.find(w => w.id === count.warehouseId)?.name ?? "Location unavailable"}</span><span className="ml-2 text-sm text-muted-foreground">{inventoryCountReference(state.counts, count.id)}</span><Badge className="ml-2" variant={count.status === "open" ? "outline" : "secondary"}>{count.status}</Badge></div>{count.status === "open" && <div className="flex gap-2"><Button size="sm" variant="outline" disabled={command.isPending} onClick={() => { if (activeCount?.id !== count.id) requestCountTransition(() => openCount(count, true)); }}>Continue count</Button><Button size="sm" variant="outline" disabled={!can("inventory.count") || command.isPending} onClick={() => cancelCount(count)}>Cancel count</Button></div>}{count.status === "posted" && <Button size="sm" variant="ghost" onClick={() => openPrint("count", count.id)}>Print</Button>}</div>)}
-          {activeCount && <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
+      <TabsContent value="counts" className="space-y-3 sm:space-y-4"><Card><CardHeader className="space-y-1 px-3 py-3 sm:px-6 sm:py-6"><CardTitle className="text-base sm:text-lg">Physical stock count</CardTitle><CardDescription>Start a snapshot, count every item including zero, and post with a reason.</CardDescription></CardHeader><CardContent className="space-y-3 px-3 pb-3 sm:space-y-4 sm:px-6 sm:pb-6">
+          <InventoryMobileTools tab="counts">
+            <div className="flex flex-wrap items-end gap-2 rounded-md border bg-card p-2 sm:gap-3 sm:border-0 sm:bg-transparent sm:p-0"><div className="w-full min-w-0 flex-1 space-y-1 sm:max-w-sm"><Label>Warehouse or vehicle</Label><Select value={countWarehouse} onValueChange={setCountWarehouse}><SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger><SelectContent>{activeWarehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.code} · {w.name}</SelectItem>)}</SelectContent></Select></div>{can("inventory.count") && <Button className="shrink-0" onClick={() => requestCountTransition(startCount)} disabled={!countWarehouse || command.isPending}>Start count</Button>}</div>
+          </InventoryMobileTools>
+          {state.counts.map(count => <div key={count.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-2 sm:p-3"><div className="min-w-0"><span className="font-medium">{warehouses.find(w => w.id === count.warehouseId)?.name ?? "Location unavailable"}</span><span className="ml-2 text-sm text-muted-foreground">{inventoryCountReference(state.counts, count.id)}</span><Badge className="ml-2" variant={count.status === "open" ? "outline" : "secondary"}>{count.status}</Badge></div>{count.status === "open" && <div className="flex gap-2"><Button size="sm" variant="outline" disabled={command.isPending} onClick={() => { if (activeCount?.id !== count.id) requestCountTransition(() => openCount(count, true)); }}>Continue count</Button><Button size="sm" variant="outline" disabled={!can("inventory.count") || command.isPending} onClick={() => cancelCount(count)}>Cancel count</Button></div>}{count.status === "posted" && <Button size="sm" variant="ghost" onClick={() => openPrint("count", count.id)}>Print</Button>}</div>)}
+          {activeCount && <div className="space-y-2 rounded-md border bg-muted/30 p-2.5 sm:space-y-3 sm:rounded-lg sm:p-4">
             <div><h3 className="font-medium">{inventoryCountReference(state.counts, activeCount.id)} · {warehouses.find(w => w.id === activeCount.warehouseId)?.name}</h3><p className="text-xs text-muted-foreground">Verify all snapshot items, including zero quantities. Add discovered products below; unused project catalog products are not required. Every entry on every page is included when saving or posting. Save count draft before leaving. Saving does not adjust stock.</p></div>
             <p role="status" className="text-sm">{countDraftMessage || "Unsaved entries remain only on this page until you save the draft."}</p>
             <div className="space-y-2 rounded border p-3">
@@ -996,7 +1071,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
               const { itemId: id, item } = row;
               if (!item) return <Alert key={id} variant="destructive"><AlertTitle>Count item unavailable</AlertTitle><AlertDescription>Item {id} is no longer in the catalog. Resolve it before posting; it will not be silently omitted.</AlertDescription></Alert>;
               const old = activeCount.snapshot.find(row => row.itemId === id);
-              return <div key={id} className="grid gap-2 rounded border bg-background p-3 sm:grid-cols-[1fr_130px_2fr] sm:items-end">
+              return <div key={id} className="grid gap-2 rounded border bg-background p-2 sm:grid-cols-[1fr_130px_2fr] sm:items-end sm:p-3">
                 <div><div className="font-medium">{item.name}</div><div className="font-mono text-xs text-muted-foreground">{item.sku} · snapshot {old?.quantity ?? 0}</div></div>
                 <div className="space-y-1"><Label htmlFor={`count-${id}`}>Actual quantity</Label><Input id={`count-${id}`} type="number" min="0" max="1000000" step="1" value={row.quantity} disabled={command.isPending} onChange={event => setCountQuantities(current => ({ ...current, [id]: event.target.value }))} /></div>
                 {item.tracking === "serialized" && <div className="space-y-1"><Label htmlFor={`countserial-${id}`}>Scan all serials</Label><Textarea id={`countserial-${id}`} value={row.serials} disabled={command.isPending} onChange={event => setCountSerials(current => ({ ...current, [id]: event.target.value }))} /></div>}
@@ -1009,7 +1084,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
             <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => saveCountDraft()} disabled={!can("inventory.count") || command.isPending}>Save count draft</Button><Button variant="outline" onClick={() => requestCountTransition(reloadCountDraft)} disabled={!can("inventory.count") || command.isPending}>Reload saved draft</Button><Button onClick={postCount} disabled={!can("inventory.count") || !countReason.trim() || command.isPending}>Post count</Button><Button variant="outline" disabled={command.isPending} onClick={() => requestCountTransition(closeCount)}>Close</Button></div>
           </div>}
         </CardContent></Card>
-        <Card><CardHeader><CardTitle>Assemble a kit</CardTitle><CardDescription>Select a defined kit; scan components from the selected location and record its finished serial identity.</CardDescription></CardHeader><CardContent className="space-y-4"><div className="grid gap-3 sm:grid-cols-3"><div className="space-y-1"><Label>Kit item</Label><Select value={assembleItem} onValueChange={value => { setAssembleItem(value); setComponentScan({}); }}><SelectTrigger><SelectValue placeholder="Select kit" /></SelectTrigger><SelectContent>{items.filter(item => item.active && item.components.length).map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1"><Label>Build location</Label><Select value={assembleWarehouse} onValueChange={setAssembleWarehouse}><SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger><SelectContent>{activeWarehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.code} · {w.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1"><Label>Build quantity</Label><Input type="number" min="1" value={assembleQty} onChange={event => setAssembleQty(event.target.value)} /></div></div>{items.find(item => item.id === assembleItem)?.components.map(component => { const item = items.find(value => value.id === component.itemId); return <div key={component.itemId} className="grid gap-2 sm:grid-cols-[1fr_2fr] sm:items-center"><Label>{item?.sku} · {item?.name} — {component.quantity * Number(assembleQty || 1)} required</Label><Input aria-label={`Scan ${item?.name ?? "component"} serials`} value={componentScan[component.itemId] ?? ""} onChange={event => setComponentScan(current => ({ ...current, [component.itemId]: event.target.value }))} placeholder={item?.tracking === "serialized" ? "Scan component serials" : "Quantity is taken from this location"} /></div>; })}{items.find(item => item.id === assembleItem)?.tracking === "serialized" && <div className="space-y-1"><Label>Finished kit serials</Label><Input value={assembleSerials} onChange={event => setAssembleSerials(event.target.value)} placeholder="Scan each finished unit" /></div>}<Button disabled={!can("inventory.assemble") || !assembleItem || !assembleWarehouse || command.isPending} onClick={() => { const kit = items.find(item => item.id === assembleItem); if (!kit) return; const quantity = Number(assembleQty); const components = kit.components.map(component => { const componentItem = items.find(item => item.id === component.itemId); const serialList = componentItem?.tracking === "serialized" ? csv(componentScan[component.itemId] ?? "") : []; return { itemId: component.itemId, quantity: componentItem?.tracking === "serialized" ? serialList.length : component.quantity * quantity, serials: serialList }; }); command.mutate({ action: "assemble", data: { warehouseId: assembleWarehouse, itemId: kit.id, quantity, serials: kit.tracking === "serialized" ? csv(assembleSerials) : [], components } }); }}>Assemble kit</Button></CardContent></Card>
+        <Card><CardHeader className="space-y-1 px-3 py-3 sm:px-6 sm:py-6"><CardTitle className="text-base sm:text-lg">Assemble a kit</CardTitle><CardDescription>Select a defined kit; scan components from the selected location and record its finished serial identity.</CardDescription></CardHeader><CardContent className="space-y-3 px-3 pb-3 sm:space-y-4 sm:px-6 sm:pb-6"><div className="grid gap-2 sm:grid-cols-3 sm:gap-3"><div className="space-y-1"><Label>Kit item</Label><Select value={assembleItem} onValueChange={value => { setAssembleItem(value); setComponentScan({}); }}><SelectTrigger><SelectValue placeholder="Select kit" /></SelectTrigger><SelectContent>{items.filter(item => item.active && item.components.length).map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1"><Label>Build location</Label><Select value={assembleWarehouse} onValueChange={setAssembleWarehouse}><SelectTrigger><SelectValue placeholder="Select location" /></SelectTrigger><SelectContent>{activeWarehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.code} · {w.name}</SelectItem>)}</SelectContent></Select></div><div className="space-y-1"><Label>Build quantity</Label><Input type="number" min="1" value={assembleQty} onChange={event => setAssembleQty(event.target.value)} /></div></div>{items.find(item => item.id === assembleItem)?.components.map(component => { const item = items.find(value => value.id === component.itemId); return <div key={component.itemId} className="grid gap-2 sm:grid-cols-[1fr_2fr] sm:items-center"><Label>{item?.sku} · {item?.name} — {component.quantity * Number(assembleQty || 1)} required</Label><Input aria-label={`Scan ${item?.name ?? "component"} serials`} value={componentScan[component.itemId] ?? ""} onChange={event => setComponentScan(current => ({ ...current, [component.itemId]: event.target.value }))} placeholder={item?.tracking === "serialized" ? "Scan component serials" : "Quantity is taken from this location"} /></div>; })}{items.find(item => item.id === assembleItem)?.tracking === "serialized" && <div className="space-y-1"><Label>Finished kit serials</Label><Input value={assembleSerials} onChange={event => setAssembleSerials(event.target.value)} placeholder="Scan each finished unit" /></div>}<Button disabled={!can("inventory.assemble") || !assembleItem || !assembleWarehouse || command.isPending} onClick={() => { const kit = items.find(item => item.id === assembleItem); if (!kit) return; const quantity = Number(assembleQty); const components = kit.components.map(component => { const componentItem = items.find(item => item.id === component.itemId); const serialList = componentItem?.tracking === "serialized" ? csv(componentScan[component.itemId] ?? "") : []; return { itemId: component.itemId, quantity: componentItem?.tracking === "serialized" ? serialList.length : component.quantity * quantity, serials: serialList }; }); command.mutate({ action: "assemble", data: { warehouseId: assembleWarehouse, itemId: kit.id, quantity, serials: kit.tracking === "serialized" ? csv(assembleSerials) : [], components } }); }}>Assemble kit</Button></CardContent></Card>
       </TabsContent>
       <TabsContent value="returns" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         <InventoryRecordsWorkspace kind="returns" title="Removed Equipment" description="Returned systems and modules enter quarantine first. Release to usable inventory only after inspection." dataset={returnsDataset} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}

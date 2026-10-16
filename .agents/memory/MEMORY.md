@@ -26,3 +26,4 @@
 - [Shipment quarantine custody](shipment-quarantine-custody.md) — partial dispositions preserve physical receiving evidence; only selected verified units become usable.
 - [Inventory order identity](inventory-order-identity.md) — readable numbers and editable references must not replace replay/shipment identities; restores retain known numbering history.
 - [Export scope safety](export-scope-safety.md) — keep empty filtered scopes selectable; disable downloads rather than leaving users on an unintended all-records export.
+- [Inventory phone density](inventory-phone-density.md) — prioritize records across every tab; use compact section navigation and collapsed Search & Tools like Work Orders.

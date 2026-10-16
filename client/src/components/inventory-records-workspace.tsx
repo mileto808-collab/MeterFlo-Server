@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Download, FileSpreadsheet, FileText, Filter, RefreshCw, Search } from "lucide-react";
+import { InventoryMobileTools } from "@/components/inventory-mobile-tools";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -47,15 +48,21 @@ export function InventoryRecordsWorkspace({ kind, title, description, dataset, p
     const main = resultsElement?.closest("main");
     if (!main) return;
     const previousHeight = main.style.height;
-    const fit = () => { main.style.height = `${Math.max(0, window.innerHeight - Math.max(0, main.getBoundingClientRect().top))}px`; };
+    const fit = () => {
+      const viewport = window.visualViewport;
+      main.style.height = `${Math.max(0, (viewport?.height ?? window.innerHeight) -
+        Math.max(0, main.getBoundingClientRect().top - (viewport?.offsetTop ?? 0)))}px`;
+    };
     const observer = new ResizeObserver(fit);
     if (main.parentElement) observer.observe(main.parentElement);
     window.addEventListener("resize", fit);
     window.visualViewport?.addEventListener("resize", fit);
+    window.visualViewport?.addEventListener("scroll", fit);
     fit();
     return () => {
       observer.disconnect(); window.removeEventListener("resize", fit);
-      window.visualViewport?.removeEventListener("resize", fit); main.style.height = previousHeight;
+      window.visualViewport?.removeEventListener("resize", fit);
+      window.visualViewport?.removeEventListener("scroll", fit); main.style.height = previousHeight;
     };
   }, [resultsElement]);
   useEffect(() => {
@@ -113,23 +120,27 @@ export function InventoryRecordsWorkspace({ kind, title, description, dataset, p
         <DialogFooter className="flex-row justify-between sm:justify-between"><Button variant="ghost" onClick={reset}>Clear filters</Button><Button onClick={() => setFiltersOpen(false)}>Show {matchingRows.length} {nouns[kind]}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
-    <header className="sticky top-0 z-10 shrink-0 border-b bg-background px-1 pb-3" data-testid={`inventory-${kind}-subheader`}>
-      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="text-lg font-semibold tracking-tight">{title}</h2>{headerAction}</div><p className="hidden text-xs text-muted-foreground sm:block">{description}</p></div>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Button size="sm" variant="outline" aria-label={`Refresh ${nouns[kind]}`} onClick={onRefresh}><RefreshCw className="mr-1.5 hidden h-4 w-4 sm:block" />Refresh</Button>
-          <Button size="sm" variant="outline" aria-label="CSV" disabled={!matchingRows.length} onClick={() => void exportFile("csv")}><Download className="mr-1.5 hidden h-4 w-4 sm:block" />CSV</Button>
-          <Button size="sm" variant="outline" aria-label="Excel" disabled={!matchingRows.length} onClick={() => void exportFile("xlsx")}><FileSpreadsheet className="mr-1.5 hidden h-4 w-4 sm:block" />Excel</Button>
-          <Button size="sm" variant="outline" aria-label="PDF / Print" disabled={!matchingRows.length} onClick={() => void exportFile("pdf")}><FileText className="mr-1.5 hidden h-4 w-4 sm:block" />PDF / Print</Button>
-        </div>
+    <header className="sticky top-0 z-10 shrink-0 border-b bg-background px-1 pb-2 sm:pb-3" data-testid={`inventory-${kind}-subheader`}>
+      <div className="flex min-h-8 items-center justify-between gap-2">
+        <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="text-base font-semibold tracking-tight sm:text-lg">{title}</h2>{headerAction}</div><p className="hidden text-xs text-muted-foreground sm:block">{description}</p></div>
       </div>
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <div className="relative min-w-0 flex-1 sm:min-w-64"><Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input aria-label={`Search ${nouns[kind]}`} className="h-9 pl-9" type="search" autoComplete="off" placeholder={placeholder[kind]} value={query} onChange={event => setQuery(event.target.value)} />
+      <InventoryMobileTools tab={kind}>
+        <div className="space-y-2 rounded-md border bg-card p-2 md:rounded-none md:border-0 md:bg-transparent md:p-0">
+          <div className="flex items-center gap-1.5">
+            <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label={`Refresh ${nouns[kind]}`} title={`Refresh ${nouns[kind]}`} onClick={onRefresh}><RefreshCw className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Refresh</span></Button>
+            <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="CSV" title="CSV" disabled={!matchingRows.length} onClick={() => void exportFile("csv")}><Download className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">CSV</span></Button>
+            <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="Excel" title="Excel" disabled={!matchingRows.length} onClick={() => void exportFile("xlsx")}><FileSpreadsheet className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Excel</span></Button>
+            <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="PDF / Print" title="PDF / Print" disabled={!matchingRows.length} onClick={() => void exportFile("pdf")}><FileText className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">PDF / Print</span></Button>
+            <p className="ml-auto whitespace-nowrap text-xs text-muted-foreground" aria-live="polite">{matchingRows.length} {nouns[kind]}</p>
+          </div>
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="relative min-w-0 flex-1"><Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input aria-label={`Search ${nouns[kind]}`} className="h-9 pl-9" type="search" autoComplete="off" placeholder={placeholder[kind]} value={query} onChange={event => setQuery(event.target.value)} />
+            </div>
+            <Button size="sm" variant="outline" aria-label={`Filter ${nouns[kind]}`} aria-expanded={filtersOpen} onClick={() => setFiltersOpen(true)}><Filter className="mr-1.5 h-4 w-4" />Filters{activeFilterCount > 0 && <Badge variant="secondary" className="ml-1">{activeFilterCount}</Badge>}</Button>
+          </div>
         </div>
-        <Button size="sm" variant="outline" aria-label={`Filter ${nouns[kind]}`} aria-expanded={filtersOpen} onClick={() => setFiltersOpen(true)}><Filter className="mr-1.5 h-4 w-4" />Filters{activeFilterCount > 0 && <Badge variant="secondary" className="ml-1">{activeFilterCount}</Badge>}</Button>
-        <p className="hidden text-xs text-muted-foreground sm:block" aria-live="polite">{matchingRows.length} {nouns[kind]}</p>
-      </div>
+      </InventoryMobileTools>
     </header>
     <div ref={setResultsElement} className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-2" data-testid={`inventory-${kind}-results`} data-page-size={rowsPerPage} role="region" aria-label={title} tabIndex={0}>
       {visibleRows.length ? <div className="space-y-2">{visibleRows.map(row => <div key={row.id} data-operations-row>{renderRow(row)}</div>)}</div> :

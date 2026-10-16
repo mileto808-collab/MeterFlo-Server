@@ -7,6 +7,10 @@ tests, measured operating limits, concurrency budgets and large-count caveats.
 
 ## Inventory page header
 
+On phones and narrow tablets, Inventory sections are selected from a compact menu instead of a wrapping tab list. That menu also contains permission-appropriate Add location, Add new item, and Build an order draft actions. Statistics remain collapsed by default. Each section provides a collapsed **Show Search & Tools** control; opening it reveals search, filters, refresh, exports and other section tools without clearing entered filters when closed. Desktop tabs and tools remain visible. Location details can be expanded per record on phones. Paging uses the remaining visible screen space, including browser chrome changes.
+
+Phone layout regression: create the disposable operations fixture with `npx tsx tests/support/inventory-ui-fixture.ts create --operations`, run `node tests/inventory-phone-layout-ui.cjs`, then clean up with `npx tsx tests/support/inventory-ui-fixture.ts cleanup`. The check covers all nine sections at 360, 390 and 430 pixel widths.
+
 The Inventory page keeps its title, permission-available create actions, statistics toggle and inventory tabs in a sticky header while the page content scrolls. Statistics are collapsed by default; use **Show Stats** / **Hide Stats** to reveal or collapse the four inventory summary metrics. The tab menu wraps on narrow screens so the controls remain reachable without horizontal page overflow.
 
 ## Setup and permissions

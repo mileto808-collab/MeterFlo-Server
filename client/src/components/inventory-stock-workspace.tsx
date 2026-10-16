@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Download, FileSpreadsheet, FileText, Filter, RefreshCw, Search } from "lucide-react";
+import { InventoryMobileTools } from "@/components/inventory-mobile-tools";
 import type { StockBalanceRow } from "@/lib/inventory-stock-export";
 import { downloadInventoryStock } from "@/lib/inventory-stock-export";
 import { useToast } from "@/hooks/use-toast";
@@ -51,18 +52,22 @@ export function InventoryStockWorkspace({ rows, projectName, timezone, onRefresh
     if (!main) return;
     const previousHeight = main.style.height;
     const fit = () => {
-      const available = Math.max(0, window.innerHeight - Math.max(0, main.getBoundingClientRect().top));
+      const viewport = window.visualViewport;
+      const available = Math.max(0, (viewport?.height ?? window.innerHeight) -
+        Math.max(0, main.getBoundingClientRect().top - (viewport?.offsetTop ?? 0)));
       main.style.height = `${available}px`;
     };
     const observer = new ResizeObserver(fit);
     if (main.parentElement) observer.observe(main.parentElement);
     window.addEventListener("resize", fit);
     window.visualViewport?.addEventListener("resize", fit);
+    window.visualViewport?.addEventListener("scroll", fit);
     fit();
     return () => {
       observer.disconnect();
       window.removeEventListener("resize", fit);
       window.visualViewport?.removeEventListener("resize", fit);
+      window.visualViewport?.removeEventListener("scroll", fit);
       main.style.height = previousHeight;
     };
   }, [resultsElement]);
@@ -158,30 +163,34 @@ export function InventoryStockWorkspace({ rows, projectName, timezone, onRefresh
         </DialogContent>
       </Dialog>
 
-      <header id="inventory-stock-subheader" className="sticky top-0 z-10 shrink-0 border-b bg-background px-1 pb-3" data-testid="inventory-stock-subheader">
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+      <header id="inventory-stock-subheader" className="sticky top-0 z-10 shrink-0 border-b bg-background px-1 pb-2 sm:pb-3" data-testid="inventory-stock-subheader">
+        <div className="flex min-h-8 items-center justify-between gap-2">
           <div className="min-w-0">
-            <h2 className="text-lg font-semibold tracking-tight">On hand by location</h2>
-            <p className="text-xs text-muted-foreground">Reserved units are excluded from available stock. Serial identity stays with its bin.</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Button size="sm" variant="outline" aria-label="Refresh stock" onClick={onRefresh}><RefreshCw className="mr-1.5 hidden h-4 w-4 sm:block" />Refresh</Button>
-            <Button size="sm" variant="outline" aria-label="CSV" disabled={!matchingRows.length} onClick={() => void exportFile("csv")}><Download className="mr-1.5 hidden h-4 w-4 sm:block" />CSV</Button>
-            <Button size="sm" variant="outline" aria-label="Excel" disabled={!matchingRows.length} onClick={() => void exportFile("xlsx")}><FileSpreadsheet className="mr-1.5 hidden h-4 w-4 sm:block" />Excel</Button>
-            <Button size="sm" variant="outline" aria-label="PDF / Print" disabled={!matchingRows.length} onClick={() => void exportFile("pdf")}><FileText className="mr-1.5 hidden h-4 w-4 sm:block" />PDF / Print</Button>
+            <h2 className="text-base font-semibold tracking-tight sm:text-lg">On hand by location</h2>
+            <p className="hidden text-xs text-muted-foreground sm:block">Reserved units are excluded from available stock. Serial identity stays with its bin.</p>
           </div>
         </div>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <div className="relative w-full min-w-0 sm:min-w-64 sm:flex-1">
-            <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input aria-label="Search inventory" className="h-9 pl-9" type="search" autoComplete="off" placeholder="SKU, meter, location or serial number"
-              value={query} onChange={event => setQuery(event.target.value)} />
+        <InventoryMobileTools tab="stock">
+          <div className="space-y-2 rounded-md border bg-card p-2 md:rounded-none md:border-0 md:bg-transparent md:p-0">
+            <div className="flex items-center gap-1.5">
+              <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="Refresh stock" title="Refresh stock" onClick={onRefresh}><RefreshCw className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Refresh</span></Button>
+              <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="CSV" title="CSV" disabled={!matchingRows.length} onClick={() => void exportFile("csv")}><Download className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">CSV</span></Button>
+              <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="Excel" title="Excel" disabled={!matchingRows.length} onClick={() => void exportFile("xlsx")}><FileSpreadsheet className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Excel</span></Button>
+              <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="PDF / Print" title="PDF / Print" disabled={!matchingRows.length} onClick={() => void exportFile("pdf")}><FileText className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">PDF / Print</span></Button>
+              <p className="ml-auto whitespace-nowrap text-xs text-muted-foreground" aria-live="polite">{matchingRows.length} {matchingRows.length === 1 ? "balance" : "balances"}</p>
+            </div>
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="relative min-w-0 flex-1">
+                <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input aria-label="Search inventory" className="h-9 pl-9" type="search" autoComplete="off" placeholder="SKU, meter, location or serial number"
+                  value={query} onChange={event => setQuery(event.target.value)} />
+              </div>
+              <Button size="sm" variant="outline" aria-label="Filters" aria-expanded={filtersOpen} onClick={() => setFiltersOpen(true)}>
+                <Filter className="mr-1.5 h-4 w-4" />Filters{activeFilterCount > 0 && <Badge variant="secondary" className="ml-1">{activeFilterCount}</Badge>}
+              </Button>
+            </div>
           </div>
-          <Button size="sm" variant="outline" aria-label="Filters" aria-expanded={filtersOpen} onClick={() => setFiltersOpen(true)}>
-            <Filter className="mr-1.5 h-4 w-4" />Filters{activeFilterCount > 0 && <Badge variant="secondary" className="ml-1">{activeFilterCount}</Badge>}
-          </Button>
-          <p className="hidden text-xs text-muted-foreground sm:block" aria-live="polite">{matchingRows.length} {matchingRows.length === 1 ? "balance" : "balances"}</p>
-        </div>
+        </InventoryMobileTools>
       </header>
 
       <div id="inventory-stock-results" ref={setResultsElement} className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-2" data-testid="inventory-stock-results" data-page-size={rowsPerPage}
@@ -189,8 +198,8 @@ export function InventoryStockWorkspace({ rows, projectName, timezone, onRefresh
         {visibleRows.length ? <div className="space-y-2">
           {visibleRows.map(row => {
             const available = row.quantity - row.reserved;
-            return <article key={`${row.warehouseId}/${row.itemId}`} data-stock-row data-stock-key={`${row.warehouseId}/${row.itemId}`} className="min-w-0 rounded-md border bg-card px-3 py-3 sm:px-4">
-              <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_auto] sm:items-center">
+            return <article key={`${row.warehouseId}/${row.itemId}`} data-stock-row data-stock-key={`${row.warehouseId}/${row.itemId}`} className="min-w-0 rounded-md border bg-card px-2.5 py-2 sm:px-4 sm:py-3">
+              <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_auto] sm:items-center sm:gap-3">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <h3 className="break-words font-medium">{row.item.name}</h3>
@@ -209,7 +218,7 @@ export function InventoryStockWorkspace({ rows, projectName, timezone, onRefresh
                   <div><p className="text-[10px] uppercase tracking-wide text-muted-foreground">Available</p><p className="font-mono font-semibold tabular-nums">{available}</p></div>
                 </div>
               </div>
-              {row.serials.length > 0 && <div className="mt-3 border-t pt-2">
+              {row.serials.length > 0 && <div className="mt-2 border-t pt-2 sm:mt-3">
                 <Button size="sm" variant="outline" aria-label={`View serials (${row.serials.length}) for ${row.item.sku} at ${row.warehouse.code}`} onClick={() => onViewSerials(row)}>
                   View serials ({row.serials.length})
                 </Button>
