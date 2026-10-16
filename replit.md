@@ -29,6 +29,7 @@ Customer-owned updates use a numbered core source independent of the customer's 
 - **Frontend Framework**: React 18 with TypeScript
 - **UI Components**: Shadcn/ui (built on Radix UI)
 - **Styling**: Tailwind CSS with theming (light/dark mode)
+- **Projects workspace**: Matches Work Orders/Inventory with a fixed header and pager around measured, adaptively paged compact records. Phone Search & Tools defaults collapsed, including touch landscape; full project details are available in a dialog. Search covers name, description, ID and customer email, with inactive-project permission preserved. CSV/Excel/PDF exports include every authorized filtered match across all pages, never only the visible page. Run `npm run test:projects-responsive:browser` with the disposable UI fixture from `tests/support/inventory-ui-fixture.ts`, then clean up that fixture.
 
 ### Technical Implementations
 - **Backend**: Node.js with Express, TypeScript

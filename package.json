@@ -47,6 +47,7 @@
     "test:inventory-catalog:browser": "node tests/inventory-catalog-layout-ui.cjs",
     "test:inventory-stock-layout:browser": "node tests/inventory-stock-layout-ui.cjs",
     "test:inventory-stock-paging:browser": "node tests/inventory-stock-paging-ui.cjs",
+    "test:projects-responsive:browser": "node tests/projects-responsive-ui.cjs",
     "test:inventory-stock-serials:browser": "node tests/inventory-stock-serial-ui.cjs",
     "test:inventory-order-discovery:browser": "node tests/inventory-order-discovery-ui.cjs",
     "test:inventory-shipment-dismissal:browser": "node tests/inventory-shipment-dismissal-ui.cjs",

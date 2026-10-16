@@ -1,17 +1,6 @@
-import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,49 +11,79 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useToast } from "@/hooks/use-toast";
+import { Switch } from "@/components/ui/switch";
 import { useAuth } from "@/hooks/useAuth";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { useTimezone } from "@/hooks/use-timezone";
+import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
+import { exportProjects, type ProjectExportFormat } from "@/lib/projects-export";
 import type { Project } from "@shared/schema";
-import { Plus, Search, FolderOpen, Eye, Edit, Trash2, EyeOff } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { useTimezone } from "@/hooks/use-timezone";
+import {
+  ChevronDown,
+  ChevronUp,
+  Download,
+  Eye,
+  EyeOff,
+  FileSpreadsheet,
+  FileText,
+  FolderOpen,
+  Plus,
+  RefreshCw,
+  Search,
+  Trash2,
+  Pencil,
+} from "lucide-react";
+
+type ProjectSort = "newest" | "oldest" | "name-asc" | "name-desc";
+
+const selectClass =
+  "h-9 rounded-md border border-input bg-background px-2.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 export default function Projects() {
   const { user } = useAuth();
   const { toast } = useToast();
   const { formatDate } = useTimezone();
+  const isMobile = useIsMobile();
   const isAdmin = user?.role === "admin";
-
   const [searchQuery, setSearchQuery] = useState("");
   const [showInactive, setShowInactive] = useState(false);
+  const [sort, setSort] = useState<ProjectSort>("newest");
+  const [showMobileTools, setShowMobileTools] = useState(() => !(
+    typeof window !== "undefined" &&
+    window.matchMedia("(max-width: 767px), (orientation: landscape) and (pointer: coarse) and (max-height: 600px) and (max-width: 960px)").matches
+  ));
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<number | null>(null);
+  const [detailsProject, setDetailsProject] = useState<Project | null>(null);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(1);
+  const [workspaceElement, setWorkspaceElement] = useState<HTMLElement | null>(null);
+  const [resultsElement, setResultsElement] = useState<HTMLDivElement | null>(null);
+  const workspaceHeightRef = useRef(0);
+  const resultsWidthRef = useRef(0);
+  const resultsHeightRef = useRef(0);
 
-  const { data: projects, isLoading } = useQuery<Project[]>({
-    queryKey: ["/api/projects"],
-  });
-
+  const projectsQuery = useQuery<Project[]>({ queryKey: ["/api/projects"] });
+  const { data: projects, isLoading, isError } = projectsQuery;
   const { data: userPermissions = [] } = useQuery<string[]>({
     queryKey: ["/api/users", user?.id, "permissions"],
     queryFn: async () => {
       if (!user) return [];
-      const res = await fetch(`/api/users/${user.id}/permissions`, { credentials: "include" });
-      if (!res.ok) return [];
-      return res.json();
+      const response = await fetch(`/api/users/${user.id}/permissions`, { credentials: "include" });
+      if (!response.ok) return [];
+      return response.json();
     },
     enabled: !!user,
   });
 
-  const hasPermission = (permission: string) => {
-    if (isAdmin) return true;
-    return userPermissions.includes(permission);
-  };
-
+  const hasPermission = (permission: string) => isAdmin || userPermissions.includes(permission);
   const canCreateProject = hasPermission("projects.create");
   const canEditProject = hasPermission("projects.edit");
   const canDeleteProject = hasPermission("projects.delete");
@@ -75,7 +94,7 @@ export default function Projects() {
       await apiRequest("DELETE", `/api/projects/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       toast({ title: "Success", description: "Project deleted successfully" });
       setDeleteDialogOpen(false);
       setProjectToDelete(null);
@@ -94,160 +113,430 @@ export default function Projects() {
     },
   });
 
-  const filteredProjects = projects?.filter((p) => {
-    // Filter by active status - hide inactive if user doesn't have permission or toggle is off
-    if (p.isActive === false) {
-      if (!canViewInactive) return false;
-      if (!showInactive) return false;
+  useEffect(() => {
+    setShowMobileTools(!isMobile);
+  }, [isMobile]);
+
+  const filteredProjects = useMemo(() => {
+    const query = searchQuery.trim().toLocaleLowerCase();
+    return (projects ?? [])
+      .filter(project => {
+        if (project.isActive === false && (!canViewInactive || !showInactive)) return false;
+        if (!query) return true;
+        return [
+          String(project.id),
+          project.name,
+          project.description ?? "",
+          project.customerEmail ?? "",
+        ].some(value => value.toLocaleLowerCase().includes(query));
+      })
+      .sort((a, b) => {
+        if (sort === "name-asc") return a.name.localeCompare(b.name);
+        if (sort === "name-desc") return b.name.localeCompare(a.name);
+        const aTime = new Date(a.createdAt ?? 0).getTime();
+        const bTime = new Date(b.createdAt ?? 0).getTime();
+        return sort === "oldest" ? aTime - bTime : bTime - aTime;
+      });
+  }, [projects, searchQuery, showInactive, canViewInactive, sort]);
+
+  const pageCount = Math.max(1, Math.ceil(filteredProjects.length / pageSize));
+  const currentPage = Math.min(page, pageCount - 1);
+  const pageProjects = useMemo(
+    () => filteredProjects.slice(currentPage * pageSize, (currentPage + 1) * pageSize),
+    [filteredProjects, currentPage, pageSize],
+  );
+  const start = filteredProjects.length ? currentPage * pageSize + 1 : 0;
+  const end = Math.min(filteredProjects.length, (currentPage + 1) * pageSize);
+
+  useEffect(() => {
+    setPage(0);
+    resultsElement?.scrollTo({ top: 0 });
+  }, [searchQuery, showInactive, sort, resultsElement]);
+
+  useEffect(() => {
+    if (page !== currentPage) setPage(currentPage);
+  }, [currentPage, page]);
+
+  // Bound this workspace to the visible viewport without assuming the sidebar,
+  // top banner, browser chrome, or mobile orientation has a fixed size.
+  useEffect(() => {
+    const workspace = workspaceElement;
+    if (!workspace) return;
+    const previousHeight = workspace.style.height;
+    const previousOverflow = workspace.style.overflow;
+    workspace.style.overflow = "hidden";
+    const fitWorkspace = () => {
+      const viewport = window.visualViewport;
+      const viewportHeight = viewport?.height ?? window.innerHeight;
+      const top = workspace.getBoundingClientRect().top - (viewport?.offsetTop ?? 0);
+      const nextHeight = Math.max(0, viewportHeight - Math.max(0, top));
+      if (Math.abs(nextHeight - workspaceHeightRef.current) > 2) {
+        workspaceHeightRef.current = nextHeight;
+        workspace.style.height = `${nextHeight}px`;
+      }
+    };
+    const observer = new ResizeObserver(fitWorkspace);
+    if (workspace.parentElement) observer.observe(workspace.parentElement);
+    window.addEventListener("resize", fitWorkspace);
+    window.visualViewport?.addEventListener("resize", fitWorkspace);
+    window.visualViewport?.addEventListener("scroll", fitWorkspace);
+    fitWorkspace();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", fitWorkspace);
+      window.visualViewport?.removeEventListener("resize", fitWorkspace);
+      window.visualViewport?.removeEventListener("scroll", fitWorkspace);
+      workspace.style.height = previousHeight;
+      workspace.style.overflow = previousOverflow;
+    };
+  }, [workspaceElement]);
+
+  // Fit a whole number of compact records into the real results viewport.
+  // Geometry is based on the border-box width, not scrollbar-sensitive clientWidth.
+  useEffect(() => {
+    const container = resultsElement;
+    if (!container) return;
+    let frame = 0;
+    const measure = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const width = container.getBoundingClientRect().width;
+        const height = container.clientHeight;
+        const widthChanged = Math.abs(width - resultsWidthRef.current) > 2;
+        const heightChanged = Math.abs(height - resultsHeightRef.current) > 2;
+        resultsWidthRef.current = width;
+        resultsHeightRef.current = height;
+        if (widthChanged || heightChanged) {
+          if (currentPage > 0) {
+            setPage(0);
+            container.scrollTo({ top: 0 });
+            return;
+          }
+        }
+        if (!height) return;
+        const row = container.querySelector<HTMLElement>("[data-project-row]");
+        // Once paging starts, keep boundaries fixed. A later row can never
+        // redefine the page size; genuine viewport/scope changes reset to page 1.
+        if (currentPage > 0) return;
+        const rowHeight = row?.getBoundingClientRect().height || (isMobile ? 62 : 50);
+        const verticalPadding = 16;
+        const rowGap = 4;
+        const fitted = Math.max(1, Math.floor((Math.max(0, height - verticalPadding) + rowGap) / (rowHeight + rowGap)));
+        const nextSize = Math.min(100, Math.max(1, filteredProjects.length || fitted), fitted);
+        setPageSize(previous => previous === nextSize ? previous : nextSize);
+      });
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(container);
+    container.querySelectorAll("[data-project-row]").forEach(item => observer.observe(item));
+    window.addEventListener("resize", measure);
+    window.visualViewport?.addEventListener("resize", measure);
+    measure();
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+      window.visualViewport?.removeEventListener("resize", measure);
+    };
+  }, [resultsElement, pageProjects, filteredProjects.length, currentPage, isMobile, showMobileTools]);
+
+  const exportFile = (format: ProjectExportFormat) => {
+    if (!filteredProjects.length) return;
+    const success = exportProjects(format, filteredProjects);
+    if (!success) {
+      toast({
+        title: "Print view blocked",
+        description: "Allow pop-ups in your browser to open the printable project list.",
+        variant: "destructive",
+      });
     }
-    // Filter by search query
-    return p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.description?.toLowerCase().includes(searchQuery.toLowerCase());
-  });
+  };
+
+  const clearFilters = () => {
+    setSearchQuery("");
+    setShowInactive(false);
+    setSort("newest");
+  };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex items-center justify-between gap-4 flex-wrap mb-6">
-        <div>
-          <h1 className="text-3xl font-bold" data-testid="text-projects-title">Projects</h1>
-          <p className="text-muted-foreground mt-1">Manage customer projects</p>
-        </div>
-        {canCreateProject && (
-          <Link href="/projects/new">
-            <Button data-testid="button-new-project">
-              <Plus className="h-4 w-4 mr-2" />
+    <section
+      ref={setWorkspaceElement}
+      className="mx-auto flex min-h-0 w-full max-w-[1600px] flex-col px-3 sm:px-5"
+      data-testid="projects-workspace"
+      aria-label="Projects workspace"
+    >
+      <header className="sticky top-0 z-10 shrink-0 border-b bg-background pb-2 pt-2 sm:pb-3" data-testid="projects-workspace-header">
+        <div className="flex min-h-9 items-center justify-between gap-2">
+          <div className="min-w-0">
+            <h1 className="truncate text-lg font-semibold tracking-tight sm:text-xl" data-testid="text-projects-title">Projects</h1>
+            <p className="hidden text-xs text-muted-foreground sm:block">Customer projects and their work orders</p>
+          </div>
+          {canCreateProject && (
+            <Link
+              href="/projects/new"
+              className={buttonVariants({ size: "sm" }) + " h-9 shrink-0"}
+              data-testid="button-new-project"
+            >
+              <Plus aria-hidden="true" className="mr-1.5 h-4 w-4" />
               New Project
-            </Button>
-          </Link>
-        )}
-      </div>
+            </Link>
+          )}
+        </div>
 
-      <Card>
-        <CardHeader className="pb-4">
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div className="relative max-w-md flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search projects..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
-                data-testid="input-search-projects"
-              />
-            </div>
-            {canViewInactive && (
-              <div className="flex items-center gap-2">
+        <div className="mt-2 flex items-center gap-2">
+          {isMobile && (
+            <Button
+              className="h-9 shrink-0"
+              size="sm"
+              variant="outline"
+              aria-expanded={showMobileTools}
+              aria-controls="projects-search-tools"
+              onClick={() => setShowMobileTools(value => !value)}
+              data-testid="button-toggle-project-tools"
+            >
+              {showMobileTools ? <ChevronUp aria-hidden="true" className="mr-1.5 h-4 w-4" /> : <ChevronDown aria-hidden="true" className="mr-1.5 h-4 w-4" />}
+              Search &amp; Tools
+            </Button>
+          )}
+          <p className="ml-auto whitespace-nowrap text-xs text-muted-foreground" aria-live="polite" data-testid="text-project-count">
+            {filteredProjects.length} {filteredProjects.length === 1 ? "project" : "projects"}
+          </p>
+          <Button
+            className="h-9 w-9 shrink-0 p-0"
+            size="sm"
+            variant="outline"
+            aria-label="Refresh projects"
+            title="Refresh projects"
+            onClick={() => void projectsQuery.refetch()}
+            disabled={projectsQuery.isFetching}
+            data-testid="button-refresh-projects"
+          >
+            <RefreshCw aria-hidden="true" className={`h-4 w-4 ${projectsQuery.isFetching ? "animate-spin" : ""}`} />
+          </Button>
+        </div>
+
+        {(!isMobile || showMobileTools) && (
+          <div id="projects-search-tools" className="mt-2 space-y-2" data-testid="projects-search-tools">
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="relative min-w-0 flex-1">
+                <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  className="h-9 pl-9"
+                  type="search"
+                  autoComplete="off"
+                  aria-label="Search projects by name, description, ID, or customer email"
+                  placeholder="Name, description, ID or email"
+                  value={searchQuery}
+                  onChange={event => setSearchQuery(event.target.value)}
+                  data-testid="input-search-projects"
+                />
+              </div>
+              <label className="flex h-9 shrink-0 items-center gap-2 rounded-md border px-2 text-xs">
                 <Switch
                   id="show-inactive"
-                  checked={showInactive}
+                  checked={canViewInactive && showInactive}
                   onCheckedChange={setShowInactive}
+                  disabled={!canViewInactive}
                   data-testid="switch-show-inactive"
                 />
-                <Label htmlFor="show-inactive" className="text-sm cursor-pointer flex items-center gap-1">
-                  <EyeOff className="h-4 w-4" />
-                  Show Inactive
-                </Label>
-              </div>
-            )}
+                <span className="hidden sm:inline">Inactive</span>
+                <EyeOff aria-hidden="true" className="h-4 w-4 sm:hidden" />
+                <span className="sr-only">Show inactive projects</span>
+              </label>
+              <label className="sr-only" htmlFor="projects-sort">Sort projects</label>
+              <select
+                id="projects-sort"
+                className={`${selectClass} max-w-[136px]`}
+                value={sort}
+                onChange={event => setSort(event.target.value as ProjectSort)}
+                aria-label="Sort projects"
+                data-testid="select-project-sort"
+              >
+                <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
+                <option value="name-asc">Name A–Z</option>
+                <option value="name-desc">Name Z–A</option>
+              </select>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="mr-1 text-xs text-muted-foreground">Export all filtered</span>
+              <Button className="h-8" size="sm" variant="outline" aria-label="Export projects as CSV" title="CSV" disabled={!filteredProjects.length} onClick={() => exportFile("csv")} data-testid="button-export-projects-csv">
+                <Download aria-hidden="true" className="mr-1.5 h-3.5 w-3.5" />CSV
+              </Button>
+              <Button className="h-8" size="sm" variant="outline" aria-label="Export projects as Excel" title="Excel" disabled={!filteredProjects.length} onClick={() => exportFile("xlsx")} data-testid="button-export-projects-xlsx">
+                <FileSpreadsheet aria-hidden="true" className="mr-1.5 h-3.5 w-3.5" />Excel
+              </Button>
+              <Button className="h-8" size="sm" variant="outline" aria-label="Print projects or save as PDF" title="PDF / Print" disabled={!filteredProjects.length} onClick={() => exportFile("pdf")} data-testid="button-export-projects-pdf">
+                <FileText aria-hidden="true" className="mr-1.5 h-3.5 w-3.5" />PDF / Print
+              </Button>
+              {canViewInactive && (
+                <span className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
+                  {showInactive ? <Eye aria-hidden="true" className="h-3.5 w-3.5" /> : <EyeOff aria-hidden="true" className="h-3.5 w-3.5" />}
+                  {showInactive ? "Including inactive" : "Active only"}
+                </span>
+              )}
+            </div>
           </div>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="space-y-4">
-              {[...Array(5)].map((_, i) => (
-                <div key={i} className="flex items-center gap-4 p-4 border rounded-md">
-                  <Skeleton className="h-10 w-10 rounded-md" />
-                  <div className="flex-1 space-y-2">
-                    <Skeleton className="h-4 w-3/4" />
-                    <Skeleton className="h-3 w-1/2" />
+        )}
+      </header>
+
+      <div
+        ref={setResultsElement}
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain py-2"
+        data-testid="projects-results"
+        data-page-size={pageSize}
+        role="region"
+        aria-label="Project records"
+        tabIndex={0}
+      >
+        {isError ? (
+          <div className="grid min-h-40 place-items-center rounded-md border border-dashed px-4 text-center" role="alert" data-testid="projects-error">
+            <div><p className="font-medium">Projects could not be loaded</p><p className="mt-1 text-sm text-muted-foreground">Check your connection and try again.</p>
+              <Button className="mt-3" size="sm" variant="outline" onClick={() => void projectsQuery.refetch()} data-testid="button-retry-projects">Retry</Button>
+            </div>
+          </div>
+        ) : isLoading ? (
+          <div className="space-y-1" role="status" aria-label="Loading projects" data-testid="projects-loading">
+            {[...Array(6)].map((_, index) => <Skeleton key={index} className="h-[54px] rounded-md" />)}
+          </div>
+        ) : pageProjects.length ? (
+          <div className="space-y-1" data-testid="projects-record-list">
+            {pageProjects.map(project => (
+              <article
+                key={project.id}
+                className="grid h-[62px] grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 overflow-hidden rounded-md border bg-card px-2.5 sm:h-[50px] sm:grid-cols-[52px_minmax(0,1.15fr)_minmax(0,1.3fr)_minmax(0,1fr)_76px_auto] sm:gap-3 sm:px-3"
+                data-testid={`row-project-${project.id}`}
+                data-project-row
+              >
+                <div className="min-w-0 sm:hidden">
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    <Button
+                      className="h-6 min-w-0 justify-start truncate px-0 text-sm font-medium"
+                      variant="ghost"
+                      onClick={() => setDetailsProject(project)}
+                      aria-label={`Project details for ${project.name}`}
+                      aria-haspopup="dialog"
+                      data-testid={`button-project-details-${project.id}`}
+                    ><span className="truncate">{project.name}</span></Button>
+                    {project.isActive === false && <Badge variant="secondary" className="h-5 shrink-0 px-1.5 text-[10px]">Inactive</Badge>}
                   </div>
+                  <p className="truncate text-xs text-muted-foreground" title={`${project.customerEmail || ""}${project.description ? ` · ${project.description}` : ""}`}>
+                    {project.customerEmail || project.description || "No contact details"}
+                  </p>
                 </div>
-              ))}
-            </div>
-          ) : filteredProjects && filteredProjects.length > 0 ? (
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[80px]">ID</TableHead>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Customer Email</TableHead>
-                    <TableHead>Created</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredProjects.map((project) => (
-                    <TableRow key={project.id} data-testid={`row-project-${project.id}`}>
-                      <TableCell className="font-mono text-sm">#{project.id}</TableCell>
-                      <TableCell className="font-medium">
-                        <div className="flex items-center gap-2">
-                          {project.name}
-                          {project.isActive === false && (
-                            <Badge variant="secondary" className="text-xs">Inactive</Badge>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground truncate max-w-[200px]">
-                        {project.description || "—"}
-                      </TableCell>
-                      <TableCell>{project.customerEmail || "—"}</TableCell>
-                      <TableCell>
-                        {project.createdAt ? formatDate(project.createdAt) : "—"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Link href={`/projects/${project.id}/work-orders`}>
-                            <Button variant="ghost" size="icon" data-testid={`button-view-${project.id}`}>
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          </Link>
-                          {canEditProject && (
-                            <Link href={`/projects/${project.id}/edit`}>
-                              <Button variant="ghost" size="icon" data-testid={`button-edit-${project.id}`}>
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                            </Link>
-                          )}
-                          {canDeleteProject && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => { setProjectToDelete(project.id); setDeleteDialogOpen(true); }}
-                              data-testid={`button-delete-${project.id}`}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center py-16 text-center">
-              <div className="h-16 w-16 rounded-full bg-muted flex items-center justify-center mb-4">
-                <FolderOpen className="h-8 w-8 text-muted-foreground" />
-              </div>
-              <h3 className="text-lg font-medium mb-1">No projects found</h3>
-              <p className="text-sm text-muted-foreground mb-6">
-                {searchQuery ? "Try adjusting your search" : "Create your first project to get started"}
+                <span className="hidden font-mono text-xs tabular-nums text-muted-foreground sm:block">#{project.id}</span>
+                <Button
+                  className="hidden h-7 min-w-0 justify-start truncate px-0 text-sm font-medium sm:flex"
+                  variant="ghost"
+                  onClick={() => setDetailsProject(project)}
+                  aria-label={`Project details for ${project.name}`}
+                  aria-haspopup="dialog"
+                  data-testid={`button-project-details-${project.id}`}
+                ><span className="min-w-0 truncate">{project.name}</span>{project.isActive === false ? <Badge variant="secondary" className="ml-2 shrink-0 px-1.5 text-[10px]">Inactive</Badge> : null}</Button>
+                <p className="hidden min-w-0 truncate text-xs text-muted-foreground sm:block" title={project.description || ""}>{project.description || "—"}</p>
+                <p className="hidden min-w-0 truncate text-xs sm:block" title={project.customerEmail || ""}>{project.customerEmail || "—"}</p>
+                <time className="hidden whitespace-nowrap text-xs text-muted-foreground sm:block" dateTime={project.createdAt && !Number.isNaN(new Date(project.createdAt).getTime()) ? new Date(project.createdAt).toISOString() : undefined}>
+                  {project.createdAt ? formatDate(project.createdAt) : "—"}
+                </time>
+                <div className="flex items-center justify-end gap-0.5">
+                  <Link
+                    href={`/projects/${project.id}/work-orders`}
+                    className={buttonVariants({ variant: "ghost", size: "icon" }) + " h-8 w-8"}
+                    aria-label={`View work orders for ${project.name}`}
+                    title="View work orders"
+                    data-testid={`button-view-${project.id}`}
+                  >
+                    <Eye aria-hidden="true" className="h-4 w-4" />
+                  </Link>
+                  {canEditProject && (
+                    <Link
+                      href={`/projects/${project.id}/edit`}
+                      className={buttonVariants({ variant: "ghost", size: "icon" }) + " h-8 w-8"}
+                      aria-label={`Edit ${project.name}`}
+                      title="Edit project"
+                      data-testid={`button-edit-${project.id}`}
+                    >
+                      <Pencil aria-hidden="true" className="h-4 w-4" />
+                    </Link>
+                  )}
+                  {canDeleteProject && (
+                    <Button
+                      className="h-8 w-8"
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Delete ${project.name}`}
+                      title="Delete project"
+                      onClick={() => { setProjectToDelete(project.id); setDeleteDialogOpen(true); }}
+                      data-testid={`button-delete-${project.id}`}
+                    >
+                      <Trash2 aria-hidden="true" className="h-4 w-4 text-destructive" />
+                    </Button>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="grid min-h-40 place-items-center rounded-md border border-dashed bg-muted/15 px-4 py-8 text-center" role="status" data-testid="projects-empty">
+            <div className="max-w-sm">
+              <div className="mx-auto mb-2 grid h-10 w-10 place-items-center rounded-full bg-muted"><FolderOpen aria-hidden="true" className="h-5 w-5 text-muted-foreground" /></div>
+              <p className="font-medium">{projects?.length ? "No matching projects" : "No projects yet"}</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {projects?.length ? "Try another search or include inactive projects." : "Create a project to keep customer work and orders together."}
               </p>
-              {canCreateProject && !searchQuery && (
-                <Link href="/projects/new">
-                  <Button data-testid="button-create-first-project">
-                    <Plus className="h-4 w-4 mr-2" />
-                    Create Project
-                  </Button>
+              {projects?.length ? (
+                (searchQuery || showInactive || sort !== "newest") && <Button className="mt-3" size="sm" variant="outline" onClick={clearFilters} data-testid="button-clear-project-filters">Clear search and filters</Button>
+              ) : canCreateProject && (
+                <Link href="/projects/new" className={buttonVariants({ size: "sm" }) + " mt-3"} data-testid="button-create-first-project">
+                  <Plus aria-hidden="true" className="mr-1.5 h-4 w-4" />Create Project
                 </Link>
               )}
             </div>
+          </div>
+        )}
+      </div>
+
+      <nav className="flex shrink-0 flex-wrap items-center gap-2 border-t py-2" data-testid="projects-pagination" aria-label="Project pages">
+        <p className="mr-auto text-xs text-muted-foreground" aria-live="polite" data-testid="text-project-page-range">
+          {filteredProjects.length ? `${start}–${end} of ${filteredProjects.length} projects` : "0 projects"}
+        </p>
+        <Button
+          size="sm"
+          variant="outline"
+          aria-label="Previous projects page"
+          disabled={!projects || currentPage === 0}
+          onClick={() => { setPage(Math.max(0, currentPage - 1)); resultsElement?.scrollTo({ top: 0 }); }}
+          data-testid="button-projects-previous"
+        >Previous</Button>
+        <span className="min-w-16 text-center text-xs tabular-nums" data-testid="text-project-page-number">Page {currentPage + 1} / {pageCount}</span>
+        <Button
+          size="sm"
+          variant="outline"
+          aria-label="Next projects page"
+          disabled={!projects || currentPage >= pageCount - 1}
+          onClick={() => { setPage(currentPage + 1); resultsElement?.scrollTo({ top: 0 }); }}
+          data-testid="button-projects-next"
+        >Next</Button>
+      </nav>
+
+      <Dialog open={!!detailsProject} onOpenChange={open => { if (!open) setDetailsProject(null); }}>
+        <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-lg" data-testid="project-details-dialog">
+          <DialogHeader>
+            <DialogTitle>{detailsProject?.name}</DialogTitle>
+            <DialogDescription>Project #{detailsProject?.id} · {detailsProject?.isActive === false ? "Inactive" : "Active"}</DialogDescription>
+          </DialogHeader>
+          {detailsProject && (
+            <dl className="grid gap-3 text-sm">
+              <div><dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Description</dt>
+                <dd className="mt-1 whitespace-pre-wrap break-words">{detailsProject.description || "No description provided."}</dd></div>
+              <div><dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Customer email</dt>
+                <dd className="mt-1 break-all">{detailsProject.customerEmail || "Not provided"}</dd></div>
+              <div><dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Created</dt>
+                <dd className="mt-1">{detailsProject.createdAt ? formatDate(detailsProject.createdAt) : "Date unavailable"}</dd></div>
+            </dl>
           )}
-        </CardContent>
-      </Card>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
@@ -260,7 +549,11 @@ export default function Projects() {
           <AlertDialogFooter>
             <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
             <AlertDialogAction
-              onClick={() => projectToDelete && deleteMutation.mutate(projectToDelete)}
+              disabled={deleteMutation.isPending}
+              onClick={event => {
+                event.preventDefault();
+                if (projectToDelete !== null && !deleteMutation.isPending) deleteMutation.mutate(projectToDelete);
+              }}
               className="bg-destructive text-destructive-foreground"
               data-testid="button-confirm-delete"
             >
@@ -269,6 +562,6 @@ export default function Projects() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </section>
   );
 }
