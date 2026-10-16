@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import { inventoryCategoryLabels } from "../shared/inventory-categories";
+import { readRelationalInventory } from "./inventoryRelational";
 import path from "path";
 import type { PoolClient } from "pg";
 import { pool } from "./db";
@@ -22,8 +23,7 @@ export async function enqueueCustomerDelivery(client: PoolClient, schemaName: st
   if (!/\bcompleted\b|\btrouble\b|\bunable\b/.test(status)) return;
   const version = versionKey ?? String(row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at);
   if (project.inventory_enabled) {
-    const { rows: [inventory] } = await client.query("SELECT state FROM public.inventory_state WHERE project_id=$1", [project.id]);
-    if (inventory) inventory.state = inventoryCategoryLabels(inventory.state);
+    const inventory = { state: await readRelationalInventory(client, project.id) };
     const allocation = inventory?.state.allocations.find((a: any) => a.workOrderId === row.id);
     row = { ...row, inventory: { contractVersion: 1, allocation: allocation || null,
       items: inventory?.state.items.filter((i: any) => [...(allocation?.lines || []), ...(allocation?.used || [])].some((l: any) => l.itemId === i.id)) || [] } };

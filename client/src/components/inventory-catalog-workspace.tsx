@@ -28,8 +28,9 @@ type Props = {
   onInspectKits?: () => void;
   onEditItem: (item: InventoryItem) => void;
   onCopyItem?: (item: InventoryItem) => void;
-  onDeleteItem?: (item: InventoryItem) => Promise<unknown>;
+  onDeleteItem?: (item: InventoryItem, operationId: string) => Promise<unknown>;
   itemDeleteBlockers?: (item: InventoryItem) => string[];
+  itemDeletePending?: boolean;
   onEditVendor: (vendor: Vendor) => void;
 };
 
@@ -43,7 +44,7 @@ const sameOriginImage = (value: string) => {
   catch { return null; }
 };
 
-export function InventoryCatalogWorkspace({ kind, items, vendors, projectName, timezone, canMaintain, canAssemble = false, canInspectKits = false, onRefresh, onAdd, onAssemble, onDisassemble, onInspectKits, onEditItem, onCopyItem, onDeleteItem, itemDeleteBlockers, onEditVendor }: Props) {
+export function InventoryCatalogWorkspace({ kind, items, vendors, projectName, timezone, canMaintain, canAssemble = false, canInspectKits = false, onRefresh, onAdd, onAssemble, onDisassemble, onInspectKits, onEditItem, onCopyItem, onDeleteItem, itemDeleteBlockers, itemDeletePending = false, onEditVendor }: Props) {
   const { toast } = useToast();
   const [query, setQuery] = useState("");
   const [itemFilters, setItemFilters] = useState<ItemFilters>(initialItemFilters);
@@ -214,7 +215,7 @@ export function InventoryCatalogWorkspace({ kind, items, vendors, projectName, t
                 <p className="mt-1 break-words text-xs text-muted-foreground">{vendor ? `Vendor · ${vendor.name}` : "No vendor assigned"}{item.manufacturer ? ` · ${item.manufacturer}${item.model ? ` ${item.model}` : ""}` : ""}{item.barcode ? ` · Barcode ${item.barcode}` : ""}</p>
               </div>
             </div>
-              <div className="flex flex-wrap items-center gap-2">{item.reorderPoint > 0 && <Badge variant="outline">Reorder at {item.reorderPoint}</Badge>}{canMaintain && <Button size="sm" variant="outline" onClick={() => onEditItem(item)}>Edit</Button>}{canMaintain && onCopyItem && <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label={`Copy item ${item.name}`} title={`Copy item ${item.name}`} onClick={() => onCopyItem(item)}><Copy className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Copy</span></Button>}{canMaintain && onDeleteItem && <InventoryDeleteAction kind="item" id={item.id} name={item.name} canMaintain={canMaintain} pending={false} blockers={itemDeleteBlockers?.(item) ?? []} onDelete={() => onDeleteItem(item)} />}</div>
+              <div className="flex flex-wrap items-center gap-2">{item.reorderPoint > 0 && <Badge variant="outline">Reorder at {item.reorderPoint}</Badge>}{canMaintain && <Button size="sm" variant="outline" onClick={() => onEditItem(item)}>Edit</Button>}{canMaintain && onCopyItem && <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label={`Copy item ${item.name}`} title={`Copy item ${item.name}`} onClick={() => onCopyItem(item)}><Copy className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Copy</span></Button>}{canMaintain && onDeleteItem && <InventoryDeleteAction kind="item" id={item.id} name={item.name} canMaintain={canMaintain} pending={itemDeletePending} blockers={itemDeleteBlockers?.(item) ?? []} onDelete={(id, operationId) => onDeleteItem(item, operationId)} />}</div>
           </div>
         </article>;
       }) : (visibleRows as Vendor[]).map(vendor => <article key={vendor.id} data-catalog-row className="min-w-0 rounded-md border bg-card px-2.5 py-2 sm:px-4 sm:py-3">

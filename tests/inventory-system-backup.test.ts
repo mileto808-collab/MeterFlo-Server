@@ -10,6 +10,7 @@ import { createProjectSchema } from "../server/projectDb";
 import { initializeAudit } from "../server/auditMigration";
 import { withAuditContext } from "../server/auditContext";
 import { storedCategoryState } from "../server/inventoryCategories";
+import { relationalTableNames, readRelationalInventory, writeRelationalInventory } from "../server/inventoryRelational";
 
 test("full-system inventory restore preserves identity IDs, JSON serials, sequences and merge safety", async () => {
   await initializeAudit(pool);
@@ -17,7 +18,7 @@ test("full-system inventory restore preserves identity IDs, JSON serials, sequen
   const scope = () => ({ actorId: actor, actorLabel: "Full restore fixture", actorKind: "user" as const, source: "restore-test", operationId: randomUUID() });
   const schema = `inventory_backup_fixture_${randomUUID().replaceAll("-", "")}`;
   const client = await pool.connect();
-  const tables = ["inventory_state", "inventory_categories", "inventory_items", "inventory_quantities", "inventory_movements"];
+  const tables = [...new Set(["inventory_state", "inventory_categories", "inventory_items", "inventory_quantities", "inventory_movements", ...relationalTableNames])];
   const catalogs = ["service_types", "system_types", "module_types", "project_service_types", "system_type_projects", "module_type_projects"];
   const projectSchemas: string[] = [];
   try {
@@ -99,7 +100,9 @@ test("full-system inventory restore preserves identity IDs, JSON serials, sequen
     // Exercise the actual full-system restore without touching public/customer tables.
     // Its unqualified inserts resolve only to this isolated lookalike schema.
     const isolated = { connect: async () => ({
-      query: (sql: string, values?: any[]) => client.query(sql.replace("schemaname = 'public'", `schemaname = '${schema}'`), values),
+      query: (sql: string, values?: any[]) => client.query(sql.replace("schemaname = 'public'", `schemaname = '${schema}'`)
+        .replace(/table_schema\s*=\s*'public'/g, `table_schema='${schema}'`)
+        .replace(/public\.(inventory_[a-z_]+|projects)\b/g, `"${schema}".$1`), values),
       release: () => {},
     }) } as any;
     const result = await restoreFullSystemData(backup, { clearExisting: true }, isolated);
@@ -111,7 +114,7 @@ test("full-system inventory restore preserves identity IDs, JSON serials, sequen
     const next = await client.query("INSERT INTO inventory_movements(project_id,operation_id,action,changes) VALUES(42,$1,'test',$2) RETURNING id",
       [randomUUID(), { stock: [], entities: [] }]);
     assert.equal(next.rows[0].id, "501");
-    assert.deepEqual((await restoreFullSystemData(backup, {}, isolated)).errors, []);
+    await assert.rejects(restoreFullSystemData(backup, {}, isolated), /explicit replacement/);
     assert.equal((await client.query("SELECT count(*) FROM inventory_movements")).rows[0].count, "2");
     const broken = structuredClone(backup);
     broken.mainDatabase.inventory_quantities[0].quantity = -1;
@@ -123,7 +126,8 @@ test("full-system inventory restore preserves identity IDs, JSON serials, sequen
     const transactional = { connect: async () => ({
       query: (sql: string, values?: any[]) => client.query(
         sql.replace("schemaname = 'public'", `schemaname = '${schema}'`)
-          .replace(/public\.(projects|inventory_state|inventory_categories|inventory_items|inventory_quantities|inventory_movements|service_types|system_types|module_types|project_service_types|system_type_projects|module_type_projects)\b/g, `"${schema}".$1`), values),
+          .replace(/table_schema\s*=\s*'public'/g, `table_schema='${schema}'`)
+          .replace(/public\.(projects|inventory_[a-z_]+|service_types|system_types|module_types|project_service_types|system_type_projects|module_type_projects)\b/g, `"${schema}".$1`), values),
       release: () => {},
     }) } as any;
     const workSchema = await createProjectSchema(`Full backup ${schema}`, 42);
@@ -155,7 +159,9 @@ test("full-system inventory restore preserves identity IDs, JSON serials, sequen
     await assert.rejects(restoreFullSystemData(legacyMissingLookups, { clearExisting: true }, transactional), /Missing service_types configuration/);
     const numberingYear = String(new Date().getUTCFullYear());
     const advancedCounters = { ...state.orderNumberCounters, [numberingYear]: (state.orderNumberCounters?.[numberingYear] || 0) + 20 };
-    await client.query("UPDATE inventory_state SET state=jsonb_set(state,'{orderNumberCounters}',$1::jsonb) WHERE project_id=42", [JSON.stringify(advancedCounters)]);
+    const localClient = await transactional.connect();
+    const localState = await readRelationalInventory(localClient, 42);
+    await writeRelationalInventory(localClient, 42, { ...localState, orderNumberCounters: advancedCounters });
     const restoredFull = await withAuditContext(scope(), () => restoreFullSystem(full, { clearExisting: true }, transactional));
     assert.equal(restoredFull.success, true);
     assert.equal(restoredFull.databaseCommitted, true);
@@ -170,7 +176,7 @@ test("full-system inventory restore preserves identity IDs, JSON serials, sequen
     assert.deepEqual((await client.query("SELECT state FROM inventory_state WHERE project_id=42")).rows[0].state, storedCategoryState({ ...state, orderNumberCounters: advancedCounters }));
     assert.equal((await client.query("SELECT category_id FROM inventory_items WHERE project_id=42")).rows[0].category_id, categoryId);
     assert.equal((await client.query("SELECT name FROM inventory_categories WHERE project_id=42 AND id=$1", [categoryId])).rows[0].name, "Meters");
-    assert.deepEqual((await client.query("SELECT serials FROM inventory_quantities WHERE project_id=42")).rows[0].serials, ["00002", "QUARANTINE-0003"]);
+    assert.deepEqual((await readRelationalInventory(await transactional.connect(), 42)).stock[0].serials, ["00002", "QUARANTINE-0003"]);
     assert.equal((await client.query(`INSERT INTO "${workSchema}".work_orders(customer_wo_id,created_by) VALUES('after-full',NULL) RETURNING id`)).rows[0].id, 4);
     const savedRows = (await client.query(`SELECT * FROM "${workSchema}".work_orders ORDER BY id`)).rows;
     const savedInventory: Record<string, any[]> = {};

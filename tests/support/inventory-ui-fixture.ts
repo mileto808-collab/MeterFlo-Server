@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { clearRelationalInventory } from "../../server/inventoryRelational";
 import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { promises as fs } from "node:fs";
@@ -18,7 +19,8 @@ async function main() {
     const fixture = JSON.parse(await fs.readFile(file, "utf8"));
     await fs.rm(path.join(await getProjectFilesPath(), `inventory-${fixture.projectId}`), { recursive: true, force: true });
     await pool.query(`DROP SCHEMA "${fixture.schema}" CASCADE`);
-    for (const table of ["inventory_movements", "inventory_quantities", "inventory_items", "inventory_state"]) await pool.query(`DELETE FROM public.${table} WHERE project_id=$1`, [fixture.projectId]);
+    await clearRelationalInventory(pool, fixture.projectId);
+    for (const table of ["inventory_movements", "inventory_state"]) await pool.query(`DELETE FROM public.${table} WHERE project_id=$1`, [fixture.projectId]);
     await pool.query("DELETE FROM public.projects WHERE id=$1", [fixture.projectId]);
     await pool.query("DELETE FROM public.sessions WHERE sess->'passport'->'user'->'claims'->>'sub'=$1", [fixture.id]);
     await pool.query("DELETE FROM public.users WHERE id=$1", [fixture.id]);

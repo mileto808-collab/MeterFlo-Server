@@ -9,6 +9,7 @@ import { readInventoryCategories, storedCategoryState } from "../server/inventor
 import { saveInventory } from "../server/inventoryService";
 import { exportInventory, restoreInventory } from "../server/inventoryBackup";
 import { withAuditContext } from "../server/auditContext";
+import { readRelationalInventory } from "../server/inventoryRelational";
 
 test("category migration, rename, relational constraints, rollback and project restore", async () => {
   const client = await pool.connect();
@@ -32,7 +33,7 @@ test("category migration, rename, relational constraints, rollback and project r
       for (const item of legacy.items) await client.query(
         "INSERT INTO public.inventory_items(project_id,id,sku,data) VALUES($1,$2,$3,$4)",
         [project.id, item.id, item.sku, JSON.stringify(item)]);
-      let state = await readInventoryCategories(client, project.id, legacy);
+      let state = await readRelationalInventory(client, project.id);
       assert.equal(state.categoryCatalog!.length, 2);
       const id = state.categoryCatalog!.find(c => c.name === "Meters")!.id;
       assert.ok(state.items.every(item => item.categoryId === id));

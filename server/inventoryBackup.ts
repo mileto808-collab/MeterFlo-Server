@@ -9,14 +9,15 @@ import { savedShipmentDraftSchema } from "../shared/inventory-shipment-draft-mod
 import { draftWarehouse } from "../shared/inventory-shipment-drafts";
 import { readInventoryCategories, storedCategoryState, writeInventoryCategories, writeInventoryCategoryItem } from "./inventoryCategories";
 import { validateKitBackup } from "./inventoryKitBackup";
+import { readRelationalInventory, writeRelationalInventory, clearRelationalInventory } from "./inventoryRelational";
 
 export type InventoryBackup = { state: InventoryState; movements: any[]; enabled: boolean };
 export async function exportInventory(client: PoolClient, schema: string): Promise<InventoryBackup | undefined> {
   const { rows: [p] } = await client.query("SELECT id,inventory_enabled FROM public.projects WHERE database_name=$1", [schema]);
   if (!p) return;
-  const { rows: [r] } = await client.query("SELECT state FROM public.inventory_state WHERE project_id=$1 FOR UPDATE", [p.id]);
+  const { rows: [r] } = await client.query("SELECT project_id FROM public.inventory_state WHERE project_id=$1 FOR UPDATE", [p.id]);
   if (!r) return;
-  const state = storedCategoryState(await readInventoryCategories(client, p.id, r.state));
+  const state = storedCategoryState(await readRelationalInventory(client, p.id));
   const { rows } = await client.query("SELECT operation_id,action,actor_id,occurred_at,changes FROM public.inventory_movements WHERE project_id=$1 ORDER BY id", [p.id]);
   return { state, movements: rows, enabled: !!p.inventory_enabled };
 }
@@ -75,16 +76,11 @@ export async function restoreInventory(client: PoolClient, schema: string, backu
   if (!p) throw new Error("Restore the project configuration before inventory.");
   const { rows: ids } = await client.query(`SELECT id FROM "${schema}".work_orders`);
   validateInventoryBackup(backup, ids.map(x => x.id));
-  const { rows: [local] } = await client.query("SELECT state FROM public.inventory_state WHERE project_id=$1 FOR UPDATE", [p.id]);
-  backup = { ...backup, state: storedCategoryState(mergeOrderHighWater(backup.state, local?.state)) };
+  const local = await readRelationalInventory(client, p.id);
+  backup = { ...backup, state: storedCategoryState(mergeOrderHighWater(backup.state, local)) };
+  await clearRelationalInventory(client, p.id);
   await client.query("INSERT INTO public.inventory_state(project_id,state) VALUES($1,$2) ON CONFLICT(project_id) DO UPDATE SET state=EXCLUDED.state,updated_at=now()", [p.id, JSON.stringify(backup.state || emptyInventory())]);
-  await client.query("DELETE FROM public.inventory_quantities WHERE project_id=$1", [p.id]);
-  await client.query("DELETE FROM public.inventory_items WHERE project_id=$1", [p.id]);
-  await client.query("DELETE FROM public.inventory_categories WHERE project_id=$1", [p.id]);
-  await writeInventoryCategories(client, p.id, backup.state);
-  for (const i of backup.state.items) await writeInventoryCategoryItem(client, p.id, i);
-  for (const b of backup.state.stock) await client.query("INSERT INTO public.inventory_quantities(project_id,warehouse_id,item_id,quantity,reserved,serials) VALUES($1,$2,$3,$4,$5,$6)",
-    [p.id, b.warehouseId, b.itemId, b.quantity, reserved(backup.state, b.warehouseId, b.itemId), JSON.stringify(b.serials)]);
+  await writeRelationalInventory(client, p.id, backup.state);
   await client.query("DELETE FROM public.inventory_movements WHERE project_id=$1", [p.id]);
   for (const m of backup.movements) await client.query("INSERT INTO public.inventory_movements(project_id,operation_id,action,actor_id,occurred_at,changes) VALUES($1,$2,$3,$4,$5,$6)",
     [p.id, m.operation_id, m.action, m.actor_id, m.occurred_at, JSON.stringify(m.changes)]);

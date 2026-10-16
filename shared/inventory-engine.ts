@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { itemDeletionBlockers, categoryDeletionBlockers } from "./inventory-deletion";
 import { normalizeInventoryCategories, inventoryCategoryLabels } from "./inventory-categories";
 import { allocateOrderNumber, uuidOrderId } from "./inventory-order-labels";
 import { COUNT_MAX_LINES, COUNT_MAX_SERIALS, countPayloadFits } from "./inventory-count-limits";
@@ -167,6 +168,14 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
           { from: { kind: "hold", id: hold.id }, to: { kind: "retired", id: command.operationId } });
       }
     }
+  } else if (a === "itemDelete" || a === "categoryDelete") {
+    const { id } = z.object({ id: z.string().min(1).max(100) }).strict().parse(d);
+    const blockers = a === "itemDelete" ? itemDeletionBlockers(s, id) : categoryDeletionBlockers(s, id);
+    assert(!blockers.length, `Cannot delete: ${blockers.join(" ")}`);
+    if (a === "itemDelete") {
+      s.items = s.items.filter(item => item.id !== id);
+      s.stock = s.stock.filter(stock => stock.itemId !== id);
+    } else s.categoryCatalog = s.categoryCatalog!.filter(category => category.id !== id);
   } else if (a === "category") {
     const name = categoryNameSchema.parse(d.name);
     assert(!inventoryCategoryNames(s).some(existing => categoryKey(existing) === categoryKey(name)), "Category already exists in this project.");

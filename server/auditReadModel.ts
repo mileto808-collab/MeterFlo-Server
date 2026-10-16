@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 import type { AuditEvent } from "../shared/audit";
 import type { InventoryState } from "../shared/inventory";
+import { readRelationalInventory } from "./inventoryRelational";
 import { inventoryCountReference } from "../shared/inventory-count-reference";
 import { orderLabel } from "../shared/inventory-order-labels";
 import { eventDto, safeAuditLabel } from "./auditService";
@@ -52,14 +53,14 @@ const changeFor = (kind:string, id:string) =>
 export const auditEntitySql = `COALESCE(
   CASE WHEN e.entity_label<>e.entity_id AND e.entity_label !~* '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' THEN e.entity_label END,
   CASE WHEN e.entity_type='inventory' THEN COALESCE(
-    (SELECT 'Count #'||c.n FROM jsonb_array_elements(COALESCE(i.state->'counts','[]')) WITH ORDINALITY c(obj,n)
-      WHERE ${changeFor("counts", "c.obj->>'id'")} LIMIT 1),
-    (SELECT COALESCE(NULLIF(o.obj->>'orderNumber',''),NULLIF(o.obj->>'reference',''),
-      CASE WHEN o.obj->>'type'='transfer' THEN 'Transfer order' ELSE 'Purchase order' END)
-      FROM jsonb_array_elements(COALESCE(i.state->'orders','[]')) o(obj)
-      WHERE ${changeFor("orders", "o.obj->>'id'")} OR EXISTS(
-        SELECT 1 FROM jsonb_array_elements(COALESCE(i.state->'receipts','[]')) r
-        WHERE r->>'id'=e.entity_id AND r->>'reference'=o.obj->>'id') LIMIT 1),
+    (SELECT 'Count #'||(c._position+1) FROM public.inventory_counts c
+      WHERE c.project_id=e.project_id AND ${changeFor("counts", "c.id")} LIMIT 1),
+    (SELECT COALESCE(NULLIF(o.order_number,''),NULLIF(o.reference,''),
+      CASE WHEN o.type='transfer' THEN 'Transfer order' ELSE 'Purchase order' END)
+      FROM public.inventory_orders o WHERE o.project_id=e.project_id AND
+      (${changeFor("orders", "o.id")} OR EXISTS(
+        SELECT 1 FROM public.inventory_receipts r
+        WHERE r.project_id=e.project_id AND r.id=e.entity_id AND r.reference=o.id)) LIMIT 1),
     (SELECT COALESCE(ac->'after'->>'name',ac->'before'->>'name')
       FROM jsonb_array_elements(e.changes) ac
       WHERE split_part(ac->>'field','/',1) IN ('items','warehouses','vendors') LIMIT 1)
@@ -67,13 +68,13 @@ export const auditEntitySql = `COALESCE(
   CASE WHEN e.entity_type IN ('work_orders','workOrder') AND e.entity_id ~ '^[0-9]+$' THEN 'Work order #'||e.entity_id END,
   CASE WHEN e.entity_id !~* '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' THEN e.entity_label END,
   'Audit event #'||e.sequence)`;
-export const auditReadFrom = `meterflo_audit.events e LEFT JOIN public.projects p ON p.id=e.project_id
-  LEFT JOIN public.inventory_state i ON i.project_id=e.project_id AND e.entity_type='inventory'`;
+export const auditReadFrom = `meterflo_audit.events e LEFT JOIN public.projects p ON p.id=e.project_id`;
 
 export async function readableAuditEvents(client: PoolClient, rows: any[]): Promise<AuditEvent[]> {
   const projectIds = [...new Set(rows.filter(r => r.project_id !== null && r.entity_type === "inventory").map(r => r.project_id))];
-  const states = projectIds.length ? await client.query("SELECT project_id,state FROM public.inventory_state WHERE project_id=ANY($1::int[])", [projectIds]) : {rows:[]};
-  const references = new Map<number,Map<string,string>>(states.rows.map(r => [r.project_id, inventoryAuditReferences(r.state)]));
+  const references = new Map<number,Map<string,string>>();
+  for (const projectId of projectIds)
+    references.set(projectId, inventoryAuditReferences(await readRelationalInventory(client, projectId, { readOnly: true })));
   const operationIds = [...new Set(rows.map(r => r.operation_id))];
   const operations = operationIds.length ? await client.query(`SELECT operation_id,project_id,min(sequence)::text first
     FROM meterflo_audit.events WHERE operation_id=ANY($1::text[])

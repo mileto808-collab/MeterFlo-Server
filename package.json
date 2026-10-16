@@ -34,6 +34,8 @@
     "test:inventory-catalog-exports": "tsx --test tests/inventory-catalog-export.test.ts",
     "test:inventory-operations": "tsx --test tests/inventory-operations.test.ts",
     "migrate:inventory-categories": "tsx script/migrate-inventory-categories.ts",
+    "migrate:inventory-relational": "tsx script/migrate-inventory-relational.ts",
+    "test:inventory-relational": "tsx --test tests/inventory-relational.test.ts tests/inventory-relational-database.test.ts tests/inventory-deletion.test.ts",
     "test:inventory-categories": "tsx --test tests/inventory-categories.test.ts",
     "test:inventory-categories:browser": "node tests/inventory-categories-ui.cjs",
     "test:inventory-categories:database": "tsx --test tests/inventory-category-database.test.ts",

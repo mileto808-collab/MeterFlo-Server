@@ -11,6 +11,7 @@ import { pool } from "../server/db";
 import { storage } from "../server/storage";
 import { createProjectSchema, getProjectWorkOrderStorage } from "../server/projectDb";
 import { inventoryState, postInventory } from "../server/inventoryService";
+import { clearRelationalInventory } from "../server/inventoryRelational";
 import { exportInventory, restoreInventory } from "../server/inventoryBackup";
 import { initializeInventory } from "../server/inventoryMigration";
 import { initializeAudit } from "../server/auditMigration";
@@ -303,7 +304,8 @@ test("isolated inventory volume, sustained contention, sync, restore and signed-
     try {
       for (const p of projects.reverse()) {
         if (p.schema) await pool.query(`DROP SCHEMA IF EXISTS "${p.schema}" CASCADE`);
-        for (const table of ["inventory_movements", "inventory_quantities", "inventory_items", "inventory_state"])
+        await clearRelationalInventory(pool, p.id);
+        for (const table of ["inventory_movements", "inventory_state"])
           await pool.query(`DELETE FROM public.${table} WHERE project_id=$1`, [p.id]);
         await pool.query("DELETE FROM public.projects WHERE id=$1", [p.id]);
       }

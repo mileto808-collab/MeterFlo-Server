@@ -3,6 +3,7 @@
 ## Optional project inventory
 
 Inventory control is opt-in per project and uses the existing PostgreSQL database and configured local project-files storage, including on standalone Windows/Linux. See `INVENTORY.md` for setup, purchase/transfer/receiving/count workflows, work-order stock reservations, mobile contract, audit and backup rules. Disabled projects retain their existing equipment-type workflow.
+Core inventory persistence is relational; see `INVENTORY-RELATIONAL.md` for migration/restore safeguards. The legacy JSON state is an archive after cutover, not a fallback writer. Keep the project-wide command lock.
 
 ## Overview
 Android APK distribution is independent of the native update source and of Replit:

@@ -1,4 +1,7 @@
 import type { Pool } from "pg";
+import { readRelationalInventory } from "./inventoryRelational";
+import { inventoryToRelational } from "./inventoryRelationalCodec";
+import { emptyInventory as emptyRelationalInventory } from "../shared/inventory";
 import archiver from "archiver";
 import unzipper from "unzipper";
 import * as fs from "fs";
@@ -53,6 +56,9 @@ const TABLE_PRIMARY_KEYS: Record<string, string[]> = {
   inventory_movements: ["id"],
 };
 
+for (const [name, table] of inventoryToRelational(emptyRelationalInventory(), 0))
+  TABLE_PRIMARY_KEYS[name] = ["project_id", ...table.keys];
+TABLE_PRIMARY_KEYS.inventory_relational_projects = ["project_id"];
 const MAIN_TABLES = Object.keys(TABLE_PRIMARY_KEYS);
 
 const TABLE_RESTORE_ORDER = [
@@ -82,6 +88,8 @@ const TABLE_RESTORE_ORDER = [
   "inventory_categories",
   "inventory_items",
   "inventory_quantities",
+  ...Object.keys(TABLE_PRIMARY_KEYS).filter(name => name.startsWith("inventory_") &&
+    !["inventory_state", "inventory_categories", "inventory_items", "inventory_quantities", "inventory_movements"].includes(name)),
   "inventory_movements",
 ];
 
@@ -389,6 +397,9 @@ export async function restoreFullSystemData(
     backupData = structuredClone(backupData);
     const { rows: localNumbering } = await client.query("SELECT project_id,state FROM public.inventory_state FOR UPDATE");
     for (const local of localNumbering) {
+      local.state = await readRelationalInventory(client, local.project_id);
+      if (!options.clearExisting && backupData.mainDatabase.inventory_state?.some(row => row.project_id === local.project_id))
+        throw new Error("Inventory snapshots require explicit replacement; merging can leave inconsistent relational records.");
       const row = backupData.mainDatabase.inventory_state?.find(row => row.project_id === local.project_id);
       if (row) row.state = mergeOrderHighWater(row.state, local.state);
       else if (backupData.mainDatabase.projects?.some(project => project.id === local.project_id)) {
@@ -400,6 +411,16 @@ export async function restoreFullSystemData(
       }
       const project = backupData.projectDatabases?.find(project => project.projectId === local.project_id);
       if (project?.inventory) project.inventory.state = mergeOrderHighWater(project.inventory.state, local.state);
+      const marker = backupData.mainDatabase.inventory_relational_projects?.find(row => row.project_id === local.project_id);
+      if (marker && Object.keys(local.state.orderNumberCounters ?? {}).length) {
+        marker.collections = [...new Set([...marker.collections, "orderNumberCounters"])];
+        const counters = backupData.mainDatabase.inventory_order_counters ??= [];
+        for (const [key, value] of Object.entries(local.state.orderNumberCounters!)) {
+          const counter = counters.find(row => row.project_id === local.project_id && row.counter_key === key);
+          if (counter) counter.value = Math.max(counter.value, value as number);
+          else counters.push({ project_id: local.project_id, counter_key: key, value });
+        }
+      }
     }
     // Check the destination before restoring public inventory/configuration.
     // Otherwise those rows could mask an unsafe merge or a legacy downgrade.
@@ -419,7 +440,7 @@ export async function restoreFullSystemData(
 
     if (options.clearExisting) {
       for (const tableName of TABLE_DELETE_ORDER) {
-        if (existingTables.includes(tableName) && backupTables.includes(tableName)) {
+        if (existingTables.includes(tableName) && (backupTables.includes(tableName) || tableName.startsWith("inventory_"))) {
           await client.query(`TRUNCATE TABLE "${tableName}" CASCADE`);
         }
       }
@@ -437,10 +458,13 @@ export async function restoreFullSystemData(
       let restoredCount = 0;
       const primaryKeys = await getPrimaryKeyColumns(client, tableName);
       
+      const { rows: columnTypes } = await client.query(
+        "SELECT column_name,data_type FROM information_schema.columns WHERE table_schema='public' AND table_name=$1", [tableName]);
+      const jsonColumns = new Set(columnTypes.filter(column => ["json", "jsonb"].includes(column.data_type)).map(column => column.column_name));
       for (const row of rows) {
         try {
           const columns = Object.keys(row);
-          const values = columns.map(c => tableName === "inventory_quantities" && c === "serials" && row[c] != null
+          const values = columns.map(c => jsonColumns.has(c) && row[c] != null
             ? JSON.stringify(row[c]) : row[c]);
           // Valid for serial/default columns too; fresh installations may use
           // GENERATED ALWAYS identities on any public table, not only movements.

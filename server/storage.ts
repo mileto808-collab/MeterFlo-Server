@@ -1,3 +1,4 @@
+import { drizzleInventoryClient, readRelationalInventory } from "./inventoryRelational";
 import {
   users,
   projects,
@@ -480,8 +481,7 @@ export class DatabaseStorage implements IStorage {
   async updateProject(id: number, project: Partial<InsertProject>): Promise<Project | undefined> {
     if (Object.hasOwn(project, "inventoryEnabled")) return db.transaction(async tx => {
       await tx.execute(sql`SELECT id FROM public.projects WHERE id=${id} FOR UPDATE`);
-      const result = await tx.execute(sql`SELECT state FROM public.inventory_state WHERE project_id=${id} FOR UPDATE`);
-      const state = result.rows[0]?.state as InventoryState | undefined;
+      const state = await readRelationalInventory(drizzleInventoryClient(tx), id);
       if (project.inventoryEnabled === false && state &&
         (state.allocations.some(a => a.status === "reserved" && a.lines.length) ||
          state.orders.some(o => !["completed", "cancelled"].includes(o.status)) ||

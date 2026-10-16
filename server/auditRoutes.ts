@@ -118,10 +118,13 @@ export function registerAuditRoutes(app:Express) {
     const id=z.string().uuid().parse(req.params.id),values:unknown[]=[id],where=scope(res,values,"e.");
     const client=await pool.connect();
     try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
       const {rows:[row]}=await client.query(`SELECT e.*,p.name current_project_label,${auditEntitySql} resolved_entity
         FROM ${auditReadFrom} WHERE e.id=$1 AND ${where}`,values);
       if(!row) throw Object.assign(new Error("Audit event not found."),{status:404});
-      return (await readableAuditEvents(client,[row]))[0];
-    } finally {client.release();}
+      const result=(await readableAuditEvents(client,[row]))[0];
+      await client.query("COMMIT");
+      return result;
+    } catch(error) {await client.query("ROLLBACK");throw error;} finally {client.release();}
   }));
 }

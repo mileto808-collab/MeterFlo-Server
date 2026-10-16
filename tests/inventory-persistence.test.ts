@@ -10,7 +10,8 @@ test("metadata posts write no balance mirrors; reservations, serial swaps and ne
   const before = volumeState(0), after = structuredClone(before);
   const queries: { sql: string; values: any[] }[] = [];
   const client = { query: async (sql: string, values: any[]) => { queries.push({ sql, values }); return { rows: [] }; } } as unknown as PoolClient;
-  const writes = (table: string) => queries.filter(q => q.sql.startsWith(`INSERT INTO public.${table}(`));
+  const writes = (table: string) => queries.filter(q => q.sql.startsWith(`INSERT INTO public.${table}(`) || q.sql.startsWith(`INSERT INTO public.${table} (`));
+  const balanceRows = () => writes("inventory_quantities").flatMap(query => JSON.parse(query.values[0]));
   try {
     after.revision++;
     await saveInventory(client, 1, before, after, "metadata", "countStart");
@@ -24,9 +25,9 @@ test("metadata posts write no balance mirrors; reservations, serial swaps and ne
     after.stock.push({ warehouseId: "w0", itemId: "i99", quantity: 0, serials: [], revision: 1 });
     after.items[0].name = "Changed catalog label";
     await saveInventory(client, 1, before, after, "changed", "assign");
-    assert.equal(writes("inventory_quantities").length, 3, "reservation-only, same-quantity serial change, new zero row");
+    assert.equal(balanceRows().length, 2, "reservation change and new zero row; same-quantity serial changes use serial relations");
     assert.equal(writes("inventory_items").length, 1);
-    assert.equal(writes("inventory_quantities").find(q => q.values[1] === "w0" && q.values[2] === "i0")!.values[4], 1);
+    assert.equal(balanceRows().find(row => row.warehouse_id === "w0" && row.item_id === "i0")!.reserved, 1);
     const stockChanges = JSON.parse(writes("inventory_movements")[0].values[4]).stock;
     assert.equal(stockChanges.length, 2, "same audit semantics exclude unchanged zero quantity");
     assert.equal(stockChanges.find((c: any) => c.warehouseId === "w0").reservedAfter, 1);
@@ -34,6 +35,6 @@ test("metadata posts write no balance mirrors; reservations, serial swaps and ne
     const released = structuredClone(after); released.allocations[0].status = "released";
     await saveInventory(client, 1, after, released, "released", "assign");
     assert.equal(writes("inventory_quantities").length, 1);
-    assert.equal(writes("inventory_quantities")[0].values[4], 0);
+    assert.equal(balanceRows()[0].reserved, 0);
   } finally { await pool.end(); }
 });

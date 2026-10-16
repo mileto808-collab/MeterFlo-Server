@@ -12,6 +12,7 @@ import { orderLineProgress } from "@shared/inventory-shipment-model";
 import { inventoryCountReference } from "@shared/inventory-count-reference";
 import { orderLabel, orderReference, uuidOrderId } from "@shared/inventory-order-labels";
 import { inventoryActorLabel, inventoryHoldLabel, type InventoryActorLabel } from "@shared/inventory-display-labels";
+import { categoryDeletionBlockers, itemDeletionBlockers } from "@shared/inventory-deletion";
 import { emptyOrderFilters, searchOrders } from "@shared/inventory-order-search";
 import { InventoryOrderFilters } from "@/components/inventory-order-filters";
 import { downloadInventoryOrders } from "@/lib/inventory-order-export";
@@ -32,6 +33,7 @@ import { copyInventoryItem } from "@/lib/inventory-item-copy";
 import { InventoryKitDialog } from "@/components/inventory-kit-dialog";
 import { InventoryRecordsWorkspace } from "@/components/inventory-records-workspace";
 import { InventoryCategoryCreateAction } from "@/components/inventory-category-create-action";
+import { InventoryDeleteAction } from "@/components/inventory-delete-action";
 import { InventoryMobileTools } from "@/components/inventory-mobile-tools";
 import { buildOperationsDataset } from "@/lib/inventory-operations-data";
 import type { StockBalanceRow } from "@/lib/inventory-stock-export";
@@ -908,7 +910,11 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           canMaintain={can("inventory.maintain")} canAssemble={can("inventory.assemble")} canInspectKits={can("inventory.resolveExceptions")}
           onAssemble={() => setKitDialogMode("assemble")} onDisassemble={() => setKitDialogMode("disassemble")} onInspectKits={() => setKitDialogMode("inspect")}
           onRefresh={() => void refetch()} onAdd={() => openResource("item")}
-          onEditItem={item => openResource("item", item)} onCopyItem={item => openResource("item", item, true)} onEditVendor={vendor => openResource("vendor", vendor)} />
+          onEditItem={item => openResource("item", item)} onCopyItem={item => openResource("item", item, true)}
+          onDeleteItem={(item, operationId) => command.mutateAsync({ action: "itemDelete", data: { id: item.id }, operationId })}
+          itemDeleteBlockers={item => itemDeletionBlockers(state, item.id)}
+          itemDeletePending={command.isPending}
+          onEditVendor={vendor => openResource("vendor", vendor)} />
       </TabsContent>
       <TabsContent value="vendors" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         <InventoryCatalogWorkspace kind="vendors" items={items} vendors={vendors} projectName={data.projectName} timezone={timezone}
@@ -932,6 +938,10 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
                   onRename={(id, newName, operationId) => command.mutateAsync({
                     action: "categoryRename", data: { id, newName }, operationId,
                   })} />
+                <InventoryDeleteAction kind="category" id={row.id} name={categoryName}
+                  canMaintain={can("inventory.maintain")} pending={command.isPending}
+                  blockers={categoryDeletionBlockers(state, row.id)}
+                  onDelete={(id, operationId) => command.mutateAsync({ action: "categoryDelete", data: { id }, operationId })} />
               </div>
             </article>;
           }} />

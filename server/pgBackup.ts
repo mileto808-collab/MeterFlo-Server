@@ -11,6 +11,7 @@ import { auditedOperation } from "./auditService";
 import { initializeAudit } from "./auditMigration";
 import { pool as applicationPool } from "./db";
 import { auditingEnabled } from "./auditContext";
+import { relationalTableNames } from "./inventoryRelationalModel";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 function stripApplicationAuditHooks(file:string) {
@@ -462,6 +463,7 @@ const CLEAN_BACKUP_TABLES = [
 // Tables that will be EMPTY after clean restore (for documentation)
 // All other tables except CLEAN_BACKUP_TABLES and system users will be empty
 const CLEAN_TABLES_TO_CLEAR = [
+  ...relationalTableNames,
   "inventory_movements",
   "inventory_quantities",
   "inventory_items",

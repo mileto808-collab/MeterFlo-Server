@@ -1,5 +1,6 @@
 import "dotenv/config";
 import test from "node:test";
+import { clearRelationalInventory } from "../server/inventoryRelational";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
@@ -205,11 +206,13 @@ test("transactional completion, mobile usage, concurrency, import rollback, and 
   } finally {
     for (const target of targets) {
       await pool.query(`DROP SCHEMA IF EXISTS "${target.schema}" CASCADE`);
-      for (const table of ["inventory_movements", "inventory_quantities", "inventory_items", "inventory_state"]) await pool.query(`DELETE FROM public.${table} WHERE project_id=$1`, [target.id]);
+      await clearRelationalInventory(pool, target.id);
+      for (const table of ["inventory_movements", "inventory_state"]) await pool.query(`DELETE FROM public.${table} WHERE project_id=$1`, [target.id]);
       await pool.query("DELETE FROM public.projects WHERE id=$1", [target.id]);
     }
     await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
-    for (const table of ["inventory_movements", "inventory_quantities", "inventory_items", "inventory_state"]) await pool.query(`DELETE FROM public.${table} WHERE project_id=$1`, [project.id]);
+    await clearRelationalInventory(pool, project.id);
+    for (const table of ["inventory_movements", "inventory_state"]) await pool.query(`DELETE FROM public.${table} WHERE project_id=$1`, [project.id]);
     await pool.query("DELETE FROM public.projects WHERE id=$1", [project.id]);
     await pool.query("DELETE FROM public.users WHERE id=$1", [user.id]);
     await pool.end();

@@ -105,6 +105,9 @@ try {
     await categoryClient.connect();
     await categoryClient.query(await readFile(path.join(checkout, "migrations/inventory-category-ids.sql"), "utf8"));
   } finally { await categoryClient.end(); }
+  stage = "Disposable relational inventory schema";
+  await run(process.execPath, ["--import", "tsx", "script/migrate-inventory-relational.ts", "--standalone"],
+    { cwd: checkout, visible: true });
   stage = "Engine boundaries and persistence";
   await run(process.execPath, ["--import", "tsx", "--test", "tests/inventory-volume.test.ts", "tests/inventory-persistence.test.ts"],
     { cwd: checkout, visible: true });

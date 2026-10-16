@@ -10,6 +10,7 @@ import { z } from "zod";
 import type { SavedShipmentDraft } from "../shared/inventory-shipment-draft-model";
 import { readInventoryCategories, storedCategoryState, writeInventoryCategories, writeInventoryCategoryItem } from "./inventoryCategories";
 import { kitSerialContents } from "../shared/inventory-kits";
+import { readRelationalInventory, writeRelationalInventory } from "./inventoryRelational";
 
 // Saved captures are temporary editing state, not another physical-stock
 // ledger. Record useful changes without duplicating every scan on every save.
@@ -28,8 +29,7 @@ function shipmentDraftAudit(value: SavedShipmentDraft | undefined) {
 
 export async function inventoryState(projectId: number, client: Pick<PoolClient, "query"> = pool): Promise<InventoryState> {
   if (client !== pool) {
-    const { rows: [r] } = await client.query("SELECT state FROM public.inventory_state WHERE project_id=$1 FOR UPDATE", [projectId]);
-    return r ? readInventoryCategories(client, projectId, r.state) : emptyInventory();
+    return readRelationalInventory(client, projectId);
   }
   const connection = await pool.connect();
   try {
@@ -42,8 +42,7 @@ export async function inventoryState(projectId: number, client: Pick<PoolClient,
 }
 export async function lockInventory(client: PoolClient, projectId: number) {
   await client.query("INSERT INTO public.inventory_state(project_id,state) VALUES($1,$2) ON CONFLICT DO NOTHING", [projectId, JSON.stringify(emptyInventory())]);
-  const { rows: [r] } = await client.query("SELECT state FROM public.inventory_state WHERE project_id=$1 FOR UPDATE", [projectId]);
-  return readInventoryCategories(client, projectId, r.state);
+  return readRelationalInventory(client, projectId);
 }
 export async function saveInventory(client: PoolClient, projectId: number, before: InventoryState, after: InventoryState, operationId: string, action: string) {
   // Display labels never participate in item persistence or item-change audits.
@@ -77,24 +76,15 @@ export async function saveInventory(client: PoolClient, projectId: number, befor
         before: kind === "shipmentDrafts" ? shipmentDraftAudit(prior as SavedShipmentDraft | undefined) : prior || null,
         after: kind === "shipmentDrafts" ? shipmentDraftAudit(value as SavedShipmentDraft) : value }];
     });
-    if (kind === "shipmentDrafts") for (const [id, prior] of previous) {
-      if (!(after.shipmentDrafts ?? []).some(d => d.id === id))
-        updates.push({ field: `${kind}/${id}`, before: shipmentDraftAudit(prior as SavedShipmentDraft), after: null as any });
+    if (kind === "shipmentDrafts" || kind === "items") for (const [id, prior] of previous) {
+      if (!(after[kind] ?? []).some(d => d.id === id))
+        updates.push({ field: `${kind}/${id}`, before: kind === "shipmentDrafts" ? shipmentDraftAudit(prior as SavedShipmentDraft) : prior, after: null as any });
     }
     return updates;
   });
   if (JSON.stringify(before.categoryCatalog ?? []) !== JSON.stringify(after.categoryCatalog ?? []))
     entityChanges.push({ field: "categoryCatalog", before: before.categoryCatalog ?? [], after: after.categoryCatalog ?? [] });
-  await writeInventoryCategories(client, projectId, after);
-  await client.query("UPDATE public.inventory_state SET state=$2,updated_at=now() WHERE project_id=$1", [projectId, JSON.stringify(after)]);
-  // These tables mirror the locked JSON state. Only changed rows need writes;
-  // count/order metadata changes must not rewrite every warehouse's balances.
-  const previousItems = new Map(before.items.map(i => [i.id, JSON.stringify(i)]));
-  for (const i of after.items.filter(i => previousItems.get(i.id) !== JSON.stringify(i))) await writeInventoryCategoryItem(client, projectId, i);
-  const changedStock = new Set(changes.map(stockKey));
-  for (const b of after.stock.filter(b => !priorStock.has(stockKey(b)) || changedStock.has(stockKey(b)))) await client.query(`INSERT INTO public.inventory_quantities(project_id,warehouse_id,item_id,quantity,reserved,serials)
-    VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(project_id,warehouse_id,item_id) DO UPDATE SET quantity=EXCLUDED.quantity,reserved=EXCLUDED.reserved,serials=EXCLUDED.serials`,
-    [projectId, b.warehouseId, b.itemId, b.quantity, reservedAfter.get(stockKey(b)) || 0, JSON.stringify(b.serials)]);
+  await writeRelationalInventory(client, projectId, after, before);
   await client.query("INSERT INTO public.inventory_movements(project_id,operation_id,action,actor_id,changes) VALUES($1,$2,$3,$4,$5)",
     [projectId, operationId, action, actor, JSON.stringify({ stock: changes, entities: entityChanges })]);
   if (auditingEnabled) {
@@ -152,6 +142,8 @@ export async function postInventory(projectId: number, command: InventoryCommand
       try { await insertAuditEvent(client, { action: `inventory.${command.action}`, entityType: "inventory", entityId: command.operationId, projectId, outcome: "failed",
         metadata: { reason: e instanceof InventoryError ? e.message : "Validation or database failure" } }); } catch { /* original failure remains explicit */ }
     }
+    if (["itemDelete", "categoryDelete"].includes(command.action) && (e as { code?: string })?.code === "23503")
+      throw new InventoryError("This record is still referenced by inventory data and cannot be deleted. Refresh the list to check its current usage.");
     throw e;
   } finally { client.release(); }
 }
