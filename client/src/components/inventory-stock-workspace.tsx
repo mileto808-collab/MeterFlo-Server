@@ -34,9 +34,9 @@ export function InventoryStockWorkspace({ base, projectName, timezone, onRefresh
   const [exporting, setExporting] = useState(false);
   const [optionSearch, setOptionSearch] = useState("");
   const [resultsElement, setResultsElement] = useState<HTMLDivElement | null>(null);
-  const rowHeightRef = useRef(0);
   const containerWidthRef = useRef(0);
   const containerHeightRef = useRef(0);
+  const capacityLockRef = useRef<number | null>(null);
 
   const params = { q: query, ...filters, offset: page * rowsPerPage, limit: rowsPerPage };
   const url = stockUrl(base, "", params);
@@ -57,7 +57,13 @@ export function InventoryStockWorkspace({ base, projectName, timezone, onRefresh
   const activeFilterCount = Number(filters.warehouse !== "all") + Number(filters.category !== "all") +
     Number(filters.tracking !== "all") + Number(filters.availability !== "all") + Number(filters.sort !== "item-asc");
 
-  useEffect(() => { rowHeightRef.current = 0; }, [query, filters]);
+  useEffect(() => {
+    capacityLockRef.current = null;
+    resultsElement?.scrollTo({ top: 0 });
+  }, [query, filters, resultsElement]);
+  useEffect(() => {
+    resultsElement?.scrollTo({ top: 0 });
+  }, [page, resultsElement]);
   useEffect(() => {
     if (stock.data) setPage(current => Math.min(current, lastPage));
   }, [lastPage, stock.data]);
@@ -94,17 +100,83 @@ export function InventoryStockWorkspace({ base, projectName, timezone, onRefresh
     const measure = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
-        const width = container.clientWidth;
-        if (Math.abs(width - containerWidthRef.current) > 2 ||
-            Math.abs(container.clientHeight - containerHeightRef.current) > 2) rowHeightRef.current = 0;
+        // clientWidth changes when the vertical scrollbar appears; that is
+        // content chrome, not a viewport reflow, and must not release a
+        // capacity lock after an overshoot.
+        const width = container.getBoundingClientRect().width;
+        const height = container.clientHeight;
+        const widthChanged = Math.abs(width - containerWidthRef.current) > 2;
+        const heightChanged = Math.abs(height - containerHeightRef.current) > 2;
+        if (widthChanged || heightChanged) capacityLockRef.current = null;
         containerWidthRef.current = width;
-        containerHeightRef.current = container.clientHeight;
+        containerHeightRef.current = height;
+        if ((widthChanged || heightChanged) && currentPage > 0) {
+          // Page boundaries are tied to the server limit. Reflow capacity
+          // from page one after a real viewport change rather than changing
+          // the limit under an in-progress page and shifting its offset.
+          container.scrollTo({ top: 0 });
+          setPage(0);
+          return;
+        }
+
         const mountedRows = [...container.querySelectorAll<HTMLElement>("[data-stock-row]")];
-        const height = mountedRows.reduce((maximum, row) => Math.max(maximum, row.getBoundingClientRect().height), 0);
-        if (height > 0) rowHeightRef.current = Math.max(rowHeightRef.current, height);
-        const rowHeight = rowHeightRef.current || 112;
-        const next = Math.max(1, Math.min(100, Math.floor((container.clientHeight - 8) / (rowHeight + 8))));
-        setRowsPerPage(current => current === next ? current : next);
+        const measured = mountedRows.map(row => {
+          const rowHeight = row.getBoundingClientRect().height;
+          return { row, rowHeight };
+        }).filter(entry => entry.rowHeight > 0);
+
+        // A query-size request can briefly remove the rows from the DOM. Wait
+        // for the matching page rather than using an empty/stale-row fallback.
+        if (!stock.data || !matchingCount || !measured.length || height <= 0) return;
+
+        const contentOrigin = 8; // results scroller's vertical padding
+        const usableBottom = height - 8;
+        let fittedCount = 0;
+        let fittedBottom = contentOrigin;
+        const scrollTop = container.scrollTop;
+        for (const { row } of measured) {
+          const bottomInContent = row.getBoundingClientRect().bottom -
+            container.getBoundingClientRect().top + scrollTop;
+          if (bottomInContent > usableBottom) break;
+          fittedCount += 1;
+          fittedBottom = bottomInContent;
+        }
+
+        const offset = stock.data.offset;
+        const requestedCount = Math.max(1, Math.min(100, rowsPerPage));
+        const rowsExpectedOnPage = Math.min(requestedCount, Math.max(0, matchingCount - offset));
+        const canFitEveryFetchedRow = fittedCount === measured.length &&
+          measured.length >= rowsExpectedOnPage;
+
+        if (!canFitEveryFetchedRow) {
+          // A newly fetched tall row can invalidate a size inferred from its
+          // shorter neighbours. Settle at the actual complete-row prefix and
+          // hold that size until the viewport or data scope changes, avoiding
+          // a 3 → 4 → 3 request loop. One row may scroll when it alone is too
+          // tall for a short landscape viewport.
+          const settled = Math.max(1, Math.min(requestedCount, fittedCount || 1));
+          if (requestedCount > settled && currentPage === 0) {
+            capacityLockRef.current = settled;
+            setRowsPerPage(current => current === settled ? current : settled);
+          } else if (fittedCount === 0 && currentPage === 0) {
+            capacityLockRef.current = requestedCount;
+          }
+          return;
+        }
+
+        // Keep page boundaries fixed after leaving the first page. Changing a
+        // server limit while page > 0 also changes `offset = page * limit`,
+        // which would silently move records and make Previous land elsewhere.
+        if (capacityLockRef.current !== null || currentPage !== 0) return;
+        const remainingRecords = Math.max(0, matchingCount - offset);
+        if (measured.length < rowsExpectedOnPage || remainingRecords <= requestedCount) return;
+
+        const measuredHeights = measured.map(entry => entry.rowHeight);
+        const nextRowProbe = Math.min(...measuredHeights) || 112;
+        const remainingHeight = Math.max(0, usableBottom - fittedBottom);
+        const additionalRows = Math.floor(remainingHeight / (nextRowProbe + 8));
+        const next = Math.min(100, remainingRecords, requestedCount + additionalRows);
+        if (next > requestedCount) setRowsPerPage(current => current === requestedCount ? next : current);
       });
     };
     const observer = new ResizeObserver(measure);
@@ -113,7 +185,7 @@ export function InventoryStockWorkspace({ base, projectName, timezone, onRefresh
     window.addEventListener("resize", measure);
     measure();
     return () => { cancelAnimationFrame(frame); observer.disconnect(); window.removeEventListener("resize", measure); };
-  }, [resultsElement, visibleRows, currentPage, filtersOpen, rowsPerPage]);
+  }, [resultsElement, visibleRows, currentPage, filtersOpen, rowsPerPage, stock.data, matchingCount]);
 
   const exportFile = async (format: "csv" | "xlsx" | "pdf") => {
     if (!exportCount || exporting || !stock.data) return;
