@@ -418,9 +418,8 @@ async function main() {
     const poRow = id => page.locator("div.rounded-lg.border.p-4").filter({ hasText: id });
     const amended = poRow("ORDER-AMEND");
     await amended.getByRole("button", { name: "Un-release to draft", exact: true }).click();
-    await amended.getByRole("button", { name: "Edit draft", exact: true }).waitFor();
+    await editor.waitFor();
     assert.equal((await state()).orders.find(o => o.id === "ORDER-AMEND").status, "draft");
-    await amended.getByRole("button", { name: "Edit draft", exact: true }).click();
     await select(3, "ORDER-SERIAL · Order meter");
     await builder.getByRole("button", { name: "Add line", exact: true }).click();
     await notes.fill("Added a meter before receiving");

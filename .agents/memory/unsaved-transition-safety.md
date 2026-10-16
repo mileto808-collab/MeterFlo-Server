@@ -9,6 +9,12 @@ Treat Discard in an unsaved-changes warning as permission to abandon the editor 
 
 **How to apply:** Keep the current form through fallible transitions, replacing or clearing it only on confirmed success. Test failed replacement and cancellation after Discard, not just failed saves. A failed background refresh should not hide a still-usable editor holding local changes.
 
+Status recovery that can populate an editor is also a guarded transition, even when the recovery request itself is read-only. Keep new-editor transitions blocked throughout reconciliation, not just during the preceding write.
+
+**Why:** A write may finish before its confirmation read. Allowing another editor to open in between lets the late read overwrite newer local work; a later explicit status retry has the same risk.
+
+**How to apply:** Include reconciliation in the busy boundary, route explicit status checks through the unsaved-change guard, and preserve current values when either the command or confirmation read fails. Never silently re-post an unresolved command just to learn its outcome.
+
 A dismissed modal must not leave an inaccessible dirty editor behind.
 
 **Why:** Inline editors can remain visible while retaining changes; hiding the same state in a modal can cause unrelated navigation or new-order actions to warn about entries the operator explicitly discarded.

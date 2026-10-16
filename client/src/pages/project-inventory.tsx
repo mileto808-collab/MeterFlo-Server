@@ -141,6 +141,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [orderToClose, setOrderToClose] = useState<InventoryOrder | null>(null);
   const [closeReason, setCloseReason] = useState("");
   const [showClearedOrders, setShowClearedOrders] = useState(false);
+  const [unreleaseStatus, setUnreleaseStatus] = useState<Record<string, { pending: boolean; message: string; needsCheck: boolean }>>({});
+  const unreleaseInFlight = useRef(new Set<string>());
   const [orderFiltersOpen, setOrderFiltersOpen] = useState(false);
   const [shipmentDraftsOpen, setShipmentDraftsOpen] = useState(false);
   const [orderPage, setOrderPage] = useState(0);
@@ -151,7 +153,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [orderRowsPerPage, setOrderRowsPerPage] = useState(1);
   const [orderToClear, setOrderToClear] = useState<InventoryOrder | null>(null);
   const requestOrderTransition = (transition: () => void) => {
-    if (orderSaving.current || command.isPending) return;
+    if (orderSaving.current || command.isPending || unreleaseInFlight.current.size > 0) return;
     if (orderDirty) setPendingOrderTransition(current => current ?? transition);
     else transition();
   };
@@ -503,7 +505,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       onSettled: () => { orderSaving.current = false; },
     });
   };
-  const editOrderDraft = (order: InventoryOrder) => requestOrderTransition(() => {
+  const loadOrderDraft = (order: InventoryOrder) => {
     orderAttempt.current = null;
     setOrderId(orderReference(order)); setEditingOrderId(order.id); setOrderType(order.type); setOrderDestination(order.destinationId);
     setOrderSource(order.sourceId || ""); setOrderVendor(order.vendorId || "");
@@ -515,7 +517,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       orderDestination: order.destinationId, orderSource: order.sourceId || "", orderVendor: order.vendorId || "",
       orderNotes: order.notes, replacementFor: order.replacementFor ?? "", orderLines: order.lines, orderLineQuantities: {}, orderLineItem: "", orderLineQty: "1" }));
     setOrderEditorOpen(true);
-  });
+  };
+  const editOrderDraft = (order: InventoryOrder) => requestOrderTransition(() => loadOrderDraft(order));
   const startNewOrderDraft = () => requestOrderTransition(() => {
     resetOrderDraft();
     setOrderEditorOpen(true);
@@ -592,8 +595,91 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       `${items.find(item => item.id === line.itemId)?.sku ?? line.itemId} closed short × ${line.quantity}`);
     return [...good, ...damaged, ...closed, receipt.reason].filter(Boolean).join(" · ");
   };
+  const reconcileUnrelease = async (orderId: string, permission: string) => {
+    const response = await fetch(base, { credentials: "include", cache: "no-store" });
+    if (!response.ok) throw new Error(`Inventory status could not be checked (${response.status}).`);
+    const snapshot = await response.json() as Snapshot;
+    if (!snapshot?.state || !Array.isArray(snapshot.permissions)) throw new Error("The inventory status response was incomplete.");
+    queryClient.setQueryData(queryKey, snapshot);
+    const current = snapshot.state.orders.find(order => order.id === orderId);
+    if (!current) {
+      return { opened: false, checkable: true, message: "Status checked, but this order is no longer available. No editor was opened." };
+    }
+    if (!can("inventory.view") || !can(permission) ||
+        !snapshot.permissions.includes("inventory.view") || !snapshot.permissions.includes(permission)) {
+      return { opened: false, checkable: false, message: "Status checked, but your current inventory access does not allow editing this order." };
+    }
+    if (current.status !== "draft") {
+      return { opened: false, checkable: false, message: `Status checked: this order is ${current.status}, not draft. No editor was opened.` };
+    }
+    const requiredWarehouses = [current.destinationId, ...(current.type === "transfer" ? [current.sourceId] : [])];
+    if (!requiredWarehouses.every(id => {
+      const warehouse = snapshot.state.warehouses.find(value => value.id === id);
+      return warehouse?.active && (user?.role === "admin" || warehouse.assignedUserId === user?.id ||
+        !!user?.id && warehouse.userIds.includes(user.id));
+    })) {
+      return { opened: false, checkable: false, message: "Status checked, but your current warehouse access does not allow editing this order." };
+    }
+    loadOrderDraft(current);
+    return { opened: true, checkable: false, message: `Draft confirmed for ${orderLabel(current)}; opened the order editor.` };
+  };
+  const checkUnreleaseStatus = async (order: InventoryOrder) => {
+    if (unreleaseInFlight.current.has(order.id)) return;
+    const permission = order.type === "transfer" ? "inventory.transfer" : "inventory.purchase";
+    unreleaseInFlight.current.add(order.id);
+    setUnreleaseStatus(current => ({ ...current, [order.id]: { pending: true, message: "Checking the authoritative order status…", needsCheck: false } }));
+    try {
+      const result = await reconcileUnrelease(order.id, permission);
+      setUnreleaseStatus(current => ({ ...current, [order.id]: {
+        pending: false, message: result.message, needsCheck: result.checkable,
+      } }));
+    } catch (error) {
+      setUnreleaseStatus(current => ({ ...current, [order.id]: {
+        pending: false,
+        message: `Could not confirm the order status. Your editor entries were kept. ${error instanceof Error ? error.message : "Reconnect and check again."}`,
+        needsCheck: true,
+      } }));
+    } finally {
+      unreleaseInFlight.current.delete(order.id);
+    }
+  };
   const runOrderCommand = (action: "unrelease" | "archiveOrder" | "restoreOrder", order: InventoryOrder) => {
     if (command.isPending || !can(action === "unrelease" && order.type === "transfer" ? "inventory.transfer" : "inventory.purchase")) return;
+    if (action === "unrelease") {
+      if (unreleaseInFlight.current.has(order.id)) return;
+      const permission = order.type === "transfer" ? "inventory.transfer" : "inventory.purchase";
+      unreleaseInFlight.current.add(order.id);
+      setUnreleaseStatus(current => ({ ...current, [order.id]: { pending: true, message: "Returning order to draft…", needsCheck: false } }));
+      void (async () => {
+        let postMessage = "";
+        try {
+          await command.mutateAsync({ action, data: { orderId: order.id }, operationId: freshId() });
+        } catch (error) {
+          // A failed response can still follow a committed command. Reconcile before
+          // telling the operator whether the order changed.
+          postMessage = error instanceof Error ? error.message : "The command response was not confirmed.";
+        }
+        try {
+          const result = await reconcileUnrelease(order.id, permission);
+          setUnreleaseStatus(current => ({ ...current, [order.id]: {
+            pending: false,
+            message: result.opened
+              ? result.message
+              : `${result.message}${postMessage ? ` The command response was uncertain: ${postMessage} A saved capture owned by another operator may also block un-release even when it is not visible in your capture list.` : ""}`,
+            needsCheck: result.checkable,
+          } }));
+        } catch (error) {
+          setUnreleaseStatus(current => ({ ...current, [order.id]: {
+            pending: false,
+            message: `The un-release result is unknown; inventory status could not be confirmed. Your editor entries were kept. ${error instanceof Error ? error.message : postMessage || "Reconnect and check again."}`,
+            needsCheck: true,
+          } }));
+        } finally {
+          unreleaseInFlight.current.delete(order.id);
+        }
+      })();
+      return;
+    }
     command.mutate({ action, data: { orderId: order.id } }, {
       onSuccess: () => { if (action === "archiveOrder") setOrderToClear(null); },
     });
@@ -1052,6 +1138,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
             const archived = !!order.archivedAt;
             const purchase = order.type === "purchase";
             const unreleaseLocked = ["released", "partial", "completed"].includes(order.status) && isUnreleaseLocked(order);
+            const unreleaseUpdate = unreleaseStatus[order.id];
             return <article key={order.id} data-testid="inventory-order-card" data-order-id={order.id} className="min-w-0 rounded-md border bg-card px-3 py-2.5">
               <div className="flex min-w-0 flex-col justify-between gap-2 lg:flex-row lg:items-center">
                 <div className="min-w-0">
@@ -1061,7 +1148,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
                 </div>
                 <div className="flex min-w-0 flex-wrap items-center gap-1.5 max-md:[&>button]:h-7 max-md:[&>button]:min-h-7 max-md:[&>button]:px-2 max-md:[&>button]:text-xs">
                   <Button size="sm" variant="outline" onClick={() => openPrint("order", order.id)}><Printer className="mr-1 h-3.5 w-3.5" />Print</Button>
-                  {order.status === "draft" && can(purchase ? "inventory.purchase" : "inventory.transfer") && <><Button size="sm" variant="outline" onClick={() => editOrderDraft(order)}>Edit draft</Button><Button size="sm" disabled={command.isPending} onClick={() => command.mutate({ action: "release", data: { orderId: order.id } })}>Release</Button></>}
+                  {order.status === "draft" && can(purchase ? "inventory.purchase" : "inventory.transfer") && <><Button size="sm" variant="outline" disabled={!!unreleaseUpdate?.pending || !!unreleaseUpdate?.needsCheck} onClick={() => editOrderDraft(order)}>Edit draft</Button><Button size="sm" disabled={command.isPending || !!unreleaseUpdate?.pending || !!unreleaseUpdate?.needsCheck} onClick={() => command.mutate({ action: "release", data: { orderId: order.id } })}>Release</Button></>}
                   {!["completed", "cancelled", "closed"].includes(order.status) && can(purchase ? "inventory.purchase" : "inventory.transfer") && <Button size="sm" variant="ghost" disabled={command.isPending} onClick={() => command.mutate({ action: "cancel", data: { orderId: order.id } })}>Cancel</Button>}
                   {["released", "partial"].includes(order.status) && can(purchase ? "inventory.receive" : "inventory.transfer") &&
                     order.lines.some(line => purchase ? orderLineProgress(state, order, line.itemId).remaining > 0 :
@@ -1078,17 +1165,27 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
                     const progress = orderLineProgress(state, order, line.itemId);
                     return progress.ordered > progress.usable;
                   }) && can(purchase ? "inventory.purchase" : "inventory.transfer") && <Button size="sm" variant="outline" disabled={command.isPending} onClick={() => startReplacementOrder(order)}>Create replacement</Button>}
-                  {order.status === "released" && !archived && can(purchase ? "inventory.purchase" : "inventory.transfer") && <Button size="sm" variant="outline" disabled={command.isPending || isUnreleaseLocked(order)} onClick={() => requestOrderTransition(() => runOrderCommand("unrelease", order))}>Un-release to draft</Button>}
+                  {order.status === "released" && !archived && can(purchase ? "inventory.purchase" : "inventory.transfer") && <Button size="sm" variant="outline" disabled={command.isPending || !!unreleaseUpdate?.pending || !!unreleaseUpdate?.needsCheck || isUnreleaseLocked(order)} onClick={() => requestOrderTransition(() => runOrderCommand("unrelease", order))}>
+                    {unreleaseUpdate?.pending ? <><Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />{unreleaseUpdate.message.startsWith("Checking") ? "Checking…" : "Un-releasing…"}</> : "Un-release to draft"}
+                  </Button>}
                   {purchase && order.status === "cancelled" && !archived && can("inventory.purchase") && <Button size="sm" variant="outline" disabled={command.isPending} onClick={() => requestOrderTransition(() => setOrderToClear(order))}>Clear</Button>}
                   {purchase && order.status === "cancelled" && archived && can("inventory.purchase") && <Button size="sm" variant="outline" disabled={command.isPending} onClick={() => requestOrderTransition(() => runOrderCommand("restoreOrder", order))}>Restore</Button>}
                 </div>
               </div>
+              {unreleaseUpdate && <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2 text-sm" role={unreleaseUpdate.needsCheck ? "alert" : "status"} aria-live="polite">
+                <span className="min-w-0 flex-1 break-words">{unreleaseUpdate.message}</span>
+                {unreleaseUpdate.needsCheck && <Button type="button" size="sm" variant="outline" className="min-h-10" disabled={unreleaseUpdate.pending || command.isPending}
+                  onClick={() => requestOrderTransition(() => void checkUnreleaseStatus(order))} aria-label={`Check authoritative status for ${orderLabel(order)}`}>
+                  <RefreshCw className={`mr-1.5 h-4 w-4 ${unreleaseUpdate.pending ? "animate-spin" : ""}`} />
+                  {unreleaseUpdate.pending ? "Checking status…" : "Check status"}
+                </Button>}
+              </div>}
               <details className="mt-2 border-t pt-1.5 text-xs">
                 <summary className="w-fit cursor-pointer text-muted-foreground">Order details · lines, progress, and internal ID</summary>
                 <div className="mt-2 space-y-1.5">
                   <p className="break-words md:hidden">{purchase ? vendors.find(v => v.id === order.vendorId)?.name : warehouses.find(w => w.id === order.sourceId)?.name} → {warehouses.find(w => w.id === order.destinationId)?.name}{orderReference(order) ? ` · Ref ${orderReference(order)}` : ""}</p>
                   <div className="flex flex-wrap items-center gap-2 text-muted-foreground"><span className="break-all font-mono">{order.id}</span><Button size="sm" variant="ghost" onClick={() => navigator.clipboard.writeText(order.id).catch(() => toast({ title: "Copy unavailable", description: "Select and copy the displayed internal ID." }))}>Copy internal ID</Button></div>
-                  {unreleaseLocked && <p className="text-muted-foreground" role="note">{(state.shipmentDrafts ?? []).some(draft => draft.orderId === order.id) ? "Resume or discard the saved shipment capture before un-releasing this order." : "This order has posted shipment activity and cannot return to draft. Dispatches and receipts must remain attached to the order."}</p>}
+                  {unreleaseLocked && <p className="text-muted-foreground" role="note">{(state.shipmentDrafts ?? []).some(draft => draft.orderId === order.id) ? "Resume or discard the saved shipment capture before un-releasing this order. A capture owned by another operator may not be visible here; ask its owner to reconcile it." : "This order has posted shipment activity and cannot return to draft. Dispatches and receipts must remain attached to the order."}</p>}
                   <div className="grid gap-1 border-t pt-2">{order.lines.map(line => {
                 const item = items.find(value => value.id === line.itemId);
                 const p = orderLineProgress(state, order, line.itemId);

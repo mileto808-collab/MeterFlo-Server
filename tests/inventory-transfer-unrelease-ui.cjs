@@ -43,12 +43,12 @@ async function main() {
     page.on("pageerror", error => errors.push(error.message));
     await page.goto(`/projects/${fixture.projectId}/inventory`);
     await page.getByRole("tab", { name: "Orders", exact: true }).click();
-    const card = page.locator("div.rounded-lg.border.p-4").filter({ hasText: "editable-transfer" });
+    await page.getByPlaceholder("Order number, reference, ID, product, vendor or location").fill("editable-transfer");
+    const card = page.locator('[data-order-id="editable-transfer"]');
     const before = await snapshot(), original = before.orders.find(order => order.id === "editable-transfer");
     await card.getByRole("button", { name: "Un-release to draft", exact: true }).click();
-    await card.getByRole("button", { name: "Edit draft", exact: true }).waitFor();
-    await card.getByRole("button", { name: "Edit draft", exact: true }).click();
     const builder = page.getByTestId("inventory-order-dialog");
+    await builder.waitFor();
     await builder.getByLabel("Quantity for Transfer seal", { exact: true }).fill("4");
     await builder.getByRole("button", { name: "Save draft", exact: true }).click();
     await builder.waitFor({ state: "hidden" });
@@ -64,11 +64,22 @@ async function main() {
     await fs.mkdir("generated-artifacts/transfer-unrelease", { recursive: true });
     await card.scrollIntoViewIfNeeded();
     await page.screenshot({ path: "generated-artifacts/transfer-unrelease/desktop.png" });
-    const dispatch = await send(admin, "dispatch", { orderId: original.id, lines: [{ itemId: "seal", quantity: 1 }] });
-    assert.equal(dispatch.status(), 200);
+    // Dispatch wins after the button was rendered but before its un-release request reaches the server.
+    await page.route(`**${endpoint}/commands`, async route => {
+      if (route.request().postDataJSON()?.action !== "unrelease") return route.continue();
+      const dispatch = await send(admin, "dispatch", { orderId: original.id, lines: [{ itemId: "seal", quantity: 1 }] });
+      assert.equal(dispatch.status(), 200);
+      await route.continue();
+    });
+    await card.getByRole("button", { name: "Un-release to draft", exact: true }).click();
+    await card.getByText(/Status checked: this order is partial, not draft/).waitFor();
+    assert.equal(await builder.isVisible(), false, "a racing dispatch must not open a stale draft editor");
+    await page.unroute(`**${endpoint}/commands`);
     assert.equal((await send(viewer, "unrelease", { orderId: original.id })).status(), 409, "posted transfers remain locked");
     await page.reload();
     await page.getByRole("tab", { name: "Orders", exact: true }).click();
+    await page.getByPlaceholder("Order number, reference, ID, product, vendor or location").fill("editable-transfer");
+    await card.waitFor();
     assert.equal(await card.getByRole("button", { name: "Un-release to draft", exact: true }).count(), 0);
     // The project lock makes competing dispatch/un-release commands exclusive.
     await post("order", transfer("race-transfer"));
