@@ -14,3 +14,14 @@ A dismissed modal must not leave an inaccessible dirty editor behind.
 **Why:** Inline editors can remain visible while retaining changes; hiding the same state in a modal can cause unrelated navigation or new-order actions to warn about entries the operator explicitly discarded.
 
 **How to apply:** Treat Cancel, X and Escape as guarded transitions. Stay and failed saves retain the visible editor. A confirmed discard-and-close clears its values, retry attempt and dirty baseline together; normal successful saves keep their confirmation visible outside the closed dialog.
+
+Settings section switching is navigation, not permission to save or discard
+instance-wide configuration. Keep drafts intact when a form is temporarily
+hidden, and require its existing explicit save action.
+
+**Why:** Reorganizing Settings must not accidentally apply security, storage,
+update or integration changes that affect other users.
+
+**How to apply:** Preserve mounted child editor state or lift drafts before
+replacing a settings pane. Verify unsaved values after switching sections and
+rotating a phone, and verify that navigation sends no configuration writes.

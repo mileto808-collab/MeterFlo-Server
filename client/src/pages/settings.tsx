@@ -1,11 +1,12 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useTheme } from "@/hooks/use-theme";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useTimezone } from "@/hooks/use-timezone";
@@ -29,6 +30,8 @@ import { AlertTriangle } from "lucide-react";
 import { CustomerApiDeliveries } from "@/components/customer-api-deliveries";
 import { MobileReleaseManager } from "@/components/mobile-release-manager";
 import { CoreUpdatePreview, type UpdatePreview } from "@/components/core-update-preview";
+import { SettingsNavigation } from "@/components/settings-navigation";
+import { settingsGroups, type SettingsSectionKey } from "@/lib/settings-navigation";
 
 interface FileSettings {
   maxFileSizeMB: number;
@@ -90,6 +93,9 @@ function getStatusColorHex(color: string): string {
 }
 
 export default function Settings() {
+  const settingsWorkspaceRef = useRef<HTMLElement>(null);
+  const settingsContentRef = useRef<HTMLDivElement>(null);
+  const settingsMobile = useIsMobile();
   const { theme, setTheme } = useTheme();
   const { user } = useAuth();
   const { toast } = useToast();
@@ -123,6 +129,22 @@ export default function Settings() {
   const hasPermission = (permission: string) => {
     if (user?.role === "admin") return true;
     return userPermissions.includes(permission);
+  };
+  const visibleSettingsGroups = settingsGroups
+    .map(group => ({ ...group, sections: group.sections.filter(section => !section.permission || hasPermission(section.permission)) }))
+    .filter(group => group.sections.length > 0);
+  const [settingsGroup, setSettingsGroup] = useState("account");
+  const [settingsSection, setSettingsSection] = useState<SettingsSectionKey>("profile");
+  const effectiveSettingsGroup = visibleSettingsGroups.find(group => group.key === settingsGroup) ?? visibleSettingsGroups[0];
+  const effectiveSettingsSection = effectiveSettingsGroup?.sections.find(section => section.key === settingsSection)?.key
+    ?? effectiveSettingsGroup?.sections[0]?.key ?? "profile";
+  useEffect(() => {
+    settingsContentRef.current?.scrollTo({ top: 0, left: 0 });
+  }, [effectiveSettingsSection]);
+  const changeSettingsGroup = (key: string) => {
+    setSettingsGroup(key);
+    const next = visibleSettingsGroups.find(group => group.key === key);
+    if (next) setSettingsSection(next.sections[0].key);
   };
   
   const [subroleDialogOpen, setSubroleDialogOpen] = useState(false);
@@ -1555,16 +1577,53 @@ export default function Settings() {
     return "U";
   };
 
-  return (
-    <div className="p-6 max-w-3xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold" data-testid="text-settings-title">Settings</h1>
-        <p className="text-muted-foreground mt-1">Manage your account and preferences</p>
-      </div>
+  useEffect(() => {
+    const workspace = settingsWorkspaceRef.current;
+    if (!workspace) return;
+    const previousHeight = workspace.style.height;
+    const viewport = window.visualViewport;
+    const fitViewport = () => {
+      const currentViewport = window.visualViewport;
+      const height = currentViewport?.height ?? window.innerHeight;
+      const offsetTop = currentViewport?.offsetTop ?? 0;
+      const top = workspace.getBoundingClientRect().top;
+      workspace.style.height = `${Math.max(0, height - Math.max(0, top - offsetTop))}px`;
+    };
+    const observer = new ResizeObserver(fitViewport);
+    if (workspace.parentElement) observer.observe(workspace.parentElement);
+    window.addEventListener("resize", fitViewport);
+    viewport?.addEventListener("resize", fitViewport);
+    viewport?.addEventListener("scroll", fitViewport);
+    fitViewport();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", fitViewport);
+      viewport?.removeEventListener("resize", fitViewport);
+      viewport?.removeEventListener("scroll", fitViewport);
+      workspace.style.height = previousHeight;
+    };
+  }, []);
 
-      <div className="space-y-6">
+  return (
+    <main ref={settingsWorkspaceRef} data-testid="settings-workspace" className="mx-auto flex min-h-0 w-full min-w-0 max-w-6xl flex-col px-3 pb-3 sm:px-5">
+      <header data-testid="settings-sticky-header" className={`sticky top-0 z-20 shrink-0 border-b bg-background/95 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/85 ${settingsMobile ? "flex items-center gap-3" : "space-y-2"}`}>
+        <div className="flex min-h-8 items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-lg font-semibold tracking-tight sm:text-xl" data-testid="text-settings-title">Settings</h1>
+            {!settingsMobile && <p className="text-xs text-muted-foreground">Account, crew, equipment and system configuration</p>}
+          </div>
+        </div>
+        <SettingsNavigation groups={visibleSettingsGroups} activeGroup={effectiveSettingsGroup?.key ?? "account"}
+          activeSection={effectiveSettingsSection} onGroupChange={changeSettingsGroup} onSectionChange={setSettingsSection} />
+      </header>
+
+      <div ref={settingsContentRef} id="settings-panel" role={settingsMobile ? "region" : "tabpanel"} aria-label={settingsMobile ? "Settings section" : undefined}
+        aria-labelledby={settingsMobile ? undefined : `settings-group-${effectiveSettingsGroup?.key ?? "account"}`}
+        data-testid="settings-content" className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain py-3">
+        <div className="space-y-4">
         {hasPermission("maintenance.logManagement") && (
-          <Card data-testid="logs-card">
+          <Card data-testid="logs-card" data-settings-group="system" data-settings-section="log-maintenance" hidden={effectiveSettingsSection !== "log-maintenance"}>
+            <span data-testid="settings-section-log-maintenance" className="sr-only" />
             <CardHeader>
               <div className="flex items-center gap-2">
                 <Database className="h-5 w-5 text-muted-foreground" />
@@ -1584,7 +1643,7 @@ export default function Settings() {
             </CardContent>
           </Card>
         )}
-        <Card>
+        <Card data-settings-group="account" data-settings-section="profile" data-testid="settings-section-profile" hidden={effectiveSettingsSection !== "profile"}>
           <CardHeader>
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
@@ -1622,7 +1681,7 @@ export default function Settings() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card data-settings-group="account" data-settings-section="appearance" data-testid="settings-section-appearance" hidden={effectiveSettingsSection !== "appearance"}>
           <CardHeader>
             <div className="flex items-center gap-2">
               <Sun className="h-5 w-5 text-muted-foreground" />
@@ -1655,7 +1714,7 @@ export default function Settings() {
         </Card>
 
         {hasPermission("settings.contactSupport") && (
-          <Card>
+          <Card data-settings-group="api" data-settings-section="contact-support" data-testid="settings-section-contact-support" hidden={effectiveSettingsSection !== "contact-support"}>
             <CardHeader>
               <div className="flex items-center gap-2">
                 <Mail className="h-5 w-5 text-muted-foreground" />
@@ -1786,7 +1845,7 @@ export default function Settings() {
         )}
 
         {hasPermission("settings.projectFiles") && (
-            <Card>
+            <Card data-settings-group="files" data-settings-section="project-files" data-testid="settings-section-project-files" hidden={effectiveSettingsSection !== "project-files"}>
               <CardHeader>
                 <div className="flex items-center gap-2">
                   <FolderOpen className="h-5 w-5 text-muted-foreground" />
@@ -1816,7 +1875,7 @@ export default function Settings() {
                     </Button>
                   </div>
                   <p className="text-sm text-muted-foreground mt-2">
-                    Files will be stored in: <code className="bg-muted px-1 rounded">{projectFilesPath || "Project Files"}/[project_name]_[id]/[work_order_id]/</code>
+                    Files will be stored in: <code className="break-all rounded bg-muted px-1">{projectFilesPath || "Project Files"}/[project_name]_[id]/[work_order_id]/</code>
                   </p>
                 </div>
               </CardContent>
@@ -1824,7 +1883,7 @@ export default function Settings() {
         )}
 
         {hasPermission("settings.fileUpload") && (
-            <Card>
+            <Card data-settings-group="files" data-settings-section="upload-settings" data-testid="settings-section-upload-settings" hidden={effectiveSettingsSection !== "upload-settings"}>
               <CardHeader>
                 <div className="flex items-center gap-2">
                   <FileUp className="h-5 w-5 text-muted-foreground" />
@@ -1889,7 +1948,7 @@ export default function Settings() {
         )}
 
         {hasPermission("settings.timezone") && (
-            <Card>
+            <Card data-settings-group="system" data-settings-section="timezone" data-testid="settings-section-timezone" hidden={effectiveSettingsSection !== "timezone"}>
               <CardHeader>
                 <div className="flex items-center gap-2">
                   <Clock className="h-5 w-5 text-muted-foreground" />
@@ -1921,7 +1980,7 @@ export default function Settings() {
                       onValueChange={setSelectedTimezone}
                       disabled={!timezoneEnabled}
                     >
-                      <SelectTrigger className="w-72" data-testid="select-timezone">
+                    <SelectTrigger className="w-full max-w-72 sm:w-72" data-testid="select-timezone">
                         <SelectValue placeholder="Select timezone" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1951,7 +2010,7 @@ export default function Settings() {
         )}
 
         {hasPermission("settings.customerApiLogs") && (
-            <Card>
+            <Card data-settings-group="api" data-settings-section="customer-api-logs" data-testid="settings-section-customer-api-logs" hidden={effectiveSettingsSection !== "customer-api-logs"}>
               <CardHeader>
                 <div className="flex items-center justify-between gap-4 flex-wrap">
                   <div className="flex items-center gap-2">
@@ -2109,7 +2168,7 @@ export default function Settings() {
         )}
 
         {hasPermission("settings.mobileConfig") && (
-          <>
+          <div data-settings-group="updates" data-settings-section="mobile-updates" data-testid="settings-section-mobile-updates" hidden={effectiveSettingsSection !== "mobile-updates"}>
             <Card>
               <CardHeader>
                 <div className="flex items-center gap-2">
@@ -2259,11 +2318,11 @@ export default function Settings() {
               </CardContent>
             </Card>
             <MobileReleaseManager />
-          </>
+          </div>
         )}
 
         {hasPermission("settings.webUpdate") && (
-            <Card>
+            <Card data-settings-group="updates" data-settings-section="web-updates" data-testid="settings-section-web-updates" hidden={effectiveSettingsSection !== "web-updates"}>
               <CardHeader>
                 <div className="flex items-center gap-2">
                   <ArrowUpCircle className="h-5 w-5 text-muted-foreground" />
@@ -2401,7 +2460,7 @@ export default function Settings() {
           preview={updatePreviewData} copy={copyToClipboard} />
 
         {hasPermission("settings.security") && (
-            <Card>
+            <Card data-settings-group="security" data-settings-section="security-settings" data-testid="settings-section-security-settings" hidden={effectiveSettingsSection !== "security-settings"}>
               <CardHeader>
                 <div className="flex items-center gap-2">
                   <Shield className="h-5 w-5 text-muted-foreground" />
@@ -2502,7 +2561,7 @@ export default function Settings() {
         )}
 
         {hasPermission("settings.importHistory") && (
-            <Card>
+            <Card data-settings-group="files" data-settings-section="file-import-history" data-testid="settings-section-file-import-history" hidden={effectiveSettingsSection !== "file-import-history"}>
               <CardHeader>
                 <div className="flex items-center justify-between gap-4 flex-wrap">
                   <div className="flex items-center gap-2">
@@ -2583,7 +2642,7 @@ export default function Settings() {
         )}
 
         {hasPermission("settings.dbImportHistory") && (
-            <Card>
+            <Card data-settings-group="files" data-settings-section="external-import-history" data-testid="settings-section-external-import-history" hidden={effectiveSettingsSection !== "external-import-history"}>
               <CardHeader>
                 <div className="flex items-center justify-between gap-4 flex-wrap">
                   <div className="flex items-center gap-2">
@@ -2654,7 +2713,7 @@ export default function Settings() {
         )}
 
         {hasPermission("settings.statuses") && (
-            <Card>
+            <Card data-settings-group="work-orders" data-settings-section="statuses" data-testid="settings-section-statuses" hidden={effectiveSettingsSection !== "statuses"}>
               <CardHeader>
                 <div className="flex items-center justify-between gap-4 flex-wrap">
                   <div className="flex items-center gap-2">
@@ -2739,7 +2798,7 @@ export default function Settings() {
         )}
 
         {hasPermission("settings.troubleCodes") && (
-            <Card>
+            <Card data-settings-group="work-orders" data-settings-section="trouble-codes" data-testid="settings-section-trouble-codes" hidden={effectiveSettingsSection !== "trouble-codes"}>
               <CardHeader>
                 <div className="flex items-center justify-between gap-4 flex-wrap">
                   <div className="flex items-center gap-2">
@@ -2809,7 +2868,7 @@ export default function Settings() {
         )}
 
         {hasPermission("settings.userGroups") && (
-            <Card>
+            <Card data-settings-group="access" data-settings-section="user-groups" data-testid="settings-section-user-groups" hidden={effectiveSettingsSection !== "user-groups"}>
               <CardHeader>
                 <div className="flex items-center justify-between gap-4 flex-wrap">
                   <div className="flex items-center gap-2">
@@ -2903,7 +2962,7 @@ export default function Settings() {
         )}
 
         {(isAdmin || hasPermission("settings.accessLevels")) && (
-            <Card>
+            <Card data-settings-group="access" data-settings-section="access-levels" data-testid="settings-section-access-levels" hidden={effectiveSettingsSection !== "access-levels"}>
               <CardHeader>
                 <div className="flex items-center justify-between gap-4 flex-wrap">
                   <div className="flex items-center gap-2">
@@ -2991,7 +3050,7 @@ export default function Settings() {
         )}
 
         {hasPermission("settings.serviceTypes") && (
-            <Card>
+            <Card data-settings-group="work-orders" data-settings-section="service-types" data-testid="settings-section-service-types" hidden={effectiveSettingsSection !== "service-types"}>
               <CardHeader>
                 <div className="flex items-center justify-between gap-4 flex-wrap">
                   <div className="flex items-center gap-2">
@@ -3074,7 +3133,7 @@ export default function Settings() {
         )}
 
         {hasPermission("settings.systemTypes") && (
-            <Card>
+            <Card data-settings-group="equipment" data-settings-section="system-types" data-testid="settings-section-system-types" hidden={effectiveSettingsSection !== "system-types"}>
               <CardHeader>
                 <div className="flex items-center justify-between gap-4 flex-wrap">
                   <div className="flex items-center gap-2">
@@ -3183,7 +3242,7 @@ export default function Settings() {
         )}
 
         {hasPermission("settings.moduleTypes") && (
-            <Card>
+            <Card data-settings-group="equipment" data-settings-section="module-types" data-testid="settings-section-module-types" hidden={effectiveSettingsSection !== "module-types"}>
               <CardHeader>
                 <div className="flex items-center justify-between gap-4 flex-wrap">
                   <div className="flex items-center gap-2">
@@ -3291,7 +3350,7 @@ export default function Settings() {
             </Card>
         )}
 
-        <Card>
+        <Card data-settings-group="account" data-settings-section="session" data-testid="settings-section-session" hidden={effectiveSettingsSection !== "session"}>
           <CardHeader>
             <div className="flex items-center gap-2">
               <Shield className="h-5 w-5 text-muted-foreground" />
@@ -3311,6 +3370,7 @@ export default function Settings() {
             </div>
           </CardContent>
         </Card>
+      </div>
       </div>
 
       <Dialog open={subroleDialogOpen} onOpenChange={setSubroleDialogOpen}>
@@ -4511,6 +4571,6 @@ export default function Settings() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </main>
   );
 }

@@ -24,6 +24,8 @@ async function main() {
     const grantedBefore = await (await context.request.get(`/api/subroles/${fixture.viewerSubroleId}/permissions`)).json();
     assert.ok(!grantedBefore.includes("project.apiImport"), "Fixture must begin without API Import access");
     await page.goto("/settings");
+    await page.getByTestId("settings-tab-access").click();
+    await page.getByTestId("settings-section-nav-access-levels").click();
     await page.locator(`[data-testid="button-edit-access-level-${fixture.viewerSubroleId}"]`).click();
     const roleDialog = page.getByRole("dialog");
     const apiPermission = roleDialog.locator('[data-testid="checkbox-perm-project.apiImport"]');

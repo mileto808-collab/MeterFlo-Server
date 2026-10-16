@@ -28,3 +28,12 @@ parent-dismissal warnings despite the same user flow working after settling.
 
 **How to apply:** Let locator actionability checks wait for the target overlay;
 do not add arbitrary sleeps or weaken the warning assertion.
+
+Sequential Select-menu acceptance checks should wait for the previous listbox
+layer to detach before opening the next selection.
+
+**Why:** A closing animated layer can still intercept the next click even after
+the selected section is visible, producing intermittent false navigation failures.
+
+**How to apply:** Assert the previous listbox is detached rather than adding a
+sleep or treating the closing animation as a failed settings save.

@@ -154,6 +154,7 @@ async function checkReleaseBrowser(fixture: Awaited<ReturnType<typeof releaseFix
     assert.deepEqual(await fs.readFile(downloaded),bytes,"browser attachment bytes");
     await fs.rm(downloaded);
     await page.goto(fixture.base+"/settings");
+    await page.getByTestId("settings-tab-updates").click();
     const manager = page.getByTestId("card-android-apk-releases");
     await expect(manager).toBeVisible();
     await expect(manager).toContainText("Local file storage");
@@ -201,6 +202,8 @@ async function checkReleaseBrowser(fixture: Awaited<ReturnType<typeof releaseFix
         await fixture.request(`/api/subroles/${delegatedRole}/permissions`,fixture.admin.id,"PUT",
           {permissions:["nav.dashboard","nav.settings","settings.mobileConfig"]});
         await rolePage.reload();
+        await rolePage.getByTestId("settings-mobile-menu").click();
+        await rolePage.getByRole("option",{name:"Mobile Updates",exact:true}).click();
         const mobileManager = rolePage.getByTestId("card-android-apk-releases");
         await expect(mobileManager).toBeVisible();
         await mobileManager.scrollIntoViewIfNeeded();

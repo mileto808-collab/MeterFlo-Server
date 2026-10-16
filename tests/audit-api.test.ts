@@ -174,6 +174,8 @@ test("real role grants, scoped audit API, verified identity, retention access an
         const page=await context.newPage();const errors:string[]=[];
         page.on("pageerror",e=>errors.push(e.message));
         await page.goto(origin+"/settings");
+        await page.getByTestId("settings-tab-access").click();
+        await page.getByTestId("settings-section-nav-access-levels").click();
         await page.getByTestId(`button-edit-access-level-${subroleId}`).click();
         for(const key of ["audit.view","audit.viewAllProjects","audit.manageRetention"]) await expect(page.getByTestId(`checkbox-perm-${key}`)).toBeVisible();
         await page.getByTestId("checkbox-perm-audit.view").uncheck();

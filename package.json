@@ -65,6 +65,7 @@
     "test:log-maintenance": "tsx --test tests/log-maintenance.test.ts",
     "test:mobile-releases": "tsx --test tests/mobile-releases.test.ts",
     "test:mobile-releases:browser": "tsx tests/mobile-releases.test.ts --browser",
+    "test:settings:browser": "node tests/settings-workspace-ui.cjs",
     "test:reading-precision": "tsx --test tests/reading-precision.test.ts",
     "test:exact-readings": "tsx --test tests/exact-readings.test.ts",
     "test:equipment-scope": "tsx --test tests/project-equipment-scope.test.ts tests/work-order-pdf.test.ts",
