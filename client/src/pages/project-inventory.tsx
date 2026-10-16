@@ -28,6 +28,7 @@ import { InventoryShipmentTransitDialog } from "@/components/inventory-shipment-
 import { InventoryStockSerialDialog } from "@/components/inventory-stock-serial-dialog";
 import { InventoryStockWorkspace } from "@/components/inventory-stock-workspace";
 import { InventoryCatalogWorkspace } from "@/components/inventory-catalog-workspace";
+import { copyInventoryItem } from "@/lib/inventory-item-copy";
 import { InventoryKitDialog } from "@/components/inventory-kit-dialog";
 import { InventoryRecordsWorkspace } from "@/components/inventory-records-workspace";
 import { InventoryCategoryCreateAction } from "@/components/inventory-category-create-action";
@@ -95,6 +96,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [warehouseForm, setWarehouseForm] = useState<Warehouse>(blankWarehouse());
   const [vendorForm, setVendorForm] = useState<Vendor>(blankVendor());
   const [itemForm, setItemForm] = useState<InventoryItem>(blankItem());
+  const [copiedItemName, setCopiedItemName] = useState<string | null>(null);
   const [imageBusy, setImageBusy] = useState(false);
   const [resourceError, setResourceError] = useState<string | null>(null);
   const resourceErrorRef = useRef<HTMLDivElement>(null);
@@ -389,16 +391,17 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const hasAny = !!(state?.warehouses.length || state?.items.length || state?.vendors.length);
   if (!can("inventory.view")) return <main className="mx-auto max-w-3xl p-6"><Card><CardHeader><CardTitle>Inventory access required</CardTitle><CardDescription>Your account does not have permission to view this project’s stock.</CardDescription></CardHeader></Card></main>;
 
-  const openResource = (kind: ResourceKind, existing?: Warehouse | Vendor | InventoryItem) => {
-    if (resourceSaving.current || imageBusy) return;
-    resourceId.current = existing?.id || freshId();
+  const openResource = (kind: ResourceKind, existing?: Warehouse | Vendor | InventoryItem, copying = false) => {
+    if (resourceSaving.current || imageBusy || !can("inventory.maintain")) return;
+    resourceId.current = copying ? freshId() : existing?.id || freshId();
     resourceAttempt.current = null;
     setResourceError(null);
+    setCopiedItemName(copying && kind === "item" ? existing?.name ?? null : null);
     setResource(kind);
     if (kind === "warehouse") setWarehouseForm(existing as Warehouse ?? blankWarehouse());
     if (kind === "vendor") setVendorForm(existing as Vendor ?? blankVendor());
     if (kind === "item") {
-      const item = existing as InventoryItem | undefined;
+      const item = existing ? copying ? copyInventoryItem(existing as InventoryItem) : existing as InventoryItem : undefined;
       setItemForm(item ? { ...item, images: item.images.filter(image => !!sameOriginImage(image)) } : blankItem());
     }
   };
@@ -905,7 +908,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           canMaintain={can("inventory.maintain")} canAssemble={can("inventory.assemble")} canInspectKits={can("inventory.resolveExceptions")}
           onAssemble={() => setKitDialogMode("assemble")} onDisassemble={() => setKitDialogMode("disassemble")} onInspectKits={() => setKitDialogMode("inspect")}
           onRefresh={() => void refetch()} onAdd={() => openResource("item")}
-          onEditItem={item => openResource("item", item)} onEditVendor={vendor => openResource("vendor", vendor)} />
+          onEditItem={item => openResource("item", item)} onCopyItem={item => openResource("item", item, true)} onEditVendor={vendor => openResource("vendor", vendor)} />
       </TabsContent>
       <TabsContent value="vendors" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         <InventoryCatalogWorkspace kind="vendors" items={items} vendors={vendors} projectName={data.projectName} timezone={timezone}
@@ -1250,7 +1253,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       />
     )}
 
-    <Dialog open={!!resource} onOpenChange={open => { if (!open && !resourceSaving.current && !imageBusy) setResource(null); }}><DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{resource === "warehouse" ? "Location details" : resource === "vendor" ? "Vendor details" : "Item details"}</DialogTitle><DialogDescription>Changes apply only to this project. Keep scanned identities and stock rules intact.</DialogDescription></DialogHeader>
+    <Dialog open={!!resource} onOpenChange={open => { if (!open && !resourceSaving.current && !imageBusy) setResource(null); }}><DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{resource === "warehouse" ? "Location details" : resource === "vendor" ? "Vendor details" : copiedItemName !== null ? "Copy item" : "Item details"}</DialogTitle><DialogDescription>{copiedItemName !== null ? `Copy of ${copiedItemName}. Enter a unique Product ID (SKU). Barcode is cleared; stock, serials and history are not copied.` : "Changes apply only to this project. Keep scanned identities and stock rules intact."}</DialogDescription></DialogHeader>
       {resourceError && <Alert ref={resourceErrorRef} tabIndex={-1} id="inventory-resource-error" role="alert" variant="destructive"><AlertTitle>Details not saved</AlertTitle><AlertDescription>{resourceError} Your entered values have been kept. Correct the details and retry, or cancel to discard them.</AlertDescription></Alert>}
       <fieldset disabled={resourceBusy} aria-describedby={resourceError ? "inventory-resource-error" : undefined} className="contents">
       {resource === "warehouse" && <div className="grid gap-3 sm:grid-cols-2">

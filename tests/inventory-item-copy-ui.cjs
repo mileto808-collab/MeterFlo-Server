@@ -1,0 +1,93 @@
+// Run against the disposable inventory-ui-fixture, never an existing project.
+const assert = require("node:assert/strict");
+const fs = require("node:fs/promises");
+const { chromium, expect } = require("@playwright/test");
+async function main() {
+  const fixture = JSON.parse(await fs.readFile("/tmp/meterflo-inventory-ui-fixture.json","utf8"));
+  const browser = await chromium.launch({executablePath:"/repl/tools/bin/chromium",args:["--no-sandbox"]});
+  try {
+    const context = await browser.newContext({baseURL:`https://${process.env.REPLIT_DEV_DOMAIN}`,viewport:{width:1440,height:1000},hasTouch:true,isMobile:true});
+    assert.equal((await context.request.post("/api/auth/local/login",{data:fixture})).status(),200);
+    const endpoint = `/api/projects/${fixture.projectId}/inventory`;
+    const state = async () => (await (await context.request.get(endpoint)).json()).state;
+    const post = async (action,data) => {
+      const result = await context.request.post(`${endpoint}/commands`,{data:{action,data,operationId:crypto.randomUUID()}});
+      assert.equal(result.status(),200,await result.text());
+    };
+    await post("warehouse",{id:"w",code:"COPY",name:"Copy fixture warehouse",type:"physical",address:"Test"});
+    await post("vendor",{id:"v",name:"Copy fixture vendor"});
+    await post("category",{name:"Meters"});
+    const categoryId = (await state()).categoryCatalog[0].id;
+    await post("item",{id:"part",sku:"PART",name:"Component",tracking:"regular"});
+    await post("item",{id:"source",sku:"SOURCE",name:"Source meter",description:"Meter details",tracking:"serialized",equipment:"system",
+      vendorId:"v",categoryId,barcode:"SOURCE-SCAN",manufacturer:"Maker",model:"M1",unit:"each",cost:45,reorderPoint:6});
+    await post("item",{id:"kit",sku:"KIT",name:"Source kit",tracking:"regular",components:[{itemId:"part",quantity:2}]});
+    await post("order",{id:"po",type:"purchase",destinationId:"w",vendorId:"v",lines:[{itemId:"source",quantity:2}]});
+    await post("release",{orderId:"po"});
+    await post("receive",{orderId:"po",lines:[{itemId:"source",quantity:2,serials:["0001","0002"]}]});
+    const before = await state();
+    const page = await context.newPage(),errors=[];
+    page.on("pageerror",error=>errors.push(error.message));
+    await page.goto(`/projects/${fixture.projectId}/inventory`);
+    await page.getByRole("tab",{name:"Items",exact:true}).click();
+    const search = page.getByRole("searchbox",{name:"Search items",exact:true});
+    await search.fill("SOURCE");
+    await page.getByRole("button",{name:"Copy item Source meter",exact:true}).click();
+    const dialog = page.getByRole("dialog",{name:"Copy item",exact:true});
+    await expect(dialog.getByLabel(/^Product ID \(SKU\)/)).toHaveValue("");
+    await expect(dialog.getByLabel("Barcode",{exact:true})).toHaveValue("");
+    await expect(dialog.getByLabel(/^Product Label \(Name\)/)).toHaveValue("Source meter");
+    await expect(dialog.getByLabel("Category",{exact:true})).toHaveValue(categoryId);
+    await expect(dialog.locator("#item-tracking")).toContainText("Serialized");
+    await expect(dialog.locator("#item-vendor")).toContainText("Copy fixture vendor");
+    await expect(dialog.getByLabel("Cost",{exact:true})).toHaveValue("45");
+    await dialog.getByRole("button",{name:"Save changes",exact:true}).click();
+    await expect(dialog.getByRole("alert")).toContainText("Product ID (SKU)");
+    await dialog.getByLabel(/^Product ID \(SKU\)/).fill("source");
+    await dialog.getByRole("button",{name:"Save changes",exact:true}).click();
+    await expect(dialog.getByRole("alert")).toContainText("SKU already exists");
+    await dialog.getByLabel(/^Product ID \(SKU\)/).fill("COPY-METER");
+    await dialog.getByLabel(/^Product Label \(Name\)/).fill("Copied meter");
+    await dialog.getByRole("button",{name:"Save changes",exact:true}).click();
+    await expect(dialog).toBeHidden();
+    const after = await state(), copied = after.items.find(item=>item.sku==="COPY-METER");
+    assert.ok(copied && copied.id!=="source");
+    assert.deepEqual(copied,{...before.items.find(item=>item.id==="source"),id:copied.id,sku:"COPY-METER",name:"Copied meter",barcode:""});
+    assert.deepEqual(after.items.find(item=>item.id==="source"),before.items.find(item=>item.id==="source"));
+    for(const field of ["stock","orders","receipts","allocations","kitAssemblies","kitHolds"])
+      assert.deepEqual(after[field],before[field],`${field} must not be copied or altered`);
+    await search.fill("KIT");
+    await page.getByRole("button",{name:"Copy item Source kit",exact:true}).click();
+    await dialog.getByLabel(/^Product ID \(SKU\)/).fill("COPY-KIT");
+    await dialog.getByRole("button",{name:"Save changes",exact:true}).click();
+    await expect(dialog).toBeHidden();
+    assert.deepEqual((await state()).items.find(item=>item.sku==="COPY-KIT").components,[{itemId:"part",quantity:2}]);
+    await search.fill("SOURCE");
+    await page.getByRole("button",{name:"Copy item Source meter",exact:true}).click();
+    const count = (await state()).items.length;
+    await dialog.getByLabel(/^Product Label \(Name\)/).fill("Discarded edits");
+    await dialog.getByRole("button",{name:"Cancel",exact:true}).click();
+    assert.equal((await state()).items.length,count);
+    await fs.mkdir("generated-artifacts/inventory-item-copy",{recursive:true});
+    await page.screenshot({path:"generated-artifacts/inventory-item-copy/desktop.jpg"});
+    await search.fill("Source meter");
+    await page.setViewportSize({width:390,height:844});
+    await expect(page.getByRole("button",{name:"Copy item Source meter",exact:true})).toBeVisible();
+    await page.getByRole("button",{name:"Copy item Source meter",exact:true}).click();
+    await expect(dialog).toBeVisible();
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);
+    await page.screenshot({path:"generated-artifacts/inventory-item-copy/phone.jpg"});
+    await dialog.getByRole("button",{name:"Cancel",exact:true}).click();
+    assert.equal((await context.request.put(`/api/subroles/${fixture.viewerRoleId}/permissions`,{data:{permissions:["projects.view","workOrders.view","inventory.view"]}})).status(),200);
+    const viewer = await browser.newContext({baseURL:`https://${process.env.REPLIT_DEV_DOMAIN}`});
+    assert.equal((await viewer.request.post("/api/auth/local/login",{data:fixture.viewer})).status(),200);
+    const viewerPage = await viewer.newPage();
+    await viewerPage.goto(`/projects/${fixture.projectId}/inventory`);
+    await viewerPage.getByRole("tab",{name:"Items",exact:true}).click();
+    await expect(viewerPage.getByRole("button",{name:/^Copy item /})).toHaveCount(0);
+    assert.equal((await viewer.request.post(`${endpoint}/commands`,{data:{operationId:crypto.randomUUID(),action:"item",data:{...copied,id:"unauthorized",sku:"UNAUTHORIZED"}}})).status(),403);
+    assert.deepEqual(errors,[]);
+    console.log("Item copy passed: prefill, unique SKU validation/recovery, separate identity, unchanged source/stock/serials/history, kit recipe, cancel, phone layout and normal-role permission enforcement.");
+  } finally {await browser.close();}
+}
+main().catch(error=>{console.error(error);process.exitCode=1;});

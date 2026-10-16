@@ -1,6 +1,24 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { inventoryResourceFailure, validateInventoryResource } from "../client/src/lib/inventory-resource-save";
+import { copyInventoryItem } from "../client/src/lib/inventory-item-copy";
+import { itemSchema } from "../shared/inventory";
+
+test("copying an item preserves its definition but not its product identity or runtime extras", () => {
+  const source = itemSchema.parse({id:"source",sku:"OLD",name:"Meter kit",tracking:"serialized",
+    categoryId:"10000000-0000-4000-8000-000000000001",category:"Meters",vendorId:"vendor",
+    barcode:"SCAN-OLD",description:"Details",manufacturer:"Maker",model:"Model",unit:"box",
+    equipment:"system",cost:25,reorderPoint:4,active:false,images:["/item.png"],
+    components:[{itemId:"component",quantity:2}]});
+  const before = structuredClone(source);
+  const copied = copyInventoryItem({...source,stock:[{quantity:50}],serials:["SERIAL"]} as any);
+  assert.deepEqual(copied,{...source,id:"",sku:"",barcode:""});
+  copied.components[0].quantity=3;
+  copied.images.push("/other.png");
+  assert.deepEqual(source,before,"editing the new draft cannot mutate its source");
+  assert.equal("stock" in copied,false);
+  assert.equal("serials" in copied,false);
+});
 
 test("resource forms use the existing schemas and keep recognizable field names", () => {
   assert.throws(() => validateInventoryResource("item", { id: "test", sku: "", name: "", tracking: "regular" }), /Product ID \(SKU\).*Name/);
