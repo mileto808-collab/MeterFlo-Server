@@ -16,6 +16,7 @@
 - [Portable npm lockfiles](portable-npm-lockfiles.md) — internal tarball URLs can break standalone installs despite a public registry setting; inspect locked addresses before changing Node/npm.
 - [Customer instance updates](customer-instance-updates.md) — customer-owned Replit or Windows/Linux instances need core updates that preserve custom work.
 - [Inventory scope](inventory-scope.md) — inventory is optional per project; reading-only work is not a changeout, and disabled projects retain current behavior.
+- [Relational inventory direction](inventory-relational-direction.md) — user chose relational core inventory for long-term needs; JSONB remains for supporting attributes and historical snapshots.
 - [Inventory backup types](inventory-backup-types.md) — test full-system and project restores separately with posted serialized stock; JSON arrays and generated identities need type-aware handling.
 - [Audited test fixtures](audited-test-fixtures.md) — CLI fixture creation must match the app's audit initialization; persistent triggers alone do not supply project scope metadata.
 - [Inventory concurrency boundary](inventory-concurrency-boundary.md) — reducing mirror writes must not weaken the aggregate lock; warehouse-only locks can lose cross-warehouse updates.
