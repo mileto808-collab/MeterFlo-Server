@@ -4,7 +4,7 @@ import { inventoryCountReference } from "@shared/inventory-count-reference";
 import { orderLabel, orderReference, uuidOrderId } from "@shared/inventory-order-labels";
 import { holdStatus, remainingHold } from "@shared/inventory-shipment-model";
 
-export type OperationsKind = "locations" | "exceptions" | "returns" | "activity" | "categories";
+export type OperationsKind = "locations" | "exceptions" | "returns" | "activity" | "categories" | "counts";
 export type OperationsRow = { id: string; search: string; cells: Record<string, string | number>; facets: Record<string, string> };
 export type OperationsDataset = {
   rows: OperationsRow[];
@@ -62,6 +62,33 @@ export function buildOperationsDataset(
     filterKeys = [["usage", "Usage"]];
     sorts = [{ key: "name:asc", label: "Name · A–Z" }, { key: "name:desc", label: "Name · Z–A" },
       { key: "itemCount:desc", label: "Most items" }, { key: "itemCount:asc", label: "Fewest items" }];
+  } else if (kind === "counts") {
+    rows = state.counts.map((count, index) => {
+      const snapshotQuantity = count.snapshot.reduce((total, line) => total + line.quantity, 0);
+      const countedQuantity = (count.lines ?? []).reduce((total, line) => total + line.quantity, 0);
+      const location = locationName(count.warehouseId);
+      return textSearch({
+        id: count.id,
+        cells: {
+          reference: inventoryCountReference(state.counts, count.id),
+          location,
+          status: count.status,
+          snapshotItems: count.snapshot.length,
+          snapshotQuantity,
+          countedItems: count.lines?.length ?? 0,
+          countedQuantity,
+          reason: count.reason ?? count.draft?.reason ?? "",
+          sequence: index + 1,
+        },
+        facets: { warehouse: count.warehouseId, status: count.status },
+      }, [count.id]);
+    });
+    cols = columns([["reference", "Count"], ["location", "Location"], ["status", "Status"],
+      ["snapshotItems", "Snapshot items"], ["snapshotQuantity", "Snapshot units"],
+      ["countedItems", "Counted items"], ["countedQuantity", "Counted units"], ["reason", "Reason"]]);
+    filterKeys = [["status", "Status"], ["warehouse", "Location"]];
+    sorts = [{ key: "sequence:desc", label: "Newest first" }, { key: "sequence:asc", label: "Oldest first" },
+      { key: "location:asc", label: "Location · A–Z" }, { key: "status:asc", label: "Status · A–Z" }];
   } else if (kind === "locations") {
     rows = state.warehouses.map(w => textSearch({
       id: w.id, cells: {

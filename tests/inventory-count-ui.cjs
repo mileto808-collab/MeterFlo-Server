@@ -4,7 +4,7 @@ const { chromium } = require("playwright");
 
 async function main() {
   const fixture = JSON.parse(await fs.readFile("/tmp/meterflo-inventory-ui-fixture.json", "utf8"));
-  const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH, args: ["--no-sandbox"] });
+  const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_PATH || "/repl/tools/bin/chromium", args: ["--no-sandbox"] });
   const baseURL = `https://${process.env.REPLIT_DEV_DOMAIN}`;
   let context, navigationProjectId;
   try {
@@ -30,6 +30,14 @@ async function main() {
     ] });
     const page = await context.newPage(), errors = [];
     page.on("pageerror", e => errors.push(e.message));
+    const openCounts = async (target = page) => {
+      await target.getByTestId("inventory-workspace").waitFor();
+      const menu = target.getByTestId("inventory-mobile-menu");
+      if (await menu.isVisible()) {
+        await menu.click();
+        await target.getByTestId("inventory-mobile-menu-item-counts").click();
+      } else await target.getByRole("tab", { name: "Cycle counts", exact: true }).click();
+    };
     const unsaved = page.getByRole("dialog", { name: "Unsaved count changes", exact: true });
     const choose = async name => {
       await unsaved.getByRole("button", { name, exact: true }).click();
@@ -41,7 +49,7 @@ async function main() {
       return event.defaultPrevented;
     }), dirty, "beforeunload reflects only unsaved count values");
     await page.goto(`/projects/${fixture.projectId}/inventory`);
-    await page.getByRole("tab", { name: "Cycle counts", exact: true }).click();
+    await openCounts();
     const addProduct = async id => {
       await page.getByLabel("Find discovery product", { exact: true }).fill(id);
       await page.getByRole("combobox", { name: "Discovery product", exact: true }).click();
@@ -49,10 +57,15 @@ async function main() {
       await page.getByRole("button", { name: "Add discovery to count", exact: true }).click();
     };
     const start = async (location, addBaselineDiscoveries = true) => {
-      await page.getByRole("combobox").first().click();
+      const header = page.getByTestId("inventory-counts-subheader");
+      const tools = header.getByRole("button", { name: /Search & Tools/ });
+      if (await tools.isVisible() && await tools.getAttribute("aria-expanded") === "false") await tools.click();
+      await header.getByRole("button", { name: "Start count", exact: true }).click();
+      const startDialog = page.getByRole("dialog", { name: "Start count", exact: true });
+      await startDialog.getByRole("combobox", { name: "Warehouse or vehicle" }).click();
       await page.getByRole("option", { name: `${location.toUpperCase()} · ${location} fixture`, exact: true }).click();
       const response = page.waitForResponse(r => r.url().endsWith(`${endpoint}/commands`) && r.request().method() === "POST" && r.request().postDataJSON().action === "countStart");
-      await page.getByRole("button", { name: "Start count", exact: true }).click();
+      await startDialog.getByRole("button", { name: "Start count", exact: true }).click();
       assert.equal((await response).status(), 200);
       await page.getByLabel("Count adjustment reason").waitFor();
       if (addBaselineDiscoveries) for (const id of ["bulk", "serial", "zero"])
@@ -68,7 +81,13 @@ async function main() {
       return { body, submitted: res.request().postDataJSON().data };
     };
     const continueCount = async number => {
-      const row = page.getByText(`Count #${number}`, { exact: true }).locator("../..");
+      const id = (await state()).counts[number - 1].id;
+      const header = page.getByTestId("inventory-counts-subheader");
+      const search = header.getByRole("searchbox", { name: "Search counts", exact: true });
+      const tools = header.getByRole("button", { name: /Search & Tools/ });
+      if (await tools.isVisible() && await tools.getAttribute("aria-expanded") === "false") await tools.click();
+      await search.fill(`Count #${number}`);
+      const row = page.locator(`[data-count-id="${id}"]`);
       await row.getByRole("button", { name: "Continue count", exact: true }).click();
       await page.getByLabel("Count adjustment reason").waitFor();
     };
@@ -93,7 +112,7 @@ async function main() {
     assert.equal(await page.getByLabel("Count adjustment reason").inputValue(), "");
     await command("item", { id: "late", sku: "LATE", name: "Late discovery", tracking: "regular" });
     await page.reload();
-    await page.getByRole("tab", { name: "Cycle counts", exact: true }).click();
+    await openCounts();
     await continueCount(2);
     await addProduct("zero");
     await addProduct("late");
@@ -118,10 +137,10 @@ async function main() {
     await page.locator("#count-bulk").fill("123");
     await page.getByLabel("Count adjustment reason").fill("Main draft");
     await assertUnload(true);
-    await page.getByRole("button", { name: "Close", exact: true }).click();
+    await page.getByRole("button", { name: "Close", exact: true }).first().click();
     await choose("Stay");
     assert.equal(await page.locator("#count-bulk").inputValue(), "123");
-    await page.getByRole("button", { name: "Close", exact: true }).click();
+    await page.getByRole("button", { name: "Close", exact: true }).first().click();
     const failSave = route => route.request().postDataJSON()?.action === "countSaveDraft"
       ? route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ message: "Temporary fixture failure" }) })
       : route.continue();
@@ -145,12 +164,12 @@ async function main() {
     await continueCount(4);
     assert.equal(await page.locator("#count-bulk").inputValue(), "123");
     await assertUnload(false);
-    await page.getByRole("button", { name: "Close", exact: true }).click();
+    await page.getByRole("button", { name: "Close", exact: true }).first().click();
     await start("empty");
     assert.equal(await page.locator("#count-bulk").inputValue(), "7");
     assert.equal(await page.locator("#countserial-serial").inputValue(), "000010\n000011");
     assert.equal(await page.getByLabel("Count adjustment reason").inputValue(), "");
-    await page.getByRole("button", { name: "Close", exact: true }).click();
+    await page.getByRole("button", { name: "Close", exact: true }).first().click();
     if (await unsaved.isVisible()) await choose("Discard");
     await continueCount(4);
     assert.equal(await page.locator("#count-bulk").inputValue(), "123");
@@ -183,7 +202,7 @@ async function main() {
     await saveDraft(200);
     assert.deepEqual((await state()).stock, stockBeforeDraft);
     await page.reload();
-    await page.getByRole("tab", { name: "Cycle counts", exact: true }).click();
+    await openCounts();
     await continueCount(4);
     assert.equal(await page.locator("#count-bulk").inputValue(), "");
     assert.equal(await page.locator("#countserial-serial").inputValue(), "000001\npartial-scan");
@@ -272,8 +291,8 @@ async function main() {
     } } })).status(), 403);
     const readPage = await viewer.newPage();
     await readPage.goto(`/projects/${fixture.projectId}/inventory`);
-    await readPage.getByRole("tab", { name: "Counts & assembly", exact: true }).click();
-    await readPage.getByRole("button", { name: "Continue count", exact: true }).click();
+    await openCounts(readPage);
+    await readPage.getByRole("button", { name: "Continue count", exact: true }).first().click();
     assert.equal(await readPage.getByRole("button", { name: "Post count", exact: true }).isDisabled(), true);
     assert.equal(await readPage.getByRole("button", { name: "Save count draft", exact: true }).isDisabled(), true);
     // Count permission alone is not warehouse access; grant it through normal role management.
@@ -295,7 +314,7 @@ async function main() {
     // Optional isolated capacity fixture: 3,000 catalog products and 600 on-hand
     // products. Paging/filtering never changes the complete submitted set.
     if ((await state()).warehouses.some(w => w.id === "large")) {
-      await page.getByRole("button", { name: "Close", exact: true }).click();
+      await page.getByRole("button", { name: "Close", exact: true }).first().click();
       await choose("Discard");
       await start("large", false);
       await page.getByText("600 total count entries", { exact: false }).waitFor();
@@ -313,9 +332,8 @@ async function main() {
       const largeSaved = (await state()).counts.at(-1);
       assert.equal(largeSaved.draft.rows.length, 601);
       await page.reload();
-      await page.getByRole("tab", { name: "Counts & assembly", exact: true }).click();
-      const countReference = `Count #${(await state()).counts.length}`;
-      await page.getByText(countReference, { exact: true }).locator("../..").getByRole("button", { name: "Continue count", exact: true }).click();
+      await openCounts();
+      await continueCount((await state()).counts.length);
       await page.getByLabel("Search count entries", { exact: true }).fill("CAP-2999");
       assert.equal(await page.locator("#count-capacity-2999").inputValue(), "4");
       const largeResult = await post();
@@ -328,7 +346,7 @@ async function main() {
       await start("large", false);
     }
 
-    await page.getByRole("button", { name: "Close", exact: true }).click();
+    await page.getByRole("button", { name: "Close", exact: true }).first().click();
     if (await unsaved.isVisible()) await choose("Discard");
     await start("main", false);
     await fs.mkdir("generated-artifacts/inventory-counts", { recursive: true });
@@ -364,38 +382,34 @@ async function main() {
     assert.equal(draftWrites, 0);
     page.off("request", recordDraft);
 
-    // Switching counts, starting a replacement, and cancelling must not silently
-    // abandon the active editor; selecting the same count does not warn.
+    // The modal prevents accidentally starting/switching/cancelling another
+    // record underneath the editor. Close and Escape still require a choice.
     const activeNumber = (await state()).counts.length;
-    await continueCount(activeNumber);
-    assert.equal(await unsaved.isVisible(), false);
-    await page.getByRole("button", { name: "Start count", exact: true }).click();
+    await page.keyboard.press("Escape");
     await choose("Stay");
     assert.equal((await state()).counts.length, activeNumber);
-    const otherNumber = (await state()).counts.findIndex((count, i) => count.status === "open" && i + 1 !== activeNumber) + 1;
-    await continueCount(otherNumber);
-    await choose("Stay");
     assert.equal(await page.getByLabel("Count adjustment reason").inputValue(), "Unsaved project correction");
-    await page.getByText(`Count #${activeNumber}`, { exact: true }).locator("../..").getByRole("button", { name: "Cancel count", exact: true }).click();
+    await page.getByRole("button", { name: "Close", exact: true }).first().click();
     await choose("Stay");
     assert.equal((await state()).counts.at(-1).status, "open");
     await addProduct("cancel-discovery");
     const quantityBeforeCancel = await page.locator("#count-bulk").inputValue();
     const serialsBeforeCancel = await page.locator("#countserial-serial").inputValue();
-    const failCancel = route => route.request().postDataJSON()?.action === "countCancel"
+    const failCloseSave = route => route.request().postDataJSON()?.action === "countSaveDraft"
       ? route.fulfill({ status: 409, contentType: "application/json", body: JSON.stringify({ message: "Fixture cancellation rejected" }) })
       : route.continue();
-    await page.route(`**${endpoint}/commands`, failCancel);
-    await page.getByText(`Count #${activeNumber}`, { exact: true }).locator("../..").getByRole("button", { name: "Cancel count", exact: true }).click();
-    await choose("Discard");
+    await page.route(`**${endpoint}/commands`, failCloseSave);
+    await page.getByRole("button", { name: "Close", exact: true }).first().click();
+    await choose("Save draft");
     await page.getByText(/Fixture cancellation rejected/).first().waitFor();
+    await choose("Stay");
     assert.equal((await state()).counts.at(-1).status, "open");
     assert.equal(await page.getByLabel("Count adjustment reason").inputValue(), "Unsaved project correction");
     assert.equal(await page.locator("#count-bulk").inputValue(), quantityBeforeCancel);
     assert.equal(await page.locator("#countserial-serial").inputValue(), serialsBeforeCancel);
-    assert.equal(await page.locator("#count-cancel-discovery").inputValue(), "0", "discovery survives rejected cancellation");
+    assert.equal(await page.locator("#count-cancel-discovery").inputValue(), "0", "discovery survives rejected close/save");
     await assertUnload(true);
-    await page.unroute(`**${endpoint}/commands`, failCancel);
+    await page.unroute(`**${endpoint}/commands`, failCloseSave);
 
     // Actual refresh warning can be cancelled without losing entries.
     const refreshWarning = page.waitForEvent("dialog");
@@ -420,27 +434,27 @@ async function main() {
     await choose("Save draft");
     await unsaved.waitFor({ state: "hidden" });
     await page.waitForURL(`**/projects/${navigationProjectId}/inventory`);
-    await page.getByRole("tab", { name: "Counts & assembly", exact: true }).click();
+    await openCounts();
     assert.equal(await page.getByLabel("Count adjustment reason").count(), 0);
     assert.equal(await page.getByRole("button", { name: "Post count", exact: true }).count(), 0);
     const newProjectState = (await (await context.request.get(`/api/projects/${navigationProjectId}/inventory`)).json()).state;
     assert.equal(newProjectState.counts.length, 0);
     await page.goBack();
-    await page.getByRole("tab", { name: "Counts & assembly", exact: true }).click();
+    await openCounts();
     await continueCount(activeNumber);
     assert.equal(await page.getByLabel("Count adjustment reason").inputValue(), "Unsaved project correction");
     await assertUnload(false);
-    // Exercise an ordinary app link as well as programmatic project navigation.
-    // The saved transition must leave immediately, without a second warning.
+    // An app navigation event must use the same guard while the modal is open.
+    // Trigger the link event directly because the editor blocks pointer access.
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.getByLabel("Count adjustment reason").fill("Saved before app link");
-    await page.getByRole("link", { name: "Projects", exact: true }).click();
+    await page.getByRole("link", { name: "Projects", exact: true, includeHidden: true }).evaluate(link => link.click());
     await choose("Save draft");
     await page.waitForURL("**/projects");
     assert.equal(await unsaved.isVisible(), false);
     assert.equal((await state()).counts.at(-1).draft.reason, "Saved before app link");
     await page.goBack();
-    await page.getByRole("tab", { name: "Counts & assembly", exact: true }).click();
+    await openCounts();
     await continueCount(activeNumber);
     assert.equal(await page.getByLabel("Count adjustment reason").inputValue(), "Saved before app link");
     await assertUnload(false);
@@ -448,7 +462,7 @@ async function main() {
     await page.evaluate(url => window.history.pushState({}, "", url), `/projects/${navigationProjectId}/inventory`);
     await page.waitForURL(`**/projects/${navigationProjectId}/inventory`);
     await page.goBack();
-    await page.getByRole("tab", { name: "Counts & assembly", exact: true }).click();
+    await openCounts();
     await continueCount(activeNumber);
     await page.getByLabel("Count adjustment reason").fill("Forward local change");
     await page.evaluate(() => window.history.forward());
@@ -459,7 +473,7 @@ async function main() {
     await choose("Discard");
     await page.waitForURL(`**/projects/${navigationProjectId}/inventory`);
     await page.goBack();
-    await page.getByRole("tab", { name: "Counts & assembly", exact: true }).click();
+    await openCounts();
     await continueCount(activeNumber);
     assert.equal(await page.getByLabel("Count adjustment reason").inputValue(), "Saved before app link");
     // Push a same-route entry so Back also exercises a dirty transition.

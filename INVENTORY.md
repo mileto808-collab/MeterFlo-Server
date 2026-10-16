@@ -386,6 +386,10 @@ All conversions are atomic under the existing project aggregate lock, with immut
 
 ## Cycle counts and returns
 
+The **Cycle counts** tab uses the same screen-sized record list, search/filter tools, and filtered CSV, Excel and PDF/Print exports as the other inventory tabs. **Start count** is the first subheader action (inside the compact **Search & Tools** area on phones). It opens a location-selection dialog, then a count editor. **Continue count** opens the saved count in that same editor modal. Closing or escaping an unsaved editor offers Save draft, Discard or Stay; a failed save keeps it open with its entries intact.
+
+Cancelling an open count never adjusts stock. It retains the original snapshot and cancellation reason for audit history, removes its draft, and prevents further posting. There is currently no clear/delete action; use the status filter to hide cancelled records. Posted counts represent stock adjustments and must retain their evidence.
+
 Start a count for a warehouse. Enter every stocked item, including **zero** for an absent item, and scan the actual serialized identities. A reason is required to post. Counts cannot remove reserved units/serials; resolve the reservation first. If stock moves after the count starts, posting rejects the stale snapshot—start another count instead of overwriting newer movements.
 
 **Continue count** resumes an open count. **Cancel count** closes a stale or unfinished count without changing quantities; cancellation is audited. The corresponding API command is `countCancel` with `{id,reason}`.

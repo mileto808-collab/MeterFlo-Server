@@ -20,10 +20,10 @@ state.returns = [{ id: "ret", serial: "0001", equipment: "system", disposition: 
 state.shipmentHolds = [{ id: "h", orderId: "o", receiptId: "r", itemId: "i", warehouseId: "w", status: "held",
   quantity: 2, serials: ["0001"], unidentifiedQuantity: 1, expectedSerials: [], actor, occurredAt: "2026-10-15T00:00:00Z", reason: "<Damage>", dispositions: [] }];
 const people = [{ id: actor, username: "Inspector" }];
-const kinds: OperationsKind[] = ["locations", "exceptions", "returns", "activity"];
+const kinds: OperationsKind[] = ["locations", "exceptions", "returns", "activity", "counts"];
 const context = { project: "<Project>", timezone: "America/Denver" };
 
-test("all four datasets search and filter in supplied authorization scope without mutation", () => {
+test("record datasets search and filter in supplied authorization scope without mutation", () => {
   const before = structuredClone(state);
   for (const kind of kinds) {
     const dataset = buildOperationsDataset(kind, state, people);
@@ -35,6 +35,23 @@ test("all four datasets search and filter in supplied authorization scope withou
     assert.equal(filterOperationsRows(dataset, "", { [firstFilter.key]: "missing" }, dataset.defaultSort).length, 0);
   }
   assert.deepEqual(state, before);
+});
+test("cycle counts keep stable references, sort numerically, filter location/status and search draft reasons", () => {
+  const scoped = structuredClone(state);
+  scoped.counts = Array.from({ length: 12 }, (_, n) => ({
+    id: `count-${n}`, warehouseId: n % 2 ? "other" : "w", status: n === 0 ? "cancelled" : "open",
+    snapshot: [{ warehouseId: "w", itemId: "i", quantity: 2, serials: ["0001", "0002"], revision: 0 }],
+  }));
+  scoped.counts[11].draft = { revision: 1, reason: "=Draft reason", rows: [], savedBy: actor, savedAt: "2026-10-15T00:00:00Z" };
+  const before = structuredClone(scoped);
+  const dataset = buildOperationsDataset("counts", scoped, people);
+  assert.equal(filterOperationsRows(dataset, "", {}, dataset.defaultSort)[0].cells.reference, "Count #12");
+  assert.equal(filterOperationsRows(dataset, "draft reason", {}, dataset.defaultSort)[0].id, "count-11");
+  assert.equal(filterOperationsRows(dataset, "", { status: "cancelled" }, dataset.defaultSort)[0].cells.reference, "Count #1");
+  assert.equal(filterOperationsRows(dataset, "", { warehouse: "w" }, dataset.defaultSort).length, 6);
+  assert.equal(dataset.rows[0].cells.snapshotQuantity, 2);
+  assert.ok(operationsCsv(dataset, dataset.rows).includes("'=Draft reason"));
+  assert.deepEqual(scoped, before);
 });
 test("activity and exceptions resolve readable identities and search exact serials", () => {
   const activity = buildOperationsDataset("activity", state, people);

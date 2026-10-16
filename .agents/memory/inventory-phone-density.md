@@ -20,3 +20,9 @@ Opening the stock serial viewer on mobile must not focus Search serials or summo
 **Why:** The user wants to inspect serials without a keyboard covering the list.
 
 **How to apply:** Give opening focus to a non-editable element inside the dialog, retain normal tapping and keyboard accessibility, and preserve desktop search autofocus.
+
+Keep creation actions in the same position across Inventory tabs: first in the subheader action row, including Start count.
+
+**Why:** The user repeatedly requested consistent button placement, specifically including Cycle counts and mobile devices.
+
+**How to apply:** Use the existing compact action-row treatment and collapsed mobile Search & Tools, rather than giving a new tab a separate title-row action position.
