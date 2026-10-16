@@ -1,3 +1,71 @@
+/* Audit workspace uses the same theme and compact layout as Inventory. */
+.audit-page-shell {
+  --audit-paper: var(--background);
+  --audit-ink: var(--foreground);
+  --audit-line: var(--border);
+  --audit-wash: var(--muted);
+  color: hsl(var(--audit-ink));
+  background: hsl(var(--audit-paper));
+  font-family: inherit;
+}
+.audit-page-shell .font-display {
+  font-family: inherit;
+}
+.audit-subheader {
+  box-shadow: 0 1px 0 hsl(var(--audit-line) / .45);
+}
+.audit-tools-content {
+  transition: opacity 140ms ease;
+}
+.audit-event-row {
+  min-height: 58px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+.audit-event-row > :first-child { grid-column: 1; grid-row: 1; }
+.audit-event-row .row-outcome {
+  grid-column: 2;
+  grid-row: 1;
+}
+.audit-event-row > :nth-child(3) {
+  grid-column: 1;
+  grid-row: 3;
+}
+.audit-event-row > :nth-child(4) {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+.audit-event-row > :nth-child(5) {
+  grid-column: 2;
+  grid-row: 3;
+}
+@media (min-width: 640px) {
+  .audit-event-row {
+    grid-template-columns: minmax(170px,1.05fr) minmax(110px,.8fr) minmax(120px,.9fr) minmax(100px,.7fr) auto;
+  }
+  .audit-event-row > :first-child { grid-column: 1; grid-row: 1; }
+  .audit-event-row .row-outcome {
+    grid-column: 5;
+    grid-row: 1;
+  }
+  .audit-event-row > :nth-child(3),
+  .audit-event-row > :nth-child(4),
+  .audit-event-row > :nth-child(5) {
+    grid-row: 1;
+  }
+  .audit-event-row > :nth-child(3) { grid-column: 2; }
+  .audit-event-row > :nth-child(4) { grid-column: 3; }
+  .audit-event-row > :nth-child(5) { grid-column: 4; }
+}
+@media (max-height: 520px) and (orientation: landscape) and (pointer: coarse) {
+  .audit-page-shell { padding-top: 2px; }
+  .audit-subheader { padding-bottom: 4px; padding-top: 4px; }
+  .audit-subheader > div:first-child { min-height: 26px; }
+  .audit-subheader .mt-2 { margin-top: 4px; }
+  .audit-results-heading { padding-block: 4px; }
+  .audit-pagination { padding-block: 4px; }
+  .audit-event-row { min-height: 48px; padding-block: 5px; }
+  .audit-coverage-note { display: none; }
+}
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

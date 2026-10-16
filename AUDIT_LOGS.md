@@ -36,19 +36,36 @@ Changing a URL, filter or event identifier does not bypass this scope.
   For example, `updated` + `work_orders` shows committed work-order edits;
   entity choices still reflect visible recorded activity.
 - **Record identifier:** enter the internal ID, for example `2011`.
-- **Search:** a target label/customer work-order number, record ID or batch/operation ID.
+- **Search:** a readable count/order number, target label, actor, action, project,
+  audit-event reference, record ID or original batch/operation ID.
 - **Outcome:** narrow results to success, failed, partial, started or unknown.
 - **Pagination:** results and counts are computed on the server within your access scope.
+  Page capacity adapts to the available screen space. The header stays visible;
+  phone Search & Tools starts collapsed, including short touch-screen landscape.
 
 Project/action choices describe what you can search, not proof that activity has
-occurred. A project or action with no matches shows **No events match these filters**
+occurred. A project or action with no matches shows **No matching audit events**
 and a count of zero. No entries are manufactured for existing projects or earlier
 edits. **Refresh** reloads both choices and event results without a full-page reload.
 
-Open an event to inspect its actor, source, timestamp, target, operation ID,
-outcome, before/after differences and safe metadata. Use the operation ID in
-Search to follow an import/bulk batch. Request identity is resolved from the
+Open an event to inspect its actor, source, timestamp, readable target and operation
+reference, outcome and before/after differences. Raw IDs and the original changes
+and metadata remain in the collapsed **Internal identifiers and raw evidence**
+section. Copy the original operation ID from there into Search to follow a batch.
+Request identity is resolved from the
 authenticated session, never a submitted `createdBy`, `updatedBy` or username.
+
+Inventory targets use count numbers, order numbers and item/location names where
+reliably resolvable. An unresolvable historical target uses **Audit event #…**,
+not an invented historical count or order number. These are display labels;
+stored identifiers and original audit evidence are not rewritten.
+
+**CSV**, **Excel** and **PDF / Print** export all authorized events matching the
+applied filters, not just the displayed page. Unsaved filter edits do not affect
+exports. Empty scopes cannot be exported. More than 10,000 matches is rejected
+with instructions to narrow the filters; no partial export is silently produced.
+PDF / Print opens a printable view that can be saved as PDF. Retention settings
+are available from the header only to authorized global retention administrators.
 
 ## Coverage
 

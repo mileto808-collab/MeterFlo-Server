@@ -2,6 +2,7 @@ import type { PoolClient } from "pg";
 import { pool } from "./db";
 import { auditContext, auditingEnabled } from "./auditContext";
 import { insertAuditEvent } from "./auditService";
+import { inventoryAuditEntity } from "./auditReadModel";
 import { applyInventoryCommand, canonicalInventoryJson, completeInventoryWorkOrder, InventoryError, warehouseAccess } from "../shared/inventory-engine";
 import { emptyInventory, allocationSchema, dispositionSchema, inventoryImportSchema, inventoryPermissions, type InventoryState, type InventoryCommand } from "../shared/inventory";
 import { storage } from "./storage";
@@ -96,10 +97,14 @@ export async function saveInventory(client: PoolClient, projectId: number, befor
     [projectId, b.warehouseId, b.itemId, b.quantity, reservedAfter.get(stockKey(b)) || 0, JSON.stringify(b.serials)]);
   await client.query("INSERT INTO public.inventory_movements(project_id,operation_id,action,actor_id,changes) VALUES($1,$2,$3,$4,$5)",
     [projectId, operationId, action, actor, JSON.stringify({ stock: changes, entities: entityChanges })]);
-  if (auditingEnabled) await insertAuditEvent(client, { action: `inventory.${action}`, entityType: "inventory", entityId: operationId,
+  if (auditingEnabled) {
+    const { rows: [project] } = await client.query("SELECT name FROM public.projects WHERE id=$1", [projectId]);
+    await insertAuditEvent(client, { action: `inventory.${action}`, entityType: "inventory", entityId: operationId,
+    entityLabel: inventoryAuditEntity(after, entityChanges, operationId), projectLabel: project?.name,
     projectId, changes: changes.map(c => ({ field: `${c.warehouseId}/${c.itemId}`, before: { quantity: c.before, reserved: c.reservedBefore, serials: c.serialsBefore },
       after: { quantity: c.after, reserved: c.reservedAfter, serials: c.serialsAfter } })).concat(entityChanges as any),
     metadata: { revision: after.revision, reference: after.receipts.find(r => r.id === operationId)?.reference || null } });
+  }
 }
 export async function postInventory(projectId: number, command: InventoryCommand, actor: string, admin: boolean) {
   const client = await pool.connect();

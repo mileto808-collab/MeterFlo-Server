@@ -19,6 +19,8 @@ export interface AuditEvent {
   source:string; action:string; entityType:string; entityId:string; entityLabel:string;
   projectId:number|null; projectLabel:string|null; operationId:string; outcome:string;
   changes:AuditChange[]; metadata:Record<string,unknown>;
+  eventReference?:string; entityReference?:string; operationReference?:string; projectReference?:string;
+  displayChanges?:AuditChange[]; displayMetadata?:Record<string,unknown>;
 }
 export interface AuditList { events:AuditEvent[]; total:number; offset:number; limit:number }
 export interface AuditOptions {
