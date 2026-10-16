@@ -26,6 +26,8 @@ import { refreshShipmentInventory } from "@/components/inventory-shipment-draft-
 import { InventoryShipmentExceptions } from "@/components/inventory-shipment-exceptions";
 import { InventoryShipmentTransitDialog } from "@/components/inventory-shipment-transit-dialog";
 import { InventoryStockSerialDialog } from "@/components/inventory-stock-serial-dialog";
+import { InventoryStockWorkspace } from "@/components/inventory-stock-workspace";
+import type { StockBalanceRow } from "@/lib/inventory-stock-export";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -66,10 +68,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const base = `/api/projects/${projectId}/inventory`;
   const queryKey = [base];
   const { data, isLoading, isError, refetch } = useQuery<Snapshot>({ queryKey, enabled: !!projectId });
-  const [search, setSearch] = useState("");
   const [showInventoryStats, setShowInventoryStats] = useState(false);
   const [inventoryTab, setInventoryTab] = useState("stock");
-  const [stockPage, setStockPage] = useState(0);
   const [selectedStockKey, setSelectedStockKey] = useState<string | null>(null);
   const [activityPage, setActivityPage] = useState(0);
   const [resource, setResource] = useState<ResourceKind | null>(null);
@@ -303,25 +303,17 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const activityStart = Math.max(0, activityEnd - activityPageSize);
   const activityReceipts = state?.receipts.slice(activityStart, activityEnd).reverse() ?? [];
   const activeWarehouses = warehouses.filter(value => value.active);
-  const allStockRows = useMemo(() => (state?.stock ?? []).map(stock => ({
+  const allStockRows = useMemo<StockBalanceRow[]>(() => (state?.stock ?? []).map(stock => ({
     ...stock, item: items.find(value => value.id === stock.itemId), warehouse: warehouses.find(value => value.id === stock.warehouseId),
     reserved: state?.allocations.filter(allocation => allocation.status === "reserved").flatMap(allocation => allocation.lines)
       .filter(line => line.itemId === stock.itemId && line.warehouseId === stock.warehouseId).reduce((total, line) => total + line.quantity, 0) ?? 0,
-  })).filter(row => row.item && row.warehouse), [state, items, warehouses]);
-  const stockRows = useMemo(() => allStockRows.filter(row => {
-    const needle = search.toLowerCase();
-    return !needle || [row.item?.sku, row.item?.name, row.warehouse?.code, row.warehouse?.name, ...row.serials].join(" ").toLowerCase().includes(needle);
-  }), [allStockRows, search]);
+  })).filter((row): row is StockBalanceRow => !!row.item && !!row.warehouse), [state, items, warehouses]);
   const selectedStockRow = selectedStockKey
     ? allStockRows.find(row => `${row.itemId}/${row.warehouseId}` === selectedStockKey)
     : undefined;
   useEffect(() => {
     if (selectedStockKey && (!can("inventory.view") || !selectedStockRow)) setSelectedStockKey(null);
   }, [selectedStockKey, selectedStockRow, hasPermission]);
-  const stockPageSize = 100;
-  const lastStockPage = Math.max(0, Math.ceil(stockRows.length / stockPageSize) - 1);
-  const currentStockPage = Math.min(stockPage, lastStockPage);
-  const visibleStockRows = stockRows.slice(currentStockPage * stockPageSize, (currentStockPage + 1) * stockPageSize);
 
   if (!projectId) return <div className="p-6">Project not found.</div>;
   if (isLoading) return <main className="mx-auto max-w-7xl p-4 md:p-7 space-y-5"><div className="h-8 w-64 animate-pulse rounded bg-muted" /><div className="grid gap-4 md:grid-cols-3">{[1, 2, 3].map(i => <div key={i} className="h-28 animate-pulse rounded-lg bg-muted" />)}</div><div className="h-80 animate-pulse rounded-lg bg-muted" /></main>;
@@ -781,12 +773,12 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
         </TabsList>
       </div>
 
-    <div className={`min-h-0 flex-1 ${inventoryTab === "orders" ? "flex flex-col overflow-hidden" : "space-y-5 overflow-y-auto overscroll-contain pb-8 pr-1"}`} data-testid="inventory-scroll-content" role="region" aria-label="Inventory content" tabIndex={0}>
-    {!hasAny && <Alert hidden={inventoryTab === "orders"}><Boxes className="h-4 w-4" /><AlertTitle>Set up the first stock location</AlertTitle><AlertDescription>Add a warehouse or service vehicle, then add catalog items and begin receiving meters.</AlertDescription></Alert>}
+    <div className={`min-h-0 flex-1 ${inventoryTab === "orders" || inventoryTab === "stock" ? "flex flex-col overflow-hidden" : "space-y-5 overflow-y-auto overscroll-contain pb-8 pr-1"}`} data-testid="inventory-scroll-content" role="region" aria-label="Inventory content" tabIndex={0}>
+    {!hasAny && <Alert hidden={inventoryTab === "orders" || inventoryTab === "stock"}><Boxes className="h-4 w-4" /><AlertTitle>Set up the first stock location</AlertTitle><AlertDescription>Add a warehouse or service vehicle, then add catalog items and begin receiving meters.</AlertDescription></Alert>}
 
-      <TabsContent value="stock" className="space-y-4">
-        <Card><CardHeader className="pb-3"><div className="flex flex-col justify-between gap-3 md:flex-row md:items-end"><div><CardTitle>On hand by location</CardTitle><CardDescription>Reserved units are excluded from available stock. Serial identity remains attached to its bin.</CardDescription></div><div className="relative w-full md:max-w-sm"><Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" /><Input aria-label="Search inventory" className="pl-9" placeholder="Search SKU, item, location, serial…" value={search} onChange={event => { setSearch(event.target.value); setStockPage(0); }} /></div></div></CardHeader><CardContent>
-          {stockRows.length ? <><div className="max-h-[32rem] max-w-full overflow-auto" role="region" aria-label="Stock balances" tabIndex={0}><table className="w-full min-w-[780px] text-sm"><thead><tr className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground"><th className="pb-3">Item / SKU</th><th className="pb-3">Location</th><th className="pb-3 text-right">On hand</th><th className="pb-3 text-right">Reserved</th><th className="pb-3 text-right">Available</th><th className="pb-3">Serial identity</th></tr></thead><tbody>{visibleStockRows.map(row => <tr key={`${row.warehouseId}/${row.itemId}`} className="border-b align-top last:border-0"><td className="py-3"><div className="font-medium">{row.item?.name}</div><div className="font-mono text-xs text-muted-foreground">{row.item?.sku}</div></td><td className="py-3"><div>{row.warehouse?.name}</div><div className="text-xs text-muted-foreground">{row.warehouse?.code}</div></td><td className="py-3 text-right font-mono">{row.quantity}</td><td className="py-3 text-right font-mono">{row.reserved}</td><td className="py-3 text-right font-mono font-semibold">{row.quantity - row.reserved}</td><td className="py-3">{row.serials.length ? <Button size="sm" variant="outline" aria-label={`View serials (${row.serials.length}) for ${row.item?.sku} at ${row.warehouse?.code}`} onClick={() => setSelectedStockKey(`${row.itemId}/${row.warehouseId}`)}>View serials ({row.serials.length})</Button> : <span className="text-muted-foreground">—</span>}</td></tr>)}</tbody></table></div>{stockRows.length > stockPageSize && <nav aria-label="Stock pages" className="mt-4 flex flex-wrap items-center gap-2"><p className="mr-auto text-sm text-muted-foreground" aria-live="polite">{currentStockPage * stockPageSize + 1}–{Math.min((currentStockPage + 1) * stockPageSize, stockRows.length)} of {stockRows.length} balances</p><Button size="sm" variant="outline" aria-label="First stock page" disabled={currentStockPage === 0} onClick={() => setStockPage(0)}>First</Button><Button size="sm" variant="outline" aria-label="Previous stock page" disabled={currentStockPage === 0} onClick={() => setStockPage(currentStockPage - 1)}>Previous</Button><Button size="sm" variant="outline" aria-label="Next stock page" disabled={currentStockPage === lastStockPage} onClick={() => setStockPage(currentStockPage + 1)}>Next</Button><Button size="sm" variant="outline" aria-label="Last stock page" disabled={currentStockPage === lastStockPage} onClick={() => setStockPage(lastStockPage)}>Last</Button></nav>}</> : <Empty title="No stock balances yet" description="Receive a purchase or accept a transfer to see item quantities and scanned serials here." />}</CardContent></Card>
+      <TabsContent value="stock" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
+        <InventoryStockWorkspace rows={allStockRows} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
+          onViewSerials={row => setSelectedStockKey(`${row.itemId}/${row.warehouseId}`)} />
       </TabsContent>
       <TabsContent value="locations"><Card><CardHeader><div className="flex items-center justify-between"><div><CardTitle>Warehouses & vehicles</CardTitle><CardDescription>Access is enforced by the project inventory service for every operation.</CardDescription></div>{can("inventory.maintain") && <Button onClick={() => openResource("warehouse")}><Plus className="mr-2 h-4 w-4" />Add location</Button>}</div></CardHeader><CardContent><div className="grid gap-3 lg:grid-cols-2">{warehouses.map(warehouse => <div key={warehouse.id} className="rounded-lg border p-4"><div className="flex items-start justify-between gap-3"><div><div className="flex items-center gap-2 font-medium">{warehouse.name}<Badge variant="outline">{warehouse.type === "vehicle" ? "Vehicle" : "Warehouse"}</Badge>{!warehouse.active && <Badge variant="secondary">Inactive</Badge>}</div><div className="mt-1 font-mono text-xs text-muted-foreground">{warehouse.code}</div></div>{can("inventory.maintain") && <Button size="sm" variant="outline" onClick={() => openResource("warehouse", warehouse)}>Edit</Button>}</div><p className="mt-3 text-sm text-muted-foreground">{warehouse.type === "vehicle" ? `${warehouse.make} ${warehouse.model} · ${warehouse.plate} ${warehouse.plateState}` : [warehouse.address, warehouse.city, warehouse.state, warehouse.zip].filter(Boolean).join(", ")}</p><p className="mt-2 text-xs text-muted-foreground">{warehouse.assignedUserId ? `Assigned user ${data.users.find(user => user.id === warehouse.assignedUserId)?.username ?? warehouse.assignedUserId}` : "Assigned: None"} · {warehouse.userIds.length} additional authorized</p></div>)}</div>{warehouses.length === 0 && <Empty title="No locations configured" description="Create a warehouse or field vehicle to establish the first stock location." />}</CardContent></Card></TabsContent>
       <TabsContent value="catalog" className="space-y-4"><Card><CardHeader><div className="flex items-center justify-between"><div><CardTitle>Item catalog</CardTitle><CardDescription>Serialized meters require a scan for each quantity; kits list their component recipe.</CardDescription></div>{can("inventory.maintain") && <Button onClick={() => openResource("item")}><Plus className="mr-2 h-4 w-4" />Add item</Button>}</div></CardHeader><CardContent><div className="space-y-2">{items.map(item => <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3"><div className="flex items-center gap-3">{item.images[0] && sameOriginImage(item.images[0]) && <img src={sameOriginImage(item.images[0]) ?? undefined} alt="" className="h-12 w-12 rounded object-cover" />}<div><div className="font-medium">{item.name} <span className="font-mono text-xs text-muted-foreground">{item.sku}</span></div><div className="text-xs text-muted-foreground">{item.category || "Uncategorized"} · {item.tracking} · {item.unit}{item.components.length ? ` · Kit of ${item.components.length}` : ""}</div></div></div><div className="flex items-center gap-2">{item.reorderPoint > 0 && <Badge variant="outline">Reorder at {item.reorderPoint}</Badge>}{!item.active && <Badge variant="secondary">Inactive</Badge>}{can("inventory.maintain") && <Button size="sm" variant="outline" onClick={() => openResource("item", item)}>Edit</Button>}</div></div>)}</div>{items.length === 0 && <Empty title="No items in this project" description="Add the meter catalog, barcode identifiers, tracking type, and kit recipes." />}</CardContent></Card>

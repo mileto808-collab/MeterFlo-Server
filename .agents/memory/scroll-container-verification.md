@@ -26,3 +26,6 @@ which can place an otherwise bounded pager below the visible screen.
 **How to apply:** Observe the attached results node and measure available space
 from its actual layout. Verify the pager bottom against the viewport on phones,
 and keep expanded-detail height separate from normal collapsed-row capacity.
+Also check usable results height: a pager can fit while a wrapped sticky toolbar
+leaves almost no room for records. Compact redundant mobile toolbar content
+instead of treating a merely nonzero scroll area as sufficient.

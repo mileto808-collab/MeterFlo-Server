@@ -48,7 +48,13 @@ async function main() {
     const stock = page.getByRole("region", { name: "Stock balances", exact: true });
     await stock.waitFor();
     assert.ok(!(await stock.innerText()).includes("0001.2300"), "Stock table never expands into raw serial text");
-    assert.equal(await stock.getByRole("button", { name: /View serials/ }).count(), 2, "Only serialized stock rows expose serial buttons");
+    const stockSearch = page.getByRole("searchbox", { name: "Search inventory", exact: true });
+    await stockSearch.fill("SER-MTR");
+    await page.getByTestId("inventory-stock-pagination").getByText(/of 2 balances/).waitFor();
+    assert.equal(before.stock.filter(row => row.serials.length > 0).length, 2, "Both serialized locations are retained across stock pages");
+    await stockSearch.fill("0001.2300");
+    await stock.getByRole("button", { name: `View serials (${serials.length}) for SER-MTR at SERIAL-MAIN`, exact: true }).waitFor();
+    assert.equal(await stock.getByRole("button", { name: /View serials/ }).count(), 1, "Serial search scopes the balance independently of stock pagination");
     await stock.getByRole("button", { name: `View serials (${serials.length}) for SER-MTR at SERIAL-MAIN`, exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Stock serials", exact: true });
     await dialog.waitFor();
@@ -120,6 +126,7 @@ async function main() {
     assert.ok(widths.scrollWidth <= widths.listWidth + 1);
     await page.screenshot({ path: `${out}/mobile.jpg` });
     await page.keyboard.press("Escape");
+    await stockSearch.fill("OTHER-LOCATION-ONLY");
     await stock.getByRole("button", { name: "View serials (1) for SER-MTR at SERIAL-OTHER", exact: true }).click();
     assert.deepEqual(await dialog.locator("code").allTextContents(), ["OTHER-LOCATION-ONLY"], "Reopening is scoped to the new location and resets search");
     await page.keyboard.press("Escape");

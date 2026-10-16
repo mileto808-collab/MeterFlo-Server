@@ -27,6 +27,8 @@
     "test:inventory-print": "tsx --test tests/inventory-print-labels.test.ts",
     "test:inventory-print:browser": "node tests/inventory-serial-print-ui.cjs",
     "test:inventory-stock-serials": "tsx --test tests/inventory-stock-serial-export.test.ts",
+    "test:inventory-stock-exports": "tsx --test tests/inventory-stock-export.test.ts",
+    "test:inventory-stock-layout:browser": "node tests/inventory-stock-layout-ui.cjs",
     "test:inventory-stock-serials:browser": "node tests/inventory-stock-serial-ui.cjs",
     "test:inventory-order-discovery:browser": "node tests/inventory-order-discovery-ui.cjs",
     "test:inventory-shipment-dismissal:browser": "node tests/inventory-shipment-dismissal-ui.cjs",
