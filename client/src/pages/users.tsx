@@ -9,6 +9,7 @@ import { useColumnPreferences } from "@/hooks/use-column-preferences";
 import { FilterSelector, type FilterConfig } from "@/components/filter-selector";
 import { useFilterPreferences } from "@/hooks/use-filter-preferences";
 import { Button } from "@/components/ui/button";
+import { UserProjectsDialog } from "@/components/user-projects-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -147,6 +148,7 @@ export default function Users() {
   const [lockDialogOpen, setLockDialogOpen] = useState(false);
   const [assignProjectDialogOpen, setAssignProjectDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [projectsViewerUser, setProjectsViewerUser] = useState<User | null>(null);
   const [lockReason, setLockReason] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [showMobileTools, setShowMobileTools] = useState(() =>
@@ -604,9 +606,10 @@ export default function Users() {
       const tableHeader = container.querySelector<HTMLElement>("thead")?.getBoundingClientRect().height ?? 0;
       const rows = [...container.querySelectorAll<HTMLElement>("[data-users-row]")];
       const measured = rows.reduce((maximum, row) => Math.max(maximum, row.getBoundingClientRect().height), 0);
-      if (measured > 0) usersRowHeightRef.current = Math.max(usersRowHeightRef.current, measured);
+      // Measure the current compact rows, not the tallest row seen on an earlier page.
+      if (measured > 0) usersRowHeightRef.current = measured;
       const rowHeight = usersRowHeightRef.current || (isMobile ? 42 : 48);
-      const usable = Math.max(0, height - tableHeader - 12);
+      const usable = Math.max(0, height - tableHeader);
       const next = Math.max(1, Math.min(100, Math.floor(usable / rowHeight)));
       setUsersPageSize(current => current === next ? current : next);
     };
@@ -760,11 +763,11 @@ export default function Users() {
                 <AvatarFallback>{getInitials(userData)}</AvatarFallback>
               </Avatar>
               <div>
-                <span className="font-medium block">
+                <span className="block max-w-56 truncate font-medium" title={userData.firstName && userData.lastName ? `${userData.firstName} ${userData.lastName}` : userData.username || "Unknown"}>
                   {userData.firstName && userData.lastName ? `${userData.firstName} ${userData.lastName}` : userData.username || "Unknown"}
                 </span>
                 {userData.username && (
-                  <span className="text-sm text-muted-foreground">@{userData.username}</span>
+                  <span className="block max-w-56 truncate text-xs text-muted-foreground" title={userData.username}>@{userData.username}</span>
                 )}
               </div>
             </div>
@@ -807,27 +810,13 @@ export default function Users() {
       case "projects":
         return (
           <TableCell key={key} data-testid={`cell-projects-${userData.id}`}>
-            {allUsersProjects && allUsersProjects[userData.id]?.length > 0 ? (
-              <div className="flex flex-wrap gap-1 max-w-[200px]">
-                {allUsersProjects[userData.id].slice(0, 3).map((project) => (
-                  <Badge 
-                    key={project.id} 
-                    variant="secondary" 
-                    className="text-xs"
-                    data-testid={`badge-project-${userData.id}-${project.id}`}
-                  >
-                    {project.name}
-                  </Badge>
-                ))}
-                {allUsersProjects[userData.id].length > 3 && (
-                  <Badge variant="outline" className="text-xs">
-                    +{allUsersProjects[userData.id].length - 3} more
-                  </Badge>
-                )}
-              </div>
-            ) : (
-              <span className="text-muted-foreground text-sm">None</span>
-            )}
+            <Button type="button" variant="ghost" size="icon" className="h-8 w-8"
+              aria-label={`View projects for ${userData.username || userData.email || "user"}`}
+              title={`View projects for ${userData.username || userData.email || "user"}`}
+              data-testid={`button-view-projects-${userData.id}`}
+              onClick={event => { event.stopPropagation(); setProjectsViewerUser(userData); }}>
+              <Folder className="h-4 w-4" aria-hidden="true" />
+            </Button>
           </TableCell>
         );
       case "status":
@@ -2368,6 +2357,8 @@ export default function Users() {
             onClick={() => { setUsersPage(currentUsersPage + 1); usersResultsElement?.scrollTo({ top: 0, left: 0 }); }}>Next</Button>
         </nav>
       </section>
+
+      <UserProjectsDialog user={projectsViewerUser} onClose={() => setProjectsViewerUser(null)} />
 
       {/* Reset Password Dialog */}
       <Dialog open={resetPasswordDialogOpen} onOpenChange={setResetPasswordDialogOpen}>

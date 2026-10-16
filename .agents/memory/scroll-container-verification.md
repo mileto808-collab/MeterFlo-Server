@@ -40,3 +40,15 @@ after columns or records change.
 **How to apply:** Include the data and presentation inputs in measurement
 lifecycle dependencies, rather than tying remeasurement only to item counts or
 viewport dimensions.
+
+Verify that unused results space cannot fit another complete record when more
+records remain. Do not merely copy the implementation's page-size formula into
+the acceptance test.
+
+**Why:** A conservative height estimate and an unnecessary space reservation can
+both agree with a test's expected count while visibly leaving records off-page.
+Repeated project badges are also an unreliable basis for compact row capacity.
+
+**How to apply:** Include users with zero, one, and several long project
+assignments in density checks. Measure actual remaining space and row bounds;
+keep multi-valued project lists in their read-only viewer rather than tall rows.
