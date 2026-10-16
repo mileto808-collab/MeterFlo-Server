@@ -58,7 +58,7 @@ export const savedCountDraftSchema = countDraftSchema.extend({
   savedBy: id, savedAt: z.string().datetime(),
 });
 export const inventoryCommandSchema = z.object({
-  operationId: z.string().uuid(), action: z.enum(["warehouse", "vendor", "item", "category", "order", "release",
+  operationId: z.string().uuid(), action: z.enum(["warehouse", "vendor", "item", "category", "categoryRename", "order", "release",
     "cancel", "unrelease", "archiveOrder", "restoreOrder", "numberOrders", "receive", "dispatch", "accept", "assemble", "countStart", "countPost", "countCancel", "countSaveDraft",
     "assign", "prepareUse", "returnAccept", "returnRelease", "reconcileWorkOrder", "closeOrder", "resolveTransit", "resolveHold",
     "shipmentDraftSave", "shipmentDraftPrepare", "shipmentDraftUnlock", "shipmentDraftDelete", "shipmentDraftClaim"]),
@@ -97,7 +97,7 @@ export const commandPermission = (action: InventoryCommand["action"]) =>
   action === "closeOrder" ? inventoryPermissions.closeOrders :
   ["resolveTransit", "resolveHold"].includes(action) ? inventoryPermissions.resolveExceptions :
   ["archiveOrder", "restoreOrder"].includes(action) ? inventoryPermissions.purchase :
-  ["warehouse", "vendor", "item", "category", "numberOrders"].includes(action) ? inventoryPermissions.maintain :
+  ["warehouse", "vendor", "item", "category", "categoryRename", "numberOrders"].includes(action) ? inventoryPermissions.maintain :
   ["receive", "accept", "returnAccept", "returnRelease"].includes(action) ? inventoryPermissions.receive :
   action === "assemble" ? inventoryPermissions.assemble : action.startsWith("count") ? inventoryPermissions.count :
   action === "reconcileWorkOrder" ? inventoryPermissions.count :

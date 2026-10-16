@@ -431,7 +431,7 @@ Use IDs from the project's inventory, not warehouse names or SKUs. Serialized qu
 
 ## Item categories
 
-The **Categories** tab lists project-specific category names and item usage counts, with the same search, filters, adaptive pagination, and CSV/Excel/PDF tools as the other inventory lists. Users with **Maintain inventory** (`inventory.maintain`) can create categories; users with view access can browse them.
+The **Categories** tab lists project-specific category names and item usage counts, with the same search, filters, adaptive pagination, and CSV/Excel/PDF tools as the other inventory lists. Users with **Maintain inventory** (`inventory.maintain`) can create categories or use each row's **Edit** action; users with view access can browse them. Renaming updates all matching current item assignments and the category registry in one locked inventory transaction, including legacy case/whitespace variants. This is an application-level update, not a foreign-key cascade. Stock quantities and historical movement receipts remain unchanged; normal inventory audit records capture the changed category and item classifications.
 
 Item details uses a category dropdown. **None** stores an empty category; category names must already exist in this project. Existing free-text classifications remain available and are retained when an item's category is cleared. Category creation trims surrounding whitespace and rejects case-insensitive duplicates. Categories persist in inventory JSON backups, including categories not yet assigned to any items. Older backups without a category registry remain compatible.
 

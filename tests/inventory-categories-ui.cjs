@@ -72,18 +72,33 @@ async function main() {
     assert.equal(namedNone.category, "None");
     const invalid = await post("item", { ...meter, category: "Unknown category" });
     assert.equal(invalid.status(), 409);
+    await page.getByRole("tab", { name: "Categories", exact: true }).click();
+    await page.getByRole("button", { name: "Edit category Meters", exact: true }).click();
+    dialog = page.getByRole("dialog", { name: "Edit category", exact: true });
+    await expect(dialog.getByLabel("Category name", { exact: true })).toHaveValue("Meters");
+    await dialog.getByLabel("Category name", { exact: true }).fill("None");
+    await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
+    await expect(dialog.getByRole("alert")).toContainText("already exists");
+    await expect(dialog.getByLabel("Category name", { exact: true })).toHaveValue("None");
+    assert.equal((await state()).items.find(item => item.id === meter.id).category, "Meters");
+    await dialog.getByLabel("Category name", { exact: true }).fill("Electric meters");
+    await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByRole("button", { name: "Edit category Electric meters", exact: true })).toBeVisible();
+    assert.equal((await state()).items.find(item => item.id === meter.id).category, "Electric meters");
+    await page.screenshot({ path: `${out}/desktop-edit.jpg` });
     await page.reload();
     await page.getByRole("tab", { name: "Items", exact: true }).click();
     const card = page.locator("article").filter({ has: page.getByRole("heading", { name: "Category item Meters", exact: true }) });
     await card.getByRole("button", { name: /Edit/ }).click();
     dialog = page.getByRole("dialog", { name: "Item details", exact: true });
-    await expect(dialog.getByLabel("Category", { exact: true })).toHaveValue("Meters");
+    await expect(dialog.getByLabel("Category", { exact: true })).toHaveValue("Electric meters");
     await dialog.getByLabel("Category", { exact: true }).selectOption("");
     await dialog.getByRole("button", { name: "Save changes", exact: true }).click();
     await expect(dialog).toBeHidden();
     assert.equal((await state()).items.find(item => item.id === meter.id).category, "");
     await page.getByRole("tab", { name: "Categories", exact: true }).click();
-    await expect(page.getByTestId("inventory-categories-results")).toContainText("Meters");
+    await expect(page.getByTestId("inventory-categories-results")).toContainText("Electric meters");
     // Grant through normal role management, not direct permission-table inserts.
     const grant = await context.request.put(`/api/subroles/${fixture.viewerRoleId}/permissions`, {
       data: { permissions: ["workOrders.view", "projects.view", "inventory.view", "inventory.maintain"] },
@@ -105,10 +120,15 @@ async function main() {
       data: { action: "category", operationId: crypto.randomUUID(), data: { name: "Forbidden" } },
     });
     assert.equal(denied.status(), 403);
+    const deniedRename = await readonly.request.post(`${endpoint}/commands`, {
+      data: { action: "categoryRename", operationId: crypto.randomUUID(), data: { name: "Electric meters", newName: "Forbidden rename" } },
+    });
+    assert.equal(deniedRename.status(), 403);
     const reader = await readonly.newPage();
     await reader.goto(`/projects/${fixture.projectId}/inventory`);
     await reader.getByRole("tab", { name: "Categories", exact: true }).click();
     await expect(reader.getByRole("button", { name: "Add category", exact: true })).toHaveCount(0);
+    await expect(reader.getByRole("button", { name: /^Edit category / })).toHaveCount(0);
     await expect(reader.getByTestId("inventory-categories-results")).toContainText("Maintainer category");
     await readonly.close();
     // The same page supports compact menu navigation on portrait and rotated phones.
@@ -123,6 +143,10 @@ async function main() {
     await toggle.click();
     await expect(phone.getByTestId("inventory-categories-subheader").getByRole("button", { name: "Add category", exact: true })).toBeVisible();
     await toggle.click();
+    await phone.getByRole("button", { name: "Edit category Electric meters", exact: true }).click();
+    await expect(phone.getByRole("dialog", { name: "Edit category", exact: true })).toBeVisible();
+    await phone.getByRole("dialog").getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(phone.getByRole("dialog")).toBeHidden();
     for (const size of [{ width: 390, height: 720 }, { width: 844, height: 390 }]) {
       await phone.setViewportSize(size);
       await expect(phone.getByTestId("inventory-mobile-menu")).toBeVisible();
@@ -134,7 +158,7 @@ async function main() {
     await phoneContext.close();
     assert.deepEqual(errors, []);
     assert.deepEqual((await state()).stock, []);
-    console.log("PASS: persisted categories, duplicate retention, dropdown/None, clear/reopen, scoped permissions, CSV, portrait and landscape.");
+    console.log("PASS: create/edit categories, atomic item rename, duplicate retention, dropdown/None, clear/reopen, scoped permissions, CSV, portrait and landscape.");
   } finally { await browser.close(); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

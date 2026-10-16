@@ -84,3 +84,45 @@ test("category records combine legacy spellings, count usage, filter, and escape
   assert.ok(csv.includes("\"'=1+2\""));
   assert.deepEqual(state, before);
 });
+
+test("category rename updates every assigned item and registry atomically without changing stock", () => {
+  assert.equal(commandPermission("categoryRename"), "inventory.maintain");
+  let state = post(emptyInventory(), "category", { name: "Meters" });
+  state.items = [
+    itemSchema.parse({ ...item, category: "Meters" }),
+    itemSchema.parse({ ...item, id: "second", sku: "SECOND", category: " METERS " }),
+    itemSchema.parse({ ...item, id: "third", sku: "THIRD", category: "" }),
+  ];
+  state.stock = [{ warehouseId: "main", itemId: "meter", quantity: 5, serials: [], revision: 1 }];
+  const before = structuredClone(state), operationId = randomUUID();
+  const updated = post(state, "categoryRename", { name: "Meters", newName: " Electric meters " }, operationId);
+  assert.deepEqual(updated.categories, ["Electric meters"]);
+  assert.deepEqual(updated.items.map(value => value.category), ["Electric meters", "Electric meters", ""]);
+  assert.deepEqual(updated.stock, before.stock);
+  assert.deepEqual(updated.receipts, before.receipts);
+  assert.deepEqual(updated.orders, before.orders);
+  assert.deepEqual(state, before);
+  assert.deepEqual(post(updated, "categoryRename", { name: "Meters", newName: " Electric meters " }, operationId), updated);
+  const caseOnly = post(updated, "categoryRename", { name: "Electric meters", newName: "ELECTRIC METERS" });
+  assert.equal(caseOnly.items[0].category, "ELECTRIC METERS");
+});
+
+test("renaming unused or legacy categories works while invalid and conflicting names leave state unchanged", () => {
+  let state = post(emptyInventory(), "category", { name: "Unused" });
+  state.items = [itemSchema.parse({ ...item, category: " Legacy " })];
+  state = post(state, "categoryRename", { name: "unused", newName: "Supplies" });
+  assert.deepEqual(inventoryCategoryNames(state), [" Legacy ", "Supplies"]);
+  state = post(state, "categoryRename", { name: "Legacy", newName: "Legacy meters" });
+  assert.equal(state.items[0].category, "Legacy meters");
+  const before = structuredClone(state);
+  for (const data of [
+    { name: "Legacy meters", newName: " SUPPLIES " },
+    { name: "Legacy meters", newName: "" },
+    { name: "Legacy meters", newName: "x".repeat(501) },
+    { name: "Legacy", newName: "Stale rename" },
+  ]) assert.throws(() => post(state, "categoryRename", data));
+  assert.deepEqual(state, before);
+  const backup = JSON.parse(JSON.stringify({ state, movements: [], enabled: true }));
+  validateInventoryBackup(backup, []);
+  assert.deepEqual(backup.state.categories, ["Legacy meters", "Supplies"]);
+});

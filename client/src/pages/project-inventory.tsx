@@ -895,10 +895,20 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           dataset={categoriesDataset} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
           headerAction={<InventoryCategoryCreateAction canMaintain={can("inventory.maintain")} pending={command.isPending}
             onCreate={(name, operationId) => command.mutateAsync({ action: "category", data: { name }, operationId })} />}
-          renderRow={row => <article className="flex min-w-0 items-center justify-between gap-3 rounded-md border bg-card px-3 py-2.5">
-            <div className="min-w-0"><h3 className="break-words text-sm font-medium">{String(row.cells.name ?? "")}</h3></div>
-            <Badge variant="secondary" className="shrink-0">{Number(row.cells.itemCount ?? 0)} {Number(row.cells.itemCount ?? 0) === 1 ? "item" : "items"}</Badge>
-          </article>} />
+          renderRow={row => {
+            const categoryName = String(row.cells.name ?? "");
+            return <article className="flex min-w-0 items-center justify-between gap-3 rounded-md border bg-card px-3 py-2.5">
+              <div className="min-w-0"><h3 className="break-words text-sm font-medium">{categoryName}</h3></div>
+              <div className="flex shrink-0 items-center gap-2">
+                <Badge variant="secondary">{Number(row.cells.itemCount ?? 0)} {Number(row.cells.itemCount ?? 0) === 1 ? "item" : "items"}</Badge>
+                <InventoryCategoryCreateAction canMaintain={can("inventory.maintain")} pending={command.isPending}
+                  categoryName={categoryName}
+                  onRename={(name, newName, operationId) => command.mutateAsync({
+                    action: "categoryRename", data: { name, newName }, operationId,
+                  })} />
+              </div>
+            </article>;
+          }} />
       </TabsContent>
 
       <TabsContent value="orders" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">

@@ -143,6 +143,15 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     const name = categoryNameSchema.parse(d.name);
     assert(!inventoryCategoryNames(s).some(existing => categoryKey(existing) === categoryKey(name)), "Category already exists in this project.");
     s.categories = [...inventoryCategoryNames(s), name];
+  } else if (a === "categoryRename") {
+    const { name, newName } = z.object({ name: categoryNameSchema, newName: categoryNameSchema }).strict().parse(d);
+    const source = categoryKey(name);
+    const categories = inventoryCategoryNames(s);
+    assert(categories.some(existing => categoryKey(existing) === source), "Category no longer exists. Refresh the category list and try again.");
+    assert(!categories.some(existing => categoryKey(existing) !== source && categoryKey(existing) === categoryKey(newName)),
+      "Category already exists in this project. Choose a different name.");
+    s.categories = categories.map(existing => categoryKey(existing) === source ? newName : existing);
+    s.items = s.items.map(item => categoryKey(item.category) === source ? { ...item, category: newName } : item);
   } else if (a === "warehouse" || a === "vendor" || a === "item") {
     const value = a === "warehouse" ? warehouseSchema.parse(d) : a === "vendor" ? vendorSchema.parse(d) : itemSchema.parse(d);
     const list = (a === "warehouse" ? s.warehouses : a === "vendor" ? s.vendors : s.items) as any[];
