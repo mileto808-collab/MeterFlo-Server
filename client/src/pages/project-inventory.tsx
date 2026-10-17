@@ -217,6 +217,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [countSearch, setCountSearch] = useState("");
   const [countProductSearch, setCountProductSearch] = useState("");
   const [countProduct, setCountProduct] = useState("");
+  const [countToolsOpen, setCountToolsOpen] = useState(false);
   const [pendingCountTransition, setPendingCountTransition] = useState<(() => void) | null>(null);
   const [savedCountValues, setSavedCountValues] = useState("");
   const [countConflict, setCountConflict] = useState<"changed" | "unavailable" | null>(null);
@@ -840,6 +841,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   };
 
   const openCount = (count: InventoryCount, reload = false) => {
+    setCountToolsOpen(false);
     if (countDraftId !== count.id || reload) {
       const rows = inventoryCountRows(count, items, {}, {});
       setSavedCountValues(JSON.stringify({ reason: count.draft?.reason ?? "",
@@ -1439,11 +1441,37 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
             if (countDirty || countSaving.current || command.isPending) event.preventDefault();
           }}>
           {activeCount && <div className="flex min-h-0 flex-col">
-            <DialogHeader className="shrink-0 border-b px-4 py-4 sm:px-6">
+            <DialogHeader className="shrink-0 border-b px-4 py-3 sm:px-6 sm:py-4">
               <DialogTitle ref={countDialogTitleRef} tabIndex={-1}>Continue count · {inventoryCountReference(state.counts, activeCount.id)} · {warehouses.find(w => w.id === activeCount.warehouseId)?.name}</DialogTitle>
-              <DialogDescription>Verify every snapshot item, including zero. All entry pages are saved and posted together; saving a draft does not adjust stock.</DialogDescription>
+              <DialogDescription className="sr-only sm:not-sr-only [@media(max-height:500px)]:sr-only">Verify every snapshot item, including zero. All entry pages are saved and posted together; saving a draft does not adjust stock.</DialogDescription>
             </DialogHeader>
-            <div className="min-h-0 space-y-3 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6">
+            <div className="min-h-0 overflow-y-auto overscroll-contain px-4 pb-4 sm:px-6">
+            <div className="sticky top-0 z-10 -mx-4 mb-3 border-b bg-background px-4 py-2 sm:-mx-6 sm:px-6">
+            <div className="flex min-w-0 items-center gap-2">
+              <Button type="button" variant="outline" aria-expanded={countToolsOpen} aria-controls={countToolsOpen ? "count-search-tools" : undefined}
+                onClick={() => setCountToolsOpen(open => !open)}>
+                {countToolsOpen ? "Hide Search & Tools" : "Show Search & Tools"}
+              </Button>
+               {!countToolsOpen && countSearch.trim() && <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" role="status" title={`Entry filter: ${countSearch}`}>
+                Entry filter active: “{countSearch}” · {matchingCountRows.length} matching
+              </span>}
+            </div>
+            {countToolsOpen && <div id="count-search-tools" className="mt-2 max-h-[min(34dvh,18rem)] space-y-3 overflow-y-auto overscroll-contain rounded border bg-background p-3">
+              <div className="space-y-2 rounded border p-3">
+                <Label htmlFor="count-discovery-search">Find discovery product</Label>
+                <Input id="count-discovery-search" value={countProductSearch} disabled={command.isPending} onChange={event => { setCountProductSearch(event.target.value); setCountProduct(""); }} placeholder="Search the project catalog by SKU, name or barcode" />
+                <Label htmlFor="count-discovery-product">Discovery product</Label>
+                <Select value={countProduct} onValueChange={setCountProduct} disabled={command.isPending || !can("inventory.count")}><SelectTrigger id="count-discovery-product"><SelectValue placeholder="Choose a product found in this warehouse" /></SelectTrigger><SelectContent>{discoveryProducts.map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select>
+                <p className="text-xs text-muted-foreground">Up to 100 matches shown. Refine the search for another product. Adding a product starts at zero; enter its actual quantity and scans.</p>
+                <Button variant="outline" onClick={addCountProduct} disabled={!can("inventory.count") || !countProduct || command.isPending || countRows.length >= COUNT_MAX_LINES}>Add discovery to count</Button>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="count-entry-search">Search count entries</Label>
+                <Input id="count-entry-search" value={countSearch} onChange={event => { setCountSearch(event.target.value); setCountPage(0); }} placeholder="Filter entered items by SKU or name; hidden entries are still included" />
+              </div>
+            </div>}
+            </div>
+            <div className="space-y-3">
             {countConflict && <Alert data-testid="inventory-external-change" variant={countConflict === "unavailable" ? "destructive" : "default"}>
               <AlertTriangle className="h-4 w-4" />
               <AlertTitle>{countConflict === "unavailable" ? "Count is no longer open" : "Saved count draft changed elsewhere"}</AlertTitle>
@@ -1452,16 +1480,6 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
                 : "Your exact quantities and scans are retained. Saving and posting are paused until you reload the current saved draft."}</AlertDescription>
             </Alert>}
             <p role="status" className="text-sm">{countDraftMessage || "Unsaved entries remain only on this page until you save the draft."}</p>
-            <div className="space-y-2 rounded border p-3">
-              <Label htmlFor="count-discovery-search">Find discovery product</Label>
-              <Input id="count-discovery-search" value={countProductSearch} disabled={command.isPending} onChange={event => { setCountProductSearch(event.target.value); setCountProduct(""); }} placeholder="Search the project catalog by SKU, name or barcode" />
-              <Label htmlFor="count-discovery-product">Discovery product</Label>
-              <Select value={countProduct} onValueChange={setCountProduct} disabled={command.isPending || !can("inventory.count")}><SelectTrigger id="count-discovery-product"><SelectValue placeholder="Choose a product found in this warehouse" /></SelectTrigger><SelectContent>{discoveryProducts.map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select>
-              <p className="text-xs text-muted-foreground">Up to 100 matches shown. Refine the search for another product. Adding a product starts at zero; enter its actual quantity and scans.</p>
-              <Button variant="outline" onClick={addCountProduct} disabled={!can("inventory.count") || !countProduct || command.isPending || countRows.length >= COUNT_MAX_LINES}>Add discovery to count</Button>
-            </div>
-            <Label htmlFor="count-entry-search">Search count entries</Label>
-            <Input id="count-entry-search" value={countSearch} onChange={event => { setCountSearch(event.target.value); setCountPage(0); }} placeholder="Filter entered items by SKU or name; hidden entries are still included" />
             <p className="text-sm">{countRows.length} total count entries · {matchingCountRows.length} matching · limit {COUNT_MAX_LINES}. All pages are saved and posted together.</p>
             {visibleCountRows.map(row => {
               const { itemId: id, item } = row;
@@ -1480,6 +1498,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
             <div className="flex flex-wrap items-center gap-2"><Button variant="outline" aria-label="Previous count entries page" disabled={currentCountPage === 0 || command.isPending} onClick={() => setCountPage(currentCountPage - 1)}>Previous</Button><span className="text-sm">Count entries page {currentCountPage + 1} of {lastCountPage + 1}</span><Button variant="outline" aria-label="Next count entries page" disabled={currentCountPage === lastCountPage || command.isPending} onClick={() => setCountPage(currentCountPage + 1)}>Next</Button></div>
             <div className="space-y-1"><Label htmlFor="count-reason">Count adjustment reason</Label><Input id="count-reason" maxLength={1000} disabled={command.isPending} value={countReason} onChange={event => setCountReason(event.target.value)} placeholder="Required audit note" /></div>
             {countDirty && <p role="status" className="text-sm text-amber-700 dark:text-amber-400">Unsaved count changes. Save the draft to keep your entries.</p>}
+            </div>
             </div>
             <DialogFooter className="shrink-0 flex-row flex-wrap justify-start border-t px-4 py-3 sm:px-6">
               <Button variant="outline" onClick={() => saveCountDraft()} disabled={!can("inventory.count") || !!countConflict || command.isPending}>Save count draft</Button>
