@@ -22,16 +22,18 @@ type Props = {
   onAutoSave?: (capture: ShipmentCapture) => Promise<boolean>;
   confirmedCapture?: ShipmentCapture;
   checkpointBusy?: boolean; autoSaveBlocked?: boolean; autoSavePaused?: boolean;
+  externalInventoryChanged?: boolean; onRefreshInventory?: () => Promise<unknown>;
+  externalCaptureChanged?: boolean; onReloadCapture?: () => Promise<unknown>;
   externalMessage?: string;
   onPost: (data: Record<string, unknown>, capture?: ShipmentCapture) => Promise<boolean>;
   onClose: () => void; onDirtyChange: (dirty: boolean) => void;
 };
 
-export function InventoryShipmentGuidedDialog({ state: openingState, order, action, items, canCloseRemainder, busy = false, initialCapture, onSaveDraft, onAutoSave, confirmedCapture, checkpointBusy = false, autoSaveBlocked = false, autoSavePaused = false, onPost, onClose, onDirtyChange, externalMessage }: Props) {
+export function InventoryShipmentGuidedDialog({ state: openingState, order, action, items, canCloseRemainder, busy = false, initialCapture, onSaveDraft, onAutoSave, confirmedCapture, checkpointBusy = false, autoSaveBlocked = false, autoSavePaused = false, externalInventoryChanged = false, onRefreshInventory, externalCaptureChanged = false, onReloadCapture, onPost, onClose, onDirtyChange, externalMessage }: Props) {
   // A lost response may refresh stock after the server committed. Keep this
   // editor's opening snapshot so client-side availability does not block its
   // same-operation retry; the server still validates every fresh posting.
-  const [state] = useState(openingState);
+  const state = openingState;
   const initialEntries = initialCapture?.entries ?? {};
   const initialBuffers = initialCapture?.scanBuffers ?? {};
   const [entries, setEntries] = useState<Record<string, ShipmentEntry>>(() => initialCapture?.entries ?? {});
@@ -168,6 +170,16 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
     return !!target?.closest?.("[data-serial-child-dialog]");
   };
   const validateAll = () => {
+    if (externalCaptureChanged) {
+      setValidation("The saved shipment capture changed elsewhere. Reload it before reviewing or posting; your local entries are retained.");
+      setReview(false);
+      return false;
+    }
+    if (externalInventoryChanged) {
+      setValidation("Inventory changed elsewhere. Refresh current availability before reviewing or posting; your scans remain here.");
+      setReview(false);
+      return false;
+    }
     if (missingSavedItems.length || missingBufferItems.length) {
       setValidation(`Saved product identities are unavailable: ${[...new Set([...missingSavedItems, ...missingBufferItems])].join(", ")}. Restore the product/order line or discard the saved draft.`);
       setReview(false);
@@ -258,6 +270,24 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
       <DialogHeader><DialogTitle>{heading} · <span className="font-mono">{orderLabel(order)}</span></DialogTitle><DialogDescription>
         {action === "dispatch" ? "Scan actual serialized identities leaving the source location." : action === "accept" ? "Scan newly received identities. Unreadable damaged units must reference unresolved dispatched identities." : "Record physical units received. Damaged units are held for inspection, not available stock."}
       </DialogDescription></DialogHeader>
+      {externalInventoryChanged && <Alert data-testid="inventory-external-change">
+        <AlertTriangle className="h-4 w-4" /><AlertTitle>Inventory changed elsewhere</AlertTitle>
+        <AlertDescription className="space-y-2">
+          <span>Your exact quantities, committed scans, and scanner buffers are retained. Refresh the current inventory basis before reviewing or posting.</span>
+          {onRefreshInventory && <Button type="button" size="sm" variant="outline" disabled={busy || savingDraft} onClick={async () => {
+            await onRefreshInventory();
+            setReview(false);
+            setValidation("");
+          }}>Refresh current inventory</Button>}
+        </AlertDescription>
+      </Alert>}
+      {externalCaptureChanged && <Alert data-testid="inventory-external-change">
+        <AlertTriangle className="h-4 w-4" /><AlertTitle>Saved shipment capture changed elsewhere</AlertTitle>
+        <AlertDescription className="space-y-2">
+          <span>Your exact local quantities and scanner buffers remain here. A newer or missing server checkpoint will not be overwritten automatically.</span>
+          {onReloadCapture && <Button type="button" size="sm" variant="outline" disabled={busy || savingDraft} onClick={() => void onReloadCapture()}>Review latest saved capture</Button>}
+        </AlertDescription>
+      </Alert>}
       {discard ? <Alert><AlertTriangle className="h-4 w-4" /><AlertTitle>Discard movement edits?</AlertTitle><AlertDescription>Unsaved local changes will be abandoned. Server checkpoints remain available to Resume; no stock has been posted. {checkpointBusy && "Waiting for the current checkpoint before closing."}</AlertDescription><div className="mt-3 flex justify-end gap-2"><Button variant="outline" onClick={() => setDiscard(false)}>Stay</Button><Button variant="destructive" disabled={checkpointBusy} onClick={() => { onDirtyChange(false); onClose(); }}>Discard</Button></div></Alert> : <>
         <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
           <div className="rounded border p-2"><span className="text-muted-foreground">Order</span><p className="font-mono font-medium">{orderLabel(order)}</p><p>{orderReference(order)}</p></div>
@@ -338,7 +368,7 @@ export function InventoryShipmentGuidedDialog({ state: openingState, order, acti
         </p>}
         <DialogFooter className="flex-col sm:flex-row">
           <Button variant="outline" disabled={busy} onClick={close}>Cancel</Button>
-          {onSaveDraft && <Button variant="outline" disabled={busy || savingDraft || checkpointBusy || (!dirty && !autoSaveBlocked)} onClick={async () => {
+          {onSaveDraft && <Button variant="outline" disabled={busy || savingDraft || checkpointBusy || externalCaptureChanged || (!dirty && !autoSaveBlocked)} onClick={async () => {
             setSavingDraft(true); setDraftMessage("");
             try {
               const ok = await onSaveDraft(capture);

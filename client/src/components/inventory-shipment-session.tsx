@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { InventoryItem, InventoryOrder, InventoryState } from "@shared/inventory";
 import { orderLabel, orderReference } from "@shared/inventory-order-labels";
 import { blankShipmentCapture, type SavedShipmentDraft, type ShipmentCapture } from "@shared/inventory-shipment-draft-model";
@@ -13,13 +13,42 @@ import { ShipmentCheckpointWriter } from "@/lib/inventory-shipment-checkpoint-wr
 
 type Props = {
   base: string; state: InventoryState; order: InventoryOrder; action: ShipmentAction;
+  liveState?: InventoryState;
   items: InventoryItem[]; canCloseRemainder: boolean; busy?: boolean; draft?: SavedShipmentDraft; ownerId?: string;
   onClose: () => void; onDirtyChange: (dirty: boolean) => void;
   autoSavePaused?: boolean; onCheckpointBusyChange?: (busy: boolean) => void;
 };
 
+const shipmentOrderBasis = (order?: InventoryOrder) => order ? {
+  id: order.id, status: order.status, lines: order.lines, dispatched: order.dispatched,
+  received: order.received, losses: order.losses ?? [], closure: order.closure ?? null,
+} : null;
+function shipmentInventoryBasis(state: InventoryState, orderId: string, action: ShipmentAction) {
+  const order = state.orders.find(value => value.id === orderId);
+  if (!order) return JSON.stringify({ order: null });
+  const warehouses = new Set([action === "dispatch" ? order.sourceId : order.destinationId].filter((id): id is string => !!id));
+  const itemIds = new Set(order.lines.map(line => line.itemId));
+  const stock = state.stock.filter(line => warehouses.has(line.warehouseId) && itemIds.has(line.itemId));
+  const allocations = state.allocations.filter(value => value.status === "reserved").map(value => ({
+    workOrderId: value.workOrderId, revision: value.revision,
+    lines: value.lines.filter(line => warehouses.has(line.warehouseId) && itemIds.has(line.itemId)),
+  })).filter(value => value.lines.length);
+  const holds = (state.shipmentHolds ?? []).filter(hold => warehouses.has(hold.warehouseId) && itemIds.has(hold.itemId));
+  const occupancy = (state.serialOccupancy ?? []).filter(value => itemIds.has(value.itemId));
+  const returns = state.returns.filter(value => itemIds.has(value.itemId ?? ""));
+  const kitHolds = (state.kitHolds ?? []).filter(hold => warehouses.has(hold.warehouseId) && itemIds.has(hold.itemId));
+  const competingTransfers = state.orders.filter(value => value.id !== order.id && value.type === "transfer" &&
+    value.lines.some(line => itemIds.has(line.itemId)));
+  const items = state.items.filter(item => itemIds.has(item.id)).map(item => ({
+    id: item.id, active: item.active, tracking: item.tracking, components: item.components,
+  }));
+  return JSON.stringify({
+    order: shipmentOrderBasis(order), stock, allocations, items, holds, occupancy, returns, kitHolds, competingTransfers,
+  });
+}
+
 export function InventoryShipmentSession(props: Props) {
-  const { base, state: initialState, order, action, items, draft: incomingDraft, ownerId, onClose, onDirtyChange } = props;
+  const { base, state: initialState, liveState, order, action, items, draft: incomingDraft, ownerId, onClose, onDirtyChange } = props;
   const [savedDraft, setSavedDraft] = useState<SavedShipmentDraft | undefined>(incomingDraft ??
     initialState.shipmentDrafts?.find(value => value.orderId === order.id && value.stage === action && value.ownerId === ownerId));
   const foreignDraft = ownerId ? initialState.shipmentDrafts?.find(value =>
@@ -38,11 +67,15 @@ export function InventoryShipmentSession(props: Props) {
   const [statusChecked, setStatusChecked] = useState(false);
   const draftIdRef = useRef<string | null>(incomingDraft?.id ?? null);
   const [freshState, setFreshState] = useState<InventoryState>(initialState);
+  const postingRef = useRef(false);
+  const localDirtyRef = useRef(false);
+  const [externalInventoryChange, setExternalInventoryChange] = useState(false);
+  const [externalCaptureChange, setExternalCaptureChange] = useState<"changed" | "unavailable" | null>(null);
   const pending = recoveryDraft?.pending ?? null;
   const capture = useMemo(() => savedDraft ? captureFromDraft(savedDraft) : undefined, [savedDraft]);
-  const writerRef = useRef<ShipmentCheckpointWriter | null>(null);
-  if (!writerRef.current) writerRef.current = new ShipmentCheckpointWriter({
-    orderId: order.id, stage: action, ownerId, initial: savedDraft,
+  const editorCapture = capture ?? blankShipmentCapture();
+  const createWriter = (initial?: SavedShipmentDraft) => new ShipmentCheckpointWriter({
+    orderId: order.id, stage: action, ownerId, initial,
     send: async attempt => {
       const result = await sendShipmentDraftCommand(base, "shipmentDraftSave", attempt.data, attempt.operationId);
       const updated = result.state.shipmentDrafts?.find(value => value.id === attempt.data.id);
@@ -55,11 +88,109 @@ export function InventoryShipmentSession(props: Props) {
       setMessage(`Saved revision ${updated.revision}.`);
     },
   });
+  const writerRef = useRef<ShipmentCheckpointWriter | null>(null);
+  if (!writerRef.current) writerRef.current = createWriter(savedDraft);
   const writer = writerRef.current;
+  const reportDirty = useCallback((dirty: boolean) => {
+    localDirtyRef.current = dirty;
+    onDirtyChange(dirty);
+  }, [onDirtyChange]);
   useEffect(() => {
     props.onCheckpointBusyChange?.(checkpointBusy);
     return () => props.onCheckpointBusyChange?.(false);
   }, [checkpointBusy, props.onCheckpointBusyChange]);
+  const latestInventoryBasis = liveState
+    ? shipmentInventoryBasis(liveState, order.id, action)
+    : shipmentInventoryBasis(initialState, order.id, action);
+  const acceptedInventoryBasis = useRef(shipmentInventoryBasis(initialState, order.id, action));
+  useEffect(() => {
+    if (latestInventoryBasis === acceptedInventoryBasis.current) return;
+    if (postingRef.current || recoveryDraft?.pending) {
+      acceptedInventoryBasis.current = latestInventoryBasis;
+      return;
+    }
+    if (localDirtyRef.current) {
+      setExternalInventoryChange(true);
+      return;
+    }
+    if (liveState) setFreshState(liveState);
+    acceptedInventoryBasis.current = latestInventoryBasis;
+    setExternalInventoryChange(false);
+  }, [latestInventoryBasis, liveState, recoveryDraft?.pending]);
+
+  const findLiveDraft = (snapshot: InventoryState) => snapshot.shipmentDrafts?.find(value =>
+    savedDraft ? value.id === savedDraft.id :
+      value.orderId === order.id && value.stage === action);
+  useEffect(() => {
+    if (!liveState || recoveryDraft?.pending) return;
+    const liveDraft = findLiveDraft(liveState);
+    if (!liveDraft) {
+      if (savedDraft && liveState.revision > initialState.revision) setExternalCaptureChange("unavailable");
+      return;
+    }
+    if (savedDraft && liveDraft.revision < savedDraft.revision) return;
+    const same = !!savedDraft && liveDraft.id === savedDraft.id &&
+      liveDraft.revision === savedDraft.revision &&
+      JSON.stringify(liveDraft.capture) === JSON.stringify(savedDraft.capture) &&
+      JSON.stringify(liveDraft.pending ?? null) === JSON.stringify(savedDraft.pending ?? null);
+    if (same) {
+      setExternalCaptureChange(null);
+      return;
+    }
+    if (checkpointBusy || busy || activeSaves.current > 0 || postingRef.current) return;
+    setExternalCaptureChange("changed");
+  }, [liveState?.shipmentDrafts, liveState?.revision, savedDraft, recoveryDraft?.pending, checkpointBusy, busy]);
+
+  const refreshInventoryBasis = async () => {
+    setBusy(true);
+    setMessage("");
+    try {
+      const latest = await refreshShipmentInventory(base);
+      setFreshState(latest.state);
+      acceptedInventoryBasis.current = shipmentInventoryBasis(latest.state, order.id, action);
+      setExternalInventoryChange(false);
+      setMessage("Current inventory checked. Your capture and scanner text were kept; review the refreshed availability before posting.");
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : "Could not refresh inventory. Your capture is still here.");
+    } finally { setBusy(false); }
+  };
+
+  const reloadLatestCapture = async () => {
+    setBusy(true);
+    setMessage("");
+    try {
+      const latest = await refreshShipmentInventory(base);
+      const candidate = latest.state.shipmentDrafts?.find(value =>
+        savedDraft ? value.id === savedDraft.id :
+          value.orderId === order.id && value.stage === action);
+      setFreshState(latest.state);
+      const expectedOwner = ownerId ?? savedDraft?.ownerId;
+      if (!candidate || (expectedOwner && candidate.ownerId !== expectedOwner)) {
+        acceptedInventoryBasis.current = shipmentInventoryBasis(latest.state, order.id, action);
+        setExternalCaptureChange("unavailable");
+        setMessage(candidate ? "This checkpoint now belongs to another user. Your local capture remains retained." :
+          "The saved checkpoint is no longer available. Your local capture remains retained and will not be posted against a missing draft.");
+        return;
+      }
+      if (localDirtyRef.current && !window.confirm("Replace the exact local shipment entries and scanner buffers with the current saved capture? This cannot be undone.")) return;
+      const nextWriter = createWriter(candidate);
+      writerRef.current = nextWriter;
+      draftIdRef.current = candidate.id;
+      nextWriter.accept(candidate);
+      setSavedDraft(candidate);
+      setRecoveryDraft(candidate.pending ? candidate : null);
+      setEditorEpoch(epoch => epoch + 1);
+      setExternalCaptureChange(null);
+      setExternalInventoryChange(false);
+      acceptedInventoryBasis.current = shipmentInventoryBasis(latest.state, order.id, action);
+      setAutoSaveBlocked(false);
+      localDirtyRef.current = false;
+      onDirtyChange(false);
+      setMessage(`Loaded saved revision ${candidate.revision}.`);
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : "Could not refresh the saved capture. Your local entries remain retained.");
+    } finally { setBusy(false); }
+  };
 
   const persistCapture = async (current: ShipmentCapture): Promise<SavedShipmentDraft | null> => {
     draftIdRef.current = writer.draftId;
@@ -77,11 +208,19 @@ export function InventoryShipmentSession(props: Props) {
   };
 
   const saveCapture = async (current: ShipmentCapture) => {
+    if (externalCaptureChange) {
+      setMessage("The saved checkpoint changed elsewhere. Reload the latest capture before saving over it; your local entries are retained.");
+      return false;
+    }
     setBusy(true);
     try { return !!(await persistCapture(current)); } finally { setBusy(false); }
   };
 
   const post = async (payload: Record<string, unknown>, current: ShipmentCapture) => {
+    if (externalCaptureChange) {
+      setMessage("The saved checkpoint changed elsewhere. Reload the latest capture before posting; your local entries are retained.");
+      return false;
+    }
     setBusy(true);
     setMessage("");
     let prepared: SavedShipmentDraft | undefined;
@@ -97,9 +236,11 @@ export function InventoryShipmentSession(props: Props) {
       const preparedPending = prepared.pending;
       setSavedDraft(prepared);
       writer.accept(prepared);
+      postingRef.current = true;
       const result = await sendShipmentDraftCommand(base, action, {
         ...preparedPending.payload, draftId: prepared.id, draftRevision: prepared.revision,
       }, preparedPending.operationId);
+      postingRef.current = false;
       const receiptConfirmed = result.operationId === preparedPending.operationId ||
         result.state.receipts.some(receipt => receipt.id === preparedPending.operationId);
       if (!receiptConfirmed) {
@@ -109,6 +250,7 @@ export function InventoryShipmentSession(props: Props) {
       }
       return await acknowledge(prepared, preparedPending.operationId);
     } catch (cause) {
+      postingRef.current = false;
       const id = prepared?.id ?? draftIdRef.current ?? savedDraft?.id;
       if (id) {
         try {
@@ -175,6 +317,7 @@ export function InventoryShipmentSession(props: Props) {
     setMessage("");
     const attempting = recoveryDraft;
     try {
+      postingRef.current = true;
       const result = await sendShipmentDraftCommand(base, action, {
         ...pending.payload, draftId: attempting.id, draftRevision: attempting.revision,
       }, pending.operationId);
@@ -188,9 +331,11 @@ export function InventoryShipmentSession(props: Props) {
         setMessage("The prepared posting is still unconfirmed. Check status before another retry.");
       }
     } catch {
+      postingRef.current = false;
       setStatusChecked(false);
       setMessage("Retry response was lost. Check status before retrying this unchanged posting.");
     } finally { setBusy(false); }
+    postingRef.current = false;
   };
 
   const returnToEditing = async () => {
@@ -254,9 +399,11 @@ export function InventoryShipmentSession(props: Props) {
     key={`${order.id}:${action}:${editorEpoch}`}
     state={freshState} order={freshState.orders.find(value => value.id === order.id) ?? order} action={action} items={freshState.items} canCloseRemainder={props.canCloseRemainder}
     busy={props.busy || busy} initialCapture={capture}
-    confirmedCapture={capture} checkpointBusy={checkpointBusy} autoSaveBlocked={autoSaveBlocked} autoSavePaused={props.autoSavePaused}
+    confirmedCapture={capture} checkpointBusy={checkpointBusy} autoSaveBlocked={autoSaveBlocked || !!externalCaptureChange} autoSavePaused={props.autoSavePaused}
+    externalInventoryChanged={externalInventoryChange} onRefreshInventory={() => refreshInventoryBasis()}
+    externalCaptureChanged={!!externalCaptureChange} onReloadCapture={() => reloadLatestCapture()}
     onAutoSave={current => persistCapture(current).then(Boolean)}
-    onSaveDraft={saveCapture} onPost={(payload, current) => post(payload, current ?? blankShipmentCapture())} onClose={onClose} onDirtyChange={onDirtyChange}
+    onSaveDraft={saveCapture} onPost={(payload, current) => post(payload, current ?? blankShipmentCapture())} onClose={onClose} onDirtyChange={reportDirty}
     externalMessage={message}
   />;
 }

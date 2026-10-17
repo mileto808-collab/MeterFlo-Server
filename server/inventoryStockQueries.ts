@@ -69,7 +69,12 @@ export async function queryStockSerials(client: Client, projectId: number, input
   const { rows } = await client.query(`SELECT serial ${from} AND lower(serial) LIKE $4
     ORDER BY _position,serial LIMIT $5 OFFSET $6`, [...args, input.limit, offset]);
   const { rows: [marker] } = await client.query("SELECT revision FROM public.inventory_relational_projects WHERE project_id=$1", [projectId]);
-  return { ...counts, serials: rows.map(row => row.serial as string), offset, revision: marker?.revision ?? 0 };
+  const { rows: [labels] } = await client.query(`SELECT
+    (SELECT json_build_object('name',name,'sku',sku) FROM public.inventory_items WHERE project_id=$1 AND id=$3) AS item,
+    (SELECT json_build_object('name',name,'code',code) FROM public.inventory_warehouses WHERE project_id=$1 AND id=$2) AS warehouse`,
+  [projectId, input.warehouse, input.item]);
+  return { ...counts, serials: rows.map(row => row.serial as string), offset, revision: marker?.revision ?? 0,
+    item: labels?.item ?? null, warehouse: labels?.warehouse ?? null };
 }
 
 export async function stockSummary(client: Client, projectId: number) {

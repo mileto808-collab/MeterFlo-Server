@@ -7,6 +7,7 @@ import { promises as fs } from "node:fs";
 import { inventoryCommandSchema, inventoryPermissions, commandPermission, type InventoryState } from "../shared/inventory";
 import { InventoryError } from "../shared/inventory-engine";
 import { inventoryState, postInventory } from "./inventoryService";
+import { inventoryStreamAllowed, subscribeInventoryEvents } from "./inventoryEvents";
 import { storage } from "./storage";
 import { pool } from "./db";
 import { isAuthenticated } from "./replitAuth";
@@ -72,6 +73,64 @@ export function registerInventoryRoutes(app: Express) {
       state, permissions: c.permissions, users: users.map(u => ({ id: u.id, username: u.username || u.id })), actors };
   };
   app.use(base, isAuthenticated, auth);
+  app.get(`${base}/events`, async (req: any, res) => {
+    const { project, user } = res.locals.inventory;
+    if (!project.inventoryEnabled) return res.status(403).json({ message: "Project inventory is disabled." });
+    if (req.query.probe === "1") return res.json({ enabled: true });
+    let closed = false;
+    let unsubscribe: (() => void) | undefined;
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
+    let checking = false;
+    const close = () => {
+      if (closed) return;
+      closed = true;
+      unsubscribe?.();
+      if (heartbeat) clearInterval(heartbeat);
+      if (!res.writableEnded) res.end();
+    };
+    req.on("close", close);
+    const deliver = async (event?: import("../shared/inventory-events").InventoryLiveEvent) => {
+      // Never forward cached authorization after membership/role/warehouse changes.
+      // Events contain metadata only; all data is fetched through its usual API.
+      if (closed) return;
+      try {
+        if (!await inventoryStreamAllowed(project.id, user.id)) {
+          if (!closed) res.write(`data: ${JSON.stringify({ type: "access_lost", projectId: project.id })}\n\n`);
+          close();
+          return;
+        }
+        if (closed) return;
+        if (event) res.write(`data: ${JSON.stringify(event)}\n\n`);
+        else res.write(":heartbeat\n\n");
+      } catch {
+        // Fail closed on unverifiable permissions, but let EventSource reconnect
+        // after a transient database failure rather than leaking cached data.
+        close();
+      }
+    };
+    try {
+      res.set({
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-store",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+      });
+      res.flushHeaders();
+      let subscribed = false;
+      const remove = await subscribeInventoryEvents(project.id, event => { if (subscribed) void deliver(event); });
+      if (closed) { remove(); return; }
+      unsubscribe = remove;
+      subscribed = true;
+      await deliver({ type: "resync", projectId: project.id });
+      if (closed) return;
+      heartbeat = setInterval(() => {
+        if (checking || closed) return;
+        checking = true;
+        void deliver().finally(() => { checking = false; });
+      }, 15000);
+      heartbeat.unref();
+    } catch { close(); }
+  });
   app.get(base, handler((_req, res) => snapshot(res)));
   // Query-only reads never load the aggregate after cutover. Migration, when
   // needed, retains the existing project lock; page/count reads share one MVCC snapshot.

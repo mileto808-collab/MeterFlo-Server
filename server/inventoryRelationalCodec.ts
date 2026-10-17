@@ -1,3 +1,4 @@
+import { notifyInventoryChanged } from "./inventoryNotifications";
 import type { PoolClient } from "pg";
 import type { InventoryState } from "../shared/inventory";
 import { inventoryCategoryLabels } from "../shared/inventory-categories";
@@ -239,4 +240,5 @@ export async function writeRelationalInventory(client: Pick<PoolClient, "query">
   await client.query(`INSERT INTO public.inventory_relational_projects(project_id,version,revision,collections)
     VALUES($1,1,$2,$3) ON CONFLICT(project_id) DO UPDATE SET revision=EXCLUDED.revision,collections=EXCLUDED.collections`,
   [projectId, after.revision, collections]);
+  await notifyInventoryChanged(client, projectId, after.revision);
 }

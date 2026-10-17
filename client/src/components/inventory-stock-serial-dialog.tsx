@@ -8,7 +8,17 @@ import { useToast } from "@/hooks/use-toast";
 import { downloadStockSerials } from "@/lib/inventory-stock-serial-export";
 import { MOBILE_MEDIA_QUERY } from "@/hooks/use-mobile";
 import { useQuery } from "@tanstack/react-query";
-import { collectStockExport, fetchStock, stockUrl, type SerialPage } from "@/lib/inventory-stock-api";
+import { collectStockExport, fetchStock, stockUrl } from "@/lib/inventory-stock-api";
+
+type SerialPage = {
+  serials: string[];
+  total: number;
+  filtered: number;
+  offset: number;
+  revision: number;
+  item?: { name: string; sku: string } | null;
+  warehouse?: { name: string; code: string } | null;
+};
 
 type ExportContext = {
   project: string;
@@ -72,7 +82,13 @@ export function InventoryStockSerialDialog({
   const pageStart = currentPage * PAGE_SIZE;
   const pageSerials = remote ? serialPage.data?.serials ?? [] : filteredSerials.slice(pageStart, pageStart + PAGE_SIZE);
   const exportCount = scope === "all" ? total : scope === "page" ? pageSerials.length : matchingCount;
-  const context: ExportContext = { project, sku, item: itemName, location: locationName, locationCode };
+  const currentItemName = remote && serialPage.data?.item ? serialPage.data.item.name : itemName;
+  const currentSku = remote && serialPage.data?.item ? serialPage.data.item.sku : sku;
+  const currentLocationName = remote && serialPage.data?.warehouse ? serialPage.data.warehouse.name : locationName;
+  const currentLocationCode = remote && serialPage.data?.warehouse ? serialPage.data.warehouse.code : locationCode;
+  const itemUnavailable = remote && !!serialPage.data && serialPage.data.item === null;
+  const warehouseUnavailable = remote && !!serialPage.data && serialPage.data.warehouse === null;
+  const context: ExportContext = { project, sku: currentSku, item: currentItemName, location: currentLocationName, locationCode: currentLocationCode };
 
   useEffect(() => {
     if (!open) return;
@@ -122,9 +138,9 @@ export function InventoryStockSerialDialog({
         <DialogHeader className="shrink-0 border-b px-5 py-5 pr-12 sm:px-6">
           <DialogTitle ref={titleRef} tabIndex={-1}>Stock serials</DialogTitle>
           <DialogDescription className="mt-2 space-y-1 text-left">
-            <span className="block font-medium text-foreground">{itemName}</span>
-            <span className="block font-mono text-xs">{sku}</span>
-            <span className="block">{locationName} <span className="font-mono text-xs">· {locationCode}</span></span>
+            <span className="block font-medium text-foreground">{itemUnavailable ? "Item no longer available" : currentItemName}</span>
+            <span className="block font-mono text-xs">{itemUnavailable ? "Catalog record was removed" : currentSku}</span>
+            <span className="block">{warehouseUnavailable ? "Location no longer available" : currentLocationName} <span className="font-mono text-xs">· {warehouseUnavailable ? "Unavailable" : currentLocationCode}</span></span>
           </DialogDescription>
         </DialogHeader>
 

@@ -1,0 +1,22 @@
+---
+name: Inventory live-update boundaries
+description: Scope and safety rules for inventory live updates across sessions and transaction owners.
+---
+
+Inventory tabs, detail views, and modals must be live-aware like Work Orders. Preserve unfinished edits, scanner text, and uncertain-outcome retry identities when refreshing server data.
+
+**Why:** The user explicitly requested live awareness throughout Inventory, not just the top-level list. A refreshed snapshot is not permission to replace locally captured work.
+
+**How to apply:** Reconcile read-only selections against current records. Compare an editor's relevant saved record/custody/stock basis, retain local entries on conflict, and make reload or recheck explicit.
+
+Do not inherit Work Orders' suppression of events from the current user. Other tabs and devices using that same account still need inventory updates.
+
+**Why:** One user's other session can change inventory while the first session remains open; suppressing by actor silently leaves it stale.
+
+**How to apply:** Broadcast permission-checked invalidation metadata to every authorized subscribed session. Keep business-command deduplication separate from live-event delivery.
+
+Publish invalidations at the database transaction's actual commit, not just from inventory HTTP handlers.
+
+**Why:** Work-order transitions and restores also change inventory, sometimes inside transactions owned by another subsystem. A handler-only notification misses those changes or announces a write that later rolls back.
+
+**How to apply:** Preserve the shared commit-time notification boundary when adding mutation paths or changing persistence. Reconnects must catch missed writes, including restores whose revision can move backwards.

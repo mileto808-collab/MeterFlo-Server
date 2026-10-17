@@ -2,6 +2,8 @@
 
 ## Optional project inventory
 
+Inventory has a dedicated permission-checked SSE stream shared by its workspace and work-order inventory panels. Commit-time PostgreSQL notifications cover inventory commands, work-order stock changes, and restores across server processes. Reconnects refresh active queries; all tabs and read-only detail dialogs use those cache updates. Editable dialogs retain local input and stable retry identities, and require review/reload when the relevant saved record or stock basis changes. Revoked access clears cached inventory instead of leaving stale authorized data visible. The stream includes changes from other sessions signed in as the same user.
+
 Inventory control is opt-in per project and uses the existing PostgreSQL database and configured local project-files storage, including on standalone Windows/Linux. See `INVENTORY.md` for setup, purchase/transfer/receiving/count workflows, work-order stock reservations, mobile contract, audit and backup rules. Disabled projects retain their existing equipment-type workflow.
 Core inventory persistence is relational; see `INVENTORY-RELATIONAL.md` for migration/restore safeguards. The legacy JSON state is an archive after cutover, not a fallback writer. Keep the project-wide command lock.
 

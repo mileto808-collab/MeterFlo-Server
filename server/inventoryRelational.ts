@@ -1,4 +1,5 @@
 import type { Pool, PoolClient } from "pg";
+import { notifyInventoryChanged } from "./inventoryNotifications";
 import { sql, Param, type SQL } from "drizzle-orm";
 import { emptyInventory, type InventoryState } from "../shared/inventory";
 import { readInventoryCategories, storedCategoryState } from "./inventoryCategories";
@@ -85,4 +86,5 @@ export async function clearRelationalInventory(client: Client, projectId: number
     await client.query(`DELETE FROM public.${table} WHERE project_id=$1`, [projectId]);
   await client.query("DELETE FROM public.inventory_categories WHERE project_id=$1", [projectId]);
   await client.query("DELETE FROM public.inventory_relational_projects WHERE project_id=$1", [projectId]);
+  await notifyInventoryChanged(client, projectId);
 }

@@ -31,3 +31,4 @@
 - [Category compatibility](inventory-category-compatibility.md) — project categories must preserve legacy item classifications, including after the last item is cleared.
 - [Kit custody](inventory-kit-custody.md) — recover original assembled contents, never today's recipe; current custody governs reuse and ambiguous legacy lineage must not be invented.
 - [Readable audit identities](audit-display-identity.md) — readable labels must not rewrite audit evidence or invent unavailable historical identities.
+- [Inventory live updates](inventory-live-updates.md) — include same-user sessions and external transaction owners; refresh views without replacing local captures.

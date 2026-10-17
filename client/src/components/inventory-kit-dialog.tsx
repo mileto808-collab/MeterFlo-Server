@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Check, ChevronLeft, ChevronRight, PackageCheck, ScanLine, Trash2 } from "lucide-react";
+import { AlertTriangle, Check, ChevronLeft, ChevronRight, PackageCheck, ScanLine, Trash2 } from "lucide-react";
 
 type Mode = "assemble" | "disassemble" | "inspect";
 type Props = { state: InventoryState; projectId: string; mode: Mode; canResolve: boolean; onClose: () => void; onSaved: () => Promise<unknown>; onDirtyChange?: (dirty: boolean) => void; onOperationPending?: (pending: boolean) => void };
@@ -27,6 +27,25 @@ const unique = (values: string[]) => new Set(values).size === values.length;
 const phone = () => typeof window !== "undefined" && window.matchMedia("(max-width: 767px), (pointer: coarse)").matches;
 const blankRecovery = (line: StockLine): RecoveryDraft => ({ usable: String(line.quantity), damaged: "0", missing: "0", usableSerials: [], damagedSerials: [], missingSerials: [], reason: "" });
 const SERIAL_PAGE_SIZE = 40;
+const kitRelevantFingerprint = (state: InventoryState, mode: Mode, warehouseId: string, itemId: string, assemblyId: string) => {
+  if (mode === "inspect") return JSON.stringify(state.kitHolds ?? []);
+  if (!warehouseId || !itemId) return "";
+  const item = state.items.find(value => value.id === itemId);
+  const itemIds = new Set([itemId, ...(item?.components.map(component => component.itemId) ?? [])]);
+  const stock = state.stock.filter(line => line.warehouseId === warehouseId && itemIds.has(line.itemId));
+  const allocations = state.allocations.filter(value => value.status === "reserved").map(value => ({
+    workOrderId: value.workOrderId, revision: value.revision,
+    lines: value.lines.filter(line => line.warehouseId === warehouseId && itemIds.has(line.itemId)),
+  })).filter(value => value.lines.length);
+  const assemblies = (state.kitAssemblies ?? []).filter(value => value.itemId === itemId &&
+    value.warehouseId === warehouseId && (!assemblyId || value.id === assemblyId));
+  const assemblyIds = new Set(assemblies.map(value => value.id));
+  const holds = (state.kitHolds ?? []).filter(value => value.warehouseId === warehouseId &&
+    (value.itemId === itemId || assemblyIds.has(value.assemblyId)));
+  const provenanceReceipts = state.receipts.filter(receipt => receipt.action === "assemble" &&
+    receipt.warehouseId === warehouseId && receipt.lines.some(line => line.itemId === itemId));
+  return JSON.stringify({ item, stock, allocations, assemblies, holds, provenanceReceipts });
+};
 
 function MissingSerialPicker({ serials, missing, recovered, disabled, onToggle }: {
   serials: string[]; missing: string[]; recovered: string[]; disabled: boolean; onToggle: (serial: string, checked: boolean) => void;
@@ -114,6 +133,17 @@ export function InventoryKitDialog({ state, projectId, mode, canResolve, onClose
   const [pendingFieldChange, setPendingFieldChange] = useState<{ field: "warehouse" | "item" | "assembly" | "quantity"; value: string } | null>(null);
   const [attempt, setAttempt] = useState<{ fingerprint: string; operationId: string; payload: Record<string, unknown>; action: string } | null>(null);
   const busyRef = useRef(false);
+  const relevantFingerprint = kitRelevantFingerprint(state, mode, warehouseId, itemId, assemblyId);
+  const acceptedFingerprint = useRef(relevantFingerprint);
+  const [externalChange, setExternalChange] = useState(false);
+  useEffect(() => {
+    if (relevantFingerprint === acceptedFingerprint.current) return;
+    if (busyRef.current || attempt) {
+      acceptedFingerprint.current = relevantFingerprint;
+      return;
+    }
+    setExternalChange(true);
+  }, [relevantFingerprint, attempt]);
   const items = useMemo(() => state.items.filter(item => item.active && item.components.length > 0), [state.items]);
   const selectedItem = items.find(item => item.id === itemId);
   const locations = state.warehouses.filter(location => location.active);
@@ -149,12 +179,18 @@ export function InventoryKitDialog({ state, projectId, mode, canResolve, onClose
 
   const applyFieldChange = (change: NonNullable<typeof pendingFieldChange>) => {
     setPendingFieldChange(null);
+    const nextWarehouse = change.field === "warehouse" ? change.value : warehouseId;
+    const nextItem = change.field === "item" ? change.value : itemId;
+    const nextAssembly = change.field === "warehouse" || change.field === "item" ? "" :
+      change.field === "assembly" ? change.value : assemblyId;
     if (change.field === "warehouse") { setWarehouseId(change.value); setAssemblyId(""); }
     if (change.field === "item") { setItemId(change.value); setAssemblyId(""); }
     if (change.field === "assembly") setAssemblyId(change.value);
     if (change.field === "quantity") setQuantity(change.value);
     setKitSerials([]); setComponentSerials({}); setRecovery({}); setReason(""); setHoldReason(""); setScannerPending(false);
     setReviewing(false); setError(""); setRefreshWarning(""); setOperationNotice("");
+    acceptedFingerprint.current = kitRelevantFingerprint(state, mode, nextWarehouse, nextItem, nextAssembly);
+    setExternalChange(false);
   };
   const requestFieldChange = (field: "warehouse" | "item" | "assembly" | "quantity", value: string) => {
     const current = field === "warehouse" ? warehouseId : field === "item" ? itemId : field === "assembly" ? assemblyId : quantity;
@@ -165,6 +201,7 @@ export function InventoryKitDialog({ state, projectId, mode, canResolve, onClose
   };
 
   const makePayload = (): Record<string, unknown> => {
+    if (externalChange) throw new Error("Inventory changed elsewhere. Recheck current availability before reviewing this operation.");
     if (scannerPending) throw new Error("Commit or explicitly discard uncommitted scanner text before reviewing this operation.");
     if (!warehouseId) throw new Error("Choose a stock location.");
     if (!validCount(quantity, 1)) throw new Error("Quantity must be a whole number from 1 to 1,000,000.");
@@ -246,8 +283,10 @@ export function InventoryKitDialog({ state, projectId, mode, canResolve, onClose
         setHoldReason("");
       }
       try {
-        const refreshed = await onSaved() as { isError?: boolean };
+        const refreshed = await onSaved() as { isError?: boolean; data?: { state?: InventoryState } };
         if (refreshed?.isError) throw new Error("Refresh request failed.");
+        acceptedFingerprint.current = kitRelevantFingerprint(refreshed.data?.state ?? state, mode, warehouseId, itemId, assemblyId);
+        setExternalChange(false);
         if (closeOnReceipt) { onDirtyChange?.(false); onClose(); }
         else setOperationNotice("Inspection hold resolution receipt confirmed.");
       } catch {
@@ -266,8 +305,10 @@ export function InventoryKitDialog({ state, projectId, mode, canResolve, onClose
   const retryRefresh = async () => {
     setBusy(true); setError("");
     try {
-      const refreshed = await onSaved() as { isError?: boolean };
+      const refreshed = await onSaved() as { isError?: boolean; data?: { state?: InventoryState } };
       if (refreshed?.isError) throw new Error("Refresh request failed.");
+      acceptedFingerprint.current = kitRelevantFingerprint(refreshed.data?.state ?? state, mode, warehouseId, itemId, assemblyId);
+      setExternalChange(false);
       setRefreshWarning("");
       if (mode !== "inspect") { onDirtyChange?.(false); onClose(); }
     } catch { setRefreshWarning("Receipt confirmed. Inventory refresh still failed; close and verify the ledger before continuing."); }
@@ -300,6 +341,12 @@ export function InventoryKitDialog({ state, projectId, mode, canResolve, onClose
   return <Dialog open onOpenChange={open => { if (!open) close(); }}>
     <DialogContent className="flex max-h-[min(94dvh,860px)] w-[calc(100vw-1rem)] max-w-3xl flex-col gap-3 overflow-hidden p-3 sm:p-6" onOpenAutoFocus={event => event.preventDefault()} onEscapeKeyDown={event => { event.preventDefault(); close(); }} onPointerDownOutside={event => event.preventDefault()}>
       <DialogHeader className="shrink-0 text-left"><DialogTitle>{mode === "assemble" ? "Assemble kit" : mode === "inspect" ? "Kit batch inspection" : "Disassemble kit"}</DialogTitle><DialogDescription>{mode === "assemble" ? "Scan exact component custody and finished kit identity." : mode === "inspect" ? "Review damaged recovered components and resolve held stock." : "Use trusted assembly provenance and account for every original component."}</DialogDescription></DialogHeader>
+      {externalChange && !attempt && <Alert data-testid="inventory-external-change">
+        <AlertTriangle className="h-4 w-4" /><AlertTitle>Inventory changed elsewhere</AlertTitle>
+        <AlertDescription className="space-y-2"><span>Your scans and dispositions are retained. Review the refreshed stock and custody before continuing; stale conversion or hold commands are paused.</span>
+          <Button type="button" size="sm" variant="outline" onClick={() => { acceptedFingerprint.current = relevantFingerprint; setExternalChange(false); setReviewing(false); setError(""); }}>Recheck current availability</Button>
+        </AlertDescription>
+      </Alert>}
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto pr-1">
         {holds.length > 0 && <section className="min-w-0 space-y-2 rounded-md border border-amber-500/40 bg-amber-50/40 p-3 dark:bg-amber-950/10" aria-label="Kit component inspection holds">
           <div><h3 className="font-medium">Kit inspection · component custody</h3><p className="text-xs text-muted-foreground">Select only known components still held. Each decision is recorded as an append-only inspection event.</p></div>

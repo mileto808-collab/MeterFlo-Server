@@ -3,7 +3,8 @@ import type { StockBalanceRow } from "./inventory-stock-export";
 export type StockPage = {
   rows: StockBalanceRow[]; total: number; filtered: number; quantity: number; reserved: number; offset: number; revision: number;
 };
-export type SerialPage = { serials: string[]; total: number; filtered: number; offset: number; revision: number };
+export type SerialPage = { serials: string[]; total: number; filtered: number; offset: number; revision: number;
+  item?: { name: string; sku: string } | null; warehouse?: { name: string; code: string } | null };
 export type StockSummary = { locations: number; vehicles: number; items: number; serialized: number; quantity: number; orders: number; counts: number };
 export function stockUrl(base: string, path: string, params: Record<string, string | number>) {
   return `${base}/stock${path}?${new URLSearchParams(Object.entries(params).map(([key, value]) => [key, String(value)]))}`;

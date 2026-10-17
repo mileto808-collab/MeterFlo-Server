@@ -5,6 +5,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
+import { useInventoryEvents } from "@/hooks/useInventoryEvents";
 import { useUnsavedNavigation } from "@/hooks/use-unsaved-navigation";
 import { emptyInventory, type InventoryCommand, type InventoryCount, type InventoryItem, type InventoryOrder, type InventoryState, type StockLine, type Vendor, type Warehouse } from "@shared/inventory";
 import type { SavedShipmentDraft } from "@shared/inventory-shipment-draft-model";
@@ -73,6 +74,19 @@ const sameOriginImage = (value: string) => {
   try { return new URL(value, window.location.origin).origin === window.location.origin ? value : null; }
   catch { return null; }
 };
+const orderEditorValues = (order: InventoryOrder) => ({
+  orderType: order.type,
+  orderId: orderReference(order),
+  orderDestination: order.destinationId,
+  orderSource: order.sourceId || "",
+  orderVendor: order.vendorId || "",
+  orderNotes: order.notes,
+  replacementFor: order.replacementFor ?? "",
+  orderLines: order.lines,
+  orderLineQuantities: {},
+  orderLineItem: "",
+  orderLineQty: "1",
+});
 
 export default function ProjectInventory() {
   const [, params] = useRoute("/projects/:projectId/inventory");
@@ -86,6 +100,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const { hasPermission } = usePermissions();
   const { user } = useAuth();
   const { toast } = useToast();
+  const inventoryEvents = useInventoryEvents(projectId);
   const base = `/api/projects/${projectId}/inventory`;
   const queryKey = [base];
   const [showInventoryStats, setShowInventoryStats] = useState(false);
@@ -112,10 +127,12 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [copiedItemName, setCopiedItemName] = useState<string | null>(null);
   const [imageBusy, setImageBusy] = useState(false);
   const [resourceError, setResourceError] = useState<string | null>(null);
+  const [resourceConflict, setResourceConflict] = useState<"changed" | "deleted" | null>(null);
   const resourceErrorRef = useRef<HTMLDivElement>(null);
   const resourceId = useRef("");
   const resourceAttempt = useRef<{ fingerprint: string; operationId: string } | null>(null);
   const resourceSaving = useRef(false);
+  const resourceBaseline = useRef<{ kind: ResourceKind; id: string; signature: string; copied: boolean } | null>(null);
   useEffect(() => { if (resourceError) resourceErrorRef.current?.focus(); }, [resourceError]);
   const [orderType, setOrderType] = useState<"purchase" | "transfer">("purchase");
   const [orderEditorOpen, setOrderEditorOpen] = useState(false);
@@ -140,6 +157,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const orderSaving = useRef(false);
   const orderAttempt = useRef<OrderSaveAttempt | null>(null);
   const [orderMessage, setOrderMessage] = useState("");
+  const [orderConflict, setOrderConflict] = useState<"changed" | "deleted" | null>(null);
+  const orderServerBaseline = useRef<{ id: string; signature: string } | null>(null);
   const [pendingOrderTransition, setPendingOrderTransition] = useState<(() => void) | null>(null);
   const [pendingMovementTransition, setPendingMovementTransition] = useState<(() => void) | null>(null);
   const [movementDirty, setMovementDirty] = useState(false);
@@ -200,6 +219,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [countProduct, setCountProduct] = useState("");
   const [pendingCountTransition, setPendingCountTransition] = useState<(() => void) | null>(null);
   const [savedCountValues, setSavedCountValues] = useState("");
+  const [countConflict, setCountConflict] = useState<"changed" | "unavailable" | null>(null);
   const countSaving = useRef(false);
   const countRows = activeCount ? inventoryCountRows(activeCount, data?.state.items ?? [], countQuantities, countSerials) : [];
   const countValues = JSON.stringify({ reason: countReason,
@@ -217,6 +237,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [returnInspect, setReturnInspect] = useState<Record<string, { itemId: string; reason: string }>>({});
 
   const state = data?.state;
+  const currentClosingOrder = orderToClose ? state?.orders.find(order => order.id === orderToClose.id) : undefined;
   const locationsDataset = useMemo(() => buildOperationsDataset("locations", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone), [state, data?.actors, data?.users, timezone]);
   const returnsDataset = useMemo(() => buildOperationsDataset("returns", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone), [state, data?.actors, data?.users, timezone]);
   const activityDataset = useMemo(() => buildOperationsDataset("activity", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone), [state, data?.actors, data?.users, timezone]);
@@ -389,6 +410,69 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       if (host) host.style.overflow = previousOverflow ?? "";
     };
   }, [isLoading]);
+  useEffect(() => {
+    const baseline = resourceBaseline.current;
+    if (!resource || !baseline || baseline.copied || !baseline.id || !state) return;
+    const latest = baseline.kind === "warehouse" ? state.warehouses.find(value => value.id === baseline.id) :
+      baseline.kind === "vendor" ? state.vendors.find(value => value.id === baseline.id) :
+        state.items.find(value => value.id === baseline.id);
+    if (!latest) {
+      setResourceConflict("deleted");
+      return;
+    }
+    const refreshedForm = baseline.kind === "item"
+      ? { ...latest as InventoryItem, images: (latest as InventoryItem).images.filter(image => !!sameOriginImage(image)) }
+      : latest;
+    const signature = JSON.stringify(refreshedForm);
+    if (signature === baseline.signature) {
+      setResourceConflict(null);
+      return;
+    }
+    const current = baseline.kind === "warehouse" ? warehouseForm :
+      baseline.kind === "vendor" ? vendorForm : itemForm;
+    if (JSON.stringify(current) !== baseline.signature) {
+      setResourceConflict("changed");
+      return;
+    }
+    if (baseline.kind === "warehouse") setWarehouseForm(refreshedForm as Warehouse);
+    else if (baseline.kind === "vendor") setVendorForm(refreshedForm as Vendor);
+    else setItemForm(refreshedForm as InventoryItem);
+    baseline.signature = signature;
+    setResourceConflict(null);
+  }, [resource, state, warehouseForm, vendorForm, itemForm]);
+  useEffect(() => {
+    const baseline = orderServerBaseline.current;
+    if (!editingOrderId || !baseline || baseline.id !== editingOrderId || !state) return;
+    const latest = state.orders.find(value => value.id === editingOrderId);
+    if (!latest || latest.status !== "draft") {
+      setOrderConflict("deleted");
+      return;
+    }
+    const signature = JSON.stringify(orderEditorValues(latest));
+    if (signature === baseline.signature) {
+      setOrderConflict(null);
+      return;
+    }
+    if (orderDirty) {
+      setOrderConflict("changed");
+      return;
+    }
+    loadOrderDraft(latest);
+    setOrderConflict(null);
+  }, [state?.orders, editingOrderId, orderDirty]);
+  useEffect(() => {
+    if (!activeCount || !state) return;
+    const latest = state.counts.find(value => value.id === activeCount.id);
+    if (!latest || latest.status !== "open") {
+      setCountConflict("unavailable");
+      return;
+    }
+    if ((latest.draft?.revision ?? 0) !== countDraftRevision) {
+      setCountConflict("changed");
+      return;
+    }
+    setCountConflict(null);
+  }, [state?.counts, activeCount?.id, countDraftRevision]);
 
   if (!projectId) return <div className="p-6">Project not found.</div>;
   if (isLoading) return <main className="mx-auto max-w-7xl p-4 md:p-7 space-y-5"><div className="h-8 w-64 animate-pulse rounded bg-muted" /><div className="grid gap-4 md:grid-cols-3">{[1, 2, 3].map(i => <div key={i} className="h-28 animate-pulse rounded-lg bg-muted" />)}</div><div className="h-80 animate-pulse rounded-lg bg-muted" /></main>;
@@ -405,15 +489,26 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     setResourceError(null);
     setCopiedItemName(copying && kind === "item" ? existing?.name ?? null : null);
     setResource(kind);
-    if (kind === "warehouse") setWarehouseForm(existing as Warehouse ?? blankWarehouse());
-    if (kind === "vendor") setVendorForm(existing as Vendor ?? blankVendor());
+    if (kind === "warehouse") {
+      const form = existing as Warehouse ?? blankWarehouse();
+      setWarehouseForm(form);
+      resourceBaseline.current = { kind, id: form.id, signature: JSON.stringify(form), copied: copying };
+    }
+    if (kind === "vendor") {
+      const form = existing as Vendor ?? blankVendor();
+      setVendorForm(form);
+      resourceBaseline.current = { kind, id: form.id, signature: JSON.stringify(form), copied: copying };
+    }
     if (kind === "item") {
       const item = existing ? copying ? copyInventoryItem(existing as InventoryItem) : existing as InventoryItem : undefined;
-      setItemForm(item ? { ...item, images: item.images.filter(image => !!sameOriginImage(image)) } : blankItem());
+      const form = item ? { ...item, images: item.images.filter(image => !!sameOriginImage(image)) } : blankItem();
+      setItemForm(form);
+      resourceBaseline.current = { kind, id: form.id, signature: JSON.stringify(form), copied: copying };
     }
+    setResourceConflict(null);
   };
   const saveResource = () => {
-    if (!resource || resourceSaving.current || imageBusy || command.isPending || !can("inventory.maintain")) return;
+    if (!resource || resourceConflict || resourceSaving.current || imageBusy || command.isPending || !can("inventory.maintain")) return;
     setResourceError(null);
     let payload: Record<string, unknown>;
     try {
@@ -428,6 +523,28 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       resourceAttempt.current = { fingerprint, operationId: freshId() };
     resourceSaving.current = true;
     resourceSave.mutate({ action: resource, data: payload, operationId: resourceAttempt.current!.operationId });
+  };
+  const reloadResourceFromServer = () => {
+    const baseline = resourceBaseline.current;
+    if (!baseline || !baseline.id || !state) return;
+    const currentForm = baseline.kind === "warehouse" ? warehouseForm :
+      baseline.kind === "vendor" ? vendorForm : itemForm;
+    if (JSON.stringify(currentForm) !== baseline.signature &&
+        !window.confirm("Replace your unsaved details with the current server record? This discards the local edits.")) return;
+    const latest = baseline.kind === "warehouse" ? state.warehouses.find(value => value.id === baseline.id) :
+      baseline.kind === "vendor" ? state.vendors.find(value => value.id === baseline.id) :
+        state.items.find(value => value.id === baseline.id);
+    if (!latest) {
+      setResourceConflict("deleted");
+      return;
+    }
+    const signature = JSON.stringify(latest);
+    if (baseline.kind === "warehouse") setWarehouseForm(latest as Warehouse);
+    else if (baseline.kind === "vendor") setVendorForm(latest as Vendor);
+    else setItemForm(latest as InventoryItem);
+    baseline.signature = signature;
+    setResourceConflict(null);
+    setResourceError(null);
   };
   const addLine = () => {
     const item = items.find(value => value.id === orderLineItem);
@@ -466,6 +583,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       orderId: "", orderDestination: "", orderSource: "", orderVendor: "", orderNotes: "", replacementFor: "",
       orderLines: [] as StockLine[], orderLineQuantities: {}, orderLineItem: "", orderLineQty: "1" };
     orderAttempt.current = null;
+    orderServerBaseline.current = null;
+    setOrderConflict(null);
     setOrderType(next.orderType); setOrderId(next.orderId); setEditingOrderId("");
     setOrderDestination(next.orderDestination); setOrderSource(next.orderSource); setOrderVendor(next.orderVendor);
     setOrderNotes(next.orderNotes); setReplacementFor(next.replacementFor); setOrderLines(next.orderLines);
@@ -510,6 +629,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   };
   const loadOrderDraft = (order: InventoryOrder) => {
     orderAttempt.current = null;
+    orderServerBaseline.current = { id: order.id, signature: JSON.stringify(orderEditorValues(order)) };
+    setOrderConflict(null);
     setOrderId(orderReference(order)); setEditingOrderId(order.id); setOrderType(order.type); setOrderDestination(order.destinationId);
     setOrderSource(order.sourceId || ""); setOrderVendor(order.vendorId || "");
     setReplacementFor(order.replacementFor ?? "");
@@ -520,6 +641,16 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       orderDestination: order.destinationId, orderSource: order.sourceId || "", orderVendor: order.vendorId || "",
       orderNotes: order.notes, replacementFor: order.replacementFor ?? "", orderLines: order.lines, orderLineQuantities: {}, orderLineItem: "", orderLineQty: "1" }));
     setOrderEditorOpen(true);
+  };
+  const reloadOrderDraftFromServer = () => {
+    const current = state?.orders.find(order => order.id === editingOrderId && order.status === "draft");
+    if (!current) {
+      setOrderConflict("deleted");
+      return;
+    }
+    if (orderDirty && !window.confirm("Replace this unsaved order draft with the current server draft? Local edits will be discarded.")) return;
+    loadOrderDraft(current);
+    setOrderMessage("Loaded the current server draft. Review it before saving.");
   };
   const editOrderDraft = (order: InventoryOrder) => requestOrderTransition(() => loadOrderDraft(order));
   const startNewOrderDraft = () => requestOrderTransition(() => {
@@ -570,6 +701,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       orderLines: replacementLines, orderLineQuantities: {}, orderLineItem: "", orderLineQty: "1",
     };
     orderAttempt.current = null;
+    orderServerBaseline.current = null;
+    setOrderConflict(null);
     setOrderType(next.orderType); setOrderId(next.orderId); setEditingOrderId(""); setOrderDestination(next.orderDestination);
     setOrderSource(next.orderSource); setOrderVendor(next.orderVendor); setOrderNotes(next.orderNotes);
     setReplacementFor(next.replacementFor); setOrderLines(next.orderLines); setOrderLineQuantities({});
@@ -722,6 +855,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       setCountProductSearch("");
       setCountProduct("");
     }
+    setCountConflict(null);
     setActiveCount(count);
     setCountWarehouse(count.warehouseId);
   };
@@ -742,7 +876,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     setCountDraftMessage("Unsaved discovery added. Save the draft before leaving.");
   };
   const saveCountDraft = (afterSave?: () => void) => {
-    if (!activeCount || !can("inventory.count") || command.isPending || countSaving.current) return;
+    if (!activeCount || countConflict || !can("inventory.count") || command.isPending || countSaving.current) return;
     countSaving.current = true;
     command.mutate({ action: "countSaveDraft", data: {
       id: activeCount.id, revision: countDraftRevision, reason: countReason,
@@ -770,6 +904,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   };
   const reloadCountDraft = async () => {
     if (!activeCount) return;
+    if (countDirty && !window.confirm("Replace the count entries on this page with the latest saved draft? Unsaved quantities and scans will be discarded.")) return;
     const latest = await snapshotQuery.refetch();
     const count = latest.data?.state.counts.find(count => count.id === activeCount.id);
     if (!latest.isError && count?.status === "open") openCount(count, true);
@@ -799,7 +934,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     else cancel();
   };
   const postCount = () => {
-    if (!activeCount || !can("inventory.count")) return;
+    if (!activeCount || countConflict || !can("inventory.count")) return;
     let countLines: StockLine[];
     try { countLines = inventoryCountLines(countRows); }
     catch (error) {
@@ -881,15 +1016,16 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     </Dialog>
     <Dialog open={!!orderToClose} onOpenChange={open => { if (!open && !command.isPending) setOrderToClose(null); }}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl" onEscapeKeyDown={event => { if (command.isPending) event.preventDefault(); }} onPointerDownOutside={event => event.preventDefault()}>
-        <DialogHeader><DialogTitle>Close remainder · <span className="font-mono">{orderToClose ? orderLabel(orderToClose) : ""}</span></DialogTitle><DialogDescription>Outstanding units will be recorded as explicitly unfulfilled. No stock movement is created. This cannot be undone.</DialogDescription></DialogHeader>
-        {orderToClose && <div className="max-h-56 space-y-2 overflow-y-auto rounded-md border p-3">{orderToClose.lines.map(line => {
+        <DialogHeader><DialogTitle>Close remainder · <span className="font-mono">{currentClosingOrder ? orderLabel(currentClosingOrder) : "Order unavailable"}</span></DialogTitle><DialogDescription>Outstanding units will be recorded as explicitly unfulfilled. No stock movement is created. This cannot be undone.</DialogDescription></DialogHeader>
+        {orderToClose && !currentClosingOrder && <Alert data-testid="inventory-external-change" variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertTitle>Order is no longer available</AlertTitle><AlertDescription>Your closure reason is retained, but the current order could not be found and will not be submitted.</AlertDescription></Alert>}
+        {currentClosingOrder && <div className="max-h-56 space-y-2 overflow-y-auto rounded-md border p-3">{currentClosingOrder.lines.map(line => {
           const item = items.find(value => value.id === line.itemId);
-          const p = orderLineProgress(state, orderToClose, line.itemId);
+          const p = orderLineProgress(state, currentClosingOrder, line.itemId);
           const closedShort = Math.max(0, p.ordered - p.received);
           return <div key={line.itemId} className="flex justify-between gap-3 border-b pb-2 text-sm last:border-0 last:pb-0"><span>{item?.name ?? line.itemId} <span className="font-mono text-xs text-muted-foreground">{item?.sku}</span></span><span className="font-mono tabular-nums">{closedShort} closed short</span></div>;
         })}</div>}
         <div className="space-y-1"><Label htmlFor="close-order-reason">Closure reason</Label><Textarea id="close-order-reason" maxLength={1000} rows={3} value={closeReason} onChange={event => setCloseReason(event.target.value)} placeholder="Document why the remaining quantity will not be fulfilled" /></div>
-        <DialogFooter><Button variant="outline" disabled={command.isPending} onClick={() => setOrderToClose(null)}>Stay</Button><Button variant="destructive" disabled={!closeReason.trim() || command.isPending || !can("inventory.closeOrders")} onClick={() => void confirmCloseOrder()}>{command.isPending ? "Closing…" : "Confirm close with exceptions"}</Button></DialogFooter>
+        <DialogFooter><Button variant="outline" disabled={command.isPending} onClick={() => setOrderToClose(null)}>Stay</Button><Button variant="destructive" disabled={!currentClosingOrder || !closeReason.trim() || command.isPending || !can("inventory.closeOrders")} onClick={() => void confirmCloseOrder()}>{command.isPending ? "Closing…" : "Confirm close with exceptions"}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
     {isError && <Alert variant="destructive"><AlertTitle>Inventory refresh failed</AlertTitle><AlertDescription>The last loaded inventory is shown. Your count entries were kept; retry before relying on current stock.</AlertDescription><Button variant="outline" className="mt-2" onClick={() => refetch()}>Retry inventory refresh</Button></Alert>}
@@ -902,6 +1038,20 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
             <p className="mt-1 hidden text-sm text-muted-foreground sm:block">Know what’s on hand, where it lives, and which serial leaves with each crew.</p>
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1 sm:flex-wrap sm:gap-2">
+            <span
+              data-testid="inventory-live-indicator"
+              aria-live="polite"
+              aria-label={`Inventory connection ${inventoryEvents.status}`}
+              title={inventoryEvents.status === "live" ? "Live inventory updates are connected" : `Live inventory updates ${inventoryEvents.status}`}
+              className="inline-flex min-h-8 items-center gap-1.5 rounded-md border px-2 text-[11px] font-medium text-muted-foreground sm:px-2.5 sm:text-xs"
+            >
+              <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${inventoryEvents.status === "live" ? "bg-emerald-600" : inventoryEvents.status === "unavailable" ? "bg-amber-600" : "bg-muted-foreground"}`} />
+              <span className="hidden sm:inline">{inventoryEvents.status === "live" ? "Live" : inventoryEvents.status === "reconnecting" ? "Reconnecting" : inventoryEvents.status === "unavailable" ? "Live unavailable" : "Connecting"}</span>
+              <span className="sr-only">{inventoryEvents.status === "live" ? "Live" : inventoryEvents.status === "reconnecting" ? "Reconnecting" : inventoryEvents.status === "unavailable" ? "Live updates unavailable" : "Connecting"}</span>
+            </span>
+            {inventoryEvents.status === "unavailable" && <Button type="button" size="sm" variant="outline" className="h-8 px-2 text-[11px] sm:text-xs" aria-label="Retry live inventory updates" onClick={inventoryEvents.reconnect}>
+              <RefreshCw className="h-3.5 w-3.5 sm:mr-1" /><span className="hidden sm:inline">Retry live</span>
+            </Button>}
             <Button
               size="sm"
               variant={showInventoryStats ? "secondary" : "outline"}
@@ -1060,6 +1210,16 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
                   ? `This new order is linked to ${orderTitle(replacementFor)}. The original quantities and exception history stay unchanged.`
                   : "Plan items and quantities now. Record serials later during receiving or transfer dispatch."}</DialogDescription>
               </DialogHeader>
+              {orderConflict && <Alert data-testid="inventory-external-change" variant={orderConflict === "deleted" ? "destructive" : "default"}>
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>{orderConflict === "deleted" ? "Order draft is no longer available" : "Order draft changed elsewhere"}</AlertTitle>
+                <AlertDescription className="space-y-2">
+                  <span>{orderConflict === "deleted"
+                    ? "This draft was removed or is no longer editable. Your local entries are retained; they will not be submitted."
+                    : "Another operator changed this draft. Your exact local entries are retained, and saving is paused until you review the current server draft."}</span>
+                  {orderConflict === "changed" && <Button type="button" size="sm" variant="outline" onClick={reloadOrderDraftFromServer}>Reload current draft</Button>}
+                </AlertDescription>
+              </Alert>}
               <fieldset disabled={command.isPending} className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-4">
             <div className="space-y-1"><Label>Order type</Label><Select value={orderType} onValueChange={value => setOrderType(value as "purchase" | "transfer")}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="purchase">Purchase</SelectItem><SelectItem value="transfer">Transfer</SelectItem></SelectContent></Select></div>
@@ -1077,7 +1237,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
               </fieldset>
               <DialogFooter className="flex-col-reverse sm:flex-row">
                 <Button variant="outline" disabled={orderSaving.current} onClick={closeOrderEditor}>Cancel</Button>
-                <Button disabled={command.isPending || !canSaveOrder} onClick={() => saveOrderDraft()}><Plus className="mr-2 h-4 w-4" />Save draft</Button>
+                <Button disabled={command.isPending || !!orderConflict || !canSaveOrder} onClick={() => saveOrderDraft()}><Plus className="mr-2 h-4 w-4" />Save draft</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -1284,6 +1444,13 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
               <DialogDescription>Verify every snapshot item, including zero. All entry pages are saved and posted together; saving a draft does not adjust stock.</DialogDescription>
             </DialogHeader>
             <div className="min-h-0 space-y-3 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6">
+            {countConflict && <Alert data-testid="inventory-external-change" variant={countConflict === "unavailable" ? "destructive" : "default"}>
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>{countConflict === "unavailable" ? "Count is no longer open" : "Saved count draft changed elsewhere"}</AlertTitle>
+              <AlertDescription>{countConflict === "unavailable"
+                ? "Your entries remain on this page, but this count cannot be saved or posted in its current state."
+                : "Your exact quantities and scans are retained. Saving and posting are paused until you reload the current saved draft."}</AlertDescription>
+            </Alert>}
             <p role="status" className="text-sm">{countDraftMessage || "Unsaved entries remain only on this page until you save the draft."}</p>
             <div className="space-y-2 rounded border p-3">
               <Label htmlFor="count-discovery-search">Find discovery product</Label>
@@ -1312,9 +1479,9 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
             {countDirty && <p role="status" className="text-sm text-amber-700 dark:text-amber-400">Unsaved count changes. Save the draft to keep your entries.</p>}
             </div>
             <DialogFooter className="shrink-0 flex-row flex-wrap justify-start border-t px-4 py-3 sm:px-6">
-              <Button variant="outline" onClick={() => saveCountDraft()} disabled={!can("inventory.count") || command.isPending}>Save count draft</Button>
-              <Button variant="outline" onClick={() => requestCountTransition(reloadCountDraft)} disabled={!can("inventory.count") || command.isPending}>Reload saved draft</Button>
-              <Button onClick={postCount} disabled={!can("inventory.count") || !countReason.trim() || command.isPending}>Post count</Button>
+              <Button variant="outline" onClick={() => saveCountDraft()} disabled={!can("inventory.count") || !!countConflict || command.isPending}>Save count draft</Button>
+              <Button variant="outline" onClick={() => requestCountTransition(reloadCountDraft)} disabled={!can("inventory.count") || command.isPending || countConflict === "unavailable"}>Reload saved draft</Button>
+              <Button onClick={postCount} disabled={!can("inventory.count") || !!countConflict || !countReason.trim() || command.isPending}>Post count</Button>
               <Button variant="outline" disabled={command.isPending} onClick={() => requestCountTransition(closeCount)}>Close</Button>
             </DialogFooter>
           </div>}
@@ -1322,13 +1489,36 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
         </Dialog>
       </TabsContent>
       <TabsContent value="returns" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
+        {Object.entries(returnInspect).filter(([id, draft]) => {
+          const current = state.returns.find(value => value.id === id);
+          const selectedItem = items.find(value => value.id === draft.itemId && value.tracking === "serialized");
+          return !current || current.status !== "quarantine" || (!!draft.itemId && !selectedItem);
+        }).map(([id, draft]) => {
+          const current = state.returns.find(value => value.id === id);
+          const selectedItem = items.find(value => value.id === draft.itemId && value.tracking === "serialized");
+          return <Alert key={id} data-testid="inventory-external-change" variant={!current ? "destructive" : "default"}>
+            <AlertTriangle className="h-4 w-4" /><AlertTitle>{!current ? "Removed equipment record is unavailable" : current.status !== "quarantine" ? "Equipment custody changed" : "Selected catalog item is unavailable"}</AlertTitle>
+            <AlertDescription className="flex flex-wrap items-center gap-2">
+              <span>{!current
+                ? `Your inspection note “${draft.reason || "No note entered"}” and selected item ${draft.itemId || "none"} remain in this tab, but return ${id} is no longer present.`
+                : current.status !== "quarantine"
+                  ? `Return ${current.serial} is now ${current.status}; the retained inspection note will not be applied to its new custody state.`
+                  : `The selected match ${draft.itemId} is no longer an active serialized ${current.equipment}.`}</span>
+              {selectedItem && <span>{selectedItem.sku} · {selectedItem.name}</span>}
+              <Button type="button" size="sm" variant="outline" onClick={() => {
+                if (!window.confirm("Discard this retained inspection note and selected item?")) return;
+                setReturnInspect(value => { const next = { ...value }; delete next[id]; return next; });
+              }}>Discard retained inspection</Button>
+            </AlertDescription>
+          </Alert>;
+        })}
         <InventoryRecordsWorkspace kind="returns" title="Removed Equipment" description="Returned systems and modules enter quarantine first. Release to usable inventory only after inspection." dataset={returnsDataset} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
           renderRow={row => { const returned = state.returns.find(value => value.id === row.id); if (!returned) return null;
             return <article className="flex min-w-0 flex-col justify-between gap-3 rounded-md border bg-card px-3 py-3 sm:flex-row sm:items-start sm:px-4">
               <div className="min-w-0"><div className="flex flex-wrap items-center gap-2 font-medium"><span>{returned.equipment === "system" ? "System" : "Module"}</span><span className="break-all font-mono text-sm">{returned.serial}</span><Badge variant={returned.status === "released" ? "default" : "outline"}>{returned.status}</Badge></div>
                 <div className="mt-1 text-sm text-muted-foreground">Work order #{returned.workOrderId} · Return location: {warehouses.find(w => w.id === returned.warehouseId)?.name ?? "Location unavailable"}</div>
               </div><div className="flex min-w-0 flex-wrap gap-2">{returned.status === "pending" && can("inventory.receive") && <Button size="sm" disabled={command.isPending} onClick={() => command.mutate({ action: "returnAccept", data: { id: returned.id } })}>Accept into quarantine</Button>}
-                {returned.status === "quarantine" && can("inventory.receive") && <div className="flex min-w-0 flex-wrap gap-2"><Select value={returnInspect[returned.id]?.itemId ?? ""} onValueChange={value => setReturnInspect(current => ({ ...current, [returned.id]: { itemId: value, reason: current[returned.id]?.reason ?? "" } }))}><SelectTrigger className="w-48"><SelectValue placeholder="Matching equipment item" /></SelectTrigger><SelectContent>{items.filter(item => item.tracking === "serialized" && item.equipment === returned.equipment).map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select><Input aria-label="Inspection result" placeholder="Inspection note" value={returnInspect[returned.id]?.reason ?? ""} onChange={event => setReturnInspect(current => ({ ...current, [returned.id]: { itemId: current[returned.id]?.itemId ?? "", reason: event.target.value } }))} /><Button size="sm" disabled={command.isPending || !returnInspect[returned.id]?.itemId || !returnInspect[returned.id]?.reason} onClick={() => command.mutate({ action: "returnRelease", data: { id: returned.id, itemId: returnInspect[returned.id].itemId, reason: returnInspect[returned.id].reason } })}>Release to stock</Button></div>}
+                {returned.status === "quarantine" && can("inventory.receive") && <div className="flex min-w-0 flex-wrap gap-2"><Select value={returnInspect[returned.id]?.itemId ?? ""} onValueChange={value => setReturnInspect(current => ({ ...current, [returned.id]: { itemId: value, reason: current[returned.id]?.reason ?? "" } }))}><SelectTrigger className="w-48"><SelectValue placeholder="Matching equipment item" /></SelectTrigger><SelectContent>{items.filter(item => item.tracking === "serialized" && item.equipment === returned.equipment).map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select><Input aria-label="Inspection result" placeholder="Inspection note" value={returnInspect[returned.id]?.reason ?? ""} onChange={event => setReturnInspect(current => ({ ...current, [returned.id]: { itemId: current[returned.id]?.itemId ?? "", reason: event.target.value } }))} /><Button size="sm" disabled={command.isPending || !items.some(item => item.id === returnInspect[returned.id]?.itemId && item.tracking === "serialized" && item.equipment === returned.equipment) || !returnInspect[returned.id]?.reason} onClick={() => command.mutate({ action: "returnRelease", data: { id: returned.id, itemId: returnInspect[returned.id].itemId, reason: returnInspect[returned.id].reason } })}>Release to stock</Button></div>}
               </div></article>;
           }} />
       </TabsContent>
@@ -1367,6 +1557,16 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     )}
 
     <Dialog open={!!resource} onOpenChange={open => { if (!open && !resourceSaving.current && !imageBusy) setResource(null); }}><DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{resource === "warehouse" ? "Location details" : resource === "vendor" ? "Vendor details" : copiedItemName !== null ? "Copy item" : "Item details"}</DialogTitle><DialogDescription>{copiedItemName !== null ? `Copy of ${copiedItemName}. Enter a unique Product ID (SKU). Barcode is cleared; stock, serials and history are not copied.` : "Changes apply only to this project. Keep scanned identities and stock rules intact."}</DialogDescription></DialogHeader>
+      {resourceConflict && <Alert data-testid="inventory-external-change" variant={resourceConflict === "deleted" ? "destructive" : "default"}>
+        <AlertTriangle className="h-4 w-4" />
+        <AlertTitle>{resourceConflict === "deleted" ? "Record is no longer available" : "Record changed elsewhere"}</AlertTitle>
+        <AlertDescription className="space-y-2">
+          <span>{resourceConflict === "deleted"
+            ? "The original record was removed. Your entered values are retained, but this edit cannot be saved against the missing record."
+            : "Your exact edits are retained. Saving is paused until you explicitly reload the current record."}</span>
+          {resourceConflict === "changed" && <Button type="button" size="sm" variant="outline" onClick={reloadResourceFromServer}>Reload current record</Button>}
+        </AlertDescription>
+      </Alert>}
       {resourceError && <Alert ref={resourceErrorRef} tabIndex={-1} id="inventory-resource-error" role="alert" variant="destructive"><AlertTitle>Details not saved</AlertTitle><AlertDescription>{resourceError} Your entered values have been kept. Correct the details and retry, or cancel to discard them.</AlertDescription></Alert>}
       <fieldset disabled={resourceBusy} aria-describedby={resourceError ? "inventory-resource-error" : undefined} className="contents">
       {resource === "warehouse" && <div className="grid gap-3 sm:grid-cols-2">
@@ -1401,16 +1601,29 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
         <div className="sm:col-span-2"><label htmlFor="item-active" className="flex items-start gap-2 text-sm"><Checkbox id="item-active" checked={itemForm.active} aria-describedby="item-active-help" onCheckedChange={checked => setItemForm(form => ({ ...form, active: checked === true }))} /><span><span className="font-medium">Active product</span><span id="item-active-help" className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">New products default to active and can be used in new inventory activity. Turn off a discontinued supply to retain its catalog record without offering it for new use. Deactivation is blocked while stock, reservations, or open orders remain.</span></span></label></div>
       </div>}
       </fieldset>
-      <DialogFooter><Button variant="outline" disabled={resourceBusy} onClick={() => setResource(null)}>Cancel</Button><Button onClick={saveResource} disabled={resourceBusy || command.isPending || !can("inventory.maintain")}>{resourceSave.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{resourceSave.isPending ? "Saving..." : "Save changes"}</Button></DialogFooter>
+      <DialogFooter><Button variant="outline" disabled={resourceBusy} onClick={() => setResource(null)}>Cancel</Button><Button onClick={saveResource} disabled={resourceBusy || command.isPending || !!resourceConflict || !can("inventory.maintain")}>{resourceSave.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{resourceSave.isPending ? "Saving..." : "Save changes"}</Button></DialogFooter>
     </DialogContent></Dialog>
 
-    {operationOrder && <InventoryShipmentSession base={base} state={sessionState ?? state} order={operationOrder} action={operation as ShipmentAction} items={items} draft={sessionDraft} ownerId={user?.id}
+    {operationOrder && <InventoryShipmentSession base={base} state={sessionState ?? state} liveState={state} order={operationOrder} action={operation as ShipmentAction} items={items} draft={sessionDraft} ownerId={user?.id}
       canCloseRemainder={can("inventory.closeOrders") && !(operationOrder.type === "transfer" && operationOrder.lines.some(line => orderLineProgress(state, operationOrder, line.itemId).inTransit > 0))} busy={command.isPending}
       onDirtyChange={setMovementDirty}
       autoSavePaused={!!pendingMovementTransition} onCheckpointBusyChange={setMovementCheckpointBusy}
       onClose={() => { setOperationOrder(null); setSessionDraft(undefined); setSessionState(null); setMovementDirty(false); }} />}
-    {transitOrder && <InventoryShipmentTransitDialog state={state} order={transitOrder} items={items} busy={command.isPending}
-      onPost={payload => postWithStableIdentity("resolveTransit", payload)}
+    {transitOrder && <InventoryShipmentTransitDialog state={state} liveState={state} order={transitOrder} items={items} busy={command.isPending}
+      onRecheck={latestOrder => setTransitOrder(latestOrder)}
+      onPost={async payload => {
+        const latest = await refreshShipmentInventory(base);
+        const current = latest.state.orders.find(order => order.id === transitOrder.id);
+        if (!current) throw new Error("This transfer is no longer available. Your quantities and scans remain in this dialog; do not retry against the old order.");
+        const relevant = (order: InventoryOrder) => JSON.stringify({
+          status: order.status, lines: order.lines, dispatched: order.dispatched,
+          received: order.received, losses: order.losses ?? [],
+        });
+        if (relevant(current) !== relevant(transitOrder)) {
+          throw new Error("This transfer changed elsewhere. Your exact quantities and scans remain here; close safely and reopen the current transfer before recording a loss.");
+        }
+        return postWithStableIdentity("resolveTransit", payload);
+      }}
       onDirtyChange={setMovementDirty}
       onClose={() => setTransitOrder(null)} />}
     {command.isPending && <div className="fixed bottom-4 right-4 flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm shadow-lg"><Loader2 className="h-4 w-4 animate-spin" />Posting inventory update</div>}

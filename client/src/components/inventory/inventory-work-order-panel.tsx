@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Allocation, InventoryItem, Warehouse, WorkAllocation } from "@shared/inventory";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useToast } from "@/hooks/use-toast";
+import { useInventoryEvents } from "@/hooks/useInventoryEvents";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -22,6 +23,7 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
 }) {
   const { hasPermission } = usePermissions();
   const { toast } = useToast();
+  const inventoryEvents = useInventoryEvents(projectId);
   const key = ["/api/projects", projectId, "work-orders", workOrderId, "inventory"];
   const projectInventoryKey = [`/api/projects/${projectId}/inventory`];
   const { data, isLoading, isError, refetch } = useQuery<WorkInventorySnapshot>({ queryKey: key });
@@ -40,6 +42,10 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
   const [reconcileOpen, setReconcileOpen] = useState(false);
   const [reconcileReason, setReconcileReason] = useState("");
   const [restoreUsedStock, setRestoreUsedStock] = useState(false);
+  const draftBase = useRef<string | null>(null);
+  const draftEditEpoch = useRef(0);
+  const [draftTouched, setDraftTouched] = useState(false);
+  const [staleAllocation, setStaleAllocation] = useState(false);
   const canAssign = hasPermission("inventory.assign");
 
   const mutation = useMutation({
@@ -58,14 +64,51 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
   });
   const items = data?.items ?? [];
   const warehouses = data?.warehouses ?? [];
+  const allocationSignature = JSON.stringify(data?.allocation ?? null);
+  const allocationDraftActive = lines.length > 0 || draftTouched || reviewing;
+  const allocationConflict = !mutation.isPending && allocationDraftActive && (staleAllocation ||
+    draftBase.current !== null && draftBase.current !== allocationSignature);
   const selectedItem = items.find(item => item.id === itemId);
   const availableWarehouses = useMemo(() => warehouses.filter(warehouse => warehouse.active), [warehouses]);
+  const beginDraft = () => {
+    if (draftBase.current === null) draftBase.current = allocationSignature;
+    draftEditEpoch.current++;
+    setDraftTouched(true);
+  };
+  const createEmptyAssignment = async () => {
+    if (mutation.isPending) return;
+    const checked = await refetch();
+    if (checked.isError || !checked.data) {
+      toast({ title: "Could not recheck allocation", description: "Retry after the current work-order inventory loads.", variant: "destructive" });
+      return;
+    }
+    if (checked.data.allocation) return;
+    mutation.mutate({ action: "assign", payload: { workOrderId, lines: [] } });
+  };
+  const removeReservation = async (line: Allocation) => {
+    if (mutation.isPending) return;
+    const checked = await refetch();
+    if (checked.isError || !checked.data) {
+      toast({ title: "Could not recheck allocation", description: "The reservation was not removed. Retry after inventory loads.", variant: "destructive" });
+      return;
+    }
+    if (JSON.stringify(checked.data.allocation ?? null) !== allocationSignature) {
+      draftBase.current = allocationSignature;
+      setDraftTouched(true);
+      setStaleAllocation(true);
+      return;
+    }
+    const remaining = (checked.data.allocation?.lines ?? []).filter(other =>
+      !(other.warehouseId === line.warehouseId && other.itemId === line.itemId));
+    mutation.mutate({ action: "assign", payload: { workOrderId, lines: remaining } });
+  };
 
   if (isLoading) return <Card><CardContent className="p-5 space-y-3"><div className="h-5 w-40 animate-pulse rounded bg-muted" /><div className="h-12 animate-pulse rounded bg-muted" /></CardContent></Card>;
   if (isError) return <Card><CardContent className="p-5"><p className="text-sm text-destructive">Inventory assignments could not load.</p><Button className="mt-3" variant="outline" onClick={() => refetch()}>Retry</Button></CardContent></Card>;
   if (!data?.enabled) return null;
 
   const addLine = () => {
+    beginDraft();
     const qty = Number(quantity);
     const scanned = serials.split(/[\n,;]/).map(value => value.trim()).filter(Boolean);
     if (!itemId || !warehouseId || !Number.isInteger(qty) || qty < 1) return;
@@ -82,20 +125,54 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
     setSerials(""); setQuantity("1");
   };
   const assigned = data.allocation?.lines ?? [];
-  const saveAssignment = () => {
+  const saveAssignment = async () => {
+    if (allocationConflict || mutation.isPending) return;
+    const epoch = draftEditEpoch.current;
+    let latest: WorkInventorySnapshot | undefined;
+    try {
+      const checked = await refetch();
+      if (checked.isError || !checked.data) throw new Error("Current allocation could not be checked. Your staged lines are retained.");
+      latest = checked.data;
+    } catch (error) {
+      toast({ title: "Could not recheck allocation", description: error instanceof Error ? error.message : "Your staged lines are retained.", variant: "destructive" });
+      return;
+    }
+    if (epoch !== draftEditEpoch.current) return;
+    const latestSignature = JSON.stringify(latest.allocation ?? null);
+    if (draftBase.current !== null && latestSignature !== draftBase.current) {
+      setStaleAllocation(true);
+      return;
+    }
     const next = new Map<string, Allocation>();
-    assigned.filter(line => `${line.warehouseId}/${line.itemId}` !== editingKey).forEach(line => next.set(`${line.warehouseId}/${line.itemId}`, line));
+    (latest.allocation?.lines ?? []).filter(line => `${line.warehouseId}/${line.itemId}` !== editingKey).forEach(line => next.set(`${line.warehouseId}/${line.itemId}`, line));
     lines.forEach(line => {
       const key = `${line.warehouseId}/${line.itemId}`;
       const prior = next.get(key);
       next.set(key, prior ? { ...prior, quantity: prior.quantity + line.quantity, serials: [...prior.serials, ...line.serials] } : line);
     });
     mutation.mutate({ action: "assign", payload: { workOrderId, lines: [...next.values()] } }, {
-      onSuccess: () => { setLines([]); setEditingKey(null); },
+      onSuccess: () => { setLines([]); setEditingKey(null); setDraftTouched(false); setStaleAllocation(false); draftBase.current = null; },
     });
   };
-  const submitReview = () => {
-    const allocation = data.allocation;
+  const submitReview = async () => {
+    if (allocationConflict || mutation.isPending) return;
+    const epoch = draftEditEpoch.current;
+    let latest: WorkInventorySnapshot | undefined;
+    try {
+      const checked = await refetch();
+      if (checked.isError || !checked.data) throw new Error("Current allocation could not be checked. Your review entries are retained.");
+      latest = checked.data;
+    } catch (error) {
+      toast({ title: "Could not recheck allocation", description: error instanceof Error ? error.message : "Your review entries are retained.", variant: "destructive" });
+      return;
+    }
+    if (epoch !== draftEditEpoch.current) return;
+    const latestSignature = JSON.stringify(latest.allocation ?? null);
+    if (draftBase.current !== null && latestSignature !== draftBase.current) {
+      setStaleAllocation(true);
+      return;
+    }
+    const allocation = latest.allocation;
     if (!allocation) return;
     let invalid = false;
     const usedLines: Allocation[] = mode === "reading_only" ? [] : allocation.lines.flatMap(line => {
@@ -120,15 +197,39 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
     });
     if (invalid) return;
     mutation.mutate({ action: "prepareUse", payload: { workOrderId, revision: allocation.revision, mode, used: usedLines, dispositions } }, {
-      onSuccess: () => setReviewing(false),
+      onSuccess: () => { setReviewing(false); setDraftTouched(false); setStaleAllocation(false); draftBase.current = null; },
     });
   };
 
   return <Card className="border-l-4 border-l-primary/60">
     <CardHeader className="pb-3"><div className="flex items-center justify-between gap-2"><CardTitle className="flex items-center gap-2 text-base"><PackageCheck className="h-4 w-4 text-primary" />Inventory for this visit</CardTitle>
-      {data.allocation && <Badge variant={data.allocation.mode ? "default" : "outline"}>{data.allocation.status === "consumed" ? "Used reviewed" : data.allocation.mode ? "Review complete" : "Reserved"}</Badge>}</div>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <span data-testid="inventory-live-indicator" aria-live="polite" className="text-[11px] text-muted-foreground">
+          {inventoryEvents.status === "live" ? "Live inventory" : inventoryEvents.status === "reconnecting" ? "Reconnecting" : inventoryEvents.status === "unavailable" ? "Live unavailable" : "Connecting"}
+        </span>
+        {inventoryEvents.status === "unavailable" && <Button type="button" size="sm" variant="outline" aria-label="Retry live inventory updates" onClick={inventoryEvents.reconnect}>Retry</Button>}
+        {data.allocation && <Badge variant={data.allocation.mode ? "default" : "outline"}>{data.allocation.status === "consumed" ? "Used reviewed" : data.allocation.mode ? "Review complete" : "Reserved"}</Badge>}
+      </div></div>
       <p className="text-sm text-muted-foreground">Reserved stock stays tied to this work order; scan meter serials before saving.</p></CardHeader>
     <CardContent className="space-y-4">
+      {allocationConflict && <div data-testid="inventory-external-change" role="alert" className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
+        <p className="font-medium">Work-order allocation changed elsewhere</p>
+        <p className="text-muted-foreground">Your staged lines and scanner text remain local. Saving or confirming this review is paused so it cannot silently apply to a different allocation.</p>
+        <Button type="button" size="sm" variant="outline" onClick={() => {
+          if (!window.confirm("Discard staged allocation and review edits, then use the current server allocation?")) return;
+          setLines([]); setEditingKey(null); setItemId(""); setWarehouseId(""); setQuantity("1"); setSerials("");
+          setUsed({}); setUsedSerials({}); setDisposition({}); setReturnWarehouse(""); setReviewing(false);
+          setDraftTouched(false); setStaleAllocation(false); draftBase.current = null; draftEditEpoch.current++;
+        }}>Discard staged edits and use current allocation</Button>
+      </div>}
+      {itemId && !selectedItem && <div role="status" className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
+        <p className="font-medium">Selected inventory item is no longer available</p>
+        <p className="mt-1 text-muted-foreground">The selected catalog record is missing. Captured serial text has been retained: <span className="break-all font-mono">{serials || "none"}</span>. Choose a current item only after reviewing that capture.</p>
+      </div>}
+      {warehouseId && !warehouses.some(warehouse => warehouse.id === warehouseId && warehouse.active) && <div role="status" className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
+        <p className="font-medium">Selected stock location is no longer available</p>
+        <p className="mt-1 text-muted-foreground">The current location record is missing or inactive. Any serial text remains captured locally and will not be submitted until you choose a current location.</p>
+      </div>}
       {assigned.length > 0 ? <div className="space-y-2">{assigned.map(line => {
         const item = items.find(value => value.id === line.itemId);
         const warehouse = warehouses.find(value => value.id === line.warehouseId);
@@ -136,52 +237,50 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
           <div><div className="font-medium">{item?.name ?? line.itemId} <span className="font-mono text-xs text-muted-foreground">{item?.sku}</span></div>
             <div className="text-xs text-muted-foreground">{warehouse?.code ?? line.warehouseId} · {line.quantity} {item?.unit ?? "units"}{line.serials.length > 0 ? ` · ${line.serials.join(", ")}` : ""}</div></div>
           {canAssign && data.allocation?.status === "reserved" && <div className="flex gap-1"><Button aria-label={`Edit ${item?.name ?? "item"} reservation`} variant="ghost" size="sm" onClick={() => {
+            draftBase.current = allocationSignature; setDraftTouched(true); draftEditEpoch.current++;
             setEditingKey(`${line.warehouseId}/${line.itemId}`);
             setItemId(line.itemId); setWarehouseId(line.warehouseId); setQuantity(String(line.quantity)); setSerials(line.serials.join("\n")); setLines([]);
-          }}>Edit</Button><Button aria-label={`Remove ${item?.name ?? "item"} reservation`} variant="ghost" size="icon" onClick={() => {
-            const remaining = assigned.filter(other => other !== line);
-            mutation.mutate({ action: "assign", payload: { workOrderId, lines: remaining } });
-          }}><Trash2 className="h-4 w-4" /></Button></div>}
+          }}>Edit</Button><Button aria-label={`Remove ${item?.name ?? "item"} reservation`} variant="ghost" size="icon" disabled={mutation.isPending} onClick={() => void removeReservation(line)}><Trash2 className="h-4 w-4" /></Button></div>}
         </div>;
       })}</div> : <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">No stock is reserved for this work order.</div>}
 
       {canAssign && data.allocation?.status !== "consumed" && <div className="space-y-3 rounded-md bg-muted/40 p-3">
-        {!data.allocation && <Button type="button" variant="outline" onClick={() => mutation.mutate({ action: "assign", payload: { workOrderId, lines: [] } })} disabled={mutation.isPending}>Create empty assignment</Button>}
+        {!data.allocation && <Button type="button" variant="outline" onClick={() => void createEmptyAssignment()} disabled={mutation.isPending}>Create empty assignment</Button>}
         <p className="text-sm font-medium">Add reserved stock</p>
         <div className="grid gap-3 sm:grid-cols-3">
-          <div className="space-y-1"><Label htmlFor={`wo-item-${workOrderId}`}>Meter / item</Label><Select value={itemId} onValueChange={setItemId}><SelectTrigger id={`wo-item-${workOrderId}`}><SelectValue placeholder="Select item" /></SelectTrigger><SelectContent>{items.filter(item => item.active).map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select></div>
-          <div className="space-y-1"><Label htmlFor={`wo-warehouse-${workOrderId}`}>Stock location</Label><Select value={warehouseId} onValueChange={setWarehouseId}><SelectTrigger id={`wo-warehouse-${workOrderId}`}><SelectValue placeholder="Select location" /></SelectTrigger><SelectContent>{availableWarehouses.map(warehouse => <SelectItem key={warehouse.id} value={warehouse.id}>{warehouse.code} · {warehouse.name}</SelectItem>)}</SelectContent></Select></div>
-          <div className="space-y-1"><Label htmlFor={`wo-qty-${workOrderId}`}>Quantity</Label><Input id={`wo-qty-${workOrderId}`} inputMode="numeric" type="number" min="1" value={quantity} onChange={event => setQuantity(event.target.value)} /></div>
+          <div className="space-y-1"><Label htmlFor={`wo-item-${workOrderId}`}>Meter / item</Label><Select value={itemId} onValueChange={value => { if (serials.trim() && itemId && value !== itemId && !window.confirm("Change the item and clear the serial text captured for the previous item?")) return; beginDraft(); if (itemId && value !== itemId) setSerials(""); setItemId(value); }}><SelectTrigger id={`wo-item-${workOrderId}`}><SelectValue placeholder="Select item" /></SelectTrigger><SelectContent>{items.filter(item => item.active).map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select></div>
+          <div className="space-y-1"><Label htmlFor={`wo-warehouse-${workOrderId}`}>Stock location</Label><Select value={warehouseId} onValueChange={value => { if (serials.trim() && warehouseId && value !== warehouseId && !window.confirm("Change stock location and clear the serial text captured for the previous location?")) return; beginDraft(); if (warehouseId && value !== warehouseId) setSerials(""); setWarehouseId(value); }}><SelectTrigger id={`wo-warehouse-${workOrderId}`}><SelectValue placeholder="Select location" /></SelectTrigger><SelectContent>{availableWarehouses.map(warehouse => <SelectItem key={warehouse.id} value={warehouse.id}>{warehouse.code} · {warehouse.name}</SelectItem>)}</SelectContent></Select></div>
+          <div className="space-y-1"><Label htmlFor={`wo-qty-${workOrderId}`}>Quantity</Label><Input id={`wo-qty-${workOrderId}`} inputMode="numeric" type="number" min="1" value={quantity} onChange={event => { beginDraft(); setQuantity(event.target.value); }} /></div>
         </div>
-        {selectedItem?.tracking === "serialized" && <div className="space-y-1"><Label htmlFor={`wo-serials-${workOrderId}`}>Scan serials (one per line or comma)</Label><Input id={`wo-serials-${workOrderId}`} value={serials} onChange={event => setSerials(event.target.value)} placeholder="Scan or enter serial numbers" /></div>}
+        {selectedItem?.tracking === "serialized" && <div className="space-y-1"><Label htmlFor={`wo-serials-${workOrderId}`}>Scan serials (one per line or comma)</Label><Input id={`wo-serials-${workOrderId}`} value={serials} onChange={event => { beginDraft(); setSerials(event.target.value); }} placeholder="Scan or enter serial numbers" /></div>}
         <div className="flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={addLine} disabled={!itemId || !warehouseId}><Plus className="mr-1 h-4 w-4" />{editingKey ? "Stage updated line" : "Add line"}</Button>
-          <Button type="button" onClick={saveAssignment} disabled={!lines.length || mutation.isPending}><PackageCheck className="mr-1 h-4 w-4" />Save reservations</Button></div>
+          <Button type="button" onClick={saveAssignment} disabled={!lines.length || mutation.isPending || allocationConflict}><PackageCheck className="mr-1 h-4 w-4" />Save reservations</Button></div>
         {lines.length > 0 && <p className="text-xs text-muted-foreground">{lines.length} line{lines.length === 1 ? "" : "s"} ready to reserve. Availability is validated by the project inventory service.</p>}
       </div>}
 
       {data.allocation?.status === "reserved" && <div className="border-t pt-4">
-        {!reviewing ? <Button type="button" variant="outline" disabled={!canAssign} onClick={() => { setMode(readingOnly ? "reading_only" : "changeout"); setReviewing(true); }}>
+        {!reviewing ? <Button type="button" variant="outline" disabled={!canAssign} onClick={() => { draftBase.current = allocationSignature; setDraftTouched(true); draftEditEpoch.current++; setMode(readingOnly ? "reading_only" : "changeout"); setReviewing(true); }}>
           Review use & removed equipment
         </Button> : <div className="space-y-4">
-          <div><Label>Work type</Label><Select value={mode} disabled={readingOnly} onValueChange={value => setMode(value as "changeout" | "reading_only")}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="changeout">Meter changeout</SelectItem><SelectItem value="reading_only">Reading only</SelectItem></SelectContent></Select></div>
+          <div><Label>Work type</Label><Select value={mode} disabled={readingOnly} onValueChange={value => { beginDraft(); setMode(value as "changeout" | "reading_only"); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="changeout">Meter changeout</SelectItem><SelectItem value="reading_only">Reading only</SelectItem></SelectContent></Select></div>
           {mode === "reading_only" ? <p className="text-sm text-muted-foreground">Reading-only visits use no replacement stock and have no removed-meter disposition.</p> : <>
             {assigned.map(line => {
               const item = items.find(value => value.id === line.itemId);
               const key = `${line.warehouseId}/${line.itemId}`;
-              return <div key={key} className="grid gap-2 sm:grid-cols-[1fr_140px] sm:items-center"><div className="text-sm">{item?.name ?? line.itemId} · {line.quantity} reserved{line.serials.length ? ` · ${line.serials.join(", ")}` : ""}</div><div className="space-y-1"><Label htmlFor={`used-${key}`}>Used quantity</Label><Input id={`used-${key}`} type="number" min="0" max={line.quantity} value={used[key] ?? line.quantity} onChange={event => setUsed(current => ({ ...current, [key]: Math.min(line.quantity, Math.max(0, Number(event.target.value) || 0)) }))} /></div></div>;
+              return <div key={key} className="grid gap-2 sm:grid-cols-[1fr_140px] sm:items-center"><div className="text-sm">{item?.name ?? line.itemId} · {line.quantity} reserved{line.serials.length ? ` · ${line.serials.join(", ")}` : ""}</div><div className="space-y-1"><Label htmlFor={`used-${key}`}>Used quantity</Label><Input id={`used-${key}`} type="number" min="0" max={line.quantity} value={used[key] ?? line.quantity} onChange={event => { beginDraft(); setUsed(current => ({ ...current, [key]: Math.min(line.quantity, Math.max(0, Number(event.target.value) || 0)) })); }} /></div></div>;
             })}
             {assigned.filter(line => line.serials.length > 0).map(line => {
               const key = `${line.warehouseId}/${line.itemId}`;
-              return <div key={key} className="space-y-1"><Label htmlFor={`used-serial-${line.itemId}`}>Scan serials used · {items.find(item => item.id === line.itemId)?.name}</Label><Input id={`used-serial-${line.itemId}`} value={usedSerials[key] ?? ""} onChange={event => setUsedSerials(current => ({ ...current, [key]: event.target.value }))} placeholder="Reserved serials only" /></div>;
+              return <div key={key} className="space-y-1"><Label htmlFor={`used-serial-${line.itemId}`}>Scan serials used · {items.find(item => item.id === line.itemId)?.name}</Label><Input id={`used-serial-${line.itemId}`} value={usedSerials[key] ?? ""} onChange={event => { beginDraft(); setUsedSerials(current => ({ ...current, [key]: event.target.value })); }} placeholder="Reserved serials only" /></div>;
             })}
             {(["system", "module"] as const).map(equipment => <div key={equipment} className="grid gap-2 sm:grid-cols-2">
-              <div className="space-y-1"><Label htmlFor={`disp-${equipment}`}>Removed {equipment} meter serial</Label><Input id={`disp-${equipment}`} value={disposition[`${equipment}-serial`] ?? ""} onChange={event => setDisposition(current => ({ ...current, [`${equipment}-serial`]: event.target.value }))} placeholder="Scan removed serial" /></div>
-              <div className="space-y-1"><Label>Condition / disposition</Label><Select value={disposition[equipment] ?? ""} onValueChange={value => setDisposition(current => ({ ...current, [equipment]: value }))}><SelectTrigger><SelectValue placeholder="Select disposition" /></SelectTrigger><SelectContent><SelectItem value="returned">Return to warehouse</SelectItem><SelectItem value="scrapped">Scrapped</SelectItem><SelectItem value="left_onsite">Left onsite</SelectItem></SelectContent></Select></div>
+              <div className="space-y-1"><Label htmlFor={`disp-${equipment}`}>Removed {equipment} meter serial</Label><Input id={`disp-${equipment}`} value={disposition[`${equipment}-serial`] ?? ""} onChange={event => { beginDraft(); setDisposition(current => ({ ...current, [`${equipment}-serial`]: event.target.value })); }} placeholder="Scan removed serial" /></div>
+              <div className="space-y-1"><Label>Condition / disposition</Label><Select value={disposition[equipment] ?? ""} onValueChange={value => { beginDraft(); setDisposition(current => ({ ...current, [equipment]: value })); }}><SelectTrigger><SelectValue placeholder="Select disposition" /></SelectTrigger><SelectContent><SelectItem value="returned">Return to warehouse</SelectItem><SelectItem value="scrapped">Scrapped</SelectItem><SelectItem value="left_onsite">Left onsite</SelectItem></SelectContent></Select></div>
             </div>)}
-            {Object.values(disposition).includes("returned") && <div className="space-y-1"><Label>Return warehouse</Label><Select value={returnWarehouse} onValueChange={setReturnWarehouse}><SelectTrigger><SelectValue placeholder="Choose return location" /></SelectTrigger><SelectContent>{availableWarehouses.map(warehouse => <SelectItem value={warehouse.id} key={warehouse.id}>{warehouse.code} · {warehouse.name}</SelectItem>)}</SelectContent></Select></div>}
+            {Object.values(disposition).includes("returned") && <div className="space-y-1"><Label>Return warehouse</Label><Select value={returnWarehouse} onValueChange={value => { beginDraft(); setReturnWarehouse(value); }}><SelectTrigger><SelectValue placeholder="Choose return location" /></SelectTrigger><SelectContent>{availableWarehouses.map(warehouse => <SelectItem value={warehouse.id} key={warehouse.id}>{warehouse.code} · {warehouse.name}</SelectItem>)}</SelectContent></Select></div>}
             <p className="text-xs text-muted-foreground">Only a serial entered with a disposition is posted as removed equipment.</p>
           </>}
-          <div className="flex gap-2"><Button type="button" onClick={submitReview} disabled={mutation.isPending || !canAssign}>{mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Confirm inventory review</Button><Button type="button" variant="ghost" onClick={() => setReviewing(false)}>Cancel</Button></div>
+          <div className="flex gap-2"><Button type="button" onClick={() => void submitReview()} disabled={mutation.isPending || !canAssign || allocationConflict}>{mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Confirm inventory review</Button><Button type="button" variant="ghost" onClick={() => { draftEditEpoch.current++; setReviewing(false); }}>Cancel</Button></div>
         </div>}
       </div>}
       {data.allocation?.status === "consumed" && hasPermission("inventory.count") && <div className="border-t pt-4">
