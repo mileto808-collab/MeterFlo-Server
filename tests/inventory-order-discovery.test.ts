@@ -87,6 +87,20 @@ test("restored high-water marks retain higher known local counters without mutat
   const legacy = fixture();
   validateInventoryBackup({ state: legacy, movements: [], enabled: true }, []);
 });
+test("legacy numbering handles missing and invalid dates without inventing historical dates", () => {
+  let state = run(fixture(), "order", payload());
+  delete state.orders[0].orderNumber;
+  delete state.orderNumberCounters;
+  state.orders[0].createdAt = undefined as any;
+  state.orders.push({ ...state.orders[0], id: randomUUID(), createdAt: "unknown" });
+  const ids = state.orders.map(order => order.id);
+  state = run(state, "numberOrders", {}, randomUUID(), "2027-01-02T00:00:00.000Z");
+  assert.deepEqual(state.orders.map(order => order.id), ids);
+  assert.equal(state.orders[0].createdAt, undefined);
+  assert.equal(state.orders[1].createdAt, "unknown");
+  assert.deepEqual(state.orders.map(order => order.orderNumber).sort(), ["PO-2027-000001", "PO-2027-000002"]);
+  assert.equal(searchOrders(state, { ...emptyOrderFilters, from: "2027-01-01" }, true, "UTC").length, 0);
+});
 test("backup validation rejects duplicate, wrong-type, malformed and rewound numbering metadata", () => {
   const state = searchable();
   const check = (mutate: (state: InventoryState) => void) => {

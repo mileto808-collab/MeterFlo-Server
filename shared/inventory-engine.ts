@@ -245,7 +245,11 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     if (a === "item") kitCycles(s);
   } else if (a === "numberOrders") {
     z.object({}).strict().parse(d);
-    for (const order of [...s.orders].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id))) {
+    for (const order of [...s.orders].sort((a, b) => {
+      const left = Date.parse(a.createdAt), right = Date.parse(b.createdAt);
+      if (Number.isFinite(left) && Number.isFinite(right)) return left - right || a.id.localeCompare(b.id);
+      return Number.isFinite(left) ? -1 : Number.isFinite(right) ? 1 : a.id.localeCompare(b.id);
+    })) {
       if (order.orderNumber || !uuidOrderId(order.id)) continue;
       access(order.destinationId);
       if (order.sourceId) access(order.sourceId);

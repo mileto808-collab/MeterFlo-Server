@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { InventoryItem, InventoryOrder, InventoryState } from "@shared/inventory";
 import { orderLabel, orderReference } from "@shared/inventory-order-labels";
+import { inventoryReceiptLabel } from "@shared/inventory-display-labels";
 import { blankShipmentCapture, type SavedShipmentDraft, type ShipmentCapture } from "@shared/inventory-shipment-draft-model";
 import { AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -302,7 +303,7 @@ export function InventoryShipmentSession(props: Props) {
       setSavedDraft(latestDraft);
       setRecoveryDraft(latestDraft);
       const matching = latest.state.receipts.find(receipt => receipt.id === latestDraft.pending?.operationId);
-      if (matching && latestDraft.pending) setMessage(`Already posted · receipt ${matching.reference || matching.id}. Confirm the receipt to close this recovery.`);
+      if (matching && latestDraft.pending) setMessage(`Already posted · ${inventoryReceiptLabel(latest.state.receipts, matching.id)}. Confirm the receipt to close this recovery.`);
       else setMessage("No matching receipt is recorded. Retry the unchanged posting or safely return to editing.");
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : "Could not refresh inventory. Reconnect and try again.");
@@ -380,7 +381,7 @@ export function InventoryShipmentSession(props: Props) {
         {matchingReceipt ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
         <AlertTitle>{matchingReceipt ? "Shipment already posted" : "Posting outcome needs confirmation"}</AlertTitle>
         <AlertDescription>{matchingReceipt ?
-          `Receipt ${matchingReceipt.reference || matchingReceipt.id} matches this prepared operation. Confirm to acknowledge it; no new stock request will be sent.` :
+          `${inventoryReceiptLabel(freshState.receipts, matchingReceipt.id)} matches this prepared operation. Confirm to acknowledge it; no new stock request will be sent.` :
           "This saved attempt is immutable. Refresh status before deciding; retry uses the exact stored payload and operation identity."}</AlertDescription>
       </Alert>
       {message && <p role="status" className="text-sm">{message}</p>}
