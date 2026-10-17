@@ -35,3 +35,4 @@
 - [Readable audit identities](audit-display-identity.md) — readable labels must not rewrite audit evidence or invent unavailable historical identities.
 - [Inventory live updates](inventory-live-updates.md) — include same-user sessions and external transaction owners; refresh views without replacing local captures.
 - [Location assignments](inventory-location-access.md) — user assignments are intended for mobile locations such as vehicles, not brick-and-mortar warehouses.
+- [Equipment removal policy](equipment-removal-policy.md) — project-approved field choices and required returns are separate from warehouse final-decision authority.
