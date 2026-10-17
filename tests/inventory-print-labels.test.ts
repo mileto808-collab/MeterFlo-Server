@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { emptyInventory, type InventoryOrder, type InventoryReceipt } from "../shared/inventory";
 import { inventoryActorLabel, inventoryReceiptLabel, inventoryHoldLabel } from "../shared/inventory-display-labels";
 import { inventoryPrint } from "../server/inventoryPrint";
+import { inventoryBarcode } from "../server/inventoryBarcode";
 import { extractReceiptSerialEvidence } from "../server/inventoryReceiptSerials";
 import { serialPrintFixture } from "./support/inventory-serial-print-fixtures";
 
@@ -37,6 +38,7 @@ test("receipt and order printing uses readable labels and inline barcodes withou
     const html = inventoryPrint(kind, record, state, "<Project>", [{ id: actor, username: "<operator>" }]);
     assert.ok(html.includes(order.orderNumber!));
     assert.ok(html.includes("Internal order ID barcode"));
+    assert.ok(html.includes(`<figcaption>${order.orderNumber}</figcaption>`));
     assert.ok(html.includes("<svg"));
     assert.ok(!html.includes(order.id));
     assert.ok(!html.includes(receipt.id));
@@ -46,10 +48,26 @@ test("receipt and order printing uses readable labels and inline barcodes withou
     if (kind === "receipt") {
       assert.ok(html.includes("Receipt #1"));
       assert.ok(html.includes("Internal receipt ID barcode"));
+      assert.ok(html.includes("<figcaption>Receipt #1</figcaption>"));
+      const figures = [...html.matchAll(/<figure class="internal-barcode"[^>]*>[\s\S]*?<\/figure>/g)].map(match => match[0]);
+      assert.equal(figures.length, 2);
+      const svg = (figure: string) => figure.match(/<svg[\s\S]*?<\/svg>/)![0];
+      assert.equal(svg(figures[0]), svg(inventoryBarcode(receipt.id, "Expected receipt")));
+      assert.equal(svg(figures[1]), svg(inventoryBarcode(order.id, "Expected order")));
+      assert.notEqual(svg(figures[0]), svg(figures[1]), "receipt and order encode different persisted identities");
       assert.ok(html.includes("&lt;operator&gt;"));
     }
   }
   assert.deepEqual(state, before);
+});
+
+test("barcode captions escape readable identifiers without changing encoded tracking IDs", () => {
+  const id = randomUUID();
+  const barcode = inventoryBarcode(id, "Internal order ID", '<Order & "customer">');
+  assert.ok(barcode.includes("<figcaption>&lt;Order &amp; &quot;customer&quot;&gt;</figcaption>"));
+  assert.ok(!barcode.includes(id));
+  assert.equal(barcode.match(/<svg[\s\S]*?<\/svg>/)![0],
+    inventoryBarcode(id, "Internal order ID").match(/<svg[\s\S]*?<\/svg>/)![0]);
 });
 
 for (const name of ["none", "one", "hundreds", "thousands", "exceptions", "unknown-only", "disposition", "long", "components", "transit-loss", "escaping"]) {

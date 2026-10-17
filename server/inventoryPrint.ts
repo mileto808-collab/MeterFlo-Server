@@ -37,8 +37,8 @@ export function inventoryPrint(kind: string, record: any, state: InventoryState,
     <p>Date: ${escape(record.createdAt || record.occurredAt)} · Actor: ${escape(actorLabel(record.actor))}</p>
     <p>From: ${escape(warehouse(origin.sourceId))} · To: ${escape(warehouse(origin.destinationId || record.warehouseId))}</p>
     <p>Vendor: ${escape(state.vendors.find(v => v.id === origin.vendorId)?.name)} · ${escape(record.reason || record.notes)}</p>
-    ${kind === "receipt" ? inventoryBarcode(record.id, "Internal receipt ID") : ""}
-    ${linkedOrder ? inventoryBarcode(linkedOrder.id, "Internal order ID") : ""}
+    ${kind === "receipt" ? inventoryBarcode(record.id, "Internal receipt ID", reference) : ""}
+    ${linkedOrder ? inventoryBarcode(linkedOrder.id, "Internal order ID", orderLabel(linkedOrder)) : ""}
     <table><thead><tr><th>SKU</th><th>Item</th><th>Quantity</th><th>Serials</th><th>Dispatched</th><th>Received</th></tr></thead><tbody>
      ${lineList.map((l: any) => `<tr><td>${escape(state.items.find(i => i.id === l.itemId)?.sku)}</td><td>${escape(state.items.find(i => i.id === l.itemId)?.name)}</td>
      <td>${escape(l.quantity)}</td><td>${kind === "receipt" ? receiptSerialSummary(l) : escape((l.serials || []).join(", "))}</td><td>${escape((record.dispatched || []).filter((x: any) => x.itemId === l.itemId).reduce((n: number, x: any) => n + x.quantity, 0))}</td>

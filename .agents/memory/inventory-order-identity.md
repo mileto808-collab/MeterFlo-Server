@@ -31,3 +31,9 @@ Show readable business identifiers and usernames in inventory activity and shipm
 **Why:** The user explicitly requested readable Activity details and receiving/transfer receipts, with a barcode in place of the printed internal ID.
 
 **How to apply:** Preserve the original internal identity in barcode data and stored relationships. Never encode the editable supplier reference as if it were the internal ID or rewrite historical evidence merely to improve its display.
+
+Print the readable receipt/order identifier alongside its own tracking barcode.
+
+**Why:** The user found two unlabeled UUID barcodes indistinguishable and requested readable IDs with the barcodes.
+
+**How to apply:** Identify each barcode with its readable receipt label or order number, while keeping receipt and order barcode payloads attached to their respective original internal IDs.
