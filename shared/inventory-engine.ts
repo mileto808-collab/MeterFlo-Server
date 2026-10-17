@@ -4,7 +4,7 @@ import { itemDeletionBlockers, categoryDeletionBlockers } from "./inventory-dele
 import { normalizeInventoryCategories, inventoryCategoryLabels } from "./inventory-categories";
 import { allocateOrderNumber, uuidOrderId } from "./inventory-order-labels";
 import { COUNT_MAX_LINES, COUNT_MAX_SERIALS, countPayloadFits } from "./inventory-count-limits";
-import { countStockMatches } from "./inventory-count-stock";
+import { countStockScopeMatches } from "./inventory-count-stock";
 import { allocationSchema, dispositionSchema, itemSchema, stockLineSchema, vendorSchema, warehouseSchema, countDraftSchema,
   categoryNameSchema, categoryKey, inventoryCategoryNames,
   type Allocation, type InventoryCommand, type InventoryState, type StockLine, type Stock } from "./inventory";
@@ -405,11 +405,11 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     if (a === "disassemble") applyKitDisassembly(s, d, command.operationId, actor, now, hooks);
     else applyKitHoldResolution(s, d, command.operationId, actor, now, hooks);
   } else if (a === "countStart") {
-    const { id, warehouseId } = z.object({ id: identifier, warehouseId: identifier }).strict().parse(d);
+    const { id, warehouseId, scope } = z.object({ id: identifier, warehouseId: identifier, scope: z.enum(["selected", "warehouse"]).optional() }).strict().parse(d);
     access(warehouseId); assert(!s.counts.some(c => c.id === id), "Count identifier already exists.");
-    assert(s.stock.filter(b => b.warehouseId === warehouseId).length <= COUNT_MAX_LINES,
+    assert(scope === "selected" || s.stock.filter(b => b.warehouseId === warehouseId).length <= COUNT_MAX_LINES,
       `This warehouse exceeds the ${COUNT_MAX_LINES}-item complete-count limit; no items were omitted.`);
-    s.counts.push({ id, warehouseId, snapshot: structuredClone(s.stock.filter(b => b.warehouseId === warehouseId)), status: "open" });
+    s.counts.push({ id, warehouseId, ...(scope ? { scope } : {}), snapshot: structuredClone(s.stock.filter(b => b.warehouseId === warehouseId)), status: "open" });
   } else if (a === "countSaveDraft") {
     const { id, ...draft } = countDraftSchema.extend({ id: identifier }).parse(d);
     const c = s.counts.find(c => c.id === id); assert(c && c.status === "open", "Open count required."); access(c.warehouseId);
@@ -429,12 +429,14 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     const c = s.counts.find(c => c.id === id); assert(c && c.status === "open", "Open count required."); access(c.warehouseId);
     assert(!c.draft && draftRevision === undefined || (draftRevision ?? 0) === (c.draft?.revision ?? 0),
       "Count draft changed. Reload saved draft before saving or posting.");
-    assert(countStockMatches(c.snapshot, s.stock.filter(b => b.warehouseId === c.warehouseId)), "Stock moved since counting began; start a new count.");
+    assert(countStockScopeMatches(c, s.stock.filter(b => b.warehouseId === c.warehouseId), input.map(line => line.itemId)), "Stock moved since counting began; start a new count.");
     assert(input.reduce((sum, line) => sum + line.serials.length, 0) <= COUNT_MAX_SERIALS,
       `Count exceeds the ${COUNT_MAX_SERIALS}-serial complete-count limit; no changes were posted.`);
     validateLines(s, input);
     const submittedIds = new Set(input.map(line => line.itemId));
-    assert(c.snapshot.every(b => submittedIds.has(b.itemId)), "Enter every item in this warehouse count, including zero quantities.");
+    if (c.scope === "selected") assert(input.length > 0, "Add at least one product before posting this selected-items count.");
+    else assert(c.snapshot.every(b => submittedIds.has(b.itemId)), "Enter every item in this warehouse count, including zero quantities.");
+    assert(!c.draft || c.draft.rows.every(row => submittedIds.has(row.itemId)), "Include every saved count entry when posting; save a revised selection before removing entries.");
     for (const l of input) {
       const b = balance(s, c.warehouseId, l.itemId);
       assert(l.quantity >= reserved(s, c.warehouseId, l.itemId), "Count would remove reserved stock; reconcile assignments first.");

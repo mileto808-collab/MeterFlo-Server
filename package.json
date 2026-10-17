@@ -24,6 +24,8 @@
     "test:inventory-volume:standalone": "node script/inventory-volume-standalone.mjs --confirm-disposable-checkout",
     "test:inventory-resource:browser": "node tests/inventory-resource-ui.cjs",
     "test:inventory-count:browser": "node tests/inventory-count-ui.cjs",
+    "test:inventory-selected-count": "tsx --test tests/inventory-selected-count.test.ts tests/inventory-count-form.test.ts",
+    "test:inventory-selected-count:browser": "node tests/inventory-selected-count-ui.cjs",
     "test:inventory-count-layout:browser": "node tests/inventory-count-layout-ui.cjs",
     "test:inventory-count-tools:browser": "node tests/inventory-count-tools-ui.cjs",
     "test:inventory-count-expected:browser": "node tests/inventory-count-expected-ui.cjs",

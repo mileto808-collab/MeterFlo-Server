@@ -25,7 +25,10 @@ alone does not provide safe inventory batching.
 
 **How to apply:** Keep a bounded, complete atomic submission, or design durable
 staging with one final atomic validation/commit before increasing capacity.
-Retain every mandatory snapshot row and deliberately entered discovery.
+Retain every mandatory snapshot row for full-warehouse counts and every selected
+or deliberately entered discovery for selective counts. A selective count need
+not validate unrelated warehouse balances, but its selected stock baseline and
+fresh reservation/serial-custody checks remain authoritative.
 
 Count staleness is about physical stock evidence, not JSON representation.
 Ignore property, row and serial ordering, but retain quantity, location, item,

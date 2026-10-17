@@ -71,7 +71,10 @@ export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: n
     if (order.type !== "purchase" || order.status !== "cancelled")
       throw new Error("Only cancelled purchase orders may be cleared in an inventory backup.");
   }
-  for (const count of s.counts) if (count.draft) {
+  for (const count of s.counts) {
+    if (count.scope !== undefined && count.scope !== "selected" && count.scope !== "warehouse")
+      throw new Error("Inventory backup has an invalid count scope.");
+    if (!count.draft) continue;
     const draft = savedCountDraftSchema.parse(count.draft);
     if (!countPayloadFits(draft) || count.status !== "open" || !s.warehouses.some(w => w.id === count.warehouseId) ||
       new Set(draft.rows.map(row => row.itemId)).size !== draft.rows.length ||

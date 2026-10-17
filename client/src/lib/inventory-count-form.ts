@@ -8,7 +8,7 @@ export function inventoryCountRows(
   quantities: Record<string, string>,
   serials: Record<string, string>,
 ) {
-  const ids = new Set([...count.snapshot.map(row => row.itemId), ...count.draft?.rows.map(row => row.itemId) ?? [],
+  const ids = new Set([...(count.scope === "selected" ? [] : count.snapshot.map(row => row.itemId)), ...count.draft?.rows.map(row => row.itemId) ?? [],
     ...Object.keys(quantities), ...Object.keys(serials)]);
   const itemMap = new Map(items.map(item => [item.id, item]));
   const snapshotMap = new Map(count.snapshot.map(row => [row.itemId, row]));

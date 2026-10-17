@@ -8,7 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useInventoryEvents } from "@/hooks/useInventoryEvents";
 import { useUnsavedNavigation } from "@/hooks/use-unsaved-navigation";
 import { usePageHeader } from "@/contexts/page-header-context";
-import { countStockMatches } from "@shared/inventory-count-stock";
+import { countStockMatches, countStockScopeMatches } from "@shared/inventory-count-stock";
 import { emptyInventory, type InventoryCommand, type InventoryCount, type InventoryItem, type InventoryOrder, type InventoryState, type StockLine, type Vendor, type Warehouse } from "@shared/inventory";
 import type { SavedShipmentDraft } from "@shared/inventory-shipment-draft-model";
 import { orderLineProgress } from "@shared/inventory-shipment-model";
@@ -131,6 +131,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const inventoryTabsHostRef = useRef<HTMLDivElement>(null);
   const [selectedStockRow, setSelectedStockRow] = useState<StockBalanceRow | null>(null);
   const [resource, setResource] = useState<ResourceKind | null>(null);
+  const [activeCount, setActiveCount] = useState<InventoryCount | null>(null);
   const stockContext = useQuery<Omit<Snapshot, "state" | "users"> & { summary: StockSummary }>({
     queryKey: [base, "stock", "context"], queryFn: () => fetchStock(`${base}/stock/context`),
     enabled: inventoryTab === "stock",
@@ -179,7 +180,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   useEffect(() => { if (resourceError) resourceErrorRef.current?.focus(); }, [resourceError]);
   const [orderType, setOrderType] = useState<"purchase" | "transfer">("purchase");
   const [orderEditorOpen, setOrderEditorOpen] = useState(false);
-  const inlineEditorOpen = (!!resource && resource !== "vendor") || orderEditorOpen;
+  const inlineEditorOpen = (!!resource && resource !== "vendor") || orderEditorOpen || !!activeCount;
   useLayoutEffect(() => {
     const host = inventoryTabsHostRef.current;
     if (!host) return;
@@ -268,9 +269,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [transitOrder, setTransitOrder] = useState<InventoryOrder | null>(null);
   const [operation, setOperation] = useState<"receive" | "dispatch" | "accept">("receive");
   const [countWarehouse, setCountWarehouse] = useState("");
-  const [activeCount, setActiveCount] = useState<InventoryCount | null>(null);
   const [countStartOpen, setCountStartOpen] = useState(false);
-  const countDialogTitleRef = useRef<HTMLHeadingElement>(null);
   const [countQuantities, setCountQuantities] = useState<Record<string, string>>({});
   const [countSerials, setCountSerials] = useState<Record<string, string>>({});
   const [countReason, setCountReason] = useState("");
@@ -304,8 +303,12 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const state = data?.state;
   const currentCountStock = useMemo(() => (state?.stock ?? []).filter(stock => stock.warehouseId === activeCount?.warehouseId), [state?.stock, activeCount?.warehouseId]);
   const countStockByItem = useMemo(() => new Map(currentCountStock.map(stock => [stock.itemId, stock])), [currentCountStock]);
-  const countStockDrift = useMemo(() => !!activeCount && !!state
-    && !countStockMatches(activeCount.snapshot, currentCountStock), [activeCount, state, currentCountStock]);
+  const countStockDrift = useMemo(() => {
+    if (!activeCount || !state) return false;
+    return activeCount.scope === "selected"
+      ? !countStockScopeMatches(activeCount, currentCountStock, countRows.map(row => row.itemId))
+      : !countStockMatches(activeCount.snapshot, currentCountStock);
+  }, [activeCount, state, currentCountStock, countRows]);
   const currentClosingOrder = orderToClose ? state?.orders.find(order => order.id === orderToClose.id) : undefined;
   const locationsDataset = useMemo(() => buildOperationsDataset("locations", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone), [state, data?.actors, data?.users, timezone]);
   const returnsDataset = useMemo(() => buildOperationsDataset("returns", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone), [state, data?.actors, data?.users, timezone]);
@@ -909,13 +912,18 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   };
 
   const openCount = (count: InventoryCount, reload = false) => {
-    setCountToolsOpen(false);
+    setCountToolsOpen(count.scope === "selected" && !(count.draft?.rows.length));
     if (countDraftId !== count.id || reload) {
       const rows = inventoryCountRows(count, items, {}, {});
       setSavedCountValues(JSON.stringify({ reason: count.draft?.reason ?? "",
         rows: rows.map(({ itemId, quantity, serials }) => ({ itemId, quantity, serials })).sort((a, b) => a.itemId.localeCompare(b.itemId)) }));
-      setCountQuantities(Object.fromEntries(count.draft?.rows.map(row => [row.itemId, row.quantity]) ?? []));
-      setCountSerials(Object.fromEntries(count.draft?.rows.map(row => [row.itemId, row.serials]) ?? []));
+      const initialRows = count.scope === "selected"
+        ? count.draft?.rows ?? []
+        : count.draft?.rows ?? count.snapshot.map(row => ({
+          itemId: row.itemId, quantity: String(row.quantity), serials: row.serials.join("\n"),
+        }));
+      setCountQuantities(Object.fromEntries(initialRows.map(row => [row.itemId, row.quantity])));
+      setCountSerials(Object.fromEntries(initialRows.map(row => [row.itemId, row.serials])));
       setCountReason(count.draft?.reason ?? "");
       setCountDraftRevision(count.draft?.revision ?? 0);
       setCountDraftMessage(count.draft ? `Loaded saved draft revision ${count.draft.revision}.` : "");
@@ -938,7 +946,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const visibleCountRows = matchingCountRows.slice(currentCountPage * COUNT_PAGE_SIZE, (currentCountPage + 1) * COUNT_PAGE_SIZE);
   const addCountProduct = () => {
     if (!countProduct || countRowIds.has(countProduct) || countRows.length >= COUNT_MAX_LINES) return;
-    setCountQuantities(current => ({ ...current, [countProduct]: "0" }));
+    setCountQuantities(current => ({ ...current, [countProduct]: "" }));
     setCountSerials(current => ({ ...current, [countProduct]: "" }));
     setCountSearch("");
     setCountPage(Math.floor(countRows.length / COUNT_PAGE_SIZE));
@@ -983,7 +991,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const startCount = () => {
     if (!countWarehouse || !can("inventory.count")) return;
     const id = freshId();
-    command.mutate({ action: "countStart", data: { id, warehouseId: countWarehouse } }, { onSuccess: result => {
+    command.mutate({ action: "countStart", data: { id, warehouseId: countWarehouse, scope: "selected" } }, { onSuccess: result => {
       const count = (result.state as InventoryState).counts.find(value => value.id === id);
       if (!count) {
         toast({ title: "Count snapshot unavailable", description: "Refresh inventory and continue the saved count.", variant: "destructive" });
@@ -1004,7 +1012,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     else cancel();
   };
   const postCount = () => {
-    if (!activeCount || countConflict || !can("inventory.count")) return;
+    if (!activeCount || countConflict || !can("inventory.count") || countRows.length === 0) return;
     let countLines: StockLine[];
     try { countLines = inventoryCountLines(countRows); }
     catch (error) {
@@ -1470,7 +1478,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       <TabsContent value="counts" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         <Dialog open={countStartOpen} onOpenChange={open => { if (!command.isPending) setCountStartOpen(open); }}>
           <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg" onEscapeKeyDown={event => { if (command.isPending) event.preventDefault(); }} onPointerDownOutside={event => { if (command.isPending) event.preventDefault(); }}>
-            <DialogHeader><DialogTitle>Start count</DialogTitle><DialogDescription>Choose a warehouse or vehicle. The count opens against a fixed stock snapshot; no stock changes until it is posted.</DialogDescription></DialogHeader>
+            <DialogHeader><DialogTitle>Start selected-item count</DialogTitle><DialogDescription>Choose a warehouse or vehicle. A fixed snapshot of all warehouse stock is retained as the baseline; use Search &amp; Tools on the count page to add only products you physically check. No stock changes until posting.</DialogDescription></DialogHeader>
             <div className="space-y-2"><Label htmlFor="count-start-location">Warehouse or vehicle</Label>
               <Select value={countWarehouse} onValueChange={setCountWarehouse}><SelectTrigger id="count-start-location"><SelectValue placeholder="Select location" /></SelectTrigger><SelectContent>{activeWarehouses.map(w => <SelectItem key={w.id} value={w.id}>{w.code} · {w.name}</SelectItem>)}</SelectContent></Select>
             </div>
@@ -1494,8 +1502,9 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
                 </div>
                 <p className="mt-1 text-sm">{location}</p>
                 <p className="text-xs text-muted-foreground">
-                  Snapshot {count.snapshot.length} items · {count.snapshot.reduce((total, line) => total + line.quantity, 0)} units
-                  {count.status === "posted" && ` · Posted ${count.lines?.length ?? 0} items`}
+                  {count.scope === "selected" ? "Selected-item count" : "Full warehouse count"} ·
+                  {" "}warehouse baseline {count.snapshot.length} products · {count.snapshot.reduce((total, line) => total + line.quantity, 0)} units
+                  {" "}· {count.status === "posted" ? `${count.lines?.length ?? 0} posted entries` : `${count.draft?.rows.length ?? count.lines?.length ?? 0} count entries`}
                   {count.reason && ` · ${count.reason}`}
                 </p>
               </div>
@@ -1510,23 +1519,30 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
               </div>
             </article>;
           }} />
-        <Dialog open={!!activeCount} onOpenChange={open => {
-          if (!open && activeCount) requestCountTransition(closeCount);
-        }}>
-          <DialogContent className="flex max-h-[90dvh] flex-col overflow-hidden p-0 sm:max-w-3xl" onOpenAutoFocus={event => {
-            event.preventDefault();
-            countDialogTitleRef.current?.focus();
-          }} onEscapeKeyDown={event => {
-            if (countSaving.current || command.isPending) event.preventDefault();
-          }} onPointerDownOutside={event => {
-            if (countDirty || countSaving.current || command.isPending) event.preventDefault();
-          }}>
-          {activeCount && <div className="flex min-h-0 flex-col">
-            <DialogHeader className="shrink-0 border-b px-4 py-3 sm:px-6 sm:py-4">
-              <DialogTitle ref={countDialogTitleRef} tabIndex={-1}>Continue count · {inventoryCountReference(state.counts, activeCount.id)} · {warehouses.find(w => w.id === activeCount.warehouseId)?.name}</DialogTitle>
-              <DialogDescription className="sr-only sm:not-sr-only [@media(max-height:500px)]:sr-only">Verify every snapshot item, including zero. All entry pages are saved and posted together; saving a draft does not adjust stock.</DialogDescription>
-            </DialogHeader>
-            <div className="min-h-0 overflow-y-auto overscroll-contain px-4 pb-4 sm:px-6">
+        {activeCount && <InventoryEditorSurface
+          inline
+          portalHost={editorHostRef.current}
+          testId="inventory-count-editor"
+          title={`${activeCount.scope === "selected" ? "Selected-item count" : "Full warehouse count"} · ${inventoryCountReference(state.counts, activeCount.id)} · ${warehouses.find(w => w.id === activeCount.warehouseId)?.name ?? "Location unavailable"}`}
+          description={activeCount.scope === "selected"
+            ? "Choose only products you physically check. The full warehouse snapshot stays fixed as the comparison baseline; blank quantities must be entered before posting."
+            : "Verify every product in the warehouse snapshot, including zero. All entry pages save and post together; saving a draft does not adjust stock."}
+          onBack={() => requestCountTransition(closeCount)}
+          onSave={() => saveCountDraft()}
+          saving={countSaving.current || command.isPending}
+          saveDisabled={!!countConflict || !can("inventory.count")}
+          saveLabel="Save draft"
+          stickyFooter
+          actions={<div className="col-span-2 flex min-w-0 justify-end sm:col-span-1">
+            <span role="status" className="truncate text-xs text-muted-foreground">{countDraftMessage || (countDirty ? "Unsaved count entries" : "Draft is current")}</span>
+          </div>}
+          footer={<>
+            <Button size="sm" variant="outline" onClick={() => saveCountDraft()} disabled={!can("inventory.count") || !!countConflict || command.isPending}>Save draft</Button>
+            <Button size="sm" variant="outline" onClick={() => requestCountTransition(reloadCountDraft)} disabled={!can("inventory.count") || command.isPending || countConflict === "unavailable"}>Reload saved draft</Button>
+            <Button size="sm" onClick={postCount} disabled={!can("inventory.count") || !!countConflict || countStockDrift || !countReason.trim() || countRows.length === 0 || command.isPending}>Post count</Button>
+          </>}
+        >
+          <>
             <div className="sticky top-0 z-10 -mx-4 mb-3 border-b bg-background px-4 py-2 sm:-mx-6 sm:px-6">
             <div className="flex min-w-0 items-center gap-2">
               <Button type="button" variant="outline" aria-expanded={countToolsOpen} aria-controls={countToolsOpen ? "count-search-tools" : undefined}
@@ -1543,7 +1559,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
                 <Input id="count-discovery-search" value={countProductSearch} disabled={command.isPending} onChange={event => { setCountProductSearch(event.target.value); setCountProduct(""); }} placeholder="Search the project catalog by SKU, name or barcode" />
                 <Label htmlFor="count-discovery-product">Discovery product</Label>
                 <Select value={countProduct} onValueChange={setCountProduct} disabled={command.isPending || !can("inventory.count")}><SelectTrigger id="count-discovery-product"><SelectValue placeholder="Choose a product found in this warehouse" /></SelectTrigger><SelectContent>{discoveryProducts.map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select>
-                <p className="text-xs text-muted-foreground">Up to 100 matches shown. Refine the search for another product. Adding a product starts at zero; enter its actual quantity and scans.</p>
+                 <p className="text-xs text-muted-foreground">Up to 100 matches shown. Refine the search for another product. Adding it creates an entry only; enter its actual quantity and scans before posting.</p>
                 <Button variant="outline" onClick={addCountProduct} disabled={!can("inventory.count") || !countProduct || command.isPending || countRows.length >= COUNT_MAX_LINES}>Add discovery to count</Button>
               </div>
               <div className="space-y-2">
@@ -1566,7 +1582,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
               <AlertDescription>Save this draft if you want to keep it for reference, then close or cancel and start a new count. Posting is disabled.</AlertDescription>
             </Alert>}
             <p role="status" className="text-sm">{countDraftMessage || "Unsaved entries remain only on this page until you save the draft."}</p>
-            <p className="text-sm">{countRows.length} total count entries · {matchingCountRows.length} matching · limit {COUNT_MAX_LINES}. All pages are saved and posted together.</p>
+            <p className="text-sm">{countRows.length} count entries · {matchingCountRows.length} matching · limit {COUNT_MAX_LINES}. All pages are saved and posted together.</p>
             {visibleCountRows.map(row => {
               const { itemId: id, item } = row;
               if (!item) return <Alert key={id} variant="destructive"><AlertTitle>Count item unavailable</AlertTitle><AlertDescription>Item {id} is no longer in the catalog. Resolve it before posting; it will not be silently omitted.</AlertDescription></Alert>;
@@ -1581,21 +1597,13 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
                 {item.tracking === "serialized" && <div className="space-y-1"><Label htmlFor={`countserial-${id}`}>Scan all serials</Label><Textarea id={`countserial-${id}`} value={row.serials} disabled={command.isPending} onChange={event => setCountSerials(current => ({ ...current, [id]: event.target.value }))} /></div>}
               </div>;
             })}
-            {countRows.length === 0 && <p>No stock rows in the starting snapshot. Add discovered products, or post an empty count to confirm this warehouse is empty.</p>}
+            {countRows.length === 0 && <p className="rounded-md border border-dashed px-3 py-5 text-center text-sm text-muted-foreground">{activeCount.scope === "selected" ? "No products selected yet. Expand Search & Tools and add only the products you physically checked." : "There are no products in this warehouse snapshot. Add any discovered products that need to be counted."}</p>}
             <div className="flex flex-wrap items-center gap-2"><Button variant="outline" aria-label="Previous count entries page" disabled={currentCountPage === 0 || command.isPending} onClick={() => setCountPage(currentCountPage - 1)}>Previous</Button><span className="text-sm">Count entries page {currentCountPage + 1} of {lastCountPage + 1}</span><Button variant="outline" aria-label="Next count entries page" disabled={currentCountPage === lastCountPage || command.isPending} onClick={() => setCountPage(currentCountPage + 1)}>Next</Button></div>
             <div className="space-y-1"><Label htmlFor="count-reason">Count adjustment reason</Label><Input id="count-reason" maxLength={1000} disabled={command.isPending} value={countReason} onChange={event => setCountReason(event.target.value)} placeholder="Required audit note" /></div>
             {countDirty && <p role="status" className="text-sm text-amber-700 dark:text-amber-400">Unsaved count changes. Save the draft to keep your entries.</p>}
             </div>
-            </div>
-            <DialogFooter className="shrink-0 flex-row flex-wrap justify-start border-t px-4 py-3 sm:px-6">
-              <Button variant="outline" onClick={() => saveCountDraft()} disabled={!can("inventory.count") || !!countConflict || command.isPending}>Save count draft</Button>
-              <Button variant="outline" onClick={() => requestCountTransition(reloadCountDraft)} disabled={!can("inventory.count") || command.isPending || countConflict === "unavailable"}>Reload saved draft</Button>
-              <Button onClick={postCount} disabled={!can("inventory.count") || !!countConflict || countStockDrift || !countReason.trim() || command.isPending}>Post count</Button>
-              <Button variant="outline" disabled={command.isPending} onClick={() => requestCountTransition(closeCount)}>Close</Button>
-            </DialogFooter>
-          </div>}
-          </DialogContent>
-        </Dialog>
+          </>
+        </InventoryEditorSurface>}
       </TabsContent>
       <TabsContent value="returns" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         {Object.entries(returnInspect).filter(([id, draft]) => {

@@ -27,7 +27,7 @@ export const relationalEntities: EntityModel[] = [
     ] },
   { name: "inventory_orders", field: "orders", columns: { ...text("id", "type", "vendorId", "sourceId", "destinationId", "orderNumber", "reference", "status", "notes", "createdAt", "archivedAt", "replacementFor") },
     json: ["closure"], children: [{ name: "inventory_order_lines", paths: ["lines", "received", "dispatched", "losses", "closure.unfulfilled"], columns: line, arrays: ["serials"] }] },
-  { name: "inventory_counts", field: "counts", columns: text("id", "warehouseId", "status", "reason"), json: ["draft"],
+  { name: "inventory_counts", field: "counts", columns: text("id", "warehouseId", "scope", "status", "reason"), json: ["draft"],
     children: [
       { name: "inventory_count_lines", paths: ["snapshot", "lines"], columns: { ...line, warehouseId: "text", revision: "integer" }, arrays: ["serials"] },
       { name: "inventory_count_draft_lines", paths: ["draft.rows"], columns: text("itemId", "quantity", "serials") },

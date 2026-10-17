@@ -24,6 +24,9 @@ type InventoryEditorSurfaceProps = {
   saveLabel?: string;
   children: ReactNode;
   footer?: ReactNode;
+  stickyFooter?: boolean;
+  actions?: ReactNode;
+  testId?: string;
 };
 
 export function InventoryEditorSurface({
@@ -39,6 +42,9 @@ export function InventoryEditorSurface({
   saveLabel = "Save changes",
   children,
   footer,
+  stickyFooter = false,
+  actions,
+  testId = "inventory-page-editor",
 }: InventoryEditorSurfaceProps) {
   const previousFocus = useRef<HTMLElement | null>(null);
   const backRef = useRef<HTMLButtonElement>(null);
@@ -73,7 +79,7 @@ export function InventoryEditorSurface({
 
   const editor = (
     <section
-      data-testid="inventory-page-editor"
+      data-testid={testId}
       aria-label={title}
       className="absolute inset-0 flex min-h-0 min-w-0 flex-col overflow-hidden bg-background"
     >
@@ -96,30 +102,34 @@ export function InventoryEditorSurface({
           <h1 className="line-clamp-2 break-words text-sm font-semibold leading-tight tracking-tight sm:truncate sm:text-lg">{title}</h1>
           <p className="hidden max-w-3xl truncate text-xs text-muted-foreground sm:block">{description}</p>
         </div>
-        <div className="col-span-2 flex min-w-0 justify-end gap-2 sm:col-span-1">
-          <Button type="button" variant="outline" size="sm" disabled={saving} onClick={onBack}>
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            data-testid="inventory-editor-save"
-            disabled={saving || saveDisabled}
-            onClick={onSave}
-          >
-            {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
-            <span className="hidden sm:inline">{saving ? "Saving…" : saveLabel}</span>
-            <span className="sm:hidden">{saving ? "Saving" : "Save"}</span>
-          </Button>
-        </div>
+        {actions ?? <div className="col-span-2 flex min-w-0 justify-end gap-2 sm:col-span-1">
+            <Button type="button" variant="outline" size="sm" disabled={saving} onClick={onBack}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              data-testid="inventory-editor-save"
+              disabled={saving || saveDisabled}
+              onClick={onSave}
+            >
+              {saving ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Save className="mr-1.5 h-4 w-4" />}
+              <span className="hidden sm:inline">{saving ? "Saving…" : saveLabel}</span>
+              <span className="sm:hidden">{saving ? "Saving" : "Save"}</span>
+            </Button>
+          </div>}
       </header>
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain">
         <div className="mx-auto w-full max-w-5xl space-y-4 px-3 py-4 sm:px-5 sm:py-6">
           <p className="text-sm leading-relaxed text-muted-foreground sm:hidden">{description}</p>
           {children}
-          {footer && <DialogFooter className="flex-col-reverse border-t pt-4 sm:flex-row">{footer}</DialogFooter>}
         </div>
       </div>
+      {footer && <DialogFooter className={stickyFooter
+        ? "sticky bottom-0 z-20 shrink-0 flex-row flex-wrap justify-start gap-2 border-t bg-background/95 px-3 py-2.5 backdrop-blur sm:px-5"
+        : "mx-auto w-full max-w-5xl flex-col-reverse gap-2 border-t px-3 py-4 sm:flex-row sm:px-5 sm:py-6"}>
+        {footer}
+      </DialogFooter>}
     </section>
   );
   return portalHost ? createPortal(editor, portalHost) : editor;

@@ -84,7 +84,7 @@ export type InventoryTypeLink = { id: string; equipment: "system" | "module"; ty
   systemTypeId?: number | null; moduleTypeId?: number | null };
 export type WorkRequirements = { workOrderId: number; lines: { itemId: string; quantity: number }[];
   missing: { equipment: "system" | "module"; typeId: string }[] };
-export type InventoryCount = { id: string; warehouseId: string; snapshot: Stock[]; status: "open" | "posted" | "cancelled"; reason?: string; lines?: StockLine[]; draft?: z.infer<typeof savedCountDraftSchema> };
+export type InventoryCount = { id: string; warehouseId: string; scope?: "selected" | "warehouse"; snapshot: Stock[]; status: "open" | "posted" | "cancelled"; reason?: string; lines?: StockLine[]; draft?: z.infer<typeof savedCountDraftSchema> };
 export type InventoryReceipt = { id: string; action: string; reference: string; warehouseId: string | null;
   lines: StockLine[]; actor: string; occurredAt: string; reason?: string; components?: StockLine[];
   damaged?: DamageLine[]; holdId?: string; resolution?: string; externalReference?: string; closedShort?: StockLine[]; sourceReceiptId?: string;
