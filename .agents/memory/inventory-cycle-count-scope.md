@@ -26,3 +26,9 @@ Serial entry belongs behind a compact item-row icon opening a review/scan modal,
 **Why:** The user expects potentially large serial lists and explicitly requested continuous HID scanning.
 
 **How to apply:** Support Enter-terminated keyboard-wedge scans, retain scan-field focus between commits, preserve leading zeros and raw entries, and keep actual quantity independent of scans. Opening the modal must not autofocus a text field on phones; closing it retains the count's local entries, with explicit count-draft saving for persistence.
+
+Posting serial-identity discrepancies from the count page requires an explicit review of missing and unexpected serials, including identity swaps whose total quantity is unchanged.
+
+**Why:** The user approved a discrepancy-review recommendation after learning that a count can replace the location's recorded serial identities, not merely compare quantities.
+
+**How to apply:** Explain removals versus additions, retain all captures on dismissal, and require acknowledgement before confirming. Acknowledgement applies only to the reviewed count, entries, reason, draft revision and stock baseline; live changes must block stale confirmation rather than silently changing the reviewed lists.

@@ -20,6 +20,7 @@ import { emptyOrderFilters, searchOrders } from "@shared/inventory-order-search"
 import { InventoryOrderFilters } from "@/components/inventory-order-filters";
 import { downloadInventoryOrders } from "@/lib/inventory-order-export";
 import { COUNT_MAX_LINES, COUNT_PAGE_SIZE } from "@shared/inventory-count-limits";
+import { inventoryCountReviewIdentity, inventoryCountSerialChanges } from "@shared/inventory-count-review";
 import { inventoryCountRows, inventoryCountLines } from "@/lib/inventory-count-form";
 import { inventoryResourceFailure, validateInventoryResource } from "@/lib/inventory-resource-save";
 import { orderSaveAttempt, type OrderSaveAttempt } from "@/lib/inventory-order-save";
@@ -38,6 +39,7 @@ import { InventoryDeleteAction } from "@/components/inventory-delete-action";
 import { InventoryMobileTools } from "@/components/inventory-mobile-tools";
 import { InventoryEditorSurface } from "@/components/inventory/inventory-editor-surface";
 import { CountSerialsDialog } from "@/components/inventory/count-serials-dialog";
+import { CountDiscrepancyReview, type CountDiscrepancyReviewPayload } from "@/components/inventory/count-discrepancy-review";
 import { buildOperationsDataset } from "@/lib/inventory-operations-data";
 import type { StockBalanceRow } from "@/lib/inventory-stock-export";
 import { fetchStock, type StockSummary } from "@/lib/inventory-stock-api";
@@ -278,6 +280,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [countDraftId, setCountDraftId] = useState<string | null>(null);
   const [countDraftRevision, setCountDraftRevision] = useState(0);
   const [countDraftMessage, setCountDraftMessage] = useState("");
+  const [pendingCountReview, setPendingCountReview] = useState<CountDiscrepancyReviewPayload | null>(null);
   const [countPage, setCountPage] = useState(0);
   const [countSearch, setCountSearch] = useState("");
   const [countProductSearch, setCountProductSearch] = useState("");
@@ -553,6 +556,27 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     }
     setCountConflict(null);
   }, [state?.counts, activeCount?.id, countDraftRevision]);
+
+  const countReviewStaleReason = (() => {
+    if (!pendingCountReview) return null;
+    if (!activeCount || activeCount.id !== pendingCountReview.countId) return "The active count changed.";
+    if (activeCount.status !== "open") return "This count is no longer open.";
+    if (!can("inventory.count")) return "You no longer have permission to post counts.";
+    if (countConflict === "unavailable") return "The saved count is no longer open.";
+    if (countConflict === "changed") return "Another operator saved a newer count draft.";
+    if (countStockDrift) return "Warehouse stock changed after the count began.";
+    try {
+      const lines = inventoryCountLines(countRows);
+      const identity = inventoryCountReviewIdentity(activeCount.id, countDraftRevision, lines, countReason);
+      if (identity !== pendingCountReview.identity) return "Count quantities, serials, or the reason changed after this review was prepared.";
+    } catch {
+      return "The current count entries no longer pass validation.";
+    }
+    const latest = state?.counts.find(value => value.id === pendingCountReview.countId);
+    if (!latest || latest.status !== "open") return "The saved count is no longer available to post.";
+    if ((latest.draft?.revision ?? 0) !== pendingCountReview.draftRevision) return "The saved count revision changed after this review was prepared.";
+    return null;
+  })();
 
   if (!projectId) return <div className="p-6">Project not found.</div>;
   if (isLoading) return <main className="mx-auto max-w-7xl p-4 md:p-7 space-y-5"><div className="h-8 w-64 animate-pulse rounded bg-muted" /><div className="grid gap-4 md:grid-cols-3">{[1, 2, 3].map(i => <div key={i} className="h-28 animate-pulse rounded-lg bg-muted" />)}</div><div className="h-80 animate-pulse rounded-lg bg-muted" /></main>;
@@ -920,6 +944,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   };
 
   const openCount = (count: InventoryCount, reload = false) => {
+    setPendingCountReview(null);
     setCountSerialDialog(null);
     setCountToolsOpen(count.scope === "selected" && !(count.draft?.rows.length));
     if (countDraftId !== count.id || reload) {
@@ -991,7 +1016,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   };
   const reloadCountDraft = async () => {
     if (!activeCount) return;
-    if (countDirty && !window.confirm("Replace the count entries on this page with the latest saved draft? Unsaved quantities and scans will be discarded.")) return;
+    // The caller already presents Save / Discard / Stay; retain edits until refetch succeeds.
     const latest = await snapshotQuery.refetch();
     const count = latest.data?.state.counts.find(count => count.id === activeCount.id);
     if (!latest.isError && count?.status === "open") openCount(count, true);
@@ -1011,6 +1036,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     } });
   };
   const closeCount = () => {
+    setPendingCountReview(null);
     setCountSerialDialog(null);
     setActiveCount(null);
     setCountDraftId(null);
@@ -1021,17 +1047,65 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     if (activeCount?.id === count.id) requestCountTransition(cancel);
     else cancel();
   };
-  const postCount = () => {
-    if (!activeCount || countConflict || !can("inventory.count") || countRows.length === 0) return;
+  const postReviewedCount = (review: CountDiscrepancyReviewPayload) => {
+    if (!activeCount || pendingCountReview?.identity !== review.identity || countReviewStaleReason ||
+        !can("inventory.count") || command.isPending || countSaving.current) return;
     let countLines: StockLine[];
     try { countLines = inventoryCountLines(countRows); }
     catch (error) {
       toast({ title: "Check count entries", description: error instanceof Error ? error.message : "Review every counted item.", variant: "destructive" });
       return;
     }
-    command.mutate({ action: "countPost", data: { id: activeCount.id, draftRevision: countDraftRevision, lines: countLines, reason: countReason } }, { onSuccess: () => {
+    const identity = inventoryCountReviewIdentity(activeCount.id, countDraftRevision, countLines, countReason);
+    const latest = state.counts.find(value => value.id === activeCount.id);
+    if (identity !== review.identity || activeCount.id !== review.countId || !latest || latest.status !== "open" ||
+        (latest.draft?.revision ?? 0) !== review.draftRevision || countStockDrift || countConflict) {
+      setCountDraftMessage("The reviewed count changed before confirmation. Go back and prepare a fresh review; your entries are retained.");
+      return;
+    }
+    command.mutate({ action: "countPost", data: { id: review.countId, draftRevision: review.draftRevision, lines: countLines, reason: review.reason } }, { onSuccess: () => {
+      setPendingCountReview(null);
       setCountSerialDialog(null);
       setActiveCount(null);
+      setCountDraftId(null);
+    }, onError: () => {
+      // Keep the exact reviewed payload and acknowledgement available for a non-destructive retry.
+      setCountDraftMessage("Posting could not be confirmed. Your entries and review are retained; refresh inventory before retrying.");
+    } });
+  };
+  const postCount = () => {
+    if (!activeCount || countConflict || countStockDrift || !can("inventory.count") || command.isPending ||
+        countSaving.current || countRows.length === 0 || !countReason.trim()) return;
+    let countLines: StockLine[];
+    try { countLines = inventoryCountLines(countRows); }
+    catch (error) {
+      toast({ title: "Check count entries", description: error instanceof Error ? error.message : "Review every counted item.", variant: "destructive" });
+      return;
+    }
+    const changes = inventoryCountSerialChanges(activeCount.snapshot, countLines, items);
+    if (changes.length) {
+      const lines = Object.freeze(countLines.map(line => Object.freeze({ ...line, serials: Object.freeze([...line.serials]) }))) as unknown as CountDiscrepancyReviewPayload["lines"];
+      const reason = countReason;
+      const immutableChanges = Object.freeze(changes.map(change => Object.freeze({
+        ...change,
+        missingSerials: Object.freeze([...change.missingSerials]),
+        unexpectedSerials: Object.freeze([...change.unexpectedSerials]),
+      }))) as unknown as CountDiscrepancyReviewPayload["changes"];
+      setPendingCountReview(Object.freeze({
+        countId: activeCount.id,
+        draftRevision: countDraftRevision,
+        lines,
+        reason,
+        identity: inventoryCountReviewIdentity(activeCount.id, countDraftRevision, lines, reason),
+        changes: immutableChanges,
+      }));
+      return;
+    }
+    command.mutate({ action: "countPost", data: { id: activeCount.id, draftRevision: countDraftRevision, lines: countLines, reason: countReason } }, { onSuccess: () => {
+      setPendingCountReview(null);
+      setCountSerialDialog(null);
+      setActiveCount(null);
+      setCountDraftId(null);
     } });
   };
 
@@ -1040,6 +1114,13 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       ref={editorHostRef}
       className={inlineEditorOpen ? "absolute inset-0 z-30" : "hidden"}
       aria-hidden={inlineEditorOpen ? undefined : true}
+    />
+    <CountDiscrepancyReview
+      review={pendingCountReview}
+      staleReason={countReviewStaleReason}
+      posting={command.isPending}
+      onDismiss={() => setPendingCountReview(null)}
+      onConfirm={postReviewedCount}
     />
     <Dialog open={!!pendingResourceTransition} onOpenChange={open => { if (!open && !resourceSaving.current && !imageBusy) setPendingResourceTransition(null); }}>
       <DialogContent onEscapeKeyDown={event => { if (resourceSaving.current || imageBusy) event.preventDefault(); }} onPointerDownOutside={event => event.preventDefault()}>

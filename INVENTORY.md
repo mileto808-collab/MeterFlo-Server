@@ -412,6 +412,10 @@ All conversions are atomic under the existing project aggregate lock, with immut
 
 ## Cycle counts and returns
 
+Before posting from the count page, serial differences open **Review serial discrepancies**. It lists missing serials to remove from the counted location and unexpected serials to add, alongside expected and actual quantities—even when the quantity stays the same. Missing serials are not automatically treated as installed or transferred. Additions still pass existing reservation, transit, kit and serial-custody safeguards.
+
+Check **I reviewed the serial changes**, then choose **Confirm and post count**. Opening, paging or dismissing the review does not adjust stock. Back, Escape and Close retain quantities, serials and the reason. Large lists are paged, not truncated. Changes to a saved draft, stock baseline, posting payload or permission block stale confirmation; resolve the change before preparing a fresh review. Counts without serial differences do not need this extra acknowledgement. This operator review does not change the existing command API contract.
+
 The **Cycle counts** tab uses the same screen-sized record list, search/filter tools, and filtered CSV, Excel and PDF/Print exports as the other inventory tabs. **Start count** is the first subheader action (inside the compact **Search & Tools** area on phones). It opens a location-selection dialog, then a count editor. **Continue count** opens the saved count in that same editor modal. Closing or escaping an unsaved editor offers Save draft, Discard or Stay; a failed save keeps it open with its entries intact.
 
 Cancelling an open count never adjusts stock. It retains the original snapshot and cancellation reason for audit history, removes its draft, and prevents further posting. There is currently no clear/delete action; use the status filter to hide cancelled records. Posted counts represent stock adjustments and must retain their evidence.
