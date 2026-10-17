@@ -36,3 +36,4 @@
 - [Inventory live updates](inventory-live-updates.md) — include same-user sessions and external transaction owners; refresh views without replacing local captures.
 - [Location assignments](inventory-location-access.md) — user assignments are intended for mobile locations such as vehicles, not brick-and-mortar warehouses.
 - [Equipment removal policy](equipment-removal-policy.md) — project-approved field choices and required returns are separate from warehouse final-decision authority.
+- [Work-order status hierarchy](work-order-status-hierarchy.md) — shared core statuses/sub-statuses, project-owned custom sub-statuses, and inherited parent rules.
