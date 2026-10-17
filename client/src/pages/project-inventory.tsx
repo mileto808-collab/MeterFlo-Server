@@ -7,6 +7,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useInventoryEvents } from "@/hooks/useInventoryEvents";
 import { useUnsavedNavigation } from "@/hooks/use-unsaved-navigation";
+import { usePageHeader } from "@/contexts/page-header-context";
 import { emptyInventory, type InventoryCommand, type InventoryCount, type InventoryItem, type InventoryOrder, type InventoryState, type StockLine, type Vendor, type Warehouse } from "@shared/inventory";
 import type { SavedShipmentDraft } from "@shared/inventory-shipment-draft-model";
 import { orderLineProgress } from "@shared/inventory-shipment-model";
@@ -105,6 +106,7 @@ export default function ProjectInventory() {
 }
 
 function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
+  const { setHeaderContent } = usePageHeader();
   const { hasPermission } = usePermissions();
   const { user } = useAuth();
   const { toast } = useToast();
@@ -137,6 +139,22 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const { isLoading, isError } = inventoryTab === "stock" && !resource ? stockContext : snapshotQuery;
   const refetch = () => inventoryTab === "stock" && !resource ? stockContext.refetch() : snapshotQuery.refetch();
   const summary = inventoryTab === "stock" ? stockContext.data?.summary : undefined;
+  useEffect(() => {
+    if (!data?.projectName) {
+      setHeaderContent(null);
+      return;
+    }
+
+    setHeaderContent(
+      <div className="flex items-center gap-2 w-full min-w-0">
+        <div className="flex flex-col min-w-0 flex-1">
+          <span className="font-semibold text-sm truncate">{data.projectName}</span>
+          <span className="text-xs text-muted-foreground">Inventory</span>
+        </div>
+      </div>,
+    );
+  }, [data?.projectName, setHeaderContent]);
+  useEffect(() => () => setHeaderContent(null), [setHeaderContent]);
   const [warehouseForm, setWarehouseForm] = useState<Warehouse>(blankWarehouse());
   const [vendorForm, setVendorForm] = useState<Vendor>(blankVendor());
   const [itemForm, setItemForm] = useState<InventoryItem>(blankItem());
