@@ -7,7 +7,8 @@ async function main() {
   const fixture = JSON.parse(await fs.readFile("/tmp/meterflo-inventory-ui-fixture.json", "utf8"));
   const baseURL = `https://${process.env.REPLIT_DEV_DOMAIN}`;
   const browser = await chromium.launch({ executablePath: "/repl/tools/bin/chromium", args: ["--no-sandbox"] });
-  const context = await browser.newContext({ baseURL, viewport: { width: 1440, height: 1000 } });
+  const context = await browser.newContext({ baseURL, viewport: { width: 1440, height: 1000 },
+    permissions: ["clipboard-read", "clipboard-write"] });
   const output = "generated-artifacts/order-discovery";
   await fs.mkdir(output, { recursive: true });
   try {
@@ -72,6 +73,12 @@ async function main() {
     assert.equal(purchase.orderNumber, committed.orderNumber);
     assert.equal(purchase.reference, "DISCOVERY-CORRECTED");
     assert.deepEqual(state.stock, initial.stock);
+    await card().locator("summary").click();
+    await expect(card()).not.toContainText(purchase.id);
+    await card().getByRole("button", { name: "Copy internal ID", exact: true }).click();
+    await expect(page.getByText("Internal ID copied", { exact: true })).toBeVisible();
+    assert.equal(await page.evaluate(() => navigator.clipboard.readText()), purchase.id);
+    await card().locator("summary").click();
     for (const query of [purchase.orderNumber.toLowerCase(), purchase.id, purchase.reference, "000701",
       "Discovery meter", "Discovery supplier", "MAIN", "Discovery warehouse"]) {
       await search.fill(query);
@@ -152,6 +159,8 @@ async function main() {
     await search.fill("discovery-transfer");
     await expect(card()).toHaveCount(1);
     await expect(card()).toContainText(transfer.orderNumber);
+    await card().locator("summary").click();
+    await expect(card()).not.toContainText(transfer.id);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
     const bounds = await card().evaluate(element => ({ width: element.clientWidth, content: element.scrollWidth }));
     assert.ok(bounds.content <= bounds.width + 1, JSON.stringify(bounds));

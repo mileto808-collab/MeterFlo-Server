@@ -1678,10 +1678,17 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
                 </Button>}
               </div>}
               <details className="mt-2 border-t pt-1.5 text-xs">
-                <summary className="w-fit cursor-pointer text-muted-foreground">Order details · lines, progress, and internal ID</summary>
+                <summary className="w-fit cursor-pointer text-muted-foreground">Order details · lines and progress</summary>
                 <div className="mt-2 space-y-1.5">
                   <p className="break-words md:hidden">{purchase ? vendors.find(v => v.id === order.vendorId)?.name : warehouses.find(w => w.id === order.sourceId)?.name} → {warehouses.find(w => w.id === order.destinationId)?.name}{orderReference(order) ? ` · Ref ${orderReference(order)}` : ""}</p>
-                  <div className="flex flex-wrap items-center gap-2 text-muted-foreground"><span className="break-all font-mono">{order.id}</span><Button size="sm" variant="ghost" onClick={() => navigator.clipboard.writeText(order.id).catch(() => toast({ title: "Copy unavailable", description: "Select and copy the displayed internal ID." }))}>Copy internal ID</Button></div>
+                  <div className="flex flex-wrap items-center gap-2 text-muted-foreground"><Button size="sm" variant="ghost" onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(order.id);
+                      toast({ title: "Internal ID copied", description: "The order's internal tracking ID was copied to your clipboard." });
+                    } catch {
+                      toast({ title: "Copy unavailable", description: "Allow clipboard access in your browser and try again.", variant: "destructive" });
+                    }
+                  }}>Copy internal ID</Button></div>
                   {unreleaseLocked && <p className="text-muted-foreground" role="note">{(state.shipmentDrafts ?? []).some(draft => draft.orderId === order.id) ? "Resume or discard the saved shipment capture before un-releasing this order. A capture owned by another operator may not be visible here; ask its owner to reconcile it." : "This order has posted shipment activity and cannot return to draft. Dispatches and receipts must remain attached to the order."}</p>}
                   <div className="grid gap-1 border-t pt-2">{order.lines.map(line => {
                 const item = items.find(value => value.id === line.itemId);

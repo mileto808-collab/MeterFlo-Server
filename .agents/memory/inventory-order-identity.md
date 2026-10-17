@@ -8,6 +8,12 @@ Keep a readable order number, a mutable supplier/customer reference and an immut
 
 **How to apply:** Any new editor or client must preserve internal identity across reference changes and retries. Human-readable labels are for presentation, never for rebinding saved shipment commands or rewriting old receipt references.
 
+Expanded order details should not display raw order UUIDs. Keep the readable order number as the visible identifier; internal IDs can remain copyable for support.
+
+**Why:** The user clarified that readable identifiers must also apply inside expanded order details, not only to order headings.
+
+**How to apply:** Do not reintroduce raw UUID text when expanding an order. Preserve internal IDs in storage and transport, and keep full-ID search and copy actions working.
+
 Returning an order to an editable draft must not silently invalidate or clear a saved shipment capture.
 
 **Why:** Recoverable scans may include a prepared request with an unknown outcome. Editing the order underneath that capture can invalidate physical evidence or allow a late request against changed lines.
