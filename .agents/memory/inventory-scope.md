@@ -7,7 +7,15 @@ Inventory is enabled by an admin per project. Projects can have multiple warehou
 
 Readings do not require a changeout.
 
-Reserve stock when assigned to a work order; deduct it when the changeout is completed. Capture removed-equipment disposition as returned, scrapped, or left onsite; returned equipment is not automatically usable stock.
+Imports and customer API pulls must never reserve systems or modules to work orders. Imported old System/Module Type values describe installed equipment; new System/Module Type values describe expected replacements. Type values must continue to validate against the type catalogs regardless of inventory enablement. When inventory is enabled, new type values should resolve to inventory items and create planned work-order lines without selecting physical stock or serials.
+
+Only explicit manual item assignment while creating a work order or editing a non-completed, non-closed work order reserves stock. Serialized manual assignments capture the serial in work-order details. Otherwise technicians choose the actual system/module from their vehicle at the physical changeout; some customers track quantities without serializing systems/modules. Show required kit components on the physical-changeout wizard step, deduct actual inventory at completion, and associate captured serial identities with the work order then.
+
+**Why:** The user clarified that the installed physical unit is unknown until the technician grabs it. Planned replacement requirements and physical reservations are different concepts. Customers may use kits containing systems/modules, hardware, and seals, with serialized or quantity-tracked components.
+
+**How to apply:** Preserve behavior when inventory is disabled. Never interpret import-created requirement lines as reservations or stock consumption. Resolve the type-to-item database relationship explicitly before implementation; do not assume independently generated numeric IDs identify the same entity.
+
+Capture removed-equipment disposition as returned, scrapped, or left onsite; returned equipment is not automatically usable stock.
 
 **Why:** The user explicitly specified these product boundaries; inventory must not turn a reading-only visit into an equipment replacement. The user subsequently reversed the earlier requirement to replace legacy import/type fields with inventory items and asked to undo that suppression and disabling.
 
