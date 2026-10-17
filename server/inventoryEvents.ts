@@ -84,10 +84,16 @@ export async function subscribeInventoryEvents(projectId: number, callback: Subs
   return unsubscribe;
 }
 
-export async function inventoryStreamAllowed(projectId: number, userId: string): Promise<boolean> {
+export async function inventoryStreamPermissions(projectId: number, userId: string): Promise<string[] | null> {
   const [user, project] = await Promise.all([storage.getUser(userId), storage.getProject(projectId)]);
-  if (!user || user.isLocked || !project?.inventoryEnabled) return false;
-  if (!await storage.hasPermission(user, inventoryPermissions.view)) return false;
-  if (project.isActive === false && !await storage.hasPermission(user, "projects.viewInactive")) return false;
-  return await storage.isAdminUser(user) || await storage.isUserAssignedToProject(user.id, projectId);
+  if (!user || user.isLocked || !project?.inventoryEnabled) return null;
+  const permissions = await storage.getUserEffectivePermissions(user);
+  if (!permissions.includes(inventoryPermissions.view)) return null;
+  if (project.isActive === false && !permissions.includes("projects.viewInactive")) return null;
+  if (!await storage.isAdminUser(user) && !await storage.isUserAssignedToProject(user.id, projectId)) return null;
+  return permissions.sort();
+}
+
+export async function inventoryStreamAllowed(projectId: number, userId: string): Promise<boolean> {
+  return !!await inventoryStreamPermissions(projectId, userId);
 }

@@ -10,6 +10,7 @@ import { draftWarehouse } from "../shared/inventory-shipment-drafts";
 import { readInventoryCategories, storedCategoryState, writeInventoryCategories, writeInventoryCategoryItem } from "./inventoryCategories";
 import { validateKitBackup } from "./inventoryKitBackup";
 import { readRelationalInventory, writeRelationalInventory, clearRelationalInventory } from "./inventoryRelational";
+import { normalizeInventoryLocations } from "../shared/inventory-location-types";
 
 export type InventoryBackup = { state: InventoryState; movements: any[]; enabled: boolean };
 export async function exportInventory(client: PoolClient, schema: string): Promise<InventoryBackup | undefined> {
@@ -39,6 +40,10 @@ export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: n
       throw new Error("Saved shipment draft references an unrelated receipt.");
   }
   const s = backup.state;
+  // A pre-type backup used assigned-user checks even for physical warehouses.
+  // Restore that policy explicitly rather than applying the live cutover default.
+  const locations = normalizeInventoryLocations(s, "assigned");
+  z.array(warehouseSchema).parse(locations.warehouses);
   const typeLinks = z.array(z.object({
     id: z.string().min(1), equipment: z.enum(["system", "module"]), typeId: z.number().int(),
     itemId: z.string().min(1), systemTypeId: z.number().int().nullable(), moduleTypeId: z.number().int().nullable(),
@@ -96,7 +101,7 @@ export async function restoreInventory(client: PoolClient, schema: string, backu
   const { rows: ids } = await client.query(`SELECT id FROM "${schema}".work_orders`);
   validateInventoryBackup(backup, ids.map(x => x.id));
   const local = await readRelationalInventory(client, p.id);
-  backup = { ...backup, state: storedCategoryState(mergeOrderHighWater(backup.state, local)) };
+  backup = { ...backup, state: normalizeInventoryLocations(storedCategoryState(mergeOrderHighWater(backup.state, local)), "assigned") };
   await clearRelationalInventory(client, p.id);
   await client.query("INSERT INTO public.inventory_state(project_id,state) VALUES($1,$2) ON CONFLICT(project_id) DO UPDATE SET state=EXCLUDED.state,updated_at=now()", [p.id, JSON.stringify(backup.state || emptyInventory())]);
   await writeRelationalInventory(client, p.id, backup.state);

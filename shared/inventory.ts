@@ -4,18 +4,21 @@ import type { DamageLine, OrderClosure, ShipmentHold, HoldDisposition } from "./
 import type { SavedShipmentDraft } from "./inventory-shipment-draft-model";
 import type { InventoryCategory } from "./inventory-categories";
 import type { KitAssembly, KitHold } from "./inventory-kits";
+import type { InventoryLocationType } from "./inventory-location-types";
 
 export const inventoryPermissions = {
   configure: "inventory.configure", view: "inventory.view", maintain: "inventory.maintain",
   receive: "inventory.receive", purchase: "inventory.purchase", transfer: "inventory.transfer",
   count: "inventory.count", assign: "inventory.assign", assemble: "inventory.assemble",
   closeOrders: "inventory.closeOrders", resolveExceptions: "inventory.resolveExceptions",
+  manageLocationTypes: "inventory.manageLocationTypes",
 };
 const id = z.string().min(1).max(100);
 const label = z.string().trim().min(1).max(200);
 const optional = z.string().max(500).default("");
 export const warehouseSchema = z.object({
-  id, code: label, name: label, type: z.enum(["physical", "vehicle"]), active: z.boolean().default(true),
+  id, code: label, name: label, type: z.enum(["physical", "vehicle", "mobile"]),
+  locationTypeId: z.string().uuid().optional(), active: z.boolean().default(true),
   address: optional, city: optional, state: optional, zip: optional, contact: optional,
   phone: optional, location: optional, vin: optional, plate: optional, plateState: optional,
   make: optional, model: optional, year: z.number().int().min(1900).max(2200).nullable().default(null),
@@ -24,7 +27,7 @@ export const warehouseSchema = z.object({
   if (w.type === "vehicle") {
     if (!/^[A-HJ-NPR-Z0-9]{17}$/i.test(w.vin)) ctx.addIssue({ code: "custom", path: ["vin"], message: "Enter a valid 17-character VIN." });
     if (!w.plate || !w.plateState) ctx.addIssue({ code: "custom", path: ["plate"], message: "Plate and jurisdiction are required." });
-  } else if (!w.address.trim()) ctx.addIssue({ code: "custom", path: ["address"], message: "Warehouse address is required." });
+  } else if (w.type === "physical" && !w.address.trim()) ctx.addIssue({ code: "custom", path: ["address"], message: "Warehouse address is required." });
 });
 export const vendorSchema = z.object({ id, name: label, contact: optional, address: optional, phone: optional,
   email: z.string().email().or(z.literal("")).default(""), reference: optional, active: z.boolean().default(true) });
@@ -60,7 +63,7 @@ export const savedCountDraftSchema = countDraftSchema.extend({
   savedBy: id, savedAt: z.string().datetime(),
 });
 export const inventoryCommandSchema = z.object({
-  operationId: z.string().uuid(), action: z.enum(["warehouse", "vendor", "item", "itemDelete", "category", "categoryRename", "categoryDelete", "order", "release",
+  operationId: z.string().uuid(), action: z.enum(["warehouse", "locationType", "locationTypeDelete", "vendor", "item", "itemDelete", "category", "categoryRename", "categoryDelete", "order", "release",
     "cancel", "unrelease", "archiveOrder", "restoreOrder", "numberOrders", "receive", "dispatch", "accept", "assemble", "verifyVendorKit", "disassemble", "resolveKitHold", "countStart", "countPost", "countCancel", "countSaveDraft",
     "assign", "prepareUse", "returnAccept", "returnRelease", "reconcileWorkOrder", "closeOrder", "resolveTransit", "resolveHold",
     "shipmentDraftSave", "shipmentDraftPrepare", "shipmentDraftUnlock", "shipmentDraftDelete", "shipmentDraftClaim", "typeLink"]),
@@ -92,6 +95,7 @@ export type InventoryReceipt = { id: string; action: string; reference: string; 
   kitConversion?: { assemblyId: string; recovered: Array<import("./inventory-kits").KitRecovery> } };
 export type EquipmentReturn = Disposition & { id: string; workOrderId: number; status: "pending" | "quarantine" | "released"; itemId?: string };
 export type InventoryState = { warehouses: Warehouse[]; vendors: Vendor[]; items: InventoryItem[]; stock: Stock[];
+  locationTypes?: InventoryLocationType[];
   typeLinks?: InventoryTypeLink[]; workRequirements?: WorkRequirements[];
   categories?: string[];
   categoryCatalog?: InventoryCategory[];
@@ -104,6 +108,7 @@ export type InventoryState = { warehouses: Warehouse[]; vendors: Vendor[]; items
 export const emptyInventory = (): InventoryState => ({ warehouses: [], vendors: [], categories: [], items: [], stock: [], orders: [],
   counts: [], allocations: [], receipts: [], returns: [], operations: {}, revision: 0, serialOccupancy: [], shipmentHolds: [] });
 export const commandPermission = (action: InventoryCommand["action"]) =>
+  ["locationType", "locationTypeDelete"].includes(action) ? inventoryPermissions.manageLocationTypes :
   action === "closeOrder" ? inventoryPermissions.closeOrders :
   ["resolveTransit", "resolveHold", "resolveKitHold"].includes(action) ? inventoryPermissions.resolveExceptions :
   ["archiveOrder", "restoreOrder"].includes(action) ? inventoryPermissions.purchase :

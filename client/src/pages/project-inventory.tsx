@@ -38,9 +38,11 @@ import { InventoryCategoryCreateAction } from "@/components/inventory-category-c
 import { InventoryDeleteAction } from "@/components/inventory-delete-action";
 import { InventoryMobileTools } from "@/components/inventory-mobile-tools";
 import { InventoryEditorSurface } from "@/components/inventory/inventory-editor-surface";
+import { LocationTypesManager } from "@/components/inventory/location-types-manager";
 import { CountSerialsDialog } from "@/components/inventory/count-serials-dialog";
 import { CountDiscrepancyReview, type CountDiscrepancyReviewPayload } from "@/components/inventory/count-discrepancy-review";
 import { buildOperationsDataset } from "@/lib/inventory-operations-data";
+import { defaultLocationTypeId, locationTypeFor, locationTypeLabel, warehouseAccessible } from "@shared/inventory-location-types";
 import type { StockBalanceRow } from "@/lib/inventory-stock-export";
 import { fetchStock, type StockSummary } from "@/lib/inventory-stock-api";
 import { Badge } from "@/components/ui/badge";
@@ -55,7 +57,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { AlertTriangle, ArrowLeftRight, BarChart3, Boxes, ChevronDown, ChevronUp, ClipboardList, Download, FileSpreadsheet, FileText, Filter, ListOrdered, Loader2, Menu, Package, Plus, Printer, RefreshCw, Search, Warehouse as WarehouseIcon } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, ArrowLeft, BarChart3, Boxes, ChevronDown, ChevronUp, ClipboardList, Download, FileSpreadsheet, FileText, Filter, ListOrdered, Loader2, Menu, Package, Plus, Printer, RefreshCw, Search, Trash2, Warehouse as WarehouseIcon } from "lucide-react";
 
 type Snapshot = { enabled: boolean; projectName: string; timezone: string; state: InventoryState; permissions: string[]; users: Array<{ id: string; username: string }>; actors?: InventoryActorLabel[] };
 type ResourceKind = "warehouse" | "vendor" | "item";
@@ -175,15 +177,17 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const resourceId = useRef("");
   const resourceAttempt = useRef<{ fingerprint: string; operationId: string } | null>(null);
   const resourceSaving = useRef(false);
-  const resourceBaseline = useRef<{ kind: ResourceKind; id: string; signature: string; copied: boolean } | null>(null);
+  const resourceBaseline = useRef<{ kind: ResourceKind; id: string; signature: string; copied: boolean; locationContext?: string } | null>(null);
+  const [selectedLocationTypeBasis, setSelectedLocationTypeBasis] = useState<{ id: string; revision: number } | null>(null);
   const resourceCurrentForm = resource === "warehouse" ? warehouseForm : resource === "vendor" ? vendorForm : itemForm;
   const resourceDirty = !!resource && resource !== "vendor" && !!resourceBaseline.current &&
     JSON.stringify(resourceCurrentForm) !== resourceBaseline.current.signature;
   const [pendingResourceTransition, setPendingResourceTransition] = useState<(() => void) | null>(null);
+  const [locationTypesManagerOpen, setLocationTypesManagerOpen] = useState(false);
   useEffect(() => { if (resourceError) resourceErrorRef.current?.focus(); }, [resourceError]);
   const [orderType, setOrderType] = useState<"purchase" | "transfer">("purchase");
   const [orderEditorOpen, setOrderEditorOpen] = useState(false);
-  const inlineEditorOpen = (!!resource && resource !== "vendor") || orderEditorOpen || !!activeCount;
+  const inlineEditorOpen = (!!resource && resource !== "vendor") || orderEditorOpen || !!activeCount || locationTypesManagerOpen;
   useLayoutEffect(() => {
     const host = inventoryTabsHostRef.current;
     if (!host) return;
@@ -312,6 +316,10 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [returnInspect, setReturnInspect] = useState<Record<string, { itemId: string; reason: string }>>({});
 
   const state = data?.state;
+  const locationContextSignature = (warehouse: Warehouse) => JSON.stringify({
+    type: state ? locationTypeFor(state, warehouse) ?? null : null,
+    locations: state?.warehouses.filter(value => value.locationTypeId === warehouse.locationTypeId).map(value => value.id).sort() ?? [],
+  });
   const currentCountStock = useMemo(() => (state?.stock ?? []).filter(stock => stock.warehouseId === activeCount?.warehouseId), [state?.stock, activeCount?.warehouseId]);
   const countStockByItem = useMemo(() => new Map(currentCountStock.map(stock => [stock.itemId, stock])), [currentCountStock]);
   const countStockDrift = useMemo(() => {
@@ -327,7 +335,10 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const categoriesDataset = useMemo(() => buildOperationsDataset("categories", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone), [state]);
   const countsDataset = useMemo(() => buildOperationsDataset("counts", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone), [state, timezone]);
   const categoryCatalog = state?.categoryCatalog ?? [];
-  const can = (permission: string) => hasPermission(permission);
+  // Inventory SSE resyncs include fresh permissions; the global role cache may
+  // still reflect an earlier session grant while an editor is open.
+  const can = (permission: string) => data ? data.permissions.includes(permission) : hasPermission(permission);
+  const canManageLocationTypes = can("inventory.manageLocationTypes");
   const command = useMutation({
     mutationFn: async ({ action, data: payload, operationId }: { action: InventoryCommand["action"]; data: Record<string, unknown>; operationId?: string }) => {
       const response = await apiRequest("POST", `${base}/commands`, { operationId: operationId ?? freshId(), action, data: payload } satisfies InventoryCommand);
@@ -507,7 +518,18 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       ? { ...latest as InventoryItem, images: (latest as InventoryItem).images.filter(image => !!sameOriginImage(image)) }
       : latest;
     const signature = JSON.stringify(refreshedForm);
+    const latestLocationContext = baseline.kind === "warehouse"
+      ? locationContextSignature(refreshedForm as Warehouse) : baseline.locationContext;
+    const contextChanged = baseline.kind === "warehouse" && latestLocationContext !== baseline.locationContext;
     if (signature === baseline.signature) {
+      if (contextChanged) {
+        const current = baseline.kind === "warehouse" ? warehouseForm : null;
+        if (current && JSON.stringify(current) !== baseline.signature) {
+          setResourceConflict("changed");
+          return;
+        }
+        baseline.locationContext = latestLocationContext;
+      }
       setResourceConflict(null);
       return;
     }
@@ -521,6 +543,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     else if (baseline.kind === "vendor") setVendorForm(refreshedForm as Vendor);
     else setItemForm(refreshedForm as InventoryItem);
     baseline.signature = signature;
+    if (baseline.kind === "warehouse") baseline.locationContext = latestLocationContext;
     setResourceConflict(null);
   }, [resource, state, warehouseForm, vendorForm, itemForm]);
   useEffect(() => {
@@ -577,6 +600,16 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     if ((latest.draft?.revision ?? 0) !== pendingCountReview.draftRevision) return "The saved count revision changed after this review was prepared.";
     return null;
   })();
+  const warehouseEditorType = resource === "warehouse"
+    ? state?.locationTypes?.find(type => type.id === warehouseForm.locationTypeId) ?? (state ? locationTypeFor(state, warehouseForm) : undefined)
+    : undefined;
+  const warehouseRecord = state?.warehouses.find(value => value.id === warehouseForm.id);
+  const warehouseCanSave = resource === "warehouse"
+    ? (warehouseForm.id
+      ? can("inventory.maintain") && (canManageLocationTypes || (!!state && !!warehouseRecord &&
+        warehouseAccessible(state, warehouseRecord, user?.id, user?.role === "admin")))
+      : can("inventory.maintain") && canManageLocationTypes)
+    : can("inventory.maintain");
 
   if (!projectId) return <div className="p-6">Project not found.</div>;
   if (isLoading) return <main className="mx-auto max-w-7xl p-4 md:p-7 space-y-5"><div className="h-8 w-64 animate-pulse rounded bg-muted" /><div className="grid gap-4 md:grid-cols-3">{[1, 2, 3].map(i => <div key={i} className="h-28 animate-pulse rounded-lg bg-muted" />)}</div><div className="h-80 animate-pulse rounded-lg bg-muted" /></main>;
@@ -587,16 +620,29 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   if (!can("inventory.view")) return <main className="mx-auto max-w-3xl p-6"><Card><CardHeader><CardTitle>Inventory access required</CardTitle><CardDescription>Your account does not have permission to view this project’s stock.</CardDescription></CardHeader></Card></main>;
 
   const openResource = (kind: ResourceKind, existing?: Warehouse | Vendor | InventoryItem, copying = false) => {
-    if (resourceSaving.current || imageBusy || !can("inventory.maintain")) return;
+    if (resourceSaving.current || imageBusy) return;
+    if (kind === "warehouse") {
+      if (existing) {
+        if (!can("inventory.maintain") || (!canManageLocationTypes &&
+            !warehouseAccessible(state!, existing as Warehouse, user?.id, user?.role === "admin"))) return;
+      } else if (!can("inventory.maintain") || !canManageLocationTypes) return;
+    } else if (!can("inventory.maintain")) return;
     resourceId.current = copying ? freshId() : existing?.id || freshId();
     resourceAttempt.current = null;
     setResourceError(null);
     setCopiedItemName(copying && kind === "item" ? existing?.name ?? null : null);
     setResource(kind);
     if (kind === "warehouse") {
-      const form = existing as Warehouse ?? blankWarehouse();
+      const source = existing as Warehouse | undefined;
+      const resolvedType = source ? locationTypeFor(state!, source) : undefined;
+      const form: Warehouse = source
+        ? { ...source, locationTypeId: source.locationTypeId ?? resolvedType?.id, type: resolvedType?.kind ?? source.type }
+        : { ...blankWarehouse(), locationTypeId: defaultLocationTypeId("physical") };
       setWarehouseForm(form);
-      resourceBaseline.current = { kind, id: form.id, signature: JSON.stringify(form), copied: copying };
+      const selectedType = locationTypeFor(state!, form);
+      setSelectedLocationTypeBasis(selectedType ? { id: selectedType.id, revision: selectedType.revision } : null);
+      resourceBaseline.current = { kind, id: form.id, signature: JSON.stringify(form), copied: copying,
+        locationContext: source ? locationContextSignature(source) : undefined };
     }
     if (kind === "vendor") {
       const form = existing as Vendor ?? blankVendor();
@@ -612,12 +658,39 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     setResourceConflict(null);
   };
   const saveResource = () => {
-    if (!resource || resourceConflict || resourceSaving.current || imageBusy || command.isPending || !can("inventory.maintain")) return;
+    if (!resource || resourceConflict || resourceSaving.current || imageBusy || command.isPending) return;
+    if (resource !== "warehouse" && !can("inventory.maintain")) return;
+    if (resource === "warehouse") {
+      const baseline = resourceBaseline.current;
+      const creating = !baseline?.id;
+      if (creating ? (!can("inventory.maintain") || !canManageLocationTypes) : !can("inventory.maintain")) return;
+      const existing = creating ? undefined : state.warehouses.find(value => value.id === baseline?.id);
+      if (existing && !canManageLocationTypes && !warehouseAccessible(state, existing, user?.id, user?.role === "admin")) return;
+      if (!canManageLocationTypes && existing) {
+        const original = existing;
+        if (warehouseForm.locationTypeId !== (original.locationTypeId ?? locationTypeFor(state, original)?.id) ||
+            warehouseForm.assignedUserId !== original.assignedUserId ||
+            JSON.stringify(warehouseForm.userIds) !== JSON.stringify(original.userIds)) {
+          setResourceError("Location type and access assignments require the Manage location types permission.");
+          return;
+        }
+      }
+    }
     setResourceError(null);
     let payload: Record<string, unknown>;
     try {
       const draft = resource === "warehouse" ? warehouseForm : resource === "vendor" ? vendorForm : itemForm;
       payload = validateInventoryResource(resource, { ...draft, id: resourceId.current });
+      if (resource === "warehouse") {
+        const currentType = locationTypeFor(state, warehouseForm);
+        if (currentType) {
+          if (!selectedLocationTypeBasis || selectedLocationTypeBasis.id !== currentType.id || selectedLocationTypeBasis.revision !== currentType.revision) {
+            setResourceError("The selected location type changed. Review its updated policy before saving.");
+            return;
+          }
+          payload = { ...payload, expectedLocationTypeRevision: selectedLocationTypeBasis.revision };
+        }
+      }
     } catch (error) {
       setResourceError(error instanceof Error ? error.message : "Check the required fields.");
       return;
@@ -643,7 +716,11 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       return;
     }
     const signature = JSON.stringify(latest);
-    if (baseline.kind === "warehouse") setWarehouseForm(latest as Warehouse);
+    if (baseline.kind === "warehouse") {
+      setWarehouseForm(latest as Warehouse);
+      const type = locationTypeFor(state, latest as Warehouse);
+      setSelectedLocationTypeBasis(type ? { id: type.id, revision: type.revision } : null);
+    }
     else if (baseline.kind === "vendor") setVendorForm(latest as Vendor);
     else setItemForm(latest as InventoryItem);
     baseline.signature = signature;
@@ -855,8 +932,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     const requiredWarehouses = [current.destinationId, ...(current.type === "transfer" ? [current.sourceId] : [])];
     if (!requiredWarehouses.every(id => {
       const warehouse = snapshot.state.warehouses.find(value => value.id === id);
-      return warehouse?.active && (user?.role === "admin" || warehouse.assignedUserId === user?.id ||
-        !!user?.id && warehouse.userIds.includes(user.id));
+      return !!warehouse && warehouseAccessible(snapshot.state, warehouse, user?.id, user?.role === "admin");
     })) {
       return { opened: false, checkable: false, message: "Status checked, but your current warehouse access does not allow editing this order." };
     }
@@ -1315,24 +1391,41 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           onVerifyVendorKit={() => { setVendorKitOpen(true); }} />
       </TabsContent>
       <TabsContent value="locations" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
+        {locationTypesManagerOpen ? <LocationTypesManager state={state} pending={command.isPending} authorized={canManageLocationTypes} portalHost={editorHostRef.current}
+          onBack={() => setLocationTypesManagerOpen(false)}
+          onCommand={(action, payload, onSuccess, onError) => command.mutate(
+            { action: action as InventoryCommand["action"], data: payload },
+            { onSuccess: () => onSuccess(), onError: error => onError(error instanceof Error ? error : new Error("Location type could not be saved.")) },
+          )} /> :
         <InventoryRecordsWorkspace kind="locations" title="Warehouses & vehicles" description="Access is enforced by the project inventory service for every operation." dataset={locationsDataset} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
-          headerAction={can("inventory.maintain") && <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" aria-label="Add location" title="Add location" onClick={() => openResource("warehouse")}><Plus className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Add location</span></Button>}
+          persistentHeaderAction={(canManageLocationTypes || can("inventory.maintain")) && <div className="flex shrink-0 items-center gap-2">
+            {canManageLocationTypes && <Button className="h-9 px-2.5 sm:px-3" size="sm" variant="outline" aria-label="Manage location types" title="Manage location types" onClick={() => setLocationTypesManagerOpen(true)}><span className="sm:hidden">Types</span><span className="hidden sm:inline">Manage location types</span></Button>}
+            {canManageLocationTypes && can("inventory.maintain") && <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" aria-label="Add location" title="Add location" onClick={() => openResource("warehouse")}><Plus className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Add location</span></Button>}
+          </div>}
           renderRow={row => { const warehouse = warehouses.find(value => value.id === row.id); if (!warehouse) return null;
             const assigned = data.users.find(user => user.id === warehouse.assignedUserId)?.username ?? (warehouse.assignedUserId ? inventoryActorLabel(warehouse.assignedUserId, data.actors ?? data.users) : "None");
             const authorized = warehouse.userIds.map(id => data.users.find(user => user.id === id)?.username ?? inventoryActorLabel(id, data.actors ?? data.users));
+            const resolvedType = locationTypeFor(state, warehouse);
+            const restricted = resolvedType?.accessPolicy === "assigned";
+            const detail = resolvedType?.kind === "vehicle"
+              ? [warehouse.make, warehouse.model, warehouse.year, warehouse.plate && `${warehouse.plate} ${warehouse.plateState}`].filter(Boolean).join(" · ")
+              : resolvedType?.kind === "physical"
+                ? [warehouse.address, warehouse.city, warehouse.state, warehouse.zip].filter(Boolean).join(", ") || "Address not recorded"
+                : [warehouse.location, warehouse.city, warehouse.state].filter(Boolean).join(", ") || "Mobile location";
             return <article className="min-w-0 rounded-md border bg-card px-3 py-2 sm:px-4 sm:py-3"><div className="flex min-w-0 items-start justify-between gap-2 sm:gap-3">
-              <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2 font-medium"><h3 className="break-words">{warehouse.name}</h3><Badge variant="outline">{warehouse.type === "vehicle" ? "Vehicle" : "Warehouse"}</Badge>{!warehouse.active && <Badge variant="secondary">Inactive</Badge>}</div>
+              <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2 font-medium"><h3 className="break-words">{warehouse.name}</h3><Badge variant="outline">{locationTypeLabel(state, warehouse)}</Badge>{!warehouse.active && <Badge variant="secondary">Inactive</Badge>}</div>
                 <p className="mt-1 break-all font-mono text-xs text-muted-foreground">{warehouse.code}</p>
                 <div className="hidden md:block">
-                  <p className="mt-2 break-words text-sm text-muted-foreground">{warehouse.type === "vehicle" ? [warehouse.make, warehouse.model, warehouse.year, warehouse.plate && `${warehouse.plate} ${warehouse.plateState}`].filter(Boolean).join(" · ") : [warehouse.address, warehouse.city, warehouse.state, warehouse.zip].filter(Boolean).join(", ") || "Address not recorded"}</p>
-                  <p className="mt-1 break-words text-xs text-muted-foreground">Assigned: {assigned} · {warehouse.userIds.length} additional authorized{authorized.length ? ` · ${authorized.join(", ")}` : ""}</p>
+                  <p className="mt-2 break-words text-sm text-muted-foreground">{detail}</p>
+                  {restricted && <p className="mt-1 break-words text-xs text-muted-foreground">Assigned: {assigned} · {warehouse.userIds.length} additional authorized{authorized.length ? ` · ${authorized.join(", ")}` : ""}</p>}
                 </div>
                 <details className="md:hidden"><summary className="mt-1 cursor-pointer text-xs text-muted-foreground">Location details</summary><div>
-                <p className="mt-2 break-words text-sm text-muted-foreground">{warehouse.type === "vehicle" ? [warehouse.make, warehouse.model, warehouse.year, warehouse.plate && `${warehouse.plate} ${warehouse.plateState}`].filter(Boolean).join(" · ") : [warehouse.address, warehouse.city, warehouse.state, warehouse.zip].filter(Boolean).join(", ") || "Address not recorded"}</p>
-                <p className="mt-1 break-words text-xs text-muted-foreground">Assigned: {assigned} · {warehouse.userIds.length} additional authorized{authorized.length ? ` · ${authorized.join(", ")}` : ""}</p>
+                <p className="mt-2 break-words text-sm text-muted-foreground">{detail}</p>
+                {restricted && <p className="mt-1 break-words text-xs text-muted-foreground">Assigned: {assigned} · {warehouse.userIds.length} additional authorized{authorized.length ? ` · ${authorized.join(", ")}` : ""}</p>}
                 </div></details>
-              </div>{can("inventory.maintain") && <Button size="sm" variant="outline" onClick={() => openResource("warehouse", warehouse)}>Edit</Button>}</div></article>;
+              </div>{can("inventory.maintain") && (canManageLocationTypes || warehouseAccessible(state, warehouse, user?.id, user?.role === "admin")) && <Button size="sm" variant="outline" onClick={() => openResource("warehouse", warehouse)}>Edit</Button>}</div></article>;
           }} />
+        }
       </TabsContent>
       <TabsContent value="items" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         <InventoryCatalogWorkspace kind="items" items={items} vendors={vendors} projectName={data.projectName} timezone={timezone}
@@ -1811,11 +1904,11 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
         : requestResourceTransition(() => {})}
       onSave={saveResource}
       saving={resourceBusy || resourceSave.isPending}
-      saveDisabled={command.isPending || !!resourceConflict || !can("inventory.maintain")}
+      saveDisabled={command.isPending || !!resourceConflict || !warehouseCanSave}
       saveLabel="Save changes"
       footer={resource === "vendor" ? <>
         <Button variant="outline" disabled={resourceBusy} onClick={() => setResource(null)}>Cancel</Button>
-        <Button onClick={saveResource} disabled={resourceBusy || command.isPending || !!resourceConflict || !can("inventory.maintain")}>
+        <Button onClick={saveResource} disabled={resourceBusy || command.isPending || !!resourceConflict || !warehouseCanSave}>
           {resourceSave.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           {resourceSave.isPending ? "Saving..." : "Save changes"}
         </Button>
@@ -1835,11 +1928,37 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       <fieldset disabled={resourceBusy} aria-describedby={resourceError ? "inventory-resource-error" : undefined} className="contents">
       {resource === "warehouse" && <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Code" value={warehouseForm.code} set={value => setWarehouseForm(form => ({ ...form, code: value }))} /><Field label="Name" value={warehouseForm.name} set={value => setWarehouseForm(form => ({ ...form, name: value }))} />
-        <div className="space-y-1"><Label>Location type</Label><Select value={warehouseForm.type} onValueChange={value => setWarehouseForm(form => ({ ...form, type: value as "physical" | "vehicle" }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="physical">Warehouse</SelectItem><SelectItem value="vehicle">Service vehicle</SelectItem></SelectContent></Select></div>
+        <div className="space-y-1"><Label htmlFor="warehouse-location-type">Location type</Label>
+          <Select value={warehouseForm.locationTypeId ?? ""} disabled={!canManageLocationTypes} onValueChange={value => {
+            const selected = state.locationTypes?.find(type => type.id === value);
+            if (!selected) return;
+            setWarehouseForm(form => ({ ...form, locationTypeId: selected.id, type: selected.kind }));
+            setSelectedLocationTypeBasis({ id: selected.id, revision: selected.revision });
+          }}><SelectTrigger id="warehouse-location-type"><SelectValue placeholder="Choose a location type" /></SelectTrigger><SelectContent>{(state.locationTypes ?? []).map(type => <SelectItem key={type.id} value={type.id}>{type.name}</SelectItem>)}</SelectContent></Select>
+          {!canManageLocationTypes && <p className="text-xs text-muted-foreground">Only location-type managers can change the type.</p>}
+          {warehouseEditorType && selectedLocationTypeBasis?.id === warehouseEditorType.id && selectedLocationTypeBasis.revision !== warehouseEditorType.revision && <Alert variant="destructive">
+            <AlertTitle>Selected location type changed</AlertTitle><AlertDescription>Your entered details are retained. The current type uses {warehouseEditorType.kind} details and {warehouseEditorType.accessPolicy === "shared" ? "shared project access" : "assigned-user access"}.</AlertDescription>
+            <Button className="mt-2" size="sm" variant="outline" onClick={() => {
+              setSelectedLocationTypeBasis({ id: warehouseEditorType.id, revision: warehouseEditorType.revision });
+              setWarehouseForm(form => ({ ...form, type: warehouseEditorType.kind }));
+              const baseline = resourceBaseline.current;
+              const original = state.warehouses.find(warehouse => warehouse.id === baseline?.id);
+              if (baseline && original) baseline.locationContext = locationContextSignature(original);
+              setResourceError(null);
+              setResourceConflict(null);
+            }}>Review updated type and retain entries</Button>
+          </Alert>}
+        </div>
         <Field label="Contact" value={warehouseForm.contact} set={value => setWarehouseForm(form => ({ ...form, contact: value }))} /><Field label="Phone" value={warehouseForm.phone} set={value => setWarehouseForm(form => ({ ...form, phone: value }))} />
-        {warehouseForm.type === "physical" ? <><Field label="Street address" value={warehouseForm.address} set={value => setWarehouseForm(form => ({ ...form, address: value }))} /><Field label="City" value={warehouseForm.city} set={value => setWarehouseForm(form => ({ ...form, city: value }))} /><Field label="State" value={warehouseForm.state} set={value => setWarehouseForm(form => ({ ...form, state: value }))} /><Field label="ZIP" value={warehouseForm.zip} set={value => setWarehouseForm(form => ({ ...form, zip: value }))} /></> : <><Field label="VIN" value={warehouseForm.vin} set={value => setWarehouseForm(form => ({ ...form, vin: value }))} /><Field label="Plate" value={warehouseForm.plate} set={value => setWarehouseForm(form => ({ ...form, plate: value }))} /><Field label="Plate jurisdiction" value={warehouseForm.plateState} set={value => setWarehouseForm(form => ({ ...form, plateState: value }))} /><Field label="Make" value={warehouseForm.make} set={value => setWarehouseForm(form => ({ ...form, make: value }))} /><Field label="Model" value={warehouseForm.model} set={value => setWarehouseForm(form => ({ ...form, model: value }))} /><Field label="Year" value={String(warehouseForm.year ?? "")} set={value => setWarehouseForm(form => ({ ...form, year: value ? Number(value) : null }))} /></>}
-        <div className="space-y-1"><Label>Primary assigned user</Label><Select value={warehouseForm.assignedUserId ?? "none"} onValueChange={value => setWarehouseForm(form => ({ ...form, assignedUserId: value === "none" ? null : value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">None</SelectItem>{data.users.map(user => <SelectItem key={user.id} value={user.id}>{user.username}</SelectItem>)}</SelectContent></Select></div>
-        <div className="sm:col-span-2"><Label>Additional users with access</Label><div className="mt-2 grid gap-2 sm:grid-cols-2">{data.users.map(user => <label key={user.id} className="flex items-center gap-2 text-sm"><Checkbox checked={warehouseForm.userIds.includes(user.id)} onCheckedChange={checked => setWarehouseForm(form => ({ ...form, userIds: checked ? [...new Set([...form.userIds, user.id])] : form.userIds.filter(id => id !== user.id) }))} />{user.username}</label>)}</div></div>
+        {warehouseEditorType?.kind === "physical" ? <><Field label="Street address" required value={warehouseForm.address} set={value => setWarehouseForm(form => ({ ...form, address: value }))} /><Field label="City" value={warehouseForm.city} set={value => setWarehouseForm(form => ({ ...form, city: value }))} /><Field label="State" value={warehouseForm.state} set={value => setWarehouseForm(form => ({ ...form, state: value }))} /><Field label="ZIP" value={warehouseForm.zip} set={value => setWarehouseForm(form => ({ ...form, zip: value }))} /></> :
+          warehouseEditorType?.kind === "vehicle" ? <><Field label="VIN" required value={warehouseForm.vin} set={value => setWarehouseForm(form => ({ ...form, vin: value }))} help="Enter the 17-character vehicle identification number." /><Field label="Plate" required value={warehouseForm.plate} set={value => setWarehouseForm(form => ({ ...form, plate: value }))} /><Field label="Plate jurisdiction" required value={warehouseForm.plateState} set={value => setWarehouseForm(form => ({ ...form, plateState: value }))} /><Field label="Make" value={warehouseForm.make} set={value => setWarehouseForm(form => ({ ...form, make: value }))} /><Field label="Model" value={warehouseForm.model} set={value => setWarehouseForm(form => ({ ...form, model: value }))} /><Field label="Year" type="number" value={String(warehouseForm.year ?? "")} set={value => setWarehouseForm(form => ({ ...form, year: value ? Number(value) : null }))} /></> :
+            <><Field label="Location notes" value={warehouseForm.location} set={value => setWarehouseForm(form => ({ ...form, location: value }))} className="sm:col-span-2" /><Field label="City" value={warehouseForm.city} set={value => setWarehouseForm(form => ({ ...form, city: value }))} /><Field label="State / region" value={warehouseForm.state} set={value => setWarehouseForm(form => ({ ...form, state: value }))} /></>}
+        {warehouseEditorType?.accessPolicy === "assigned" && <>
+          {canManageLocationTypes ? <>
+            <div className="space-y-1"><Label>Primary assigned user</Label><Select value={warehouseForm.assignedUserId ?? "none"} onValueChange={value => setWarehouseForm(form => ({ ...form, assignedUserId: value === "none" ? null : value }))}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">None</SelectItem>{data.users.map(user => <SelectItem key={user.id} value={user.id}>{user.username}</SelectItem>)}</SelectContent></Select></div>
+            <div className="sm:col-span-2"><Label>Additional users with access</Label><div className="mt-2 grid gap-2 sm:grid-cols-2">{data.users.map(user => <label key={user.id} className="flex min-h-10 items-center gap-2 text-sm"><Checkbox checked={warehouseForm.userIds.includes(user.id)} onCheckedChange={checked => setWarehouseForm(form => ({ ...form, userIds: checked ? [...new Set([...form.userIds, user.id])] : form.userIds.filter(id => id !== user.id) }))} />{user.username}</label>)}</div></div>
+          </> : <p className="sm:col-span-2 text-sm text-muted-foreground">Restricted access · Assigned to {warehouseForm.assignedUserId ? inventoryActorLabel(warehouseForm.assignedUserId, data.actors ?? data.users) : "no primary user"} · {warehouseForm.userIds.length} additional users. Only location-type managers can change assignments.</p>}
+        </>}
         <label className="flex items-center gap-2 text-sm"><Checkbox checked={warehouseForm.active} onCheckedChange={checked => setWarehouseForm(form => ({ ...form, active: checked === true }))} />Active location</label>
       </div>}
       {resource === "vendor" && <div className="grid gap-3 sm:grid-cols-2"><Field label="Name" value={vendorForm.name} set={value => setVendorForm(form => ({ ...form, name: value }))} /><Field label="Contact" value={vendorForm.contact} set={value => setVendorForm(form => ({ ...form, contact: value }))} /><Field label="Phone" value={vendorForm.phone} set={value => setVendorForm(form => ({ ...form, phone: value }))} /><Field label="Email" value={vendorForm.email} set={value => setVendorForm(form => ({ ...form, email: value }))} /><Field label="Address" value={vendorForm.address} set={value => setVendorForm(form => ({ ...form, address: value }))} /><Field label="Reference" value={vendorForm.reference} set={value => setVendorForm(form => ({ ...form, reference: value }))} /><label className="flex items-center gap-2"><Checkbox checked={vendorForm.active} onCheckedChange={checked => setVendorForm(form => ({ ...form, active: checked === true }))} />Active vendor</label></div>}

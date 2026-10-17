@@ -20,11 +20,12 @@ type Props = {
   onRefresh: () => void;
   renderRow: (row: OperationsRow) => ReactNode;
   headerAction?: ReactNode;
+  persistentHeaderAction?: ReactNode;
 };
 const selectClass = "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const nouns: Record<OperationsKind, string> = { locations: "locations", exceptions: "exceptions", returns: "returns", activity: "activity", categories: "categories", counts: "counts" };
 
-export function InventoryRecordsWorkspace({ kind, title, description, dataset, projectName, timezone, onRefresh, renderRow, headerAction }: Props) {
+export function InventoryRecordsWorkspace({ kind, title, description, dataset, projectName, timezone, onRefresh, renderRow, headerAction, persistentHeaderAction }: Props) {
   const { toast } = useToast();
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Record<string, string>>({});
@@ -135,6 +136,7 @@ export function InventoryRecordsWorkspace({ kind, title, description, dataset, p
     <header className="sticky top-0 z-10 shrink-0 border-b bg-background px-1 pb-2 sm:pb-3" data-testid={`inventory-${kind}-subheader`}>
       <div className="flex min-h-8 items-center justify-between gap-2">
         <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h2 className="text-base font-semibold tracking-tight sm:text-lg">{title}</h2></div><p className="hidden text-xs text-muted-foreground sm:block">{description}</p></div>
+        {persistentHeaderAction}
       </div>
       <InventoryMobileTools tab={kind}>
         <div className="space-y-2 rounded-md border bg-card p-2 md:rounded-none md:border-0 md:bg-transparent md:p-0">

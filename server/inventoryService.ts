@@ -13,6 +13,7 @@ import { kitSerialContents } from "../shared/inventory-kits";
 import { readRelationalInventory, writeRelationalInventory } from "./inventoryRelational";
 import { setWorkRequirements, workRequirements } from "./inventoryRequirements";
 import { actualEquipmentLines } from "../shared/inventory-requirements";
+import { resolveWarehouseInput } from "../shared/inventory-location-types";
 
 // Saved captures are temporary editing state, not another physical-stock
 // ledger. Record useful changes without duplicating every scan on every save.
@@ -86,6 +87,8 @@ export async function saveInventory(client: PoolClient, projectId: number, befor
   });
   if (JSON.stringify(before.categoryCatalog ?? []) !== JSON.stringify(after.categoryCatalog ?? []))
     entityChanges.push({ field: "categoryCatalog", before: before.categoryCatalog ?? [], after: after.categoryCatalog ?? [] });
+  if (JSON.stringify(before.locationTypes ?? []) !== JSON.stringify(after.locationTypes ?? []))
+    entityChanges.push({ field: "locationTypes", before: before.locationTypes ?? [], after: after.locationTypes ?? [] });
   await writeRelationalInventory(client, projectId, after, before);
   await client.query("INSERT INTO public.inventory_movements(project_id,operation_id,action,actor_id,changes) VALUES($1,$2,$3,$4,$5)",
     [projectId, operationId, action, actor, JSON.stringify({ stock: changes, entities: entityChanges })]);
@@ -106,6 +109,16 @@ export async function postInventory(projectId: number, command: InventoryCommand
     if (!p?.inventory_enabled) throw new InventoryError("Inventory is disabled for this project.");
     if (p.is_active === false) throw new InventoryError("Reactivate this project before posting inventory.");
     const before = await lockInventory(client, projectId);
+    const isTypeCommand = ["locationType", "locationTypeDelete"].includes(command.action);
+    let canManageLocations = admin;
+    if (isTypeCommand || command.action === "warehouse") {
+      const user = await storage.getUser(actor);
+      if (!user || user.isLocked || !admin && !await storage.isUserAssignedToProject(actor, projectId))
+        throw Object.assign(new InventoryError("Active project membership required."), { status: 403 });
+      canManageLocations = await storage.hasPermission(user, inventoryPermissions.manageLocationTypes);
+      if (isTypeCommand && !canManageLocations)
+        throw Object.assign(new InventoryError("Manage inventory location types and access permission required."), { status: 403 });
+    }
     if (["assign", "prepareUse"].includes(command.action)) {
       const { rows: [project] } = await client.query("SELECT database_name FROM public.projects WHERE id=$1", [projectId]);
       if (!project?.database_name || !/^[a-z0-9_]+$/.test(project.database_name)) throw new InventoryError("Project work-order storage unavailable.");
@@ -123,9 +136,14 @@ export async function postInventory(projectId: number, command: InventoryCommand
       const { rows } = await client.query(`SELECT 1 FROM public.${equipment}_type_projects WHERE project_id=$1 AND ${equipment}_type_id=$2`, [projectId, typeId]);
       if (!rows.length) throw new InventoryError("Choose an equipment type assigned to this project.");
     }
-    if (command.action === "warehouse") {
-      const input = command.data;
-      const ids = [...(Array.isArray(input.userIds) ? input.userIds : []), ...(input.assignedUserId ? [input.assignedUserId] : [])];
+    if (command.action === "warehouse" && !before.operations[command.operationId]) {
+      const input = resolveWarehouseInput(before, command.data);
+      const previousGrants = before.warehouses.find(warehouse => warehouse.id === input.id);
+      const retainedIds = new Set([...(previousGrants?.userIds ?? []), ...(previousGrants?.assignedUserId ? [previousGrants.assignedUserId] : [])]);
+      // Retain historical hidden grants on shared locations, even if a former
+      // member has since been disabled. Only newly granted access needs validation.
+      const ids = [...(Array.isArray(input.userIds) ? input.userIds : []), ...(input.assignedUserId ? [input.assignedUserId] : [])]
+        .filter(id => !retainedIds.has(id));
       for (const userId of ids) {
         const { rows: [user] } = await client.query(`SELECT u.id FROM public.users u WHERE id=$1 AND NOT coalesce(is_locked,false)
           AND (role='admin' OR EXISTS(SELECT 1 FROM public.user_projects WHERE user_id=u.id AND project_id=$2)
@@ -134,14 +152,14 @@ export async function postInventory(projectId: number, command: InventoryCommand
       }
       // A maintainer may update an accessible warehouse, but cannot grant access
       // to new users or create an unrestricted warehouse without admin review.
-      if (!admin) {
+      if (!canManageLocations) {
         const previous = before.warehouses.find(w => w.id === input.id);
         if (!previous || JSON.stringify(previous.userIds) !== JSON.stringify(input.userIds || []) ||
-          previous.assignedUserId !== (input.assignedUserId || null))
-          throw new InventoryError("Administrator required to create warehouses or change warehouse access grants.");
+          previous.assignedUserId !== (input.assignedUserId || null) || previous.locationTypeId !== input.locationTypeId)
+          throw Object.assign(new InventoryError("Manage inventory location types and access permission required to create locations or change their type or user assignments."), { status: 403 });
       }
     }
-    const result = applyInventoryCommand(before, command, actor, admin);
+    const result = applyInventoryCommand(before, command, actor, admin, undefined, { manageLocations: canManageLocations });
     if (!result.replay && command.action === "typeLink") {
       const { rows: [project] } = await client.query("SELECT database_name FROM public.projects WHERE id=$1", [projectId]);
       if (project?.database_name && /^[a-z0-9_]+$/.test(project.database_name)) {
@@ -160,7 +178,7 @@ export async function postInventory(projectId: number, command: InventoryCommand
       try { await insertAuditEvent(client, { action: `inventory.${command.action}`, entityType: "inventory", entityId: command.operationId, projectId, outcome: "failed",
         metadata: { reason: e instanceof InventoryError ? e.message : "Validation or database failure" } }); } catch { /* original failure remains explicit */ }
     }
-    if (["itemDelete", "categoryDelete"].includes(command.action) && (e as { code?: string })?.code === "23503")
+    if (["itemDelete", "categoryDelete", "locationTypeDelete"].includes(command.action) && (e as { code?: string })?.code === "23503")
       throw new InventoryError("This record is still referenced by inventory data and cannot be deleted. Refresh the list to check its current usage.");
     throw e;
   } finally { client.release(); }

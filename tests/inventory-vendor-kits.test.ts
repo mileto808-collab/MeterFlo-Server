@@ -10,6 +10,7 @@ import { inventoryToRelational, inventoryFromRelational } from "../server/invent
 import { storedCategoryState } from "../server/inventoryCategories";
 import { inventoryPrint } from "../server/inventoryPrint";
 import { extractReceiptSerialEvidence } from "../server/inventoryReceiptSerials";
+import { initialLocationTypes } from "../shared/inventory-location-types";
 
 const post = (s: InventoryState, action: InventoryCommand["action"], data: Record<string, unknown>, operationId = randomUUID()) =>
   applyInventoryCommand(s, { action, data, operationId }, "receiver", true).state;
@@ -18,6 +19,7 @@ const backup = (s: InventoryState) => validateInventoryBackup({ enabled: true, m
   s.allocations.map(a => a.workOrderId));
 function setup(serialized = true) {
   let s = emptyInventory();
+  s.locationTypes = initialLocationTypes("assigned");
   for (const id of ["w", "van"]) s = post(s, "warehouse", { id, code: id, name: id, type: "physical", address: "Fixture", userIds: ["receiver"] });
   s = post(s, "vendor", { id: "v", name: "Kit supplier" });
   s = post(s, "item", { id: "meter", sku: "M", name: "Meter", tracking: serialized ? "serialized" : "regular", equipment: "system" });

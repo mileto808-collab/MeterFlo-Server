@@ -8,6 +8,7 @@ const referenceTables: Record<string, string> = {
   warehouseId: "inventory_warehouses", sourceId: "inventory_warehouses", destinationId: "inventory_warehouses",
   orderId: "inventory_orders", receiptId: "inventory_receipts", sourceReceiptId: "inventory_receipts", assemblyId: "inventory_kit_assemblies",
   replacementFor: "inventory_orders",
+  locationTypeId: "inventory_location_types",
 };
 
 /** Development/standalone maintenance only. Publish transports schema to managed production. */
@@ -107,6 +108,18 @@ export async function applyInventoryRelationalSchema(pool: Pool) {
     ON public.inventory_items(project_id,name,sku,id)`);
   statements.push(`CREATE INDEX IF NOT EXISTS inventory_stock_location_sort
     ON public.inventory_warehouses(project_id,name,code,id)`);
+  statements.push(`CREATE UNIQUE INDEX IF NOT EXISTS inventory_location_type_name_unique
+    ON public.inventory_location_types(project_id,lower(regexp_replace(btrim(name),'\\s+',' ','g')))`);
+  constraints.push(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='public.inventory_location_types'::regclass AND conname='inventory_location_type_valid') THEN
+    ALTER TABLE public.inventory_location_types ADD CONSTRAINT inventory_location_type_valid CHECK (
+      id IS NOT NULL AND name IS NOT NULL AND length(btrim(name)) BETWEEN 1 AND 200 AND
+      kind IS NOT NULL AND kind IN ('physical','vehicle','mobile') AND
+      access_policy IS NOT NULL AND access_policy IN ('shared','assigned') AND revision IS NOT NULL AND revision>0);
+    END IF; END $$`);
+  constraints.push(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='public.inventory_warehouses'::regclass AND conname='inventory_warehouse_location_type_required') THEN
+    ALTER TABLE public.inventory_warehouses ADD CONSTRAINT inventory_warehouse_location_type_required
+      CHECK(location_type_id IS NOT NULL) NOT VALID;
+    END IF; END $$`);
   const client = await pool.connect();
   await client.query("BEGIN");
   try {

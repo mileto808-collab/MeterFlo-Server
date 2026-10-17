@@ -7,7 +7,7 @@ import { promises as fs } from "node:fs";
 import { inventoryCommandSchema, inventoryPermissions, commandPermission, type InventoryState } from "../shared/inventory";
 import { InventoryError } from "../shared/inventory-engine";
 import { inventoryState, postInventory } from "./inventoryService";
-import { inventoryStreamAllowed, subscribeInventoryEvents } from "./inventoryEvents";
+import { inventoryStreamAllowed, inventoryStreamPermissions, subscribeInventoryEvents } from "./inventoryEvents";
 import { storage } from "./storage";
 import { pool } from "./db";
 import { isAuthenticated } from "./replitAuth";
@@ -20,6 +20,7 @@ import { draftWarehouse, isShipmentDraftAction } from "../shared/inventory-shipm
 import { serialQuerySchema, stockQuerySchema } from "../shared/inventory-stock-query";
 import { prepareStockQueries, queryStock, queryStockSerials, stockOptions, stockSummary } from "./inventoryStockQueries";
 import { workRequirements } from "./inventoryRequirements";
+import { warehouseAccessible } from "../shared/inventory-location-types";
 
 export function inventoryVisibleState(state: InventoryState, actor: string, admin: boolean, canCount = true, permissions?: string[]) {
   // Project-level view permits finding stock at other locations and requesting
@@ -28,10 +29,10 @@ export function inventoryVisibleState(state: InventoryState, actor: string, admi
     if (!admin && draft.ownerId !== actor) return false;
     if (permissions && !permissions.includes(draft.stage === "dispatch" ? inventoryPermissions.transfer : inventoryPermissions.receive)) return false;
     const warehouse = state.warehouses.find(w => w.id === draftWarehouse(state, draft.orderId, draft.stage));
-    return !!warehouse?.active && (admin || warehouse.assignedUserId === actor || warehouse.userIds.includes(actor));
+    return warehouseAccessible(state, warehouse, actor, admin);
   }), counts: state.counts.map(count => {
     const warehouse = state.warehouses.find(w => w.id === count.warehouseId);
-    if (canCount && (admin || warehouse?.assignedUserId === actor || warehouse?.userIds.includes(actor))) return count;
+    if (canCount && warehouseAccessible(state, warehouse, actor, admin)) return count;
     const { draft, ...visible } = count;
     return visible;
   }) };
@@ -97,19 +98,25 @@ export function registerInventoryRoutes(app: Express) {
       if (!res.writableEnded) res.end();
     };
     req.on("close", close);
+    let permissionSignature = JSON.stringify([...res.locals.inventory.permissions].sort());
     const deliver = async (event?: import("../shared/inventory-events").InventoryLiveEvent) => {
       // Never forward cached authorization after membership/role/warehouse changes.
       // Events contain metadata only; all data is fetched through its usual API.
       if (closed) return;
       try {
-        if (!await inventoryStreamAllowed(project.id, user.id)) {
+        const permissions = await inventoryStreamPermissions(project.id, user.id);
+        if (!permissions) {
           if (!closed) res.write(`data: ${JSON.stringify({ type: "access_lost", projectId: project.id })}\n\n`);
           close();
           return;
         }
         if (closed) return;
+        const nextSignature = JSON.stringify(permissions);
         if (event) res.write(`data: ${JSON.stringify(event)}\n\n`);
+        else if (nextSignature !== permissionSignature)
+          res.write(`data: ${JSON.stringify({ type: "resync", projectId: project.id })}\n\n`);
         else res.write(":heartbeat\n\n");
+        permissionSignature = nextSignature;
       } catch {
         // Fail closed on unverifiable permissions, but let EventSource reconnect
         // after a transient database failure rather than leaking cached data.
@@ -247,7 +254,7 @@ export function registerInventoryRoutes(app: Express) {
       ? s.workRequirements?.find(r => r.workOrderId === id)
       : await workRequirements(pool as any, c.project.id, s, wo);
     return { enabled: !!c.project.inventoryEnabled, canSelect, allocation, requirements: requirements ?? { workOrderId: id, lines: [], missing: [] },
-      items: s.items, warehouses: s.warehouses, revision: s.revision };
+      items: s.items, warehouses: s.warehouses, locationTypes: s.locationTypes, revision: s.revision };
   }));
 }
 // insertAuditEvent only needs a query-capable connection for this single event.

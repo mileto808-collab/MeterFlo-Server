@@ -16,6 +16,7 @@ import { getProjectFilesPath } from "./fileStorage";
 import { exportInventory, validateInventoryBackup, type InventoryBackup } from "./inventoryBackup";
 import { mergeOrderHighWater } from "../shared/inventory-order-labels";
 import { emptyInventory } from "../shared/inventory";
+import { prepareLocationTypeRestore } from "./inventoryLocationTypesBackup";
 import { lockInventoryForSchema } from "./inventoryService";
 
 const pool = applicationPool;
@@ -373,6 +374,7 @@ export async function restoreFullSystemData(
       if (!r.table_name) await createProjectSchema(projectBackup.projectName, projectBackup.projectId, projectBackup.schemaName, connectionPool);
       await migrateProjectSchema(projectBackup.schemaName, connectionPool);
     }
+    prepareLocationTypeRestore(backupData);
     const existingTables = await getExistingTables(client);
     const backupTables = Object.keys(backupData.mainDatabase);
     

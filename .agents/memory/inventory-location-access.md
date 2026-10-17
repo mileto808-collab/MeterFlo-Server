@@ -14,3 +14,13 @@ The user approved shared warehouse access versus assigned-user mobile access, an
 **Why:** The user wants configurable location types rather than treating every location as an individually assigned warehouse.
 
 **How to apply:** Default physical warehouses to shared project access and vehicles to assigned-user access; keep action permissions and project boundaries enforced. Use stable type references rather than names as identifiers, and do not treat a type rename as an access-policy change.
+
+Legacy backup restoration must not repeat the live cutover to shared warehouse
+access. A backup predating configurable location types retains the former
+assignment-restricted policy; backups with explicit types retain those policies.
+
+**Why:** The live cutover is the user's approved access change. Replaying it during
+a historical restore could silently grant access beyond the restored assignments.
+
+**How to apply:** Keep the live-migration default separate from conservative legacy
+restore/read-only-export compatibility. Preserve hidden assignments in either case.

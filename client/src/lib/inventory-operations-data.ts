@@ -3,6 +3,7 @@ import { inventoryActorLabel, inventoryHoldLabel, inventoryReceiptLabel, type In
 import { inventoryCountReference } from "@shared/inventory-count-reference";
 import { orderLabel, orderReference, uuidOrderId } from "@shared/inventory-order-labels";
 import { holdStatus, remainingHold } from "@shared/inventory-shipment-model";
+import { locationTypeFor, locationTypeLabel } from "@shared/inventory-location-types";
 
 export type OperationsKind = "locations" | "exceptions" | "returns" | "activity" | "categories" | "counts";
 export type OperationsRow = { id: string; search: string; cells: Record<string, string | number>; facets: Record<string, string> };
@@ -26,6 +27,7 @@ export function buildOperationsDataset(
   users: readonly { id: string; username: string }[] = [], timezone = "UTC",
 ): OperationsDataset {
   const locations = new Map(state.warehouses.map(w => [w.id, w]));
+  const locationTypes = new Map((state.locationTypes ?? []).map(type => [type.id, type]));
   const items = new Map(state.items.map(i => [i.id, i]));
   const orders = new Map(state.orders.map(o => [o.id, o]));
   const people = [...actors, ...users];
@@ -92,12 +94,13 @@ export function buildOperationsDataset(
   } else if (kind === "locations") {
     rows = state.warehouses.map(w => textSearch({
       id: w.id, cells: {
-        code: w.code, name: w.name, type: w.type === "vehicle" ? "Vehicle" : "Warehouse",
+        code: w.code, name: w.name, type: locationTypeLabel(state, w),
         status: w.active ? "Active" : "Inactive", address: w.address, city: w.city, state: w.state, zip: w.zip,
         contact: w.contact, phone: w.phone, location: w.location, vin: w.vin, plate: w.plate, plateState: w.plateState,
         make: w.make, model: w.model, year: w.year ?? "", assigned: w.assignedUserId ? inventoryActorLabel(w.assignedUserId, people) : "Unassigned",
         authorized: w.userIds.map(id => inventoryActorLabel(id, people)).join("; "),
-      }, facets: { type: w.type, status: w.active ? "Active" : "Inactive", assigned: w.assignedUserId ? "Assigned" : "Unassigned" },
+      }, facets: { type: locationTypeFor(state, w)?.id ?? w.locationTypeId ?? w.type,
+        status: w.active ? "Active" : "Inactive", assigned: w.assignedUserId ? "Assigned" : "Unassigned" },
     }));
     cols = columns([["code", "Location code"], ["name", "Location"], ["type", "Type"], ["status", "Status"], ["address", "Address"],
       ["city", "City"], ["state", "State"], ["zip", "Postal code"], ["contact", "Contact"], ["phone", "Phone"], ["location", "Location notes"],
@@ -179,8 +182,8 @@ export function buildOperationsDataset(
     filters: filterKeys.map(([key, label]) => ({
       key, label, options: [...new Set(rows.map(r => r.facets[key]))].map(value => ({
         value, label: key === "warehouse" ? locationName(value === "none" ? null : value) :
-          key === "actor" ? inventoryActorLabel(value, people) : value === "physical" ? "Warehouse" :
-          value === "vehicle" ? "Vehicle" : value,
+          key === "actor" ? inventoryActorLabel(value, people) :
+          key === "type" ? locationTypes.get(value)?.name ?? (value === "physical" ? "Warehouse" : value === "vehicle" ? "Vehicle" : value) : value,
       })).sort((a, b) => a.label.localeCompare(b.label)),
     })),
   };

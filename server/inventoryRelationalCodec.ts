@@ -4,6 +4,7 @@ import type { InventoryState } from "../shared/inventory";
 import { inventoryCategoryLabels } from "../shared/inventory-categories";
 import { storedCategoryState } from "./inventoryCategories";
 import { arrayTable, columnName, relationalEntities } from "./inventoryRelationalModel";
+import { normalizeInventoryLocations } from "../shared/inventory-location-types";
 
 type Row = Record<string, any>;
 export type RelationalRows = { columns: Record<string, string>; keys: string[]; rows: Row[] };
@@ -45,7 +46,7 @@ const keyOf = (row: Row, keys: string[]) => JSON.stringify(keys.map(key => row[k
 
 /** Pure codec: no relationship is stored only inside a live aggregate document. */
 export function inventoryToRelational(input: InventoryState, projectId: number): Tables {
-  const state = storedCategoryState(input);
+  const state = normalizeInventoryLocations(storedCategoryState(input));
   const tables: Tables = new Map();
   tables.set("inventory_categories", {
     columns: { project_id: "integer", id: "uuid", name: "text", active: "boolean", _position: "integer" },
@@ -236,7 +237,7 @@ export async function writeRelationalInventory(client: Pick<PoolClient, "query">
       [JSON.stringify(changed.slice(start, start + 500))]);
     }
   }
-  const collections = Object.keys(storedCategoryState(after));
+  const collections = Object.keys(normalizeInventoryLocations(storedCategoryState(after)));
   await client.query(`INSERT INTO public.inventory_relational_projects(project_id,version,revision,collections)
     VALUES($1,1,$2,$3) ON CONFLICT(project_id) DO UPDATE SET revision=EXCLUDED.revision,collections=EXCLUDED.collections`,
   [projectId, after.revision, collections]);

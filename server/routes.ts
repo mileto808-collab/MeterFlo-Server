@@ -28,6 +28,7 @@ import { runtimeCustomerRelease } from "./customerExtensions";
 import { registerInventoryRoutes } from "./inventoryRoutes";
 import { inventoryState } from "./inventoryService";
 import { InventoryError } from "../shared/inventory-engine";
+import { warehouseAccessible } from "../shared/inventory-location-types";
 
 function mobileInventoryUsage(req: any): unknown {
   try {
@@ -9326,7 +9327,8 @@ export async function registerRoutes(
           workOrders: withExactReadings(result.rows).map((wo: any) => ({ ...wo,
             ...(inv ? { inventoryAllocation: inv.allocations.find(a => a.workOrderId === wo.id) || null } : {}) })),
           inventory: { contractVersion: 1, enabled: !!inv, items: inv?.items || [],
-            warehouses: inv?.warehouses.filter(w => inventoryAdmin || w.assignedUserId === currentUser.id || w.userIds.includes(currentUser.id)) || [] },
+            locationTypes: inv?.locationTypes || [],
+            warehouses: inv?.warehouses.filter(w => warehouseAccessible(inv, w, currentUser.id, inventoryAdmin)) || [] },
           referenceData: {
             workOrderStatuses,
             troubleCodes,

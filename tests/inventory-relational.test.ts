@@ -4,9 +4,10 @@ import { randomUUID } from "node:crypto";
 import { inventoryToRelational, inventoryFromRelational, writeRelationalInventory } from "../server/inventoryRelationalCodec";
 import { storedCategoryState } from "../server/inventoryCategories";
 import { volumeState } from "./helpers/inventory-volume";
+import { normalizeInventoryLocations } from "../shared/inventory-location-types";
 
 test("relational codec preserves live data, optional fields, empty lists and historical snapshots", () => {
-  const state = storedCategoryState(volumeState(20));
+  const state = normalizeInventoryLocations(storedCategoryState(volumeState(20)));
   state.items[3].components = [{ itemId: "i1", quantity: 2 }];
   state.orders = [{
     id: "order", type: "purchase", vendorId: "vendor", sourceId: null, destinationId: "w0",

@@ -26,6 +26,7 @@ export function inventoryAuditReferences(state: InventoryState): Map<string, str
     for (const [n, row] of (state[kind] ?? []).entries()) refs.set(row.id, `${names[kind]} #${n + 1}`);
   for (const row of state.kitAssemblies ?? []) refs.set(row.id, `Kit assembly · ${refs.get(row.id) ?? refs.get(row.itemId) ?? "Recorded kit"}`);
   for (const row of state.categoryCatalog ?? []) refs.set(row.id, row.name);
+  for (const row of state.locationTypes ?? []) refs.set(row.id, row.name);
   return refs;
 }
 
@@ -43,6 +44,14 @@ export function inventoryAuditEntity(
       `${names[kind]} (historical record)`);
   }
   if (changes.some(c => c.field === "categoryCatalog")) return "Item categories";
+  if (changes.some(c => c.field === "locationTypes")) {
+    const change = changes.find(c => c.field === "locationTypes")!;
+    const previous = new Map((Array.isArray(change.before) ? change.before : []).map(type => [type.id, type]));
+    const after = Array.isArray(change.after) ? change.after : [];
+    const changed = after.filter(type => JSON.stringify(type) !== JSON.stringify(previous.get(type.id)));
+    const removed = [...previous.values()].filter(type => !after.some(value => value.id === type.id));
+    return [...changed, ...removed].map(type => `Location type · ${type.name}`).join(", ") || "Location types";
+  }
   return undefined;
 }
 

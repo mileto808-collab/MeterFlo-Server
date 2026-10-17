@@ -19,6 +19,59 @@ The Inventory page keeps its title, permission-available create actions, statist
 
 ## Setup and permissions
 
+### Location types and access
+
+In **Locations**, **Manage location types** sits beside **Add location**, outside
+the collapsible tools. It opens a full-page editor with a Back button and supports
+creating, renaming, updating and deleting unused project types. Type names are
+unique within a project, ignoring case and whitespace. Locations reference stable
+relational type IDs: renaming a type does not reassign or rewrite its locations.
+Inactive locations also prevent deletion of a referenced type.
+
+Each type has two independent settings:
+
+- **Location details:** Physical requires an address; Vehicle requires the existing
+  VIN and plate fields; Mobile does not require a VIN or street address.
+- **Access policy:** Shared locations are usable by active, authorized project
+  members with the relevant inventory-action permission. Restricted locations
+  additionally require primary/additional assignment, except administrators.
+  Shared access does not grant receiving, counting, transfer or installation
+  permissions by itself.
+
+The default Warehouse type is Physical/Shared and Vehicle is Vehicle/Restricted.
+Assignment fields appear only for restricted types. Switching to shared access
+retains existing assignments so switching back does not lose them. Changing a
+type's details or policy requires acknowledging all affected locations, including
+inactive ones, and validates every affected location before committing.
+
+**Manage Inventory Location Types and Access** (`inventory.manageLocationTypes`)
+is a separate, discoverable role permission. It permits type management, but does
+not grant stock-operation permissions. Creating locations or changing their type
+or user assignments also requires the existing location-maintenance permission.
+Ordinary maintainers can edit accessible locations' other details without granting
+themselves access. All operations remain project scoped and serialized under the
+existing project inventory transaction lock.
+
+Run `npm run migrate:inventory-relational -- --development` for development,
+or use the existing documented `--standalone` upgrade process outside Replit,
+before starting a checkout that lacks the new relational catalog. The migration
+backfills existing locations without deleting or changing their stored grants.
+Backups include the catalog and stable references. Restoring a backup created
+before location types existed preserves its assignment-restricted access rather
+than silently making warehouses shared. Modern backups preserve their explicit
+policies. Read-only legacy exports use the same conservative compatibility rule.
+
+Verification: `npm run test:inventory-location-types` and
+`npm run test:inventory-location-types:database`. For signed-in browser checks,
+create the disposable fixture with
+`npx tsx tests/support/inventory-ui-fixture.ts`, run
+`npm run test:inventory-location-types:browser`, then run
+`npx tsx tests/support/inventory-ui-fixture.ts cleanup`. Browser checks use normal
+role-management grants and cover desktop, touch-phone portrait and touch-phone
+landscape, including dirty-editor updates from another session.
+
+### Enabling inventory
+
 1. Enable inventory for the project using an administrator account with `inventory.configure` and project-edit permission.
 2. Under **Users / role management**, grant the relevant Inventory permissions. Existing administrator roles have them; other roles do not receive new permissions automatically.
 3. Open the project's **Inventory** menu. Create warehouses, a vendor and items, then create/release a purchase order and receive stock.

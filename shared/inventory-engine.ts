@@ -5,6 +5,7 @@ import { normalizeInventoryCategories, inventoryCategoryLabels } from "./invento
 import { allocateOrderNumber, uuidOrderId } from "./inventory-order-labels";
 import { COUNT_MAX_LINES, COUNT_MAX_SERIALS, countPayloadFits } from "./inventory-count-limits";
 import { countStockScopeMatches } from "./inventory-count-stock";
+import { normalizeInventoryLocations, warehouseAccessible, resolveWarehouseInput, applyLocationTypeCommand } from "./inventory-location-types";
 import { allocationSchema, dispositionSchema, itemSchema, stockLineSchema, vendorSchema, warehouseSchema, countDraftSchema,
   categoryNameSchema, categoryKey, inventoryCategoryNames,
   type Allocation, type InventoryCommand, type InventoryState, type StockLine, type Stock } from "./inventory";
@@ -32,7 +33,7 @@ export function reserved(s: InventoryState, warehouseId: string, itemId: string,
 export function warehouseAccess(s: InventoryState, id: string, actor: string, admin: boolean) {
   const w = s.warehouses.find(w => w.id === id);
   assert(w && w.active, "Choose an active warehouse in this project.");
-  assert(admin || w.assignedUserId === actor || w.userIds.includes(actor), "Warehouse access required.");
+  assert(warehouseAccessible(s, w, actor, admin), "Warehouse access required.");
   return w;
 }
 function item(s: InventoryState, id: string) {
@@ -121,7 +122,7 @@ function kitCycles(s: InventoryState) {
   };
   for (const i of s.items) visit(i.id, []);
 }
-export function applyInventoryCommand(original: InventoryState, command: InventoryCommand, actor: string, admin: boolean, now = new Date().toISOString()) {
+export function applyInventoryCommand(original: InventoryState, command: InventoryCommand, actor: string, admin: boolean, now = new Date().toISOString(), capabilities: { manageLocations?: boolean } = {}) {
   if (shipmentActions.includes(command.action) || ["assemble", "verifyVendorKit", "disassemble", "resolveKitHold"].includes(command.action))
     assert(new TextEncoder().encode(JSON.stringify(command.data)).length <= 8 * 1024 * 1024, "Shipment data exceeds the 8 MiB limit; no changes were posted.");
   if (command.action === "countSaveDraft" || command.action === "countPost")
@@ -133,7 +134,7 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     if (isShipmentDraftAction(command.action)) validateDraftReplay(original, command, actor, canonicalInventoryJson);
     return { state: original, replay: true };
   }
-  const s = inventoryCategoryLabels(normalizeInventoryCategories(original)), d = command.data;
+  const s = normalizeInventoryLocations(inventoryCategoryLabels(normalizeInventoryCategories(original))), d = command.data;
   ensureKitProvenance(s);
   ensureSerialOccupancy(s);
   const access = (id: string) => warehouseAccess(s, id, actor, admin);
@@ -170,6 +171,11 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
           { from: { kind: "hold", id: hold.id }, to: { kind: "retired", id: command.operationId } });
       }
     }
+  } else if (a === "locationType" || a === "locationTypeDelete") {
+    applyLocationTypeCommand(s, a, d);
+    // Changing kind must not leave any existing location invalid.
+    if (a === "locationType") for (const warehouse of s.warehouses.filter(warehouse => warehouse.locationTypeId === d.id))
+      warehouseSchema.parse(warehouse);
   } else if (a === "itemDelete" || a === "categoryDelete") {
     const { id } = z.object({ id: z.string().min(1).max(100) }).strict().parse(d);
     const blockers = a === "itemDelete" ? itemDeletionBlockers(s, id) : categoryDeletionBlockers(s, id);
@@ -190,12 +196,12 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
       "Category already exists in this project. Choose a different name.");
     category.name = newName;
   } else if (a === "warehouse" || a === "vendor" || a === "item") {
-    const value = a === "warehouse" ? warehouseSchema.parse(d) : a === "vendor" ? vendorSchema.parse(d) : itemSchema.parse(d);
+    const value = a === "warehouse" ? warehouseSchema.parse(resolveWarehouseInput(s, d)) : a === "vendor" ? vendorSchema.parse(d) : itemSchema.parse(d);
     const list = (a === "warehouse" ? s.warehouses : a === "vendor" ? s.vendors : s.items) as any[];
     const old = list.find(x => x.id === value.id);
     if (a === "warehouse") {
       assert(!s.warehouses.some(w => w.id !== value.id && w.code.toLowerCase() === (value as any).code.toLowerCase()), "Warehouse code already exists.");
-      if (old) access(old.id);
+      if (old && !capabilities.manageLocations) access(old.id);
       if (!(value as any).active) assert(!s.stock.some(b => b.warehouseId === value.id && b.quantity) &&
         !(s.kitHolds ?? []).some(h => h.warehouseId === value.id && h.status === "held") &&
         !(s.shipmentHolds ?? []).some(h => h.warehouseId === value.id && h.status === "held") &&

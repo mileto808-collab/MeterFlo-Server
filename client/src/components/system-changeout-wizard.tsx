@@ -3,7 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Allocation, Disposition, InventoryItem, Warehouse, WorkAllocation, WorkRequirements } from "@shared/inventory";
+import { locationTypeFor, locationTypeLabel, warehouseAccessible, type InventoryLocationType } from "@shared/inventory-location-types";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -252,10 +254,11 @@ export function SystemChangeoutWizard({
   searchMethodSettings,
 }: SystemChangeoutWizardProps) {
   const { toast } = useToast();
+  const { user } = useAuth();
   const { hasPermission } = usePermissions();
   const inventoryQueryKey = ["/api/projects", projectId, "work-orders", workOrderId, "inventory"];
   type WizardInventory = { enabled: boolean; allocation: WorkAllocation | null; items: InventoryItem[]; warehouses: Warehouse[];
-    requirements?: WorkRequirements;
+    locationTypes?: InventoryLocationType[]; requirements?: WorkRequirements;
     revision?: number };
   const { data: workInventory, isLoading: workInventoryLoading, isError: workInventoryError, refetch: refetchWorkInventory } = useQuery<WizardInventory>({
     queryKey: inventoryQueryKey,
@@ -264,6 +267,7 @@ export function SystemChangeoutWizard({
   const [actualUse, setActualUse] = useState<ActualUseDraft[]>([]);
   const actualUseInitializedFor = useRef<number | null>(null);
   const actualUseBaseline = useRef<string | null>(null);
+  const actualUseLocationBaseline = useRef(new Map<string, string>());
   const actualUseTouched = useRef(false);
   const [basisAccepted, setBasisAccepted] = useState(false);
   const prepareAttempt = useRef<{
@@ -272,13 +276,33 @@ export function SystemChangeoutWizard({
     commandData: { workOrderId: number; revision: number; mode: "changeout" | "reading_only"; used: Allocation[]; dispositions: Disposition[] };
   } | null>(null);
   const [removedMeters, setRemovedMeters] = useState<Record<string, { serial: string; disposition: string; warehouseId: string }>>({});
+  const locationSignatureIn = (snapshot: WizardInventory, id: string) => {
+    const warehouse = snapshot.warehouses.find(value => value.id === id);
+    const type = warehouse ? locationTypeFor({ locationTypes: snapshot.locationTypes ?? [] }, warehouse) : undefined;
+    return JSON.stringify({ id, active: warehouse?.active ?? false, type: type
+      ? { id: type.id, revision: type.revision, kind: type.kind, accessPolicy: type.accessPolicy }
+      : null });
+  };
+  const captureLocationBasis = (snapshot: WizardInventory, ids: string[]) => ids.filter(Boolean).forEach(id => {
+    if (!actualUseLocationBaseline.current.has(id))
+      actualUseLocationBaseline.current.set(id, locationSignatureIn(snapshot, id));
+  });
+  const currentLocationIds = [...new Set([
+    ...actualUse.map(line => line.warehouseId),
+    ...Object.values(removedMeters).map(value => value.warehouseId),
+  ].filter(Boolean))];
+  const locationPolicyChanged = !!workInventory && currentLocationIds.some(id =>
+    actualUseLocationBaseline.current.has(id) &&
+    actualUseLocationBaseline.current.get(id) !== locationSignatureIn(workInventory, id));
+  const accessibleWarehouses = (snapshot: WizardInventory | undefined) => (snapshot?.warehouses ?? [])
+    .filter(warehouse => warehouseAccessible({ locationTypes: snapshot?.locationTypes ?? [] }, warehouse, user?.id, user?.role === "admin"));
   const inventoryBasis = JSON.stringify({
     revision: workInventory?.revision ?? 0,
     allocation: workInventory?.allocation ?? null,
     requirements: workInventory?.requirements ?? null,
   });
   const actualUseConflict = actualUseTouched.current && actualUseBaseline.current !== null &&
-    actualUseBaseline.current !== inventoryBasis && !basisAccepted;
+    (actualUseBaseline.current !== inventoryBasis || locationPolicyChanged) && !basisAccepted;
 
   useEffect(() => {
     // Accepting one refresh must not suppress warnings about later stock changes.
@@ -290,6 +314,7 @@ export function SystemChangeoutWizard({
     if (!isOpen) {
       actualUseInitializedFor.current = null;
       actualUseBaseline.current = null;
+      actualUseLocationBaseline.current.clear();
       actualUseTouched.current = false;
       prepareAttempt.current = null;
       setActualUse([]);
@@ -299,6 +324,7 @@ export function SystemChangeoutWizard({
     if (workInventory && actualUseInitializedFor.current !== workOrderId) {
       actualUseInitializedFor.current = workOrderId;
       setActualUse(initialActualUse(workInventory.allocation));
+      captureLocationBasis(workInventory, (workInventory.allocation?.lines ?? []).map(line => line.warehouseId));
       actualUseBaseline.current = inventoryBasis;
       actualUseTouched.current = false;
       setBasisAccepted(false);
@@ -670,7 +696,7 @@ export function SystemChangeoutWizard({
       case "physicalChange":
         return !inventoryEnabled || (!workInventoryLoading && !workInventoryError && !!workInventory && hasPermission("inventory.assign") &&
           actualUseLinesAreValid(actualUse, workInventory?.items ?? []) &&
-          !actualUse.some(line => Number(line.quantity) > 0 && !workInventory?.warehouses.some(warehouse => warehouse.id === line.warehouseId && warehouse.active)) &&
+          !actualUse.some(line => Number(line.quantity) > 0 && !accessibleWarehouses(workInventory).some(warehouse => warehouse.id === line.warehouseId)) &&
           !actualUseConflict);
       case "newSystemId": {
         // Validate based on scope
@@ -941,10 +967,16 @@ export function SystemChangeoutWizard({
           .then(response => response.json() as Promise<WizardInventory>);
         const latestBasis = JSON.stringify({ revision: latest.revision ?? 0, allocation: latest.allocation ?? null, requirements: latest.requirements ?? null });
         if (!actualUseLinesAreValid(actualUse, latest.items ?? [])) throw new Error("Check used quantities and serials. Reserved lines can only use their reserved quantity and serials.");
-        if (actualUse.some(line => Number(line.quantity) > 0 && !latest.warehouses.some(warehouse => warehouse.id === line.warehouseId && warehouse.active))) {
+        if (actualUse.some(line => Number(line.quantity) > 0 && !accessibleWarehouses(latest).some(warehouse => warehouse.id === line.warehouseId))) {
           queryClient.setQueryData(inventoryQueryKey, latest);
           setBasisAccepted(false);
-          throw new Error("A selected stock location is no longer active. Your entries are retained; choose a current location.");
+          throw new Error("A selected stock location is missing, inactive, or no longer accessible. Your entries are retained; choose an accessible location.");
+        }
+        if (currentLocationIds.some(id => actualUseLocationBaseline.current.has(id) &&
+          actualUseLocationBaseline.current.get(id) !== locationSignatureIn(latest, id))) {
+          queryClient.setQueryData(inventoryQueryKey, latest);
+          setBasisAccepted(false);
+          throw new Error("A selected location type or access policy changed. Your entries are retained; recheck the current location details.");
         }
         const mode = isReadingOnlyMode || !data.canChange ? "reading_only" : "changeout";
         const used: Allocation[] = mode === "reading_only" || !data.canChange ? [] : actualUse.flatMap(line => {
@@ -1768,9 +1800,12 @@ export function SystemChangeoutWizard({
                 <Card><CardContent className="pt-4">
                   <ActualUseCollector
                     value={actualUse}
-                    onChange={next => { actualUseTouched.current = true; setBasisAccepted(false); setActualUse(next); }}
+                    onChange={next => {
+                      if (workInventory) captureLocationBasis(workInventory, next.map(line => line.warehouseId));
+                      actualUseTouched.current = true; setBasisAccepted(false); setActualUse(next);
+                    }}
                     items={workInventory.items}
-                    warehouses={workInventory.warehouses}
+                    warehouses={accessibleWarehouses(workInventory)}
                     requirements={workInventory.requirements?.lines ?? []}
                     missing={workInventory.requirements?.missing ?? []}
                   />
@@ -1785,6 +1820,8 @@ export function SystemChangeoutWizard({
                         allocation: checked.data.allocation ?? null,
                         requirements: checked.data.requirements ?? null,
                       });
+                       actualUseLocationBaseline.current.clear();
+                       captureLocationBasis(checked.data, currentLocationIds);
                       setBasisAccepted(true);
                     }}>Recheck and keep my entries</Button>
                   </div>}
@@ -2443,7 +2480,10 @@ export function SystemChangeoutWizard({
               <Card className="border-destructive/40"><CardContent className="pt-4 text-sm text-destructive">Inventory assignment permission is required to complete this work order.</CardContent></Card>
             ) : <Card><CardContent className="pt-4 text-sm text-muted-foreground">
               Actual stock use was entered during the physical installation step. No import reservation or empty assignment is created.
-              {actualUse.filter(line => Number(line.quantity) > 0).length > 0 && <ul className="mt-2 space-y-1 text-foreground">{actualUse.filter(line => Number(line.quantity) > 0).map(line => <li key={line.key}>{workInventory?.items.find(item => item.id === line.itemId)?.name ?? line.itemId} · {line.quantity} from {workInventory?.warehouses.find(warehouse => warehouse.id === line.warehouseId)?.code ?? line.warehouseId}</li>)}</ul>}
+              {actualUse.filter(line => Number(line.quantity) > 0).length > 0 && <ul className="mt-2 space-y-1 text-foreground">{actualUse.filter(line => Number(line.quantity) > 0).map(line => {
+                const warehouse = workInventory?.warehouses.find(value => value.id === line.warehouseId);
+                return <li key={line.key}>{workInventory?.items.find(item => item.id === line.itemId)?.name ?? line.itemId} · {line.quantity} from {warehouse?.code ?? line.warehouseId}{warehouse && workInventory ? ` · ${locationTypeLabel({ locationTypes: workInventory.locationTypes ?? [] }, warehouse)}` : ""}</li>;
+              })}</ul>}
             </CardContent></Card>}
             {(oldSystemId || oldModuleId) && (
               <Card>
@@ -2458,7 +2498,7 @@ export function SystemChangeoutWizard({
                       <div key={asset.equipment} className="grid gap-3 rounded-md border p-3 sm:grid-cols-3 sm:items-end">
                         <div className="space-y-1"><Label htmlFor={`removed-${asset.equipment}`}>Removed {asset.equipment} serial</Label><Input id={`removed-${asset.equipment}`} value={value.serial} onChange={event => setRemovedMeters(current => ({ ...current, [asset.equipment]: { ...value, serial: event.target.value } }))} /></div>
                         <div className="space-y-1"><Label>Disposition</Label><Select value={value.disposition} onValueChange={selected => setRemovedMeters(current => ({ ...current, [asset.equipment]: { ...value, disposition: selected } }))}><SelectTrigger><SelectValue placeholder="Choose condition" /></SelectTrigger><SelectContent><SelectItem value="returned">Return to stockroom</SelectItem><SelectItem value="scrapped">Scrapped</SelectItem><SelectItem value="left_onsite">Left onsite</SelectItem></SelectContent></Select></div>
-                        {value.disposition === "returned" && <div className="space-y-1"><Label>Return warehouse</Label><Select value={value.warehouseId} onValueChange={selected => setRemovedMeters(current => ({ ...current, [asset.equipment]: { ...value, warehouseId: selected } }))}><SelectTrigger><SelectValue placeholder="Choose warehouse" /></SelectTrigger><SelectContent>{workInventory?.warehouses.filter(warehouse => warehouse.active).map(warehouse => <SelectItem key={warehouse.id} value={warehouse.id}>{warehouse.code} · {warehouse.name}</SelectItem>)}</SelectContent></Select></div>}
+                        {value.disposition === "returned" && <div className="space-y-1"><Label>Return warehouse</Label><Select value={value.warehouseId} onValueChange={selected => { if (workInventory) captureLocationBasis(workInventory, [selected]); setRemovedMeters(current => ({ ...current, [asset.equipment]: { ...value, warehouseId: selected } })); }}><SelectTrigger><SelectValue placeholder="Choose warehouse" /></SelectTrigger><SelectContent>{accessibleWarehouses(workInventory).map(warehouse => <SelectItem key={warehouse.id} value={warehouse.id}>{warehouse.code} · {warehouse.name} · {locationTypeLabel({ locationTypes: workInventory?.locationTypes ?? [] }, warehouse)}</SelectItem>)}</SelectContent></Select></div>}
                       </div>
                     );
                   })}

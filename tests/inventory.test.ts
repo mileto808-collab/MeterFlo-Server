@@ -6,6 +6,7 @@ import { applyInventoryCommand, completeInventoryWorkOrder, reserved } from "../
 import { validateInventoryBackup } from "../server/inventoryBackup";
 import { orderLineProgress } from "../shared/inventory-shipment-model";
 import { blankShipmentCapture } from "../shared/inventory-shipment-draft-model";
+import { initialLocationTypes } from "../shared/inventory-location-types";
 
 const actor = "admin";
 function post(s: InventoryState, action: InventoryCommand["action"], data: Record<string, unknown>, operationId = randomUUID()) {
@@ -13,6 +14,8 @@ function post(s: InventoryState, action: InventoryCommand["action"], data: Recor
 }
 function setup() {
   let s = emptyInventory();
+  // This suite exercises restricted-location safeguards; shared defaults have their own coverage.
+  s.locationTypes = initialLocationTypes("assigned");
   for (const id of ["main", "van"]) s = post(s, "warehouse", { id, code: id, name: id, type: "physical", address: "Test location" });
   s = post(s, "vendor", { id: "vendor", name: "Test vendor" });
   s = post(s, "item", { id: "meter", sku: "meter", name: "Meter", tracking: "serialized", equipment: "system" });

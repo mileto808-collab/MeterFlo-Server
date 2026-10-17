@@ -25,9 +25,11 @@ export interface PermissionDefinition {
 
 export const permissionRegistry: PermissionDefinition[] = [
   ...Object.entries(inventoryPermissions).map(([name, key]): PermissionDefinition => ({
-    key, label: name === "closeOrders" ? "Close Short Inventory Orders" :
+    key, label: name === "manageLocationTypes" ? "Manage Inventory Location Types and Access" :
+      name === "closeOrders" ? "Close Short Inventory Orders" :
       name === "resolveExceptions" ? "Resolve Inventory Shipment Exceptions" : `${name[0].toUpperCase()}${name.slice(1)} Inventory`,
-    category: "Inventory", description: name === "closeOrders" ? "Close purchase/transfer orders with unfulfilled quantities and a required reason; cannot erase in-transit stock." :
+    category: "Inventory", description: name === "manageLocationTypes" ? "Create, rename and delete unused location types; manage shared/assigned access policies, location type selections and user assignments within assigned projects. Does not grant stock-operation permissions." :
+      name === "closeOrders" ? "Close purchase/transfer orders with unfulfilled quantities and a required reason; cannot erase in-transit stock." :
       name === "resolveExceptions" ? "Inspect/release quarantined shipment stock, record returns/scrap, or approve confirmed in-transit losses. Project and warehouse access are required." :
         `Permission to ${name} project inventory; project and warehouse access are also required.`,
     defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },

@@ -9,12 +9,15 @@ import { buildOperationsDataset } from "../client/src/lib/inventory-operations-d
 import { operationsCsv } from "../client/src/lib/inventory-operations-export";
 import { validateInventoryBackup } from "../server/inventoryBackup";
 import { inventoryPrint } from "../server/inventoryPrint";
+import { initialLocationTypes } from "../shared/inventory-location-types";
 
 const post = (s: InventoryState, action: InventoryCommand["action"], data: Record<string, unknown>, operationId: string = randomUUID()) =>
   applyInventoryCommand(s, { action, data, operationId }, "admin", true).state;
 const line = (itemId: string, quantity: number, serials: string[] = []): StockLine => ({ itemId, quantity, serials });
 function setup(serialized = false) {
   let s = emptyInventory();
+  // Keep custody-denial fixtures restricted; shared warehouse access is tested separately.
+  s.locationTypes = initialLocationTypes("assigned");
   for (const id of ["w", "van"]) s = post(s, "warehouse", { id, code: id, name: id, type: "physical", address: "Fixture" });
   s = post(s, "vendor", { id: "v", name: "Supplier" });
   s = post(s, "item", { id: "part", sku: "PART", name: "Part", tracking: serialized ? "serialized" : "regular" });

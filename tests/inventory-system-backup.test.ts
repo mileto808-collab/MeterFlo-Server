@@ -135,7 +135,8 @@ test("full-system inventory restore preserves identity IDs, JSON serials, sequen
     }) } as any;
     const result = await restoreFullSystemData(backup, { clearExisting: true }, isolated);
     assert.deepEqual(result.errors, []);
-    for (const table of tables) assert.equal(result.mainTablesRestored[table], mainDatabase[table].length);
+    // The restore adapter adds typed warehouse relationships to older public dumps.
+    for (const table of tables) assert.equal(result.mainTablesRestored[table], backup.mainDatabase[table].length);
     assert.deepEqual((await client.query("SELECT state FROM inventory_state")).rows[0].state, backup.mainDatabase.inventory_state[0].state);
     assert.deepEqual((await client.query("SELECT serials FROM inventory_quantities")).rows[0].serials, ["00001", "00002", "QUARANTINE-0003"]);
     assert.equal((await client.query("SELECT id FROM inventory_movements")).rows[0].id, "500");

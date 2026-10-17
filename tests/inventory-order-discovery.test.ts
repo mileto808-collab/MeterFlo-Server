@@ -7,9 +7,11 @@ import { allocateOrderNumber, mergeOrderHighWater, orderLabel, orderReference, v
 import { searchOrders, emptyOrderFilters, orderDate } from "../shared/inventory-order-search";
 import { validateInventoryBackup } from "../server/inventoryBackup";
 import { orderSaveAttempt } from "../client/src/lib/inventory-order-save";
+import { initialLocationTypes } from "../shared/inventory-location-types";
 
 function fixture() {
   const state = emptyInventory();
+  state.locationTypes = initialLocationTypes("assigned");
   state.warehouses = ["main", "van"].map(id => warehouseSchema.parse({ id, code: id.toUpperCase(),
     name: id === "main" ? "Cleveland Main" : "Service Vehicle 1", type: "physical", address: "Test only" }));
   state.items = [itemSchema.parse({ id: "meter", sku: "000701", name: "E460 Meter", tracking: "regular" })];

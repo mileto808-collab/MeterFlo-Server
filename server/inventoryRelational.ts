@@ -4,6 +4,7 @@ import { sql, Param, type SQL } from "drizzle-orm";
 import { emptyInventory, type InventoryState } from "../shared/inventory";
 import { readInventoryCategories, storedCategoryState } from "./inventoryCategories";
 import { inventoryFromRelational, inventoryToRelational, writeRelationalInventory } from "./inventoryRelationalCodec";
+import { normalizeInventoryLocations } from "../shared/inventory-location-types";
 
 type Client = Pick<PoolClient, "query">;
 /** Keep the same database transaction when a caller uses Drizzle. */
@@ -31,10 +32,11 @@ export async function readRelationalInventory(client: Client, projectId: number,
     const { rows: [archive] } = await client.query("SELECT state FROM public.inventory_state WHERE project_id=$1", [projectId]);
     // Audit exports run in a read-only consistent snapshot. Pre-cutover evidence
     // is readable there, but cannot initiate migration or override a marker.
-    if (options.readOnly) return archive.state;
-    const legacy = archive.state.categoryCatalog === undefined
+    if (options.readOnly) return normalizeInventoryLocations(archive.state, "assigned");
+    const categoryState = archive.state.categoryCatalog === undefined
       ? storedCategoryState(archive.state)
       : await readInventoryCategories(client, projectId, archive.state);
+    const legacy = normalizeInventoryLocations(categoryState);
     await writeRelationalInventory(client, projectId, legacy);
     const loaded = await readRelationalInventory(client, projectId);
     if (JSON.stringify(storedCategoryState(loaded)) !== JSON.stringify(storedCategoryState(legacy))) {
@@ -53,7 +55,20 @@ export async function readRelationalInventory(client: Client, projectId: number,
     const result = await client.query(`SELECT * FROM public.${table} WHERE project_id=$1`, [projectId]);
     rows.set(table, result.rows);
   }
-  return inventoryFromRelational(rows, marker.revision, marker.collections);
+  const loaded = inventoryFromRelational(rows, marker.revision, marker.collections);
+  if (!marker.collections.includes("locationTypes")) {
+    const migrated = normalizeInventoryLocations(loaded, options.readOnly ? "assigned" : "shared");
+    if (!options.readOnly) {
+      await writeRelationalInventory(client, projectId, migrated);
+      await client.query(`INSERT INTO public.inventory_movements(project_id,operation_id,action,changes)
+        VALUES($1,$2,'locationTypeMigration',$3) ON CONFLICT(project_id,operation_id) DO NOTHING`,
+      [projectId, `location-type-migration-${projectId}`, JSON.stringify({ stock: [], entities: [
+        { field: "locationTypes", before: null, after: migrated.locationTypes },
+      ] })]);
+    }
+    return migrated;
+  }
+  return normalizeInventoryLocations(loaded);
 }
 
 export async function migrateRelationalInventories(pool: Pool) {
@@ -73,6 +88,7 @@ export async function migrateRelationalInventories(pool: Pool) {
         throw new Error("Unexpected inventory migration constraint.");
       await client.query(`ALTER TABLE ${constraint.relation} VALIDATE CONSTRAINT "${constraint.conname}"`);
     }
+    await client.query("ALTER TABLE public.inventory_warehouses VALIDATE CONSTRAINT inventory_warehouse_location_type_required");
     await client.query("COMMIT");
     return rows.length;
   } catch (error) { await client.query("ROLLBACK"); throw error; }

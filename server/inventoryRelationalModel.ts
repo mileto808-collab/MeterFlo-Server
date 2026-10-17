@@ -12,8 +12,10 @@ export type EntityModel = {
 const text = (...keys: string[]): Columns => Object.fromEntries(keys.map(key => [key, "text"]));
 const line = { itemId: "text", quantity: "integer" };
 export const relationalEntities: EntityModel[] = [
+  { name: "inventory_location_types", field: "locationTypes",
+    columns: { id: "uuid", ...text("name", "kind", "accessPolicy"), revision: "integer" } },
   { name: "inventory_warehouses", field: "warehouses",
-    columns: { ...text("id", "code", "name", "type", "address", "city", "state", "zip", "contact", "phone", "location", "vin", "plate", "plateState", "make", "model", "assignedUserId"), year: "integer", active: "boolean" },
+    columns: { ...text("id", "code", "name", "type", "address", "city", "state", "zip", "contact", "phone", "location", "vin", "plate", "plateState", "make", "model", "assignedUserId"), locationTypeId: "uuid", year: "integer", active: "boolean" },
     arrays: ["userIds"] },
   { name: "inventory_vendors", field: "vendors", columns: { ...text("id", "name", "contact", "address", "phone", "email", "reference"), active: "boolean" } },
   { name: "inventory_items", field: "items", columns: { ...text("id", "sku", "name", "description", "unit", "tracking", "equipment", "barcode", "manufacturer", "model", "vendorId"), categoryId: "uuid", cost: "double precision", reorderPoint: "double precision", active: "boolean" },

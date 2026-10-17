@@ -1,0 +1,196 @@
+// Use only the disposable fixture created by tests/support/inventory-ui-fixture.ts.
+const assert = require("node:assert/strict");
+const fs = require("node:fs/promises");
+const { chromium } = require("playwright");
+const { expect } = require("@playwright/test");
+expect.configure({ timeout: 20000 });
+async function main() {
+  const fixture = JSON.parse(await fs.readFile("/tmp/meterflo-inventory-ui-fixture.json", "utf8"));
+  const browser = await chromium.launch({ executablePath: "/repl/tools/bin/chromium", args: ["--no-sandbox"] });
+  const baseURL = `https://${process.env.REPLIT_DEV_DOMAIN}`, endpoint = `/api/projects/${fixture.projectId}/inventory`;
+  const run = crypto.randomUUID().slice(0, 8);
+  const admin = await browser.newContext({ baseURL });
+  assert.equal((await admin.request.post("/api/auth/local/login", { data: fixture })).status(), 200);
+  const command = (context, action, data) => context.request.post(`${endpoint}/commands`, { data: { operationId: crypto.randomUUID(), action, data } });
+  const post = async (context, action, data) => {
+    const response = await command(context, action, data);
+    assert.equal(response.status(), 200, `${action}: ${await response.text()}`);
+    return (await response.json()).state;
+  };
+  const state = async () => (await (await admin.request.get(endpoint)).json()).state;
+  const grant = async permissions => assert.equal((await admin.request.put(`/api/subroles/${fixture.viewerRoleId}/permissions`, { data: { permissions } })).status(), 200);
+  const core = ["projects.view", "nav.projects", "project.workOrders", "workOrders.view", "inventory.view", "inventory.maintain", "inventory.count", "inventory.receive", "inventory.purchase", "inventory.transfer", "inventory.assemble", "inventory.assign"];
+  const permissionDefinitions = await (await admin.request.get("/api/permissions")).json();
+  assert.ok(permissionDefinitions.some(permission => permission.key === "inventory.manageLocationTypes" && /Location Types/.test(permission.label)));
+  await grant(core);
+  const member = await browser.newContext({ baseURL, viewport: { width: 1280, height: 900 } });
+  assert.equal((await member.request.post("/api/auth/local/login", { data: fixture.viewer })).status(), 200);
+  const pages = [];
+  try {
+    await fs.mkdir("generated-artifacts", { recursive: true });
+    for (const [mode, viewport] of [["desktop", { width: 1280, height: 900 }], ["phone", { width: 390, height: 844 }], ["landscape", { width: 844, height: 390 }]]) {
+      const context = await browser.newContext({ baseURL, viewport, isMobile: mode !== "desktop", hasTouch: mode !== "desktop" });
+      assert.equal((await context.request.post("/api/auth/local/login", { data: fixture })).status(), 200);
+      const page = await context.newPage(), errors = [];
+      pages.push(page);
+      page.on("pageerror", error => { errors.push(error.message); console.error(error.message); });
+      await page.goto(`/projects/${fixture.projectId}/inventory`);
+      await page.getByTestId("inventory-sticky-header").waitFor();
+      const menu = page.getByTestId("inventory-mobile-menu");
+      if (await menu.isVisible()) {
+        await menu.click();
+        await page.getByRole("menuitem", { name: "Locations", exact: true }).click();
+      } else await page.getByRole("tab", { name: "Locations", exact: true }).click();
+      const manage = () => page.getByRole("button", { name: "Manage location types", exact: true });
+      const showTools = async () => {
+        const header = page.getByTestId("inventory-locations-subheader");
+        await expect(header).toBeVisible();
+      };
+      const manager = () => page.getByTestId("inventory-location-types-manager");
+      const editor = () => page.getByTestId("inventory-page-editor");
+      const select = async (scope, label, option) => {
+        await scope.getByLabel(label, { exact: true }).click();
+        await page.getByRole("option", { name: option, exact: true }).click();
+      };
+      const unique = `${mode}-${crypto.randomUUID().slice(0, 7)}`, typeName = `Portable stock ${unique}`, locationName = `Cart ${unique}`;
+      await showTools();
+      await manage().click();
+      await manager().getByRole("button", { name: "Add type", exact: true }).click();
+      await manager().getByLabel("Display name", { exact: true }).fill(typeName);
+      await select(manager(), "Location details", "Mobile location");
+      await select(manager(), "Access policy", "Restricted — assigned users only");
+      await manager().getByRole("button", { name: "Create type", exact: true }).click();
+      await expect(manager().getByText(typeName, { exact: true })).toBeVisible();
+      let type = (await state()).locationTypes.find(type => type.name === typeName);
+      assert.ok(type);
+      await manager().getByTestId("inventory-editor-back").click();
+      await showTools();
+      await page.getByRole("button", { name: "Add location", exact: true }).click();
+      await expect(editor()).toBeVisible();
+      await editor().getByLabel("Code", { exact: true }).fill(unique);
+      await editor().getByLabel("Name", { exact: true }).fill(locationName);
+      await select(editor(), "Location type", typeName);
+      await expect(editor().getByText("Primary assigned user", { exact: true })).toBeVisible();
+      await expect(editor().getByLabel("VIN", { exact: true })).toHaveCount(0);
+      await expect(editor().getByLabel("Street address", { exact: true })).toHaveCount(0);
+      await editor().getByLabel(fixture.viewer.username, { exact: true }).check();
+      await page.screenshot({ path: `generated-artifacts/location-types-${mode}-location.jpg` });
+      await editor().getByTestId("inventory-editor-save").click();
+      await expect(editor()).toBeHidden();
+      let location = (await state()).warehouses.find(warehouse => warehouse.name === locationName);
+      assert.ok(location.userIds.includes(fixture.viewer.id));
+      await showTools();
+      await manage().click();
+      let row = manager().locator(`[data-location-type-id="${type.id}"]`);
+      await expect(row.getByRole("button", { name: `Delete ${typeName}`, exact: true })).toBeDisabled();
+      await row.getByRole("button", { name: "Edit", exact: true }).click();
+      await manager().getByLabel("Display name", { exact: true }).fill("warehouse");
+      await expect(manager().getByText("A location type with this name already exists.")).toBeVisible();
+      const renamed = `Shared cart ${unique}`;
+      await manager().getByLabel("Display name", { exact: true }).fill(renamed);
+      await select(manager(), "Access policy", "Shared — available to authorized inventory staff");
+      await expect(manager().getByRole("button", { name: "Save type", exact: true }).first()).toBeDisabled();
+      await manager().getByLabel(/I understand this updates/).check();
+      await page.screenshot({ path: `generated-artifacts/location-types-${mode}-policy.jpg` });
+      await manager().getByRole("button", { name: "Save type", exact: true }).first().click();
+      await expect(manager().getByText(renamed, { exact: true })).toBeVisible();
+      type = (await state()).locationTypes.find(value => value.id === type.id);
+      location = (await state()).warehouses.find(value => value.id === location.id);
+      assert.equal(location.locationTypeId, type.id);
+      assert.ok(location.userIds.includes(fixture.viewer.id), "Sharing must retain old grants");
+      await manager().locator(`[data-location-type-id="${type.id}"]`).getByRole("button", { name: "Edit", exact: true }).click();
+      await manager().getByLabel("Display name", { exact: true }).fill(`Unsaved ${unique}`);
+      await post(admin, "locationType", { id: type.id, name: `${renamed} live`, kind: type.kind, accessPolicy: type.accessPolicy, expectedRevision: type.revision });
+      await expect(manager().getByText("Type or affected locations changed", { exact: true })).toBeVisible();
+      await expect(manager().getByLabel("Display name", { exact: true })).toHaveValue(`Unsaved ${unique}`);
+      await expect(manager().getByRole("button", { name: "Save type", exact: true }).first()).toBeDisabled();
+      await manager().getByTestId("inventory-editor-back").click();
+      await page.getByRole("dialog", { name: "Discard location type changes?" }).getByRole("button", { name: "Discard changes", exact: true }).click();
+      await expect(manager()).toBeHidden();
+      await showTools();
+      await page.getByRole("button", { name: "Add location", exact: true }).click();
+      await expect(editor().getByText("Primary assigned user", { exact: true })).toHaveCount(0);
+      await expect(editor().getByText("Additional users with access", { exact: true })).toHaveCount(0);
+      await editor().getByTestId("inventory-editor-back").click();
+      // Verify every page is horizontally contained, including short landscape heights.
+      assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1));
+      assert.deepEqual(errors, []);
+      await context.close();
+      console.log(`PASS ${mode}: type CRUD form, mobile location fields, assignment retention, policy acknowledgement, duplicate validation and SSE dirty-editor preservation.`);
+    }
+    // Ordinary role management grants this exact permission; no direct SQL permission seeding.
+    let latest = await state();
+    const sharedType = latest.locationTypes.find(type => type.kind === "mobile" && type.accessPolicy === "shared");
+    const shared = { id: crypto.randomUUID(), code: `UNASSIGNED-${run}`, name: "Unassigned shared stock", type: "mobile", locationTypeId: sharedType.id };
+    await post(admin, "warehouse", shared);
+    await post(member, "countStart", { id: crypto.randomUUID(), warehouseId: shared.id, scope: "selected" });
+    let response = await command(member, "locationType", { id: crypto.randomUUID(), name: "Forbidden", kind: "mobile", accessPolicy: "shared" });
+    assert.equal(response.status(), 403);
+    response = await command(member, "warehouse", { ...shared, locationTypeId: latest.locationTypes.find(type => type.kind === "physical").id, type: "physical", address: "Attempted escalation" });
+    assert.equal(response.status(), 403);
+    const restrictedId = crypto.randomUUID();
+    await post(admin, "locationType", { id: restrictedId, name: `Restricted test vehicle ${run}`, kind: "mobile", accessPolicy: "assigned" });
+    const restricted = { id: crypto.randomUUID(), code: `RESTRICTED-${run}`, name: "Private mobile stock", type: "mobile", locationTypeId: restrictedId, assignedUserId: fixture.id };
+    await post(admin, "warehouse", restricted);
+    response = await command(member, "countStart", { id: crypto.randomUUID(), warehouseId: restricted.id, scope: "selected" });
+    assert.notEqual(response.status(), 200);
+    response = await command(member, "warehouse", { ...(await state()).warehouses.find(warehouse => warehouse.id === restricted.id), userIds: [fixture.viewer.id] });
+    assert.equal(response.status(), 403);
+    await grant(["projects.view", "inventory.view", "inventory.manageLocationTypes"]);
+    await post(member, "locationType", { id: crypto.randomUUID(), name: `Type-only manager ${run}`, kind: "mobile", accessPolicy: "assigned" });
+    response = await command(member, "countStart", { id: crypto.randomUUID(), warehouseId: shared.id, scope: "selected" });
+    assert.equal(response.status(), 403, "Type management must not grant stock-operation permissions");
+    await grant([...core, "inventory.manageLocationTypes"]);
+    await post(member, "locationType", { id: crypto.randomUUID(), name: `Granted through roles ${run}`, kind: "mobile", accessPolicy: "assigned" });
+    await post(member, "warehouse", { ...(await state()).warehouses.find(warehouse => warehouse.id === restricted.id), userIds: [fixture.viewer.id] });
+    await post(member, "countStart", { id: crypto.randomUUID(), warehouseId: restricted.id, scope: "selected" });
+    // Concurrent stale edits: exactly one succeeds; neither can overwrite a newer revision.
+    latest = await state();
+    const raceType = latest.locationTypes.find(type => type.id === restrictedId);
+    const changes = await Promise.all(["A", "B"].map(suffix => command(admin, "locationType", { ...raceType, revision: undefined, name: `Concurrent ${suffix} ${run}`, expectedRevision: raceType.revision })));
+    assert.equal(changes.filter(response => response.status() === 200).length, 1);
+    const unused = crypto.randomUUID();
+    const unusedName = `Delete unused ${run}`;
+    await post(admin, "locationType", { id: unused, name: unusedName, kind: "mobile", accessPolicy: "assigned" });
+    const deletePage = await admin.newPage();
+    await deletePage.goto(`/projects/${fixture.projectId}/inventory`);
+    await deletePage.getByRole("tab", { name: "Locations", exact: true }).click();
+    await deletePage.getByRole("button", { name: "Manage location types", exact: true }).click();
+    const unusedRow = deletePage.locator(`[data-location-type-id="${unused}"]`);
+    await unusedRow.getByRole("button", { name: `Delete ${unusedName}`, exact: true }).click();
+    const confirmDelete = deletePage.getByRole("dialog", { name: "Delete location type?" });
+    await confirmDelete.getByRole("button", { name: "Cancel", exact: true }).click();
+    assert.ok((await state()).locationTypes.some(type => type.id === unused));
+    await unusedRow.getByRole("button", { name: `Delete ${unusedName}`, exact: true }).click();
+    await confirmDelete.getByRole("button", { name: "Delete type", exact: true }).click();
+    await expect(confirmDelete).toBeHidden();
+    assert.ok(!(await state()).locationTypes.some(type => type.id === unused));
+    // Deletion races with a new reference are serialized, never leaving dangling IDs.
+    const racedType = crypto.randomUUID();
+    await post(admin, "locationType", { id: racedType, name: `Reference race ${run}`, kind: "mobile", accessPolicy: "assigned" });
+    const raced = await Promise.all([
+      command(admin, "locationTypeDelete", { id: racedType, expectedRevision: 1 }),
+      command(admin, "warehouse", { id: crypto.randomUUID(), code: `RACE-${run}`, name: "Reference race stock", type: "mobile", locationTypeId: racedType }),
+    ]);
+    assert.equal(raced.filter(response => response.status() === 200).length, 1);
+    const memberPage = await member.newPage();
+    await memberPage.goto(`/projects/${fixture.projectId}/inventory`);
+    await memberPage.getByRole("tab", { name: "Locations", exact: true }).click();
+    await memberPage.getByRole("button", { name: "Manage location types", exact: true }).click();
+    const memberManager = memberPage.getByTestId("inventory-location-types-manager");
+    await memberManager.getByRole("button", { name: "Add type", exact: true }).click();
+    await memberManager.getByLabel("Display name", { exact: true }).fill("Unsaved after permission revocation");
+    await grant(core);
+    await expect(memberManager.getByText("Location type access changed", { exact: true })).toBeVisible({ timeout: 25000 });
+    await expect(memberManager.getByLabel("Display name", { exact: true })).toHaveValue("Unsaved after permission revocation");
+    await expect(memberManager.getByRole("button", { name: "Create type", exact: true })).toBeDisabled();
+    response = await command(member, "locationTypeDelete", { id: restrictedId, expectedRevision: 2 });
+    assert.equal(response.status(), 403);
+    console.log("PASS roles/API: permission discovery/grant/revoke, shared operation without assignment, restricted denial, no self-grant/type escalation, stale revision concurrency and unused deletion.");
+  } finally {
+    await member.close();
+    await admin.close();
+    await browser.close();
+  }
+}
+main().catch(error => { console.error(error); process.exitCode = 1; });
