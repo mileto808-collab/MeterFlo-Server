@@ -5,6 +5,7 @@ import { inventoryCountRows, inventoryCountLines } from "../client/src/lib/inven
 import { emptyInventory, type InventoryCommand, type InventoryState } from "../shared/inventory";
 import { applyInventoryCommand } from "../shared/inventory-engine";
 import { COUNT_MAX_LINES, COUNT_MAX_BYTES } from "../shared/inventory-count-limits";
+import { countStockMatches } from "../shared/inventory-count-stock";
 
 function post(s: InventoryState, action: InventoryCommand["action"], data: Record<string, unknown>) {
   return applyInventoryCommand(s, { operationId: randomUUID(), action, data }, "fixture", true).state;
@@ -15,6 +16,39 @@ function fixture() {
   state = post(state, "item", { id: "regular", sku: "REG", name: "Regular", tracking: "regular" });
   return state;
 }
+
+test("reloaded stock field order does not make an unchanged count stale", () => {
+  let state = post(fixture(), "countStart", { id: "reloaded", warehouseId: "main" });
+  state.stock = [{ warehouseId: "main", itemId: "regular", quantity: 5, revision: 1, serials: [] }];
+  // Relational child rows and current balances hydrate their keys in different orders.
+  state.counts[0].snapshot = [{ itemId: "regular", quantity: 5, warehouseId: "main", revision: 1, serials: [] }];
+  const completed = post(state, "countPost", { id: "reloaded", reason: "Unchanged stock verified", lines: [{ itemId: "regular", quantity: 5 }] });
+  assert.equal(completed.counts[0].status, "posted");
+  assert.equal(completed.stock[0].revision, 1);
+  const moved = structuredClone(state);
+  moved.stock[0].revision++;
+  assert.throws(() => post(moved, "countPost", { id: "reloaded", reason: "Same total after movement", lines: [{ itemId: "regular", quantity: 5 }] }), /Stock moved/);
+});
+
+test("count stock comparison ignores only representation order, not physical changes", () => {
+  const snapshot = [
+    { warehouseId: "main", itemId: "serial", quantity: 2, revision: 3, serials: ["002", "001"] },
+    { warehouseId: "main", itemId: "regular", quantity: 0, revision: 1, serials: [] },
+  ];
+  const reordered = structuredClone(snapshot).reverse();
+  reordered[1].serials.reverse();
+  assert.equal(countStockMatches(snapshot, reordered), true);
+  assert.deepEqual(snapshot[0].serials, ["002", "001"], "comparison must not mutate evidence");
+  for (const field of ["quantity", "revision"] as const) {
+    const changed = structuredClone(snapshot);
+    changed[0][field]++;
+    assert.equal(countStockMatches(snapshot, changed), false);
+  }
+  const changedSerial = structuredClone(snapshot);
+  changedSerial[0].serials[0] = "003";
+  assert.equal(countStockMatches(snapshot, changedSerial), false);
+  assert.equal(countStockMatches(snapshot, snapshot.slice(0, 1)), false, "zero stock rows are still part of the snapshot");
+});
 
 test("empty warehouse submits newly found regular and serialized items and explicit zeros", () => {
   let state = post(fixture(), "countStart", { id: "count", warehouseId: "main" });

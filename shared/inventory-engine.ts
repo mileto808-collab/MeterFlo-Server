@@ -3,6 +3,7 @@ import { itemDeletionBlockers, categoryDeletionBlockers } from "./inventory-dele
 import { normalizeInventoryCategories, inventoryCategoryLabels } from "./inventory-categories";
 import { allocateOrderNumber, uuidOrderId } from "./inventory-order-labels";
 import { COUNT_MAX_LINES, COUNT_MAX_SERIALS, countPayloadFits } from "./inventory-count-limits";
+import { countStockMatches } from "./inventory-count-stock";
 import { allocationSchema, dispositionSchema, itemSchema, stockLineSchema, vendorSchema, warehouseSchema, countDraftSchema,
   categoryNameSchema, categoryKey, inventoryCategoryNames,
   type Allocation, type InventoryCommand, type InventoryState, type StockLine, type Stock } from "./inventory";
@@ -374,7 +375,7 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     const c = s.counts.find(c => c.id === id); assert(c && c.status === "open", "Open count required."); access(c.warehouseId);
     assert(!c.draft && draftRevision === undefined || (draftRevision ?? 0) === (c.draft?.revision ?? 0),
       "Count draft changed. Reload saved draft before saving or posting.");
-    assert(same(c.snapshot, s.stock.filter(b => b.warehouseId === c.warehouseId)), "Stock moved since counting began; start a new count.");
+    assert(countStockMatches(c.snapshot, s.stock.filter(b => b.warehouseId === c.warehouseId)), "Stock moved since counting began; start a new count.");
     assert(input.reduce((sum, line) => sum + line.serials.length, 0) <= COUNT_MAX_SERIALS,
       `Count exceeds the ${COUNT_MAX_SERIALS}-serial complete-count limit; no changes were posted.`);
     validateLines(s, input);

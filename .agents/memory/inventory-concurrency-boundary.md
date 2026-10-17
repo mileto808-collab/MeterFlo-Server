@@ -26,3 +26,15 @@ alone does not provide safe inventory batching.
 **How to apply:** Keep a bounded, complete atomic submission, or design durable
 staging with one final atomic validation/commit before increasing capacity.
 Retain every mandatory snapshot row and deliberately entered discovery.
+
+Count staleness is about physical stock evidence, not JSON representation.
+Ignore property, row and serial ordering, but retain quantity, location, item,
+serial identity and movement-revision comparisons.
+
+**Why:** Relational balances and historical snapshot lines hydrate fields in
+different orders. Raw JSON-string comparisons falsely rejected untouched counts.
+A changed revision still matters when movements leave the same final quantity.
+
+**How to apply:** Keep the editor warning and authoritative posting check on the
+same semantic comparison. Show current on-hand expectations separately from the
+original count-start amounts; never silently rebase a stale count to make it post.

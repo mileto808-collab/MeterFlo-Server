@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useInventoryEvents } from "@/hooks/useInventoryEvents";
 import { useUnsavedNavigation } from "@/hooks/use-unsaved-navigation";
 import { usePageHeader } from "@/contexts/page-header-context";
+import { countStockMatches } from "@shared/inventory-count-stock";
 import { emptyInventory, type InventoryCommand, type InventoryCount, type InventoryItem, type InventoryOrder, type InventoryState, type StockLine, type Vendor, type Warehouse } from "@shared/inventory";
 import type { SavedShipmentDraft } from "@shared/inventory-shipment-draft-model";
 import { orderLineProgress } from "@shared/inventory-shipment-model";
@@ -272,6 +273,10 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [returnInspect, setReturnInspect] = useState<Record<string, { itemId: string; reason: string }>>({});
 
   const state = data?.state;
+  const currentCountStock = useMemo(() => (state?.stock ?? []).filter(stock => stock.warehouseId === activeCount?.warehouseId), [state?.stock, activeCount?.warehouseId]);
+  const countStockByItem = useMemo(() => new Map(currentCountStock.map(stock => [stock.itemId, stock])), [currentCountStock]);
+  const countStockDrift = useMemo(() => !!activeCount && !!state
+    && !countStockMatches(activeCount.snapshot, currentCountStock), [activeCount, state, currentCountStock]);
   const currentClosingOrder = orderToClose ? state?.orders.find(order => order.id === orderToClose.id) : undefined;
   const locationsDataset = useMemo(() => buildOperationsDataset("locations", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone), [state, data?.actors, data?.users, timezone]);
   const returnsDataset = useMemo(() => buildOperationsDataset("returns", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone), [state, data?.actors, data?.users, timezone]);
@@ -1513,16 +1518,22 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
                 ? "Your entries remain on this page, but this count cannot be saved or posted in its current state."
                 : "Your exact quantities and scans are retained. Saving and posting are paused until you reload the current saved draft."}</AlertDescription>
             </Alert>}
+            {countStockDrift && <Alert data-testid="inventory-count-stock-drift">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Warehouse stock changed since this count started</AlertTitle>
+              <AlertDescription>Save this draft if you want to keep it for reference, then close or cancel and start a new count. Posting is disabled.</AlertDescription>
+            </Alert>}
             <p role="status" className="text-sm">{countDraftMessage || "Unsaved entries remain only on this page until you save the draft."}</p>
             <p className="text-sm">{countRows.length} total count entries · {matchingCountRows.length} matching · limit {COUNT_MAX_LINES}. All pages are saved and posted together.</p>
             {visibleCountRows.map(row => {
               const { itemId: id, item } = row;
               if (!item) return <Alert key={id} variant="destructive"><AlertTitle>Count item unavailable</AlertTitle><AlertDescription>Item {id} is no longer in the catalog. Resolve it before posting; it will not be silently omitted.</AlertDescription></Alert>;
               const old = activeCount.snapshot.find(row => row.itemId === id);
+              const currentStock = countStockByItem.get(id);
               return <div key={id} className="grid min-w-0 gap-2 rounded border bg-background p-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,260px)_minmax(0,2fr)] sm:items-end sm:p-3">
-                <div><div className="font-medium">{item.name}</div><div className="font-mono text-xs text-muted-foreground">{item.sku} · snapshot {old?.quantity ?? 0}</div></div>
+                <div><div className="font-medium">{item.name}</div><div className="font-mono text-xs text-muted-foreground">{item.sku} · at count start {old?.quantity ?? 0}</div></div>
                 <div className="grid min-w-0 grid-cols-2 gap-2">
-                  <div className="min-w-0 space-y-1"><Label htmlFor={`expected-count-${id}`}>Expected quantity</Label><Input id={`expected-count-${id}`} type="number" value={old?.quantity ?? 0} readOnly aria-readonly="true" /></div>
+                  <div className="min-w-0 space-y-1"><span id={`expected-count-label-${id}`} className="text-sm font-medium">Expected quantity</span><output id={`expected-count-${id}`} aria-labelledby={`expected-count-label-${id}`} className="block min-w-0 py-2 text-sm tabular-nums">{currentStock?.quantity ?? 0}</output></div>
                   <div className="min-w-0 space-y-1"><Label htmlFor={`count-${id}`}>Actual quantity</Label><Input id={`count-${id}`} type="number" min="0" max="1000000" step="1" value={row.quantity} disabled={command.isPending} onChange={event => setCountQuantities(current => ({ ...current, [id]: event.target.value }))} /></div>
                 </div>
                 {item.tracking === "serialized" && <div className="space-y-1"><Label htmlFor={`countserial-${id}`}>Scan all serials</Label><Textarea id={`countserial-${id}`} value={row.serials} disabled={command.isPending} onChange={event => setCountSerials(current => ({ ...current, [id]: event.target.value }))} /></div>}
@@ -1537,7 +1548,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
             <DialogFooter className="shrink-0 flex-row flex-wrap justify-start border-t px-4 py-3 sm:px-6">
               <Button variant="outline" onClick={() => saveCountDraft()} disabled={!can("inventory.count") || !!countConflict || command.isPending}>Save count draft</Button>
               <Button variant="outline" onClick={() => requestCountTransition(reloadCountDraft)} disabled={!can("inventory.count") || command.isPending || countConflict === "unavailable"}>Reload saved draft</Button>
-              <Button onClick={postCount} disabled={!can("inventory.count") || !!countConflict || !countReason.trim() || command.isPending}>Post count</Button>
+              <Button onClick={postCount} disabled={!can("inventory.count") || !!countConflict || countStockDrift || !countReason.trim() || command.isPending}>Post count</Button>
               <Button variant="outline" disabled={command.isPending} onClick={() => requestCountTransition(closeCount)}>Close</Button>
             </DialogFooter>
           </div>}

@@ -24,6 +24,7 @@
     "test:inventory-count:browser": "node tests/inventory-count-ui.cjs",
     "test:inventory-count-layout:browser": "node tests/inventory-count-layout-ui.cjs",
     "test:inventory-count-tools:browser": "node tests/inventory-count-tools-ui.cjs",
+    "test:inventory-count-expected:browser": "node tests/inventory-count-expected-ui.cjs",
     "test:inventory-tab-refresh:browser": "node tests/inventory-tab-refresh-ui.cjs",
     "test:inventory-order:browser": "node tests/inventory-order-ui.cjs",
     "test:inventory-unrelease:browser": "node tests/inventory-unrelease-editor-ui.cjs && node tests/inventory-transfer-unrelease-ui.cjs",

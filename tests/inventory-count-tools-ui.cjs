@@ -55,7 +55,7 @@ async function main() {
     await expect(dialog.locator("#count-discovery-product")).toContainText("Discovery extra");
     await dialog.getByRole("button", { name: "Add discovery to count", exact: true }).click();
     await expect(dialog.locator("#count-tools-extra")).toHaveValue("0");
-    await expect(dialog.locator("#expected-count-tools-extra")).toHaveValue("0");
+    await expect(dialog.locator("#expected-count-tools-extra")).toHaveText("0");
     await hide().click();
     const output = "generated-artifacts/inventory-count-tools";
     await fs.mkdir(output, { recursive: true });
