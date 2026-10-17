@@ -70,6 +70,14 @@ const inventoryTabs = [
   { value: "returns", label: "Removed Equipment" },
   { value: "activity", label: "Activity" },
 ];
+function savedInventoryTab(key: string) {
+  try {
+    const saved = window.sessionStorage.getItem(key);
+    return inventoryTabs.some(tab => tab.value === saved) ? saved! : "stock";
+  } catch {
+    return "stock"; // Browser storage can be disabled; inventory itself must remain usable.
+  }
+}
 const sameOriginImage = (value: string) => {
   try { return new URL(value, window.location.origin).origin === window.location.origin ? value : null; }
   catch { return null; }
@@ -104,7 +112,15 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const base = `/api/projects/${projectId}/inventory`;
   const queryKey = [base];
   const [showInventoryStats, setShowInventoryStats] = useState(false);
-  const [inventoryTab, setInventoryTab] = useState("stock");
+  const inventoryTabKey = `meterflo:inventory-tab:${user?.id ?? "pending"}:${projectId}`;
+  const [inventoryTab, setInventoryTabState] = useState(() => savedInventoryTab(inventoryTabKey));
+  useEffect(() => { setInventoryTabState(savedInventoryTab(inventoryTabKey)); }, [inventoryTabKey]);
+  const setInventoryTab = (value: string) => {
+    if (!inventoryTabs.some(tab => tab.value === value)) return;
+    setInventoryTabState(value);
+    try { window.sessionStorage.setItem(inventoryTabKey, value); }
+    catch { console.warn("Browser storage is unavailable; the selected Inventory tab cannot be remembered on refresh."); }
+  };
   const inventoryMainRef = useRef<HTMLElement>(null);
   const [selectedStockRow, setSelectedStockRow] = useState<StockBalanceRow | null>(null);
   const [resource, setResource] = useState<ResourceKind | null>(null);

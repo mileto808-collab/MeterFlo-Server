@@ -31,3 +31,14 @@ update or integration changes that affect other users.
 **How to apply:** Preserve mounted child editor state or lift drafts before
 replacing a settings pane. Verify unsaved values after switching sections and
 rotating a phone, and verify that navigation sends no configuration writes.
+
+Remembering an Inventory tab is a browser preference, not a draft save or an
+additional navigation. Keep that persistence separate from unsaved-edit guards.
+
+**Why:** The global history guard intercepts query-only URL changes too. Updating
+the URL solely to remember a confirmed tab transition can prompt again before
+the editor's clean state commits.
+
+**How to apply:** Preserve the existing guarded transitions and keep tab
+preferences scoped to the project and signed-in user. Any future URL-based tab
+links must deliberately coordinate with the global navigation guard.
