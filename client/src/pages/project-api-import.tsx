@@ -42,12 +42,9 @@ const fieldLabels: Record<string, string> = {
   status: "Status", notes: "Notes",
   inventoryItems: "Inventory items (JSON array)",
 };
-const legacyAssetTypeTargets = ["oldSystemType", "newSystemType", "oldModuleType", "newModuleType"];
 const cleanFieldMapping = (mapping: Record<string, string>, inventoryEnabled: boolean) =>
   Object.fromEntries(Object.entries(mapping).filter(([, target]) =>
-    inventoryEnabled
-      ? !legacyAssetTypeTargets.includes(target)
-      : target !== "inventoryItems",
+    inventoryEnabled || target !== "inventoryItems",
   ));
 const defaults: ApiImportSettings = {
   name: "", endpoint: "", authType: "none", secretEnvVar: "", keyHeader: "X-API-Key",
@@ -121,12 +118,9 @@ export default function ProjectApiImport({ projectId: explicitProjectId }: { pro
   const inventoryEnabled = Boolean(project?.inventoryEnabled);
   const availableFieldKeys = useMemo(() => {
     const fields = Object.keys(importFields);
-    const withoutLegacyTypes = inventoryEnabled
-      ? fields.filter(field => !legacyAssetTypeTargets.includes(field))
-      : fields;
     return inventoryEnabled
-      ? [...withoutLegacyTypes.filter(field => field !== "inventoryItems"), "inventoryItems"]
-      : withoutLegacyTypes.filter(field => field !== "inventoryItems");
+      ? [...fields.filter(field => field !== "inventoryItems"), "inventoryItems"]
+      : fields.filter(field => field !== "inventoryItems");
   }, [inventoryEnabled]);
   const { data: configs, isLoading: configsLoading, error: configsError, refetch: refetchConfigs } =
     useQuery<ApiImportConfig[]>({
@@ -388,7 +382,7 @@ export default function ProjectApiImport({ projectId: explicitProjectId }: { pro
             </div>
             <div className="rounded-xl border border-amber-300/60 bg-amber-50/60 p-4">
               <div className="grid gap-4 md:grid-cols-2"><FormField label="Update behavior"><Select value={draft.updateMode} onValueChange={(value: ApiImportSettings["updateMode"]) => field("updateMode", value)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="create_only">Create-only (recommended)</SelectItem><SelectItem value="safe_update">Safe update selected fields</SelectItem></SelectContent></Select></FormField><div className="text-sm leading-relaxed text-amber-950/75">{draft.updateMode === "create_only" ? "Incoming records will not change existing work orders." : "Only the selected baseline fields can be updated. Work-order ID, status, and notes are never eligible."}</div></div>
-              {draft.updateMode === "safe_update" && <div className="mt-4 flex flex-wrap gap-2">{safeUpdateFields.filter(key => !inventoryEnabled || !legacyAssetTypeTargets.includes(key)).map(key => <label key={key} className="flex cursor-pointer items-center gap-2 rounded-lg border bg-background px-3 py-2 text-xs"><input type="checkbox" checked={draft.updateFields.includes(key)} onChange={e => field("updateFields", e.target.checked ? [...draft.updateFields, key] : draft.updateFields.filter(item => item !== key))} />{fieldLabels[key]}</label>)}</div>}
+              {draft.updateMode === "safe_update" && <div className="mt-4 flex flex-wrap gap-2">{safeUpdateFields.map(key => <label key={key} className="flex cursor-pointer items-center gap-2 rounded-lg border bg-background px-3 py-2 text-xs"><input type="checkbox" checked={draft.updateFields.includes(key)} onChange={e => field("updateFields", e.target.checked ? [...draft.updateFields, key] : draft.updateFields.filter(item => item !== key))} />{fieldLabels[key]}</label>)}</div>}
             </div>
             {editorError && <Alert variant="destructive"><CircleAlert className="h-4 w-4" /><AlertDescription>{editorError}</AlertDescription></Alert>}
             <div className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground"><strong>Available target fields:</strong> {availableFieldKeys.map(key => fieldLabels[key]).join(" · ")}</div>

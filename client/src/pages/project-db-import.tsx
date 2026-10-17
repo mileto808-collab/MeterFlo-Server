@@ -205,16 +205,10 @@ export default function ProjectDbImport() {
     retry: false,
   });
   const inventoryEnabled = Boolean((project as any)?.inventoryEnabled);
-  const legacyTypeMappingKeys = ["oldSystemType", "newSystemType", "oldModuleType", "newModuleType"];
   const visibleWorkOrderFields = workOrderFields.filter(field =>
-    inventoryEnabled
-      ? !legacyTypeMappingKeys.includes(field.key)
-      : field.key !== "inventoryItems",
+    inventoryEnabled || field.key !== "inventoryItems",
   );
-  const normalizeColumnName = (column: string) => column.toLowerCase().replace(/[_\s-]/g, "");
-  const visiblePreviewColumns = inventoryEnabled
-    ? previewColumns.filter(column => !legacyTypeMappingKeys.some(key => normalizeColumnName(key) === normalizeColumnName(column)))
-    : previewColumns;
+  const visiblePreviewColumns = previewColumns;
 
   const { data: dbConfigs = [], refetch: refetchConfigs } = useQuery<ExternalDatabaseConfig[]>({
     queryKey: ["/api/projects", projectId, "database-configs"],
@@ -458,7 +452,7 @@ export default function ProjectDbImport() {
   const openEditImportConfig = (config: ImportConfig) => {
     const savedMapping = (config.columnMapping as Record<string, string>) || {};
     const columnMapping = Object.fromEntries(Object.entries(savedMapping).filter(([key]) =>
-      inventoryEnabled ? !legacyTypeMappingKeys.includes(key) : key !== "inventoryItems",
+      inventoryEnabled || key !== "inventoryItems",
     ));
     setImportConfigForm({
       name: config.name,
@@ -509,7 +503,7 @@ export default function ProjectDbImport() {
   const handleSaveImportConfig = () => {
     if (!selectedDbConfigId) return;
     const columnMapping = Object.fromEntries(Object.entries(importConfigForm.columnMapping).filter(([key]) =>
-      inventoryEnabled ? !legacyTypeMappingKeys.includes(key) : key !== "inventoryItems",
+      inventoryEnabled || key !== "inventoryItems",
     ));
     const data = { ...importConfigForm, columnMapping };
     
@@ -917,7 +911,6 @@ export default function ProjectDbImport() {
             {previewData && previewColumns.length > 0 && (
               <div className="grid gap-2">
                 <Label>Query Preview ({previewData.length} rows)</Label>
-                {inventoryEnabled && <p className="text-xs text-muted-foreground">Legacy system and module type columns are hidden for this inventory-enabled project.</p>}
                 <ScrollArea className="h-[150px] border rounded-md">
                   <Table>
                     <TableHeader>

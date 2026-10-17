@@ -147,7 +147,7 @@ export async function postInventory(projectId: number, command: InventoryCommand
     throw e;
   } finally { client.release(); }
 }
-export async function inventoryWorkOrderChange(client: PoolClient, schema: string, prior: any, next: any, usage?: unknown, importedItems?: unknown) {
+export async function inventoryWorkOrderChange(client: PoolClient, schema: string, prior: any, next: any, usage?: unknown, importedItems?: unknown, ordinaryImport = false) {
   const { rows: [p] } = await client.query("SELECT id,inventory_enabled,wizard_mode,changeout_equipment_type FROM public.projects WHERE database_name=$1", [schema]);
   if (!p?.inventory_enabled) {
     if (importedItems !== undefined && inventoryImportSchema.parse(importedItems).length) throw new InventoryError("Enable inventory before importing inventory items.");
@@ -162,9 +162,6 @@ export async function inventoryWorkOrderChange(client: PoolClient, schema: strin
   if (previouslyCompleted && completed && before.allocations.find(a => a.workOrderId === prior.id)?.status === "consumed" &&
       ["old_system_id", "new_system_id", "old_module_id", "new_module_id"].some(key => next[key] !== prior[key]))
     throw new InventoryError("Reconcile inventory before changing completed equipment IDs.");
-  for (const field of ["old_system_type", "new_system_type", "old_module_type", "new_module_type"])
-    if (prior?.[field] !== next?.[field] && next && next[field] != null)
-      throw new InventoryError("System and module types are managed by inventory for this project.");
   if (importedItems !== undefined) {
     const input = inventoryImportSchema.parse(importedItems);
     const actorId = auditContext.getStore()?.actorId;
@@ -197,7 +194,11 @@ export async function inventoryWorkOrderChange(client: PoolClient, schema: strin
     } else state = applyInventoryCommand(state, { operationId: command.operationId, action: "prepareUse",
       data: { workOrderId: next.id, revision: command.revision, mode: command.mode, used: command.used, dispositions: command.dispositions } }, actor, admin).state;
   }
-  if (completed && !previouslyCompleted) {
+  // Only trusted import callers opt in. Existing stock assignments, explicit item
+  // imports and usage uploads must still go through the full completion checks.
+  const importedWithoutStock = ordinaryImport && importedItems === undefined && !usage &&
+    !state.allocations.some(a => a.workOrderId === next?.id);
+  if (completed && !previouslyCompleted && !importedWithoutStock) {
     const actorId = auditContext.getStore()?.actorId;
     const completionUser = actorId ? await storage.getUser(actorId) : await storage.getUserByUsername("file_import");
     if (!completionUser || completionUser.isLocked || !await storage.hasPermission(completionUser, inventoryPermissions.assign))

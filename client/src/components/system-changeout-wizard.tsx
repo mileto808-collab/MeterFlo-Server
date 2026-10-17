@@ -951,7 +951,7 @@ export function SystemChangeoutWizard({
           ...submitData,
           newSystemId: oldSystemId || "",
           newModuleId: oldModuleId || "",
-          ...(!inventoryEnabled ? { newSystemType: oldSystemType || "", newModuleType: oldModuleType || "" } : {}),
+          newSystemType: oldSystemType || "", newModuleType: oldModuleType || "",
         };
       }
       

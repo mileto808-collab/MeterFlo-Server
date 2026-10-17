@@ -388,7 +388,7 @@ class FileImportScheduler {
 
             const existingWo = await workOrderStorage.getWorkOrderByCustomerWoId(mappedData.customerWoId);
             if (existingWo) {
-              await workOrderStorage.updateWorkOrder(existingWo.id, mappedData);
+              await workOrderStorage.updateWorkOrder(existingWo.id, mappedData, undefined, true);
             } else {
               // Create clean data with explicit status (must be string, not null)
               const cleanedData: Record<string, any> = { ...mappedData };
@@ -404,7 +404,7 @@ class FileImportScheduler {
               });
               const validated = insertProjectWorkOrderSchema.parse(cleanedData);
               // Cast to bypass type issue - we've already ensured status is a string
-              await workOrderStorage.createWorkOrder(validated as any);
+              await workOrderStorage.createWorkOrder(validated as any, undefined, true);
             }
             imported++;
           } catch (rowError: any) {

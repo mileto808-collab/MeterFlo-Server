@@ -674,7 +674,7 @@ export class ProjectWorkOrderStorage {
     }
   }
 
-  async createWorkOrder(workOrder: Omit<InsertProjectWorkOrder, "id" | "createdAt" | "updatedAt">, createdBy?: string): Promise<ProjectWorkOrder> {
+  async createWorkOrder(workOrder: Omit<InsertProjectWorkOrder, "id" | "createdAt" | "updatedAt">, createdBy?: string, ordinaryImport = false): Promise<ProjectWorkOrder> {
     await this.ensureMigrated();
     const client = await pool.connect();
     try {
@@ -774,7 +774,7 @@ export class ProjectWorkOrderStorage {
       
       // Re-fetch with JOINs to get display fields (scheduledByDisplay, completedByDisplay)
       const createdId = result.rows[0].id;
-      await inventoryWorkOrderChange(client, this.schemaName, null, result.rows[0], undefined, (workOrder as any).inventoryItems);
+      await inventoryWorkOrderChange(client, this.schemaName, null, result.rows[0], undefined, (workOrder as any).inventoryItems, ordinaryImport);
       await client.query("COMMIT");
       return await this.getWorkOrder(createdId) as ProjectWorkOrder;
     } catch (error) {
@@ -1072,7 +1072,7 @@ export class ProjectWorkOrderStorage {
     }
   }
 
-  async updateWorkOrder(id: number, updates: Partial<InsertProjectWorkOrder>, updatedBy?: string): Promise<ProjectWorkOrder | undefined> {
+  async updateWorkOrder(id: number, updates: Partial<InsertProjectWorkOrder>, updatedBy?: string, ordinaryImport = false): Promise<ProjectWorkOrder | undefined> {
     await this.ensureMigrated();
     const client = await pool.connect();
     try {
@@ -1497,7 +1497,7 @@ export class ProjectWorkOrderStorage {
           await client.query("COMMIT");
           return undefined;
         }
-        await inventoryWorkOrderChange(client, this.schemaName, prior, result.rows[0], (updates as any).inventoryUsage, (updates as any).inventoryItems);
+        await inventoryWorkOrderChange(client, this.schemaName, prior, result.rows[0], (updates as any).inventoryUsage, (updates as any).inventoryItems, ordinaryImport);
         await enqueueCustomerDelivery(client, this.schemaName, result.rows[0]);
         await client.query("COMMIT");
       } catch (error) {
@@ -1612,14 +1612,14 @@ export class ProjectWorkOrderStorage {
           if (existing) {
             // Update existing work order (upsert) - exclude createdBy for updates
             const { createdBy, ...updateData } = wo as any;
-            await this.updateWorkOrder(existing.id, updateData, importedBy);
+            await this.updateWorkOrder(existing.id, updateData, importedBy, true);
             updated++;
             continue;
           }
         }
         
         // Create new work order
-        await this.createWorkOrder(wo, importedBy);
+        await this.createWorkOrder(wo, importedBy, true);
         imported++;
       } catch (error) {
         errors.push(`Row ${i + 1}: ${error instanceof Error ? error.message : "Unknown error"}`);

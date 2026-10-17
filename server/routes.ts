@@ -3588,7 +3588,7 @@ export async function registerRoutes(
           scheduledAt: wo.scheduledAt || wo.scheduledDate || wo.scheduled_date || wo.scheduled_at || null,
           assignedUserId: wo.assignedUserId || wo.assigned_user_id || null,
           assignedGroupId: wo.assignedGroupId || wo.assigned_group_id || null,
-          createdBy: createdByName,
+          createdBy: currentUser?.username || null,
           trouble: wo.trouble || null,
           notes: wo.notes || null,
           attachments: wo.attachments || null,
@@ -3600,10 +3600,13 @@ export async function registerRoutes(
           newModuleRead: readingParameter(wo.newModuleReadText ?? wo.new_module_read_text ?? wo.newModuleRead ?? wo.new_module_read),
           oldModuleType: wo.oldModuleType || wo.old_module_type || null,
           newModuleType: wo.newModuleType || wo.new_module_type || null,
+          ...(Object.hasOwn(wo, "inventoryItems") ? { inventoryItems: wo.inventoryItems } : {}),
         });
       }
       
-      const result = await workOrderStorage.importWorkOrders(toImport, createdByName);
+      // Work-order creator/updater foreign keys reference usernames; the import
+      // history above retains the human-readable display name.
+      const result = await workOrderStorage.importWorkOrders(toImport, currentUser?.username || undefined);
       
       // Combine pre-import validation errors with import errors
       const allErrors = [...importErrors, ...(result.errors || [])];
@@ -3623,7 +3626,7 @@ export async function registerRoutes(
       
       res.json({
         ...result,
-        errors: allErrors.length > 0 ? allErrors : undefined,
+        errors: allErrors,
         skipped: importErrors.length,
       });
     } catch (error: any) {
@@ -4154,7 +4157,7 @@ export async function registerRoutes(
             updateData.newSystemReading = newSystemReading;
             // Copy type from old to new
             const existingOldType = workOrder.oldSystemType || woAny.old_system_type;
-            if (existingOldType && !project.inventoryEnabled) {
+            if (existingOldType) {
               updateData.newSystemType = existingOldType;
             }
           } else {
@@ -4163,7 +4166,7 @@ export async function registerRoutes(
             updateData.newSystemId = newSystemId;
             updateData.newSystemReading = newSystemReading;
             // For changeout, copy type from request if provided
-            if (newSystemType && !project.inventoryEnabled) {
+            if (newSystemType) {
               updateData.newSystemType = newSystemType;
             }
           }
@@ -4178,7 +4181,7 @@ export async function registerRoutes(
             updateData.newModuleRead = newModuleReading;
             // Copy type from old to new
             const existingOldModuleType = workOrder.oldModuleType || woAny.old_module_type;
-            if (existingOldModuleType && !project.inventoryEnabled) {
+            if (existingOldModuleType) {
               updateData.newModuleType = existingOldModuleType;
             }
           } else {
@@ -4187,7 +4190,7 @@ export async function registerRoutes(
             updateData.newModuleId = newModuleId;
             updateData.newModuleRead = newModuleReading;
             // For changeout, copy type from request if provided
-            if (newModuleType && !project.inventoryEnabled) {
+            if (newModuleType) {
               updateData.newModuleType = newModuleType;
             }
           }
@@ -7257,14 +7260,14 @@ export async function registerRoutes(
             }
             
             mappedData.status = String(mappedData.status || "pending");
-            mappedData.createdBy = currentUser.id;
+            mappedData.createdBy = currentUser.username;
             
             const existingWo = await workOrderStorage.getWorkOrderByCustomerWoId(mappedData.customerWoId);
             if (existingWo) {
-              await workOrderStorage.updateWorkOrder(existingWo.id, mappedData as any);
+              await workOrderStorage.updateWorkOrder(existingWo.id, mappedData as any, undefined, true);
             } else {
               const validated = insertProjectWorkOrderSchema.parse(mappedData);
-              await workOrderStorage.createWorkOrder(validated as any);
+              await workOrderStorage.createWorkOrder(validated as any, undefined, true);
             }
             imported++;
           } catch (rowError: any) {
@@ -10222,7 +10225,7 @@ export async function registerRoutes(
         } else if (isReadingOnly) {
           // In Reading Only mode, copy old system type to new system type if mobile doesn't provide it
           const existingOldType = (workOrder as any).oldSystemType || (workOrder as any).old_system_type;
-          if (existingOldType && !project.inventoryEnabled) {
+          if (existingOldType) {
             updateData.newSystemType = existingOldType;
           }
         }
@@ -10247,7 +10250,7 @@ export async function registerRoutes(
         } else if (isReadingOnly) {
           // In Reading Only mode, copy old module type to new module type if mobile doesn't provide it
           const existingOldModType = (workOrder as any).oldModuleType || (workOrder as any).old_module_type;
-          if (existingOldModType && !project.inventoryEnabled) {
+          if (existingOldModType) {
             updateData.newModuleType = existingOldModType;
           }
         }
@@ -10675,7 +10678,7 @@ export async function registerRoutes(
           updateData.newSystemReading = String(newSystemReading).trim();
           // Copy type from old to new
           const existingOldType = woAny.oldSystemType || woAny.old_system_type;
-          if (existingOldType && !project.inventoryEnabled) {
+          if (existingOldType) {
             updateData.newSystemType = existingOldType;
           }
         } else {
@@ -10704,7 +10707,7 @@ export async function registerRoutes(
           updateData.newModuleRead = String(newModuleReading).trim();
           // Copy type from old to new
           const existingOldModType = woAny.oldModuleType || woAny.old_module_type;
-          if (existingOldModType && !project.inventoryEnabled) {
+          if (existingOldModType) {
             updateData.newModuleType = existingOldModType;
           }
         } else {

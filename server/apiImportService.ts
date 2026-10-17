@@ -194,7 +194,7 @@ async function writeImportRecord(client: PoolClient, project: any, config: ApiIm
   const result = await client.query(`INSERT INTO ${table} (${writeColumns.map(c => `"${c}"`).join(",")},created_by)
     VALUES (${writeColumns.map((_,index) => `$${index+1}`).join(",")},NULL) ON CONFLICT(customer_wo_id) DO NOTHING RETURNING *,updated_at::text row_version`,
     writeValues);
-  if (result.rows.length) await inventoryWorkOrderChange(client, project.database_name, null, result.rows[0], undefined, mapped.inventoryItems);
+        if (result.rows.length) await inventoryWorkOrderChange(client, project.database_name, null, result.rows[0], undefined, mapped.inventoryItems, true);
   if (result.rows.length) await client.query(`INSERT INTO public.api_import_versions(project_id,work_order_id,customer_wo_id,row_version)
     VALUES($1,$2,$3,$4) ON CONFLICT(project_id,work_order_id) DO UPDATE SET customer_wo_id=EXCLUDED.customer_wo_id,row_version=EXCLUDED.row_version`,
     [project.id, result.rows[0].id, mapped.customerWoId, result.rows[0].row_version]);

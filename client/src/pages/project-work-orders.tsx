@@ -2858,7 +2858,6 @@ export default function ProjectWorkOrders() {
                               <Select 
                                 value={field.value || "__none__"} 
                                 onValueChange={(val) => field.onChange(val === "__none__" ? null : val)}
-                                disabled={(project as any)?.inventoryEnabled === true}
                               >
                                 <FormControl>
                                   <SelectTrigger data-testid="select-create-old-system-type" className="flex-1">
@@ -2876,7 +2875,6 @@ export default function ProjectWorkOrders() {
                                 type="button"
                                 size="icon"
                                 variant="outline"
-                                disabled={(project as any)?.inventoryEnabled === true}
                                 onClick={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
@@ -2946,7 +2944,6 @@ export default function ProjectWorkOrders() {
                               <Select 
                                 value={field.value || "__none__"} 
                                 onValueChange={(val) => field.onChange(val === "__none__" ? null : val)}
-                                disabled={(project as any)?.inventoryEnabled === true}
                               >
                                 <FormControl>
                                   <SelectTrigger data-testid="select-create-new-system-type" className="flex-1">
@@ -2964,7 +2961,6 @@ export default function ProjectWorkOrders() {
                                 type="button"
                                 size="icon"
                                 variant="outline"
-                                disabled={(project as any)?.inventoryEnabled === true}
                                 onClick={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
@@ -3046,7 +3042,6 @@ export default function ProjectWorkOrders() {
                             <Select 
                               value={field.value || "__none__"} 
                               onValueChange={(val) => field.onChange(val === "__none__" ? null : val)}
-                              disabled={(project as any)?.inventoryEnabled === true}
                             >
                               <FormControl>
                                 <SelectTrigger data-testid="select-create-old-module-type">
@@ -3118,7 +3113,6 @@ export default function ProjectWorkOrders() {
                             <Select 
                               value={field.value || "__none__"} 
                               onValueChange={(val) => field.onChange(val === "__none__" ? null : val)}
-                              disabled={(project as any)?.inventoryEnabled === true}
                             >
                               <FormControl>
                                 <SelectTrigger data-testid="select-create-new-module-type">

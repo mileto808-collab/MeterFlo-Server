@@ -255,14 +255,14 @@ class ImportScheduler {
             }
 
             mappedData.status = mappedData.status || "Open";
-            mappedData.createdBy = "system_import";
+            mappedData.createdBy = "file_import";
 
             const existingWo = await workOrderStorage.getWorkOrderByCustomerWoId(mappedData.customerWoId);
             if (existingWo) {
-              await workOrderStorage.updateWorkOrder(existingWo.id, mappedData);
+              await workOrderStorage.updateWorkOrder(existingWo.id, mappedData, undefined, true);
             } else {
               const validated = insertProjectWorkOrderSchema.parse(mappedData);
-              await workOrderStorage.createWorkOrder(validated as any);
+              await workOrderStorage.createWorkOrder(validated as any, undefined, true);
             }
             imported++;
           } catch (rowError: any) {
