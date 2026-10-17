@@ -14,6 +14,7 @@ import { exactReadingDto, exactReadingFields, capturedReadingText, readingParame
 import { inventoryWorkOrderChange, lockInventoryForSchema } from "./inventoryService";
 import { exportInventory, restoreInventory, validateInventoryBackup, type InventoryBackup } from "./inventoryBackup";
 import { installProjectSubStatuses, listSubStatuses, restoreSubStatusDefinitions } from "./workOrderSubStatuses";
+import { exportProjectRouting, restoreProjectRouting } from "./routing/configuration";
 
 function readingSetClauses(column: string, valueIndex: number, textIndex: number) {
   // Old clients may echo a rounded numeric compatibility field. Preserve the
@@ -1740,6 +1741,7 @@ async function backupProjectDatabaseData(schemaName: string): Promise<{
   version: string;
   inventory?: InventoryBackup;
   subStatuses?: unknown[];
+  routingConfiguration?: unknown;
 }> {
   await migrateProjectSchema(schemaName);
   const client = await pool.connect();
@@ -1800,6 +1802,7 @@ async function backupProjectDatabaseData(schemaName: string): Promise<{
     const inventory = await exportInventory(client, schemaName);
     const { rows:[scope] } = await client.query("SELECT id FROM public.projects WHERE database_name=$1",[schemaName]);
     const subStatuses = await listSubStatuses(scope?.id,client);
+    const routingConfiguration = scope?.id ? await exportProjectRouting(client,scope.id) : null;
     await client.query("COMMIT");
     return {
       schemaName,
@@ -1808,6 +1811,7 @@ async function backupProjectDatabaseData(schemaName: string): Promise<{
       version: "2.6",
       inventory,
       subStatuses,
+      routingConfiguration,
     };
   } finally {
     client.release();
@@ -1816,7 +1820,7 @@ async function backupProjectDatabaseData(schemaName: string): Promise<{
 
 // Restore project database from backup JSON
 export async function restoreProjectDatabase(
-  schemaName:string,backup:{workOrders:Array<Omit<ProjectWorkOrder,"id"|"createdAt"|"updatedAt">>;inventory?:InventoryBackup;subStatuses?:unknown[]},options:{clearExisting?:boolean}={}
+  schemaName:string,backup:{workOrders:Array<Omit<ProjectWorkOrder,"id"|"createdAt"|"updatedAt">>;inventory?:InventoryBackup;subStatuses?:unknown[];routingConfiguration?:unknown},options:{clearExisting?:boolean}={}
 ) {
   if (!auditingEnabled) return restoreProjectDatabaseData(schemaName,backup,options);
   const {rows:[scope]}=await pool.query("SELECT project_id,project_label FROM meterflo_audit.project_scopes WHERE schema_name=$1",[schemaName]);
@@ -1834,14 +1838,14 @@ export async function restoreProjectDatabaseInTransaction(
 
 async function restoreProjectDatabaseData(
   schemaName: string,
-  backup: { workOrders: Array<Omit<ProjectWorkOrder, "id" | "createdAt" | "updatedAt">>; inventory?: InventoryBackup; subStatuses?:unknown[] },
+  backup: { workOrders: Array<Omit<ProjectWorkOrder, "id" | "createdAt" | "updatedAt">>; inventory?: InventoryBackup; subStatuses?:unknown[];routingConfiguration?:unknown },
   options: { clearExisting?: boolean } = {},
   transactionClient?: PoolClient
 ): Promise<{ restored: number; errors: string[] }> {
   if (!transactionClient) await migrateProjectSchema(schemaName);
   const client = transactionClient ?? await pool.connect();
   const errors: string[] = [];
-  const atomic = !!backup.inventory || !!backup.subStatuses;
+  const atomic = !!backup.inventory || !!backup.subStatuses || backup.routingConfiguration !== undefined;
   let restored = 0;
   
   try {
@@ -1858,6 +1862,7 @@ async function restoreProjectDatabaseData(
         throw new Error("This backup has no inventory snapshot. Restore an inventory-aware backup to protect stock and work-order links.");
     }
     const subStatusMapping = backup.subStatuses ? await restoreSubStatusDefinitions(client,schemaName,backup.subStatuses) : new Map<string,string>();
+    if(backup.routingConfiguration!==undefined)await restoreProjectRouting(client,schemaName,backup.routingConfiguration);
     if (options.clearExisting) {
       await client.query(`DELETE FROM "${schemaName}".work_orders`);
     }

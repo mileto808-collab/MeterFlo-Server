@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowUpCircle } from "lucide-react";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { HttpLoginRecoveryAlert } from "@/components/http-login-recovery-alert";
+import { RouteSessionCleanup } from "@/components/work-order-routing/route-session-cleanup";
 
 import Landing from "@/pages/landing";
 import LoginPage from "@/pages/login";
@@ -307,6 +308,7 @@ function Router() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <RouteSessionCleanup />
       <TooltipProvider>
         <Router />
         <Toaster />

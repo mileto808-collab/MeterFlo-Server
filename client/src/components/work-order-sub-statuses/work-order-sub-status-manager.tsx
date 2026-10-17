@@ -26,6 +26,7 @@ export interface WorkOrderSubStatus {
   description: string | null;
   color: string | null;
   sortOrder: number;
+  routingPriority: number | null;
   active: boolean;
 }
 
@@ -47,6 +48,7 @@ interface FormState {
   description: string;
   color: string;
   sortOrder: string;
+  routingPriority: string;
   active: boolean;
 }
 
@@ -57,6 +59,7 @@ const blankForm: FormState = {
   description: "",
   color: "#64748b",
   sortOrder: "0",
+  routingPriority: "",
   active: true,
 };
 
@@ -108,6 +111,7 @@ export function WorkOrderSubStatusManager({ projectId, canEdit }: Props) {
           description: form.description.trim() || null,
           color: form.color || null,
           sortOrder: Number(form.sortOrder) || 0,
+          routingPriority: form.routingPriority.trim() === "" ? null : Number(form.routingPriority),
           active: form.active,
         });
       }
@@ -118,6 +122,7 @@ export function WorkOrderSubStatusManager({ projectId, canEdit }: Props) {
         description: form.description.trim() || null,
         color: form.color || null,
         sortOrder: Number(form.sortOrder) || 0,
+        routingPriority: form.routingPriority.trim() === "" ? null : Number(form.routingPriority),
         active: form.active,
       });
     },
@@ -159,11 +164,13 @@ export function WorkOrderSubStatusManager({ projectId, canEdit }: Props) {
       description: definition.description || "",
       color: definition.color || "#64748b",
       sortOrder: String(definition.sortOrder),
+      routingPriority: definition.routingPriority === null || definition.routingPriority === undefined ? "" : String(definition.routingPriority),
       active: definition.active,
     });
     setDialogOpen(true);
   };
   const updateForm = (patch: Partial<FormState>) => setForm(previous => ({ ...previous, ...patch }));
+  const routingPriorityValid = form.routingPriority.trim() === "" || (/^\d+$/.test(form.routingPriority.trim()) && Number(form.routingPriority) <= 100000);
 
   return (
     <Card data-testid={projectId ? "project-work-order-sub-statuses" : "global-work-order-sub-statuses"}>
@@ -208,6 +215,7 @@ export function WorkOrderSubStatusManager({ projectId, canEdit }: Props) {
                       <span className="text-xs text-muted-foreground">{definition.code}</span>
                       <Badge variant="outline">{definition.parentStatusLabel}</Badge>
                       {definition.projectId === null && <Badge variant="secondary">Shared</Badge>}
+                      {definition.routingPriority !== null && definition.routingPriority !== undefined && <Badge variant="outline">Route priority {definition.routingPriority}</Badge>}
                       {!definition.active && <Badge variant="outline">Inactive</Badge>}
                     </div>
                     {definition.description && <p className="mt-1 text-sm text-muted-foreground">{definition.description}</p>}
@@ -265,6 +273,12 @@ export function WorkOrderSubStatusManager({ projectId, canEdit }: Props) {
                 <Input id="sub-status-order" type="number" value={form.sortOrder} onChange={event => updateForm({ sortOrder: event.target.value })} />
               </div>
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="sub-status-routing-priority">Routing priority <span className="font-normal text-muted-foreground">(optional; lower is more urgent)</span></Label>
+              <Input id="sub-status-routing-priority" type="number" min="0" step="1" inputMode="numeric" value={form.routingPriority} onChange={event => updateForm({ routingPriority: event.target.value })} placeholder="Unrated" data-testid="sub-status-routing-priority" />
+              <p className="text-xs text-muted-foreground">Priority 0 is valid and ranks ahead of 1. Unrated values are considered after rated work; this does not change display order.</p>
+              {!routingPriorityValid && <p role="alert" className="text-xs text-destructive">Enter a whole number from 0 to 100,000 or leave it empty.</p>}
+            </div>
             <div className="flex items-center justify-between rounded-md border p-3">
               <div><Label htmlFor="sub-status-active">Active</Label><p className="text-xs text-muted-foreground">Inactive values remain visible on existing work orders.</p></div>
               <Switch id="sub-status-active" checked={form.active} onCheckedChange={active => updateForm({ active })} />
@@ -273,7 +287,7 @@ export function WorkOrderSubStatusManager({ projectId, canEdit }: Props) {
           </div>
           <DialogFooter className="flex-col-reverse gap-2 sm:flex-row">
             <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} disabled={saveMutation.isPending}>Cancel</Button>
-            <Button type="button" disabled={!form.label.trim() || (!editing && (!form.code.trim() || !form.parentStatusId)) || saveMutation.isPending} onClick={() => saveMutation.mutate()}>
+            <Button type="button" disabled={!form.label.trim() || !routingPriorityValid || (!editing && (!form.code.trim() || !form.parentStatusId)) || saveMutation.isPending} onClick={() => saveMutation.mutate()}>
               {saveMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{editing ? "Save changes" : "Create sub-status"}
             </Button>
           </DialogFooter>

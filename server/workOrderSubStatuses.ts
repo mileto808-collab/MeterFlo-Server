@@ -11,6 +11,7 @@ const mutable = z.object({
   description: z.string().trim().max(2000).nullable().optional(),
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).nullable().optional(),
   sortOrder: z.number().int().min(0).max(100000).optional(),
+  routingPriority: z.number().int().min(0).max(100000).nullable().optional(),
   active: z.boolean().optional(),
 });
 const createSchema = mutable.extend({ parentStatusId: z.number().int().positive(),
@@ -26,6 +27,7 @@ export async function initializeSubStatusTables(client: Pick<PoolClient, "query"
     project_id integer REFERENCES public.projects(id) ON DELETE CASCADE, code varchar(50) NOT NULL, label varchar(100) NOT NULL,
     description text, color varchar(20), sort_order integer NOT NULL DEFAULT 0, active boolean NOT NULL DEFAULT true,
     created_at timestamp DEFAULT now(), updated_at timestamp DEFAULT now());
+    ALTER TABLE public.work_order_sub_statuses ADD COLUMN IF NOT EXISTS routing_priority integer CHECK(routing_priority >= 0);
     CREATE UNIQUE INDEX IF NOT EXISTS work_order_sub_status_shared_code ON public.work_order_sub_statuses(parent_status_id,lower(code)) WHERE project_id IS NULL;
     CREATE UNIQUE INDEX IF NOT EXISTS work_order_sub_status_project_code ON public.work_order_sub_statuses(project_id,parent_status_id,lower(code)) WHERE project_id IS NOT NULL;
     CREATE OR REPLACE FUNCTION public.guard_work_order_sub_status_definition() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -99,7 +101,7 @@ export async function initializeWorkOrderSubStatuses() {
 
 export async function listSubStatuses(projectId?: number, client: Pick<PoolClient, "query"> = pool) {
   return (await client.query(`SELECT s.id,s.parent_status_id AS "parentStatusId",s.project_id AS "projectId",
-    s.code,s.label,s.description,s.color,s.sort_order AS "sortOrder",s.active,s.created_at AS "createdAt",s.updated_at AS "updatedAt",
+    s.code,s.label,s.description,s.color,s.sort_order AS "sortOrder",s.routing_priority AS "routingPriority",s.active,s.created_at AS "createdAt",s.updated_at AS "updatedAt",
     p.code AS "parentStatusCode",p.label AS "parentStatusLabel"
     FROM public.work_order_sub_statuses s JOIN public.work_order_statuses p ON p.id=s.parent_status_id
     WHERE s.project_id IS NULL ${projectId ? "OR s.project_id=$1" : ""} ORDER BY p.sort_order,s.sort_order,s.label`,
@@ -129,11 +131,11 @@ export async function restoreSubStatusDefinitions(client: Pick<PoolClient,"query
     if (!existing) {
       if (targetProject === null)
         throw new Error("Missing shared sub-status. Restore shared definitions through administrator Settings or a full-system backup first.");
-      await client.query(`INSERT INTO public.work_order_sub_statuses(id,parent_status_id,project_id,code,label,description,color,sort_order,active)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [id,parent.id,targetProject,d.code,d.label,d.description??null,d.color??null,d.sortOrder??0,d.active??true]);
+      await client.query(`INSERT INTO public.work_order_sub_statuses(id,parent_status_id,project_id,code,label,description,color,sort_order,active,routing_priority)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, [id,parent.id,targetProject,d.code,d.label,d.description??null,d.color??null,d.sortOrder??0,d.active??true,d.routingPriority??null]);
     } else if (targetProject !== null) {
-      await client.query(`UPDATE public.work_order_sub_statuses SET label=$2,description=$3,color=$4,sort_order=$5,active=$6,updated_at=now() WHERE id=$1`,
-        [id,d.label,d.description??null,d.color??null,d.sortOrder??0,d.active??true]);
+      await client.query(`UPDATE public.work_order_sub_statuses SET label=$2,description=$3,color=$4,sort_order=$5,active=$6,routing_priority=$7,updated_at=now() WHERE id=$1`,
+        [id,d.label,d.description??null,d.color??null,d.sortOrder??0,d.active??true,d.routingPriority??null]);
     }
     mapping.set(d.id,id);
   }
@@ -177,15 +179,15 @@ export function registerWorkOrderSubStatusRoutes(app: Express) {
     app.post(base, isAuthenticated, authorize, async (req, res) => {
       try {
         const d = createSchema.parse(req.body), id = randomUUID();
-        await pool.query(`INSERT INTO public.work_order_sub_statuses(id,parent_status_id,project_id,code,label,description,color,sort_order,active)
-          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [id,d.parentStatusId,res.locals.subStatusProjectId ?? null,d.code,d.label,d.description ?? null,d.color ?? null,d.sortOrder ?? 0,d.active ?? true]);
+        await pool.query(`INSERT INTO public.work_order_sub_statuses(id,parent_status_id,project_id,code,label,description,color,sort_order,active,routing_priority)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, [id,d.parentStatusId,res.locals.subStatusProjectId ?? null,d.code,d.label,d.description ?? null,d.color ?? null,d.sortOrder ?? 0,d.active ?? true,d.routingPriority??null]);
         res.status(201).json((await listSubStatuses(res.locals.subStatusProjectId)).find(s => s.id === id));
       } catch (err) { error(err, res); }
     });
     app.patch(`${base}/:id`, isAuthenticated, authorize, async (req, res) => {
       try {
         const id = z.string().uuid().parse(req.params.id), d = patchSchema.parse(req.body);
-        const columns: Record<string,string> = { label:"label", description:"description", color:"color", sortOrder:"sort_order", active:"active" };
+        const columns: Record<string,string> = { label:"label", description:"description", color:"color", sortOrder:"sort_order", active:"active", routingPriority:"routing_priority" };
         const entries = Object.entries(d), values: any[] = entries.map(([,value]) => value);
         values.push(id,res.locals.subStatusProjectId ?? null);
         const result = await pool.query(`UPDATE public.work_order_sub_statuses SET ${entries.map(([key],i)=>`${columns[key]}=$${i+1}`).join(",")},updated_at=now()

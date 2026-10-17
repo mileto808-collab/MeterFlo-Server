@@ -1,4 +1,5 @@
 import { drizzleInventoryClient, readRelationalInventory } from "./inventoryRelational";
+import { sanitizeGenericProjectSettings } from "../shared/project-settings-boundary";
 import {
   users,
   projects,
@@ -453,15 +454,16 @@ export class DatabaseStorage implements IStorage {
 
   // Project operations
   async getProjects(): Promise<Project[]> {
-    return await db.select().from(projects).orderBy(desc(projects.createdAt));
+    return (await db.select().from(projects).orderBy(desc(projects.createdAt))).map(project=>({...project,routingConfiguration:null}));
   }
 
   async getProject(id: number): Promise<Project | undefined> {
     const [project] = await db.select().from(projects).where(eq(projects.id, id));
-    return project;
+    return project ? {...project,routingConfiguration:null} : undefined;
   }
 
   async createProject(project: InsertProject): Promise<Project> {
+    project = sanitizeGenericProjectSettings(project);
     const [newProject] = await db.insert(projects).values({
       name: project.name,
       description: project.description,
@@ -470,15 +472,17 @@ export class DatabaseStorage implements IStorage {
       systemReadingDecimalPlaces: project.systemReadingDecimalPlaces ?? 3,
       moduleReadingDecimalPlaces: project.moduleReadingDecimalPlaces ?? 3,
     }).returning();
-    return newProject;
+    return {...newProject,routingConfiguration:null};
   }
 
   async createProjectWithFullData(project: Partial<InsertProject> & { name: string }): Promise<Project> {
+    project = sanitizeGenericProjectSettings(project);
     const [newProject] = await db.insert(projects).values(project as InsertProject).returning();
-    return newProject;
+    return {...newProject,routingConfiguration:null};
   }
 
   async updateProject(id: number, project: Partial<InsertProject>): Promise<Project | undefined> {
+    project = sanitizeGenericProjectSettings(project);
     if (Object.hasOwn(project, "inventoryEnabled")) return db.transaction(async tx => {
       await tx.execute(sql`SELECT id FROM public.projects WHERE id=${id} FOR UPDATE`);
       const state = await readRelationalInventory(drizzleInventoryClient(tx), id);
@@ -488,14 +492,14 @@ export class DatabaseStorage implements IStorage {
          state.counts.some(c => c.status === "open") || state.returns.some(r => r.disposition === "returned" && ["pending", "quarantine"].includes(r.status))))
         throw new InventoryError("Resolve reservations, open orders, counts and returns before disabling inventory.");
       const [updated] = await tx.update(projects).set({ ...project, updatedAt: new Date() }).where(eq(projects.id, id)).returning();
-      return updated;
+      return updated ? {...updated,routingConfiguration:null} : undefined;
     });
     const [updated] = await db
       .update(projects)
       .set({ ...project, updatedAt: new Date() })
       .where(eq(projects.id, id))
       .returning();
-    return updated;
+    return updated ? {...updated,routingConfiguration:null} : undefined;
   }
 
   async updateProjectDatabaseName(id: number, databaseName: string): Promise<Project | undefined> {
@@ -504,7 +508,7 @@ export class DatabaseStorage implements IStorage {
       .set({ databaseName, updatedAt: new Date() })
       .where(eq(projects.id, id))
       .returning();
-    return updated;
+    return updated ? {...updated,routingConfiguration:null} : undefined;
   }
 
   async deleteProject(id: number): Promise<boolean> {
@@ -543,7 +547,7 @@ export class DatabaseStorage implements IStorage {
     
     for (const projectId of projectIds) {
       const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
-      if (project) projectList.push(project);
+      if (project) projectList.push({...project,routingConfiguration:null});
     }
     
     return projectList;

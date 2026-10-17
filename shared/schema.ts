@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, serial, jsonb, index, uniqueIndex, primaryKey, boolean, uuid } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, serial, jsonb, index, uniqueIndex, primaryKey, boolean, uuid, date } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -104,6 +104,9 @@ export const projects = pgTable("projects", {
   databaseName: varchar("database_name", { length: 255 }),
   isActive: boolean("is_active").default(true),
   inventoryEnabled: boolean("inventory_enabled").notNull().default(false),
+  // Dedicated routing endpoints manage this metadata; ordinary project DTOs
+  // redact it so environment references are not general project information.
+  routingConfiguration: jsonb("routing_configuration"),
   webhookUrl: varchar("webhook_url", { length: 500 }),
   webhookEnabled: boolean("webhook_enabled").default(false),
   customerApiEnabled: boolean("customer_api_enabled").default(false),
@@ -300,6 +303,13 @@ export const systemSettings = pgTable("system_settings", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Operational quota state, deliberately excluded from business backup payloads.
+export const routingDailyUsage = pgTable("routing_daily_usage", {
+  accountHash: varchar("account_hash", { length: 64 }).notNull(),
+  usageDay: date("usage_day").notNull(),
+  plans: integer("plans").notNull().default(0),
+}, table => [primaryKey({ columns: [table.accountHash, table.usageDay] })]);
+
 // Instance-wide Android distribution, independent of project files and native update URLs.
 export const mobileApkReleases = pgTable("mobile_apk_releases", {
   id: text("id").primaryKey(),
@@ -475,6 +485,7 @@ export const workOrderSubStatuses = pgTable("work_order_sub_statuses", {
   description: text("description"),
   color: varchar("color", { length: 20 }),
   sortOrder: integer("sort_order").notNull().default(0),
+  routingPriority: integer("routing_priority"),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),

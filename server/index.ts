@@ -29,6 +29,7 @@ import { initializeAudit } from "./auditMigration";
 import { reconcileAuditOperations, startAuditRetention } from "./auditService";
 import { initializeInventory } from "./inventoryMigration";
 import { requestLogging } from "./requestLogging";
+import { initializeRouting } from "./routing/configuration";
 
 const app = express();
 
@@ -98,6 +99,7 @@ app.use(requestLogging(log));
 (async () => {
   // Initialize persistent file logging
   initializeLogger();
+  await initializeRouting();
   await initializeReadingPrecision(pool);
   await initializeProjectExactReadings(pool);
   await initializeCustomerApi();

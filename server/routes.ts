@@ -1,4 +1,10 @@
-import type { Express } from "express";
+import type { Express, RequestHandler } from "express";
+import { registerRoutingRoutes } from "./routing/routes";
+import { sanitizeGenericProjectSettings } from "../shared/project-settings-boundary";
+const projectRoutingWriteBoundary: RequestHandler = (req, res, next) => {
+  try { req.body = sanitizeGenericProjectSettings(req.body ?? {}); next(); }
+  catch { res.status(400).json({message:"Routing configuration must be changed through the dedicated Maps & Routing settings."}); }
+};
 import { createServer, type Server } from "http";
 import path from "path";
 import os from "os";
@@ -223,6 +229,7 @@ export async function registerRoutes(
   await storage.seedDefaultWorkOrderStatuses();
   await initializeWorkOrderSubStatuses();
   registerWorkOrderSubStatusRoutes(app);
+  registerRoutingRoutes(app);
   await storage.syncPermissionsFromRegistry();
   await storage.ensureDefaultSubroles();
   registerApiImportRoutes(app);
@@ -1696,7 +1703,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/projects", isAuthenticated, async (req: any, res) => {
+  app.post("/api/projects", isAuthenticated, projectRoutingWriteBoundary, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       if (!currentUser) {
@@ -1754,7 +1761,7 @@ export async function registerRoutes(
   });
 
   // Copy project endpoint - creates a new project with same settings
-  app.post("/api/projects/:id/copy", isAuthenticated, async (req: any, res) => {
+  app.post("/api/projects/:id/copy", isAuthenticated, projectRoutingWriteBoundary, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       if (!currentUser) {
@@ -1848,7 +1855,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/projects/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/projects/:id", isAuthenticated, projectRoutingWriteBoundary, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       if (!currentUser) {

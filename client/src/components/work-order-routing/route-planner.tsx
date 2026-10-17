@@ -1,0 +1,402 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle, ArrowLeft, Check, ChevronRight, Loader2, Map, MapPin, Navigation, Route, Settings2 } from "lucide-react";
+import type { ProjectWorkOrder } from "../../../../server/projectDb";
+import type { RoutePoint, RoutingReadiness, RoutingResult } from "@shared/workOrderRouting";
+import { navigationLinks } from "@shared/workOrderRouting";
+import { useAuth } from "@/hooks/useAuth";
+import { useToast } from "@/hooks/use-toast";
+import { usePageHeader } from "@/contexts/page-header-context";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { RoutingSettings } from "./routing-settings";
+import { routeSessionStorage as sessionStorage } from "./session-storage";
+
+type DisplayMode = "list" | "map" | "both";
+type OriginChoice = RoutePoint | { address: string };
+type Props = {
+  projectId: number;
+  projectName: string;
+  timezone: string;
+  workOrders: ProjectWorkOrder[];
+  selectedIds: number[];
+  onOpenWorkOrder: (workOrder: ProjectWorkOrder) => void;
+  onBack: () => void;
+};
+type MapConfig = { provider: "google" | "geoapify"; browserKey: string };
+
+const errorMessage = async (response: Response) => {
+  try { const payload = await response.json(); return payload.message || payload.error || "Route request failed"; }
+  catch { return `Route request failed (${response.status})`; }
+};
+const routeRequestIds = (route: RoutingResult) => [
+  ...route.stops.map(stop => stop.id),
+  ...route.excluded.map(stop => stop.id),
+];
+const routeExpired = (route: RoutingResult) => {
+  const expiresAt = Date.parse(route.expiresAt);
+  return !Number.isFinite(expiresAt) || Date.now() >= expiresAt;
+};
+const localInputForTimezone = (date: Date, timezone: string) => {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}`;
+};
+const isoFromZonedInput = (value: string, timezone: string) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
+  if (!match) throw new Error("Choose a valid departure time.");
+  const [, year, month, day, hour, minute] = match.map(Number) as unknown as [string, number, number, number, number, number];
+  const wallTime = Date.UTC(year, month - 1, day, hour, minute);
+  const offsetAt = (instant: number) => {
+    const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).formatToParts(new Date(instant));
+    const p = Object.fromEntries(parts.map(part => [part.type, Number(part.value)]));
+    return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) - instant;
+  };
+  let instant = wallTime - offsetAt(wallTime);
+  instant = wallTime - offsetAt(instant);
+  if (localInputForTimezone(new Date(instant), timezone) !== value)
+    throw new Error("That local departure time does not exist due to a time-zone clock change. Choose another time.");
+  return new Date(instant).toISOString();
+};
+
+function MapView({ projectId, result, config, retryKey, configError }: { projectId: number; result: RoutingResult; config: MapConfig | undefined; retryKey: number; configError?: string }) {
+  const host = useRef<HTMLDivElement>(null);
+  const [failure, setFailure] = useState("");
+  useEffect(() => {
+    if (!host.current || !config || !result.geometry.length || config.provider === "google" || config.provider !== result.provider) return;
+    let cancelled = false;
+    let cleanup: (() => void) | undefined;
+    setFailure("");
+    const loadScript = (src: string, id: string) => new Promise<void>((resolve, reject) => {
+      const existing = document.getElementById(id) as HTMLScriptElement | null;
+      if (existing?.dataset.loaded === "true") { resolve(); return; }
+      if (existing) {
+        existing.remove();
+      }
+      const script = document.createElement("script");
+      script.id = id; script.src = src; script.async = true;
+      const timeout = window.setTimeout(() => { script.remove(); reject(new Error("Map library loading timed out. Check your network and try again.")); }, 12000);
+      script.onload = () => { window.clearTimeout(timeout); script.dataset.loaded = "true"; resolve(); };
+      script.onerror = () => { window.clearTimeout(timeout); script.remove(); reject(new Error("Map library failed to load. Check your network and try again.")); };
+      document.head.appendChild(script);
+    });
+    const loadCss = (href: string, id: string) => {
+      if (!document.getElementById(id)) { const link = document.createElement("link"); link.id = id; link.rel = "stylesheet"; link.href = href; document.head.appendChild(link); }
+    };
+    const render = async () => {
+      try {
+        if (!config.browserKey?.trim()) throw new Error("A public, restricted browser map key is not configured for this provider.");
+        loadCss("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css", "meterflo-leaflet-css");
+        await loadScript("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js", "meterflo-leaflet-js");
+        if (cancelled) return;
+        const L = (window as any).L;
+        if (!L || !host.current) throw new Error("Geoapify map could not initialize. Check browser key restrictions.");
+        const map = L.map(host.current, { scrollWheelZoom: false, zoomControl: true }).setView([result.origin.lat, result.origin.lng], 10);
+        const tiles = L.tileLayer(`https://maps.geoapify.com/v1/tile/osm-carto/{z}/{x}/{y}.png?apiKey=${encodeURIComponent(config.browserKey)}`, { attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors · <a href="https://www.geoapify.com/">Geoapify</a>', maxZoom: 20 });
+        tiles.on("tileerror", () => { if (!cancelled) setFailure("Geoapify map tiles could not load. Check the public browser key, domain restrictions and tile quota."); });
+        tiles.addTo(map);
+        const latlngs = result.geometry.map(point => [point.lat, point.lng]);
+        L.polyline(latlngs, { color: "#b54b2c", weight: 5, opacity: 0.94 }).addTo(map);
+        result.stops.forEach((stop, index) => {
+          const tooltip = document.createElement("span");
+          tooltip.textContent = `${index + 1}. ${stop.label}`;
+          L.marker([stop.point.lat, stop.point.lng], { icon: L.divIcon({ className: "meterflo-route-marker", html: `<span>${index + 1}</span>`, iconSize: [30, 30], iconAnchor: [15, 15] }) }).bindTooltip(tooltip).addTo(map);
+        });
+        map.fitBounds(L.latLngBounds(latlngs), { padding: [24, 24] });
+        cleanup = () => map.remove();
+      } catch (error) { if (!cancelled) setFailure(error instanceof Error ? error.message : "Map could not be loaded."); }
+    };
+    void render();
+    return () => { cancelled = true; cleanup?.(); };
+  }, [projectId, result, config, retryKey]);
+  const googleMapHtml = useMemo(() => {
+    if (config?.provider !== "google" || config.provider !== result.provider || !config.browserKey || !result.geometry.length) return "";
+    const geometry = JSON.stringify(result.geometry).replace(/</g, "\\u003c");
+    const stops = JSON.stringify(result.stops.map(stop => stop.point)).replace(/</g, "\\u003c");
+    const callback = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>html,body,#map{height:100%;margin:0;background:#f1ede6}.gm-error{font:14px system-ui;padding:22px;color:#55372d}</style></head><body><div id="map"></div><script>const geometry=${geometry};const stops=${stops};let loaded=false;function fail(){document.body.innerHTML='<p class="gm-error">Google Maps could not load. Check the restricted browser key, enabled Maps JavaScript API and network access.</p>'}window.gm_authFailure=fail;setTimeout(()=>{if(!loaded)fail()},15000);function initMap(){loaded=true;try{const map=new google.maps.Map(document.getElementById("map"),{center:geometry[0],zoom:10,mapTypeControl:false,streetViewControl:false,fullscreenControl:false});const bounds=new google.maps.LatLngBounds();const path=geometry.map(p=>{const v=new google.maps.LatLng(p.lat,p.lng);bounds.extend(v);return v});new google.maps.Polyline({path,geodesic:true,strokeColor:"#b54b2c",strokeOpacity:.94,strokeWeight:5,map});stops.forEach((p,i)=>{const v=new google.maps.LatLng(p.lat,p.lng);bounds.extend(v);new google.maps.Marker({position:v,map,label:String(i+1)});});map.fitBounds(bounds,36)}catch(e){fail()}}const script=document.createElement("script");script.src="https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(config.browserKey)}&callback=initMap";script.async=true;script.onerror=fail;document.head.appendChild(script);</script></body></html>`;
+    return callback;
+  }, [config, result]);
+  if (config && config.provider !== result.provider) {
+    return <div className="flex min-h-64 items-center justify-center rounded-xl border border-amber-300 bg-amber-50 p-6 text-center text-sm text-amber-950">The route’s provider configuration changed. Review the stale-route warning and re-plan before loading this map.</div>;
+  }
+  if (config?.provider === "google") {
+    return <iframe key={retryKey} title="Google Maps road route" sandbox="allow-scripts allow-same-origin" referrerPolicy="strict-origin-when-cross-origin" srcDoc={googleMapHtml} className="h-[360px] w-full rounded-xl border bg-muted/30 sm:h-[480px]" data-testid="routing-map" />;
+  }
+  if (!config) return <div className="flex min-h-64 items-center justify-center rounded-xl border border-dashed bg-muted/20 p-6 text-center text-sm text-muted-foreground">{configError || "Map display is not configured."} The ordered route remains available in the stop list.</div>;
+  return <div className="relative"><style>{`.meterflo-route-marker{background:transparent;border:0}.meterflo-route-marker span{display:flex;width:30px;height:30px;align-items:center;justify-content:center;border:2px solid #f7f0e7;border-radius:9999px;background:#b54b2c;color:#fff;font:700 13px/1 system-ui,sans-serif;box-shadow:0 2px 8px rgba(25,38,42,.28)}`}</style><div ref={host} className="h-[360px] w-full rounded-xl border bg-muted/30 sm:h-[480px]" data-testid="routing-map" />{failure && <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-xl bg-background/95 p-6 text-center"><AlertTriangle className="h-6 w-6 text-amber-700" /><p className="max-w-md text-sm">{failure}</p><p className="text-xs text-muted-foreground">The route geometry is still available as a list; no map is being represented as successfully loaded.</p></div>}</div>;
+}
+
+export function RoutePlanner({ projectId, projectName, timezone, workOrders, selectedIds, onOpenWorkOrder, onBack }: Props) {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const { setHeaderContent } = usePageHeader();
+  const readinessUrl = `/api/projects/${projectId}/routing/settings`;
+  const { data: readiness, isLoading: readinessLoading, isError: readinessError, refetch } = useQuery<RoutingReadiness>({
+    queryKey: [readinessUrl],
+    queryFn: async () => { const response = await fetch(readinessUrl, { credentials: "include" }); if (!response.ok) throw new Error(await errorMessage(response)); return response.json(); },
+  });
+  const [setupOpen, setSetupOpen] = useState(true);
+  const [mode, setMode] = useState<DisplayMode>("both");
+  const [scope, setScope] = useState<"filtered" | "selected">("filtered");
+  const [departure, setDeparture] = useState(() => localInputForTimezone(new Date(Date.now() + 15 * 60000), timezone));
+  const [serviceMinutes, setServiceMinutes] = useState("45");
+  const [toleranceMinutes, setToleranceMinutes] = useState("10");
+  const [originMode, setOriginMode] = useState<"device" | "manual">("device");
+  const [manualAddress, setManualAddress] = useState("");
+  const [locationMessage, setLocationMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<RoutingResult | null>(null);
+  const [staleMessage, setStaleMessage] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [mapRetry, setMapRetry] = useState(0);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [validationMessage, setValidationMessage] = useState("");
+  const [restoreChecked, setRestoreChecked] = useState(false);
+  const resultOwnerRef = useRef<string | null>(null);
+  const activeKey = `meterflo:active-route:${user?.id ?? "unknown"}:${projectId}`;
+  useEffect(() => {
+    setHeaderContent(
+      <div className="flex min-w-0 items-center gap-3">
+        <Button type="button" size="icon" variant="ghost" onClick={onBack} aria-label="Back to work orders" data-testid="routing-header-back">
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <div className="min-w-0">
+          <span className="block truncate text-sm font-semibold">{projectName}</span>
+          <span className="block text-xs text-muted-foreground">Scheduled route</span>
+        </div>
+      </div>,
+    );
+    return () => setHeaderContent(null);
+  }, [onBack, projectName, setHeaderContent]);
+  useEffect(() => {
+    const prefix = "meterflo:active-route:";
+    if (user === undefined) return;
+    const allowed = user ? `${prefix}${user.id}:` : "";
+    for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
+      const key = sessionStorage.key(index);
+      if (key?.startsWith(prefix) && (!allowed || !key.startsWith(allowed))) sessionStorage.removeItem(key);
+    }
+  }, [user?.id, user === null]);
+  const candidates = useMemo(() => {
+    const source = scope === "selected" && selectedIds.length ? workOrders.filter(order => selectedIds.includes(order.id)) : workOrders;
+    return source.filter(order => order.status?.toLowerCase() === "scheduled");
+  }, [scope, selectedIds, workOrders]);
+  const nonScheduled = useMemo(() => {
+    const source = scope === "selected" && selectedIds.length ? workOrders.filter(order => selectedIds.includes(order.id)) : workOrders;
+    return source.length - source.filter(order => order.status?.toLowerCase() === "scheduled").length;
+  }, [scope, selectedIds, workOrders]);
+  const fetchMapConfig = useCallback(async (): Promise<MapConfig> => {
+    const response = await fetch(`/api/projects/${projectId}/routing/map-config`, { credentials: "include" });
+    if (!response.ok) throw new Error(await errorMessage(response));
+    return response.json() as Promise<MapConfig>;
+  }, [projectId]);
+  const { data: mapConfig, isError: mapConfigFailed, error: mapConfigQueryError } = useQuery<MapConfig>({
+    queryKey: ["/api/projects", projectId, "routing", "map-config", result?.configurationRevision],
+    queryFn: fetchMapConfig,
+    enabled: !!result && (mode === "map" || mode === "both"),
+    retry: false,
+  });
+  const mapConfigError = mapConfigFailed ? (mapConfigQueryError instanceof Error ? mapConfigQueryError.message : "Public map configuration could not be loaded.") : undefined;
+
+  const validateResult = useCallback(async (route: RoutingResult, signalStale = true) => {
+    if (routeExpired(route)) {
+      sessionStorage.removeItem(activeKey);
+      resultOwnerRef.current = null;
+      setResult(null);
+      setSetupOpen(true);
+      setStaleMessage("");
+      setValidationMessage("This route has expired. Review the current work orders and plan again.");
+      return true;
+    }
+    try {
+      const response = await fetch(`/api/projects/${projectId}/routing/validate`, {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: routeRequestIds(route), fingerprint: route.fingerprint, configurationRevision: route.configurationRevision }),
+      });
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          sessionStorage.removeItem(activeKey);
+          resultOwnerRef.current = null;
+          setResult(null);
+          setStaleMessage("");
+          setValidationMessage("Route access was revoked or has expired. The saved route has been cleared.");
+          onBack();
+          return true;
+        }
+        throw new Error(await errorMessage(response));
+      }
+      const state = await response.json() as { stale: boolean };
+      if (state.stale && signalStale) setStaleMessage("Appointments, order details, priorities or routing settings changed. This sequence is preserved but needs review.");
+      if (!state.stale && signalStale) setStaleMessage("");
+      return state.stale;
+    } catch (error) {
+      setValidationMessage(error instanceof Error ? error.message : "Route access could not be verified.");
+      return true;
+    }
+  }, [projectId, activeKey, onBack]);
+
+  useEffect(() => {
+    let cancelled = false;
+    resultOwnerRef.current = null;
+    setResult(null);
+    setRestoreChecked(false);
+    const restore = async () => {
+      try {
+        const stored = sessionStorage.getItem(activeKey);
+        if (!stored) { setRestoreChecked(true); return; }
+        const parsed = JSON.parse(stored) as { expiresAt: string; result: RoutingResult; mode: DisplayMode; activeIndex: number };
+        if (new Date(parsed.expiresAt).getTime() <= Date.now() || routeExpired(parsed.result) || parsed.result.projectId !== projectId) { sessionStorage.removeItem(activeKey); setRestoreChecked(true); return; }
+        const response = await fetch(`/api/projects/${projectId}/routing/validate`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: routeRequestIds(parsed.result), fingerprint: parsed.result.fingerprint, configurationRevision: parsed.result.configurationRevision }) });
+        if (!response.ok) {
+          sessionStorage.removeItem(activeKey);
+          if (response.status === 401 || response.status === 403) { setValidationMessage("Saved route was removed because route access is no longer available."); onBack(); }
+          else setValidationMessage("Saved route was removed because access could not be verified.");
+          setRestoreChecked(true);
+          return;
+        }
+        const validity = await response.json() as { stale: boolean };
+        if (cancelled) return;
+        if (validity.stale) { sessionStorage.removeItem(activeKey); setValidationMessage("Saved route is out of date and was not restored. Re-plan from current scheduled work."); }
+        else { resultOwnerRef.current = user?.id ?? null; setResult(parsed.result); setMode(parsed.mode); setActiveIndex(parsed.activeIndex || 0); setSetupOpen(false); }
+      } catch { sessionStorage.removeItem(activeKey); }
+      if (!cancelled) setRestoreChecked(true);
+    };
+    void restore();
+    return () => { cancelled = true; };
+  }, [activeKey, projectId, user?.id, onBack]);
+  useEffect(() => {
+    if (!restoreChecked || !result || resultOwnerRef.current !== user?.id) return;
+    if (!sessionStorage.setItem(activeKey, JSON.stringify({ expiresAt: result.expiresAt, result, mode, activeIndex })))
+      setValidationMessage("Browser storage is unavailable. This route works here, but cannot be recovered after refresh.");
+  }, [activeKey, result, mode, activeIndex, restoreChecked, user?.id]);
+  useEffect(() => {
+    const check = () => { if (result) void validateResult(result); };
+    check();
+    const interval = window.setInterval(check, 20000);
+    window.addEventListener("focus", check);
+    return () => { window.clearInterval(interval); window.removeEventListener("focus", check); };
+  }, [result, validateResult]);
+  useEffect(() => {
+    if (result) {
+      void validateResult(result);
+    }
+    // React Query work-order refreshes may change cache references; route result remains stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workOrders]);
+
+  const getDeviceOrigin = () => new Promise<RoutePoint>((resolve, reject) => {
+    if (!navigator.geolocation) { reject(new Error("Device location is unavailable in this browser. Enter a starting address instead.")); return; }
+    navigator.geolocation.getCurrentPosition(position => resolve({ lat: position.coords.latitude, lng: position.coords.longitude }), error => {
+      const reasons: Record<number, string> = { 1: "Location permission was denied. Enter a starting address to continue.", 2: "Device location could not be determined. Enter a starting address to continue.", 3: "Location request timed out. Enter a starting address to continue." };
+      reject(new Error(reasons[error.code] || "Device location failed. Enter a starting address to continue."));
+    }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
+  });
+  const plan = async () => {
+    if (!candidates.length) { setValidationMessage("No scheduled work orders match this scope. Adjust the grid filters or select scheduled orders."); return; }
+    if (readiness?.ready !== true) { setValidationMessage("Routing is not ready. Configure the provider before planning."); return; }
+    if (candidates.length > readiness.effective.maxStops) { setValidationMessage(`This scope has ${candidates.length} scheduled orders; the configured limit is ${readiness.effective.maxStops}. Narrow the filters or configure a higher limit.`); return; }
+    const serviceValue = Number(serviceMinutes);
+    const toleranceValue = Number(toleranceMinutes);
+    if (!Number.isInteger(serviceValue) || serviceValue < 1 || serviceValue > 120) { setValidationMessage("On-site service must be a whole number from 1 to 120 minutes."); return; }
+    if (!Number.isInteger(toleranceValue) || toleranceValue < 0 || toleranceValue > 60) { setValidationMessage("Appointment tolerance must be a whole number from 0 to 60 minutes."); return; }
+    setBusy(true); setValidationMessage(""); setLocationMessage("");
+    try {
+      let origin: OriginChoice;
+      if (originMode === "device") {
+        try { origin = await getDeviceOrigin(); }
+        catch (error) { setLocationMessage(error instanceof Error ? error.message : "Device location unavailable."); setOriginMode("manual"); setBusy(false); return; }
+      } else {
+        if (!manualAddress.trim()) { setValidationMessage("Enter the starting address."); setBusy(false); return; }
+        origin = { address: manualAddress.trim() };
+      }
+      const response = await fetch(`/api/projects/${projectId}/routing/plan`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: candidates.map(order => order.id), origin, departureAt: isoFromZonedInput(departure, timezone), serviceMinutes: Number(serviceMinutes), toleranceMinutes: Number(toleranceMinutes) }) });
+      if (!response.ok) throw new Error(await errorMessage(response));
+      const planned = await response.json() as RoutingResult;
+      if (!planned.stops?.length && !planned.excluded?.length) throw new Error("Provider returned no stops or exclusion details. No route was activated.");
+      if (planned.stops.length > 0 && !planned.geometry?.length) throw new Error("Provider returned stops without road geometry. No route was activated.");
+      const providerExpiry = Date.parse(planned.expiresAt);
+      const shortCacheExpiry = Date.parse(planned.createdAt) + 4 * 60 * 60 * 1000;
+      if (!Number.isFinite(providerExpiry) || !Number.isFinite(shortCacheExpiry)) throw new Error("Route provider returned an invalid expiry; no route was activated.");
+      const clientExpiry = Math.min(providerExpiry, shortCacheExpiry);
+      if (clientExpiry <= Date.now()) throw new Error("The provider returned an already-expired route. Plan again.");
+      const safelyExpiringResult = { ...planned, expiresAt: new Date(clientExpiry).toISOString() };
+      resultOwnerRef.current = user?.id ?? null;
+      setResult(safelyExpiringResult); setStaleMessage(""); setActiveIndex(0); setSetupOpen(false);
+      await queryClient.invalidateQueries({ queryKey: [readinessUrl] });
+    } catch (error) { setValidationMessage(error instanceof Error ? error.message : "Route could not be planned."); }
+    finally { setBusy(false); }
+  };
+  const selectedStop = result?.stops[activeIndex];
+  const startReplan = () => {
+    sessionStorage.removeItem(activeKey);
+    setResult(null);
+    setSetupOpen(true);
+    setStaleMessage("");
+  };
+  const navigateWithMaps = (provider: "apple" | "google") => {
+    if (result && routeExpired(result)) {
+      sessionStorage.removeItem(activeKey);
+      resultOwnerRef.current = null;
+      setResult(null);
+      setSetupOpen(true);
+      setValidationMessage("This route has expired. Review the current work orders and plan again.");
+      return;
+    }
+    if (!selectedStop) return;
+    const links = navigationLinks(selectedStop.point);
+    // Direct navigation in the gesture handler: no asynchronous popup can be blocked.
+    window.location.assign(links[provider]);
+  };
+  const preferredMapsProvider = /iPad|iPhone|iPod/.test(navigator.userAgent) ? "apple" : "google";
+  const alternateMapsProvider = preferredMapsProvider === "apple" ? "google" : "apple";
+  const clearRoute = () => {
+    sessionStorage.removeItem(activeKey); resultOwnerRef.current = null; setResult(null); setStaleMessage(""); setSetupOpen(true); setActiveIndex(0);
+  };
+
+  if (!restoreChecked || readinessLoading || (result !== null && resultOwnerRef.current !== (user?.id ?? null))) return <main className="mx-auto max-w-5xl space-y-4 p-4 sm:p-6" data-testid="routing-loading"><div className="h-8 w-44 animate-pulse rounded bg-muted" /><div className="h-48 animate-pulse rounded-xl bg-muted" /></main>;
+  return (
+    <main className="mx-auto min-h-[70dvh] max-w-7xl space-y-5 p-3 pb-24 sm:p-6" data-testid="route-planner">
+      <div className="flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-center sm:justify-between">
+        <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Field route · {projectName}</p><h1 className="text-2xl font-semibold tracking-tight">Scheduled stops</h1></div>
+        <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setSettingsOpen(true)} data-testid="project-routing-settings-open"><Settings2 className="mr-2 h-4 w-4" />Project settings</Button>{result && <Button variant="outline" onClick={startReplan} data-testid="route-replan"><Route className="mr-2 h-4 w-4" />Re-plan</Button>}</div>
+      </div>
+      {readinessError && <div className="rounded-lg border border-destructive/30 p-4 text-sm"><span>Could not check routing access or readiness. </span><Button variant="ghost" onClick={() => refetch()}>Try again</Button></div>}
+      {validationMessage && <div role="alert" className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"><AlertTriangle className="h-4 w-4 shrink-0" />{validationMessage}</div>}
+      {result && <>
+        {result.stops.length === 0 && <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">No navigable route was produced. Review the exclusions below and correct locations or scheduling before trying again.</div>}
+      {staleMessage && <div role="alert" className="flex flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950 sm:flex-row sm:items-center sm:justify-between" data-testid="route-stale-banner"><div className="flex gap-2 text-sm"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>{staleMessage}</span></div><Button size="sm" onClick={startReplan}>Re-plan route</Button></div>}
+        <div className="grid gap-3 sm:grid-cols-3"><Card><CardContent className="p-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Ordered stops</p><p className="mt-1 text-2xl font-semibold">{result.stops.length}</p><p className="text-xs text-muted-foreground">{result.excluded.length} excluded for review</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Road travel</p><p className="mt-1 text-2xl font-semibold">{Math.round(result.totalTravelMeters / 1609.34 * 10) / 10} mi</p><p className="text-xs text-muted-foreground">About {Math.round(result.totalTravelSeconds / 60)} min · provider estimate, no live traffic claim</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Planning assumptions</p><p className="mt-1 font-medium">{result.serviceMinutes} min on site · {result.toleranceMinutes} min appointment tolerance</p><p className="text-xs text-muted-foreground">Scheduled timestamps treated in {timezone}</p></CardContent></Card></div>
+        {result.warnings.length > 0 && <div className="space-y-1 rounded-xl border border-amber-200 bg-amber-50/60 p-3 text-sm">{result.warnings.map((warning, index) => <p key={index} className="flex gap-2"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-800" />{warning}</p>)}</div>}
+        <div className="flex flex-wrap items-center justify-between gap-3"><div className="inline-flex rounded-lg border bg-muted/40 p-1" role="group" aria-label="Route display"><Button size="sm" variant={mode === "list" ? "default" : "ghost"} onClick={() => setMode("list")} data-testid="route-mode-list"><Route className="mr-1.5 h-4 w-4" />List</Button><Button size="sm" variant={mode === "map" ? "default" : "ghost"} onClick={() => setMode("map")} data-testid="route-mode-map"><Map className="mr-1.5 h-4 w-4" />Map</Button><Button size="sm" variant={mode === "both" ? "default" : "ghost"} onClick={() => setMode("both")} data-testid="route-mode-both">Both</Button></div><Button variant="ghost" size="sm" onClick={clearRoute}>End route</Button></div>
+        <div className={`grid gap-5 ${mode === "both" ? "lg:grid-cols-[minmax(300px,0.85fr)_minmax(0,1.15fr)]" : "grid-cols-1"}`}>
+          {(mode === "list" || mode === "both") && <section className="space-y-3" aria-label="Ordered route stops"><h2 className="font-semibold">Sequence · {result.stops.length} stops</h2>{result.stops.length === 0 && <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">No stops could be placed on this route.</p>}{result.stops.map((stop, index) => {
+            const order = workOrders.find(item => item.id === stop.id);
+            return <button key={stop.id} type="button" onClick={() => { setActiveIndex(index); if (order) onOpenWorkOrder(order); }} className={`w-full rounded-xl border p-4 text-left transition-colors ${index === activeIndex ? "border-primary bg-primary/5" : "bg-card hover:bg-muted/40"}`} data-testid={`route-stop-${stop.id}`}>
+              <div className="flex items-start gap-3"><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold ${index === activeIndex ? "bg-primary text-primary-foreground" : "bg-muted"}`}>{index + 1}</span><span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2 font-semibold">{stop.label}{stop.priority !== null && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] text-amber-900">Priority {stop.priority}</span>}<ChevronRight className="h-4 w-4 text-muted-foreground" /></span><span className="mt-1 block text-sm text-muted-foreground">{stop.address}</span><span className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs"><span>Scheduled {stop.scheduledAt ? new Intl.DateTimeFormat(undefined, { timeZone: timezone, hour: "numeric", minute: "2-digit" }).format(new Date(stop.scheduledAt)) : "Unscheduled"}</span><span>Arrive {new Intl.DateTimeFormat(undefined, { timeZone: timezone, hour: "numeric", minute: "2-digit" }).format(new Date(stop.arrivalAt))}</span>{stop.subStatus && <span>{stop.subStatus}</span>}</span>{stop.lateMinutes > 0 && <span className="mt-2 block text-xs font-medium text-amber-800">Estimated {stop.lateMinutes} min late</span>}</span></div>
+            </button>;
+          })}</section>}
+          {(mode === "map" || mode === "both") && <section className="min-w-0 space-y-3"><h2 className="font-semibold">Road route <span className="font-normal text-muted-foreground">· {result.provider === "geoapify" ? "Geoapify" : "Google Maps"}</span></h2>{result.stops.length ? <MapView projectId={projectId} result={result} config={mapConfig} retryKey={mapRetry} configError={mapConfigError} /> : <div className="flex min-h-64 items-center justify-center rounded-xl border border-dashed bg-muted/20 p-6 text-center text-sm text-muted-foreground">No route geometry is available because no stops were resolved.</div>}{mapConfig && result.stops.length > 0 && <Button variant="outline" size="sm" onClick={() => setMapRetry(value => value + 1)}>Reload map</Button>}</section>}
+        </div>
+        {selectedStop && <div className="sticky bottom-2 z-20 flex flex-col gap-3 rounded-2xl border bg-background/95 p-3 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-center gap-2"><MapPin className="h-5 w-5 shrink-0 text-primary" /><span className="truncate text-sm"><strong>{activeIndex === 0 ? "Next stop" : `Stop ${activeIndex + 1} of ${result.stops.length}`}</strong> · {selectedStop.label}</span></div><div className="flex flex-wrap gap-2"><Button className="flex-1 sm:flex-none" onClick={() => navigateWithMaps(preferredMapsProvider)} data-testid="navigate-next-stop"><Navigation className="mr-2 h-4 w-4" />Navigate · {preferredMapsProvider === "apple" ? "Apple Maps" : "Google Maps"}</Button><Button variant="outline" onClick={() => navigateWithMaps(alternateMapsProvider)} data-testid={`navigate-alternate-${alternateMapsProvider}`}>{alternateMapsProvider === "google" ? "Google Maps / web" : "Apple Maps"}</Button><Button variant="outline" onClick={() => setActiveIndex(index => Math.min(index + 1, result.stops.length - 1))} disabled={activeIndex >= result.stops.length - 1} data-testid="route-next-stop"><Check className="mr-2 h-4 w-4" />Next</Button></div><span className="text-xs text-muted-foreground sm:w-full sm:text-right">HTTPS navigation opens the selected app when available, otherwise its web maps page. Navigation does not mark work complete.</span></div>}
+        {result.excluded.length > 0 && <section className="rounded-xl border p-4" data-testid="route-exclusions"><h2 className="font-semibold">Not routed · {result.excluded.length}</h2><p className="mb-3 mt-1 text-sm text-muted-foreground">Review these scheduled orders before replanning.</p><div className="divide-y">{result.excluded.map(item => <div key={item.id} className="flex flex-wrap justify-between gap-2 py-2 text-sm"><span>{item.label}</span><span className="text-muted-foreground">{item.reason}</span></div>)}</div></section>}
+      </>}
+      <Dialog open={setupOpen && !result} onOpenChange={open => { if (!open && !result) onBack(); else setSetupOpen(open); }}><DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-xl" data-testid="route-setup-dialog"><DialogHeader><DialogTitle>Plan a protected route</DialogTitle><DialogDescription>MeterFlo keeps appointment order and selected work-order scope. Location is sent to the configured provider to calculate road travel. Minimal route recovery is scoped to your account and retained here for no more than four hours, or the provider’s shorter expiry.</DialogDescription></DialogHeader>
+        {readiness && <div className="rounded-lg border bg-muted/30 p-3 text-sm"><div className="flex items-center justify-between gap-3"><span className="font-medium">{readiness.ready ? "Provider ready" : readiness.message}</span><Button size="sm" variant="ghost" onClick={() => setSettingsOpen(true)}><Settings2 className="mr-1 h-4 w-4" />Settings</Button></div><p className="mt-1 text-xs text-muted-foreground">{readiness.effective.provider === "geoapify" ? "Geoapify" : "Google Maps"} · {readiness.effective.source === "site" ? "site default" : "project-specific"} · maximum {readiness.effective.maxStops}</p></div>}
+        <div className="space-y-4 py-1">
+          <div className="space-y-2"><Label>Work-order scope</Label><RadioGroup value={scope} onValueChange={value => setScope(value as "filtered" | "selected")} className="grid gap-2"><label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3"><RadioGroupItem value="filtered" className="mt-0.5" /><span><strong className="text-sm">Scheduled orders in current filters</strong><span className="block text-xs text-muted-foreground">{workOrders.filter(order => order.status?.toLowerCase() === "scheduled").length} candidates across all grid pages · {nonScheduled} non-scheduled excluded</span></span></label><label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 ${!selectedIds.length ? "opacity-50" : ""}`}><RadioGroupItem value="selected" disabled={!selectedIds.length} className="mt-0.5" /><span><strong className="text-sm">Selected orders</strong><span className="block text-xs text-muted-foreground">{selectedIds.length} selected · only Scheduled orders will be considered</span></span></label></RadioGroup></div>
+          <div className="grid gap-3 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="route-departure">Departure time ({timezone})</Label><Input id="route-departure" type="datetime-local" value={departure} onChange={event => setDeparture(event.target.value)} data-testid="route-departure" /></div><div className="space-y-2"><Label htmlFor="route-service-minutes">On-site service (minutes)</Label><Input id="route-service-minutes" type="number" min="1" max="120" value={serviceMinutes} onChange={event => setServiceMinutes(event.target.value)} data-testid="route-service-minutes" /><p className="text-xs text-muted-foreground">Uniform estimate for every stop; not an appointment duration.</p></div><div className="space-y-2 sm:col-span-2"><Label htmlFor="route-tolerance">Appointment tolerance (minutes)</Label><Input id="route-tolerance" type="number" min="0" max="60" value={toleranceMinutes} onChange={event => setToleranceMinutes(event.target.value)} data-testid="route-tolerance" /><p className="text-xs text-muted-foreground">Planning assumption only. Scheduled timestamps are protected, not silently changed.</p></div></div>
+          <div className="space-y-2"><Label>Result view</Label><RadioGroup value={mode} onValueChange={value => setMode(value as DisplayMode)} className="grid grid-cols-3 gap-2">{(["list", "map", "both"] as const).map(value => <label key={value} className="flex cursor-pointer items-center gap-2 rounded-lg border p-3 capitalize"><RadioGroupItem value={value} />{value}</label>)}</RadioGroup></div>
+          <div className="space-y-2"><Label>Starting point</Label><RadioGroup value={originMode} onValueChange={value => setOriginMode(value as "device" | "manual")} className="grid grid-cols-2 gap-2"><label className="flex cursor-pointer items-center gap-2 rounded-lg border p-3 text-sm"><RadioGroupItem value="device" />Device location</label><label className="flex cursor-pointer items-center gap-2 rounded-lg border p-3 text-sm"><RadioGroupItem value="manual" />Enter address</label></RadioGroup>{originMode === "manual" && <Input value={manualAddress} onChange={event => setManualAddress(event.target.value)} placeholder="Street, city, region" aria-label="Starting address" data-testid="route-manual-origin" />}{locationMessage && <p className="text-sm text-amber-800" role="status">{locationMessage}</p>}</div>
+          {validationMessage && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{validationMessage}</div>}
+        </div>
+        <DialogFooter className="flex-col-reverse gap-2 sm:flex-row"><Button variant="outline" onClick={onBack}>Back to work orders</Button><Button onClick={() => void plan()} disabled={busy || !readiness?.ready || candidates.length === 0} data-testid="create-route-plan">{busy ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Resolving route…</> : <><Route className="mr-2 h-4 w-4" />Optimize {candidates.length} scheduled</>}</Button></DialogFooter>
+      </DialogContent></Dialog>
+      <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}><DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>Project routing settings</DialogTitle><DialogDescription>Use the site default or configure isolated project credentials.</DialogDescription></DialogHeader><RoutingSettings projectId={projectId} compact /></DialogContent></Dialog>
+    </main>
+  );
+}

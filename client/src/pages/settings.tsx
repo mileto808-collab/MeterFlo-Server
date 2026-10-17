@@ -33,6 +33,7 @@ import { CoreUpdatePreview, type UpdatePreview } from "@/components/core-update-
 import { SettingsNavigation } from "@/components/settings-navigation";
 import { settingsGroups, type SettingsSectionKey } from "@/lib/settings-navigation";
 import { WorkOrderSubStatusManager } from "@/components/work-order-sub-statuses/work-order-sub-status-manager";
+import { RoutingSettings } from "@/components/work-order-routing/routing-settings";
 
 interface FileSettings {
   maxFileSizeMB: number;
@@ -132,7 +133,9 @@ export default function Settings() {
     return userPermissions.includes(permission);
   };
   const visibleSettingsGroups = settingsGroups
-    .map(group => ({ ...group, sections: group.sections.filter(section => !section.permission || hasPermission(section.permission)) }))
+    .map(group => ({ ...group, sections: group.sections.filter(section =>
+      (!section.adminOnly || user?.subroleKey === "administrator") &&
+      (!section.permission || hasPermission(section.permission))) }))
     .filter(group => group.sections.length > 0);
   const [settingsGroup, setSettingsGroup] = useState("account");
   const [settingsSection, setSettingsSection] = useState<SettingsSectionKey>("profile");
@@ -2802,6 +2805,10 @@ export default function Settings() {
               </CardContent>
             </Card>
         )}
+        <Card data-settings-group="work-orders" data-settings-section="routing" data-testid="settings-section-routing" hidden={effectiveSettingsSection !== "routing"}>
+          <CardHeader><CardTitle>Maps &amp; Routing</CardTitle><CardDescription>Sitewide provider defaults and readiness for appointment-aware scheduled work-order planning.</CardDescription></CardHeader>
+          <CardContent><RoutingSettings /></CardContent>
+        </Card>
 
         {hasPermission("settings.troubleCodes") && (
             <Card data-settings-group="work-orders" data-settings-section="trouble-codes" data-testid="settings-section-trouble-codes" hidden={effectiveSettingsSection !== "trouble-codes"}>

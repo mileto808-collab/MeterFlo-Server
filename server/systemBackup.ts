@@ -109,6 +109,7 @@ export interface FullSystemBackup {
     workOrders: any[];
     inventory?: InventoryBackup;
     subStatuses?: unknown[];
+    routingConfiguration?: unknown;
   }>;
 }
 
@@ -142,6 +143,7 @@ export async function createFullSystemBackup(): Promise<{ backup: FullSystemBack
             workOrders: backup.workOrders,
             inventory: backup.inventory,
             subStatuses: backup.subStatuses,
+            routingConfiguration: backup.routingConfiguration,
           });
         } catch (error) {
           console.warn(`Failed to backup project database ${project.databaseName}:`, error);
@@ -531,7 +533,7 @@ export async function restoreFullSystemData(
         const result = await restoreProjectDatabaseInTransaction(
           client,
           projectBackup.schemaName,
-          { workOrders: projectBackup.workOrders, inventory: projectBackup.inventory, subStatuses: projectBackup.subStatuses },
+          { workOrders: projectBackup.workOrders, inventory: projectBackup.inventory, subStatuses: projectBackup.subStatuses, routingConfiguration: projectBackup.routingConfiguration },
           { clearExisting: options.clearExisting }
         );
         if (result.errors.length > 0) {

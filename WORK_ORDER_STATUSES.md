@@ -4,6 +4,8 @@ The existing core `status` code remains authoritative for work-order validation,
 
 `public.work_order_sub_statuses` stores UUID, parent core status ID, optional project ID, code, label, description, color, active flag and sort order. Null project means a shared definition; otherwise the definition belongs only to that project. Administrators manage shared definitions in Settings beside Work Order Statuses. Authorized project managers manage local definitions in saved Project Settings with `projects.manageSubStatuses` plus project access. Shared entries shown there are read-only.
 
+Definitions also have an optional integer **routing priority**, separate from display sort order. Lower numbers mean greater urgency (Critical = 0, Priority = 1); blank is unrated. Route planning protects appointments before priority and does not change inherited parent-status rules. See [Work-order routing](WORK_ORDER_ROUTING.md) for provider setup, project overrides and navigation.
+
 - Core status rules always apply, including rules added later. Project customizations cannot weaken core safeguards.
 - Parent, code, scope and UUID are immutable. Rename the label freely; deactivate a used definition rather than deleting it. Unused definitions may be deleted.
 - Work orders store `sub_status_id` alongside `status`; inserts and updates validate parent, project scope and active selection in PostgreSQL. Unchanged inactive assignments remain valid historical references.

@@ -582,8 +582,8 @@ export async function createCleanPgBackup(): Promise<PgBackupResult> {
   
   // Step 3: Combine schema + data into single backup file
   const sharedSubStatuses = await pool.query(`SELECT format(
-    'INSERT INTO public.work_order_sub_statuses(id,parent_status_id,project_id,code,label,description,color,sort_order,active) VALUES(%L,%s,NULL,%L,%L,%L,%L,%s,%L);',
-    id,parent_status_id,code,label,description,color,sort_order,active) AS statement
+    'INSERT INTO public.work_order_sub_statuses(id,parent_status_id,project_id,code,label,description,color,sort_order,active,routing_priority) VALUES(%L,%s,NULL,%L,%L,%L,%L,%s,%L,%L);',
+    id,parent_status_id,code,label,description,color,sort_order,active,routing_priority) AS statement
     FROM public.work_order_sub_statuses WHERE project_id IS NULL ORDER BY id`);
   fs.appendFileSync(dataFile, "\n" + sharedSubStatuses.rows.map(row => row.statement).join("\n") + "\n");
   console.log("[Clean Backup] Step 3: Combining schema and data...");

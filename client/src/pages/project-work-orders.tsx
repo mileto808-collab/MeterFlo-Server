@@ -97,6 +97,7 @@ import { getReadingPrecision, normalizeReadingInput, validateCapturedReadings } 
 import { getProjectEquipmentVisibility, omitInapplicableEquipmentFields } from "@shared/project-equipment-scope";
 import type { WorkOrderSubStatus } from "@/components/work-order-sub-statuses/work-order-sub-status-manager";
 import { SubStatusBadge } from "@/components/work-order-sub-statuses/sub-status-badge";
+import { RoutePlanner } from "@/components/work-order-routing/route-planner";
 
 type Assignee = {
   type: "user" | "group";
@@ -194,6 +195,8 @@ export default function ProjectWorkOrders() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortCriteria, setSortCriteria] = useState<Array<{ column: string; direction: "asc" | "desc" }>>([]);
   const [showRouteSheetDialog, setShowRouteSheetDialog] = useState(false);
+  const [showRoutePlanner, setShowRoutePlanner] = useState(false);
+  const leaveRoutePlanner = useCallback(() => setShowRoutePlanner(false), []);
   const [showStartSystemChangeout, setShowStartSystemChangeout] = useState(false);
   const [autoLaunchSystemChangeout, setAutoLaunchSystemChangeout] = useState(false);
   const [autoLaunchChangeoutScope, setAutoLaunchChangeoutScope] = useState<"system" | "module" | "both">("system");
@@ -620,6 +623,7 @@ export default function ProjectWorkOrders() {
     setSelectedServiceTypes([]);
     setShowFilters(false);
     setIsCreatingWorkOrder(false);
+    setShowRoutePlanner(false);
     // Clean up history if we had pushed a state before project change
     if (historyPushedRef.current) {
       historyPushedRef.current = false;
@@ -629,6 +633,17 @@ export default function ProjectWorkOrders() {
     setEditingWorkOrder(null);
     setCameFromSearch(false);
   }, [projectId]);
+
+  useEffect(() => {
+    if (!user?.id || !projectId) return;
+    const routePrefix = "meterflo:active-route:";
+    const userPrefix = `${routePrefix}${user.id}:`;
+    for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
+      const key = sessionStorage.key(index);
+      if (key?.startsWith(routePrefix) && !key.startsWith(userPrefix)) sessionStorage.removeItem(key);
+    }
+    if (sessionStorage.getItem(`${userPrefix}${projectId}`)) setShowRoutePlanner(true);
+  }, [user?.id, projectId]);
 
   // Set default status filters for field technicians
   // Field technicians default to showing Open, Scheduled, and Trouble statuses
@@ -2090,12 +2105,13 @@ export default function ProjectWorkOrders() {
   // Set sticky header content - now that filteredAndSortedWorkOrders is available
   // Only set project-level header when NOT viewing a work order detail
   useEffect(() => {
-    if (!project || !user || editingWorkOrder) {
+    // The detail screen and route planner each own their sticky header.
+    // Do not clear either header while switching between those inline views.
+    if (editingWorkOrder || showRoutePlanner) return;
+    if (!project || !user) {
       // Don't set project header when viewing a work order detail
       // The work-order-detail component will set its own header
-      if (!editingWorkOrder) {
-        setHeaderContent(null);
-      }
+      setHeaderContent(null);
       return;
     }
     
@@ -2105,11 +2121,25 @@ export default function ProjectWorkOrders() {
           <span className="font-semibold text-sm truncate">{project.name}</span>
           <span className="text-xs text-muted-foreground">Work Orders</span>
         </div>
+        {hasPermission("workOrders.optimizeRoute") && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="ml-auto shrink-0"
+            onClick={() => setShowRoutePlanner(true)}
+            data-testid="optimize-work-order-route"
+          >
+            <Route className="mr-2 h-4 w-4" />
+            <span className="hidden sm:inline">Optimize route</span>
+            <span className="sm:hidden">Route</span>
+          </Button>
+        )}
       </div>
     );
     
     setHeaderContent(content);
-  }, [project, user, projectId, hasPermission, viewMode, setHeaderContent, editingWorkOrder]);
+  }, [project, user, projectId, hasPermission, viewMode, setHeaderContent, editingWorkOrder, filteredAndSortedWorkOrders.length, selectedWorkOrderIds.size, showRoutePlanner]);
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
@@ -3404,6 +3434,24 @@ export default function ProjectWorkOrders() {
           </form>
         </Form>
       </div>
+    );
+  }
+
+  if (showRoutePlanner && projectId && project) {
+    return (
+      <RoutePlanner
+        projectId={projectId}
+        projectName={project.name}
+        timezone={effectiveTimezone}
+        workOrders={filteredAndSortedWorkOrders}
+        selectedIds={Array.from(selectedWorkOrderIds)}
+        onOpenWorkOrder={(workOrder) => {
+          setEditingWorkOrder(workOrder);
+          setCameFromSearch(false);
+          setEditingWorkOrderVersion(0);
+        }}
+        onBack={leaveRoutePlanner}
+      />
     );
   }
 

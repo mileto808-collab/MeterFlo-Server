@@ -37,4 +37,4 @@
 - [Location assignments](inventory-location-access.md) — user assignments are intended for mobile locations such as vehicles, not brick-and-mortar warehouses.
 - [Equipment removal policy](equipment-removal-policy.md) — project-approved field choices and required returns are separate from warehouse final-decision authority.
 - [Work-order status hierarchy](work-order-status-hierarchy.md) — shared core statuses/sub-statuses, project-owned custom sub-statuses, and inherited parent rules.
-- [Route scheduling priorities](route-scheduling-priorities.md) — protect appointments before sub-status priority; lower numeric ratings indicate greater urgency.
+- [Route scheduling and providers](route-scheduling-priorities.md) — appointment-first priority, hybrid phone navigation, and site/project provider and billing boundaries.

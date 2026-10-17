@@ -324,6 +324,13 @@ export const permissionRegistry: PermissionDefinition[] = [
 
   // Work Order Action permissions - what users can do with work orders
   {
+    key: "workOrders.optimizeRoute",
+    label: "Optimize work-order routes",
+    category: "Work Order Actions",
+    description: "Plan Scheduled work-order visits using configured routing services",
+    defaultAccess: { administrator: true, projectManager: true, fieldTechnician: true, viewer: false, customer: false },
+  },
+  {
     key: "workOrders.view",
     label: "View Work Orders",
     category: "Work Order Actions",

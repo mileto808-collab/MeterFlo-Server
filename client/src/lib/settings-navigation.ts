@@ -1,7 +1,7 @@
 export type SettingsSectionKey =
   | "profile" | "appearance" | "session"
   | "user-groups" | "access-levels"
-  | "statuses" | "trouble-codes" | "service-types"
+  | "statuses" | "trouble-codes" | "service-types" | "routing"
   | "system-types" | "module-types"
   | "project-files" | "upload-settings" | "file-import-history" | "external-import-history"
   | "contact-support" | "customer-api-logs"
@@ -13,6 +13,7 @@ export type SettingsSection = {
   key: SettingsSectionKey;
   label: string;
   permission?: string;
+  adminOnly?: boolean;
 };
 
 export type SettingsGroup = {
@@ -35,6 +36,7 @@ export const settingsGroups: SettingsGroup[] = [
     { key: "statuses", label: "Statuses", permission: "settings.statuses" },
     { key: "trouble-codes", label: "Trouble Codes", permission: "settings.troubleCodes" },
     { key: "service-types", label: "Service Types", permission: "settings.serviceTypes" },
+    { key: "routing", label: "Maps & Routing", adminOnly: true },
   ] },
   { key: "equipment", label: "Equipment", sections: [
     { key: "system-types", label: "System Types", permission: "settings.systemTypes" },
