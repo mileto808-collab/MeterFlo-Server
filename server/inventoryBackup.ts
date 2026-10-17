@@ -11,6 +11,8 @@ import { readInventoryCategories, storedCategoryState, writeInventoryCategories,
 import { validateKitBackup } from "./inventoryKitBackup";
 import { readRelationalInventory, writeRelationalInventory, clearRelationalInventory } from "./inventoryRelational";
 import { normalizeInventoryLocations } from "../shared/inventory-location-types";
+import { removalRuleSchema, removalPolicySchema } from "../shared/inventory-removal-policy";
+import { dispositionSchema } from "../shared/inventory";
 
 export type InventoryBackup = { state: InventoryState; movements: any[]; enabled: boolean };
 export async function exportInventory(client: PoolClient, schema: string): Promise<InventoryBackup | undefined> {
@@ -40,6 +42,38 @@ export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: n
       throw new Error("Saved shipment draft references an unrelated receipt.");
   }
   const s = backup.state;
+  const rules = z.array(removalRuleSchema).max(1000).parse(s.removalRules ?? []);
+  const policies = z.array(removalPolicySchema).max(1).parse(s.removalPolicies ?? []);
+  if ((s.removalRules === undefined) !== (s.removalPolicies === undefined) ||
+      s.removalPolicies !== undefined && policies.length !== 1 ||
+      new Set(rules.map(r => r.id)).size !== rules.length ||
+      new Set(rules.map(r => r.name.toLowerCase())).size !== rules.length)
+    throw new Error("Inventory backup has invalid equipment-removal rules.");
+  const historical = (d: { ruleId?: string; ruleName?: string; ruleRevision?: number; policyRevision?: number }) => {
+    if (d.ruleId && (!rules.some(r => r.id === d.ruleId) || !d.ruleName || !d.ruleRevision))
+      throw new Error("Inventory backup has an orphaned removal-rule snapshot.");
+  };
+  for (const allocation of s.allocations) for (const d of allocation.dispositions) {
+    dispositionSchema.parse(d); historical(d);
+  }
+  const returnSchema = dispositionSchema.extend({
+    id: z.string().min(1), workOrderId: z.number().int().positive(),
+    status: z.enum(["pending", "quarantine", "released", "scrapped", "left_onsite"]),
+    itemId: z.string().min(1).optional(), history: z.array(z.object({
+      operationId: z.string().min(1), actor: z.string().min(1), occurredAt: z.string().datetime(),
+      outcome: z.enum(["returned", "scrapped", "left_onsite", "released", "quarantine"]), reason: z.string().min(1),
+      ruleId: z.string().uuid().optional(), ruleRevision: z.number().int().positive().optional(), ruleName: z.string().min(1).max(200).optional(),
+    }).strict()).optional(),
+  }).strict();
+  for (const returned of z.array(returnSchema).parse(s.returns)) {
+    historical(returned);
+    for (const event of returned.history ?? []) historical(event);
+    if (!workOrderIds.includes(returned.workOrderId) ||
+        returned.warehouseId && !s.warehouses.some(w => w.id === returned.warehouseId) ||
+        returned.itemId && !s.items.some(i => i.id === returned.itemId) ||
+        ["quarantine", "released"].includes(returned.status) && (!returned.warehouseId || returned.disposition !== "returned"))
+      throw new Error("Inventory backup has invalid removed-equipment custody.");
+  }
   // A pre-type backup used assigned-user checks even for physical warehouses.
   // Restore that policy explicitly rather than applying the live cutover default.
   const locations = normalizeInventoryLocations(s, "assigned");

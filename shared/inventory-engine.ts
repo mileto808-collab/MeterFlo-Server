@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { requirementsSatisfied } from "./inventory-requirements";
+import { normalizeRemovalPolicy, applyRemovalRuleCommand, resolveFieldDisposition, removalChoices } from "./inventory-removal-policy";
 import { itemDeletionBlockers, categoryDeletionBlockers } from "./inventory-deletion";
 import { normalizeInventoryCategories, inventoryCategoryLabels } from "./inventory-categories";
 import { allocateOrderNumber, uuidOrderId } from "./inventory-order-labels";
@@ -134,7 +135,7 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     if (isShipmentDraftAction(command.action)) validateDraftReplay(original, command, actor, canonicalInventoryJson);
     return { state: original, replay: true };
   }
-  const s = normalizeInventoryLocations(inventoryCategoryLabels(normalizeInventoryCategories(original))), d = command.data;
+  const s = normalizeRemovalPolicy(normalizeInventoryLocations(inventoryCategoryLabels(normalizeInventoryCategories(original)))), d = command.data;
   ensureKitProvenance(s);
   ensureSerialOccupancy(s);
   const access = (id: string) => warehouseAccess(s, id, actor, admin);
@@ -171,6 +172,8 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
           { from: { kind: "hold", id: hold.id }, to: { kind: "retired", id: command.operationId } });
       }
     }
+  } else if (["removalRule", "removalRuleDelete", "removalPolicy"].includes(a)) {
+    applyRemovalRuleCommand(s, a, d);
   } else if (a === "locationType" || a === "locationTypeDelete") {
     applyLocationTypeCommand(s, a, d);
     // Changing kind must not leave any existing location invalid.
@@ -206,7 +209,7 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
         !(s.kitHolds ?? []).some(h => h.warehouseId === value.id && h.status === "held") &&
         !(s.shipmentHolds ?? []).some(h => h.warehouseId === value.id && h.status === "held") &&
         !s.orders.some(o => [o.sourceId, o.destinationId].includes(value.id) && !["completed", "cancelled", "closed"].includes(o.status)) &&
-        !s.returns.some(r => r.warehouseId === value.id && r.status !== "released") &&
+        !s.returns.some(r => r.warehouseId === value.id && ["pending", "quarantine"].includes(r.status)) &&
         !(s.shipmentDrafts ?? []).some(draft => s.orders.some(order => order.id === draft.orderId &&
           (draft.stage === "dispatch" ? order.sourceId : order.destinationId) === value.id)),
         "Warehouse has stock or unresolved operations, including saved shipment drafts. Finish or discard them first.");
@@ -374,6 +377,7 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     for (const l of input.used) groups.set(l.warehouseId, [...(groups.get(l.warehouseId) ?? []), l]);
     for (const [warehouse, selected] of groups) move(trial, warehouse, selected, -1, input.workOrderId);
     assert(new Set(input.dispositions.map(x => x.equipment)).size === input.dispositions.length, "Only one disposition per removed equipment type.");
+    input.dispositions = input.dispositions.map(value => resolveFieldDisposition(s, value));
     for (const r of input.dispositions) if (r.disposition === "returned") { assert(r.warehouseId, "Choose a return warehouse."); access(r.warehouseId); }
     allocation.used = input.used; allocation.dispositions = input.dispositions; allocation.mode = input.mode; allocation.revision++;
   } else if (a === "verifyVendorKit") {
@@ -488,17 +492,33 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
       receipt(`work-order-${input.workOrderId}`, null, used, input.reason);
     } else { allocation.status = "released"; receipt(`work-order-${input.workOrderId}`, null, [], input.reason); }
     allocation.lines = []; allocation.mode = null;
-    s.returns = s.returns.filter(r => r.workOrderId !== input.workOrderId);
-  } else if (a === "returnAccept" || a === "returnRelease") {
+    // Reconciliation reverses stock use, not the physical custody of removed equipment.
+  } else if (a === "returnAccept" || a === "returnRelease" || a === "returnDecide") {
     const r = s.returns.find(r => r.id === identifier.parse(d.id)); assert(r && r.warehouseId, "Return not found."); access(r.warehouseId);
-    if (a === "returnAccept") { assert(r.status === "pending", "Return already accepted."); r.status = "quarantine"; receipt(r.id, r.warehouseId, [], "Removed equipment accepted into quarantine"); }
+    if (a === "returnAccept") {
+      assert(r.disposition === "returned" && r.status === "pending", "Return already accepted or not due back.");
+      r.status = "quarantine"; receipt(r.id, r.warehouseId, [], "Removed equipment accepted into quarantine");
+      (r.history ??= []).push({ operationId: command.operationId, actor, occurredAt: now, outcome: "quarantine", reason: "Removed equipment accepted into quarantine" });
+    }
     else {
-      const reason = z.string().trim().min(1).max(1000).parse(d.reason), itemId = identifier.parse(d.itemId);
+      const reason = z.string().trim().min(1).max(1000).parse(d.reason);
       assert(r.status === "quarantine", "Accept and inspect returned equipment first.");
-      assert(item(s, itemId).tracking === "serialized" && item(s, itemId).equipment === r.equipment, "Select matching serialized equipment.");
-      r.status = "released"; r.itemId = itemId;
-      const input = [{ itemId, quantity: 1, serials: [r.serial] }];
-      move(s, r.warehouseId, input, 1); receipt(r.id, r.warehouseId, input, reason);
+      const rule = removalChoices(s, r.equipment, "warehouse").find(rule => rule.id === (d.ruleId ??
+        (a === "returnRelease" ? "ea936000-0000-4000-8000-000000000002" : "")));
+      assert(rule && (a === "returnRelease" && d.ruleRevision === undefined || rule.revision === d.ruleRevision),
+        "Choose a current approved warehouse disposition.");
+      assert(a !== "returnRelease" || rule.outcome === "released", "Choose a stock-release disposition.");
+      const input: StockLine[] = [];
+      if (rule.outcome === "released") {
+        const itemId = identifier.parse(d.itemId), matched = item(s, itemId);
+        assert(matched.equipment === r.equipment && !matched.components.length, "Select matching equipment, not an assembled kit.");
+        r.status = "released"; r.itemId = itemId;
+        input.push({ itemId, quantity: 1, serials: matched.tracking === "serialized" ? [r.serial] : [] });
+        move(s, r.warehouseId, input, 1);
+      } else { r.status = "scrapped"; }
+      (r.history ??= []).push({ operationId: command.operationId, actor, occurredAt: now,
+        outcome: rule.outcome, reason, ruleId: rule.id, ruleRevision: rule.revision, ruleName: rule.name });
+      receipt(r.id, r.warehouseId, input, reason);
     }
   }
   s.operations[command.operationId] = fingerprint; s.revision++;
@@ -506,14 +526,15 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
 }
 
 // Called inside the same database transaction as the work-order status update.
-export function completeInventoryWorkOrder(original: InventoryState, workOrderId: number, readingOnly: boolean) {
-  const s = structuredClone(original), a = s.allocations.find(a => a.workOrderId === workOrderId);
+export function completeInventoryWorkOrder(original: InventoryState, workOrderId: number, readingOnly: boolean, actor?: string, now = new Date().toISOString()) {
+  const s = normalizeRemovalPolicy(structuredClone(original)), a = s.allocations.find(a => a.workOrderId === workOrderId);
   ensureKitProvenance(s);
   ensureSerialOccupancy(s);
   assert(a && a.mode, "Review inventory use and removed-equipment disposition before completing this work order.");
   if (a.status === "consumed" || a.status === "released") return original;
   assert(!readingOnly || a.mode === "reading_only", "This project only permits reading-only work.");
   if (a.mode === "changeout") {
+    a.dispositions = a.dispositions.map(d => resolveFieldDisposition(s, d));
     const requirements = s.workRequirements?.find(r => r.workOrderId === workOrderId);
     assert(!requirements || requirementsSatisfied(s, requirements, a.used),
       "Resolve missing type-to-item links and record every required item or kit component before completion.");
@@ -523,7 +544,18 @@ export function completeInventoryWorkOrder(original: InventoryState, workOrderId
     for (const d of a.dispositions) s.serialOccupancy = s.serialOccupancy!.filter(x =>
       x.serial !== d.serial || s.items.find(i => i.id === x.itemId)?.equipment !== d.equipment);
     occupy(s, a.used, workOrderId);
-    for (const r of a.dispositions) s.returns.push({ ...r, id: `wo-${workOrderId}-${r.equipment}-${a.revision}`, workOrderId, status: "pending" });
+    for (const r of a.dispositions) {
+      const prior = s.returns.find(value => value.workOrderId === workOrderId && value.equipment === r.equipment && value.serial === r.serial);
+      if (prior) {
+        assert(prior.disposition === r.disposition && prior.warehouseId === r.warehouseId,
+          "Previously recorded removal custody cannot be rewritten by reopening a work order.");
+        continue; // A data correction does not physically remove the same equipment twice.
+      }
+      s.returns.push({ ...r, id: `wo-${workOrderId}-${r.equipment}-${a.revision}`, workOrderId,
+        status: r.disposition === "returned" ? "pending" : r.disposition,
+        history: [{ operationId: `wo-${workOrderId}-${a.revision}`, actor: actor ?? "unavailable", occurredAt: now,
+          outcome: r.disposition, reason: "Removal recorded at completion", ruleId: r.ruleId, ruleRevision: r.ruleRevision, ruleName: r.ruleName }] });
+    }
     a.status = "consumed";
   } else a.status = "released";
   s.revision++; return s;

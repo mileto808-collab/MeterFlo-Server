@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Allocation, InventoryItem, Warehouse, WorkAllocation, WorkRequirements } from "@shared/inventory";
+import { removalChoices, removalConfig, type RemovalRule, type RemovalPolicy, type RemovalWorkflow } from "@shared/inventory-removal-policy";
 import { locationTypeFor, locationTypeLabel, warehouseAccessible, type InventoryLocationType } from "@shared/inventory-location-types";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useAuth } from "@/hooks/useAuth";
@@ -20,6 +21,7 @@ import { Loader2, PackageCheck, Plus, Trash2 } from "lucide-react";
 type WorkInventorySnapshot = {
   enabled: boolean; allocation: WorkAllocation | null; items: InventoryItem[]; warehouses: Warehouse[];
   locationTypes?: InventoryLocationType[]; requirements?: WorkRequirements; canSelect?: boolean;
+  removalRules?: RemovalRule[]; removalPolicies?: RemovalPolicy[]; workflow?: RemovalWorkflow;
 };
 type DraftLine = Allocation;
 
@@ -53,7 +55,10 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
   const draftEditEpoch = useRef(0);
   const [draftTouched, setDraftTouched] = useState(false);
   const [staleAllocation, setStaleAllocation] = useState(false);
-  const canAssign = hasPermission("inventory.assign") && data?.canSelect !== false;
+  const projectReadingOnly = data?.workflow?.wizardMode === "reading_only" || readingOnly;
+  const canAssign = hasPermission("inventory.assign") && data?.canSelect !== false && !projectReadingOnly;
+  const workMode = data?.workflow?.wizardMode === "user_choice" ? mode : projectReadingOnly ? "reading_only" : "changeout";
+  const visibleEquipment = (["system", "module"] as const).filter(e => !["system", "module"].includes(data?.workflow?.equipment ?? "") || e === data?.workflow?.equipment);
 
   const mutation = useMutation({
     mutationFn: async ({ action, payload }: { action: string; payload: Record<string, unknown> }) => {
@@ -72,7 +77,9 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
   const items = data?.items ?? [];
   const warehouses = data?.warehouses ?? [];
   const locationState = { locationTypes: data?.locationTypes ?? [] };
-  const allocationSignature = JSON.stringify(data?.allocation ?? null);
+  const snapshotSignature = (snapshot: WorkInventorySnapshot | undefined) => JSON.stringify({ allocation: snapshot?.allocation ?? null,
+    removal: snapshot ? removalConfig(snapshot) : null, workflow: snapshot?.workflow });
+  const allocationSignature = snapshotSignature(data);
   const locationTypeSignature = (id: string) => {
     const warehouse = warehouses.find(value => value.id === id);
     const type = warehouse ? locationTypeFor(locationState, warehouse) : undefined;
@@ -133,7 +140,7 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
       toast({ title: "Could not recheck allocation", description: "The reservation was not removed. Retry after inventory loads.", variant: "destructive" });
       return;
     }
-    if (JSON.stringify(checked.data.allocation ?? null) !== allocationSignature) {
+    if (snapshotSignature(checked.data) !== allocationSignature) {
       draftBase.current = allocationSignature;
       captureLocationTypes([...lines.map(value => value.warehouseId), ...(data?.allocation?.lines ?? []).map(value => value.warehouseId), warehouseId, returnWarehouse]);
       setDraftTouched(true);
@@ -146,7 +153,7 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
   };
 
   if (isLoading) return <Card><CardContent className="p-5 space-y-3"><div className="h-5 w-40 animate-pulse rounded bg-muted" /><div className="h-12 animate-pulse rounded bg-muted" /></CardContent></Card>;
-  if (isError) return <Card><CardContent className="p-5"><p className="text-sm text-destructive">Inventory assignments could not load.</p><Button className="mt-3" variant="outline" onClick={() => refetch()}>Retry</Button></CardContent></Card>;
+  if (isError) return <Card><CardContent className="p-5"><p className="text-sm text-destructive">Inventory assignments could not load.</p><Button type="button" className="mt-3" variant="outline" onClick={() => refetch()}>Retry</Button></CardContent></Card>;
   if (!data?.enabled) return null;
 
   const addLine = () => {
@@ -180,7 +187,7 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
       return;
     }
     if (epoch !== draftEditEpoch.current) return;
-    const latestSignature = JSON.stringify(latest.allocation ?? null);
+    const latestSignature = snapshotSignature(latest);
     if ((draftBase.current !== null && latestSignature !== draftBase.current) || typeBasisChangedIn(latest)) {
       setStaleAllocation(true);
       return;
@@ -209,7 +216,7 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
       return;
     }
     if (epoch !== draftEditEpoch.current) return;
-    const latestSignature = JSON.stringify(latest.allocation ?? null);
+    const latestSignature = snapshotSignature(latest);
     if ((draftBase.current !== null && latestSignature !== draftBase.current) || typeBasisChangedIn(latest)) {
       setStaleAllocation(true);
       return;
@@ -217,7 +224,7 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
     const allocation = latest.allocation;
     if (!allocation) return;
     let invalid = false;
-    const usedLines: Allocation[] = mode === "reading_only" ? [] : allocation.lines.flatMap(line => {
+    const usedLines: Allocation[] = workMode === "reading_only" ? [] : allocation.lines.flatMap(line => {
       const key = `${line.warehouseId}/${line.itemId}`;
       const qty = used[key] ?? line.quantity;
       if (qty <= 0) return [];
@@ -229,16 +236,18 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
       }
       return [{ ...line, quantity: qty, serials: ids }];
     });
-    const dispositions = mode === "reading_only" ? [] : (["system", "module"] as const).flatMap(equipment => {
-      const selected = disposition[equipment];
+    const dispositions = workMode === "reading_only" ? [] : visibleEquipment.flatMap(equipment => {
+      const selected = removalChoices(latest!, equipment, "field").find(r => r.id === disposition[equipment]);
+      if (disposition[equipment] && !selected) invalid = true;
       return selected ? [{
         equipment, serial: disposition[`${equipment}-serial`] ?? "",
-        disposition: selected as "returned" | "scrapped" | "left_onsite",
-        warehouseId: selected === "returned" ? returnWarehouse || null : null,
+        disposition: selected.outcome as "returned" | "scrapped" | "left_onsite",
+        ruleId: selected.id, ruleRevision: selected.revision, policyRevision: removalConfig(latest!).policy.revision,
+        warehouseId: selected.outcome === "returned" ? returnWarehouse || null : null,
       }] : [];
     });
     if (invalid) return;
-    mutation.mutate({ action: "prepareUse", payload: { workOrderId, revision: allocation.revision, mode, used: usedLines, dispositions } }, {
+    mutation.mutate({ action: "prepareUse", payload: { workOrderId, revision: allocation.revision, mode: workMode, used: usedLines, dispositions } }, {
       onSuccess: () => { setReviewing(false); setDraftTouched(false); setStaleAllocation(false); draftBase.current = null; draftLocationTypes.current.clear(); },
     });
   };
@@ -254,7 +263,7 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
       </div></div>
       <p className="text-sm text-muted-foreground">Planned requirements are separate from reserved stock. Technicians record what they actually use from an accessible stock location during installation.</p></CardHeader>
     <CardContent className="space-y-4">
-      <section className="rounded-md border bg-muted/20 p-3" aria-label="Planned requirements">
+      {projectReadingOnly ? <p className="text-sm text-muted-foreground">Reading-only projects do not reserve or consume replacement inventory and do not record removed equipment.</p> : <section className="rounded-md border bg-muted/20 p-3" aria-label="Planned requirements">
         <p className="mb-2 text-sm font-medium">Planned requirements <span className="ml-1 text-xs font-normal text-muted-foreground">No reservation created</span></p>
         {(data.requirements?.lines ?? []).length ? <ul className="space-y-1.5 text-sm">
           {(data.requirements?.lines ?? []).map((line, index) => {
@@ -263,10 +272,17 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
           })}
         </ul> : <p className="text-xs text-muted-foreground">No items are mapped to the assigned equipment types.</p>}
         {!!data.requirements?.missing.length && <p className="mt-2 rounded border border-amber-500/40 bg-amber-500/5 p-2 text-xs text-amber-900 dark:text-amber-200">Unmapped equipment types: {data.requirements.missing.map(row => `${row.equipment} ${row.typeId}`).join(", ")}</p>}
-      </section>
+      </section>}
+      {projectReadingOnly && data.allocation?.status === "reserved" && (!!data.allocation.used.length || !!data.allocation.dispositions.length) && <div role="alert" className="space-y-2 rounded-md border p-3 text-sm">
+        <p>A previous changeout inventory review remains. Clear it before completing this reading-only visit. No stock has been consumed by that review.</p>
+        {hasPermission("inventory.assign") && data.canSelect !== false && <Button type="button" variant="outline" disabled={mutation.isPending || allocationConflict} onClick={() => {
+          if (window.confirm("Discard the previous prepared changeout use and removal selections? This reading-only visit will consume no stock."))
+            mutation.mutate({ action: "prepareUse", payload: { workOrderId, revision: data.allocation!.revision, mode: "reading_only", used: [], dispositions: [] } });
+        }}>Clear previous changeout review</Button>}
+      </div>}
       {allocationConflict && <div data-testid="inventory-external-change" role="alert" className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
         <p className="font-medium">Work-order allocation or location access changed elsewhere</p>
-        <p className="text-muted-foreground">Your staged lines and scanner text remain local. Saving or confirming this review is paused so it cannot silently apply to a different allocation or location policy.</p>
+        <p className="text-muted-foreground">Your staged lines and scanner text remain local. Saving or confirming this review is paused because the allocation, project removal rules, workflow, or location policy changed.</p>
         <Button type="button" size="sm" variant="outline" onClick={() => {
           if (!window.confirm("Discard staged allocation and review edits, then use the current server allocation?")) return;
           setLines([]); setEditingKey(null); setItemId(""); setWarehouseId(""); setQuantity("1"); setSerials("");
@@ -282,19 +298,19 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
         <p className="font-medium">Selected stock location is no longer available</p>
         <p className="mt-1 text-muted-foreground">The location is missing, inactive, or its access changed. Any serial text remains captured locally and will not be submitted until you choose an accessible location.</p>
       </div>}
-      {assigned.length > 0 ? <div className="space-y-2">{assigned.map(line => {
+      {!projectReadingOnly && (assigned.length > 0 ? <div className="space-y-2">{assigned.map(line => {
         const item = items.find(value => value.id === line.itemId);
         const warehouse = warehouses.find(value => value.id === line.warehouseId);
         return <div key={`${line.warehouseId}/${line.itemId}`} className="flex flex-wrap items-start justify-between gap-2 rounded-md border p-3">
           <div><div className="font-medium">{item?.name ?? line.itemId} <span className="font-mono text-xs text-muted-foreground">{item?.sku}</span></div>
             <div className="text-xs text-muted-foreground">{warehouse?.code ?? line.warehouseId}{warehouse ? ` · ${locationTypeLabel(locationState, warehouse)}` : ""} · {line.quantity} {item?.unit ?? "units"}{line.serials.length > 0 ? ` · ${line.serials.join(", ")}` : ""}</div></div>
-          {canAssign && data.allocation?.status === "reserved" && <div className="flex gap-1"><Button aria-label={`Edit ${item?.name ?? "item"} reservation`} variant="ghost" size="sm" onClick={() => {
+          {canAssign && data.allocation?.status === "reserved" && <div className="flex gap-1"><Button type="button" aria-label={`Edit ${item?.name ?? "item"} reservation`} variant="ghost" size="sm" onClick={() => {
             draftBase.current = allocationSignature; captureLocationTypes([line.warehouseId, ...(data.allocation?.lines ?? []).map(value => value.warehouseId)]); setDraftTouched(true); draftEditEpoch.current++;
             setEditingKey(`${line.warehouseId}/${line.itemId}`);
             setItemId(line.itemId); setWarehouseId(line.warehouseId); setQuantity(String(line.quantity)); setSerials(line.serials.join("\n")); setLines([]);
-          }}>Edit</Button><Button aria-label={`Remove ${item?.name ?? "item"} reservation`} variant="ghost" size="icon" disabled={mutation.isPending} onClick={() => void removeReservation(line)}><Trash2 className="h-4 w-4" /></Button></div>}
+          }}>Edit</Button><Button type="button" aria-label={`Remove ${item?.name ?? "item"} reservation`} variant="ghost" size="icon" disabled={mutation.isPending} onClick={() => void removeReservation(line)}><Trash2 className="h-4 w-4" /></Button></div>}
         </div>;
-      })}</div> : <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">No stock is reserved for this work order.</div>}
+      })}</div> : <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">No stock is reserved for this work order.</div>)}
 
       {canAssign && data.allocation?.status !== "consumed" && <div className="space-y-3 rounded-md bg-muted/40 p-3">
         {!data.allocation && <Button type="button" variant="outline" onClick={() => void createEmptyAssignment()} disabled={mutation.isPending}>Create empty assignment</Button>}
@@ -310,12 +326,12 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
         {lines.length > 0 && <p className="text-xs text-muted-foreground">{lines.length} line{lines.length === 1 ? "" : "s"} ready to reserve. Availability is validated by the project inventory service.</p>}
       </div>}
 
-      {data.allocation?.status === "reserved" && <div className="border-t pt-4">
+      {!projectReadingOnly && data.allocation?.status === "reserved" && <div className="border-t pt-4">
         {!reviewing ? <Button type="button" variant="outline" disabled={!canAssign} onClick={() => { draftBase.current = allocationSignature; captureLocationTypes((data.allocation?.lines ?? []).map(value => value.warehouseId)); setDraftTouched(true); draftEditEpoch.current++; setMode(readingOnly ? "reading_only" : "changeout"); setReviewing(true); }}>
           Review use & removed equipment
         </Button> : <div className="space-y-4">
-          <div><Label>Work type</Label><Select value={mode} disabled={readingOnly} onValueChange={value => { beginDraft(); setMode(value as "changeout" | "reading_only"); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="changeout">Meter changeout</SelectItem><SelectItem value="reading_only">Reading only</SelectItem></SelectContent></Select></div>
-          {mode === "reading_only" ? <p className="text-sm text-muted-foreground">Reading-only visits use no replacement stock and have no removed-meter disposition.</p> : <>
+          {data.workflow?.wizardMode === "user_choice" ? <div><Label>Work type</Label><Select value={workMode} onValueChange={value => { beginDraft(); setMode(value as "changeout" | "reading_only"); }}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="changeout">Meter changeout</SelectItem><SelectItem value="reading_only">Reading only</SelectItem></SelectContent></Select></div> : <p className="text-sm">Work type: Meter changeout</p>}
+          {workMode === "reading_only" ? <p className="text-sm text-muted-foreground">Reading-only visits use no replacement stock and have no removed-meter disposition.</p> : <>
             {assigned.map(line => {
               const item = items.find(value => value.id === line.itemId);
               const key = `${line.warehouseId}/${line.itemId}`;
@@ -325,11 +341,11 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
               const key = `${line.warehouseId}/${line.itemId}`;
               return <div key={key} className="space-y-1"><Label htmlFor={`used-serial-${line.itemId}`}>Scan serials used · {items.find(item => item.id === line.itemId)?.name}</Label><Input id={`used-serial-${line.itemId}`} value={usedSerials[key] ?? ""} onChange={event => { beginDraft(); setUsedSerials(current => ({ ...current, [key]: event.target.value })); }} placeholder="Reserved serials only" /></div>;
             })}
-            {(["system", "module"] as const).map(equipment => <div key={equipment} className="grid gap-2 sm:grid-cols-2">
+            {visibleEquipment.map(equipment => <div key={equipment} className="grid gap-2 sm:grid-cols-2">
               <div className="space-y-1"><Label htmlFor={`disp-${equipment}`}>Removed {equipment} meter serial</Label><Input id={`disp-${equipment}`} value={disposition[`${equipment}-serial`] ?? ""} onChange={event => { beginDraft(); setDisposition(current => ({ ...current, [`${equipment}-serial`]: event.target.value })); }} placeholder="Scan removed serial" /></div>
-              <div className="space-y-1"><Label>Condition / disposition</Label><Select value={disposition[equipment] ?? ""} onValueChange={value => { beginDraft(); setDisposition(current => ({ ...current, [equipment]: value })); }}><SelectTrigger><SelectValue placeholder="Select disposition" /></SelectTrigger><SelectContent><SelectItem value="returned">Return to warehouse</SelectItem><SelectItem value="scrapped">Scrapped</SelectItem><SelectItem value="left_onsite">Left onsite</SelectItem></SelectContent></Select></div>
+              <div className="space-y-1"><Label>Condition / disposition</Label><Select value={disposition[equipment] ?? ""} onValueChange={value => { beginDraft(); setDisposition(current => ({ ...current, [equipment]: value })); }}><SelectTrigger><SelectValue placeholder="Select disposition" /></SelectTrigger><SelectContent>{removalChoices(data, equipment, "field").map(r => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}</SelectContent></Select>{!removalChoices(data, equipment, "field").length && <p className="text-xs text-destructive">No approved dispositions. Ask an administrator to configure removal rules.</p>}</div>
             </div>)}
-            {Object.values(disposition).includes("returned") && <div className="space-y-1"><Label>Return warehouse</Label><Select value={returnWarehouse} onValueChange={value => { beginDraft(); captureLocationTypes([value]); setReturnWarehouse(value); }}><SelectTrigger><SelectValue placeholder="Choose return location" /></SelectTrigger><SelectContent>{availableWarehouses.map(warehouse => <SelectItem value={warehouse.id} key={warehouse.id}>{warehouse.code} · {warehouse.name} · {locationTypeLabel(locationState, warehouse)}</SelectItem>)}</SelectContent></Select></div>}
+            {visibleEquipment.some(e => removalChoices(data, e, "field").some(r => r.id === disposition[e] && r.outcome === "returned")) && <div className="space-y-1"><Label>Return warehouse</Label><Select value={returnWarehouse} onValueChange={value => { beginDraft(); captureLocationTypes([value]); setReturnWarehouse(value); }}><SelectTrigger><SelectValue placeholder="Choose return location" /></SelectTrigger><SelectContent>{availableWarehouses.map(warehouse => <SelectItem value={warehouse.id} key={warehouse.id}>{warehouse.code} · {warehouse.name} · {locationTypeLabel(locationState, warehouse)}</SelectItem>)}</SelectContent></Select></div>}
             <p className="text-xs text-muted-foreground">Only a serial entered with a disposition is posted as removed equipment.</p>
           </>}
           <div className="flex gap-2"><Button type="button" onClick={() => void submitReview()} disabled={mutation.isPending || !canAssign || allocationConflict}>{mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Confirm inventory review</Button><Button type="button" variant="ghost" onClick={() => { draftEditEpoch.current++; setReviewing(false); }}>Cancel</Button></div>

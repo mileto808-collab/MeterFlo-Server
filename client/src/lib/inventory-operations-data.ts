@@ -131,7 +131,7 @@ export function buildOperationsDataset(
   } else if (kind === "returns") {
     rows = state.returns.map(r => textSearch({ id: r.id, cells: {
       equipment: r.equipment === "system" ? "System" : "Module", serial: r.serial, status: r.status,
-      workOrder: r.workOrderId, location: locationName(r.warehouseId), disposition: r.disposition,
+      workOrder: r.workOrderId, location: locationName(r.warehouseId), disposition: r.ruleName ?? r.disposition,
       sku: r.itemId ? items.get(r.itemId)?.sku ?? "Unavailable item" : "", item: r.itemId ? items.get(r.itemId)?.name ?? "Unavailable item" : "",
     }, facets: { equipment: r.equipment, status: r.status, warehouse: r.warehouseId ?? "none", disposition: r.disposition } }));
     cols = columns([["equipment", "Equipment"], ["serial", "Serial"], ["status", "Status"], ["workOrder", "Work order"],

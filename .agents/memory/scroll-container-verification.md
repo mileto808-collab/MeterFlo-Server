@@ -3,6 +3,12 @@ name: Scroll-container verification
 description: Prevent false-positive responsive checks when scroll containers clip oversized content.
 ---
 
+Emulate touch input when verifying phone landscape, not only its viewport dimensions.
+
+**Why:** Touch-specific compact layouts use pointer capability as well as screen size. A mouse-only browser at phone-landscape dimensions can select the desktop layout and falsely report clipped controls.
+
+**How to apply:** Use a touch-capable browser context for phone portrait/landscape acceptance; separately verify desktop mouse layouts where relevant.
+
 Verify the width of the actual content inside a scroll container, not just the page's width, and inspect a rendered screenshot. Keep wide tables and code scrollable within their own bounded containers.
 
 **Why:** A documentation page passed a phone page-width assertion while its scroll area's intrinsic table layout expanded the article beyond the viewport and clipped prose and columns. Hidden overflow made the outer page appear correctly sized.

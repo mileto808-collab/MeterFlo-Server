@@ -9,6 +9,7 @@ const referenceTables: Record<string, string> = {
   orderId: "inventory_orders", receiptId: "inventory_receipts", sourceReceiptId: "inventory_receipts", assemblyId: "inventory_kit_assemblies",
   replacementFor: "inventory_orders",
   locationTypeId: "inventory_location_types",
+  ruleId: "inventory_removal_rules",
 };
 
 /** Development/standalone maintenance only. Publish transports schema to managed production. */
@@ -110,6 +111,17 @@ export async function applyInventoryRelationalSchema(pool: Pool) {
     ON public.inventory_warehouses(project_id,name,code,id)`);
   statements.push(`CREATE UNIQUE INDEX IF NOT EXISTS inventory_location_type_name_unique
     ON public.inventory_location_types(project_id,lower(regexp_replace(btrim(name),'\\s+',' ','g')))`);
+  statements.push(`CREATE UNIQUE INDEX IF NOT EXISTS inventory_removal_rule_name_unique ON public.inventory_removal_rules(project_id,lower(btrim(name)))`);
+  constraints.push(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='public.inventory_removal_rules'::regclass AND conname='inventory_removal_rule_valid') THEN
+    ALTER TABLE public.inventory_removal_rules ADD CONSTRAINT inventory_removal_rule_valid CHECK (
+      id IS NOT NULL AND length(btrim(name)) BETWEEN 1 AND 200 AND active IS NOT NULL AND revision>0 AND
+      equipment IN ('system','module','both') AND
+      (stage='field' AND outcome IN ('returned','scrapped','left_onsite') OR stage='warehouse' AND outcome IN ('released','scrapped')));
+    END IF; END $$`);
+  constraints.push(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='public.inventory_removal_policies'::regclass AND conname='inventory_removal_policy_valid') THEN
+    ALTER TABLE public.inventory_removal_policies ADD CONSTRAINT inventory_removal_policy_valid CHECK (
+      id='removal-policy' AND revision IS NOT NULL AND revision>0 AND require_system_return IS NOT NULL AND require_module_return IS NOT NULL);
+    END IF; END $$`);
   constraints.push(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='public.inventory_location_types'::regclass AND conname='inventory_location_type_valid') THEN
     ALTER TABLE public.inventory_location_types ADD CONSTRAINT inventory_location_type_valid CHECK (
       id IS NOT NULL AND name IS NOT NULL AND length(btrim(name)) BETWEEN 1 AND 200 AND

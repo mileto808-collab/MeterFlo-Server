@@ -485,7 +485,7 @@ export class DatabaseStorage implements IStorage {
       if (project.inventoryEnabled === false && state &&
         (state.allocations.some(a => a.status === "reserved" && a.lines.length) ||
          state.orders.some(o => !["completed", "cancelled"].includes(o.status)) ||
-         state.counts.some(c => c.status === "open") || state.returns.some(r => r.disposition === "returned" && r.status !== "released")))
+         state.counts.some(c => c.status === "open") || state.returns.some(r => r.disposition === "returned" && ["pending", "quarantine"].includes(r.status))))
         throw new InventoryError("Resolve reservations, open orders, counts and returns before disabling inventory.");
       const [updated] = await tx.update(projects).set({ ...project, updatedAt: new Date() }).where(eq(projects.id, id)).returning();
       return updated;

@@ -27,6 +27,8 @@ import { coreUpdatePreview, gitReader } from "./coreUpdatePreview";
 import { runtimeCustomerRelease } from "./customerExtensions";
 import { registerInventoryRoutes } from "./inventoryRoutes";
 import { inventoryState } from "./inventoryService";
+import { removalConfig } from "../shared/inventory-removal-policy";
+import { getProjectEquipmentVisibility } from "../shared/project-equipment-scope";
 import { InventoryError } from "../shared/inventory-engine";
 import { warehouseAccessible } from "../shared/inventory-location-types";
 
@@ -1870,7 +1872,7 @@ export async function registerRoutes(
           const inv = await inventoryState(projectId);
           if (inv.allocations.some(a => a.status === "reserved" && a.lines.length) ||
               inv.orders.some(o => !["completed", "cancelled"].includes(o.status)) ||
-              inv.counts.some(c => c.status === "open") || inv.returns.some(r => r.disposition === "returned" && r.status !== "released"))
+              inv.counts.some(c => c.status === "open") || inv.returns.some(r => r.disposition === "returned" && ["pending", "quarantine"].includes(r.status)))
             return res.status(409).json({ message: "Resolve reservations, open orders, counts and equipment returns before disabling inventory. Historical stock is preserved." });
         }
       }
@@ -2858,8 +2860,9 @@ export async function registerRoutes(
         const missingFields: string[] = [];
         
         // Determine if this work order has system data or module data
-        const hasSystemData = mergedData.oldSystemId || mergedData.newSystemId;
-        const hasModuleData = mergedData.oldModuleId || mergedData.newModuleId;
+        const inventoryScope = project.inventoryEnabled ? getProjectEquipmentVisibility(project) : { showSystem: true, showModule: true };
+        const hasSystemData = inventoryScope.showSystem && (mergedData.oldSystemId || mergedData.newSystemId);
+        const hasModuleData = inventoryScope.showModule && (mergedData.oldModuleId || mergedData.newModuleId);
         
         // Validate system data if present
         const systemMissingFields: string[] = [];
@@ -3013,17 +3016,17 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Work order not found" });
       }
       
-      // Delete work order files/directory
+      // Commit stock/custody checks before deleting attachments. A rejected
+      // removal must leave both the work order and its physical evidence intact.
       const folderName = workOrder.customerWoId || String(workOrder.id);
-      await deleteWorkOrderDirectory(project.name, project.id, folderName, workOrder.id);
-      
-      // Delete work order from database
       await workOrderStorage.deleteWorkOrder(workOrderId);
+      await deleteWorkOrderDirectory(project.name, project.id, folderName, workOrder.id);
       
       emitWorkOrderDeleted(projectId, workOrderId, currentUser?.id);
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting work order:", error);
+      if (error instanceof InventoryError) return res.status(error.status).json({ message: error.message, code: "INVENTORY_CONFLICT" });
       res.status(500).json({ message: "Failed to delete work order" });
     }
   });
@@ -9328,6 +9331,9 @@ export async function registerRoutes(
             ...(inv ? { inventoryAllocation: inv.allocations.find(a => a.workOrderId === wo.id) || null } : {}) })),
           inventory: { contractVersion: 1, enabled: !!inv, items: inv?.items || [],
             locationTypes: inv?.locationTypes || [],
+            ...(inv ? { removalContractVersion: 1, removalRules: removalConfig(inv).rules,
+              removalPolicies: [removalConfig(inv).policy],
+              workflow: { wizardMode: project.wizardMode ?? "changeout", equipment: project.changeoutEquipmentType ?? "both", readingEquipment: project.readingEquipmentType ?? "both" } } : {}),
             warehouses: inv?.warehouses.filter(w => warehouseAccessible(inv, w, currentUser.id, inventoryAdmin)) || [] },
           referenceData: {
             workOrderStatuses,

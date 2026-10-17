@@ -509,7 +509,6 @@ export function WorkOrderDetail({
 
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-5xl mx-auto">
-      {inventoryEnabled && <InventoryWorkOrderPanel projectId={projectId} workOrderId={workOrder.id} readingOnly={wizardConfig?.wizardMode === "reading_only"} />}
       {/* Read-Only Banner */}
       {!canEdit && (
         <div className="flex items-center gap-2 p-3 bg-muted border rounded-md" data-testid="banner-read-only">
@@ -2334,6 +2333,10 @@ export function WorkOrderDetail({
                     </div>
                   </div>
                 )}
+                {inventoryEnabled && <details className="mt-4 min-w-0 rounded-md border p-3" data-testid="equipment-inventory-section">
+                  <summary className="cursor-pointer text-sm font-medium">Inventory for this visit</summary>
+                  <div className="mt-3 min-w-0"><InventoryWorkOrderPanel projectId={projectId} workOrderId={workOrder.id} readingOnly={wizardConfig?.wizardMode === "reading_only"} /></div>
+                </details>}
               </AccordionContent>
             </AccordionItem>
 

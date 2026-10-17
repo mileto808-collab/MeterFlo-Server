@@ -12,6 +12,10 @@ export type EntityModel = {
 const text = (...keys: string[]): Columns => Object.fromEntries(keys.map(key => [key, "text"]));
 const line = { itemId: "text", quantity: "integer" };
 export const relationalEntities: EntityModel[] = [
+  { name: "inventory_removal_rules", field: "removalRules",
+    columns: { id: "uuid", ...text("name", "equipment", "stage", "outcome"), active: "boolean", revision: "integer" } },
+  { name: "inventory_removal_policies", field: "removalPolicies",
+    columns: { ...text("id"), revision: "integer", requireSystemReturn: "boolean", requireModuleReturn: "boolean" } },
   { name: "inventory_location_types", field: "locationTypes",
     columns: { id: "uuid", ...text("name", "kind", "accessPolicy"), revision: "integer" } },
   { name: "inventory_warehouses", field: "warehouses",
@@ -40,7 +44,8 @@ export const relationalEntities: EntityModel[] = [
   { name: "inventory_receipts", field: "receipts", columns: text("id", "action", "reference", "warehouseId", "actor", "occurredAt", "reason", "holdId", "resolution", "externalReference", "kitHoldId", "sourceReceiptId"),
     json: ["holdDisposition", "kitConversion", "kitInspection"],
     children: [{ name: "inventory_receipt_lines", paths: ["lines", "components", "damaged", "closedShort"], columns: { ...line, warehouseId: "text", unidentifiedQuantity: "integer", reason: "text" }, arrays: ["serials", "expectedSerials"] }] },
-  { name: "inventory_returns", field: "returns", columns: { ...text("id", "equipment", "serial", "disposition", "warehouseId", "status", "itemId"), workOrderId: "integer" } },
+  { name: "inventory_returns", field: "returns", columns: { ...text("id", "equipment", "serial", "disposition", "warehouseId", "status", "itemId", "ruleName"),
+    ruleId: "uuid", ruleRevision: "integer", policyRevision: "integer", workOrderId: "integer" }, json: ["history"] },
   { name: "inventory_shipment_holds", field: "shipmentHolds", columns: { ...text("id", "itemId", "orderId", "receiptId", "warehouseId", "actor", "occurredAt", "status", "reason"), quantity: "integer", unidentifiedQuantity: "integer" },
     arrays: ["serials", "expectedSerials"], json: ["resolution", "dispositions"] },
   { name: "inventory_shipment_drafts", field: "shipmentDrafts", columns: { ...text("id", "orderId", "stage", "ownerId", "savedAt"), revision: "integer" }, json: ["capture", "pending"] },

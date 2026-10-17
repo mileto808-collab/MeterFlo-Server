@@ -39,6 +39,8 @@ import { InventoryDeleteAction } from "@/components/inventory-delete-action";
 import { InventoryMobileTools } from "@/components/inventory-mobile-tools";
 import { InventoryEditorSurface } from "@/components/inventory/inventory-editor-surface";
 import { LocationTypesManager } from "@/components/inventory/location-types-manager";
+import { RemovalRulesManager } from "@/components/inventory/removal-rules-manager";
+import { RemovedEquipmentActions, type ReturnDecisionDraft } from "@/components/inventory/removed-equipment-actions";
 import { CountSerialsDialog } from "@/components/inventory/count-serials-dialog";
 import { CountProductScanner } from "@/components/inventory/count-product-scanner";
 import { matchesCountProduct } from "@/lib/inventory-count-recovery";
@@ -337,7 +339,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   // A count choice must not silently discard an unrelated order draft.
   const completeSavedNavigation = useUnsavedNavigation(countDirty || orderDirty || resourceDirty || (!!resource && resource !== "vendor" && (imageBusy || resourceSaving.current)) || movementDirty || movementCheckpointBusy || kitDirty,
     transition => requestCountTransition(() => requestOrderTransition(() => requestResourceTransition(() => requestMovementTransition(() => requestKitTransition(transition))))));
-  const [returnInspect, setReturnInspect] = useState<Record<string, { itemId: string; reason: string }>>({});
+  const [returnInspect, setReturnInspect] = useState<Record<string, ReturnDecisionDraft>>({});
 
   const state = data?.state;
   const locationContextSignature = (warehouse: Warehouse) => JSON.stringify({
@@ -1953,11 +1955,11 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       <TabsContent value="returns" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         {Object.entries(returnInspect).filter(([id, draft]) => {
           const current = state.returns.find(value => value.id === id);
-          const selectedItem = items.find(value => value.id === draft.itemId && value.tracking === "serialized");
+          const selectedItem = items.find(value => value.id === draft.itemId && value.active);
           return !current || current.status !== "quarantine" || (!!draft.itemId && !selectedItem);
         }).map(([id, draft]) => {
           const current = state.returns.find(value => value.id === id);
-          const selectedItem = items.find(value => value.id === draft.itemId && value.tracking === "serialized");
+          const selectedItem = items.find(value => value.id === draft.itemId && value.active);
           return <Alert key={id} data-testid="inventory-external-change" variant={!current ? "destructive" : "default"}>
             <AlertTriangle className="h-4 w-4" /><AlertTitle>{!current ? "Removed equipment record is unavailable" : current.status !== "quarantine" ? "Equipment custody changed" : "Selected catalog item is unavailable"}</AlertTitle>
             <AlertDescription className="flex flex-wrap items-center gap-2">
@@ -1965,7 +1967,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
                 ? `Your inspection note “${draft.reason || "No note entered"}” and selected item ${draft.itemId || "none"} remain in this tab, but return ${id} is no longer present.`
                 : current.status !== "quarantine"
                   ? `Return ${current.serial} is now ${current.status}; the retained inspection note will not be applied to its new custody state.`
-                  : `The selected match ${draft.itemId} is no longer an active serialized ${current.equipment}.`}</span>
+                  : `The selected match ${draft.itemId} is no longer active equipment.`}</span>
               {selectedItem && <span>{selectedItem.sku} · {selectedItem.name}</span>}
               <Button type="button" size="sm" variant="outline" onClick={() => {
                 if (!window.confirm("Discard this retained inspection note and selected item?")) return;
@@ -1975,13 +1977,16 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           </Alert>;
         })}
         <InventoryRecordsWorkspace kind="returns" title="Removed Equipment" description="Returned systems and modules enter quarantine first. Release to usable inventory only after inspection." dataset={returnsDataset} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
+          persistentHeaderAction={<RemovalRulesManager state={state} authorized={can("inventory.manageRemovalRules")} post={(action, payload, operationId) => command.mutateAsync({ action, data: payload, operationId })} />}
           renderRow={row => { const returned = state.returns.find(value => value.id === row.id); if (!returned) return null;
             return <article className="flex min-w-0 flex-col justify-between gap-3 rounded-md border bg-card px-3 py-3 sm:flex-row sm:items-start sm:px-4">
               <div className="min-w-0"><div className="flex flex-wrap items-center gap-2 font-medium"><span>{returned.equipment === "system" ? "System" : "Module"}</span><span className="break-all font-mono text-sm">{returned.serial}</span><Badge variant={returned.status === "released" ? "default" : "outline"}>{returned.status}</Badge></div>
                 <div className="mt-1 text-sm text-muted-foreground">Work order #{returned.workOrderId} · Return location: {warehouses.find(w => w.id === returned.warehouseId)?.name ?? "Location unavailable"}</div>
-              </div><div className="flex min-w-0 flex-wrap gap-2">{returned.status === "pending" && can("inventory.receive") && <Button size="sm" disabled={command.isPending} onClick={() => command.mutate({ action: "returnAccept", data: { id: returned.id } })}>Accept into quarantine</Button>}
-                {returned.status === "quarantine" && can("inventory.receive") && <div className="flex min-w-0 flex-wrap gap-2"><Select value={returnInspect[returned.id]?.itemId ?? ""} onValueChange={value => setReturnInspect(current => ({ ...current, [returned.id]: { itemId: value, reason: current[returned.id]?.reason ?? "" } }))}><SelectTrigger className="w-48"><SelectValue placeholder="Matching equipment item" /></SelectTrigger><SelectContent>{items.filter(item => item.tracking === "serialized" && item.equipment === returned.equipment).map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select><Input aria-label="Inspection result" placeholder="Inspection note" value={returnInspect[returned.id]?.reason ?? ""} onChange={event => setReturnInspect(current => ({ ...current, [returned.id]: { itemId: current[returned.id]?.itemId ?? "", reason: event.target.value } }))} /><Button size="sm" disabled={command.isPending || !items.some(item => item.id === returnInspect[returned.id]?.itemId && item.tracking === "serialized" && item.equipment === returned.equipment) || !returnInspect[returned.id]?.reason} onClick={() => command.mutate({ action: "returnRelease", data: { id: returned.id, itemId: returnInspect[returned.id].itemId, reason: returnInspect[returned.id].reason } })}>Release to stock</Button></div>}
-              </div></article>;
+                {returned.ruleName && <div className="mt-1 text-xs text-muted-foreground">Field disposition: {returned.ruleName}</div>}
+              </div><RemovedEquipmentActions record={returned} state={state} canReceive={can("inventory.receive")} canDecide={can("inventory.resolveReturns")}
+                actorLabel={id => inventoryActorLabel(id, data.actors ?? data.users)}
+                draft={returnInspect[returned.id]} onDraft={draft => setReturnInspect(current => { const next = { ...current }; if (draft) next[returned.id] = draft; else delete next[returned.id]; return next; })}
+                post={(action, payload, operationId) => command.mutateAsync({ action, data: payload, operationId })} /></article>;
           }} />
       </TabsContent>
       <TabsContent value="activity" data-testid="inventory-activity-entries" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">

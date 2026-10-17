@@ -4,6 +4,7 @@ import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Allocation, Disposition, InventoryItem, Warehouse, WorkAllocation, WorkRequirements } from "@shared/inventory";
 import { locationTypeFor, locationTypeLabel, warehouseAccessible, type InventoryLocationType } from "@shared/inventory-location-types";
+import { removalChoices, removalConfig, type RemovalRule, type RemovalPolicy, type RemovalWorkflow } from "@shared/inventory-removal-policy";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -259,6 +260,7 @@ export function SystemChangeoutWizard({
   const inventoryQueryKey = ["/api/projects", projectId, "work-orders", workOrderId, "inventory"];
   type WizardInventory = { enabled: boolean; allocation: WorkAllocation | null; items: InventoryItem[]; warehouses: Warehouse[];
     locationTypes?: InventoryLocationType[]; requirements?: WorkRequirements;
+    removalRules?: RemovalRule[]; removalPolicies?: RemovalPolicy[]; workflow?: RemovalWorkflow;
     revision?: number };
   const { data: workInventory, isLoading: workInventoryLoading, isError: workInventoryError, refetch: refetchWorkInventory } = useQuery<WizardInventory>({
     queryKey: inventoryQueryKey,
@@ -300,6 +302,7 @@ export function SystemChangeoutWizard({
     revision: workInventory?.revision ?? 0,
     allocation: workInventory?.allocation ?? null,
     requirements: workInventory?.requirements ?? null,
+    removal: workInventory ? removalConfig(workInventory) : null, workflow: workInventory?.workflow,
   });
   const actualUseConflict = actualUseTouched.current && actualUseBaseline.current !== null &&
     (actualUseBaseline.current !== inventoryBasis || locationPolicyChanged) && !basisAccepted;
@@ -429,6 +432,8 @@ export function SystemChangeoutWizard({
   // Determine the effective display mode based on presence of system/module IDs
   // This is now data-driven instead of scope-driven
   const getDisplayMode = (): "system" | "module" | "both" => {
+    const scope = getEffectiveWorkflowMode() === "reading_only" ? workInventory?.workflow?.readingEquipment : workInventory?.workflow?.equipment;
+    if (inventoryEnabled && (scope === "system" || scope === "module")) return scope;
     const hasSystem = !!oldSystemId;
     const hasModule = !!oldModuleId;
     
@@ -732,13 +737,14 @@ export function SystemChangeoutWizard({
         if (!hasPermission("inventory.assign")) return false;
         const quantitiesValid = actualUseLinesAreValid(actualUse, workInventory?.items ?? []) && !actualUseConflict;
         const assets = [
-          ...(oldSystemId ? [{ key: "system" as const }] : []),
-          ...(oldModuleId ? [{ key: "module" as const }] : []),
+          ...(oldSystemId && displayMode !== "module" && data.newSystemId !== oldSystemId ? [{ key: "system" as const }] : []),
+          ...(oldModuleId && displayMode !== "system" && data.newModuleId !== oldModuleId ? [{ key: "module" as const }] : []),
         ];
         const dispositionsValid = assets.every(({ key }) => {
           const entry = removedMeters[key];
-          return !!entry?.serial.trim() && !!entry.disposition &&
-            (entry.disposition !== "returned" || !!entry.warehouseId);
+          const rule = workInventory && removalChoices(workInventory, key, "field").find(r => r.id === entry?.disposition);
+          return !!entry?.serial.trim() && !!rule &&
+            (rule.outcome !== "returned" || !!entry.warehouseId);
         });
         return quantitiesValid && dispositionsValid;
       }
@@ -961,11 +967,12 @@ export function SystemChangeoutWizard({
 
     setIsSubmitting(true);
     try {
-      if (inventoryEnabled) {
+      if (inventoryEnabled && data.canChange && !isReadingOnlyMode) {
         if (!hasPermission("inventory.assign")) throw new Error("Inventory assignment permission is required to record actual stock use.");
         const latest = await apiRequest("GET", `/api/projects/${projectId}/work-orders/${workOrderId}/inventory`)
           .then(response => response.json() as Promise<WizardInventory>);
-        const latestBasis = JSON.stringify({ revision: latest.revision ?? 0, allocation: latest.allocation ?? null, requirements: latest.requirements ?? null });
+        const latestBasis = JSON.stringify({ revision: latest.revision ?? 0, allocation: latest.allocation ?? null, requirements: latest.requirements ?? null,
+          removal: removalConfig(latest), workflow: latest.workflow });
         if (!actualUseLinesAreValid(actualUse, latest.items ?? [])) throw new Error("Check used quantities and serials. Reserved lines can only use their reserved quantity and serials.");
         if (actualUse.some(line => Number(line.quantity) > 0 && !accessibleWarehouses(latest).some(warehouse => warehouse.id === line.warehouseId))) {
           queryClient.setQueryData(inventoryQueryKey, latest);
@@ -987,16 +994,18 @@ export function SystemChangeoutWizard({
           return [{ itemId: line.itemId, warehouseId: line.warehouseId, quantity, serials }];
         });
         const removedAssets = [
-          ...(oldSystemId ? [{ equipment: "system" as const, key: "system", oldSerial: oldSystemId }] : []),
-          ...(oldModuleId ? [{ equipment: "module" as const, key: "module", oldSerial: oldModuleId }] : []),
+          ...(oldSystemId && displayMode !== "module" && data.newSystemId !== oldSystemId ? [{ equipment: "system" as const, key: "system", oldSerial: oldSystemId }] : []),
+          ...(oldModuleId && displayMode !== "system" && data.newModuleId !== oldModuleId ? [{ equipment: "module" as const, key: "module", oldSerial: oldModuleId }] : []),
         ];
         const dispositions: Disposition[] = mode === "reading_only" || !data.canChange ? [] : removedAssets.map(asset => {
           const entry = removedMeters[asset.key];
-          if (!entry?.disposition) throw new Error(`Choose a disposition for the removed ${asset.key} meter.`);
+          const rule = removalChoices(latest, asset.equipment, "field").find(r => r.id === entry?.disposition);
+          if (!entry?.disposition || !rule) throw new Error(`Choose a currently approved disposition for the removed ${asset.key} meter.`);
           const serial = entry.serial.trim();
           if (!serial) throw new Error(`Scan the removed ${asset.key} meter serial.`);
-          if (entry.disposition === "returned" && !entry.warehouseId) throw new Error("Choose a warehouse for returned equipment.");
-          return { equipment: asset.equipment, serial, disposition: entry.disposition as Disposition["disposition"], warehouseId: entry.disposition === "returned" ? entry.warehouseId : null };
+          if (rule.outcome === "returned" && !entry.warehouseId) throw new Error("Choose a warehouse for returned equipment.");
+          return { equipment: asset.equipment, serial, disposition: rule.outcome as Disposition["disposition"], warehouseId: rule.outcome === "returned" ? entry.warehouseId : null,
+            ruleId: rule.id, ruleRevision: rule.revision, policyRevision: removalConfig(latest).policy.revision };
         });
         const intent = JSON.stringify({ workOrderId, mode, used, dispositions });
         const priorAttempt = prepareAttempt.current;
@@ -2490,15 +2499,15 @@ export function SystemChangeoutWizard({
                 <CardHeader className="pb-3"><CardTitle className="text-base">Removed Equipment</CardTitle></CardHeader>
                 <CardContent className="space-y-3">
                   {[
-                    ...(oldSystemId ? [{ equipment: "system" as const, serial: oldSystemId }] : []),
-                    ...(oldModuleId ? [{ equipment: "module" as const, serial: oldModuleId }] : []),
+                    ...(oldSystemId && displayMode !== "module" && data.newSystemId !== oldSystemId ? [{ equipment: "system" as const, serial: oldSystemId }] : []),
+                    ...(oldModuleId && displayMode !== "system" && data.newModuleId !== oldModuleId ? [{ equipment: "module" as const, serial: oldModuleId }] : []),
                   ].map(asset => {
                     const value = removedMeters[asset.equipment] ?? { serial: asset.serial, disposition: "", warehouseId: "" };
                     return (
                       <div key={asset.equipment} className="grid gap-3 rounded-md border p-3 sm:grid-cols-3 sm:items-end">
                         <div className="space-y-1"><Label htmlFor={`removed-${asset.equipment}`}>Removed {asset.equipment} serial</Label><Input id={`removed-${asset.equipment}`} value={value.serial} onChange={event => setRemovedMeters(current => ({ ...current, [asset.equipment]: { ...value, serial: event.target.value } }))} /></div>
-                        <div className="space-y-1"><Label>Disposition</Label><Select value={value.disposition} onValueChange={selected => setRemovedMeters(current => ({ ...current, [asset.equipment]: { ...value, disposition: selected } }))}><SelectTrigger><SelectValue placeholder="Choose condition" /></SelectTrigger><SelectContent><SelectItem value="returned">Return to stockroom</SelectItem><SelectItem value="scrapped">Scrapped</SelectItem><SelectItem value="left_onsite">Left onsite</SelectItem></SelectContent></Select></div>
-                        {value.disposition === "returned" && <div className="space-y-1"><Label>Return warehouse</Label><Select value={value.warehouseId} onValueChange={selected => { if (workInventory) captureLocationBasis(workInventory, [selected]); setRemovedMeters(current => ({ ...current, [asset.equipment]: { ...value, warehouseId: selected } })); }}><SelectTrigger><SelectValue placeholder="Choose warehouse" /></SelectTrigger><SelectContent>{accessibleWarehouses(workInventory).map(warehouse => <SelectItem key={warehouse.id} value={warehouse.id}>{warehouse.code} · {warehouse.name} · {locationTypeLabel({ locationTypes: workInventory?.locationTypes ?? [] }, warehouse)}</SelectItem>)}</SelectContent></Select></div>}
+                        <div className="space-y-1"><Label>Disposition</Label><Select value={value.disposition} onValueChange={selected => { actualUseTouched.current = true; setRemovedMeters(current => ({ ...current, [asset.equipment]: { ...value, disposition: selected } })); }}><SelectTrigger><SelectValue placeholder="Choose approved disposition" /></SelectTrigger><SelectContent>{workInventory && removalChoices(workInventory, asset.equipment, "field").map(r => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}</SelectContent></Select>{workInventory && !removalChoices(workInventory, asset.equipment, "field").length && <p className="text-xs text-destructive">No approved dispositions. Ask an administrator to configure removal rules.</p>}</div>
+                        {workInventory && removalChoices(workInventory, asset.equipment, "field").some(r => r.id === value.disposition && r.outcome === "returned") && <div className="space-y-1"><Label>Return warehouse</Label><Select value={value.warehouseId} onValueChange={selected => { actualUseTouched.current = true; if (workInventory) captureLocationBasis(workInventory, [selected]); setRemovedMeters(current => ({ ...current, [asset.equipment]: { ...value, warehouseId: selected } })); }}><SelectTrigger><SelectValue placeholder="Choose warehouse" /></SelectTrigger><SelectContent>{accessibleWarehouses(workInventory).map(warehouse => <SelectItem key={warehouse.id} value={warehouse.id}>{warehouse.code} · {warehouse.name} · {locationTypeLabel({ locationTypes: workInventory?.locationTypes ?? [] }, warehouse)}</SelectItem>)}</SelectContent></Select></div>}
                       </div>
                     );
                   })}

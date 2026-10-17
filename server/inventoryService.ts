@@ -14,6 +14,7 @@ import { readRelationalInventory, writeRelationalInventory } from "./inventoryRe
 import { setWorkRequirements, workRequirements } from "./inventoryRequirements";
 import { actualEquipmentLines } from "../shared/inventory-requirements";
 import { resolveWarehouseInput } from "../shared/inventory-location-types";
+import { validateRemovalWorkflow, sameRemovalCapture, hasInventoryReplacement } from "../shared/inventory-removal-policy";
 
 // Saved captures are temporary editing state, not another physical-stock
 // ledger. Record useful changes without duplicating every scan on every save.
@@ -89,6 +90,9 @@ export async function saveInventory(client: PoolClient, projectId: number, befor
     entityChanges.push({ field: "categoryCatalog", before: before.categoryCatalog ?? [], after: after.categoryCatalog ?? [] });
   if (JSON.stringify(before.locationTypes ?? []) !== JSON.stringify(after.locationTypes ?? []))
     entityChanges.push({ field: "locationTypes", before: before.locationTypes ?? [], after: after.locationTypes ?? [] });
+  for (const field of ["removalRules", "removalPolicies"] as const)
+    if (JSON.stringify(before[field] ?? []) !== JSON.stringify(after[field] ?? []))
+      entityChanges.push({ field, before: before[field] ?? [], after: after[field] ?? [] });
   await writeRelationalInventory(client, projectId, after, before);
   await client.query("INSERT INTO public.inventory_movements(project_id,operation_id,action,actor_id,changes) VALUES($1,$2,$3,$4,$5)",
     [projectId, operationId, action, actor, JSON.stringify({ stock: changes, entities: entityChanges })]);
@@ -105,10 +109,18 @@ export async function postInventory(projectId: number, command: InventoryCommand
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const { rows: [p] } = await client.query("SELECT inventory_enabled,is_active FROM public.projects WHERE id=$1 FOR SHARE", [projectId]);
+    const { rows: [p] } = await client.query("SELECT inventory_enabled,is_active,wizard_mode,changeout_equipment_type FROM public.projects WHERE id=$1 FOR SHARE", [projectId]);
     if (!p?.inventory_enabled) throw new InventoryError("Inventory is disabled for this project.");
     if (p.is_active === false) throw new InventoryError("Reactivate this project before posting inventory.");
     const before = await lockInventory(client, projectId);
+    const removalPermission = ["removalRule", "removalRuleDelete", "removalPolicy"].includes(command.action)
+      ? inventoryPermissions.manageRemovalRules : ["returnDecide", "returnRelease"].includes(command.action) ? inventoryPermissions.resolveReturns : null;
+    if (removalPermission) {
+      const user = await storage.getUser(actor);
+      if (!user || user.isLocked || !await storage.hasPermission(user, removalPermission) ||
+          !admin && !await storage.isUserAssignedToProject(actor, projectId))
+        throw Object.assign(new InventoryError("Equipment removal action permission required."), { status: 403 });
+    }
     const isTypeCommand = ["locationType", "locationTypeDelete"].includes(command.action);
     let canManageLocations = admin;
     if (isTypeCommand || command.action === "warehouse") {
@@ -120,6 +132,13 @@ export async function postInventory(projectId: number, command: InventoryCommand
         throw Object.assign(new InventoryError("Manage inventory location types and access permission required."), { status: 403 });
     }
     if (["assign", "prepareUse"].includes(command.action)) {
+      if (command.action === "assign" && p.wizard_mode === "reading_only")
+        throw new InventoryError("Reading-only projects cannot reserve replacement inventory.");
+      if (command.action === "prepareUse") {
+        const parsed = z.object({ mode: z.string(), used: z.array(allocationSchema), dispositions: z.array(dispositionSchema) }).parse(command.data);
+        validateRemovalWorkflow(parsed.mode, parsed.used, parsed.dispositions, before,
+          { wizardMode: p.wizard_mode ?? "changeout", equipment: p.changeout_equipment_type ?? "both" });
+      }
       const { rows: [project] } = await client.query("SELECT database_name FROM public.projects WHERE id=$1", [projectId]);
       if (!project?.database_name || !/^[a-z0-9_]+$/.test(project.database_name)) throw new InventoryError("Project work-order storage unavailable.");
       const id = z.number().int().positive().parse(command.data.workOrderId);
@@ -184,7 +203,7 @@ export async function postInventory(projectId: number, command: InventoryCommand
   } finally { client.release(); }
 }
 export async function inventoryWorkOrderChange(client: PoolClient, schema: string, prior: any, next: any, usage?: unknown, importedItems?: unknown, ordinaryImport = false) {
-  const { rows: [p] } = await client.query("SELECT id,inventory_enabled,wizard_mode,changeout_equipment_type FROM public.projects WHERE database_name=$1", [schema]);
+  const { rows: [p] } = await client.query("SELECT id,inventory_enabled,wizard_mode,changeout_equipment_type,reading_equipment_type FROM public.projects WHERE database_name=$1", [schema]);
   if (!p?.inventory_enabled) {
     if (!ordinaryImport && importedItems !== undefined && inventoryImportSchema.parse(importedItems).length) throw new InventoryError("Enable inventory before importing inventory items.");
     return;
@@ -195,6 +214,8 @@ export async function inventoryWorkOrderChange(client: PoolClient, schema: strin
   const completed = completedStatus(next?.status), previouslyCompleted = completedStatus(prior?.status);
   // Serialize state before checking assignments; callers lock inventory before the work order too.
   let before = await lockInventory(client, p.id), state = before;
+  if (!next && prior && state.returns.some(r => r.workOrderId === prior.id))
+    throw new InventoryError("Work orders with recorded equipment removals cannot be deleted. Keep their custody and decision history.");
   if (previouslyCompleted && completed && before.allocations.find(a => a.workOrderId === prior.id)?.status === "consumed" &&
       ["old_system_id", "new_system_id", "old_module_id", "new_module_id"].some(key => next[key] !== prior[key]))
     throw new InventoryError("Reconcile inventory before changing completed equipment IDs.");
@@ -231,6 +252,8 @@ export async function inventoryWorkOrderChange(client: PoolClient, schema: strin
   if (usage && !ordinaryImport) {
     const command = z.object({ operationId: z.string().uuid(), revision: z.number().int(), mode: z.enum(["changeout", "reading_only"]),
       used: z.array(allocationSchema), dispositions: z.array(dispositionSchema) }).strict().parse(usage);
+    validateRemovalWorkflow(command.mode, command.used, command.dispositions, state,
+      { wizardMode: p.wizard_mode ?? "changeout", equipment: p.changeout_equipment_type ?? "both" });
     const actor = auditContext.getStore()?.actorId;
     if (!actor) throw new InventoryError("Authenticated inventory identity required.");
     const u = await storage.getUser(actor);
@@ -241,7 +264,7 @@ export async function inventoryWorkOrderChange(client: PoolClient, schema: strin
     const existing = state.allocations.find(a => a.workOrderId === next.id);
     if (previouslyCompleted && existing) {
       if (existing.revision !== command.revision + 1 || existing.mode !== command.mode ||
-         canonicalInventoryJson(existing.used) !== canonicalInventoryJson(command.used) || canonicalInventoryJson(existing.dispositions) !== canonicalInventoryJson(command.dispositions))
+         canonicalInventoryJson(existing.used) !== canonicalInventoryJson(command.used) || !sameRemovalCapture(existing.dispositions, command.dispositions))
         throw new InventoryError("Completed inventory use cannot be changed by another upload; reconcile it first.");
     } else state = applyInventoryCommand(state, { operationId: command.operationId, action: "prepareUse",
       data: { workOrderId: next.id, revision: command.revision, mode: command.mode, used: command.used, dispositions: command.dispositions } }, actor, admin).state;
@@ -255,15 +278,40 @@ export async function inventoryWorkOrderChange(client: PoolClient, schema: strin
   }
   const importedWithoutStock = ordinaryImport;
   if (completed && !previouslyCompleted && !importedWithoutStock) {
+    let prepared = state.allocations.find(a => a.workOrderId === next.id);
+    const capture = (row: any) => row ? {
+      system: { old: row.old_system_id, new: row.new_system_id },
+      module: { old: row.old_module_id, new: row.new_module_id },
+    } : null;
+    const changedEquipment = hasInventoryReplacement(capture(prior), capture(next)!, {
+      wizardMode: p.wizard_mode ?? "changeout", equipment: p.changeout_equipment_type ?? "both",
+      readingEquipment: p.reading_equipment_type ?? "both",
+    });
+    const readingVisit = p.wizard_mode === "reading_only" || prepared?.mode === "reading_only" ||
+      p.wizard_mode === "user_choice" && !prepared?.mode && !changedEquipment;
+    if (readingVisit) {
+      if (changedEquipment) throw new InventoryError("Reading-only visits cannot replace equipment or bypass removed-equipment rules.");
+      if (prepared?.used.length || prepared?.dispositions.length)
+        throw new InventoryError("Clear prepared changeout use before completing a reading-only visit.");
+      if (prepared?.mode !== "reading_only") {
+        state = applyInventoryCommand(state, {
+          operationId: `${auditContext.getStore()?.operationId || "reading"}-${next.id}-${state.revision}`,
+          action: "prepareUse", data: { workOrderId: next.id, revision: prepared?.revision ?? 0, mode: "reading_only", used: [], dispositions: [] },
+        }, auditContext.getStore()?.actorId ?? "unavailable", true).state;
+        prepared = state.allocations.find(a => a.workOrderId === next.id);
+      }
+    }
     const actorId = auditContext.getStore()?.actorId;
     const completionUser = actorId ? await storage.getUser(actorId) : await storage.getUserByUsername("file_import");
-    if (!completionUser || completionUser.isLocked || !await storage.hasPermission(completionUser, inventoryPermissions.assign))
+    if (!completionUser || completionUser.isLocked || !readingVisit && !await storage.hasPermission(completionUser, inventoryPermissions.assign))
       throw new InventoryError("Inventory usage permission required to complete inventory work.");
     const completionAdmin = await storage.isAdminUser(completionUser);
     if (!completionAdmin && (next.assigned_user_id && next.assigned_user_id !== completionUser.id || !await storage.isUserAssignedToProject(completionUser.id, p.id)))
       throw new InventoryError("Inventory work order is not assigned to this user.");
     for (const l of state.allocations.find(a => a.workOrderId === next.id)?.used || []) warehouseAccess(state, l.warehouseId, completionUser.id, completionAdmin);
-    state = completeInventoryWorkOrder(state, next.id, p.wizard_mode === "reading_only");
+    if (prepared?.mode) validateRemovalWorkflow(prepared.mode, prepared.used, prepared.dispositions, state,
+      { wizardMode: p.wizard_mode ?? "changeout", equipment: p.changeout_equipment_type ?? "both" });
+    state = completeInventoryWorkOrder(state, next.id, p.wizard_mode === "reading_only", completionUser.id);
     const allocation = state.allocations.find(a => a.workOrderId === next.id);
     if (allocation?.mode === "changeout") {
       for (const disposition of allocation.dispositions) {

@@ -10,7 +10,7 @@ Send `inventoryUsage` with the completed work order: a stable operation UUID, do
 
 Shipment-held/damaged or unidentified goods and in-transit units are not usable stock. Do not infer availability from PO/transfer ordered or physically received totals, or offer those identities for offline assignment. The server excludes them from allocation/consumption and enforces inspection/discrepancy resolution. Guided receiving, short closure and shipment-hold resolution currently belong to the web warehouse workflow; this does not add native Expo screens or change the existing completion-upload contract. Operator/API examples are in `INVENTORY.md`.
 
-Read [INVENTORY.md](INVENTORY.md) for the exact JSON example and server endpoints before implementing this in the separately maintained Expo app.
+Read [INVENTORY.md](INVENTORY.md) and the **Project equipment-removal rules** section in [MOBILE_API.md](MOBILE_API.md) before implementing this in the separately maintained Expo app. Download `removalRules`, `removalPolicies` and `workflow`; select only active applicable field-stage rules, send `ruleId`, `ruleRevision` and `policyRevision`, and retain pending scans/notes when a policy conflict requires review. Never hardcode technician scrap/leave-onsite authority. Required-return choices remain physical obligations even if administrators later rename or disable their rules. Warehouse decisions require separate permission and cannot be made in the technician's offline completion payload.
 
 This document provides comprehensive instructions for updating the mobile application to synchronize with the web application's workflow configuration, search methods, time tracking, file uploads, and other features.
 

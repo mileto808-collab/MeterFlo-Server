@@ -1,5 +1,21 @@
 # Project Inventory Control
 
+## Project equipment-removal policy
+
+Authorized administrators configure **Inventory → Removed Equipment → Removal rules**. Rules are project-scoped relational records with immutable IDs and editable labels. The policy separately controls whether all removed systems and/or modules must return. The safe default requires both to return and offers technicians “Return to warehouse”; no field scrap or leave-onsite authority is inferred. Administrators can create several differently named return rules, scope them to systems/modules, disable them, or delete only unused rules. Used rules remain for historical evidence. A project with no applicable active choice must be corrected before removal review can proceed.
+
+Field-stage rules allow return, approved field scrap, or approved leave-onsite. Mandatory return hides and rejects non-return field rules. Warehouse-stage rules allow inspected release or scrap and never appear in technician choices. Manage policy with `inventory.manageRemovalRules`; receive returned equipment with `inventory.receive`; make final inspected release/scrap decisions with `inventory.resolveReturns`. Grant each through normal role management. Policy management alone grants neither stock movement nor final-decision authority.
+
+The work-order inventory area is collapsible beneath **System/Module Details**, respecting project scope. Fixed changeout projects do not offer Reading only. Reading-only projects do not reserve, consume, or remove equipment; their hidden historical system/module values are retained. Import planning is unchanged: imports and customer API pulls do not reserve serial stock.
+
+`removalRule`, `removalRuleDelete`, and `removalPolicy` use the inventory command endpoint and optimistic rule/policy revisions. For example, create a field return rule with `{id:UUID,name:"Contract salvage return",equipment:"system",stage:"field",outcome:"returned",active:true,revision:1}`. Updating sends the currently observed revision; the server increments it. Delete sends `{id,revision}`. Policy updates send `{id:"removal-policy",revision,requireSystemReturn,requireModuleReturn}`.
+
+Field dispositions sent in `prepareUse` or mobile `inventoryUsage` include `{equipment,serial,disposition,warehouseId,ruleId,ruleRevision,policyRevision}`. The server validates stage, applicability, required returns, equipment scope, and current revisions at preparation **and completion**. It records the rule name and outcome as historical evidence rather than rewriting old events after a rename. Live rule changes retain local drafts but require review before submission.
+
+Physical `returned` removals become **pending** obligations independent of the work order's later reopening. Completing a corrected work order does not duplicate the same physical removal or rewrite its custody. Work orders with recorded removals cannot be deleted. `returnAccept:{id}` records receipt into **quarantine**, not usable stock. The warehouse then posts `returnDecide:{id,ruleId,ruleRevision,reason,itemId?}` using an active warehouse-stage rule. Release requires a matching active system/module item (serialized or quantity-tracked); scrap does not add stock. A reason is mandatory. Final decisions cannot be applied before receipt, repeated under a new command, or turned into field authority. Use the same operation UUID for retries. Historical receipt/decision entries retain actor, time, reason, and rule snapshot. The older `returnRelease` command is restricted to the same separate warehouse permission and current approved release rule.
+
+Project and full-system backups include rule definitions, mandatory-return policy and custody snapshots. Restore rejects orphaned rule references. Inventory-disabled projects keep their previous behavior. Native Expo selectors live in a separate repository; the additive sync contract is documented in `MOBILE_API.md`.
+
 For storage design, upgrade safeguards and unused-record deletion, see [Relational inventory](INVENTORY-RELATIONAL.md).
 
 Inventory is optional for each project. An administrator enables **Project inventory** in the project form. It uses the same PostgreSQL database and configured local project-files directory on Replit, Windows, and Linux. No Replit bucket or external inventory service is required.

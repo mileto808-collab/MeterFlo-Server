@@ -21,6 +21,7 @@ import { serialQuerySchema, stockQuerySchema } from "../shared/inventory-stock-q
 import { prepareStockQueries, queryStock, queryStockSerials, stockOptions, stockSummary } from "./inventoryStockQueries";
 import { workRequirements } from "./inventoryRequirements";
 import { warehouseAccessible } from "../shared/inventory-location-types";
+import { removalConfig } from "../shared/inventory-removal-policy";
 
 export function inventoryVisibleState(state: InventoryState, actor: string, admin: boolean, canCount = true, permissions?: string[]) {
   // Project-level view permits finding stock at other locations and requesting
@@ -70,7 +71,7 @@ export function registerInventoryRoutes(app: Express) {
        OR EXISTS(SELECT 1 FROM public.user_group_members gm JOIN public.user_group_projects gp ON gp.group_id=gm.group_id
          WHERE gm.user_id=u.id AND gp.project_id=$1)) ORDER BY u.username`, [c.project.id]);
     const { rows: actors } = await pool.query(`SELECT id, username FROM public.users WHERE id = ANY($1::text[])`,
-      [[...new Set(state.receipts.map(receipt => receipt.actor))]]);
+      [[...new Set([...state.receipts.map(receipt => receipt.actor), ...state.returns.flatMap(r => (r.history ?? []).map(h => h.actor))])]]);
     return { enabled: !!c.project.inventoryEnabled, projectName: c.project.name, timezone: timezoneEnabled === "false" ? "UTC" : defaultTimezone || "America/Denver",
       state, permissions: c.permissions, users: users.map(u => ({ id: u.id, username: u.username || u.id })), actors };
   };
@@ -254,7 +255,9 @@ export function registerInventoryRoutes(app: Express) {
       ? s.workRequirements?.find(r => r.workOrderId === id)
       : await workRequirements(pool as any, c.project.id, s, wo);
     return { enabled: !!c.project.inventoryEnabled, canSelect, allocation, requirements: requirements ?? { workOrderId: id, lines: [], missing: [] },
-      items: s.items, warehouses: s.warehouses, locationTypes: s.locationTypes, revision: s.revision };
+      items: s.items, warehouses: s.warehouses, locationTypes: s.locationTypes, revision: s.revision,
+      removalRules: removalConfig(s).rules, removalPolicies: [removalConfig(s).policy],
+      workflow: { wizardMode: c.project.wizardMode ?? "changeout", equipment: c.project.changeoutEquipmentType ?? "both", readingEquipment: c.project.readingEquipmentType ?? "both" } };
   }));
 }
 // insertAuditEvent only needs a query-capable connection for this single event.
