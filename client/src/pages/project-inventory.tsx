@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRoute } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -36,6 +36,7 @@ import { InventoryRecordsWorkspace } from "@/components/inventory-records-worksp
 import { InventoryCategoryCreateAction } from "@/components/inventory-category-create-action";
 import { InventoryDeleteAction } from "@/components/inventory-delete-action";
 import { InventoryMobileTools } from "@/components/inventory-mobile-tools";
+import { InventoryEditorSurface } from "@/components/inventory/inventory-editor-surface";
 import { buildOperationsDataset } from "@/lib/inventory-operations-data";
 import type { StockBalanceRow } from "@/lib/inventory-stock-export";
 import { fetchStock, type StockSummary } from "@/lib/inventory-stock-api";
@@ -126,6 +127,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     catch { console.warn("Browser storage is unavailable; the selected Inventory tab cannot be remembered on refresh."); }
   };
   const inventoryMainRef = useRef<HTMLElement>(null);
+  const editorHostRef = useRef<HTMLDivElement>(null);
+  const inventoryTabsHostRef = useRef<HTMLDivElement>(null);
   const [selectedStockRow, setSelectedStockRow] = useState<StockBalanceRow | null>(null);
   const [resource, setResource] = useState<ResourceKind | null>(null);
   const stockContext = useQuery<Omit<Snapshot, "state" | "users"> & { summary: StockSummary }>({
@@ -169,9 +172,23 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const resourceAttempt = useRef<{ fingerprint: string; operationId: string } | null>(null);
   const resourceSaving = useRef(false);
   const resourceBaseline = useRef<{ kind: ResourceKind; id: string; signature: string; copied: boolean } | null>(null);
+  const resourceCurrentForm = resource === "warehouse" ? warehouseForm : resource === "vendor" ? vendorForm : itemForm;
+  const resourceDirty = !!resource && resource !== "vendor" && !!resourceBaseline.current &&
+    JSON.stringify(resourceCurrentForm) !== resourceBaseline.current.signature;
+  const [pendingResourceTransition, setPendingResourceTransition] = useState<(() => void) | null>(null);
   useEffect(() => { if (resourceError) resourceErrorRef.current?.focus(); }, [resourceError]);
   const [orderType, setOrderType] = useState<"purchase" | "transfer">("purchase");
   const [orderEditorOpen, setOrderEditorOpen] = useState(false);
+  const inlineEditorOpen = (!!resource && resource !== "vendor") || orderEditorOpen;
+  useLayoutEffect(() => {
+    const host = inventoryTabsHostRef.current;
+    if (!host) return;
+    if (inlineEditorOpen) {
+      host.setAttribute("inert", "");
+    } else {
+      host.removeAttribute("inert");
+    }
+  }, [inlineEditorOpen]);
   const [orderId, setOrderId] = useState("");
   const [editingOrderId, setEditingOrderId] = useState("");
   const [orderFilters, setOrderFilters] = useState(emptyOrderFilters);
@@ -218,6 +235,17 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const orderContainerHeightRef = useRef(0);
   const [orderRowsPerPage, setOrderRowsPerPage] = useState(1);
   const [orderToClear, setOrderToClear] = useState<InventoryOrder | null>(null);
+  const requestResourceTransition = (transition: () => void) => {
+    if (resourceSaving.current || imageBusy) return;
+    const leaveResource = () => {
+      setResource(null);
+      setResourceError(null);
+      setPendingResourceTransition(null);
+      transition();
+    };
+    if (resourceDirty) setPendingResourceTransition(current => current ?? leaveResource);
+    else leaveResource();
+  };
   const requestOrderTransition = (transition: () => void) => {
     if (orderSaving.current || command.isPending || unreleaseInFlight.current.size > 0) return;
     if (orderDirty) setPendingOrderTransition(current => current ?? transition);
@@ -269,8 +297,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   };
   // Register a single navigation guard: both editors can have unsaved values.
   // A count choice must not silently discard an unrelated order draft.
-  const completeSavedNavigation = useUnsavedNavigation(countDirty || orderDirty || movementDirty || movementCheckpointBusy || kitDirty,
-    transition => requestCountTransition(() => requestOrderTransition(() => requestMovementTransition(() => requestKitTransition(transition)))));
+  const completeSavedNavigation = useUnsavedNavigation(countDirty || orderDirty || resourceDirty || (!!resource && resource !== "vendor" && (imageBusy || resourceSaving.current)) || movementDirty || movementCheckpointBusy || kitDirty,
+    transition => requestCountTransition(() => requestOrderTransition(() => requestResourceTransition(() => requestMovementTransition(() => requestKitTransition(transition))))));
   const [returnInspect, setReturnInspect] = useState<Record<string, { itemId: string; reason: string }>>({});
 
   const state = data?.state;
@@ -986,7 +1014,25 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     command.mutate({ action: "countPost", data: { id: activeCount.id, draftRevision: countDraftRevision, lines: countLines, reason: countReason } }, { onSuccess: () => setActiveCount(null) });
   };
 
-  return <main ref={inventoryMainRef} className="inventory-workspace-shell mx-auto flex h-[calc(100dvh-72px)] min-h-0 w-full max-w-7xl flex-col overflow-hidden p-2 sm:p-4 md:p-7" data-testid="inventory-workspace">
+  return <main ref={inventoryMainRef} className="inventory-workspace-shell relative mx-auto flex h-[calc(100dvh-72px)] min-h-0 w-full max-w-7xl flex-col overflow-hidden p-2 sm:p-4 md:p-7" data-testid="inventory-workspace">
+    <div
+      ref={editorHostRef}
+      className={inlineEditorOpen ? "absolute inset-0 z-30" : "hidden"}
+      aria-hidden={inlineEditorOpen ? undefined : true}
+    />
+    <Dialog open={!!pendingResourceTransition} onOpenChange={open => { if (!open && !resourceSaving.current && !imageBusy) setPendingResourceTransition(null); }}>
+      <DialogContent onEscapeKeyDown={event => { if (resourceSaving.current || imageBusy) event.preventDefault(); }} onPointerDownOutside={event => event.preventDefault()}>
+        <DialogHeader><DialogTitle>Unsaved inventory details</DialogTitle><DialogDescription>Your location or item changes have not been saved. Stay to keep editing, or discard them and return to the inventory list.</DialogDescription></DialogHeader>
+        <DialogFooter>
+          <Button type="button" variant="outline" disabled={resourceBusy} onClick={() => setPendingResourceTransition(null)}>Stay</Button>
+          <Button type="button" variant="destructive" disabled={resourceBusy} onClick={() => {
+            const next = pendingResourceTransition;
+            setPendingResourceTransition(null);
+            next?.();
+          }}>Discard</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
     <Dialog open={!!pendingOrderTransition} onOpenChange={open => { if (!open && !orderSaving.current) setPendingOrderTransition(null); }}>
       <DialogContent onEscapeKeyDown={event => { if (orderSaving.current) event.preventDefault(); }} onPointerDownOutside={event => event.preventDefault()}>
         <DialogHeader><DialogTitle>Unsaved order changes</DialogTitle><DialogDescription>Save this purchase or transfer draft before continuing, discard the unsaved changes, or stay here. Saving a draft does not release an order or change stock.</DialogDescription></DialogHeader>
@@ -1071,7 +1117,12 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       </DialogContent>
     </Dialog>
     {isError && <Alert variant="destructive"><AlertTitle>Inventory refresh failed</AlertTitle><AlertDescription>The last loaded inventory is shown. Your count entries were kept; retry before relying on current stock.</AlertDescription><Button variant="outline" className="mt-2" onClick={() => refetch()}>Retry inventory refresh</Button></Alert>}
-    <Tabs value={inventoryTab} onValueChange={value => requestCountTransition(() => requestOrderTransition(() => requestMovementTransition(() => requestKitTransition(() => setInventoryTab(value)))))} className="flex min-h-0 flex-1 flex-col gap-1.5 sm:gap-3 [&>[role=tabpanel]]:mt-0 md:[&>[role=tabpanel]]:mt-2">
+    <div
+      ref={inventoryTabsHostRef}
+      style={{ visibility: inlineEditorOpen ? "hidden" : undefined }}
+      className="flex min-h-0 min-w-0 flex-1 flex-col"
+    >
+    <Tabs value={inventoryTab} onValueChange={value => requestCountTransition(() => requestOrderTransition(() => requestResourceTransition(() => requestMovementTransition(() => requestKitTransition(() => setInventoryTab(value))))))} className="flex min-h-0 flex-1 flex-col gap-1.5 sm:gap-3 [&>[role=tabpanel]]:mt-0 md:[&>[role=tabpanel]]:mt-2">
       <div className="inventory-sticky-header relative z-10 shrink-0 space-y-2 border-b bg-background pb-2 sm:space-y-3 sm:pb-3" data-testid="inventory-sticky-header">
         <div className="flex min-w-0 items-center justify-between gap-2 sm:items-center">
           <div className="inventory-desktop-heading hidden min-w-0 md:block">
@@ -1108,9 +1159,6 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
               <span className="hidden sm:inline">{showInventoryStats ? "Hide Stats" : "Show Stats"}</span>
               {showInventoryStats ? <ChevronUp className="ml-1 hidden h-4 w-4 sm:block" /> : <ChevronDown className="ml-1 hidden h-4 w-4 sm:block" />}
             </Button>
-            {can("inventory.maintain") && <Button size="sm" variant="outline" className="inventory-desktop-action hidden h-9 px-3 md:inline-flex" aria-label="Add location" onClick={() => openResource("warehouse")}><Plus className="mr-1.5 h-4 w-4" />Location</Button>}
-            {can("inventory.maintain") && <Button size="sm" className="inventory-desktop-action hidden h-9 px-3 md:inline-flex" aria-label="Add new item" onClick={() => openResource("item")}><Plus className="mr-1.5 h-4 w-4" />New item</Button>}
-            {(can("inventory.purchase") || can("inventory.transfer")) && <Button size="sm" className="inventory-desktop-action hidden h-9 px-3 md:inline-flex" aria-label="Build an order draft" onClick={() => { setInventoryTab("orders"); startNewOrderDraft(); }}><Plus className="mr-1.5 h-4 w-4" />Build an order draft</Button>}
           </div>
         </div>
         <div
@@ -1135,10 +1183,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="max-h-[min(70dvh,30rem)] w-[var(--radix-dropdown-menu-trigger-width)] overflow-y-auto">
-              {can("inventory.maintain") && <DropdownMenuItem onSelect={() => openResource("warehouse")}>Add location</DropdownMenuItem>}
-              {can("inventory.maintain") && <DropdownMenuItem onSelect={() => openResource("item")}>Add new item</DropdownMenuItem>}
               {can("inventory.maintain") && <DropdownMenuItem onSelect={() => setInventoryTab("categories")}>Manage categories</DropdownMenuItem>}
-              {(can("inventory.purchase") || can("inventory.transfer")) && <DropdownMenuItem onSelect={() => { setInventoryTab("orders"); startNewOrderDraft(); }}>Build an order draft</DropdownMenuItem>}
               {inventoryTabs.map(tab => <DropdownMenuItem key={tab.value} aria-label={tab.label} data-testid={`inventory-mobile-menu-item-${tab.value}`} onSelect={() => setInventoryTab(tab.value)}>
                 {tab.label}
               </DropdownMenuItem>)}
@@ -1238,21 +1283,21 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           </DialogContent>
         </Dialog>
         {can("inventory.purchase") || can("inventory.transfer") ? <>
-          <Dialog open={orderEditorOpen} onOpenChange={open => {
-            if (open) setOrderEditorOpen(true);
-            else if (!orderSaving.current) closeOrderEditor();
-          }}>
-            <DialogContent data-testid="inventory-order-dialog" className="max-h-[90dvh] overflow-y-auto sm:max-w-3xl"
-              onEscapeKeyDown={event => { if (orderSaving.current) event.preventDefault(); }}
-              onPointerDownOutside={event => event.preventDefault()}>
-              <DialogHeader>
-                <DialogTitle>{editingOrderId ? "Edit order draft" : replacementFor ? "Create replacement draft" : "Build an order draft"}</DialogTitle>
-                <DialogDescription>{editingOrderId
+          {orderEditorOpen && <InventoryEditorSurface
+              inline
+              portalHost={editorHostRef.current}
+              title={editingOrderId ? "Edit order draft" : replacementFor ? "Create replacement draft" : "Build an order draft"}
+              description={editingOrderId
                   ? `Update ${orderTitle(editingOrderId)}. Its generated order number and internal ID stay unchanged.`
                   : replacementFor
                   ? `This new order is linked to ${orderTitle(replacementFor)}. The original quantities and exception history stay unchanged.`
-                  : "Plan items and quantities now. Record serials later during receiving or transfer dispatch."}</DialogDescription>
-              </DialogHeader>
+                  : "Plan items and quantities now. Record serials later during receiving or transfer dispatch."}
+              onBack={closeOrderEditor}
+              onSave={() => saveOrderDraft()}
+              saving={orderSaving.current || command.isPending}
+              saveDisabled={!!orderConflict || !canSaveOrder}
+              saveLabel="Save draft"
+            >
               {orderConflict && <Alert data-testid="inventory-external-change" variant={orderConflict === "deleted" ? "destructive" : "default"}>
                 <AlertTriangle className="h-4 w-4" />
                 <AlertTitle>{orderConflict === "deleted" ? "Order draft is no longer available" : "Order draft changed elsewhere"}</AlertTitle>
@@ -1278,12 +1323,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           {orderHasPendingLine && <div className="flex flex-wrap items-center gap-2"><p className="text-sm">Add or clear the unfinished line before saving.</p><Button type="button" variant="outline" size="sm" onClick={() => { setOrderLineItem(""); setOrderLineQty("1"); }}>Clear unfinished line</Button></div>}
           {orderMessage && <p role="status" className="text-sm">{orderMessage}</p>}
               </fieldset>
-              <DialogFooter className="flex-col-reverse sm:flex-row">
-                <Button variant="outline" disabled={orderSaving.current} onClick={closeOrderEditor}>Cancel</Button>
-                <Button disabled={command.isPending || !!orderConflict || !canSaveOrder} onClick={() => saveOrderDraft()}><Plus className="mr-2 h-4 w-4" />Save draft</Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          </InventoryEditorSurface>}
         </> : null}
         <Dialog open={orderFiltersOpen} onOpenChange={setOrderFiltersOpen}>
           <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-3xl">
@@ -1604,6 +1644,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       </TabsContent>
     </div>
     </Tabs>
+    </div>
     {kitDialogMode && <InventoryKitDialog key={kitDialogMode} state={state} projectId={projectId} mode={kitDialogMode}
       canResolve={can("inventory.resolveExceptions")} onDirtyChange={setKitDirty} onOperationPending={setKitOperationPending}
       onClose={() => { setKitDialogMode(null); setKitDirty(false); setKitOperationPending(false); }}
@@ -1629,7 +1670,27 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       />
     )}
 
-    <Dialog open={!!resource} onOpenChange={open => { if (!open && !resourceSaving.current && !imageBusy) setResource(null); }}><DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>{resource === "warehouse" ? "Location details" : resource === "vendor" ? "Vendor details" : copiedItemName !== null ? "Copy item" : "Item details"}</DialogTitle><DialogDescription>{copiedItemName !== null ? `Copy of ${copiedItemName}. Enter a unique Product ID (SKU). Barcode is cleared; stock, serials and history are not copied.` : "Changes apply only to this project. Keep scanned identities and stock rules intact."}</DialogDescription></DialogHeader>
+    {resource && <InventoryEditorSurface
+      inline={resource !== "vendor"}
+      portalHost={editorHostRef.current}
+      open={!!resource}
+      title={resource === "warehouse" ? (warehouseForm.id ? "Edit location" : "Add location") : resource === "vendor" ? "Vendor details" : copiedItemName !== null ? "Copy item" : itemForm.id ? "Edit item" : "Add item"}
+      description={copiedItemName !== null ? `Copy of ${copiedItemName}. Enter a unique Product ID (SKU). Barcode is cleared; stock, serials and history are not copied.` : "Changes apply only to this project. Keep scanned identities and stock rules intact."}
+      onBack={() => resource === "vendor"
+        ? (!resourceSaving.current && !imageBusy && setResource(null))
+        : requestResourceTransition(() => {})}
+      onSave={saveResource}
+      saving={resourceBusy || resourceSave.isPending}
+      saveDisabled={command.isPending || !!resourceConflict || !can("inventory.maintain")}
+      saveLabel="Save changes"
+      footer={resource === "vendor" ? <>
+        <Button variant="outline" disabled={resourceBusy} onClick={() => setResource(null)}>Cancel</Button>
+        <Button onClick={saveResource} disabled={resourceBusy || command.isPending || !!resourceConflict || !can("inventory.maintain")}>
+          {resourceSave.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+          {resourceSave.isPending ? "Saving..." : "Save changes"}
+        </Button>
+      </> : undefined}
+    >
       {resourceConflict && <Alert data-testid="inventory-external-change" variant={resourceConflict === "deleted" ? "destructive" : "default"}>
         <AlertTriangle className="h-4 w-4" />
         <AlertTitle>{resourceConflict === "deleted" ? "Record is no longer available" : "Record changed elsewhere"}</AlertTitle>
@@ -1674,8 +1735,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
         <div className="sm:col-span-2"><label htmlFor="item-active" className="flex items-start gap-2 text-sm"><Checkbox id="item-active" checked={itemForm.active} aria-describedby="item-active-help" onCheckedChange={checked => setItemForm(form => ({ ...form, active: checked === true }))} /><span><span className="font-medium">Active product</span><span id="item-active-help" className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">New products default to active and can be used in new inventory activity. Turn off a discontinued supply to retain its catalog record without offering it for new use. Deactivation is blocked while stock, reservations, or open orders remain.</span></span></label></div>
       </div>}
       </fieldset>
-      <DialogFooter><Button variant="outline" disabled={resourceBusy} onClick={() => setResource(null)}>Cancel</Button><Button onClick={saveResource} disabled={resourceBusy || command.isPending || !!resourceConflict || !can("inventory.maintain")}>{resourceSave.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}{resourceSave.isPending ? "Saving..." : "Save changes"}</Button></DialogFooter>
-    </DialogContent></Dialog>
+    </InventoryEditorSurface>}
 
     {operationOrder && <InventoryShipmentSession base={base} state={sessionState ?? state} liveState={state} order={operationOrder} action={operation as ShipmentAction} items={items} draft={sessionDraft} ownerId={user?.id}
       canCloseRemainder={can("inventory.closeOrders") && !(operationOrder.type === "transfer" && operationOrder.lines.some(line => orderLineProgress(state, operationOrder, line.itemId).inTransit > 0))} busy={command.isPending}

@@ -32,3 +32,9 @@ Keep creation actions in the same position across Inventory tabs: first in the s
 **Why:** The user repeatedly requested consistent button placement, specifically including Cycle counts and mobile devices.
 
 **How to apply:** Use the existing compact action-row treatment and collapsed mobile Search & Tools, rather than giving a new tab a separate title-row action position.
+
+Location, item, and order-draft creation belongs in the relevant tab subheader, not duplicated in Inventory's top header. These forms should use same-screen detail views with Back, like Work Orders, rather than modals.
+
+**Why:** The user explicitly requested removal of the three top-header shortcuts and consistent work-order-style editing optimized for phones.
+
+**How to apply:** Preserve the originating list state and existing save/conflict/unsaved-navigation safeguards. Keep Back and save actions visible while long forms scroll; leave unrelated operational dialogs unchanged.
