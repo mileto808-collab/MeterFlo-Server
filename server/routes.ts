@@ -16,6 +16,7 @@ const execAsync = promisify(exec);
 import { storage } from "./storage";
 import { loginUserResponse, userResponse } from "./userResponse";
 import { setupAuth, isAuthenticated } from "./replitAuth";
+import { initializeWorkOrderSubStatuses, registerWorkOrderSubStatusRoutes, listSubStatuses } from "./workOrderSubStatuses";
 import { insertProjectWorkOrderSchema, insertProjectSchema, createUserSchema, updateUserSchema, resetPasswordSchema, changePasswordSchema, updateProfileSchema, permissionKeys, insertExternalDatabaseConfigSchema, updateExternalDatabaseConfigSchema, insertImportConfigSchema, updateImportConfigSchema, databaseTypeEnum, importScheduleFrequencyEnum, ADMINISTRATOR_SUBROLE_KEY, getSubroleLevel, insertSupportSubmissionSchema, type CustomerApiAuthType, type GpsMode, type WizardMode } from "@shared/schema";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
@@ -220,6 +221,8 @@ export async function registerRoutes(
   registerAuditRoutes(app);
   await initializeAdminUser();
   await storage.seedDefaultWorkOrderStatuses();
+  await initializeWorkOrderSubStatuses();
+  registerWorkOrderSubStatusRoutes(app);
   await storage.syncPermissionsFromRegistry();
   await storage.ensureDefaultSubroles();
   registerApiImportRoutes(app);
@@ -2309,9 +2312,13 @@ export async function registerRoutes(
       }
       
       const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
-      const filters: { status?: string; assignedTo?: string } = {};
+      const filters: { status?: string; subStatusId?: string; assignedTo?: string } = {};
       
       if (req.query.status) filters.status = req.query.status;
+      if (req.query.subStatusId) {
+        if (!z.string().uuid().safeParse(req.query.subStatusId).success) return res.status(400).json({ message: "Invalid sub-status." });
+        filters.subStatusId = req.query.subStatusId;
+      }
       if (req.query.assignedTo) filters.assignedTo = req.query.assignedTo;
       
       let workOrders = await workOrderStorage.getWorkOrders(filters);
@@ -2748,6 +2755,8 @@ export async function registerRoutes(
       res.status(201).json(workOrder);
     } catch (error) {
       console.error("Error creating work order:", error);
+      if (["23514","23503","22P02"].includes((error as any)?.code))
+        return res.status(400).json({ message: (error as any).message?.startsWith("Sub-status") ? (error as any).message : "Invalid work-order reference or sub-status." });
       if (error instanceof InventoryError) return res.status(error.status).json({ message: error.message, code: "INVENTORY_CONFLICT" });
       res.status(500).json({ message: "Failed to create work order" });
     }
@@ -2988,6 +2997,8 @@ export async function registerRoutes(
       res.json(workOrder);
     } catch (error) {
       console.error("Error updating work order:", error);
+      if ((error as any)?.code === "23514" || (error as any)?.code === "23503" || (error as any)?.code === "22P02")
+        return res.status(400).json({ message: (error as any).message?.startsWith("Sub-status") ? (error as any).message : "Invalid work-order reference or sub-status." });
       if (error instanceof InventoryError) return res.status(error.status).json({ message: error.message, code: "INVENTORY_CONFLICT" });
       res.status(500).json({ message: "Failed to update work order" });
     }
@@ -9328,6 +9339,7 @@ export async function registerRoutes(
           success: true,
           serverTimestamp,
           workOrders: withExactReadings(result.rows).map((wo: any) => ({ ...wo,
+            subStatusId: wo.sub_status_id ?? null,
             ...(inv ? { inventoryAllocation: inv.allocations.find(a => a.workOrderId === wo.id) || null } : {}) })),
           inventory: { contractVersion: 1, enabled: !!inv, items: inv?.items || [],
             locationTypes: inv?.locationTypes || [],
@@ -9337,6 +9349,7 @@ export async function registerRoutes(
             warehouses: inv?.warehouses.filter(w => warehouseAccessible(inv, w, currentUser.id, inventoryAdmin)) || [] },
           referenceData: {
             workOrderStatuses,
+            workOrderSubStatuses: await listSubStatuses(projectId),
             troubleCodes,
             systemTypes,
             moduleTypes,
@@ -9395,6 +9408,12 @@ export async function registerRoutes(
       for (const woUpdate of workOrders) {
         try {
           const { id, clientUpdatedAt, forceOverwrite, ...updateData } = woUpdate;
+          if (Object.prototype.hasOwnProperty.call(updateData, "sub_status_id")) {
+            if (updateData.subStatusId !== undefined && updateData.subStatusId !== updateData.sub_status_id)
+              throw new Error("Conflicting sub-status identifiers.");
+            updateData.subStatusId = updateData.sub_status_id;
+            delete updateData.sub_status_id;
+          }
           
           // Get current server version
           const serverWorkOrder = await workOrderStorage.getWorkOrder(id);

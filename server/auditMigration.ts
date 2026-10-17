@@ -5,7 +5,7 @@ const businessTables = [
   "projects","users","subroles","permissions","subrole_permissions","user_projects",
   "user_groups","user_group_members","user_group_projects","project_holidays","system_settings",
   "api_import_configs","api_import_runs","external_database_configs","import_configs","import_history",
-  "file_import_configs","file_import_history","work_order_statuses","trouble_codes","service_types",
+  "file_import_configs","file_import_history","work_order_statuses","work_order_sub_statuses","trouble_codes","service_types",
   "system_types","system_type_projects","module_types","module_type_projects","project_service_types",
   "work_order_time_tracking","mobile_apk_releases","mobile_apk_publication","mobile_apk_uploads",
 ];

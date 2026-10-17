@@ -81,7 +81,7 @@ test("transactional completion, mobile usage, concurrency, import rollback, and 
     const allocatedId = (await inventoryState(project.id)).allocations[0].workOrderId;
     const current = await work.getWorkOrder(allocatedId);
     const usage = { operationId: randomUUID(), revision: 1, mode: "changeout", used: [{ warehouseId: "w", itemId: "meter", quantity: 1, serials: ["0001"] }],
-      dispositions: current?.oldSystemId ? [{ equipment: "system", serial: "OLD1", disposition: "scrapped", warehouseId: null }] : [] };
+      dispositions: current?.oldSystemId ? [{ equipment: "system", serial: "OLD1", disposition: "returned", warehouseId: "w" }] : [] };
     await assert.rejects(withAuditContext(scope(), () => work.updateWorkOrder(allocatedId, { status: "Completed", newSystemId: "WRONG", inventoryUsage: usage } as any)), /must match/);
     assert.equal((await inventoryState(project.id)).stock[0].quantity, 2);
     assert.notEqual((await work.getWorkOrder(allocatedId))?.status, "Completed");

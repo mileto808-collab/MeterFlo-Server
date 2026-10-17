@@ -82,6 +82,7 @@ import { DateTimePicker } from "@/components/ui/datetime-picker";
 import { WorkOrderPdf } from "@/components/work-order-pdf";
 import type { EquipmentVisibility } from "@shared/project-equipment-scope";
 import { InventoryWorkOrderPanel } from "@/components/inventory/inventory-work-order-panel";
+import type { WorkOrderSubStatus } from "@/components/work-order-sub-statuses/work-order-sub-status-manager";
 
 interface OperationalHoursConfig {
   enabled: boolean;
@@ -203,6 +204,22 @@ export function WorkOrderDetail({
   const watchedAssignedUserId = useWatch({ control: form.control, name: 'assignedUserId' });
   const watchedAssignedGroupId = useWatch({ control: form.control, name: 'assignedGroupId' });
   const watchedScheduledAt = useWatch({ control: form.control, name: 'scheduledAt' });
+  const watchedStatus = useWatch({ control: form.control, name: "status" }) || workOrder.status;
+  const watchedSubStatusId = useWatch({ control: form.control, name: "subStatusId" });
+  const { data: workOrderSubStatuses = [] } = useQuery<WorkOrderSubStatus[]>({
+    queryKey: ["/api/projects", projectId, "work-order-sub-statuses"],
+    queryFn: async () => {
+      const response = await fetch(`/api/projects/${projectId}/work-order-sub-statuses`, { credentials: "include" });
+      if (!response.ok) throw new Error("Unable to load work-order sub-statuses");
+      return response.json();
+    },
+    enabled: !!projectId,
+    refetchOnWindowFocus: true,
+  });
+  const compatibleSubStatuses = workOrderSubStatuses.filter(definition =>
+    (definition.parentStatusCode === watchedStatus || definition.parentStatusLabel === watchedStatus) &&
+    (definition.active || definition.id === watchedSubStatusId)
+  );
   
   // Watch customer/site fields for summary card - updates as user edits
   const watchedCustomerWoId = useWatch({ control: form.control, name: 'customerWoId' });
@@ -327,25 +344,32 @@ export function WorkOrderDetail({
     }
   }, [autoLaunchSystemChangeout, canSystemChangeout]);
 
+  const getWorkOrderSubStatusLabel = () => {
+    const assignedId = (workOrder as any).subStatusId ?? (workOrder as any).sub_status_id;
+    if (!assignedId) return "";
+    return workOrderSubStatuses.find(definition => definition.id === assignedId)?.label || "";
+  };
+
   const getStatusBadge = (status: string) => {
     // Find status color from workOrderStatuses table
     const statusRecord = workOrderStatuses.find(s => s.code === status || s.label === status);
-    if (statusRecord && statusRecord.color) {
-      const hexColor = getColorHex(statusRecord.color);
-      return (
-        <Badge 
-          variant="outline"
-          style={{ color: hexColor }}
-        >
-          {status}
-        </Badge>
-      );
-    }
-    // Fallback to outline badge if no color configured
-    return (
-      <Badge variant="outline">
+    const parentBadge = statusRecord && statusRecord.color ? (
+      <Badge variant="outline" style={{ color: getColorHex(statusRecord.color) }}>
         {status}
       </Badge>
+    ) : (
+      <Badge variant="outline">{status}</Badge>
+    );
+    const subStatusLabel = getWorkOrderSubStatusLabel();
+    return (
+      <span className="inline-flex max-w-full flex-wrap items-center gap-x-2 gap-y-1">
+        {parentBadge}
+        {subStatusLabel && (
+          <span className="max-w-[min(15rem,65vw)] whitespace-normal break-words text-xs font-medium text-muted-foreground" data-testid="work-order-sub-status-badge">
+            {subStatusLabel}
+          </span>
+        )}
+      </span>
     );
   };
 
@@ -503,7 +527,7 @@ export function WorkOrderDetail({
   }, [
     workOrder, cameFromSearch, onBack, canSystemChangeout, isClaiming, 
     wizardConfig, projectId, workOrderFiles, canPrint, formatDateTime, 
-    getAssignedUserName, serviceTypes, troubleCodes, watchedAssignedUserId,
+    getAssignedUserName, serviceTypes, troubleCodes, workOrderSubStatuses, watchedAssignedUserId,
     setHeaderContent, handleStartSystemChangeout, equipmentVisibility
   ]);
 
@@ -2394,6 +2418,15 @@ export function WorkOrderDetail({
                         </div>
                       </div>
                     )}
+                    {getWorkOrderSubStatusLabel() && (
+                      <div className="flex items-start gap-3" data-testid="mobile-readonly-sub-status">
+                        <Flag className="h-4 w-4 text-muted-foreground mt-0.5" />
+                        <div className="min-w-0">
+                          <p className="text-xs text-muted-foreground">Sub-status</p>
+                          <p className="text-sm font-medium break-words" style={{ overflowWrap: "anywhere" }}>{getWorkOrderSubStatusLabel()}</p>
+                        </div>
+                      </div>
+                    )}
 
                     {/* Assigned User - only show if has value */}
                     {workOrder.assignedUserId && getAssignedUserName(workOrder.assignedUserId) && (
@@ -2479,6 +2512,10 @@ export function WorkOrderDetail({
                                 return;
                               }
                               field.onChange(newStatus);
+                              const selectedSubStatus = workOrderSubStatuses.find(definition => definition.id === form.getValues("subStatusId"));
+                              if (selectedSubStatus && selectedSubStatus.parentStatusCode !== newStatus && selectedSubStatus.parentStatusLabel !== newStatus) {
+                                form.setValue("subStatusId", null, { shouldDirty: true });
+                              }
                               const currentScheduledAt = form.getValues("scheduledAt");
                               if (currentScheduledAt && newStatus !== "Scheduled") {
                                 toast({
@@ -2498,6 +2535,26 @@ export function WorkOrderDetail({
                                 <SelectItem key={s.id} value={s.code}>
                                   {s.label}
                                 </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+
+                    <FormField
+                      control={form.control}
+                      name="subStatusId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Sub-status</FormLabel>
+                          <Select value={field.value || "__none"} onValueChange={value => field.onChange(value === "__none" ? null : value)} disabled={!canEdit}>
+                            <FormControl><SelectTrigger data-testid="select-mobile-sub-status"><SelectValue placeholder="None" /></SelectTrigger></FormControl>
+                            <SelectContent>
+                              <SelectItem value="__none">None</SelectItem>
+                              {compatibleSubStatuses.map(definition => (
+                                <SelectItem key={definition.id} value={definition.id}>{definition.label}{!definition.active ? " (inactive)" : ""}</SelectItem>
                               ))}
                             </SelectContent>
                           </Select>
@@ -2672,6 +2729,12 @@ export function WorkOrderDetail({
                         <p className="text-xs text-muted-foreground">Status</p>
                         <p className="text-sm font-medium" data-testid="desktop-status">{workOrder.status || "-"}</p>
                       </div>
+                      {getWorkOrderSubStatusLabel() && (
+                        <div className="min-w-0" data-testid="desktop-readonly-sub-status">
+                          <p className="text-xs text-muted-foreground">Sub-status</p>
+                          <p className="text-sm font-medium break-words" style={{ overflowWrap: "anywhere" }}>{getWorkOrderSubStatusLabel()}</p>
+                        </div>
+                      )}
                       
                       {/* Assigned User - show if has value */}
                       {workOrder.assignedUserId && getAssignedUserName(workOrder.assignedUserId) && (
@@ -2750,6 +2813,10 @@ export function WorkOrderDetail({
                               return;
                             }
                             field.onChange(newStatus);
+                            const selectedSubStatus = workOrderSubStatuses.find(definition => definition.id === form.getValues("subStatusId"));
+                            if (selectedSubStatus && selectedSubStatus.parentStatusCode !== newStatus && selectedSubStatus.parentStatusLabel !== newStatus) {
+                              form.setValue("subStatusId", null, { shouldDirty: true });
+                            }
                             const currentScheduledAt = form.getValues("scheduledAt");
                             if (currentScheduledAt && newStatus !== "Scheduled") {
                               toast({
@@ -2770,6 +2837,25 @@ export function WorkOrderDetail({
                               <SelectItem key={s.id} value={s.code}>
                                 {s.label}
                               </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="subStatusId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Sub-status</FormLabel>
+                        <Select value={field.value || "__none"} onValueChange={value => field.onChange(value === "__none" ? null : value)} disabled={!canEdit}>
+                          <FormControl><SelectTrigger data-testid="select-sub-status"><SelectValue placeholder="None" /></SelectTrigger></FormControl>
+                          <SelectContent>
+                            <SelectItem value="__none">None</SelectItem>
+                            {compatibleSubStatuses.map(definition => (
+                              <SelectItem key={definition.id} value={definition.id}>{definition.label}{!definition.active ? " (inactive)" : ""}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>

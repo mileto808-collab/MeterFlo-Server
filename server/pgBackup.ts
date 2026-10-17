@@ -456,6 +456,7 @@ const CLEAN_BACKUP_TABLES = [
   "subrole_permissions",
   "system_settings",
   "work_order_statuses",
+  "work_order_sub_statuses",
   "trouble_codes",
   "service_types",
 ];
@@ -562,6 +563,7 @@ export async function createCleanPgBackup(): Promise<PgBackupResult> {
   ];
   
   for (const table of CLEAN_BACKUP_TABLES) {
+    if (table === "work_order_sub_statuses") continue; // Project-scoped rows need projects, which clean backups omit.
     dataArgs.push(`--table=public.${table}`);
   }
   
@@ -579,6 +581,11 @@ export async function createCleanPgBackup(): Promise<PgBackupResult> {
   }
   
   // Step 3: Combine schema + data into single backup file
+  const sharedSubStatuses = await pool.query(`SELECT format(
+    'INSERT INTO public.work_order_sub_statuses(id,parent_status_id,project_id,code,label,description,color,sort_order,active) VALUES(%L,%s,NULL,%L,%L,%L,%L,%s,%L);',
+    id,parent_status_id,code,label,description,color,sort_order,active) AS statement
+    FROM public.work_order_sub_statuses WHERE project_id IS NULL ORDER BY id`);
+  fs.appendFileSync(dataFile, "\n" + sharedSubStatuses.rows.map(row => row.statement).join("\n") + "\n");
   console.log("[Clean Backup] Step 3: Combining schema and data...");
   let combinedSql = `-- MeterFlo Clean Database Backup
 -- Generated: ${new Date().toISOString()}

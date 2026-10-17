@@ -32,6 +32,7 @@ import { MobileReleaseManager } from "@/components/mobile-release-manager";
 import { CoreUpdatePreview, type UpdatePreview } from "@/components/core-update-preview";
 import { SettingsNavigation } from "@/components/settings-navigation";
 import { settingsGroups, type SettingsSectionKey } from "@/lib/settings-navigation";
+import { WorkOrderSubStatusManager } from "@/components/work-order-sub-statuses/work-order-sub-status-manager";
 
 interface FileSettings {
   maxFileSizeMB: number;
@@ -2730,6 +2731,11 @@ export default function Settings() {
                 </div>
               </CardHeader>
               <CardContent>
+                {isAdmin && (
+                  <div className="mb-6">
+                    <WorkOrderSubStatusManager canEdit={isAdmin} />
+                  </div>
+                )}
                 {loadingStatuses ? (
                   <p className="text-muted-foreground">Loading...</p>
                 ) : workOrderStatusList && workOrderStatusList.length > 0 ? (

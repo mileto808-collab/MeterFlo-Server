@@ -1,3 +1,11 @@
+# Work-order sub-statuses
+
+Sync download `referenceData.workOrderSubStatuses` contains shared and project-specific definitions, including inactive entries used historically. Each definition includes `id`, `parentStatusId`, `parentStatusCode`, `parentStatusLabel`, `projectId`, `code`, `label`, `description`, `color`, `sortOrder`, and `active`. A null project ID means shared.
+
+Downloaded work orders expose `subStatusId` (also `sub_status_id` in raw records). Upload `subStatusId: UUID | null`; the snake-case alias is accepted if it does not conflict with the camel-case field. Offer only active definitions for the order's core status, while retaining an existing inactive selection. Changing core status must clear an incompatible selection. Never replace the core `status` with a combined label or sub-status code: all core rules remain mandatory. Server/database validation rejects cross-project or incompatible assignments and retired new selections.
+
+The separate native client needs selection/display controls; server metadata alone does not implement those screens. See `WORK_ORDER_STATUSES.md`.
+
 # MeterFlo Mobile API Documentation
 
 Inventory-enabled sync downloads additionally require `inventory.view`; missing permission returns 403 without inventory or work-order data. Grant this permission to inventory technicians through role management. See `INVENTORY.md` for reservations, actual-use payloads and removal/return handling.

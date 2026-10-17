@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, serial, jsonb, index, uniqueIndex, primaryKey, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, serial, jsonb, index, uniqueIndex, primaryKey, boolean, uuid } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -466,6 +466,20 @@ export const workOrderStatuses = pgTable("work_order_statuses", {
 export const defaultWorkOrderStatuses = ["Open", "Completed", "Scheduled", "Skipped", "Trouble"] as const;
 export type DefaultWorkOrderStatus = (typeof defaultWorkOrderStatuses)[number];
 
+export const workOrderSubStatuses = pgTable("work_order_sub_statuses", {
+  id: uuid("id").primaryKey(),
+  parentStatusId: integer("parent_status_id").notNull().references(() => workOrderStatuses.id, { onDelete: "restrict" }),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  code: varchar("code", { length: 50 }).notNull(),
+  label: varchar("label", { length: 100 }).notNull(),
+  description: text("description"),
+  color: varchar("color", { length: 20 }),
+  sortOrder: integer("sort_order").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // Trouble codes table - configurable trouble/issue codes for work orders
 export const troubleCodes = pgTable("trouble_codes", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -804,6 +818,7 @@ export const insertProjectWorkOrderSchema = z.object({
   oldGps: z.string().max(100).optional().nullable(),
   newGps: z.string().max(100).optional().nullable(),
   status: z.string().max(50).optional().nullable(),
+  subStatusId: z.string().uuid().optional().nullable(),
   scheduledAt: z.string().optional().nullable(),
   scheduledBy: z.string().optional().nullable(),
   assignedUserId: z.string().optional().nullable(),

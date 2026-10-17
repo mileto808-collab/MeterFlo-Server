@@ -23,6 +23,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Filter, X } from "lucide-react";
 import type { WorkOrderStatus, TroubleCode, ServiceTypeRecord, SystemType, ModuleType } from "@shared/schema";
+import type { WorkOrderSubStatus } from "@/components/work-order-sub-statuses/work-order-sub-status-manager";
 
 type Assignee = {
   type: "user" | "group";
@@ -46,6 +47,8 @@ interface WorkOrderFiltersDialogProps {
   setSearchQuery: (value: string) => void;
   selectedStatuses: string[];
   setSelectedStatuses: (value: string[]) => void;
+  selectedSubStatusId: string;
+  setSelectedSubStatusId: (value: string) => void;
   selectedServiceTypes: string[];
   setSelectedServiceTypes: (value: string[]) => void;
   selectedAssignedTo: string;
@@ -120,6 +123,7 @@ interface WorkOrderFiltersDialogProps {
   moduleTypes: ModuleType[];
   assigneesData: AssigneesResponse | undefined;
   workOrderStatuses: WorkOrderStatus[];
+  workOrderSubStatuses: WorkOrderSubStatus[];
   serviceTypes: ServiceTypeRecord[];
   troubleCodes: TroubleCode[];
   hasActiveFilters: boolean;
@@ -136,6 +140,8 @@ export function WorkOrderFiltersDialog({
   setSearchQuery,
   selectedStatuses,
   setSelectedStatuses,
+  selectedSubStatusId,
+  setSelectedSubStatusId,
   selectedServiceTypes,
   setSelectedServiceTypes,
   selectedAssignedTo,
@@ -210,6 +216,7 @@ export function WorkOrderFiltersDialog({
   moduleTypes,
   assigneesData,
   workOrderStatuses,
+  workOrderSubStatuses,
   serviceTypes,
   troubleCodes,
   hasActiveFilters,
@@ -315,6 +322,22 @@ export function WorkOrderFiltersDialog({
                     Clear Status Filter
                   </Button>
                 )}
+              </div>
+              <div>
+                <Label htmlFor="dialog-filter-sub-status">Sub-status</Label>
+                <Select value={selectedSubStatusId || "all"} onValueChange={value => setSelectedSubStatusId(value === "all" ? "" : value)}>
+                  <SelectTrigger id="dialog-filter-sub-status" data-testid="dialog-select-filter-sub-status">
+                    <SelectValue placeholder="All sub-statuses" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All sub-statuses</SelectItem>
+                    {workOrderSubStatuses.map(definition => (
+                      <SelectItem key={definition.id} value={definition.id}>
+                        {definition.parentStatusLabel} · {definition.label}{!definition.active ? " (inactive)" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="md:col-span-2">
                 <Label>Service Type</Label>

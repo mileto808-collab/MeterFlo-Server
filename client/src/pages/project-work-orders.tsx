@@ -95,6 +95,7 @@ import { WorkOrderFiltersDialog } from "@/components/work-order-filters-dialog";
 import { Calendar as CalendarIcon, List } from "lucide-react";
 import { getReadingPrecision, normalizeReadingInput, validateCapturedReadings } from "@shared/reading-precision";
 import { getProjectEquipmentVisibility, omitInapplicableEquipmentFields } from "@shared/project-equipment-scope";
+import type { WorkOrderSubStatus } from "@/components/work-order-sub-statuses/work-order-sub-status-manager";
 
 type Assignee = {
   type: "user" | "group";
@@ -110,6 +111,7 @@ type AssigneesResponse = {
 };
 
 const workOrderFormSchema = insertProjectWorkOrderSchema.extend({
+  subStatusId: z.string().uuid().nullable().optional(),
   email: z.string().optional().nullable().or(z.literal("")),
   oldSystemReading: z.union([z.number(), z.string()]).optional().nullable(),
   newSystemReading: z.union([z.number(), z.string()]).optional().nullable(),
@@ -196,6 +198,7 @@ export default function ProjectWorkOrders() {
   const [autoLaunchChangeoutScope, setAutoLaunchChangeoutScope] = useState<"system" | "module" | "both">("system");
   const [hidScannerValue, setHidScannerValue] = useState<string | undefined>(undefined);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+  const [selectedSubStatusId, setSelectedSubStatusId] = useState("");
   const [selectedServiceTypes, setSelectedServiceTypes] = useState<string[]>([]);
   const [selectedAssignedTo, setSelectedAssignedTo] = useState<string>("all");
   const [selectedAssignedGroup, setSelectedAssignedGroup] = useState<string>("all");
@@ -402,6 +405,7 @@ export default function ProjectWorkOrders() {
       trouble: "",
       oldSystemType: "",
       newSystemType: "",
+      subStatusId: null,
     },
   });
 
@@ -440,6 +444,7 @@ export default function ProjectWorkOrders() {
       newModuleId: "",
       newModuleRead: undefined,
       newModuleType: "",
+      subStatusId: null,
     },
   });
 
@@ -498,6 +503,28 @@ export default function ProjectWorkOrders() {
   const { data: workOrderStatuses = [] } = useQuery<WorkOrderStatus[]>({
     queryKey: ["/api/work-order-statuses"],
   });
+  const { data: workOrderSubStatuses = [] } = useQuery<WorkOrderSubStatus[]>({
+    queryKey: ["/api/projects", projectId, "work-order-sub-statuses"],
+    queryFn: async () => {
+      const response = await fetch(`/api/projects/${projectId}/work-order-sub-statuses`, { credentials: "include" });
+      if (!response.ok) throw new Error("Unable to load work-order sub-statuses");
+      return response.json();
+    },
+    enabled: !!projectId && !accessDenied,
+    refetchOnWindowFocus: true,
+  });
+  const createStatusCode = form.watch("trouble")
+    ? workOrderStatuses.find(status => status.label === "Trouble")?.code || "Trouble"
+    : workOrderStatuses.find(status => status.isDefault)?.code || "Open";
+  const createStatusLabel = workOrderStatuses.find(status => status.code === createStatusCode)?.label || createStatusCode;
+
+  useEffect(() => {
+    const currentSubStatusId = form.getValues("subStatusId");
+    const selectedDefinition = workOrderSubStatuses.find(definition => definition.id === currentSubStatusId);
+    if (selectedDefinition && selectedDefinition.parentStatusCode !== createStatusCode && selectedDefinition.parentStatusLabel !== createStatusLabel) {
+      form.setValue("subStatusId", null, { shouldDirty: true });
+    }
+  }, [createStatusCode, createStatusLabel, workOrderSubStatuses, form]);
 
   const { data: assigneesData } = useQuery<AssigneesResponse>({
     queryKey: [`/api/projects/${projectId}/assignees`],
@@ -588,6 +615,7 @@ export default function ProjectWorkOrders() {
   useEffect(() => {
     setSearchQuery("");
     setSelectedStatuses([]);
+    setSelectedSubStatusId("");
     setSelectedServiceTypes([]);
     setShowFilters(false);
     setIsCreatingWorkOrder(false);
@@ -767,6 +795,7 @@ export default function ProjectWorkOrders() {
         newModuleId: (editingWorkOrder as any).newModuleId || "",
         newModuleRead: (editingWorkOrder as any).newModuleRead != null ? String((editingWorkOrder as any).newModuleRead) : undefined,
         newModuleType: (editingWorkOrder as any).newModuleType || "",
+        subStatusId: (editingWorkOrder as any).subStatusId ?? (editingWorkOrder as any).sub_status_id ?? null,
       });
       // Set signature data after a brief delay to ensure the ref is ready
       setTimeout(() => {
@@ -866,6 +895,9 @@ export default function ProjectWorkOrders() {
       newModuleId: getIdValue((data as any).newModuleId, existingWo?.newModuleId),
       newModuleRead: getReadingValue((data as any).newModuleRead, existingWo?.newModuleRead),
       newModuleType: getIdValue((data as any).newModuleType, existingWo?.newModuleType),
+      subStatusId: (data as any).subStatusId !== undefined
+        ? (data as any).subStatusId
+        : existingWo?.subStatusId ?? existingWo?.sub_status_id ?? null,
       assignedUserId: (data as any).assignedUserId ?? null,
       assignedGroupId: (data as any).assignedGroupId ?? null,
       scheduledAt: (data as any).scheduledAt || null,
@@ -896,8 +928,8 @@ export default function ProjectWorkOrders() {
       const applicableData = omitInapplicableEquipmentFields(data, equipmentVisibility);
       const readingErrors = getManualReadingErrors(applicableData);
       if (readingErrors.length) throw new Error(readingErrors.map(({ message }) => message).join(" "));
-      const troubleStatus = workOrderStatuses.find(s => s.label === "Trouble")?.label || "Trouble";
-      const defaultStatus = workOrderStatuses.find(s => s.isDefault)?.label || "Open";
+      const troubleStatus = workOrderStatuses.find(s => s.label === "Trouble")?.code || "Trouble";
+      const defaultStatus = workOrderStatuses.find(s => s.isDefault)?.code || "Open";
       const status = (data as any).trouble ? troubleStatus : defaultStatus;
       const signatureData = signaturePadRef.current?.getSignatureData() || null;
       const signatureName = signaturePadRef.current?.getSignatureName() || "";
@@ -1387,7 +1419,10 @@ export default function ProjectWorkOrders() {
     return colorMap[color] || colorMap.gray;
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string, subStatusId?: string | null) => {
+    const activeStatusSubLabel = subStatusId
+      ? workOrderSubStatuses.find(definition => definition.id === subStatusId)?.label
+      : undefined;
     if (!status) {
       return <Badge variant="outline">Unknown</Badge>;
     }
@@ -1398,14 +1433,20 @@ export default function ProjectWorkOrders() {
       const bgColor = getStatusColorHex(statusRecord.color);
       const textColor = ['yellow', 'orange'].includes(statusRecord.color) ? '#000' : '#fff';
       return (
-        <Badge 
-          style={{ backgroundColor: bgColor, color: textColor, borderColor: bgColor }}
-        >
-          {statusRecord.label}
-        </Badge>
+        <div className="flex flex-col items-start gap-1">
+          <Badge style={{ backgroundColor: bgColor, color: textColor, borderColor: bgColor }}>
+            {statusRecord.label}
+          </Badge>
+          {activeStatusSubLabel && <span className="text-xs text-muted-foreground">{activeStatusSubLabel}</span>}
+        </div>
       );
     }
-    return <Badge variant="outline">{status}</Badge>;
+    return (
+      <div className="flex flex-col items-start gap-1">
+        <Badge variant="outline">{status}</Badge>
+        {activeStatusSubLabel && <span className="text-xs text-muted-foreground">{activeStatusSubLabel}</span>}
+      </div>
+    );
   };
 
   // Helper to get assigned user name from ID
@@ -1677,7 +1718,7 @@ export default function ProjectWorkOrders() {
       case "newGps":
         return <TableCell key={key} className={baseClass} style={cellStyle}>{workOrder.newGps || "-"}</TableCell>;
       case "status":
-        return <TableCell key={key} className={baseClass} style={cellStyle} data-testid={`text-status-${workOrder.id}`}>{getStatusBadge(workOrder.status)}</TableCell>;
+        return <TableCell key={key} className={baseClass} style={cellStyle} data-testid={`text-status-${workOrder.id}`}>{getStatusBadge(workOrder.status, woAny.subStatusId ?? woAny.sub_status_id)}</TableCell>;
       case "scheduledAt":
         return <TableCell key={key} className={baseClass} style={cellStyle}>{woAny.scheduledAt ? formatDateTime(woAny.scheduledAt) : "-"}</TableCell>;
       case "scheduledBy":
@@ -1735,6 +1776,14 @@ export default function ProjectWorkOrders() {
     // Filter by status (multi-select)
     if (selectedStatuses.length > 0) {
       result = result.filter(wo => selectedStatuses.includes(wo.status));
+    }
+
+    // Sub-status filtering is independent of the core-status filter/grouping.
+    if (selectedSubStatusId) {
+      result = result.filter(wo => {
+        const workOrder = wo as any;
+        return (workOrder.subStatusId ?? workOrder.sub_status_id) === selectedSubStatusId;
+      });
     }
     
     // Filter by service type (multi-select)
@@ -2009,7 +2058,7 @@ export default function ProjectWorkOrders() {
     }
     
     return result;
-  }, [workOrders, searchQuery, sortCriteria, selectedStatuses, selectedServiceTypes, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldSystemType, selectedNewSystemType, selectedOldModuleType, selectedNewModuleType, systemTypes, moduleTypes, assigneesData, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterNewSystemId, filterOldModuleId, filterNewModuleId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
+  }, [workOrders, searchQuery, sortCriteria, selectedStatuses, selectedSubStatusId, selectedServiceTypes, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldSystemType, selectedNewSystemType, selectedOldModuleType, selectedNewModuleType, systemTypes, moduleTypes, assigneesData, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterNewSystemId, filterOldModuleId, filterNewModuleId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
 
   const totalPages = Math.ceil(filteredAndSortedWorkOrders.length / pageSize);
   const paginatedWorkOrders = useMemo(() => {
@@ -2027,7 +2076,7 @@ export default function ProjectWorkOrders() {
   useEffect(() => {
     setCurrentPage(1);
     setSelectedWorkOrderIds(new Set());
-  }, [workOrders, searchQuery, selectedStatuses, selectedServiceTypes, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldSystemType, selectedNewSystemType, selectedOldModuleType, selectedNewModuleType, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterNewSystemId, filterOldModuleId, filterNewModuleId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
+  }, [workOrders, searchQuery, selectedStatuses, selectedSubStatusId, selectedServiceTypes, selectedAssignedTo, selectedAssignedGroup, selectedTrouble, selectedOldSystemType, selectedNewSystemType, selectedOldModuleType, selectedNewModuleType, filterSystemWoId, filterCustomerId, filterCustomerName, filterAddress, filterCity, filterState, filterZip, filterPhone, filterEmail, filterRoute, filterZone, filterOldSystemId, filterNewSystemId, filterOldModuleId, filterNewModuleId, filterScheduledDateFrom, filterScheduledDateTo, filterCreatedBy, filterUpdatedBy, filterScheduledBy, filterCompletedBy, filterCompletedAtFrom, filterCompletedAtTo, filterNotes, filterCreatedAtFrom, filterCreatedAtTo, filterUpdatedAtFrom, filterUpdatedAtTo]);
 
   useEffect(() => {
     if (currentPage > totalPages && totalPages > 0) {
@@ -2133,6 +2182,7 @@ export default function ProjectWorkOrders() {
   const clearFilters = () => {
     setSearchQuery("");
     setSelectedStatuses([]);
+    setSelectedSubStatusId("");
     setSelectedServiceTypes([]);
     setSelectedAssignedTo("all");
     setSelectedAssignedGroup("all");
@@ -2172,10 +2222,11 @@ export default function ProjectWorkOrders() {
     setCurrentPage(1);
   };
 
-  const hasActiveFilters = selectedStatuses.length > 0 || selectedServiceTypes.length > 0 || selectedAssignedTo !== "all" || selectedAssignedGroup !== "all" || selectedTrouble !== "all" || selectedOldSystemType !== "all" || selectedNewSystemType !== "all" || selectedOldModuleType !== "all" || selectedNewModuleType !== "all" || filterSystemWoId !== "" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldSystemId !== "" || filterNewSystemId !== "" || filterOldModuleId !== "" || filterNewModuleId !== "" || filterScheduledDateFrom !== "" || filterScheduledDateTo !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterScheduledBy !== "all" || filterCompletedBy !== "all" || filterCompletedAtFrom !== "" || filterCompletedAtTo !== "" || filterNotes !== "" || filterCreatedAtFrom !== "" || filterCreatedAtTo !== "" || filterUpdatedAtFrom !== "" || filterUpdatedAtTo !== "";
+  const hasActiveFilters = selectedStatuses.length > 0 || selectedSubStatusId !== "" || selectedServiceTypes.length > 0 || selectedAssignedTo !== "all" || selectedAssignedGroup !== "all" || selectedTrouble !== "all" || selectedOldSystemType !== "all" || selectedNewSystemType !== "all" || selectedOldModuleType !== "all" || selectedNewModuleType !== "all" || filterSystemWoId !== "" || filterCustomerId !== "" || filterCustomerName !== "" || filterAddress !== "" || filterCity !== "" || filterState !== "" || filterZip !== "" || filterPhone !== "" || filterEmail !== "" || filterRoute !== "" || filterZone !== "" || filterOldSystemId !== "" || filterNewSystemId !== "" || filterOldModuleId !== "" || filterNewModuleId !== "" || filterScheduledDateFrom !== "" || filterScheduledDateTo !== "" || filterCreatedBy !== "all" || filterUpdatedBy !== "all" || filterScheduledBy !== "all" || filterCompletedBy !== "all" || filterCompletedAtFrom !== "" || filterCompletedAtTo !== "" || filterNotes !== "" || filterCreatedAtFrom !== "" || filterCreatedAtTo !== "" || filterUpdatedAtFrom !== "" || filterUpdatedAtTo !== "";
 
   const activeFilterCount = [
     selectedStatuses.length > 0,
+    selectedSubStatusId !== "",
     selectedServiceTypes.length > 0,
     selectedAssignedTo !== "all",
     selectedAssignedGroup !== "all",
@@ -2247,6 +2298,11 @@ export default function ProjectWorkOrders() {
     return statusRecord?.label || status;
   };
 
+  const getSubStatusLabel = (subStatusId: string | null | undefined): string => {
+    if (!subStatusId) return "";
+    return workOrderSubStatuses.find(definition => definition.id === subStatusId)?.label || "";
+  };
+
   // Helper to get export value for a column key
   const getExportValue = (wo: ProjectWorkOrder, key: string): string => {
     switch (key) {
@@ -2277,7 +2333,11 @@ export default function ProjectWorkOrders() {
       case "newModuleType": return (wo as any).newModuleType?.toString() || "";
       case "oldGps": return wo.oldGps || "";
       case "newGps": return wo.newGps || "";
-      case "status": return getStatusLabel(wo.status);
+      case "status": {
+        const parent = getStatusLabel(wo.status);
+        const subStatus = getSubStatusLabel((wo as any).subStatusId ?? (wo as any).sub_status_id);
+        return subStatus ? `${parent} — ${subStatus}` : parent;
+      }
       case "scheduledAt": return (wo as any).scheduledAt ? formatExport((wo as any).scheduledAt) : "";
       case "scheduledBy": return (wo as any).scheduledByDisplay || getAssignedUserName((wo as any).scheduledBy) || "";
       case "assignedTo": return (wo as any).assignedUserDisplay || getAssignedUserName((wo as any).assignedUserId) || "";
@@ -3183,7 +3243,29 @@ export default function ProjectWorkOrders() {
                   </div>
                 </AccordionTrigger>
                 <AccordionContent className="pb-4">
+                  <p className="mb-3 text-sm text-muted-foreground">
+                    New work orders start as <span className="font-medium text-foreground">{createStatusLabel}</span>. A sub-status adds detail without changing its workflow.
+                  </p>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <FormField
+                      control={form.control}
+                      name="subStatusId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Sub-status</FormLabel>
+                          <Select value={field.value || "__none"} onValueChange={value => field.onChange(value === "__none" ? null : value)}>
+                            <FormControl><SelectTrigger data-testid="select-create-sub-status"><SelectValue placeholder="None" /></SelectTrigger></FormControl>
+                            <SelectContent>
+                              <SelectItem value="__none">None</SelectItem>
+                              {workOrderSubStatuses.filter(definition =>
+                                definition.active && (definition.parentStatusCode === createStatusCode || definition.parentStatusLabel === createStatusLabel)
+                              ).map(definition => <SelectItem key={definition.id} value={definition.id}>{definition.label}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                     <FormField
                       control={form.control}
                       name="assignedUserId"
@@ -3749,6 +3831,8 @@ export default function ProjectWorkOrders() {
                 setSearchQuery={setSearchQuery}
                 selectedStatuses={selectedStatuses}
                 setSelectedStatuses={setSelectedStatuses}
+                selectedSubStatusId={selectedSubStatusId}
+                setSelectedSubStatusId={setSelectedSubStatusId}
                 selectedServiceTypes={selectedServiceTypes}
                 setSelectedServiceTypes={setSelectedServiceTypes}
                 selectedAssignedTo={selectedAssignedTo}
@@ -3823,6 +3907,7 @@ export default function ProjectWorkOrders() {
                 moduleTypes={moduleTypes}
                 assigneesData={assigneesData}
                 workOrderStatuses={workOrderStatuses}
+                workOrderSubStatuses={workOrderSubStatuses}
                 serviceTypes={serviceTypes}
                 troubleCodes={troubleCodes}
                 hasActiveFilters={hasActiveFilters}

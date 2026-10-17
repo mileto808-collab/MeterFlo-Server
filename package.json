@@ -57,6 +57,7 @@
     "migrate:inventory-relational": "tsx script/migrate-inventory-relational.ts",
     "test:inventory-relational": "tsx --test tests/inventory-relational.test.ts tests/inventory-relational-database.test.ts tests/inventory-deletion.test.ts",
     "test:inventory-removal": "tsx --test --test-concurrency=1 tests/inventory-removal-policy.test.ts tests/inventory-removal-database.test.ts",
+    "test:work-order-sub-statuses": "tsx --test tests/work-order-sub-statuses.test.ts",
     "test:inventory-categories": "tsx --test tests/inventory-categories.test.ts",
     "test:inventory-categories:browser": "node tests/inventory-categories-ui.cjs",
     "test:inventory-categories:database": "tsx --test tests/inventory-category-database.test.ts",

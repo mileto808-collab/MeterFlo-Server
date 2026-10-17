@@ -23,6 +23,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { usePermissions } from "@/hooks/usePermissions";
 import { getReadingPrecision } from "@shared/reading-precision";
 import { getProjectEquipmentVisibility } from "@shared/project-equipment-scope";
+import { WorkOrderSubStatusManager } from "@/components/work-order-sub-statuses/work-order-sub-status-manager";
 
 const DAYS_OF_WEEK = [
   { value: 'monday', label: 'Mon' },
@@ -89,6 +90,7 @@ export default function ProjectForm() {
   const { toast } = useToast();
   const { hasPermission, isLoading: permissionsLoading } = usePermissions();
   const canConfigureReadingPrecision = hasPermission("projects.readingPrecision");
+  const canManageSubStatuses = hasPermission("projects.manageSubStatuses");
 
   const { data: project, isLoading: projectLoading } = useQuery<Project>({
     queryKey: ["/api/projects", id],
@@ -602,6 +604,12 @@ export default function ProjectForm() {
                   <p className="mt-3 text-sm font-medium">Setup is available immediately after creation.</p>
                 )}
               </div>
+
+              {isEditing && (
+                <div className="border-t pt-6 mt-6">
+                  <WorkOrderSubStatusManager projectId={Number(id)} canEdit={canManageSubStatuses} />
+                </div>
+              )}
 
               {isEditing && (
                 <div className="border-t pt-6 mt-6">

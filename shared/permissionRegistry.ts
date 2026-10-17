@@ -24,6 +24,9 @@ export interface PermissionDefinition {
 }
 
 export const permissionRegistry: PermissionDefinition[] = [
+  { key: "projects.manageSubStatuses", label: "Manage Project Work Order Sub-statuses", category: "Project Actions",
+    description: "Create and maintain custom sub-statuses within assigned projects. Does not change core status rules or shared definitions.",
+    defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false } },
   ...Object.entries(inventoryPermissions).map(([name, key]): PermissionDefinition => ({
     key, label: name === "manageRemovalRules" ? "Manage Equipment Removal Rules" :
       name === "resolveReturns" ? "Decide Returned Equipment Disposition" :

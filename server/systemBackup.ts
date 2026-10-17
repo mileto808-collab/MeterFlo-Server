@@ -38,6 +38,7 @@ const TABLE_PRIMARY_KEYS: Record<string, string[]> = {
   subrole_permissions: ["subrole_id", "permission_id"],
   system_settings: ["key"],
   work_order_statuses: ["id"],
+  work_order_sub_statuses: ["id"],
   trouble_codes: ["id"],
   service_types: ["id"],
   system_types: ["id"],
@@ -73,6 +74,7 @@ const TABLE_RESTORE_ORDER = [
   "user_group_members",
   "system_settings",
   "work_order_statuses",
+  "work_order_sub_statuses",
   "trouble_codes",
   "service_types",
   "system_types",
@@ -106,6 +108,7 @@ export interface FullSystemBackup {
     schemaName: string;
     workOrders: any[];
     inventory?: InventoryBackup;
+    subStatuses?: unknown[];
   }>;
 }
 
@@ -138,6 +141,7 @@ export async function createFullSystemBackup(): Promise<{ backup: FullSystemBack
             schemaName: project.databaseName,
             workOrders: backup.workOrders,
             inventory: backup.inventory,
+            subStatuses: backup.subStatuses,
           });
         } catch (error) {
           console.warn(`Failed to backup project database ${project.databaseName}:`, error);
@@ -527,7 +531,7 @@ export async function restoreFullSystemData(
         const result = await restoreProjectDatabaseInTransaction(
           client,
           projectBackup.schemaName,
-          { workOrders: projectBackup.workOrders, inventory: projectBackup.inventory },
+          { workOrders: projectBackup.workOrders, inventory: projectBackup.inventory, subStatuses: projectBackup.subStatuses },
           { clearExisting: options.clearExisting }
         );
         if (result.errors.length > 0) {
