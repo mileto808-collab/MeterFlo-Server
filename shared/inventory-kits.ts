@@ -6,6 +6,7 @@ export type KitOwner = { kind: "stock" | "transit" | "work" | "assembly" | "hold
 export type KitPosition = KitOwner & { quantity: number; serials: string[] };
 export type KitAssembly = {
   id: string; itemId: string; quantity: number; serials: string[]; components: StockLine[];
+  source?: "vendor"; sourceReceiptId?: string;
   warehouseId: string; occurredAt: string; positions: KitPosition[];
   disassembledQuantity: number; disassembledSerials: string[];
 };
@@ -167,6 +168,59 @@ export function recordKitAssembly(state: InventoryState, id: string, warehouseId
     disassembledQuantity: 0, disassembledSerials: [] });
 }
 
+export const vendorKitSchema = z.object({
+  receiptId: z.string().min(1).max(100), itemId: z.string().min(1).max(100),
+  quantity: z.number().int().positive().max(1000000),
+  serials: z.array(z.string().trim().min(1).max(100)).max(10000).default([]),
+  components: z.array(z.object({ itemId: z.string().min(1).max(100),
+    quantity: z.number().int().positive().max(1000000),
+    serials: z.array(z.string().trim().min(1).max(100)).max(10000).default([]) }).strict()).min(1).max(100),
+  reason: z.string().trim().min(1).max(1000),
+}).strict();
+
+/** Inspection creates provenance for purchased finished stock, never a loose-stock conversion. */
+export function vendorKitSource(state: InventoryState, data: z.infer<typeof vendorKitSchema>) {
+  const receipt = state.receipts.find(r => r.id === data.receiptId);
+  const order = state.orders.find(o => o.id === receipt?.reference && o.type === "purchase");
+  const original = receipt?.lines.find(l => l.itemId === data.itemId);
+  fail(receipt?.action === "receive" && order && original && receipt.warehouseId === order.destinationId,
+    "Select a usable finished-kit line from an original purchase receipt.");
+  const warehouseId = receipt.warehouseId!;
+  const kit = state.items.find(i => i.id === data.itemId);
+  fail(kit?.active && kit.components.length, "Select an active kit item.");
+  const verified = (state.kitAssemblies ?? []).filter(a => a.sourceReceiptId === receipt.id && a.itemId === data.itemId);
+  fail(verified.reduce((n, a) => n + a.quantity, 0) + data.quantity <= original.quantity,
+    "Quantity exceeds the unverified finished kits on this receipt.");
+  fail(kit.tracking === "serialized" ? data.serials.length === data.quantity &&
+    new Set(data.serials).size === data.quantity && data.serials.every(serial => original.serials.includes(serial) &&
+      !verified.some(a => a.serials.includes(serial))) : !data.serials.length,
+    "Choose exact unverified finished-kit serials from the purchase receipt.");
+  const receiptIndex = state.receipts.indexOf(receipt);
+  if (kit.tracking === "serialized") {
+    fail(data.serials.every(serial => legacySerialLocation(state, receiptIndex, kit.id, serial, warehouseId) === warehouseId),
+      "Finished-kit custody changed after receipt; its original receiving identity cannot be verified here.");
+  } else {
+    // Quantity-only lineage cannot distinguish an original unit from a later replacement.
+    fail(!state.receipts.slice(receiptIndex + 1).some(r => r.action !== "verifyVendorKit" &&
+      (r.lines.some(l => l.itemId === kit.id) && ["dispatch", "countPost", "disassemble"].includes(r.action) ||
+       r.components?.some(l => l.itemId === kit.id))) &&
+      !state.allocations.some(a => [...a.used, ...a.lines].some(l => l.itemId === kit.id)),
+      "Quantity-only kit custody changed after receipt; original receiving evidence is ambiguous.");
+  }
+  const stock = state.stock.find(b => b.itemId === kit.id && b.warehouseId === warehouseId);
+  const proven = (state.kitAssemblies ?? []).filter(a => a.itemId === kit.id)
+    .flatMap(a => a.positions).filter(p => p.kind === "stock" && p.id === warehouseId);
+  fail(stock && data.quantity <= stock.quantity - proven.reduce((n, p) => n + p.quantity, 0) &&
+    data.serials.every(serial => stock.serials.includes(serial) && !proven.some(p => p.serials.includes(serial))),
+    "Selected finished kits are not unverified stock at the receiving warehouse.");
+  const reserved = state.allocations.filter(a => a.status === "reserved").flatMap(a => a.lines)
+    .filter(l => l.itemId === kit.id && l.warehouseId === warehouseId);
+  fail(data.quantity <= kitAvailable(state, warehouseId, kit.id) &&
+    data.serials.every(serial => !reserved.some(l => l.serials.includes(serial))),
+    "Release finished-kit reservations before verifying contents.");
+  return { receipt, kit, warehouseId };
+}
+
 export function kitSerialContents(state: InventoryState, itemId: string, serial: string): StockLine[] {
   const assembly = [...(state.kitAssemblies ?? [])].reverse().find(a => a.itemId === itemId && a.serials.includes(serial));
   if (assembly) return assembly.disassembledSerials.includes(serial) ? [] :
@@ -187,7 +241,7 @@ export function kitAssemblyOptions(input: InventoryState, warehouseId: string, i
     const availableQuantity = Math.min(kitAvailable(state, warehouseId, itemId),
       assembly.serials.length ? serials.length : position.quantity);
     return availableQuantity > 0 ? [{ assemblyId: assembly.id,
-      label: `Assembly #${state.receipts.findIndex(r => r.id === assembly.id) + 1} · ${assembly.occurredAt.slice(0, 10)}`,
+      label: `${assembly.source === "vendor" ? "Vendor inspection" : "Assembly"} #${state.receipts.findIndex(r => r.id === assembly.id) + 1} · ${assembly.occurredAt.slice(0, 10)}`,
       availableQuantity, serials, components: structuredClone(assembly.components) }] : [];
   });
 }

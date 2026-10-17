@@ -5,11 +5,16 @@ import { receiptSerialSummary } from "./inventoryReceiptSerials";
 const escape = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, c =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 export function inventoryKitPrint(receipt: InventoryReceipt, state: InventoryState) {
-  if (!["assemble", "disassemble", "resolveKitHold"].includes(receipt.action)) return "";
+  if (!["assemble", "verifyVendorKit", "disassemble", "resolveKitHold"].includes(receipt.action)) return "";
   const itemName = (itemId: string) => {
     const item = state.items.find(i => i.id === itemId);
     return `${item?.sku ?? "Unavailable product"} · ${item?.name ?? ""}`;
   };
+  if (receipt.action === "verifyVendorKit") return `<h2>Vendor kit contents verified</h2>
+    <p>Original receiving evidence: ${escape(inventoryReceiptLabel(state.receipts, receipt.sourceReceiptId ?? ""))}.
+    These components arrived inside purchased finished kits. No loose component stock was deducted or added, and finished-kit stock was unchanged.</p>
+    <table><thead><tr><th>Actual component</th><th>Verified quantity</th><th>Serial evidence</th></tr></thead><tbody>
+    ${(receipt.components ?? []).map(c => `<tr><td>${escape(itemName(c.itemId))}</td><td>${c.quantity}</td><td>${receiptSerialSummary(c)}</td></tr>`).join("")}</tbody></table>`;
   if (receipt.action === "assemble") return `<h2>Stock conversion</h2><p>Finished kits added to usable stock above. Components deducted:</p>
     <table><thead><tr><th>Component</th><th>Consumed quantity</th><th>Serial evidence</th></tr></thead><tbody>
     ${(receipt.components ?? []).map(c => `<tr><td>${escape(itemName(c.itemId))}</td><td>${c.quantity}</td><td>${receiptSerialSummary(c)}</td></tr>`).join("")}</tbody></table>`;

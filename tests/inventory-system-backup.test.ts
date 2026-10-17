@@ -106,6 +106,15 @@ test("full-system inventory restore preserves identity IDs, JSON serials, sequen
     const serialHoldId = state.kitHolds!.find(h => h.itemId === "serial-part")!.id;
     post("resolveKitHold", { id: serialHoldId, quantity: 1, serials: ["S2"], outcome: "released", reason: "S2 passed" });
     post("resolveKitHold", { id: serialHoldId, quantity: 1, serials: ["S1"], outcome: "scrapped", reason: "S1 failed" });
+    post("item", { id: "vendor-kit", sku: "VENDOR-KIT", name: "Purchased kit", tracking: "serialized",
+      components: [{ itemId: "m", quantity: 1 }] });
+    post("order", { id: "vendor-po", type: "purchase", vendorId: "v", destinationId: "w",
+      lines: [{ itemId: "vendor-kit", quantity: 1 }] });
+    post("release", { orderId: "vendor-po" });
+    post("receive", { orderId: "vendor-po", lines: [{ itemId: "vendor-kit", quantity: 1, serials: ["VK1"] }] });
+    const vendorReceive = state.receipts.at(-1)!.id;
+    post("verifyVendorKit", { receiptId: vendorReceive, itemId: "vendor-kit", quantity: 1, serials: ["VK1"],
+      components: [{ itemId: "m", quantity: 1, serials: ["VENDOR-METER"] }], reason: "Vendor physical inspection" });
     await client.query("INSERT INTO inventory_state VALUES($1,$2)", [42, state]);
     await client.query("INSERT INTO inventory_categories(project_id,id,name,active) VALUES($1,$2,$3,true)", [42, categoryId, "Meters"]);
     for (const item of state.items) await client.query("INSERT INTO inventory_items(project_id,id,sku,data,category_id) VALUES($1,$2,$3,$4,$5)", [42, item.id, item.sku, item, item.categoryId]);

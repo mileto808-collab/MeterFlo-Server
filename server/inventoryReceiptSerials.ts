@@ -13,7 +13,7 @@ export type ReceiptSerialEvidenceCategory =
   | "disposition-movement"
   | "disposition-known"
   | "transit-loss"
-  | "assembled-kit" | "disassembled-kit" | "assembly-consumed" | "recovered" | "kit-missing" | "kit-inspection";
+  | "assembled-kit" | "disassembled-kit" | "assembly-consumed" | "vendor-kit" | "vendor-component" | "recovered" | "kit-missing" | "kit-inspection";
 
 export type ReceiptSerialEvidence = {
   itemId: string;
@@ -49,11 +49,12 @@ export function extractReceiptSerialEvidence(receipt: InventoryReceipt, state?: 
     });
   };
 
-  const lineCategory = receipt.action === "assemble" ? "assembled-kit" : receipt.action === "disassemble" ? "disassembled-kit" :
+  const lineCategory = receipt.action === "verifyVendorKit" ? "vendor-kit" : receipt.action === "assemble" ? "assembled-kit" : receipt.action === "disassemble" ? "disassembled-kit" :
     receipt.action === "resolveTransit" ? "transit-loss" :
     receipt.action === "resolveHold" ? "disposition-movement" : "confirmed";
   for (const line of receipt.lines ?? []) addLine(line, lineCategory);
-  for (const line of receipt.components ?? []) addLine(line, receipt.action === "assemble" ? "assembly-consumed" : receipt.kitConversion ? "recovered" : "confirmed");
+  for (const line of receipt.components ?? []) addLine(line, receipt.action === "verifyVendorKit" ? "vendor-component" :
+    receipt.action === "assemble" ? "assembly-consumed" : receipt.kitConversion ? "recovered" : "confirmed");
   for (const recovery of receipt.kitConversion?.recovered ?? []) {
     addLine({ itemId: recovery.itemId, quantity: recovery.damagedQuantity, serials: recovery.damagedSerials }, "damaged");
     addLine({ itemId: recovery.itemId, quantity: recovery.missingQuantity, serials: recovery.missingSerials }, "kit-missing");
@@ -89,6 +90,8 @@ const categoryLabels: Record<ReceiptSerialEvidenceCategory, string> = {
   "disposition-known": "Disposition-selected known identities",
   "transit-loss": "Confirmed transit loss references (not physically received)",
   "assembled-kit": "Finished kits added to stock",
+  "vendor-kit": "Purchased finished kits inspected (no stock movement)",
+  "vendor-component": "Actual contents received inside vendor kits (not loose stock)",
   "disassembled-kit": "Finished kits removed for disassembly",
   "assembly-consumed": "Components consumed by assembly",
   recovered: "Usable components returned to stock",

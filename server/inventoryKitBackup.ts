@@ -11,6 +11,7 @@ const positionSchema = z.object({
 const assemblySchema = z.object({
   id, itemId: id, quantity, serials, components: z.array(stockLineSchema).min(1).max(100),
   warehouseId: id, occurredAt: z.string().datetime(), positions: z.array(positionSchema),
+  source: z.literal("vendor").optional(), sourceReceiptId: id.optional(),
   disassembledQuantity: z.number().int().nonnegative(), disassembledSerials: serials,
 }).strict();
 const holdSchema = z.object({
@@ -35,9 +36,32 @@ export function validateKitBackup(state: InventoryState) {
   fail(new Set(holds.map(h => h.id)).size === holds.length, "duplicate inspection holds");
   for (const assembly of assemblies) {
     const receipt = state.receipts.find(r => r.id === assembly.id), item = state.items.find(i => i.id === assembly.itemId);
-    fail(receipt?.action === "assemble" && item && receipt.warehouseId === assembly.warehouseId &&
+    fail(receipt?.action === (assembly.source === "vendor" ? "verifyVendorKit" : "assemble") && item && receipt.warehouseId === assembly.warehouseId &&
       receipt.lines.length === 1 && equal(receipt.components, assembly.components) &&
       equal(receipt.lines[0], { itemId: assembly.itemId, quantity: assembly.quantity, serials: assembly.serials }), "assembly evidence differs from its receipt");
+    if (assembly.source === "vendor") {
+      const source = state.receipts.find(r => r.id === assembly.sourceReceiptId);
+      const original = source?.lines.find(l => l.itemId === assembly.itemId);
+      const siblings = assemblies.filter(a => a.sourceReceiptId === assembly.sourceReceiptId && a.itemId === assembly.itemId);
+      fail(source?.action === "receive" && source.warehouseId === assembly.warehouseId && original &&
+        receipt.sourceReceiptId === source.id &&
+        state.orders.some(o => o.id === source.reference && o.type === "purchase" && o.destinationId === source.warehouseId) &&
+        siblings.reduce((n, a) => n + a.quantity, 0) <= original.quantity &&
+        siblings.flatMap(a => a.serials).every(serial => original.serials.includes(serial)) &&
+        new Set(siblings.flatMap(a => a.serials)).size === siblings.flatMap(a => a.serials).length,
+        "vendor inspection differs from original purchase receiving evidence");
+      fail(!assembly.components.some(c => c.serials.length) || item.tracking === "serialized" && assembly.quantity === 1,
+        "ambiguous vendor component identities");
+      if (!assembly.disassembledQuantity) for (const component of assembly.components) for (const serial of component.serials) fail(
+        state.serialOccupancy?.some(o => o.itemId === component.itemId && o.serial === serial) &&
+        !state.stock.some(b => b.itemId === component.itemId && b.serials.includes(serial)),
+        "vendor component custody is missing or also available as loose stock");
+    } else fail(!assembly.sourceReceiptId && !receipt.sourceReceiptId, "unexpected vendor receiving evidence");
+    fail(assembly.components.every(c => {
+      const component = state.items.find(i => i.id === c.itemId);
+      return component && (component.tracking === "serialized" ? c.serials.length === c.quantity &&
+        new Set(c.serials).size === c.quantity : !c.serials.length);
+    }), "invalid original component quantities or serials");
     fail(new Set(assembly.components.map(c => c.itemId)).size === assembly.components.length &&
       assembly.components.every(c => state.items.some(i => i.id === c.itemId)), "invalid original component relationship");
     fail(assembly.positions.reduce((n, p) => n + p.quantity, 0) + assembly.disassembledQuantity === assembly.quantity, "unbalanced assembly positions");
@@ -141,6 +165,8 @@ export function validateKitBackup(state: InventoryState) {
   for (const receipt of state.receipts.filter(r => r.action === "resolveKitHold")) fail(
     dispositionIds.has(receipt.id) || holds.some(h => h.resolution?.operationId === receipt.id),
     "orphan inspection receipt");
+  for (const receipt of state.receipts.filter(r => r.action === "verifyVendorKit")) fail(
+    assemblies.some(a => a.id === receipt.id && a.source === "vendor"), "orphan vendor inspection receipt");
   for (const stock of state.stock) {
     const positioned = assemblies.flatMap(a => a.itemId === stock.itemId ? a.positions.filter(p =>
       p.kind === "stock" && p.id === stock.warehouseId) : []);

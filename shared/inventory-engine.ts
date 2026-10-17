@@ -13,7 +13,7 @@ import { applyShipmentCommand, assertNotHeld, shipmentActions } from "./inventor
 import { settledLines } from "./inventory-shipment-model";
 import { applyShipmentDraftCommand, isShipmentDraftAction, validateDraftPosting, draftFingerprintCommand, validateDraftReplay } from "./inventory-shipment-drafts";
 import { ensureKitProvenance, kitSerialContents, moveKitProvenance, recordKitAssembly, remainingKitHold,
-  applyKitDisassembly, applyKitHoldResolution, type KitFlow } from "./inventory-kits";
+  applyKitDisassembly, applyKitHoldResolution, vendorKitSchema, vendorKitSource, type KitFlow } from "./inventory-kits";
 
 export { InventoryError } from "./inventory-errors";
 const assert: (ok: unknown, message: string) => asserts ok = (ok, message) => { if (!ok) throw new InventoryError(message); };
@@ -122,7 +122,7 @@ function kitCycles(s: InventoryState) {
   for (const i of s.items) visit(i.id, []);
 }
 export function applyInventoryCommand(original: InventoryState, command: InventoryCommand, actor: string, admin: boolean, now = new Date().toISOString()) {
-  if (shipmentActions.includes(command.action) || ["assemble", "disassemble", "resolveKitHold"].includes(command.action))
+  if (shipmentActions.includes(command.action) || ["assemble", "verifyVendorKit", "disassemble", "resolveKitHold"].includes(command.action))
     assert(new TextEncoder().encode(JSON.stringify(command.data)).length <= 8 * 1024 * 1024, "Shipment data exceeds the 8 MiB limit; no changes were posted.");
   if (command.action === "countSaveDraft" || command.action === "countPost")
     assert(countPayloadFits(command.data), "Count data exceeds the 8 MiB limit; no changes were posted.");
@@ -366,6 +366,28 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     assert(new Set(input.dispositions.map(x => x.equipment)).size === input.dispositions.length, "Only one disposition per removed equipment type.");
     for (const r of input.dispositions) if (r.disposition === "returned") { assert(r.warehouseId, "Choose a return warehouse."); access(r.warehouseId); }
     allocation.used = input.used; allocation.dispositions = input.dispositions; allocation.mode = input.mode; allocation.revision++;
+  } else if (a === "verifyVendorKit") {
+    const data = vendorKitSchema.parse(d);
+    const { kit, warehouseId } = vendorKitSource(s, data);
+    access(warehouseId);
+    validateLines(s, data.components);
+    assert(data.components.length === kit.components.length && kit.components.every(c =>
+      totals(data.components, c.itemId) === c.quantity * data.quantity), "Captured contents must exactly match the kit recipe.");
+    assert(data.components.every(c => !item(s, c.itemId).components.length),
+      "Nested vendor kits require their own verified contents; capture a leaf-component kit instead.");
+    if (data.components.some(c => c.serials.length))
+      assert(kit.tracking === "serialized" && data.quantity === 1,
+        "Kits containing serialized units require a kit serial and one-kit-at-a-time inspection for traceability.");
+    // Use the existing incoming-custody checks on an isolated trial only.
+    // Actual loose balances and revisions must never change during inspection.
+    const trial = structuredClone(s);
+    move(trial, warehouseId, data.components, 1);
+    const output = { itemId: kit.id, quantity: data.quantity, serials: data.serials };
+    recordKitAssembly(s, command.operationId, warehouseId, output, data.components, now);
+    Object.assign(s.kitAssemblies!.at(-1)!, { source: "vendor", sourceReceiptId: data.receiptId });
+    occupy(s, data.components, null);
+    receipt(kit.id, warehouseId, [output], data.reason, data.components);
+    s.receipts.at(-1)!.sourceReceiptId = data.receiptId;
   } else if (a === "assemble") {
     const { warehouseId, itemId, quantity, serials, components } = z.object({ warehouseId: identifier, itemId: identifier,
       quantity: z.number().int().positive().max(1000000), serials: z.array(identifier).default([]), components: lines }).strict().parse(d);

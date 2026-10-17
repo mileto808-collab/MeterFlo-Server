@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Download, FileSpreadsheet, FileText, Filter, ListOrdered, RefreshCw, Search } from "lucide-react";
+import { Download, FileSpreadsheet, FileText, Filter, ListOrdered, PackageCheck, RefreshCw, Search } from "lucide-react";
 import { InventoryMobileTools } from "@/components/inventory-mobile-tools";
 import type { StockBalanceRow } from "@/lib/inventory-stock-export";
 import { downloadInventoryStock } from "@/lib/inventory-stock-export";
@@ -20,9 +20,11 @@ type InventoryStockWorkspaceProps = {
   timezone: string;
   onRefresh: () => void;
   onViewSerials: (row: StockBalanceRow) => void;
+  canVerifyVendorKit?: boolean;
+  onVerifyVendorKit?: () => void;
 };
 
-export function InventoryStockWorkspace({ base, projectName, timezone, onRefresh, onViewSerials }: InventoryStockWorkspaceProps) {
+export function InventoryStockWorkspace({ base, projectName, timezone, onRefresh, onViewSerials, canVerifyVendorKit = false, onVerifyVendorKit }: InventoryStockWorkspaceProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
@@ -274,6 +276,7 @@ export function InventoryStockWorkspace({ base, projectName, timezone, onRefresh
           <div className="space-y-2 rounded-md border bg-card p-2 md:rounded-none md:border-0 md:bg-transparent md:p-0">
             <div className="flex items-center gap-1.5">
               <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="Refresh stock" title="Refresh stock" onClick={() => { void queryClient.invalidateQueries({ queryKey: [base, "stock"] }); onRefresh(); }}><RefreshCw className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Refresh</span></Button>
+              {canVerifyVendorKit && <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="Inspect vendor kit" title="Inspect vendor kit" onClick={onVerifyVendorKit}><PackageCheck className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Vendor kit</span></Button>}
               <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="CSV" title="CSV" disabled={!exportCount || exporting || !stock.data} onClick={() => void exportFile("csv")}><Download className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">CSV</span></Button>
               <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="Excel" title="Excel" disabled={!exportCount || exporting || !stock.data} onClick={() => void exportFile("xlsx")}><FileSpreadsheet className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Excel</span></Button>
               <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="PDF / Print" title="PDF / Print" disabled={!exportCount || exporting || !stock.data} onClick={() => void exportFile("pdf")}><FileText className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">PDF / Print</span></Button>

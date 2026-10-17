@@ -6,7 +6,7 @@ const q = (name: string) => `"${name}"`;
 const referenceTables: Record<string, string> = {
   itemId: "inventory_items", vendorId: "inventory_vendors",
   warehouseId: "inventory_warehouses", sourceId: "inventory_warehouses", destinationId: "inventory_warehouses",
-  orderId: "inventory_orders", receiptId: "inventory_receipts", assemblyId: "inventory_kit_assemblies",
+  orderId: "inventory_orders", receiptId: "inventory_receipts", sourceReceiptId: "inventory_receipts", assemblyId: "inventory_kit_assemblies",
   replacementFor: "inventory_orders",
 };
 

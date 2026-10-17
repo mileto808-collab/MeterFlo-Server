@@ -61,7 +61,7 @@ export const savedCountDraftSchema = countDraftSchema.extend({
 });
 export const inventoryCommandSchema = z.object({
   operationId: z.string().uuid(), action: z.enum(["warehouse", "vendor", "item", "itemDelete", "category", "categoryRename", "categoryDelete", "order", "release",
-    "cancel", "unrelease", "archiveOrder", "restoreOrder", "numberOrders", "receive", "dispatch", "accept", "assemble", "disassemble", "resolveKitHold", "countStart", "countPost", "countCancel", "countSaveDraft",
+    "cancel", "unrelease", "archiveOrder", "restoreOrder", "numberOrders", "receive", "dispatch", "accept", "assemble", "verifyVendorKit", "disassemble", "resolveKitHold", "countStart", "countPost", "countCancel", "countSaveDraft",
     "assign", "prepareUse", "returnAccept", "returnRelease", "reconcileWorkOrder", "closeOrder", "resolveTransit", "resolveHold",
     "shipmentDraftSave", "shipmentDraftPrepare", "shipmentDraftUnlock", "shipmentDraftDelete", "shipmentDraftClaim", "typeLink"]),
   data: z.record(z.unknown()),
@@ -87,7 +87,7 @@ export type WorkRequirements = { workOrderId: number; lines: { itemId: string; q
 export type InventoryCount = { id: string; warehouseId: string; snapshot: Stock[]; status: "open" | "posted" | "cancelled"; reason?: string; lines?: StockLine[]; draft?: z.infer<typeof savedCountDraftSchema> };
 export type InventoryReceipt = { id: string; action: string; reference: string; warehouseId: string | null;
   lines: StockLine[]; actor: string; occurredAt: string; reason?: string; components?: StockLine[];
-  damaged?: DamageLine[]; holdId?: string; resolution?: string; externalReference?: string; closedShort?: StockLine[];
+  damaged?: DamageLine[]; holdId?: string; resolution?: string; externalReference?: string; closedShort?: StockLine[]; sourceReceiptId?: string;
   holdDisposition?: HoldDisposition; kitHoldId?: string; kitInspection?: StockLine;
   kitConversion?: { assemblyId: string; recovered: Array<import("./inventory-kits").KitRecovery> } };
 export type EquipmentReturn = Disposition & { id: string; workOrderId: number; status: "pending" | "quarantine" | "released"; itemId?: string };
@@ -108,7 +108,7 @@ export const commandPermission = (action: InventoryCommand["action"]) =>
   ["resolveTransit", "resolveHold", "resolveKitHold"].includes(action) ? inventoryPermissions.resolveExceptions :
   ["archiveOrder", "restoreOrder"].includes(action) ? inventoryPermissions.purchase :
   ["warehouse", "vendor", "item", "itemDelete", "category", "categoryRename", "categoryDelete", "numberOrders", "typeLink"].includes(action) ? inventoryPermissions.maintain :
-  ["receive", "accept", "returnAccept", "returnRelease"].includes(action) ? inventoryPermissions.receive :
+  ["receive", "accept", "returnAccept", "returnRelease", "verifyVendorKit"].includes(action) ? inventoryPermissions.receive :
   ["assemble", "disassemble"].includes(action) ? inventoryPermissions.assemble : action.startsWith("count") ? inventoryPermissions.count :
   action === "reconcileWorkOrder" ? inventoryPermissions.count :
   ["assign", "prepareUse"].includes(action) ? inventoryPermissions.assign : null;

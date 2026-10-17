@@ -155,7 +155,8 @@ export function buildOperationsDataset(
         componentsOut: r.action === "assemble" ? (r.components ?? []).map(l => `${items.get(l.itemId)?.sku ?? "Unavailable item"} × ${l.quantity}`).join("; ") : "",
         componentsIn: r.action === "disassemble" ? (r.components ?? []).map(l => `${items.get(l.itemId)?.sku ?? "Unavailable item"} × ${l.quantity}`).join("; ") : "",
         missingComponents: (r.kitConversion?.recovered ?? []).filter(l => l.missingQuantity).map(l => `${items.get(l.itemId)?.sku ?? "Unavailable item"} × ${l.missingQuantity}`).join("; "),
-        sourceAssembly: r.kitConversion ? inventoryReceiptLabel(state.receipts, r.kitConversion.assemblyId) :
+        sourceAssembly: r.sourceReceiptId ? inventoryReceiptLabel(state.receipts, r.sourceReceiptId) :
+          r.kitConversion ? inventoryReceiptLabel(state.receipts, r.kitConversion.assemblyId) :
           r.kitHoldId ? inventoryReceiptLabel(state.receipts, state.kitHolds?.find(h => h.id === r.kitHoldId)?.assemblyId ?? "") : "",
         inspectionSerials: r.kitInspection?.serials.join("; ") ?? "",
         reason: r.reason ?? "", resolution: r.resolution ?? "", externalReference: r.externalReference ?? "",

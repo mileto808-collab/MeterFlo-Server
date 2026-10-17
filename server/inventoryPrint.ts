@@ -17,7 +17,7 @@ export function inventoryPrint(kind: string, record: any, state: InventoryState,
   const orderReference = linkedOrder ? `${orderLabel(linkedOrder)}${customerOrderReference(linkedOrder) ? ` · Reference: ${customerOrderReference(linkedOrder)}` : ""}` : undefined;
   const actorLabel = (id: string) => inventoryActorLabel(id, actors);
   const origin = linkedOrder || record;
-  const kitReceipt = kind === "receipt" && ["assemble", "disassemble", "resolveKitHold"].includes(record.action);
+  const kitReceipt = kind === "receipt" && ["assemble", "verifyVendorKit", "disassemble", "resolveKitHold"].includes(record.action);
   const kitItem = kitReceipt ? state.items.find(i => i.id === record.reference) : undefined;
   return `<!doctype html><html><head><meta charset="utf-8"><title>${escape(reference)}</title><style>
      body{font:14px Arial;margin:30px;color:#111}table{border-collapse:collapse;width:100%;margin-top:20px}th,td{border:1px solid #bbb;padding:8px;text-align:left}button{padding:10px}

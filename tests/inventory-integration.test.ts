@@ -189,6 +189,35 @@ test("transactional completion, mobile usage, concurrency, import rollback, and 
     const serialHold = (await inventoryState(project.id)).kitHolds!.find(h => h.id === serialHoldId)!;
     assert.equal(serialHold.dispositions!.length, 3, "disjoint concurrent selections both commit without overwriting history");
     assert.equal(serialHold.status, "resolved");
+    // Purchased finished kits bring their own components; neither verification
+    // nor installation may consume the unrelated loose meter balance.
+    await command("item", { id: "vendor-kit", sku: "VENDOR-KIT", name: "Purchased meter kit", tracking: "serialized",
+      components: [{ itemId: "meter", quantity: 1 }] });
+    await command("order", { id: "vendor-po", type: "purchase", vendorId: "v", destinationId: "w",
+      lines: [{ itemId: "vendor-kit", quantity: 1 }] });
+    await command("release", { orderId: "vendor-po" });
+    const vendorReceiveId = randomUUID(), vendorVerifyId = randomUUID();
+    await command("receive", { orderId: "vendor-po", lines: [{ itemId: "vendor-kit", quantity: 1, serials: ["VK1"] }] }, vendorReceiveId);
+    const vendorCapture = { receiptId: vendorReceiveId, itemId: "vendor-kit", quantity: 1, serials: ["VK1"],
+      components: [{ itemId: "meter", quantity: 1, serials: ["VENDOR-METER"] }], reason: "Inspected supplied meter label" };
+    const stockBeforeVerification = (await inventoryState(project.id)).stock;
+    const competingVerifications = await Promise.allSettled([
+      command("verifyVendorKit", vendorCapture, vendorVerifyId), command("verifyVendorKit", vendorCapture, vendorVerifyId),
+    ]);
+    assert.ok(competingVerifications.every(result => result.status === "fulfilled"), "same-operation concurrent retry confirms one inspection");
+    const vendorState = await inventoryState(project.id);
+    assert.deepEqual(vendorState.stock, stockBeforeVerification);
+    assert.equal(vendorState.kitAssemblies!.filter(a => a.source === "vendor").length, 1);
+    const { rows: vendorAudit } = await pool.query(
+      "SELECT actor_id,changes FROM meterflo_audit.events WHERE project_id=$1 AND entity_id=$2 AND action='inventory.verifyVendorKit'",
+      [project.id, vendorVerifyId]);
+    assert.equal(vendorAudit.length, 1);
+    assert.equal(vendorAudit[0].actor_id, user.id);
+    assert.ok(vendorAudit[0].changes.some((change: any) => change.field === `kitAssemblies/${vendorVerifyId}` &&
+      change.after.sourceReceiptId === vendorReceiveId && change.after.components[0].serials[0] === "VENDOR-METER"));
+    const { rows: relationalVendor } = await pool.query(
+      "SELECT source,source_receipt_id FROM public.inventory_kit_assemblies WHERE project_id=$1 AND id=$2", [project.id, vendorVerifyId]);
+    assert.deepEqual(relationalVendor, [{ source: "vendor", source_receipt_id: vendorReceiveId }]);
     const before = await inventoryState(project.id), backup = await backupProjectDatabase(schema);
     assert.ok(backup.inventory);
     assert.ok(backup.inventory.state.orders.find(order => order.id === "amend-po")?.archivedAt, "cleared POs remain in portable backups");
@@ -241,6 +270,19 @@ test("transactional completion, mobile usage, concurrency, import rollback, and 
     const year = String(new Date().getUTCFullYear());
     assert.equal(Number(nextOrder.orderNumber!.split("-")[2]), knownCounters[year] + 1, "project restore does not reuse an issued number");
     assert.equal((await work.getWorkOrder(allocatedId))?.newSystemId, "0001");
+    const vendorWo = await withAuditContext(scope(), () => work.createWorkOrder({ customerWoId: "vendor-install", serviceType: "Electric" } as any));
+    const vendorUsage = { operationId: randomUUID(), revision: 0, mode: "changeout",
+      used: [{ warehouseId: "w", itemId: "vendor-kit", quantity: 1, serials: ["VK1"] }], dispositions: [] };
+    const stockBeforeInstall = (await inventoryState(project.id)).stock;
+    await assert.rejects(withAuditContext(scope(), () => work.updateWorkOrder(vendorWo.id,
+      { status: "Completed", newSystemId: "WRONG", inventoryUsage: vendorUsage } as any)), /must match/);
+    await withAuditContext(scope(), () => work.updateWorkOrder(vendorWo.id,
+      { status: "Completed", newSystemId: "VENDOR-METER", inventoryUsage: vendorUsage } as any));
+    const installedVendor = await inventoryState(project.id);
+    assert.deepEqual(installedVendor.stock.filter(b => b.itemId !== "vendor-kit"), stockBeforeInstall.filter(b => b.itemId !== "vendor-kit"));
+    assert.equal(installedVendor.stock.find(b => b.itemId === "vendor-kit")!.quantity, 0);
+    assert.equal(installedVendor.serialOccupancy!.find(o => o.serial === "VENDOR-METER")!.workOrderId, vendorWo.id);
+    assert.equal((await work.getWorkOrder(vendorWo.id))?.newSystemId, "VENDOR-METER");
     await command("reconcileWorkOrder", { workOrderId: allocatedId, reason: "Fixture physical return confirmed", restoreUsedStock: true });
     assert.equal((await inventoryState(project.id)).stock[0].quantity, 3);
     await work.updateWorkOrder(allocatedId, { status: "Open" } as any);

@@ -2,11 +2,17 @@
 name: Kit custody and recovery
 description: Why kit breakdown depends on original contents and current ownership rather than catalog recipes.
 ---
-Kit breakdown must recover the originally assembled contents, never today's recipe. Purchased/imported kits without trustworthy assembly evidence must not silently acquire component provenance.
+Kit breakdown must recover the original physically recorded contents, never today's recipe. Purchased/imported kits without trustworthy assembly or explicit vendor receiving-inspection evidence must not silently acquire component provenance.
 
 **Why:** Kit recipes can change; quantity-only stock can mix batches. Inventing lineage can create components that were never consumed, or recover the same kit twice.
 
 **How to apply:** Preserve original assembly evidence across transfers, nesting, work use, teardown, retries, and backups. Admit older quantity-only assemblies only when their ownership is unambiguous. Separate damaged custody from usable stock; missing and scrapped identities remain unavailable.
+
+Purchased finished kits bring their components inside the kit, not from existing loose stock. Explicit inspection may establish their provenance, but it must never require those component serials to appear as separate purchase-receipt lines or loose balances.
+
+**Why:** The receiving evidence concerns the finished purchased unit. Treating its internals as separately received or assembled loose stock either rejects valid vendor kits or fabricates stock movements.
+
+**How to apply:** Validate actual scans/counts against expected contents and current serial custody. Preserve the original finished-kit receipt link, and consume only finished stock during installation.
 
 A matching legacy serialized label alone is not continuous custody.
 

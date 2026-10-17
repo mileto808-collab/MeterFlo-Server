@@ -29,7 +29,7 @@ import { InventoryShipmentDraftsPanel } from "@/components/inventory-shipment-dr
 import { refreshShipmentInventory } from "@/components/inventory-shipment-draft-api";
 import { InventoryShipmentExceptions } from "@/components/inventory-shipment-exceptions";
 import { InventoryShipmentTransitDialog } from "@/components/inventory-shipment-transit-dialog";
-import { InventoryStockSerialDialog, InventoryCatalogWorkspace, InventoryKitDialog } from "@/components/inventory-lazy-tools";
+import { InventoryStockSerialDialog, InventoryCatalogWorkspace, InventoryKitDialog, InventoryVendorKitDialog } from "@/components/inventory-lazy-tools";
 import { InventoryStockWorkspace } from "@/components/inventory-stock-workspace";
 import { copyInventoryItem } from "@/lib/inventory-item-copy";
 import { InventoryRecordsWorkspace } from "@/components/inventory-records-workspace";
@@ -115,6 +115,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const base = `/api/projects/${projectId}/inventory`;
   const queryKey = [base];
   const [showInventoryStats, setShowInventoryStats] = useState(false);
+  const [vendorKitOpen, setVendorKitOpen] = useState(false);
   const inventoryTabKey = `meterflo:inventory-tab:${user?.id ?? "pending"}:${projectId}`;
   const [inventoryTab, setInventoryTabState] = useState(() => savedInventoryTab(inventoryTabKey));
   useEffect(() => { setInventoryTabState(savedInventoryTab(inventoryTabKey)); }, [inventoryTabKey]);
@@ -132,13 +133,13 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     enabled: inventoryTab === "stock",
   });
   // Other tabs/editors retain the legacy contract; stock never subscribes to it in the background.
-  const snapshotQuery = useQuery<Snapshot>({ queryKey, enabled: inventoryTab !== "stock" || !!resource });
+  const snapshotQuery = useQuery<Snapshot>({ queryKey, enabled: inventoryTab !== "stock" || !!resource || vendorKitOpen });
   const stockSnapshot = useMemo<Snapshot | undefined>(() => stockContext.data ? {
     ...stockContext.data, state: emptyInventory(), users: [],
   } : undefined, [stockContext.data]);
-  const data = inventoryTab === "stock" && !resource ? stockSnapshot : snapshotQuery.data;
-  const { isLoading, isError } = inventoryTab === "stock" && !resource ? stockContext : snapshotQuery;
-  const refetch = () => inventoryTab === "stock" && !resource ? stockContext.refetch() : snapshotQuery.refetch();
+  const data = inventoryTab === "stock" && !resource && !vendorKitOpen ? stockSnapshot : snapshotQuery.data;
+  const { isLoading, isError } = inventoryTab === "stock" && !resource && !vendorKitOpen ? stockContext : snapshotQuery;
+  const refetch = () => inventoryTab === "stock" && !resource && !vendorKitOpen ? stockContext.refetch() : snapshotQuery.refetch();
   const summary = inventoryTab === "stock" ? stockContext.data?.summary : undefined;
   useEffect(() => {
     if (!data?.projectName) {
@@ -229,7 +230,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   };
   const requestKitTransition = (transition: () => void) => {
     if (command.isPending || kitOperationPending) return;
-    const leaveKit = () => { setKitDirty(false); setKitDialogMode(null); transition(); };
+    const leaveKit = () => { setKitDirty(false); setKitDialogMode(null); setVendorKitOpen(false); transition(); };
     if (kitDirty) setPendingKitTransition(current => current ?? leaveKit);
     else leaveKit();
   };
@@ -1163,7 +1164,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
 
       <TabsContent value="stock" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         <InventoryStockWorkspace base={base} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
-          onViewSerials={setSelectedStockRow} />
+          onViewSerials={setSelectedStockRow} canVerifyVendorKit={can("inventory.receive")}
+          onVerifyVendorKit={() => { setVendorKitOpen(true); }} />
       </TabsContent>
       <TabsContent value="locations" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
         <InventoryRecordsWorkspace kind="locations" title="Warehouses & vehicles" description="Access is enforced by the project inventory service for every operation." dataset={locationsDataset} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
@@ -1605,6 +1607,10 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     {kitDialogMode && <InventoryKitDialog key={kitDialogMode} state={state} projectId={projectId} mode={kitDialogMode}
       canResolve={can("inventory.resolveExceptions")} onDirtyChange={setKitDirty} onOperationPending={setKitOperationPending}
       onClose={() => { setKitDialogMode(null); setKitDirty(false); setKitOperationPending(false); }}
+      onSaved={async () => { await queryClient.invalidateQueries({ queryKey }); return refetch(); }} />}
+    {vendorKitOpen && state && can("inventory.receive") && <InventoryVendorKitDialog key="vendor-kit" state={state} projectId={projectId}
+      onDirtyChange={setKitDirty} onOperationPending={setKitOperationPending}
+      onClose={() => { setVendorKitOpen(false); setKitDirty(false); setKitOperationPending(false); }}
       onSaved={async () => { await queryClient.invalidateQueries({ queryKey }); return refetch(); }} />}
     {selectedStockRow && can("inventory.view") && (
       <InventoryStockSerialDialog

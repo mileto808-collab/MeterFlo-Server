@@ -20,3 +20,9 @@ Isolate importer integration tests from the application's background import work
 **Why:** A running development worker can claim a test's queued run, making cancellation and ownership assertions fail nondeterministically. The same importer suite passed when run without competing application workers.
 
 **How to apply:** Briefly stop the development workflow for isolated importer suites and restart it afterward. Keep browser tests on the running application and never use production data for these tests.
+
+Serialize database suites that reinitialize global audit metadata against the same database.
+
+**Why:** Concurrent audit initialization and permission-fixture writes can deadlock on the shared audit relations even when each business fixture uses a different project.
+
+**How to apply:** Use separate owned databases or run those suites with test concurrency set to one. Keep independent pure/browser checks parallel where they do not rebuild global audit metadata.

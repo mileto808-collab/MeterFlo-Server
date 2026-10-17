@@ -374,6 +374,24 @@ Use the Print controls on orders, receipts and counts. They open escaped, printe
 
 ## Kit assembly and disassembly
 
+### Purchased vendor kits
+
+After receiving finished kits on a purchase order, receivers with **Receive inventory** permission can use **Stock & serials → Search & Tools → Vendor kit** (desktop: **Vendor kit** in the stock toolbar). Choose the original purchase receipt and finished kit, open it, scan the actual serialized components and enter actual counted quantities. The recipe supplies expected quantities only; it never supplies component serial identities or confirms counts automatically. An inspection note is required.
+
+Verification changes no stock quantities or stock revisions. Components arrived **inside** the purchased kit: they are not received as loose stock and no loose components are deducted. Their serials become occupied by the finished kit, with a separate inspection receipt linked to the original purchase receiving receipt. The original receipt and the actual recorded contents remain immutable evidence.
+
+Serialized components require a serialized finished kit and one-kit-at-a-time inspection, as with warehouse assembly. Quantity-tracked finished kits support quantity-only contents. Nested vendor-kit recipes are explicitly rejected rather than assigning invented nested contents. Inspect before reserving or moving unverified kits; changed or ambiguous original receiving custody cannot be relabeled by inspection. Permission to assemble stock is not required, but receiving permission and access to the receiving warehouse are enforced.
+
+The server rechecks the exact recipe, receiving evidence, remaining unverified units, reservations, and component serial custody across stock, transit, other kits, installed equipment, holds and returns. A mismatch blocks verification without changing stock; keep the kit out of installation until the discrepancy is resolved. Live updates preserve captures and require an explicit recheck when the relevant saved basis changes. An uncertain posting retains its exact payload and UUID for an unchanged retry or receipt check; it cannot be edited into another operation.
+
+Verified vendor contents follow the same relational custody, transfer, work-order installation, breakdown, damage/missing dispositions, audit, serial appendix and project/full-system backup rules as warehouse-assembled kits. Installation links the actual underlying equipment serials to the work order while consuming only the finished-kit line. Breakdown recovers the originally captured contents, never the current recipe.
+
+API command: `verifyVendorKit` with `{receiptId,itemId,quantity,serials,components:[{itemId,quantity,serials}],reason}`. `receiptId` identifies the original purchase `receive` receipt. The command UUID identifies the separate verification receipt and its provenance record.
+
+The additive relational fields are installed by the existing `script/migrate-inventory-relational.ts` maintenance entry point (and the existing post-merge setup); application startup does not perform this schema installation.
+
+### Warehouse stock conversions
+
 The Items subheader opens **Assemble kit** and **Disassemble kit** dialogs. These are stock conversions, not cycle counts. Defining an item recipe never changes stock. Assembly consumes the required usable, unreserved components at one authorized location and adds the finished kit there; serialized components require a serialized kit and one-kit-at-a-time assembly.
 
 Each assembly records its original contents and output provenance. Transfers, nesting in another kit, and work-order use retain that provenance without making the contents individually available. Disassembly selects a recorded assembly and removes finished-kit stock at the selected location; it returns only explicitly usable recovered components. Quantities can be split across multiple breakdowns, but each recorded output can be broken down only once. Serialized identities must match the original assembly, not today's recipe. A nested kit is returned intact with its own contents still occupied; disassemble it separately to recover those contents.
