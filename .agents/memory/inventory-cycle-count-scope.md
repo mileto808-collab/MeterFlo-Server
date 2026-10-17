@@ -20,3 +20,9 @@ Expanding Search & Tools must expose the complete tool panel without a separate 
 **Why:** The user rejected having to scroll inside the tools to find controls and asked for a mobile-optimized layout.
 
 **How to apply:** Use natural-height responsive controls in the page's normal scroll flow. Keep only the collapse control sticky, not the entire expanded panel; a tall pinned panel must not cover count entries on short landscape screens.
+
+Serial entry belongs behind a compact item-row icon opening a review/scan modal, rather than a large inline serial box. Repeated HID scans must advance automatically to the next serial line without additional clicks.
+
+**Why:** The user expects potentially large serial lists and explicitly requested continuous HID scanning.
+
+**How to apply:** Support Enter-terminated keyboard-wedge scans, retain scan-field focus between commits, preserve leading zeros and raw entries, and keep actual quantity independent of scans. Opening the modal must not autofocus a text field on phones; closing it retains the count's local entries, with explicit count-draft saving for persistence.

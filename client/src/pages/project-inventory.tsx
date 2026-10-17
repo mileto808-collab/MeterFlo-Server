@@ -37,6 +37,7 @@ import { InventoryCategoryCreateAction } from "@/components/inventory-category-c
 import { InventoryDeleteAction } from "@/components/inventory-delete-action";
 import { InventoryMobileTools } from "@/components/inventory-mobile-tools";
 import { InventoryEditorSurface } from "@/components/inventory/inventory-editor-surface";
+import { CountSerialsDialog } from "@/components/inventory/count-serials-dialog";
 import { buildOperationsDataset } from "@/lib/inventory-operations-data";
 import type { StockBalanceRow } from "@/lib/inventory-stock-export";
 import { fetchStock, type StockSummary } from "@/lib/inventory-stock-api";
@@ -52,7 +53,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { AlertTriangle, ArrowLeftRight, BarChart3, Boxes, ChevronDown, ChevronUp, ClipboardList, Download, FileSpreadsheet, FileText, Filter, Loader2, Menu, Package, Plus, Printer, RefreshCw, Search, Warehouse as WarehouseIcon } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, BarChart3, Boxes, ChevronDown, ChevronUp, ClipboardList, Download, FileSpreadsheet, FileText, Filter, ListOrdered, Loader2, Menu, Package, Plus, Printer, RefreshCw, Search, Warehouse as WarehouseIcon } from "lucide-react";
 
 type Snapshot = { enabled: boolean; projectName: string; timezone: string; state: InventoryState; permissions: string[]; users: Array<{ id: string; username: string }>; actors?: InventoryActorLabel[] };
 type ResourceKind = "warehouse" | "vendor" | "item";
@@ -272,6 +273,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [countStartOpen, setCountStartOpen] = useState(false);
   const [countQuantities, setCountQuantities] = useState<Record<string, string>>({});
   const [countSerials, setCountSerials] = useState<Record<string, string>>({});
+  const [countSerialDialog, setCountSerialDialog] = useState<{ itemId: string; countId: string } | null>(null);
   const [countReason, setCountReason] = useState("");
   const [countDraftId, setCountDraftId] = useState<string | null>(null);
   const [countDraftRevision, setCountDraftRevision] = useState(0);
@@ -286,6 +288,12 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [countConflict, setCountConflict] = useState<"changed" | "unavailable" | null>(null);
   const countSaving = useRef(false);
   const countRows = activeCount ? inventoryCountRows(activeCount, data?.state.items ?? [], countQuantities, countSerials) : [];
+  useEffect(() => {
+    if (countSerialDialog && (countSerialDialog.countId !== activeCount?.id ||
+      !countRows.some(row => row.itemId === countSerialDialog.itemId && row.item?.tracking === "serialized"))) {
+      setCountSerialDialog(null);
+    }
+  }, [activeCount?.id, countSerialDialog, countRows]);
   const countValues = JSON.stringify({ reason: countReason,
     rows: countRows.map(({ itemId, quantity, serials }) => ({ itemId, quantity, serials })).sort((a, b) => a.itemId.localeCompare(b.itemId)) });
   const countDirty = !!activeCount && countValues !== savedCountValues;
@@ -912,6 +920,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   };
 
   const openCount = (count: InventoryCount, reload = false) => {
+    setCountSerialDialog(null);
     setCountToolsOpen(count.scope === "selected" && !(count.draft?.rows.length));
     if (countDraftId !== count.id || reload) {
       const rows = inventoryCountRows(count, items, {}, {});
@@ -1002,6 +1011,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     } });
   };
   const closeCount = () => {
+    setCountSerialDialog(null);
     setActiveCount(null);
     setCountDraftId(null);
   };
@@ -1019,7 +1029,10 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       toast({ title: "Check count entries", description: error instanceof Error ? error.message : "Review every counted item.", variant: "destructive" });
       return;
     }
-    command.mutate({ action: "countPost", data: { id: activeCount.id, draftRevision: countDraftRevision, lines: countLines, reason: countReason } }, { onSuccess: () => setActiveCount(null) });
+    command.mutate({ action: "countPost", data: { id: activeCount.id, draftRevision: countDraftRevision, lines: countLines, reason: countReason } }, { onSuccess: () => {
+      setCountSerialDialog(null);
+      setActiveCount(null);
+    } });
   };
 
   return <main ref={inventoryMainRef} className="inventory-workspace-shell relative mx-auto flex h-[calc(100dvh-72px)] min-h-0 w-full max-w-7xl flex-col overflow-hidden p-2 sm:p-4 md:p-7" data-testid="inventory-workspace">
@@ -1590,13 +1603,39 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
               if (!item) return <Alert key={id} variant="destructive"><AlertTitle>Count item unavailable</AlertTitle><AlertDescription>Item {id} is no longer in the catalog. Resolve it before posting; it will not be silently omitted.</AlertDescription></Alert>;
               const old = activeCount.snapshot.find(row => row.itemId === id);
               const currentStock = countStockByItem.get(id);
-              return <div key={id} className="grid min-w-0 gap-2 rounded border bg-background p-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,260px)_minmax(0,2fr)] sm:items-end sm:p-3">
-                <div><div className="font-medium">{item.name}</div><div className="font-mono text-xs text-muted-foreground">{item.sku} · at count start {old?.quantity ?? 0}</div></div>
+              return <div key={id} className="grid min-w-0 gap-2 rounded border bg-background p-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,260px)] sm:items-end sm:p-3">
+                <div className="flex min-w-0 items-start justify-between gap-2">
+                  <div className="min-w-0"><div className="font-medium">{item.name}</div><div className="font-mono text-xs text-muted-foreground">{item.sku} · at count start {old?.quantity ?? 0}</div></div>
+                  {item.tracking === "serialized" && <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="relative h-11 w-11 shrink-0"
+                    aria-label={`Scan serials for ${item.name}`}
+                    title={`Scan serials for ${item.name}`}
+                    disabled={command.isPending || !can("inventory.count")}
+                    onClick={() => setCountSerialDialog({ itemId: id, countId: activeCount.id })}
+                  >
+                    <ListOrdered className="h-4 w-4" aria-hidden="true" />
+                    <span className="sr-only">{row.serials.split(/[\n,;]/).filter(value => value.trim()).length} serials entered</span>
+                  </Button>}
+                </div>
                 <div className="grid min-w-0 grid-cols-2 gap-2">
                   <div className="min-w-0 space-y-1"><span id={`expected-count-label-${id}`} className="text-sm font-medium">Expected quantity</span><output id={`expected-count-${id}`} aria-labelledby={`expected-count-label-${id}`} className="block min-w-0 py-2 text-sm tabular-nums">{currentStock?.quantity ?? 0}</output></div>
                   <div className="min-w-0 space-y-1"><Label htmlFor={`count-${id}`}>Actual quantity</Label><Input id={`count-${id}`} type="number" min="0" max="1000000" step="1" value={row.quantity} disabled={command.isPending} onChange={event => setCountQuantities(current => ({ ...current, [id]: event.target.value }))} /></div>
                 </div>
-                {item.tracking === "serialized" && <div className="space-y-1"><Label htmlFor={`countserial-${id}`}>Scan all serials</Label><Textarea id={`countserial-${id}`} value={row.serials} disabled={command.isPending} onChange={event => setCountSerials(current => ({ ...current, [id]: event.target.value }))} /></div>}
+                {item.tracking === "serialized" && <span className="text-xs text-muted-foreground sm:col-span-2">
+                  {row.serials.split(/[\n,;]/).filter(value => value.trim()).length} serials entered
+                </span>}
+                {item.tracking === "serialized" && countSerialDialog?.itemId === id && countSerialDialog.countId === activeCount.id && <CountSerialsDialog
+                  item={item}
+                  actualQuantity={row.quantity}
+                  serials={row.serials}
+                  open
+                  disabled={command.isPending || !can("inventory.count")}
+                  onOpenChange={open => { if (!open) setCountSerialDialog(null); }}
+                  onSerialsChange={value => setCountSerials(current => ({ ...current, [id]: value }))}
+                />}
               </div>;
             })}
             {countRows.length === 0 && <p className="rounded-md border border-dashed px-3 py-5 text-center text-sm text-muted-foreground">{activeCount.scope === "selected" ? "No products selected yet. Expand Search & Tools and add only the products you physically checked." : "There are no products in this warehouse snapshot. Add any discovered products that need to be counted."}</p>}
