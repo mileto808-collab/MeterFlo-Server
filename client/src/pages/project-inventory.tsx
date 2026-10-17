@@ -1106,10 +1106,10 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const addCountProduct = (itemId = countProduct) => {
     if (!itemId || countRecovery.pending || !can("inventory.count") || command.isPending ||
       countRowIds.has(itemId) || countRows.length >= COUNT_MAX_LINES) return;
-    setCountQuantities(current => ({ ...current, [itemId]: "" }));
-    setCountSerials(current => ({ ...current, [itemId]: "" }));
+    setCountQuantities(current => ({ [itemId]: "", ...current }));
+    setCountSerials(current => ({ [itemId]: "", ...current }));
     setCountSearch("");
-    setCountPage(Math.floor(countRows.length / countPageSize));
+    setCountPage(0);
     setCountProduct("");
     setCountDraftMessage("Unsaved discovery added. Save the draft before leaving.");
   };

@@ -45,6 +45,12 @@ The count editor uses one master product search for barcode scans, SKU, name and
 
 **How to apply:** Keep ambiguous searches available for dropdown selection rather than guessing. Clearing a successful addition must reveal existing entries again, and filtering must never remove captured rows.
 
+Newly added count products belong at the beginning of the list, with the count view returned to its first page.
+
+**Why:** The user reported new selections appearing at the end and explicitly requested that they appear first.
+
+**How to apply:** Apply this to both dropdown additions and barcode/search additions; preserve prior quantities and serial captures.
+
 Browser-local recovery is a best-effort safety net, not a server draft or an automatic stock adjustment. Restore must be an explicit choice and must retain the captured draft revision.
 
 **Why:** The user approved recovery after an unexpected browser restart. Quietly assigning the newest server revision to older captures could overwrite another operator's saved work.

@@ -2,6 +2,24 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { inventoryCountRows, inventoryCountLines } from "../client/src/lib/inventory-count-form";
+
+test("new discoveries appear first without losing saved or snapshot entries", () => {
+  const count = {
+    id: "count", warehouseId: "warehouse", status: "open", scope: "selected",
+    snapshot: [{ itemId: "saved", warehouseId: "warehouse", quantity: 3, serials: [] }],
+    draft: { revision: 1, reason: "", rows: [{ itemId: "saved", quantity: "2", serials: "0001" }] },
+  } as Parameters<typeof inventoryCountRows>[0];
+  const quantities = { newest: "", earlier: "5", saved: "2" };
+  const serials = { newest: "", earlier: "", saved: "0001" };
+  const rows = inventoryCountRows(count, [], quantities, serials);
+  assert.deepEqual(rows.map(row => row.itemId), ["newest", "earlier", "saved"]);
+  assert.deepEqual(rows.map(row => row.quantity), ["", "5", "2"]);
+  assert.equal(rows[2].serials, "0001");
+  const reloaded = { ...count, draft: { ...count.draft!, rows } };
+  assert.deepEqual(inventoryCountRows(reloaded, [], {}, {}).map(row => row.itemId), ["newest", "earlier", "saved"]);
+  const full = inventoryCountRows({ ...count, scope: "warehouse" }, [], quantities, serials);
+  assert.deepEqual(full.map(row => row.itemId), ["newest", "earlier", "saved"]);
+});
 import { emptyInventory, type InventoryCommand, type InventoryState } from "../shared/inventory";
 import { applyInventoryCommand } from "../shared/inventory-engine";
 import { COUNT_MAX_LINES, COUNT_MAX_BYTES } from "../shared/inventory-count-limits";
@@ -112,7 +130,8 @@ test("large catalogs do not force unused products into complete atomic counts", 
   assert.equal(saved.counts[0].draft?.rows.length, COUNT_MAX_LINES);
   assert.equal(inventoryCountRows(JSON.parse(JSON.stringify(saved.counts[0])), state.items, {}, {}).length, COUNT_MAX_LINES);
   const before = JSON.stringify(state);
-  assert.throws(() => post(state, "countPost", { id: "large", reason: "Missing one", lines: lines.slice(1) }), /every item/);
+  assert.throws(() => post(state, "countPost", { id: "large", reason: "Missing one",
+    lines: lines.filter(line => line.itemId !== "large-0") }), /every item/);
   assert.equal(JSON.stringify(state), before);
   const begin = performance.now();
   const completed = post(state, "countPost", { id: "large", reason: "Complete physical count", lines });

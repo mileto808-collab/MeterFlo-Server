@@ -83,6 +83,7 @@ async function main() {
     await master.press("Tab");
     await expect(master).toBeFocused();
     await expect(master).toHaveValue("");
+    await expect(editor().locator('input[type="number"]').first()).toHaveAttribute("id", `count-${prefix}-regular`);
     await expect.poll(async () => (await localRecords()).find(record => record.countId === countId)?.rows.length).toBe(2);
     await expect(await entry("regular")).toHaveValue("");
     await scan(serialBarcode);

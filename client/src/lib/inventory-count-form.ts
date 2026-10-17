@@ -8,8 +8,12 @@ export function inventoryCountRows(
   quantities: Record<string, string>,
   serials: Record<string, string>,
 ) {
-  const ids = new Set([...(count.scope === "selected" ? [] : count.snapshot.map(row => row.itemId)), ...count.draft?.rows.map(row => row.itemId) ?? [],
-    ...Object.keys(quantities), ...Object.keys(serials)]);
+  // Local entries carry the operator's display order, including newly prepended
+  // discoveries. Use saved/snapshot rows only to fill in entries not yet hydrated.
+  const ids = new Set([...Object.keys(quantities),
+    ...count.draft?.rows.map(row => row.itemId) ?? [],
+    ...(count.scope === "selected" ? [] : count.snapshot.map(row => row.itemId)),
+    ...Object.keys(serials)]);
   const itemMap = new Map(items.map(item => [item.id, item]));
   const snapshotMap = new Map(count.snapshot.map(row => [row.itemId, row]));
   const savedMap = new Map(count.draft?.rows.map(row => [row.itemId, row]) ?? []);
