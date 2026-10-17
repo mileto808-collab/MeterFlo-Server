@@ -14,3 +14,9 @@ Use hybrid navigation: show the route map and stop list inside MeterFlo, with ac
 **Why:** The user chose the recommended hybrid approach and explicitly added “Needs work on iOS too.”
 
 **How to apply:** Keep MeterFlo's stop sequence and current-stop state when switching apps. Support Apple Maps on iOS, Google Maps where available and a browser fallback without assuming an installed navigation app.
+
+Routing provider configuration must support a customer-operated instance's sitewide default and per-project configuration with that customer's credentials. Offer selectable providers rather than requiring Google, and allow credentials to be supplied later.
+
+**Why:** The user deferred API keys and requested free-service choices, sitewide settings for self-operated MeterFlo instances, and project-specific customer keys.
+
+**How to apply:** Make inheritance versus override explicit, protect credentials across project boundaries, and never silently charge an instance default when project credentials fail. Keep phone navigation choice independent of the routing provider.
