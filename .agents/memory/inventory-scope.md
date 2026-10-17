@@ -15,6 +15,12 @@ Only explicit manual item assignment while creating a work order or editing a no
 
 **How to apply:** Preserve behavior when inventory is disabled. Never interpret import-created requirement lines as reservations or stock consumption. Resolve the type-to-item database relationship explicitly before implementation; do not assume independently generated numeric IDs identify the same entity.
 
+The user accepted explicit type-to-inventory-item references rather than equal primary keys. Support both preassembled kits and components collected during installation, as well as standalone system/module items with either serial or quantity tracking. Shipments may supply individual items or vendor kits.
+
+**Why:** The user receives individual components unless the vendor supplies a kit, and not every work order uses a kit. Preassembly must not be required for standalone-item usage.
+
+**How to apply:** Keep type-to-item references optional for inventory-disabled operation. Deduct components at assembly for preassembled kits and consume the finished kit at installation; when collecting components during installation, consume the actual components at completion without also consuming a finished kit.
+
 Capture removed-equipment disposition as returned, scrapped, or left onsite; returned equipment is not automatically usable stock.
 
 **Why:** The user explicitly specified these product boundaries; inventory must not turn a reading-only visit into an equipment replacement. The user subsequently reversed the earlier requirement to replace legacy import/type fields with inventory items and asked to undo that suppression and disabling.
