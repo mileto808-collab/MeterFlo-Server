@@ -411,11 +411,21 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     if (a === "disassemble") applyKitDisassembly(s, d, command.operationId, actor, now, hooks);
     else applyKitHoldResolution(s, d, command.operationId, actor, now, hooks);
   } else if (a === "countStart") {
-    const { id, warehouseId, scope } = z.object({ id: identifier, warehouseId: identifier, scope: z.enum(["selected", "warehouse"]).optional() }).strict().parse(d);
+    const { id, warehouseId, scope, itemIds } = z.object({
+      id: identifier, warehouseId: identifier, scope: z.enum(["selected", "warehouse"]).optional(),
+      itemIds: z.array(identifier).min(1).max(COUNT_MAX_LINES).optional(),
+    }).strict().parse(d);
     access(warehouseId); assert(!s.counts.some(c => c.id === id), "Count identifier already exists.");
+    assert(!itemIds || scope === "selected", "Choose individual products only for a selected-item count.");
+    assert(!itemIds || new Set(itemIds).size === itemIds.length, "Duplicate selected product.");
+    assert(!itemIds || itemIds.every(id => s.items.some(item => item.id === id && item.active)),
+      "Selected count products must be active items in this project.");
     assert(scope === "selected" || s.stock.filter(b => b.warehouseId === warehouseId).length <= COUNT_MAX_LINES,
       `This warehouse exceeds the ${COUNT_MAX_LINES}-item complete-count limit; no items were omitted.`);
-    s.counts.push({ id, warehouseId, ...(scope ? { scope } : {}), snapshot: structuredClone(s.stock.filter(b => b.warehouseId === warehouseId)), status: "open" });
+    s.counts.push({ id, warehouseId, ...(scope ? { scope } : {}), snapshot: structuredClone(s.stock.filter(b => b.warehouseId === warehouseId)), status: "open",
+      ...(itemIds ? { draft: { revision: 1, savedBy: actor, savedAt: now, reason: "",
+        rows: itemIds.map(itemId => ({ itemId, quantity: "", serials: "" })) } } : {}),
+    });
   } else if (a === "countSaveDraft") {
     const { id, ...draft } = countDraftSchema.extend({ id: identifier }).parse(d);
     const c = s.counts.find(c => c.id === id); assert(c && c.status === "open", "Open count required."); access(c.warehouseId);

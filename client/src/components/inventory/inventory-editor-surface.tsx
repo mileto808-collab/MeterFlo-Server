@@ -18,6 +18,7 @@ type InventoryEditorSurfaceProps = {
   title: string;
   description: string;
   onBack: () => void;
+  compact?: boolean;
   onSave: () => void;
   saving?: boolean;
   saveDisabled?: boolean;
@@ -36,6 +37,7 @@ export function InventoryEditorSurface({
   title,
   description,
   onBack,
+  compact = false,
   onSave,
   saving = false,
   saveDisabled = false,
@@ -120,8 +122,8 @@ export function InventoryEditorSurface({
           </div>}
       </header>
       <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain">
-        <div className="mx-auto w-full max-w-5xl space-y-4 px-3 py-4 sm:px-5 sm:py-6">
-          <p className="text-sm leading-relaxed text-muted-foreground sm:hidden">{description}</p>
+        <div className={`mx-auto w-full max-w-5xl px-3 sm:px-5 ${compact ? "space-y-2 py-2 sm:py-3" : "space-y-4 py-4 sm:py-6"}`}>
+          {!compact && <p className="text-sm leading-relaxed text-muted-foreground sm:hidden">{description}</p>}
           {children}
         </div>
       </div>

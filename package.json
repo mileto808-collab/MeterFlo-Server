@@ -28,6 +28,8 @@
     "test:inventory-resource:browser": "node tests/inventory-resource-ui.cjs",
     "test:inventory-count:browser": "node tests/inventory-count-ui.cjs",
     "test:inventory-selected-count": "tsx --test tests/inventory-selected-count.test.ts tests/inventory-count-form.test.ts tests/inventory-count-review.test.ts",
+    "test:inventory-count-screen": "tsx --test tests/inventory-count-start-selection.test.ts tests/inventory-count-export.test.ts",
+    "test:inventory-count-screen:browser": "node tests/inventory-count-screen-ui.cjs",
     "test:inventory-selected-count:browser": "node tests/inventory-selected-count-ui.cjs",
     "test:inventory-count-review:browser": "node tests/inventory-count-review-ui.cjs",
     "test:inventory-count-layout:browser": "node tests/inventory-count-layout-ui.cjs",

@@ -3,9 +3,9 @@ name: Inventory cycle count scope
 description: User-selected product counts and full-page count navigation.
 ---
 
-New counts should start without automatically adding every warehouse product. Operators choose the discovery products they want to count. Selecting a warehouse in Start count opens the count page immediately; Continue count opens the same page, not a modal.
+Start count must offer an explicit Full warehouse or Selected items choice. Selected items remains the default: operators may choose products in the start modal or add discovered products on the count page, without automatically adding every warehouse item. Selecting a warehouse and confirming Start count opens the count page immediately; Continue count opens the same page, not a modal.
 
-**Why:** The user reported that automatic warehouse-wide entry creation prevented the intended selective workflow and requested the same page-based editing used elsewhere in Inventory.
+**Why:** The user requested both full-warehouse and selected-item workflows, after reporting that automatic warehouse-wide entry creation prevented selective counting. They also requested the same page-based editing used elsewhere in Inventory.
 
 **How to apply:** Keep the warehouse chooser modal, but count editing uses a mobile-aware page with Back and sticky save/post controls. Retain all selected entries across filtering, paging and draft saves. Unselected quantities and serials must not change when posting a selective count.
 

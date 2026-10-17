@@ -37,3 +37,14 @@ the selected section is visible, producing intermittent false navigation failure
 
 **How to apply:** Assert the previous listbox is detached rather than adding a
 sleep or treating the closing animation as a failed settings save.
+
+Dismiss the development preview's own banner before viewport-fit acceptance
+checks, using its normal Close banner control.
+
+**Why:** The injected banner changes document geometry. Browser actionability
+scrolling can then move the outer document and resize the application mid-click,
+creating false pagination resets and misleading short-landscape screenshots.
+
+**How to apply:** Keep authentication intact, dismiss the banner as a visitor
+would, and test the application's actual available viewport. Verify complete
+mixed-height page traversal and rotation, not only a successful Next click.
