@@ -57,6 +57,16 @@ async function main() {
       await expect(page.getByRole("dialog")).toHaveCount(0);
       await expect(editor.locator('input[id^="count-count-"]')).toHaveCount(0);
       await expect(editor.getByLabel("Find discovery product", { exact: true })).toBeVisible();
+      const panel = editor.locator("#count-search-tools");
+      const toolsMetrics = await panel.evaluate(el => ({
+        height: el.clientHeight, fullHeight: el.scrollHeight,
+        overflow: getComputedStyle(el).overflowY, maxHeight: getComputedStyle(el).maxHeight,
+      }));
+      assert.equal(toolsMetrics.maxHeight, "none", `${mode}: tools must not be height-capped`);
+      assert.ok(toolsMetrics.fullHeight <= toolsMetrics.height + 1, `${mode}: all tools must fit their panel`);
+      assert.ok(!["auto", "scroll", "hidden"].includes(toolsMetrics.overflow), `${mode}: no internal tools scrolling/clipping`);
+      assert.equal(await editor.evaluate(el => el.scrollWidth > el.clientWidth + 1), false);
+      await page.screenshot({ path: `generated-artifacts/count-tools-expanded-${mode}.jpg` });
       assert.equal(await page.evaluate(() => document.activeElement?.tagName === "INPUT"), false);
       await expect(editor.getByRole("button", { name: "Post count", exact: true })).toBeDisabled();
       await editor.getByLabel("Find discovery product", { exact: true }).fill("COUNT-A");
@@ -66,6 +76,11 @@ async function main() {
       await expect(editor.locator("#count-count-a")).toHaveValue("");
       await expect(editor.locator("#expected-count-count-a")).toHaveText(mode === "desktop" ? "5" : "4");
       await editor.locator("#count-count-a").fill("4");
+      await editor.getByRole("button", { name: "Hide Search & Tools", exact: true }).click();
+      await expect(panel).toHaveCount(0);
+      await editor.getByRole("button", { name: "Show Search & Tools", exact: true }).click();
+      await expect(editor.getByLabel("Find discovery product", { exact: true })).toHaveValue("COUNT-A");
+      await expect(editor.locator("#count-count-a")).toHaveValue("4");
       await editor.getByRole("button", { name: "Hide Search & Tools", exact: true }).click();
       await editor.getByLabel("Count adjustment reason", { exact: true }).fill("Selected product physically verified");
       const unselected = structuredClone((await state()).stock.find(row => row.itemId === "count-b"));

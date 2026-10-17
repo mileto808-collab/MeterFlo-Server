@@ -1543,31 +1543,33 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           </>}
         >
           <>
-            <div className="sticky top-0 z-10 -mx-4 mb-3 border-b bg-background px-4 py-2 sm:-mx-6 sm:px-6">
-            <div className="flex min-w-0 items-center gap-2">
-              <Button type="button" variant="outline" aria-expanded={countToolsOpen} aria-controls={countToolsOpen ? "count-search-tools" : undefined}
-                onClick={() => setCountToolsOpen(open => !open)}>
-                {countToolsOpen ? "Hide Search & Tools" : "Show Search & Tools"}
-              </Button>
-               {!countToolsOpen && countSearch.trim() && <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" role="status" title={`Entry filter: ${countSearch}`}>
-                Entry filter active: “{countSearch}” · {matchingCountRows.length} matching
-              </span>}
-            </div>
-            {countToolsOpen && <div id="count-search-tools" className="mt-2 max-h-[min(34dvh,18rem)] space-y-3 overflow-y-auto overscroll-contain rounded border bg-background p-3">
-              <div className="space-y-2 rounded border p-3">
-                <Label htmlFor="count-discovery-search">Find discovery product</Label>
-                <Input id="count-discovery-search" value={countProductSearch} disabled={command.isPending} onChange={event => { setCountProductSearch(event.target.value); setCountProduct(""); }} placeholder="Search the project catalog by SKU, name or barcode" />
-                <Label htmlFor="count-discovery-product">Discovery product</Label>
-                <Select value={countProduct} onValueChange={setCountProduct} disabled={command.isPending || !can("inventory.count")}><SelectTrigger id="count-discovery-product"><SelectValue placeholder="Choose a product found in this warehouse" /></SelectTrigger><SelectContent>{discoveryProducts.map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select>
-                 <p className="text-xs text-muted-foreground">Up to 100 matches shown. Refine the search for another product. Adding it creates an entry only; enter its actual quantity and scans before posting.</p>
-                <Button variant="outline" onClick={addCountProduct} disabled={!can("inventory.count") || !countProduct || command.isPending || countRows.length >= COUNT_MAX_LINES}>Add discovery to count</Button>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="count-entry-search">Search count entries</Label>
-                <Input id="count-entry-search" value={countSearch} onChange={event => { setCountSearch(event.target.value); setCountPage(0); }} placeholder="Filter entered items by SKU or name; hidden entries are still included" />
-              </div>
-            </div>}
-            </div>
+            <Button type="button" variant="outline" className="sticky top-0 z-10 mb-2 h-10 w-full justify-between bg-background"
+              aria-expanded={countToolsOpen} aria-controls={countToolsOpen ? "count-search-tools" : undefined}
+              onClick={() => setCountToolsOpen(open => !open)}>
+              <span>{countToolsOpen ? "Hide Search & Tools" : "Show Search & Tools"}</span>
+              {countToolsOpen ? <ChevronUp className="h-4 w-4 shrink-0" /> : <ChevronDown className="h-4 w-4 shrink-0" />}
+            </Button>
+            {!countToolsOpen && countSearch.trim() && <span className="mb-3 block truncate text-xs text-muted-foreground" role="status" title={`Entry filter: ${countSearch}`}>
+              Entry filter active: “{countSearch}” · {matchingCountRows.length} matching
+            </span>}
+            {countToolsOpen && <div id="count-search-tools" className="mb-3 grid grid-cols-1 gap-3 rounded border bg-background p-3 sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+                <div className="grid min-w-0 grid-cols-1 gap-2 rounded border p-3 sm:grid-cols-2">
+                  <div className="min-w-0 space-y-2">
+                    <Label htmlFor="count-discovery-search">Find discovery product</Label>
+                    <Input id="count-discovery-search" value={countProductSearch} disabled={command.isPending} onChange={event => { setCountProductSearch(event.target.value); setCountProduct(""); }} placeholder="Search the project catalog by SKU, name or barcode" />
+                  </div>
+                  <div className="min-w-0 space-y-2">
+                    <Label htmlFor="count-discovery-product">Discovery product</Label>
+                    <Select value={countProduct} onValueChange={setCountProduct} disabled={command.isPending || !can("inventory.count")}><SelectTrigger id="count-discovery-product"><SelectValue placeholder="Choose a product found in this warehouse" /></SelectTrigger><SelectContent>{discoveryProducts.map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select>
+                  </div>
+                  <p className="text-xs text-muted-foreground sm:col-span-2">Up to 100 matches shown. Refine the search for another product. Adding it creates an entry only; enter its actual quantity and scans before posting.</p>
+                  <Button className="w-full sm:col-span-2 sm:w-fit" variant="outline" onClick={addCountProduct} disabled={!can("inventory.count") || !countProduct || command.isPending || countRows.length >= COUNT_MAX_LINES}>Add discovery to count</Button>
+                </div>
+                <div className="min-w-0 space-y-2">
+                  <Label htmlFor="count-entry-search">Search count entries</Label>
+                  <Input id="count-entry-search" value={countSearch} onChange={event => { setCountSearch(event.target.value); setCountPage(0); }} placeholder="Filter entered items by SKU or name; hidden entries are still included" />
+                </div>
+              </div>}
             <div className="space-y-3">
             {countConflict && <Alert data-testid="inventory-external-change" variant={countConflict === "unavailable" ? "destructive" : "default"}>
               <AlertTriangle className="h-4 w-4" />

@@ -14,3 +14,9 @@ Preserve existing full-warehouse counts rather than silently converting them or 
 **Why:** Changing the default must not erase unfinished historical counts or broaden a partial count's stock adjustments. Unrelated warehouse movement should not invalidate an intentionally selective count.
 
 **How to apply:** Keep scope durable through relational persistence and backups. Require explicit actual quantities/scans for newly selected products, reject empty selected postings, preserve reservation and serial-custody safeguards, and keep one atomic all-entries commit.
+
+Expanding Search & Tools must expose the complete tool panel without a separate capped-height scrolling area.
+
+**Why:** The user rejected having to scroll inside the tools to find controls and asked for a mobile-optimized layout.
+
+**How to apply:** Use natural-height responsive controls in the page's normal scroll flow. Keep only the collapse control sticky, not the entire expanded panel; a tall pinned panel must not cover count entries on short landscape screens.
