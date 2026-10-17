@@ -40,6 +40,9 @@ import { InventoryMobileTools } from "@/components/inventory-mobile-tools";
 import { InventoryEditorSurface } from "@/components/inventory/inventory-editor-surface";
 import { LocationTypesManager } from "@/components/inventory/location-types-manager";
 import { CountSerialsDialog } from "@/components/inventory/count-serials-dialog";
+import { CountProductScanner } from "@/components/inventory/count-product-scanner";
+import { CountRecoveryInbox, CountRecoveryNotice } from "@/components/inventory/count-recovery-notice";
+import { useCountRecovery } from "@/components/inventory/use-count-recovery";
 import { CountDiscrepancyReview, type CountDiscrepancyReviewPayload } from "@/components/inventory/count-discrepancy-review";
 import { useCountEntryPagination } from "@/components/inventory/use-count-entry-pagination";
 import { downloadCountEntries, type CountExportRow } from "@/lib/inventory-count-export";
@@ -322,6 +325,11 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const countValues = JSON.stringify({ reason: countReason,
     rows: countRows.map(({ itemId, quantity, serials }) => ({ itemId, quantity, serials })).sort((a, b) => a.itemId.localeCompare(b.itemId)) });
   const countDirty = !!activeCount && countValues !== savedCountValues;
+  const countRecovery = useCountRecovery({
+    userId: user?.id ? String(user.id) : undefined, projectId, count: activeCount,
+    revision: countDraftRevision, rows: countRows, reason: countReason, dirty: countDirty,
+    enabled: !!data?.enabled && data.permissions.includes("inventory.count"),
+  });
   const requestCountTransition = (transition: () => void) => {
     if (countSaving.current || command.isPending) return;
     if (countDirty) setPendingCountTransition(current => current ?? transition);
@@ -1041,6 +1049,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   };
 
   const openCount = (count: InventoryCount, reload = false) => {
+    if (activeCount && (activeCount.id !== count.id || reload)) countRecovery.clear();
     setPendingCountReview(null);
     setCountSerialDialog(null);
     setCountToolsOpen(count.scope === "selected" && !(count.draft?.rows.length));
@@ -1100,17 +1109,18 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
         description: error instanceof Error ? error.message : "Try again.", variant: "destructive" });
     }
   };
-  const addCountProduct = () => {
-    if (!countProduct || countRowIds.has(countProduct) || countRows.length >= COUNT_MAX_LINES) return;
-    setCountQuantities(current => ({ ...current, [countProduct]: "" }));
-    setCountSerials(current => ({ ...current, [countProduct]: "" }));
+  const addCountProduct = (itemId = countProduct) => {
+    if (!itemId || countRecovery.pending || !can("inventory.count") || command.isPending ||
+      countRowIds.has(itemId) || countRows.length >= COUNT_MAX_LINES) return;
+    setCountQuantities(current => ({ ...current, [itemId]: "" }));
+    setCountSerials(current => ({ ...current, [itemId]: "" }));
     setCountSearch("");
     setCountPage(Math.floor(countRows.length / countPageSize));
     setCountProduct("");
     setCountDraftMessage("Unsaved discovery added. Save the draft before leaving.");
   };
   const saveCountDraft = (afterSave?: () => void) => {
-    if (!activeCount || countConflict || !can("inventory.count") || command.isPending || countSaving.current) return;
+    if (!activeCount || countRecovery.pending || countConflict || !can("inventory.count") || command.isPending || countSaving.current) return;
     countSaving.current = true;
     command.mutate({ action: "countSaveDraft", data: {
       id: activeCount.id, revision: countDraftRevision, reason: countReason,
@@ -1119,6 +1129,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       onSuccess: result => {
         const saved = (result.state as InventoryState).counts.find(count => count.id === activeCount.id);
         if (saved?.draft) {
+          countRecovery.clear();
           setActiveCount(saved);
           setCountDraftRevision(saved.draft.revision);
           setCountDraftMessage(`Draft saved, revision ${saved.draft.revision}. Stock has not changed.`);
@@ -1173,6 +1184,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     });
   };
   const closeCount = () => {
+    countRecovery.clear();
     setPendingCountReview(null);
     setCountSerialDialog(null);
     setActiveCount(null);
@@ -1201,6 +1213,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       return;
     }
     command.mutate({ action: "countPost", data: { id: review.countId, draftRevision: review.draftRevision, lines: countLines, reason: review.reason } }, { onSuccess: () => {
+      countRecovery.clear();
       setPendingCountReview(null);
       setCountSerialDialog(null);
       setActiveCount(null);
@@ -1211,7 +1224,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     } });
   };
   const postCount = () => {
-    if (!activeCount || countConflict || countStockDrift || !can("inventory.count") || command.isPending ||
+    if (!activeCount || countRecovery.pending || countConflict || countStockDrift || !can("inventory.count") || command.isPending ||
         countSaving.current || countRows.length === 0 || !countReason.trim()) return;
     let countLines: StockLine[];
     try { countLines = inventoryCountLines(countRows); }
@@ -1239,6 +1252,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       return;
     }
     command.mutate({ action: "countPost", data: { id: activeCount.id, draftRevision: countDraftRevision, lines: countLines, reason: countReason } }, { onSuccess: () => {
+      countRecovery.clear();
       setPendingCountReview(null);
       setCountSerialDialog(null);
       setActiveCount(null);
@@ -1746,6 +1760,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
               </div>
             </fieldset>
             {countStartScope === "selected" && <section className="space-y-2" aria-label="Choose products for selected-item count" data-testid="count-start-product-picker">
+              <CountProductScanner id="count-start-product-scanner" items={items} existingIds={countStartItemIds}
+                onAdd={id => toggleCountStartItem(id, true)} disabled={command.isPending || !can("inventory.count")} />
               <div className="flex flex-wrap items-end justify-between gap-2">
                 <div>
                   <Label htmlFor="count-start-product-search">Choose products (optional)</Label>
@@ -1803,6 +1819,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
         <InventoryRecordsWorkspace kind="counts" title="Cycle counts"
           description="Review physical count snapshots, continue open drafts, and retain posted or cancelled counts as audit history."
           dataset={countsDataset} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
+          persistentHeaderAction={can("inventory.count") ? <CountRecoveryInbox records={countRecovery.records} counts={state.counts}
+            onOpen={count => requestCountTransition(() => openCount(count, true))} onDiscard={countRecovery.discardRecord} /> : null}
           headerAction={can("inventory.count") ? <Button size="sm" className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" aria-label="Start count" title="Start count" onClick={() => setCountStartOpen(true)} disabled={command.isPending}><Plus className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Start count</span></Button> : null}
           renderRow={row => {
             const count = state.counts.find(value => value.id === row.id);
@@ -1820,6 +1838,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
                   {" "}· {count.status === "posted" ? `${count.lines?.length ?? 0} posted entries` : `${count.draft?.rows.length ?? count.lines?.length ?? 0} count entries`}
                   {count.reason && ` · ${count.reason}`}
                 </p>
+                {countRecovery.records.some(record => record.countId === count.id) && can("inventory.count") &&
+                  <p className="mt-1 text-xs font-medium text-amber-700 dark:text-amber-400">Unsaved entries available in Local recovery</p>}
               </div>
               <div className="flex shrink-0 flex-wrap items-center gap-2">
                 {count.status === "open" && <>
@@ -1844,16 +1864,16 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           onBack={() => requestCountTransition(closeCount)}
           onSave={() => saveCountDraft()}
           saving={countSaving.current || command.isPending}
-          saveDisabled={!!countConflict || !can("inventory.count")}
+          saveDisabled={!!countRecovery.pending || !!countConflict || !can("inventory.count")}
           saveLabel="Save draft"
           stickyFooter
           actions={<div className="col-span-2 flex min-w-0 justify-end sm:col-span-1">
             <span role="status" className="truncate text-xs text-muted-foreground">{countDraftMessage || (countDirty ? "Unsaved count entries" : "Draft is current")}</span>
           </div>}
           footer={<>
-            <Button size="sm" variant="outline" onClick={() => saveCountDraft()} disabled={!can("inventory.count") || !!countConflict || command.isPending}>Save draft</Button>
-            <Button size="sm" variant="outline" onClick={() => requestCountTransition(reloadCountDraft)} disabled={!can("inventory.count") || command.isPending || countConflict === "unavailable"}>Reload saved draft</Button>
-            <Button size="sm" onClick={postCount} disabled={!can("inventory.count") || !!countConflict || countStockDrift || !countReason.trim() || countRows.length === 0 || command.isPending}>Post count</Button>
+            <Button size="sm" variant="outline" onClick={() => saveCountDraft()} disabled={!!countRecovery.pending || !can("inventory.count") || !!countConflict || command.isPending}>Save draft</Button>
+            <Button size="sm" variant="outline" onClick={() => requestCountTransition(reloadCountDraft)} disabled={!!countRecovery.pending || !can("inventory.count") || command.isPending || countConflict === "unavailable"}>Reload saved draft</Button>
+            <Button size="sm" onClick={postCount} disabled={!!countRecovery.pending || !can("inventory.count") || !!countConflict || countStockDrift || !countReason.trim() || countRows.length === 0 || command.isPending}>Post count</Button>
           </>}
         >
           <>
@@ -1879,7 +1899,27 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
             {!countToolsOpen && countSearch.trim() && <span className="mb-3 block truncate text-xs text-muted-foreground" role="status" title={`Entry filter: ${countSearch}`}>
               Entry filter active: “{countSearch}” · {matchingCountRows.length} matching
             </span>}
+            {countRecovery.error && <Alert variant="destructive"><AlertTitle>Local recovery unavailable</AlertTitle><AlertDescription>{countRecovery.error}</AlertDescription></Alert>}
+            {countRecovery.pending && <CountRecoveryNotice record={countRecovery.pending} count={state.counts.find(count => count.id === activeCount.id) ?? activeCount}
+              disabled={command.isPending || !can("inventory.count")}
+              onDiscard={countRecovery.discardRecovery}
+              onRestore={() => {
+                const recovered = countRecovery.restore();
+                if (!recovered) return;
+                setCountQuantities(Object.fromEntries(recovered.rows.map(row => [row.itemId, row.quantity])));
+                setCountSerials(Object.fromEntries(recovered.rows.map(row => [row.itemId, row.serials])));
+                setCountReason(recovered.reason);
+                setCountDraftRevision(recovered.revision);
+                // Review the captured rows, not a hybrid with a newer saved
+                // selected-item draft. The old revision still blocks writes.
+                setActiveCount(current => current ? { ...current, draft: current.draft
+                  ? { ...current.draft, rows: recovered.rows } : undefined } : null);
+                setCountPage(0);
+                setCountDraftMessage("Local entries restored for review. Save the draft to keep them on the server. Stock has not changed.");
+              }} />}
             {countToolsOpen && <div id="count-search-tools" className="mb-3 grid grid-cols-1 gap-3 rounded border bg-background p-3 sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+                <div className="sm:col-span-2"><CountProductScanner id="count-product-scanner" items={items} existingIds={[...countRowIds]}
+                  onAdd={addCountProduct} disabled={command.isPending || !can("inventory.count") || !!countRecovery.pending} /></div>
                 <div className="grid min-w-0 grid-cols-1 gap-2 rounded border p-3 sm:grid-cols-2">
                   <div className="min-w-0 space-y-2">
                     <Label htmlFor="count-discovery-search">Find discovery product</Label>
@@ -1890,7 +1930,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
                     <Select value={countProduct} onValueChange={setCountProduct} disabled={command.isPending || !can("inventory.count")}><SelectTrigger id="count-discovery-product"><SelectValue placeholder="Choose a product found in this warehouse" /></SelectTrigger><SelectContent>{discoveryProducts.map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select>
                   </div>
                   <p className="text-xs text-muted-foreground sm:col-span-2">Up to 100 matches shown. Refine the search for another product. Adding it creates an entry only; enter its actual quantity and scans before posting.</p>
-                  <Button className="w-full sm:col-span-2 sm:w-fit" variant="outline" onClick={addCountProduct} disabled={!can("inventory.count") || !countProduct || command.isPending || countRows.length >= COUNT_MAX_LINES}>Add discovery to count</Button>
+                  <Button className="w-full sm:col-span-2 sm:w-fit" variant="outline" onClick={() => addCountProduct()} disabled={!!countRecovery.pending || !can("inventory.count") || !countProduct || command.isPending || countRows.length >= COUNT_MAX_LINES}>Add discovery to count</Button>
                 </div>
                 <div className="min-w-0 space-y-2">
                   <Label htmlFor="count-entry-search">Search count entries</Label>
@@ -1946,7 +1986,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
                     className="relative h-11 w-11 shrink-0"
                     aria-label={`Scan serials for ${item.name}`}
                     title={`Scan serials for ${item.name}`}
-                    disabled={command.isPending || !can("inventory.count")}
+                    disabled={!!countRecovery.pending || command.isPending || !can("inventory.count")}
                     onClick={() => setCountSerialDialog({ itemId: id, countId: activeCount.id })}
                   >
                     <ListOrdered className="h-4 w-4" aria-hidden="true" />
@@ -1955,7 +1995,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
                 </div>
                 <div className="grid min-w-0 grid-cols-2 gap-2">
                   <div className="min-w-0 space-y-1"><span id={`expected-count-label-${id}`} className="text-sm font-medium">Expected quantity</span><output id={`expected-count-${id}`} aria-labelledby={`expected-count-label-${id}`} className="block min-w-0 py-2 text-sm tabular-nums">{currentStock?.quantity ?? 0}</output></div>
-                  <div className="min-w-0 space-y-1"><Label htmlFor={`count-${id}`}>Actual quantity</Label><Input id={`count-${id}`} type="number" min="0" max="1000000" step="1" value={row.quantity} disabled={command.isPending} onChange={event => setCountQuantities(current => ({ ...current, [id]: event.target.value }))} /></div>
+                  <div className="min-w-0 space-y-1"><Label htmlFor={`count-${id}`}>Actual quantity</Label><Input id={`count-${id}`} type="number" min="0" max="1000000" step="1" value={row.quantity} disabled={!!countRecovery.pending || command.isPending || !can("inventory.count")} onChange={event => setCountQuantities(current => ({ ...current, [id]: event.target.value }))} /></div>
                 </div>
                 {item.tracking === "serialized" && <span className="text-xs text-muted-foreground sm:col-span-2">
                   {row.serials.split(/[\n,;]/).filter(value => value.trim()).length} serials entered
@@ -1974,7 +2014,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
             {countRows.length === 0 && <p data-count-entry className="rounded-md border border-dashed px-3 py-5 text-center text-sm text-muted-foreground">{activeCount.scope === "selected" ? "No products selected yet. Expand Search & Tools and add only the products you physically checked." : "There are no products in this warehouse snapshot. Add any discovered products that need to be counted."}</p>}
             </div>
             <div ref={countReserveRef} className="space-y-2">
-              <div className="space-y-1"><Label htmlFor="count-reason">Count adjustment reason</Label><Input id="count-reason" maxLength={1000} disabled={command.isPending} value={countReason} onChange={event => setCountReason(event.target.value)} placeholder="Required audit note" /></div>
+              <div className="space-y-1"><Label htmlFor="count-reason">Count adjustment reason</Label><Input id="count-reason" maxLength={1000} disabled={!!countRecovery.pending || command.isPending || !can("inventory.count")} value={countReason} onChange={event => setCountReason(event.target.value)} placeholder="Required audit note" /></div>
               {countDirty && <p role="status" className="text-sm text-amber-700 dark:text-amber-400">Unsaved count changes. Save the draft to keep your entries.</p>}
             </div>
             </div>

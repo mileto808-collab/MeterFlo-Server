@@ -32,3 +32,15 @@ Posting serial-identity discrepancies from the count page requires an explicit r
 **Why:** The user approved a discrepancy-review recommendation after learning that a count can replace the location's recorded serial identities, not merely compare quantities.
 
 **How to apply:** Explain removals versus additions, retain all captures on dismissal, and require acknowledgement before confirming. Acknowledgement applies only to the reviewed count, entries, reason, draft revision and stock baseline; live changes must block stale confirmation rather than silently changing the reviewed lists.
+
+Product barcode scanning selects a catalog product once; it does not count units, increment actual quantity, or replace serialized-unit scanning.
+
+**Why:** The approved improvement was adding count products by barcode, not inferring physical quantities from repeated product scans. Serialized and quantity-tracked products still need an explicit physical count.
+
+**How to apply:** Keep product selection and serial capture separate. Preserve leading zeros, reject ambiguous product identities, and leave repeated product scans non-destructive.
+
+Browser-local recovery is a best-effort safety net, not a server draft or an automatic stock adjustment. Restore must be an explicit choice and must retain the captured draft revision.
+
+**Why:** The user approved recovery after an unexpected browser restart. Quietly assigning the newest server revision to older captures could overwrite another operator's saved work.
+
+**How to apply:** Isolate captures by account, project and browser session writer; never erase another tab's newer capture during cleanup. Keep restored older revisions blocked from saving/posting until the current server draft is reloaded. Warn when local storage is unavailable, and continue recommending explicit server draft saves.
