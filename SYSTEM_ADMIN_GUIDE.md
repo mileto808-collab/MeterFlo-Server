@@ -1206,6 +1206,53 @@ Files are not part of that database transaction. If database restoration succeed
 
 ---
 
+## Safe Replit Republishing
+
+Adding an API key or republishing code does **not** require replacing production
+records with development data. Keep **Overwrite production data** (or **Set up
+your production database with your current development data**) off for ordinary
+updates. That option is data replacement, not a repair for migration validation.
+
+Publishing compares the **actual development database** with production, not
+just the fields declared in source code. The development post-merge setup installs
+the additive visit scheduling schema before the preview restarts. This prevents
+a development database missing active fields from proposing their deletion in
+production. The declared project schema also retains the named visit range
+constraints. Historical null scheduling defaults remain null; new-project
+defaults are assigned by project creation rather than a database backfill.
+
+Before publishing:
+
+1. Download a current production backup, including project work orders,
+   inventory, and files, and retain it outside the running instance. Confirm
+   that it is a production backup, not a development backup.
+2. Confirm the task merge's setup succeeded and development loads correctly.
+   A failed setup must be repaired before continuing to Publish.
+3. Review the generated database migration. `DROP COLUMN` followed by `ADD
+   COLUMN` for `default_service_minutes` or
+   `default_appointment_tolerance_minutes` is **not expected** for this update.
+   Stop rather than approving deletion of those active settings.
+4. If the publish dialog proposes a rename, confirm it only when it is genuinely
+   the same data under a new name. These scheduling fields have **not** been
+   renamed, so do not use rename choices to conceal an unrelated mismatch.
+5. Publish through Replit's normal flow, without data overwrite. Check saved
+   project defaults, routing configuration, work orders, and stock afterward.
+   Repeating an unchanged publish should not recreate scheduling columns.
+
+If validation still fails, preserve the exact error and generated SQL for
+investigation. Do not add database pushes to the publish build command or use a
+production migration script as a workaround. Managed production schema changes
+belong to the Publish flow; standalone Windows/Linux maintenance is separate.
+If a previous publish already erased values, fixing the schema will not recover
+them automatically. Compare an earlier backup and obtain explicit approval for
+any targeted recovery; do not restore development data over live records.
+
+Developer regression check: `npm run test:publishing-schema`. It creates and
+removes its own temporary PostgreSQL cluster; it does not accept a production
+URL. It verifies additive setup, two no-change schema reconciliations, repeat
+initialization, constraints, and preservation of populated project, work-order,
+and serialized-stock records.
+
 ## Web Application Updates
 
 MeterFlo checks numbered releases from the approved MeterFlo core source, independent

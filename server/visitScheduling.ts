@@ -19,11 +19,11 @@ export async function installVisitScheduling(client: Pick<PoolClient, "query">, 
     END IF; END $$;`);
 }
 
-export async function initializeVisitScheduling() {
+export async function initializeVisitScheduling(connection: Pick<PoolClient, "query"> = pool) {
   // Keep schema-tool-first standalone upgrades safe too: adding these columns
   // must never backfill old projects. New-project defaults belong to creation,
   // not SQL column defaults that would also affect legacy restores.
-  await pool.query(`ALTER TABLE public.projects
+  await connection.query(`ALTER TABLE public.projects
     ADD COLUMN IF NOT EXISTS default_service_minutes integer,
     ADD COLUMN IF NOT EXISTS default_appointment_tolerance_minutes integer;
     DO $$ BEGIN
@@ -35,11 +35,11 @@ export async function initializeVisitScheduling() {
     END IF; END $$;
     ALTER TABLE public.projects ALTER COLUMN default_service_minutes DROP DEFAULT;
     ALTER TABLE public.projects ALTER COLUMN default_appointment_tolerance_minutes DROP DEFAULT;`);
-  const { rows } = await pool.query("SELECT database_name FROM public.projects WHERE database_name IS NOT NULL");
+  const { rows } = await connection.query("SELECT database_name FROM public.projects WHERE database_name IS NOT NULL");
   for (const row of rows) {
     if (!/^project_[a-z0-9_]+$/.test(row.database_name)) continue;
-    const exists = await pool.query("SELECT to_regclass($1) AS name", [`"${row.database_name}".work_orders`]);
-    if (exists.rows[0].name) await installVisitScheduling(pool, row.database_name);
+    const exists = await connection.query("SELECT to_regclass($1) AS name", [`"${row.database_name}".work_orders`]);
+    if (exists.rows[0].name) await installVisitScheduling(connection, row.database_name);
   }
 }
 

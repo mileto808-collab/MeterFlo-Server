@@ -8,4 +8,8 @@ npm install --no-audit --no-fund
 # fields before the restarted app reads/posts inspection history or vendor-kit provenance.
 if [ -n "${REPL_ID:-}" ]; then
   npx tsx script/migrate-inventory-relational.ts --development
+  # Publishing compares actual dev/prod databases, not TypeScript declarations.
+  # Install additive scheduling fields before a publish, even if no preview was
+  # opened after the merge. Never run this command in a production build hook.
+  npx tsx script/migrate-visit-scheduling.ts --development
 fi

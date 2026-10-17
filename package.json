@@ -101,6 +101,7 @@
     "test:login-flow": "tsx --test tests/login-security.test.ts tests/logout.test.ts",
     "test:user-response-security": "tsx --test tests/user-response-security.test.ts",
     "test:login-ui": "tsx tests/login-flow-ui.ts",
+    "test:publishing-schema": "tsx --test tests/publishing-schema.test.ts",
     "db:push": "drizzle-kit push"
   },
   "dependencies": {

@@ -40,3 +40,4 @@
 - [Route scheduling and providers](route-scheduling-priorities.md) — appointment-first priority, hybrid phone navigation, and site/project provider and billing boundaries.
 - [Relational design](relational-design-principle.md) — user requires long-term scalability: relational business data and programmatic calculations where appropriate.
 - [Visit scheduling policy](visit-scheduling-policy.md) — approved 30-minute visits, 60-minute timestamp tolerance, service-start windows, and existing editing authority.
+- [Publishing schema ownership](publishing-schema-ownership.md) — active fields must exist in actual dev schema before publish; never replace production data to repair migration drift.

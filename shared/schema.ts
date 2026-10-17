@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, serial, jsonb, index, uniqueIndex, primaryKey, boolean, uuid, date } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, serial, jsonb, index, uniqueIndex, primaryKey, boolean, uuid, date, check } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -141,7 +141,12 @@ export const projects = pgTable("projects", {
   readingEquipmentType: varchar("reading_equipment_type", { length: 20 }).default("both"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, table => [
+  // Match the independently hosted upgrade path. Publishing/schema tools must
+  // not remove rules which the next standalone startup would recreate.
+  check("visit_default_duration_range", sql`${table.defaultServiceMinutes} BETWEEN 1 AND 480`),
+  check("visit_default_tolerance_range", sql`${table.defaultAppointmentToleranceMinutes} BETWEEN 0 AND 240`),
+]);
 
 // Project Holidays - dates to exclude from scheduling
 export const projectHolidays = pgTable("project_holidays", {
