@@ -94,7 +94,11 @@ async function main() {
     await expect(start).toBeHidden(); await expect(countDialog).toBeVisible();
     assert.equal(await page.evaluate(() => document.activeElement?.tagName), "H2");
     await expect(countDialog.locator("#count-count-bulk")).toHaveValue("5");
+    await expect(countDialog.locator("#expected-count-count-bulk")).toHaveValue("5");
+    await expect(countDialog.locator("#expected-count-count-bulk")).toHaveAttribute("readonly", "");
+    await expect(countDialog.locator("#expected-count-count-bulk")).toHaveAttribute("aria-readonly", "true");
     await countDialog.locator("#count-count-bulk").fill("8");
+    await expect(countDialog.locator("#expected-count-count-bulk")).toHaveValue("5");
     await countDialog.getByLabel("Count adjustment reason").fill("Saved modal count");
     await countDialog.getByRole("button", { name: "Close", exact: true }).first().click();
     await expect(unsaved).toBeVisible();

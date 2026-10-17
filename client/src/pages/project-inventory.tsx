@@ -1467,9 +1467,12 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
               const { itemId: id, item } = row;
               if (!item) return <Alert key={id} variant="destructive"><AlertTitle>Count item unavailable</AlertTitle><AlertDescription>Item {id} is no longer in the catalog. Resolve it before posting; it will not be silently omitted.</AlertDescription></Alert>;
               const old = activeCount.snapshot.find(row => row.itemId === id);
-              return <div key={id} className="grid gap-2 rounded border bg-background p-2 sm:grid-cols-[1fr_130px_2fr] sm:items-end sm:p-3">
+              return <div key={id} className="grid min-w-0 gap-2 rounded border bg-background p-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,260px)_minmax(0,2fr)] sm:items-end sm:p-3">
                 <div><div className="font-medium">{item.name}</div><div className="font-mono text-xs text-muted-foreground">{item.sku} · snapshot {old?.quantity ?? 0}</div></div>
-                <div className="space-y-1"><Label htmlFor={`count-${id}`}>Actual quantity</Label><Input id={`count-${id}`} type="number" min="0" max="1000000" step="1" value={row.quantity} disabled={command.isPending} onChange={event => setCountQuantities(current => ({ ...current, [id]: event.target.value }))} /></div>
+                <div className="grid min-w-0 grid-cols-2 gap-2">
+                  <div className="min-w-0 space-y-1"><Label htmlFor={`expected-count-${id}`}>Expected quantity</Label><Input id={`expected-count-${id}`} type="number" value={old?.quantity ?? 0} readOnly aria-readonly="true" /></div>
+                  <div className="min-w-0 space-y-1"><Label htmlFor={`count-${id}`}>Actual quantity</Label><Input id={`count-${id}`} type="number" min="0" max="1000000" step="1" value={row.quantity} disabled={command.isPending} onChange={event => setCountQuantities(current => ({ ...current, [id]: event.target.value }))} /></div>
+                </div>
                 {item.tracking === "serialized" && <div className="space-y-1"><Label htmlFor={`countserial-${id}`}>Scan all serials</Label><Textarea id={`countserial-${id}`} value={row.serials} disabled={command.isPending} onChange={event => setCountSerials(current => ({ ...current, [id]: event.target.value }))} /></div>}
               </div>;
             })}
