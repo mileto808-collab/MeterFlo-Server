@@ -75,6 +75,8 @@ const assert = require("node:assert/strict");
         const order=orders.find(o=>o.id===id);
         return {id,label:order.customerWoId,address:order.address||"Verified fixture location",point:{lat:40+i*.002,lng:-105+i*.002},
           scheduledAt:order.scheduledAt,priority:i===0?0:null,subStatus:i===0?"Critical":null,
+          serviceDurationMinutes:i===0?75:30,durationSource:i===0?"work-order":"project",
+          appointmentWindowStart:null,appointmentWindowEnd:null,appointmentSource:order.scheduledAt?"scheduled":"none",waitingMinutes:i===0?5:0,
           arrivalAt:new Date(Date.now()+(i+1)*600000).toISOString(),serviceAt:new Date(Date.now()+(i+1)*600000).toISOString(),
           departureAt:new Date(Date.now()+(i+1)*600000+300000).toISOString(),lateMinutes:0,travelSeconds:300,travelMeters:1000};
       });

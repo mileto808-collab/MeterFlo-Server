@@ -114,6 +114,9 @@ const workOrderFields = [
   { key: "newModuleType", label: "New Module Type", required: false },
   { key: "status", label: "Status", required: false },
   { key: "scheduledAt", label: "Scheduled At", required: false },
+  { key: "serviceDurationMinutes", label: "Service Duration Minutes (1–480)", required: false },
+  { key: "appointmentWindowStart", label: "Appointment Window Start (ISO with offset)", required: false },
+  { key: "appointmentWindowEnd", label: "Appointment Window End (ISO with offset)", required: false },
   { key: "scheduledBy", label: "Scheduled By", required: false },
   { key: "trouble", label: "Trouble", required: false },
   { key: "notes", label: "Notes", required: false },
@@ -937,6 +940,7 @@ export default function ProjectDbImport() {
               <div className="grid gap-2">
                 <Label>Column Mapping</Label>
                 <p className="text-sm text-muted-foreground">Map source columns to work order fields. Required fields are marked with *</p>
+                <p className="text-xs text-muted-foreground">Service duration values must be whole minutes from 1–480. Appointment-window timestamps must include Z or an explicit UTC offset such as -07:00; map both endpoints together.</p>
                 {inventoryEnabled && <p className="text-xs leading-relaxed text-muted-foreground">New system/module type values create planned requirements from this project’s type item links. Imports never reserve stock; technicians record actual use at installation.</p>}
                 <ScrollArea className="h-[250px] border rounded-md p-3">
                   <div className="grid gap-3">

@@ -14,7 +14,7 @@ import type { RoutePoint, RoutingResult } from "../../shared/workOrderRouting";
 const point=z.object({lat:z.number().finite().min(-90).max(90),lng:z.number().finite().min(-180).max(180)}).strict();
 const idsSchema=z.array(z.number().int().positive()).min(1).max(50).refine(ids=>new Set(ids).size===ids.length);
 const planSchema=z.object({ids:idsSchema,origin:z.union([point,z.object({address:z.string().trim().min(5).max(400)}).strict()]),
-  departureAt:z.string().datetime({offset:true}),serviceMinutes:z.number().int().min(1).max(120),toleranceMinutes:z.number().int().min(0).max(60)}).strict();
+  departureAt:z.string().datetime({offset:true}),serviceMinutes:z.number().int().min(1).max(480).optional(),toleranceMinutes:z.number().int().min(0).max(240).optional()}).strict();
 const running=new Set<string>(),lastRequest=new Map<string,number>();
 export function parseGps(value:unknown):RoutePoint|null {
   if(typeof value!=="string")return null;
@@ -23,13 +23,14 @@ export function parseGps(value:unknown):RoutePoint|null {
   const parsed=point.safeParse({lat:Number(match[1]),lng:Number(match[2])});
   return parsed.success?parsed.data:null;
 }
-export function routeFingerprint(orders:any[], definitions:any[]) {
+export function routeFingerprint(orders:any[], definitions:any[], project?: { defaultServiceMinutes?: number | null; defaultAppointmentToleranceMinutes?: number | null }) {
   const defs=new Map(definitions.map(d=>[d.id,d]));
-  return createHash("sha256").update(JSON.stringify([...orders].sort((a,b)=>a.id-b.id).map(wo=>[
-    wo.id,wo.status,wo.scheduledAt,wo.updatedAt,wo.address,wo.city,wo.state,wo.zip,
+  return createHash("sha256").update(JSON.stringify([project?.defaultServiceMinutes??null,project?.defaultAppointmentToleranceMinutes??null,
+    [...orders].sort((a,b)=>a.id-b.id).map(wo=>[
+    "visit-scheduling-v1",wo.id,wo.status,wo.scheduledAt,wo.serviceDurationMinutes,wo.appointmentWindowStart,wo.appointmentWindowEnd,wo.updatedAt,wo.address,wo.city,wo.state,wo.zip,
     wo.oldGps,wo.newGps,wo.assignedUserId,wo.assignedGroupId,wo.subStatusId,
     defs.get(wo.subStatusId)?.routingPriority??null,defs.get(wo.subStatusId)?.label??null,
-  ]))).digest("hex");
+  ])])).digest("hex");
 }
 // Dependency injection is limited to server construction for isolated acceptance
 // tests; it is never controlled by an HTTP parameter or persisted setting.
@@ -105,10 +106,14 @@ export function registerRoutingRoutes(app:Express, services = { effectiveRouting
     const input=z.object({ids:idsSchema,fingerprint:z.string().length(64),configurationRevision:z.string().length(64)}).strict().parse(req.body);
     const ctx=await candidates(req,input.ids),config=await readEffective(ctx.project.id);
     res.set("Cache-Control","no-store").json({stale:!config.result.ready||config.result.revision!==input.configurationRevision||
-      routeFingerprint(ctx.orders,ctx.definitions)!==input.fingerprint});
+      routeFingerprint(ctx.orders,ctx.definitions,ctx.project)!==input.fingerprint});
   }));
   app.post("/api/projects/:projectId/routing/plan",isAuthenticated,wrap(async(req,res)=>{
     const input=planSchema.parse(req.body),ctx=await candidates(req,input.ids);
+    const serviceMinutes=input.serviceMinutes??ctx.project.defaultServiceMinutes??45;
+    const toleranceMinutes=input.toleranceMinutes??ctx.project.defaultAppointmentToleranceMinutes??10;
+    const durationSource = input.serviceMinutes!==undefined && input.serviceMinutes!==(ctx.project.defaultServiceMinutes??45)
+      ? "route" : ctx.project.defaultServiceMinutes!=null ? "project" : "legacy";
     const actor=ctx.user.id;
     if(running.has(actor)||Date.now()-(lastRequest.get(actor)??0)<10000)throw new RoutingError(429,"A route is already running or was just requested. Please wait before replanning.");
     const config=await readEffective(ctx.project.id);
@@ -140,6 +145,10 @@ export function registerRoutingRoutes(app:Express, services = { effectiveRouting
           const def=defs.get(order.subStatusId);
           resolved.push({id:order.id,label,address,point:destination,
             scheduledAt:order.scheduledAt?new Date(order.scheduledAt).toISOString():null,
+            appointmentWindowStart:order.appointmentWindowStart?new Date(order.appointmentWindowStart).toISOString():null,
+            appointmentWindowEnd:order.appointmentWindowEnd?new Date(order.appointmentWindowEnd).toISOString():null,
+            serviceDurationMinutes:order.serviceDurationMinutes??serviceMinutes,
+            durationSource:order.serviceDurationMinutes!=null?"work-order":durationSource,
             priority:def?.routingPriority??null,subStatus:def?.label??null});
         }catch(e){if(!(e instanceof RoutingError)||e.status!==422)throw e;excluded.push({id:order.id,label,reason:e.message});}
       }
@@ -151,19 +160,19 @@ export function registerRoutingRoutes(app:Express, services = { effectiveRouting
       const keep=resolved.map((_,i)=>i).filter(i=>!unreachable.some(u=>u.i===i));
       if(!keep.length)throw new RoutingError(422,"No selected stops are reachable by road.");
       const indices=[0,...keep.map(i=>i+1)],roadMatrix=indices.map(i=>indices.map(j=>matrix[i][j]));
-      const stops=optimizeStops(keep.map(i=>resolved[i]),roadMatrix,departure,input.serviceMinutes,input.toleranceMinutes);
+      const stops=optimizeStops(keep.map(i=>resolved[i]),roadMatrix,departure,serviceMinutes,toleranceMinutes);
       const geometry=await provider.geometry([origin,...stops.map(s=>s.point)]);
       const warnings=["Driving times are estimates, not live traffic. This bounded planning method does not guarantee a mathematically optimal route.",
-        `Appointments are start times; early arrivals wait. Assumed service time: ${input.serviceMinutes} minutes per stop; lateness tolerance: ${input.toleranceMinutes} minutes.`];
+        `Explicit windows constrain service start without extra tolerance. Other appointments remain start times with ${toleranceMinutes} minutes tolerance. Early arrivals wait. Default service: ${serviceMinutes} minutes; individual overrides are shown per stop.`];
       if(stops.some(s=>s.lateMinutes>0))warnings.push("Some appointments cannot be met within tolerance. Review the displayed lateness before driving.");
-      if(stops.some(s=>!s.scheduledAt))warnings.push("Some Scheduled orders have no appointment time; they are explicitly marked unscheduled.");
+      if(stops.some(s=>s.appointmentSource==="none"))warnings.push("Some Scheduled orders have no appointment time or window; they are explicitly marked unscheduled.");
       if(excluded.length)warnings.push(`${excluded.length} selected orders were excluded. Review their reasons; they were not silently dropped.`);
       const result:RoutingResult={projectId:ctx.project.id,provider:config.effective.provider,
-        configurationRevision:config.result.revision,fingerprint:routeFingerprint(ctx.orders,ctx.definitions),
+        configurationRevision:config.result.revision,fingerprint:routeFingerprint(ctx.orders,ctx.definitions,ctx.project),
         createdAt:new Date().toISOString(),expiresAt:new Date(Date.now()+4*3600000).toISOString(),
         departureAt:input.departureAt,origin,stops,excluded,warnings,geometry,
         totalTravelSeconds:stops.reduce((s,c)=>s+c.travelSeconds,0),totalTravelMeters:stops.reduce((s,c)=>s+c.travelMeters,0),
-        serviceMinutes:input.serviceMinutes,toleranceMinutes:input.toleranceMinutes};
+        serviceMinutes,toleranceMinutes};
       res.set("Cache-Control","no-store").json(result);
     }finally{clearTimeout(timer);res.off("close",abort);running.delete(actor);}
   }));

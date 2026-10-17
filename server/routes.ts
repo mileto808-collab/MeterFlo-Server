@@ -25,6 +25,7 @@ import { setupAuth, isAuthenticated } from "./replitAuth";
 import { initializeWorkOrderSubStatuses, registerWorkOrderSubStatusRoutes, listSubStatuses } from "./workOrderSubStatuses";
 import { insertProjectWorkOrderSchema, insertProjectSchema, createUserSchema, updateUserSchema, resetPasswordSchema, changePasswordSchema, updateProfileSchema, permissionKeys, insertExternalDatabaseConfigSchema, updateExternalDatabaseConfigSchema, insertImportConfigSchema, updateImportConfigSchema, databaseTypeEnum, importScheduleFrequencyEnum, ADMINISTRATOR_SUBROLE_KEY, getSubroleLevel, insertSupportSubmissionSchema, type CustomerApiAuthType, type GpsMode, type WizardMode } from "@shared/schema";
 import { z } from "zod";
+import { importedVisitScheduling, mapSqlImportRow, schedulingDto, validateVisitScheduling, visitSchedulingKeys } from "../shared/visitScheduling";
 import bcrypt from "bcryptjs";
 import multer from "multer";
 import { createProjectSchema, deleteProjectSchema, getProjectWorkOrderStorage, sanitizeSchemaName, backupProjectDatabase, restoreProjectDatabase, getProjectDatabaseStats } from "./projectDb";
@@ -1713,6 +1714,10 @@ export async function registerRoutes(
       if (!canCreateProjects) {
         return res.status(403).json({ message: "Forbidden: You don't have permission to create projects" });
       }
+      if (((Object.hasOwn(req.body, "defaultServiceMinutes") && req.body.defaultServiceMinutes !== 30) ||
+          (Object.hasOwn(req.body, "defaultAppointmentToleranceMinutes") && req.body.defaultAppointmentToleranceMinutes !== 60)) &&
+          !await storage.hasPermission(currentUser, permissionKeys.PROJECTS_EDIT))
+        return res.status(403).json({ message: "Edit Projects permission is required to customize visit planning defaults." });
       if (req.body.inventoryEnabled === true &&
           (!await storage.isAdminUser(currentUser) || !await storage.hasPermission(currentUser, permissionKeys.INVENTORY_CONFIGURE))) {
         return res.status(403).json({ message: "Administrator and inventory configuration permission required." });
@@ -1742,6 +1747,8 @@ export async function registerRoutes(
         ? await storage.createProjectWithFullData({
             name: parsed.data.name, description: parsed.data.description, customerEmail: parsed.data.customerEmail,
             inventoryEnabled: parsed.data.inventoryEnabled ?? false,
+            defaultServiceMinutes: parsed.data.defaultServiceMinutes,
+            defaultAppointmentToleranceMinutes: parsed.data.defaultAppointmentToleranceMinutes,
             ...getReadingPrecision(parsed.data),
             ...customerPushSettings(parsed.data),
           })
@@ -2552,7 +2559,7 @@ export async function registerRoutes(
           return res.status(403).json({ message: "Forbidden: Customers can only view completed work orders" });
         }
         
-        res.json(workOrder);
+        res.json({ ...workOrder, ...schedulingDto(workOrder) });
       } finally {
         client.release();
       }
@@ -2720,6 +2727,9 @@ export async function registerRoutes(
       if (!canCreate) {
         return res.status(403).json({ message: "Forbidden: You don't have permission to create work orders" });
       }
+      if (visitSchedulingKeys.some(key => req.body[key] != null) &&
+          !await storage.hasPermission(currentUser, permissionKeys.WORK_ORDERS_EDIT))
+        return res.status(403).json({ message: "Edit Work Orders permission is required to set visit scheduling." });
       
       if (currentUser.role !== "admin") {
         const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
@@ -2762,6 +2772,7 @@ export async function registerRoutes(
       res.status(201).json(workOrder);
     } catch (error) {
       console.error("Error creating work order:", error);
+      if (error instanceof z.ZodError) return res.status(400).json({ message: "Invalid visit scheduling fields.", errors: error.issues });
       if (["23514","23503","22P02"].includes((error as any)?.code))
         return res.status(400).json({ message: (error as any).message?.startsWith("Sub-status") ? (error as any).message : "Invalid work-order reference or sub-status." });
       if (error instanceof InventoryError) return res.status(error.status).json({ message: error.message, code: "INVENTORY_CONFLICT" });
@@ -2865,6 +2876,10 @@ export async function registerRoutes(
       }
       const readingErrors = validateCapturedReadings(req.body, project, existingWorkOrder);
       if (readingErrors.length) return res.status(400).json(readingValidationResponse(readingErrors));
+      if (visitSchedulingKeys.some(key => Object.hasOwn(req.body, key)) &&
+          !await storage.hasPermission(currentUser!, permissionKeys.WORK_ORDERS_EDIT))
+        return res.status(403).json({ message: "Edit Work Orders permission is required to edit visit scheduling." });
+      validateVisitScheduling({ ...existingWorkOrder, ...req.body });
       
       // Check if status is being set to "Completed" and validate required fields
       const finalStatus = req.body.status || existingWorkOrder.status;
@@ -3004,6 +3019,7 @@ export async function registerRoutes(
       res.json(workOrder);
     } catch (error) {
       console.error("Error updating work order:", error);
+      if (error instanceof z.ZodError) return res.status(400).json({ message: "Invalid visit scheduling fields.", errors: error.issues });
       if ((error as any)?.code === "23514" || (error as any)?.code === "23503" || (error as any)?.code === "22P02")
         return res.status(400).json({ message: (error as any).message?.startsWith("Sub-status") ? (error as any).message : "Invalid work-order reference or sub-status." });
       if (error instanceof InventoryError) return res.status(error.status).json({ message: error.message, code: "INVENTORY_CONFLICT" });
@@ -3608,6 +3624,7 @@ export async function registerRoutes(
           newGps: wo.newGps || wo.new_gps || null,
           status: wo.status || "Open",
           scheduledAt: wo.scheduledAt || wo.scheduledDate || wo.scheduled_date || wo.scheduled_at || null,
+          ...importedVisitScheduling(wo),
           assignedUserId: wo.assignedUserId || wo.assigned_user_id || null,
           assignedGroupId: wo.assignedGroupId || wo.assigned_group_id || null,
           createdBy: currentUser?.username || null,
@@ -7256,12 +7273,7 @@ export async function registerRoutes(
         
         for (const row of queryResult.data) {
           try {
-            const mappedData: Record<string, any> = {};
-            for (const [sourceCol, targetField] of Object.entries(columnMapping)) {
-              if (targetField && row[sourceCol] !== undefined) {
-                mappedData[targetField] = row[sourceCol];
-              }
-            }
+            const mappedData = mapSqlImportRow(row, columnMapping);
             
             if (!mappedData.customerWoId || !mappedData.customerId || !mappedData.customerName || !mappedData.address || !mappedData.serviceType) {
               failed++;
@@ -9346,6 +9358,7 @@ export async function registerRoutes(
           success: true,
           serverTimestamp,
           workOrders: withExactReadings(result.rows).map((wo: any) => ({ ...wo,
+            ...schedulingDto(wo),
             subStatusId: wo.sub_status_id ?? null,
             ...(inv ? { inventoryAllocation: inv.allocations.find(a => a.workOrderId === wo.id) || null } : {}) })),
           inventory: { contractVersion: 1, enabled: !!inv, items: inv?.items || [],
@@ -9366,7 +9379,11 @@ export async function registerRoutes(
           meta: {
             count: result.rows.length,
             projectId,
-            projectName: project.name
+            projectName: project.name,
+            visitSchedulingContractVersion: 1,
+            timezone: project.timezone || await storage.getSetting("default_timezone") || "America/Denver",
+            defaultServiceMinutes: project.defaultServiceMinutes ?? null,
+            defaultAppointmentToleranceMinutes: project.defaultAppointmentToleranceMinutes ?? null
           }
         });
       } finally {
@@ -9415,6 +9432,17 @@ export async function registerRoutes(
       for (const woUpdate of workOrders) {
         try {
           const { id, clientUpdatedAt, forceOverwrite, ...updateData } = woUpdate;
+          for (const [camel, snake] of [["serviceDurationMinutes","service_duration_minutes"],
+            ["appointmentWindowStart","appointment_window_start"],["appointmentWindowEnd","appointment_window_end"]]) {
+            if (Object.hasOwn(updateData, snake)) {
+              if (updateData[camel] !== undefined && updateData[camel] !== updateData[snake]) throw new Error("Conflicting visit scheduling values.");
+              updateData[camel] = updateData[snake];
+              delete updateData[snake];
+            }
+          }
+          if (visitSchedulingKeys.some(key => Object.hasOwn(updateData, key)) &&
+              !await storage.hasPermission(currentUser, permissionKeys.WORK_ORDERS_EDIT))
+            throw new Error("Edit Work Orders permission is required to edit visit scheduling.");
           if (Object.prototype.hasOwnProperty.call(updateData, "sub_status_id")) {
             if (updateData.subStatusId !== undefined && updateData.subStatusId !== updateData.sub_status_id)
               throw new Error("Conflicting sub-status identifiers.");

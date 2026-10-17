@@ -72,6 +72,8 @@ export async function initializeAudit(pool:Pool) {
         IF k = ANY(ARRAY[
           'id','key','name','username','role','subrole_id','user_id','group_id','project_id','config_id','permission_id',
           'is_active','enabled','is_default','is_system','status','status_id','assigned_to','scheduled_date','scheduled_at',
+          'service_duration_minutes','appointment_window_start','appointment_window_end',
+          'default_service_minutes','default_appointment_tolerance_minutes',
           'service_type','service_type_id','customer_wo_id','customer_id','customer_name','address','city','state','zip',
           'old_system_id','new_system_id','old_module_id','new_module_id','old_system_type','new_system_type',
           'old_system_type_id','new_system_type_id','old_module_type','new_module_type','old_module_type_id','new_module_type_id',

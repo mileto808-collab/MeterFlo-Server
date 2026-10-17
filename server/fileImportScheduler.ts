@@ -3,6 +3,7 @@ import { storage } from "./storage";
 import { auditContext, serviceAuditContext, withAuditContext } from "./auditContext";
 import { auditedOperation } from "./auditService";
 import { getProjectWorkOrderStorage } from "./projectDb";
+import { importedVisitScheduling } from "../shared/visitScheduling";
 import { insertProjectWorkOrderSchema } from "@shared/schema";
 import { getProjectFtpFiles, getProjectFtpFilePath } from "./fileStorage";
 import * as fs from "fs";
@@ -305,6 +306,7 @@ class FileImportScheduler {
               }
             }
 
+            Object.assign(mappedData, importedVisitScheduling(mappedData));
             // Auto-generate customerWoId if not provided
             if (!mappedData.customerWoId) {
               mappedData.customerWoId = String(nextAutoId);

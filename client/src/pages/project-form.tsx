@@ -52,6 +52,8 @@ const projectFormSchema = z.object({
   operationalHoursEnd: z.string().max(10).optional().or(z.literal("")),
   operationalHoursDays: z.array(z.string()).optional().default([]),
   timezone: z.string().max(100).optional().or(z.literal("")),
+  defaultServiceMinutes: z.number().int().min(1).max(480).nullable().optional(),
+  defaultAppointmentToleranceMinutes: z.number().int().min(0).max(240).nullable().optional(),
   wizardMode: z.enum(["changeout", "reading_only", "user_choice"]).optional().default("changeout"),
   wizardGpsMode: z.enum(["automatic", "manual_step", "disabled"]).optional().default("automatic"),
   wizardShowNotesStep: z.boolean().optional().default(true),
@@ -116,6 +118,8 @@ export default function ProjectForm() {
       operationalHoursEnd: "",
       operationalHoursDays: [],
       timezone: "",
+      defaultServiceMinutes: 30,
+      defaultAppointmentToleranceMinutes: 60,
       wizardMode: "changeout",
       wizardGpsMode: "automatic",
       wizardShowNotesStep: true,
@@ -159,6 +163,8 @@ export default function ProjectForm() {
         operationalHoursEnd: project.operationalHoursEnd || "",
         operationalHoursDays: project.operationalHoursDays || [],
         timezone: project.timezone || "",
+        defaultServiceMinutes: (project as any).defaultServiceMinutes ?? null,
+        defaultAppointmentToleranceMinutes: (project as any).defaultAppointmentToleranceMinutes ?? null,
         wizardMode: (project.wizardMode as "changeout" | "reading_only" | "user_choice") || "changeout",
         wizardGpsMode: (project.wizardGpsMode as "automatic" | "manual_step" | "disabled") || "automatic",
         wizardShowNotesStep: project.wizardShowNotesStep !== false,
@@ -449,6 +455,30 @@ export default function ProjectForm() {
                   </FormItem>
                 )}
               />
+              {hasPermission("projects.edit") && (
+                <section className="space-y-4 rounded-lg border border-l-4 border-l-primary/60 p-4" data-testid="project-planning-defaults">
+                  <div>
+                    <h2 className="font-semibold">Route planning defaults</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">Defaults for planning only. They never reschedule customer appointments.</p>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <FormField control={form.control} name="defaultServiceMinutes" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Default service duration (minutes)</FormLabel>
+                        <FormControl><Input type="number" min="1" max="480" step="1" value={field.value ?? ""} onChange={event => field.onChange(event.target.value === "" ? null : Number(event.target.value))} placeholder="No project default" data-testid="input-project-service-default" /></FormControl>
+                        <FormDescription>Whole number from 1 to 480. Empty retains the legacy planner fallback.</FormDescription><FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="defaultAppointmentToleranceMinutes" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Default appointment tolerance (minutes)</FormLabel>
+                        <FormControl><Input type="number" min="0" max="240" step="1" value={field.value ?? ""} onChange={event => field.onChange(event.target.value === "" ? null : Number(event.target.value))} placeholder="No project default" data-testid="input-project-tolerance-default" /></FormControl>
+                        <FormDescription>Whole number from 0 to 240. Empty retains the legacy planner fallback.</FormDescription><FormMessage />
+                      </FormItem>
+                    )} />
+                  </div>
+                </section>
+              )}
               {hasPermission("inventory.configure") && (
                 <FormField
                   control={form.control}

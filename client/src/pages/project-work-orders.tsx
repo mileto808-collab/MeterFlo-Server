@@ -42,6 +42,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useTimezone } from "@/hooks/use-timezone";
+import { WorkOrderPlanningFields } from "@/components/work-order-routing/work-order-planning-fields";
 import { formatDateTimeInTimezone, formatForExport, formatInTimezone } from "@/lib/timezone";
 import { useProjectEvents } from "@/hooks/useProjectEvents";
 import { useHidScanner } from "@/hooks/useHidScanner";
@@ -119,6 +120,18 @@ const workOrderFormSchema = insertProjectWorkOrderSchema.extend({
   newSystemReading: z.union([z.number(), z.string()]).optional().nullable(),
   oldModuleRead: z.union([z.number(), z.string()]).optional().nullable(),
   newModuleRead: z.union([z.number(), z.string()]).optional().nullable(),
+  serviceDurationMinutes: z.number().int().min(1).max(480).nullable().optional(),
+  appointmentWindowStart: z.string().datetime({ offset: true }).nullable().optional(),
+  appointmentWindowEnd: z.string().datetime({ offset: true }).nullable().optional(),
+}).superRefine((data, context) => {
+  const hasStart = !!data.appointmentWindowStart;
+  const hasEnd = !!data.appointmentWindowEnd;
+  if (hasStart !== hasEnd) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Set both appointment window endpoints, or clear both.", path: [hasStart ? "appointmentWindowEnd" : "appointmentWindowStart"] });
+  }
+  if (hasStart && hasEnd && Date.parse(data.appointmentWindowEnd!) < Date.parse(data.appointmentWindowStart!)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Appointment window end must be at or after its start.", path: ["appointmentWindowEnd"] });
+  }
 });
 
 type WorkOrderFormData = z.infer<typeof workOrderFormSchema>;
@@ -406,6 +419,9 @@ export default function ProjectWorkOrders() {
       assignedUserId: undefined,
       assignedGroupId: undefined,
       scheduledAt: "",
+      serviceDurationMinutes: null,
+      appointmentWindowStart: null,
+      appointmentWindowEnd: null,
       trouble: "",
       oldSystemType: "",
       newSystemType: "",
@@ -439,6 +455,9 @@ export default function ProjectWorkOrders() {
       assignedUserId: undefined,
       assignedGroupId: undefined,
       scheduledAt: "",
+      serviceDurationMinutes: null,
+      appointmentWindowStart: null,
+      appointmentWindowEnd: null,
       trouble: "",
       oldSystemType: "",
       newSystemType: "",
@@ -802,6 +821,9 @@ export default function ProjectWorkOrders() {
         assignedUserId: (editingWorkOrder as any).assignedUserId || undefined,
         assignedGroupId: (editingWorkOrder as any).assignedGroupId || undefined,
         scheduledAt: (editingWorkOrder as any).scheduledAt || "",
+        serviceDurationMinutes: (editingWorkOrder as any).serviceDurationMinutes ?? null,
+        appointmentWindowStart: (editingWorkOrder as any).appointmentWindowStart || null,
+        appointmentWindowEnd: (editingWorkOrder as any).appointmentWindowEnd || null,
         trouble: (editingWorkOrder as any).trouble || "",
         oldSystemType: (editingWorkOrder as any).oldSystemType || "",
         newSystemType: (editingWorkOrder as any).newSystemType || "",
@@ -985,7 +1007,14 @@ export default function ProjectWorkOrders() {
     },
     onSuccess: async (workOrder: ProjectWorkOrder) => {
       editSignaturePadRef.current?.clear();
-      setEditingWorkOrder(workOrder);
+      const refreshed = workOrder as ProjectWorkOrder & Record<string, unknown>;
+      const previous = editingWorkOrder as (ProjectWorkOrder & Record<string, unknown>) | null;
+      setEditingWorkOrder({
+        ...workOrder,
+        serviceDurationMinutes: "serviceDurationMinutes" in refreshed ? refreshed.serviceDurationMinutes as number | null : previous?.serviceDurationMinutes as number | null ?? null,
+        appointmentWindowStart: "appointmentWindowStart" in refreshed ? refreshed.appointmentWindowStart as string | null : previous?.appointmentWindowStart as string | null ?? null,
+        appointmentWindowEnd: "appointmentWindowEnd" in refreshed ? refreshed.appointmentWindowEnd as string | null : previous?.appointmentWindowEnd as string | null ?? null,
+      } as ProjectWorkOrder);
       setEditingWorkOrderVersion(version => version + 1);
       setResetDialogOpen(false);
       await Promise.all([
@@ -2636,6 +2665,7 @@ export default function ProjectWorkOrders() {
           isSubmitting={updateMutation.isPending || resetMutation.isPending}
           projectId={projectId!}
           projectName={project?.name}
+          projectTimezone={effectiveTimezone}
           cameFromSearch={cameFromSearch}
           serviceTypes={serviceTypes}
           systemTypes={systemTypes}
@@ -3279,6 +3309,7 @@ export default function ProjectWorkOrders() {
                   <p className="mb-3 text-sm text-muted-foreground">
                     New work orders start as <span className="font-medium text-foreground">{createStatusLabel}</span>. A sub-status adds detail without changing its workflow.
                   </p>
+                  <WorkOrderPlanningFields form={form} timezone={effectiveTimezone} disabled={!hasPermission("workOrders.edit")} />
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField
                       control={form.control}
@@ -3443,6 +3474,8 @@ export default function ProjectWorkOrders() {
         projectId={projectId}
         projectName={project.name}
         timezone={effectiveTimezone}
+        defaultServiceMinutes={(project as any).defaultServiceMinutes ?? null}
+        defaultAppointmentToleranceMinutes={(project as any).defaultAppointmentToleranceMinutes ?? null}
         workOrders={filteredAndSortedWorkOrders}
         selectedIds={Array.from(selectedWorkOrderIds)}
         onOpenWorkOrder={(workOrder) => {

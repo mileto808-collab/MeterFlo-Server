@@ -1,5 +1,23 @@
 # MeterFlo Mobile App Synchronization Guide
 
+## Visit scheduling contract
+
+Scheduling contract version 1 adds nullable `serviceDurationMinutes` (1–480 whole
+minutes), `appointmentWindowStart` and `appointmentWindowEnd` to work orders.
+Download retains snake_case columns and includes camelCase aliases; metadata
+contains `visitSchedulingContractVersion`, effective `timezone`, and nullable
+`defaultServiceMinutes` / `defaultAppointmentToleranceMinutes`. New projects
+default to 30/60 minutes; null legacy defaults retain the 45/10 planner fallback.
+
+Upload accepts camelCase or snake_case names, rejects conflicting aliases and
+requires Edit Work Orders for scheduling edits. Windows must be paired ISO
+timestamps with `Z` or an explicit offset and end >= start. Clear both with null;
+omit fields that the client does not edit. Existing `scheduledAt` remains a point
+appointment and is never inferred to be a window. Explicit windows constrain
+service start with no extra tolerance; planned ETAs are never scheduling writes.
+Native clients must preserve queued edits and surface validation/permission
+failures using their existing sync recovery. See `WORK_ORDER_ROUTING.md`.
+
 ## Inventory-enabled projects
 
 Inventory-enabled projects require `inventory.view` for sync download, in addition to normal work-order/project access. A missing grant returns 403 rather than exposing catalog costs or allocations. Handle this as a permission/configuration problem; do not erase queued work or substitute an inventory-disabled project.

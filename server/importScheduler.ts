@@ -5,6 +5,7 @@ import { auditedOperation } from "./auditService";
 import { ExternalDatabaseService } from "./externalDbService";
 import { getProjectWorkOrderStorage } from "./projectDb";
 import { insertProjectWorkOrderSchema } from "@shared/schema";
+import { importedVisitScheduling } from "../shared/visitScheduling";
 
 class ImportScheduler {
   private scheduledTasks: Map<number, cron.ScheduledTask> = new Map();
@@ -255,6 +256,7 @@ class ImportScheduler {
             }
 
             mappedData.status = mappedData.status || "Open";
+            Object.assign(mappedData, importedVisitScheduling(mappedData));
             mappedData.createdBy = "file_import";
 
             const existingWo = await workOrderStorage.getWorkOrderByCustomerWoId(mappedData.customerWoId);

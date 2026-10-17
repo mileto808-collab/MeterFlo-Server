@@ -15,9 +15,11 @@ Priority **0** is valid and highest; blank is unrated and ranks last. Display so
 order is not routing priority. This is not a guarantee of a globally optimal
 route or of meeting every appointment.
 
-Scheduled time is an appointment start, not an appointment window. Early arrivals
-wait until that time. Departure uses the project's time zone; setup explicitly
-asks for uniform service minutes and lateness tolerance. Impossible appointments,
+Scheduled time remains an appointment start, not an appointment window. An optional,
+separately saved explicit window constrains when service **starts**, not when it
+finishes. Early arrivals wait. Departure and scheduling controls use the project's
+time zone (or the instance default when inherited). Setup asks for default service
+minutes and point-appointment lateness tolerance. Impossible appointments,
 missing times, ambiguous addresses and inaccessible road destinations are
 reported rather than silently changed. Travel estimates are **not live traffic**:
 Google uses traffic-unaware road times; Geoapify uses approximated traffic.
@@ -26,6 +28,67 @@ Route planning does not modify statuses, schedules, assignments, inventory or
 completion. A next-stop control advances route progress only, not work completion.
 Work-order changes, priority changes and configuration changes mark the route
 stale. Replanning is explicit and never silently reorders the technician's route.
+
+## Visit durations and explicit appointment windows
+
+**Project settings → Route planning defaults** sets the default visit duration
+(1–480 whole minutes) and point-appointment tolerance (0–240 whole minutes).
+Edit Projects permission is required. New projects start at **30 minutes / 60
+minutes**. Existing projects keep null defaults and the old **45 / 10** planner
+fallback until explicitly configured. Blank project defaults restore that legacy
+fallback; they do not rewrite work orders.
+
+Users with **Edit Work Orders** can set an optional service duration and a paired
+window in **Scheduling & Assignment** on desktop or phone, or during work-order
+creation (which also requires Create Work Orders). Clear both endpoints to remove
+a window. The end must be at or after the start; zero-width windows are valid.
+The project-local time controls reject nonexistent or repeated DST wall-clock
+times rather than choosing an offset silently. Integrations may provide repeated
+times using explicit ISO offsets to distinguish them.
+
+Duration precedence is: work-order override, explicit route-setup assumption,
+project default, legacy fallback. A route-setup value equal to the effective
+project default is labeled with that default's provenance. Each stop shows its
+effective service minutes/source, waiting time, window or point appointment,
+and estimated lateness. Windows have **no extra tolerance**. A separately saved
+scheduled timestamp is retained even when the explicit window governs planning.
+The optimizer compares explicit-window conflicts first, then point-appointment
+conflicts, then sub-status urgency (including priority 0), then real directional
+road travel. Impossible windows remain visible rather than being dropped.
+
+Business facts are relational: nullable integer defaults on `public.projects`,
+and nullable `service_duration_minutes` plus `appointment_window_start` /
+`appointment_window_end` (`timestamptz`) on each project's work-order table.
+Database range/pair/order constraints protect non-browser writers too. There is
+one duration/window per work order, so extra one-to-one tables are unnecessary;
+future multiple visits would warrant a separate related visit entity. Startup
+and per-project migration are idempotent on hosted and standalone PostgreSQL.
+The application writes new-project defaults explicitly; the nullable SQL columns
+have no defaults, so schema-tool-first upgrades cannot backfill legacy projects.
+The optimizer remains provider-independent and never persists calculated ETAs
+as appointments.
+
+Scheduling/default changes invalidate route fingerprints, including same-tab
+recovery. Recovered old-format results without scheduling provenance are rejected.
+Project JSON backups include these work-order fields and `schedulingDefaults`;
+full JSON and SQL backups include the relational columns. Invalid scheduling
+backups fail before acquiring a connection or deleting business rows. Legacy
+project backups leave current defaults unchanged and restore omitted work-order
+overrides as null; old full-system project records restore null defaults, not
+new-project defaults. Audit evidence records old/new typed values.
+
+CSV, SQL/FTP and customer API imports accept `serviceDurationMinutes`,
+`appointmentWindowStart`, and `appointmentWindowEnd`. Imports allow numeric text
+for duration, but windows must be paired ISO timestamps with `Z` or an explicit
+offset; bare local times are rejected. Omitted import fields preserve saved
+values during updates. Existing import protection and permission rules remain.
+Outbound customer delivery adds the three fields without changing schemaVersion
+or legacy keys. Mobile download retains snake_case fields and adds canonical
+camelCase scheduling fields and `meta.visitSchedulingContractVersion: 1`,
+effective timezone and nullable project defaults. Mobile upload accepts either
+naming form, rejects conflicting aliases, applies the same validation, and
+requires Edit Work Orders for scheduling changes. Native apps must omit fields
+they do not edit; the server never invents windows from old timestamps.
 
 ## Site defaults and project overrides
 
@@ -174,8 +237,11 @@ addresses or technician origins. Free quota alone does not resolve that issue.
 ## Verification
 
 - `npx tsx --test tests/work-order-routing.test.ts`
+- `npx tsx --test tests/visit-scheduling.test.ts`
 - Create a disposable fixture with `npx tsx tests/support/inventory-ui-fixture.ts`.
 - `npx tsx --test tests/work-order-routing-api.test.ts`
+- `npx tsx --test tests/visit-scheduling-database.test.ts`
+- `node tests/visit-scheduling-ui.cjs`
 - `node tests/work-order-routing-ui.cjs`
 - `node tests/work-order-routing-security.cjs`
 - Always clean the owned fixture with

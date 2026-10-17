@@ -42,6 +42,9 @@ const fieldLabels: Record<string, string> = {
   oldModuleId: "Old module ID", oldModuleRead: "Old module reading", oldModuleType: "Old module type",
   newModuleType: "New module type",
   status: "Status", notes: "Notes",
+  serviceDurationMinutes: "Service duration (minutes)",
+  appointmentWindowStart: "Appointment window start (ISO with offset)",
+  appointmentWindowEnd: "Appointment window end (ISO with offset)",
 };
 const cleanFieldMapping = (mapping: Record<string, string>) =>
   Object.fromEntries(Object.entries(mapping).filter(([, target]) => target !== "inventoryItems"));

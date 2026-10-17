@@ -78,6 +78,9 @@ type ParsedWorkOrder = {
   newModuleType?: string;
   status?: string;
   scheduledAt?: string;
+  serviceDurationMinutes?: number;
+  appointmentWindowStart?: string;
+  appointmentWindowEnd?: string;
   scheduledBy?: string;
   trouble?: string;
   notes?: string;
@@ -114,6 +117,9 @@ type ColumnMapping = {
   newModuleType: string;
   status: string;
   scheduledAt: string;
+  serviceDurationMinutes: string;
+  appointmentWindowStart: string;
+  appointmentWindowEnd: string;
   scheduledBy: string;
   trouble: string;
   notes: string;
@@ -150,6 +156,9 @@ const defaultColumnMapping: ColumnMapping = {
   newModuleType: "",
   status: "",
   scheduledAt: "",
+  serviceDurationMinutes: "",
+  appointmentWindowStart: "",
+  appointmentWindowEnd: "",
   scheduledBy: "",
   trouble: "",
   notes: "",
@@ -166,6 +175,16 @@ const parseIntOrUndefined = (value: string): number | undefined => {
   const parsed = parseInt(trimmed, 10);
   return isNaN(parsed) ? undefined : parsed;
 };
+
+const parsePlanningDuration = (value: string): number | undefined => {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  if (!/^\d+$/.test(trimmed)) return Number.NaN;
+  const parsed = Number(trimmed);
+  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 480 ? parsed : Number.NaN;
+};
+const hasExplicitOffsetTimestamp = (value: string) =>
+  /(?:Z|[+-]\d{2}:\d{2})$/i.test(value.trim()) && Number.isFinite(Date.parse(value.trim()));
 
 export default function ProjectImport() {
   const { formatDateTime } = useTimezone();
@@ -585,6 +604,9 @@ export default function ProjectImport() {
       { field: "newModuleType", variants: ["new module type", "new_module_type", "newmoduletype", "replacement module type"] },
       { field: "status", variants: ["status", "state", "condition", "wo status"] },
       { field: "scheduledAt", variants: ["scheduled date", "scheduled_date", "scheduleddate", "schedule date", "schedule", "due date", "due_date", "scheduled datetime", "scheduled_datetime", "scheduled at", "scheduled_at", "scheduledat"] },
+      { field: "serviceDurationMinutes", variants: ["service duration", "service_duration_minutes", "servicedurationminutes", "duration minutes", "service minutes"] },
+      { field: "appointmentWindowStart", variants: ["appointment window start", "appointment_window_start", "appointmentwindowstart", "window start"] },
+      { field: "appointmentWindowEnd", variants: ["appointment window end", "appointment_window_end", "appointmentwindowend", "window end"] },
       { field: "scheduledBy", variants: ["scheduled by", "scheduled_by", "scheduledby", "scheduler"] },
       { field: "trouble", variants: ["trouble", "issue", "problem", "trouble code", "trouble_code"] },
       { field: "notes", variants: ["notes", "comments", "remarks", "description"] },
@@ -655,6 +677,9 @@ export default function ProjectImport() {
         newModuleRead: columnMapping.newModuleRead ? parseIntOrUndefined(getValueByHeader(columnMapping.newModuleRead)) : undefined,
         status: getValueByHeader(columnMapping.status) || undefined,
         scheduledAt: getValueByHeader(columnMapping.scheduledAt) || undefined,
+        serviceDurationMinutes: columnMapping.serviceDurationMinutes ? parsePlanningDuration(getValueByHeader(columnMapping.serviceDurationMinutes)) : undefined,
+        appointmentWindowStart: getValueByHeader(columnMapping.appointmentWindowStart) || undefined,
+        appointmentWindowEnd: getValueByHeader(columnMapping.appointmentWindowEnd) || undefined,
         scheduledBy: getValueByHeader(columnMapping.scheduledBy) || undefined,
         trouble: getValueByHeader(columnMapping.trouble) || undefined,
         notes: getValueByHeader(columnMapping.notes) || undefined,
@@ -703,6 +728,7 @@ export default function ProjectImport() {
 
     const dataRows = hasHeader ? rawData.slice(1) : rawData;
     const serviceTypeErrors: string[] = [];
+    const planningErrors: string[] = [];
     
     const workOrders = dataRows.map((row, rowIndex) => {
       const getValueByHeader = (headerName: string): string => {
@@ -714,10 +740,20 @@ export default function ProjectImport() {
       const status = getValueByHeader(columnMapping.status);
       const serviceTypeRaw = getValueByHeader(columnMapping.serviceType);
       const serviceTypeResult = resolveServiceType(serviceTypeRaw);
+      const durationRaw = getValueByHeader(columnMapping.serviceDurationMinutes);
+      const windowStart = getValueByHeader(columnMapping.appointmentWindowStart).trim();
+      const windowEnd = getValueByHeader(columnMapping.appointmentWindowEnd).trim();
+      const duration = columnMapping.serviceDurationMinutes ? parsePlanningDuration(durationRaw) : undefined;
+      const rowNumber = hasHeader ? rowIndex + 2 : rowIndex + 1;
+      if (Number.isNaN(duration)) planningErrors.push(`Row ${rowNumber}: service duration must be a whole number from 1 to 480.`);
+      if (windowStart && !hasExplicitOffsetTimestamp(windowStart)) planningErrors.push(`Row ${rowNumber}: appointment window start must include Z or an explicit ±HH:MM offset.`);
+      if (windowEnd && !hasExplicitOffsetTimestamp(windowEnd)) planningErrors.push(`Row ${rowNumber}: appointment window end must include Z or an explicit ±HH:MM offset.`);
+      if (!!windowStart !== !!windowEnd) planningErrors.push(`Row ${rowNumber}: both appointment window endpoints are required.`);
+      if (windowStart && windowEnd && hasExplicitOffsetTimestamp(windowStart) && hasExplicitOffsetTimestamp(windowEnd) && Date.parse(windowEnd) < Date.parse(windowStart)) planningErrors.push(`Row ${rowNumber}: appointment window end must not precede its start.`);
       
       // Collect service type validation errors with row context
       if (serviceTypeResult.error) {
-        const rowNum = hasHeader ? rowIndex + 2 : rowIndex + 1; // +2 for header row, +1 for 1-based indexing
+        const rowNum = rowNumber;
         serviceTypeErrors.push(`Row ${rowNum}: ${serviceTypeResult.error}`);
       }
 
@@ -749,6 +785,9 @@ export default function ProjectImport() {
         newModuleRead: columnMapping.newModuleRead ? parseIntOrUndefined(getValueByHeader(columnMapping.newModuleRead)) : undefined,
         status: status || undefined,
         scheduledAt: getValueByHeader(columnMapping.scheduledAt) || undefined,
+        serviceDurationMinutes: duration,
+        appointmentWindowStart: windowStart || undefined,
+        appointmentWindowEnd: windowEnd || undefined,
         scheduledBy: getValueByHeader(columnMapping.scheduledBy) || undefined,
         trouble: getValueByHeader(columnMapping.trouble) || undefined,
         notes: getValueByHeader(columnMapping.notes) || undefined,
@@ -768,6 +807,11 @@ export default function ProjectImport() {
         ? `${serviceTypeErrors.slice(0, 3).join("; ")}... and ${serviceTypeErrors.length - 3} more errors`
         : serviceTypeErrors.join("; ");
       toast({ title: "Invalid service types in import", description: errorSummary, variant: "destructive" });
+      return;
+    }
+    if (planningErrors.length > 0) {
+      const summary = planningErrors.length > 3 ? `${planningErrors.slice(0, 3).join("; ")}... and ${planningErrors.length - 3} more errors` : planningErrors.join("; ");
+      toast({ title: "Invalid appointment planning values", description: summary, variant: "destructive" });
       return;
     }
 
@@ -1005,7 +1049,7 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
               <CardHeader>
                 <CardTitle>Column Mapping</CardTitle>
                 <CardDescription>
-                  Map your file columns to work order fields. Fields marked with * are required.
+                  Map your file columns to work order fields. Fields marked with * are required. Planning duration is a whole number (1–480); window timestamps must include Z or an explicit offset such as -07:00.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1035,6 +1079,9 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
                   <MappingSelect field="newModuleType" label="New Module Type" />
                   <MappingSelect field="status" label="Status" />
                   <MappingSelect field="scheduledAt" label="Scheduled At" />
+                  <MappingSelect field="serviceDurationMinutes" label="Service Duration (minutes)" />
+                  <MappingSelect field="appointmentWindowStart" label="Appointment Window Start" />
+                  <MappingSelect field="appointmentWindowEnd" label="Appointment Window End" />
                   <MappingSelect field="scheduledBy" label="Scheduled By" />
                   <MappingSelect field="trouble" label="Trouble" />
                   <MappingSelect field="notes" label="Notes" />
@@ -1072,6 +1119,9 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
                         <TableHead>New System Type</TableHead>
                         <TableHead>Old Module Type</TableHead>
                         <TableHead>New Module Type</TableHead>
+                        <TableHead>Duration</TableHead>
+                        <TableHead>Window Start</TableHead>
+                        <TableHead>Window End</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1088,6 +1138,9 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
                           <TableCell>{wo.newSystemType || "-"}</TableCell>
                           <TableCell>{wo.oldModuleType || "-"}</TableCell>
                           <TableCell>{wo.newModuleType || "-"}</TableCell>
+                          <TableCell>{wo.serviceDurationMinutes ?? "-"}</TableCell>
+                          <TableCell>{wo.appointmentWindowStart || "-"}</TableCell>
+                          <TableCell>{wo.appointmentWindowEnd || "-"}</TableCell>
                         </TableRow>
                       ))}
                     </TableBody>

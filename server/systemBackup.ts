@@ -110,6 +110,7 @@ export interface FullSystemBackup {
     inventory?: InventoryBackup;
     subStatuses?: unknown[];
     routingConfiguration?: unknown;
+    schedulingDefaults?: unknown;
   }>;
 }
 
@@ -144,6 +145,7 @@ export async function createFullSystemBackup(): Promise<{ backup: FullSystemBack
             inventory: backup.inventory,
             subStatuses: backup.subStatuses,
             routingConfiguration: backup.routingConfiguration,
+            schedulingDefaults: backup.schedulingDefaults,
           });
         } catch (error) {
           console.warn(`Failed to backup project database ${project.databaseName}:`, error);
@@ -471,6 +473,11 @@ export async function restoreFullSystemData(
       const jsonColumns = new Set(columnTypes.filter(column => ["json", "jsonb"].includes(column.data_type)).map(column => column.column_name));
       for (const row of rows) {
         try {
+          if (tableName === "projects") {
+            // An old backup describes a legacy project, not a newly configured one.
+            if (!Object.hasOwn(row, "default_service_minutes")) row.default_service_minutes = null;
+            if (!Object.hasOwn(row, "default_appointment_tolerance_minutes")) row.default_appointment_tolerance_minutes = null;
+          }
           const columns = Object.keys(row);
           const values = columns.map(c => jsonColumns.has(c) && row[c] != null
             ? JSON.stringify(row[c]) : row[c]);
@@ -533,7 +540,7 @@ export async function restoreFullSystemData(
         const result = await restoreProjectDatabaseInTransaction(
           client,
           projectBackup.schemaName,
-          { workOrders: projectBackup.workOrders, inventory: projectBackup.inventory, subStatuses: projectBackup.subStatuses, routingConfiguration: projectBackup.routingConfiguration },
+          { workOrders: projectBackup.workOrders, inventory: projectBackup.inventory, subStatuses: projectBackup.subStatuses, routingConfiguration: projectBackup.routingConfiguration, schedulingDefaults: projectBackup.schedulingDefaults },
           { clearExisting: options.clearExisting }
         );
         if (result.errors.length > 0) {

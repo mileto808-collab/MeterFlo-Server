@@ -22,12 +22,33 @@ type Props = {
   projectId: number;
   projectName: string;
   timezone: string;
+  defaultServiceMinutes?: number | null;
+  defaultAppointmentToleranceMinutes?: number | null;
   workOrders: ProjectWorkOrder[];
   selectedIds: number[];
   onOpenWorkOrder: (workOrder: ProjectWorkOrder) => void;
   onBack: () => void;
 };
 type MapConfig = { provider: "google" | "geoapify"; browserKey: string };
+type PlanningStop = RoutingResult["stops"][number] & {
+  serviceDurationMinutes: number;
+  durationSource: "work-order" | "project" | "route" | "legacy";
+  appointmentWindowStart: string | null;
+  appointmentWindowEnd: string | null;
+  appointmentSource: "window" | "scheduled" | "none";
+  waitingMinutes: number;
+};
+type PlanningResult = Omit<RoutingResult, "stops"> & { stops: PlanningStop[] };
+const hasPlanningMetadata = (route: RoutingResult): route is PlanningResult =>
+  Array.isArray(route.stops) && route.stops.every(stop => {
+    const value = stop as PlanningStop;
+    return Number.isInteger(value.serviceDurationMinutes) && value.serviceDurationMinutes >= 1 && value.serviceDurationMinutes <= 480 &&
+      ["work-order", "project", "route", "legacy"].includes(value.durationSource) &&
+      ["window", "scheduled", "none"].includes(value.appointmentSource) &&
+      Number.isFinite(value.waitingMinutes) && value.waitingMinutes >= 0 &&
+      (value.appointmentWindowStart === null || typeof value.appointmentWindowStart === "string") &&
+      (value.appointmentWindowEnd === null || typeof value.appointmentWindowEnd === "string");
+  });
 
 const errorMessage = async (response: Response) => {
   try { const payload = await response.json(); return payload.message || payload.error || "Route request failed"; }
@@ -46,22 +67,7 @@ const localInputForTimezone = (date: Date, timezone: string) => {
   const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
   return `${values.year}-${values.month}-${values.day}T${values.hour}:${values.minute}`;
 };
-const isoFromZonedInput = (value: string, timezone: string) => {
-  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
-  if (!match) throw new Error("Choose a valid departure time.");
-  const [, year, month, day, hour, minute] = match.map(Number) as unknown as [string, number, number, number, number, number];
-  const wallTime = Date.UTC(year, month - 1, day, hour, minute);
-  const offsetAt = (instant: number) => {
-    const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }).formatToParts(new Date(instant));
-    const p = Object.fromEntries(parts.map(part => [part.type, Number(part.value)]));
-    return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second) - instant;
-  };
-  let instant = wallTime - offsetAt(wallTime);
-  instant = wallTime - offsetAt(instant);
-  if (localInputForTimezone(new Date(instant), timezone) !== value)
-    throw new Error("That local departure time does not exist due to a time-zone clock change. Choose another time.");
-  return new Date(instant).toISOString();
-};
+import { isoFromZonedInput } from "@/lib/project-scheduling-time";
 
 function MapView({ projectId, result, config, retryKey, configError }: { projectId: number; result: RoutingResult; config: MapConfig | undefined; retryKey: number; configError?: string }) {
   const host = useRef<HTMLDivElement>(null);
@@ -130,7 +136,7 @@ function MapView({ projectId, result, config, retryKey, configError }: { project
   return <div className="relative"><style>{`.meterflo-route-marker{background:transparent;border:0}.meterflo-route-marker span{display:flex;width:30px;height:30px;align-items:center;justify-content:center;border:2px solid #f7f0e7;border-radius:9999px;background:#b54b2c;color:#fff;font:700 13px/1 system-ui,sans-serif;box-shadow:0 2px 8px rgba(25,38,42,.28)}`}</style><div ref={host} className="h-[360px] w-full rounded-xl border bg-muted/30 sm:h-[480px]" data-testid="routing-map" />{failure && <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 rounded-xl bg-background/95 p-6 text-center"><AlertTriangle className="h-6 w-6 text-amber-700" /><p className="max-w-md text-sm">{failure}</p><p className="text-xs text-muted-foreground">The route geometry is still available as a list; no map is being represented as successfully loaded.</p></div>}</div>;
 }
 
-export function RoutePlanner({ projectId, projectName, timezone, workOrders, selectedIds, onOpenWorkOrder, onBack }: Props) {
+export function RoutePlanner({ projectId, projectName, timezone, defaultServiceMinutes, defaultAppointmentToleranceMinutes, workOrders, selectedIds, onOpenWorkOrder, onBack }: Props) {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const { toast } = useToast();
@@ -144,13 +150,13 @@ export function RoutePlanner({ projectId, projectName, timezone, workOrders, sel
   const [mode, setMode] = useState<DisplayMode>("both");
   const [scope, setScope] = useState<"filtered" | "selected">("filtered");
   const [departure, setDeparture] = useState(() => localInputForTimezone(new Date(Date.now() + 15 * 60000), timezone));
-  const [serviceMinutes, setServiceMinutes] = useState("45");
-  const [toleranceMinutes, setToleranceMinutes] = useState("10");
+  const [serviceMinutes, setServiceMinutes] = useState(String(defaultServiceMinutes ?? 45));
+  const [toleranceMinutes, setToleranceMinutes] = useState(String(defaultAppointmentToleranceMinutes ?? 10));
   const [originMode, setOriginMode] = useState<"device" | "manual">("device");
   const [manualAddress, setManualAddress] = useState("");
   const [locationMessage, setLocationMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<RoutingResult | null>(null);
+  const [result, setResult] = useState<PlanningResult | null>(null);
   const [staleMessage, setStaleMessage] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const [mapRetry, setMapRetry] = useState(0);
@@ -250,7 +256,7 @@ export function RoutePlanner({ projectId, projectName, timezone, workOrders, sel
         const stored = sessionStorage.getItem(activeKey);
         if (!stored) { setRestoreChecked(true); return; }
         const parsed = JSON.parse(stored) as { expiresAt: string; result: RoutingResult; mode: DisplayMode; activeIndex: number };
-        if (new Date(parsed.expiresAt).getTime() <= Date.now() || routeExpired(parsed.result) || parsed.result.projectId !== projectId) { sessionStorage.removeItem(activeKey); setRestoreChecked(true); return; }
+        if (new Date(parsed.expiresAt).getTime() <= Date.now() || routeExpired(parsed.result) || parsed.result.projectId !== projectId || !hasPlanningMetadata(parsed.result)) { sessionStorage.removeItem(activeKey); setValidationMessage("Saved route used an older planning format and was cleared. Re-plan to see current appointment estimates."); setRestoreChecked(true); return; }
         const response = await fetch(`/api/projects/${projectId}/routing/validate`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: routeRequestIds(parsed.result), fingerprint: parsed.result.fingerprint, configurationRevision: parsed.result.configurationRevision }) });
         if (!response.ok) {
           sessionStorage.removeItem(activeKey);
@@ -302,8 +308,8 @@ export function RoutePlanner({ projectId, projectName, timezone, workOrders, sel
     if (candidates.length > readiness.effective.maxStops) { setValidationMessage(`This scope has ${candidates.length} scheduled orders; the configured limit is ${readiness.effective.maxStops}. Narrow the filters or configure a higher limit.`); return; }
     const serviceValue = Number(serviceMinutes);
     const toleranceValue = Number(toleranceMinutes);
-    if (!Number.isInteger(serviceValue) || serviceValue < 1 || serviceValue > 120) { setValidationMessage("On-site service must be a whole number from 1 to 120 minutes."); return; }
-    if (!Number.isInteger(toleranceValue) || toleranceValue < 0 || toleranceValue > 60) { setValidationMessage("Appointment tolerance must be a whole number from 0 to 60 minutes."); return; }
+    if (!Number.isInteger(serviceValue) || serviceValue < 1 || serviceValue > 480) { setValidationMessage("On-site service must be a whole number from 1 to 480 minutes."); return; }
+    if (!Number.isInteger(toleranceValue) || toleranceValue < 0 || toleranceValue > 240) { setValidationMessage("Appointment tolerance must be a whole number from 0 to 240 minutes."); return; }
     setBusy(true); setValidationMessage(""); setLocationMessage("");
     try {
       let origin: OriginChoice;
@@ -317,6 +323,7 @@ export function RoutePlanner({ projectId, projectName, timezone, workOrders, sel
       const response = await fetch(`/api/projects/${projectId}/routing/plan`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: candidates.map(order => order.id), origin, departureAt: isoFromZonedInput(departure, timezone), serviceMinutes: Number(serviceMinutes), toleranceMinutes: Number(toleranceMinutes) }) });
       if (!response.ok) throw new Error(await errorMessage(response));
       const planned = await response.json() as RoutingResult;
+      if (!hasPlanningMetadata(planned)) throw new Error("The route response is missing current appointment-planning details. No route was activated.");
       if (!planned.stops?.length && !planned.excluded?.length) throw new Error("Provider returned no stops or exclusion details. No route was activated.");
       if (planned.stops.length > 0 && !planned.geometry?.length) throw new Error("Provider returned stops without road geometry. No route was activated.");
       const providerExpiry = Date.parse(planned.expiresAt);
@@ -370,14 +377,14 @@ export function RoutePlanner({ projectId, projectName, timezone, workOrders, sel
       {result && <>
         {result.stops.length === 0 && <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">No navigable route was produced. Review the exclusions below and correct locations or scheduling before trying again.</div>}
       {staleMessage && <div role="alert" className="flex flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950 sm:flex-row sm:items-center sm:justify-between" data-testid="route-stale-banner"><div className="flex gap-2 text-sm"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>{staleMessage}</span></div><Button size="sm" onClick={startReplan}>Re-plan route</Button></div>}
-        <div className="grid gap-3 sm:grid-cols-3"><Card><CardContent className="p-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Ordered stops</p><p className="mt-1 text-2xl font-semibold">{result.stops.length}</p><p className="text-xs text-muted-foreground">{result.excluded.length} excluded for review</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Road travel</p><p className="mt-1 text-2xl font-semibold">{Math.round(result.totalTravelMeters / 1609.34 * 10) / 10} mi</p><p className="text-xs text-muted-foreground">About {Math.round(result.totalTravelSeconds / 60)} min · provider estimate, no live traffic claim</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Planning assumptions</p><p className="mt-1 font-medium">{result.serviceMinutes} min on site · {result.toleranceMinutes} min appointment tolerance</p><p className="text-xs text-muted-foreground">Scheduled timestamps treated in {timezone}</p></CardContent></Card></div>
+        <div className="grid gap-3 sm:grid-cols-3"><Card><CardContent className="p-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Ordered stops</p><p className="mt-1 text-2xl font-semibold">{result.stops.length}</p><p className="text-xs text-muted-foreground">{result.excluded.length} excluded for review</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Road travel</p><p className="mt-1 text-2xl font-semibold">{Math.round(result.totalTravelMeters / 1609.34 * 10) / 10} mi</p><p className="text-xs text-muted-foreground">About {Math.round(result.totalTravelSeconds / 60)} min · provider estimate, no live traffic claim</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Planning assumptions</p><p className="mt-1 font-medium">{result.serviceMinutes} min route default · {result.toleranceMinutes} min tolerance</p><p className="text-xs text-muted-foreground">Project timezone: {timezone}</p></CardContent></Card></div>
         {result.warnings.length > 0 && <div className="space-y-1 rounded-xl border border-amber-200 bg-amber-50/60 p-3 text-sm">{result.warnings.map((warning, index) => <p key={index} className="flex gap-2"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-800" />{warning}</p>)}</div>}
         <div className="flex flex-wrap items-center justify-between gap-3"><div className="inline-flex rounded-lg border bg-muted/40 p-1" role="group" aria-label="Route display"><Button size="sm" variant={mode === "list" ? "default" : "ghost"} onClick={() => setMode("list")} data-testid="route-mode-list"><Route className="mr-1.5 h-4 w-4" />List</Button><Button size="sm" variant={mode === "map" ? "default" : "ghost"} onClick={() => setMode("map")} data-testid="route-mode-map"><Map className="mr-1.5 h-4 w-4" />Map</Button><Button size="sm" variant={mode === "both" ? "default" : "ghost"} onClick={() => setMode("both")} data-testid="route-mode-both">Both</Button></div><Button variant="ghost" size="sm" onClick={clearRoute}>End route</Button></div>
         <div className={`grid gap-5 ${mode === "both" ? "lg:grid-cols-[minmax(300px,0.85fr)_minmax(0,1.15fr)]" : "grid-cols-1"}`}>
           {(mode === "list" || mode === "both") && <section className="space-y-3" aria-label="Ordered route stops"><h2 className="font-semibold">Sequence · {result.stops.length} stops</h2>{result.stops.length === 0 && <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">No stops could be placed on this route.</p>}{result.stops.map((stop, index) => {
             const order = workOrders.find(item => item.id === stop.id);
             return <button key={stop.id} type="button" onClick={() => { setActiveIndex(index); if (order) onOpenWorkOrder(order); }} className={`w-full rounded-xl border p-4 text-left transition-colors ${index === activeIndex ? "border-primary bg-primary/5" : "bg-card hover:bg-muted/40"}`} data-testid={`route-stop-${stop.id}`}>
-              <div className="flex items-start gap-3"><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold ${index === activeIndex ? "bg-primary text-primary-foreground" : "bg-muted"}`}>{index + 1}</span><span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2 font-semibold">{stop.label}{stop.priority !== null && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] text-amber-900">Priority {stop.priority}</span>}<ChevronRight className="h-4 w-4 text-muted-foreground" /></span><span className="mt-1 block text-sm text-muted-foreground">{stop.address}</span><span className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs"><span>Scheduled {stop.scheduledAt ? new Intl.DateTimeFormat(undefined, { timeZone: timezone, hour: "numeric", minute: "2-digit" }).format(new Date(stop.scheduledAt)) : "Unscheduled"}</span><span>Arrive {new Intl.DateTimeFormat(undefined, { timeZone: timezone, hour: "numeric", minute: "2-digit" }).format(new Date(stop.arrivalAt))}</span>{stop.subStatus && <span>{stop.subStatus}</span>}</span>{stop.lateMinutes > 0 && <span className="mt-2 block text-xs font-medium text-amber-800">Estimated {stop.lateMinutes} min late</span>}</span></div>
+              <div className="flex items-start gap-3"><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold ${index === activeIndex ? "bg-primary text-primary-foreground" : "bg-muted"}`}>{index + 1}</span><span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2 font-semibold">{stop.label}{stop.priority !== null && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] text-amber-900">Priority {stop.priority}</span>}<ChevronRight className="h-4 w-4 text-muted-foreground" /></span><span className="mt-1 block text-sm text-muted-foreground">{stop.address}</span><span className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs"><span>Scheduled {stop.scheduledAt ? new Intl.DateTimeFormat(undefined, { timeZone: timezone, hour: "numeric", minute: "2-digit" }).format(new Date(stop.scheduledAt)) : "Unscheduled"}</span><span>Arrive {new Intl.DateTimeFormat(undefined, { timeZone: timezone, hour: "numeric", minute: "2-digit" }).format(new Date(stop.arrivalAt))}</span><span>Service {stop.serviceDurationMinutes} min · {stop.durationSource}</span><span>Waiting {stop.waitingMinutes} min</span><span>Appointment source: {stop.appointmentSource}</span>{stop.subStatus && <span>{stop.subStatus}</span>}</span>{stop.appointmentSource === "window" && <span className="mt-2 block text-xs">Service-start window: {stop.appointmentWindowStart ? new Intl.DateTimeFormat(undefined, { timeZone: timezone, dateStyle: "short", timeStyle: "short" }).format(new Date(stop.appointmentWindowStart)) : "—"} – {stop.appointmentWindowEnd ? new Intl.DateTimeFormat(undefined, { timeZone: timezone, dateStyle: "short", timeStyle: "short" }).format(new Date(stop.appointmentWindowEnd)) : "—"} ({timezone})</span>}<span className={`mt-2 block text-xs font-medium ${stop.lateMinutes > 0 ? "text-amber-800" : "text-muted-foreground"}`}>{stop.lateMinutes > 0 ? `Estimated ${stop.lateMinutes} min late` : "Estimated on time"}</span></span></div>
             </button>;
           })}</section>}
           {(mode === "map" || mode === "both") && <section className="min-w-0 space-y-3"><h2 className="font-semibold">Road route <span className="font-normal text-muted-foreground">· {result.provider === "geoapify" ? "Geoapify" : "Google Maps"}</span></h2>{result.stops.length ? <MapView projectId={projectId} result={result} config={mapConfig} retryKey={mapRetry} configError={mapConfigError} /> : <div className="flex min-h-64 items-center justify-center rounded-xl border border-dashed bg-muted/20 p-6 text-center text-sm text-muted-foreground">No route geometry is available because no stops were resolved.</div>}{mapConfig && result.stops.length > 0 && <Button variant="outline" size="sm" onClick={() => setMapRetry(value => value + 1)}>Reload map</Button>}</section>}
@@ -389,7 +396,7 @@ export function RoutePlanner({ projectId, projectName, timezone, workOrders, sel
         {readiness && <div className="rounded-lg border bg-muted/30 p-3 text-sm"><div className="flex items-center justify-between gap-3"><span className="font-medium">{readiness.ready ? "Provider ready" : readiness.message}</span><Button size="sm" variant="ghost" onClick={() => setSettingsOpen(true)}><Settings2 className="mr-1 h-4 w-4" />Settings</Button></div><p className="mt-1 text-xs text-muted-foreground">{readiness.effective.provider === "geoapify" ? "Geoapify" : "Google Maps"} · {readiness.effective.source === "site" ? "site default" : "project-specific"} · maximum {readiness.effective.maxStops}</p></div>}
         <div className="space-y-4 py-1">
           <div className="space-y-2"><Label>Work-order scope</Label><RadioGroup value={scope} onValueChange={value => setScope(value as "filtered" | "selected")} className="grid gap-2"><label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3"><RadioGroupItem value="filtered" className="mt-0.5" /><span><strong className="text-sm">Scheduled orders in current filters</strong><span className="block text-xs text-muted-foreground">{workOrders.filter(order => order.status?.toLowerCase() === "scheduled").length} candidates across all grid pages · {nonScheduled} non-scheduled excluded</span></span></label><label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 ${!selectedIds.length ? "opacity-50" : ""}`}><RadioGroupItem value="selected" disabled={!selectedIds.length} className="mt-0.5" /><span><strong className="text-sm">Selected orders</strong><span className="block text-xs text-muted-foreground">{selectedIds.length} selected · only Scheduled orders will be considered</span></span></label></RadioGroup></div>
-          <div className="grid gap-3 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="route-departure">Departure time ({timezone})</Label><Input id="route-departure" type="datetime-local" value={departure} onChange={event => setDeparture(event.target.value)} data-testid="route-departure" /></div><div className="space-y-2"><Label htmlFor="route-service-minutes">On-site service (minutes)</Label><Input id="route-service-minutes" type="number" min="1" max="120" value={serviceMinutes} onChange={event => setServiceMinutes(event.target.value)} data-testid="route-service-minutes" /><p className="text-xs text-muted-foreground">Uniform estimate for every stop; not an appointment duration.</p></div><div className="space-y-2 sm:col-span-2"><Label htmlFor="route-tolerance">Appointment tolerance (minutes)</Label><Input id="route-tolerance" type="number" min="0" max="60" value={toleranceMinutes} onChange={event => setToleranceMinutes(event.target.value)} data-testid="route-tolerance" /><p className="text-xs text-muted-foreground">Planning assumption only. Scheduled timestamps are protected, not silently changed.</p></div></div>
+          <div className="grid gap-3 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="route-departure">Departure time ({timezone})</Label><Input id="route-departure" type="datetime-local" value={departure} onChange={event => setDeparture(event.target.value)} data-testid="route-departure" /></div><div className="space-y-2"><Label htmlFor="route-service-minutes">On-site service (minutes)</Label><Input id="route-service-minutes" type="number" min="1" max="480" value={serviceMinutes} onChange={event => setServiceMinutes(event.target.value)} data-testid="route-service-minutes" /><p className="text-xs text-muted-foreground">Route-wide default; work-order and project estimates can override it.</p></div><div className="space-y-2 sm:col-span-2"><Label htmlFor="route-tolerance">Appointment tolerance (minutes)</Label><Input id="route-tolerance" type="number" min="0" max="240" value={toleranceMinutes} onChange={event => setToleranceMinutes(event.target.value)} data-testid="route-tolerance" /><p className="text-xs text-muted-foreground">Planning assumption only. Appointment windows constrain service start and do not modify scheduled appointments.</p></div></div>
           <div className="space-y-2"><Label>Result view</Label><RadioGroup value={mode} onValueChange={value => setMode(value as DisplayMode)} className="grid grid-cols-3 gap-2">{(["list", "map", "both"] as const).map(value => <label key={value} className="flex cursor-pointer items-center gap-2 rounded-lg border p-3 capitalize"><RadioGroupItem value={value} />{value}</label>)}</RadioGroup></div>
           <div className="space-y-2"><Label>Starting point</Label><RadioGroup value={originMode} onValueChange={value => setOriginMode(value as "device" | "manual")} className="grid grid-cols-2 gap-2"><label className="flex cursor-pointer items-center gap-2 rounded-lg border p-3 text-sm"><RadioGroupItem value="device" />Device location</label><label className="flex cursor-pointer items-center gap-2 rounded-lg border p-3 text-sm"><RadioGroupItem value="manual" />Enter address</label></RadioGroup>{originMode === "manual" && <Input value={manualAddress} onChange={event => setManualAddress(event.target.value)} placeholder="Street, city, region" aria-label="Starting address" data-testid="route-manual-origin" />}{locationMessage && <p className="text-sm text-amber-800" role="status">{locationMessage}</p>}</div>
           {validationMessage && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{validationMessage}</div>}

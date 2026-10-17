@@ -29,6 +29,12 @@ export interface RoutingStop {
   address: string;
   point: RoutePoint;
   scheduledAt: string | null;
+  appointmentWindowStart: string | null;
+  appointmentWindowEnd: string | null;
+  serviceDurationMinutes: number;
+  durationSource: "work-order" | "project" | "route" | "legacy";
+  appointmentSource: "window" | "scheduled" | "none";
+  waitingMinutes: number;
   priority: number | null;
   subStatus: string | null;
   arrivalAt: string;

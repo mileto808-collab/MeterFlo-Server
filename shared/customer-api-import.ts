@@ -7,6 +7,7 @@ export const importFields = {
   oldSystemType: 100, oldModuleId: 100, oldModuleRead: 100, oldModuleType: 100,
   newSystemType: 100, newModuleType: 100,
   status: 50, notes: 10000,
+  serviceDurationMinutes: 10, appointmentWindowStart: 50, appointmentWindowEnd: 50,
   inventoryItems: 100000,
 } as const;
 export type ImportField = keyof typeof importFields;

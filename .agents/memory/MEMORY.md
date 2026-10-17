@@ -38,3 +38,5 @@
 - [Equipment removal policy](equipment-removal-policy.md) — project-approved field choices and required returns are separate from warehouse final-decision authority.
 - [Work-order status hierarchy](work-order-status-hierarchy.md) — shared core statuses/sub-statuses, project-owned custom sub-statuses, and inherited parent rules.
 - [Route scheduling and providers](route-scheduling-priorities.md) — appointment-first priority, hybrid phone navigation, and site/project provider and billing boundaries.
+- [Relational design](relational-design-principle.md) — user requires long-term scalability: relational business data and programmatic calculations where appropriate.
+- [Visit scheduling policy](visit-scheduling-policy.md) — approved 30-minute visits, 60-minute timestamp tolerance, service-start windows, and existing editing authority.

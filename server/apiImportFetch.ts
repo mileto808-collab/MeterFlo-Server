@@ -105,6 +105,7 @@ export function nextImportPage(config: ApiImportSettings, body: unknown, records
   return { url: url.toString(), cursor: String(next) };
 }
 
+import { importedVisitScheduling } from "../shared/visitScheduling";
 export type ImportRules = { services: string[]; statuses: string[]; systems: string[]; modules: string[]; openStatus: string };
 export function mapImportRecord(record: unknown, config: ApiImportSettings, rules: ImportRules) {
   const mapped: Record<string, any> = {};
@@ -146,5 +147,7 @@ export function mapImportRecord(record: unknown, config: ApiImportSettings, rule
     if (parts.length !== 2 || parts.some(part => !part) || !Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) errors.push("oldGps: expected latitude,longitude");
   }
   mapped.status ||= rules.openStatus;
+  try { importedVisitScheduling(mapped); }
+  catch { errors.push("Visit scheduling: use 1–480 service minutes and a valid paired ISO appointment window with explicit offsets."); }
   return { mapped, errors };
 }

@@ -469,6 +469,8 @@ export class DatabaseStorage implements IStorage {
       description: project.description,
       customerEmail: project.customerEmail,
       inventoryEnabled: project.inventoryEnabled ?? false,
+      defaultServiceMinutes: project.defaultServiceMinutes === undefined ? 30 : project.defaultServiceMinutes,
+      defaultAppointmentToleranceMinutes: project.defaultAppointmentToleranceMinutes === undefined ? 60 : project.defaultAppointmentToleranceMinutes,
       systemReadingDecimalPlaces: project.systemReadingDecimalPlaces ?? 3,
       moduleReadingDecimalPlaces: project.moduleReadingDecimalPlaces ?? 3,
     }).returning();
@@ -477,7 +479,11 @@ export class DatabaseStorage implements IStorage {
 
   async createProjectWithFullData(project: Partial<InsertProject> & { name: string }): Promise<Project> {
     project = sanitizeGenericProjectSettings(project);
-    const [newProject] = await db.insert(projects).values(project as InsertProject).returning();
+    const [newProject] = await db.insert(projects).values({
+      ...project,
+      defaultServiceMinutes: project.defaultServiceMinutes === undefined ? 30 : project.defaultServiceMinutes,
+      defaultAppointmentToleranceMinutes: project.defaultAppointmentToleranceMinutes === undefined ? 60 : project.defaultAppointmentToleranceMinutes,
+    } as InsertProject).returning();
     return {...newProject,routingConfiguration:null};
   }
 

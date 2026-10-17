@@ -84,6 +84,8 @@ import type { EquipmentVisibility } from "@shared/project-equipment-scope";
 import { InventoryWorkOrderPanel } from "@/components/inventory/inventory-work-order-panel";
 import type { WorkOrderSubStatus } from "@/components/work-order-sub-statuses/work-order-sub-status-manager";
 import { SubStatusBadge } from "@/components/work-order-sub-statuses/sub-status-badge";
+import { WorkOrderPlanningFields } from "@/components/work-order-routing/work-order-planning-fields";
+import { formatProjectTimestamp } from "@/lib/project-scheduling-time";
 
 interface OperationalHoursConfig {
   enabled: boolean;
@@ -100,6 +102,7 @@ interface WorkOrderDetailProps {
   isSubmitting: boolean;
   projectId: string | number;
   projectName?: string;
+  projectTimezone?: string;
   cameFromSearch?: boolean;
   serviceTypes: Array<{ id: number; code: string; label: string; color?: string | null }>;
   systemTypes: Array<{ id: number; productId: string; productLabel: string }>;
@@ -143,6 +146,7 @@ export function WorkOrderDetail({
   isSubmitting,
   projectId,
   projectName,
+  projectTimezone = "UTC",
   cameFromSearch,
   serviceTypes = [],
   systemTypes = [],
@@ -2463,6 +2467,12 @@ export function WorkOrderDetail({
                         </div>
                       </div>
                     )}
+                    <div className="rounded-md border bg-muted/20 p-3" data-testid="mobile-work-order-planning-summary">
+                      <p className="text-xs text-muted-foreground">Planning duration</p>
+                      <p className="text-sm font-medium">{(workOrder as any).serviceDurationMinutes ?? "Project / route default"}{(workOrder as any).serviceDurationMinutes != null ? " min" : ""}</p>
+                      <p className="mt-2 text-xs text-muted-foreground">Service-start window · {projectTimezone}</p>
+                      <p className="text-sm font-medium">{formatProjectTimestamp((workOrder as any).appointmentWindowStart, projectTimezone)} – {formatProjectTimestamp((workOrder as any).appointmentWindowEnd, projectTimezone)}</p>
+                    </div>
 
                     {/* Trouble Code - only show if has value */}
                     {workOrder.trouble && (
@@ -2494,6 +2504,7 @@ export function WorkOrderDetail({
                         Done
                       </Button>
                     </div>
+                    <WorkOrderPlanningFields form={form} timezone={projectTimezone} disabled={!canEdit} />
 
                     <FormField
                       control={form.control}
@@ -2764,6 +2775,12 @@ export function WorkOrderDetail({
                           </p>
                         </div>
                       )}
+                      <div className="rounded-md border bg-muted/20 p-3 sm:col-span-2" data-testid="desktop-work-order-planning-summary">
+                        <p className="text-xs text-muted-foreground">Planning duration</p>
+                        <p className="text-sm font-medium">{(workOrder as any).serviceDurationMinutes ?? "Project / route default"}{(workOrder as any).serviceDurationMinutes != null ? " min" : ""}</p>
+                        <p className="mt-2 text-xs text-muted-foreground">Service-start window · {projectTimezone}</p>
+                        <p className="text-sm font-medium">{formatProjectTimestamp((workOrder as any).appointmentWindowStart, projectTimezone)} – {formatProjectTimestamp((workOrder as any).appointmentWindowEnd, projectTimezone)}</p>
+                      </div>
                       
                       {/* Trouble Code - show if has value */}
                       {workOrder.trouble && (
@@ -2795,6 +2812,7 @@ export function WorkOrderDetail({
                         Done
                       </Button>
                     </div>
+                    <WorkOrderPlanningFields form={form} timezone={projectTimezone} disabled={!canEdit} />
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField
                     control={form.control}

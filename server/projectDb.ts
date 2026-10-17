@@ -15,6 +15,8 @@ import { inventoryWorkOrderChange, lockInventoryForSchema } from "./inventorySer
 import { exportInventory, restoreInventory, validateInventoryBackup, type InventoryBackup } from "./inventoryBackup";
 import { installProjectSubStatuses, listSubStatuses, restoreSubStatusDefinitions } from "./workOrderSubStatuses";
 import { exportProjectRouting, restoreProjectRouting } from "./routing/configuration";
+import { installVisitScheduling, writeVisitScheduling } from "./visitScheduling";
+import { schedulingDto, validateVisitScheduling, schedulingDefaultsSchema } from "../shared/visitScheduling";
 
 function readingSetClauses(column: string, valueIndex: number, textIndex: number) {
   // Old clients may echo a rounded numeric compatibility field. Preserve the
@@ -64,6 +66,9 @@ export const projectWorkOrders = pgTable("work_orders", {
   oldSystemReading: numeric("old_system_reading"),
   newSystemReading: numeric("new_system_reading"),
   scheduledAt: timestamp("scheduled_at"),
+  serviceDurationMinutes: integer("service_duration_minutes"),
+  appointmentWindowStart: timestamp("appointment_window_start", { withTimezone: true }),
+  appointmentWindowEnd: timestamp("appointment_window_end", { withTimezone: true }),
   updatedBy: varchar("updated_by", { length: 100 }),
   trouble: varchar("trouble", { length: 50 }),
   oldSystemType: varchar("old_system_type", { length: 100 }),
@@ -196,6 +201,7 @@ export async function createProjectSchema(projectName: string, projectId: number
     
     await initializeExactReadings(client,schemaName);
     await installProjectSubStatuses(client,schemaName);
+    await installVisitScheduling(client,schemaName);
     if (auditingEnabled) {
       await client.query(`INSERT INTO meterflo_audit.project_scopes(schema_name,project_id,project_label) VALUES($1,$2,$3)
         ON CONFLICT(schema_name) DO UPDATE SET project_id=EXCLUDED.project_id,project_label=EXCLUDED.project_label`,[schemaName,projectId,projectName]);
@@ -383,6 +389,7 @@ export async function migrateProjectSchema(schemaName: string, connectionPool: P
     
     await initializeExactReadings(client,schemaName);
     await installProjectSubStatuses(client,schemaName);
+    await installVisitScheduling(client,schemaName);
     if (auditingEnabled) await installProjectAudit(client,schemaName);
 
     // Step 5: Drop deprecated _id suffix columns (consolidate to text-based references)
@@ -784,6 +791,7 @@ export class ProjectWorkOrderStorage {
       
       // Re-fetch with JOINs to get display fields (scheduledByDisplay, completedByDisplay)
       const createdId = result.rows[0].id;
+      await writeVisitScheduling(client, this.schemaName, createdId, workOrder);
       if (workOrder.subStatusId)
         await client.query(`UPDATE "${this.schemaName}".work_orders SET sub_status_id=$1 WHERE id=$2`, [workOrder.subStatusId,createdId]);
       await inventoryWorkOrderChange(client, this.schemaName, null, result.rows[0], undefined, (workOrder as any).inventoryItems, ordinaryImport);
@@ -1191,9 +1199,20 @@ export class ProjectWorkOrderStorage {
       
       // Always fetch existing state to check for transitions
       const existingStateResult = await client.query(
-        `SELECT scheduled_at, status, trouble, assigned_user_id FROM "${this.schemaName}".work_orders WHERE id = $1`,
+        `SELECT * FROM "${this.schemaName}".work_orders WHERE id = $1`,
         [id]
       );
+      const visit = validateVisitScheduling({ ...schedulingDto(existingStateResult.rows[0] ?? {}), ...updates });
+      for (const [key, column] of Object.entries({
+        serviceDurationMinutes: "service_duration_minutes",
+        appointmentWindowStart: "appointment_window_start",
+        appointmentWindowEnd: "appointment_window_end",
+      })) {
+        if ((updates as any)[key] !== undefined) {
+          setClauses.push(`${column} = $${paramCount++}`);
+          values.push((visit as any)[key] ?? null);
+        }
+      }
       existingScheduledAt = existingStateResult.rows[0]?.scheduled_at || null;
       existingStatus = existingStateResult.rows[0]?.status || null;
       existingTroubleCode = existingStateResult.rows[0]?.trouble || null;
@@ -1682,6 +1701,7 @@ export class ProjectWorkOrderStorage {
       oldSystemReading: this.parseNumericReading(row.old_system_reading),
       newSystemReading: this.parseNumericReading(row.new_system_reading),
       scheduledAt: row.scheduled_at,
+      ...schedulingDto(row),
       updatedBy: row.updated_by,
       trouble: row.trouble,
       oldSystemType: row.old_system_type,
@@ -1742,6 +1762,7 @@ async function backupProjectDatabaseData(schemaName: string): Promise<{
   inventory?: InventoryBackup;
   subStatuses?: unknown[];
   routingConfiguration?: unknown;
+  schedulingDefaults?: unknown;
 }> {
   await migrateProjectSchema(schemaName);
   const client = await pool.connect();
@@ -1781,6 +1802,7 @@ async function backupProjectDatabaseData(schemaName: string): Promise<{
       oldSystemReading: row.old_system_reading_text ?? row.old_system_reading,
       newSystemReading: row.new_system_reading_text ?? row.new_system_reading,
       scheduledAt: row.scheduled_at,
+      ...schedulingDto(row),
       updatedBy: row.updated_by,
       trouble: row.trouble,
       oldSystemType: row.old_system_type,
@@ -1800,7 +1822,8 @@ async function backupProjectDatabaseData(schemaName: string): Promise<{
     })) as unknown as ProjectWorkOrder[];
     
     const inventory = await exportInventory(client, schemaName);
-    const { rows:[scope] } = await client.query("SELECT id FROM public.projects WHERE database_name=$1",[schemaName]);
+    const { rows:[scope] } = await client.query(`SELECT id, default_service_minutes AS "defaultServiceMinutes",
+      default_appointment_tolerance_minutes AS "defaultAppointmentToleranceMinutes" FROM public.projects WHERE database_name=$1`,[schemaName]);
     const subStatuses = await listSubStatuses(scope?.id,client);
     const routingConfiguration = scope?.id ? await exportProjectRouting(client,scope.id) : null;
     await client.query("COMMIT");
@@ -1812,6 +1835,8 @@ async function backupProjectDatabaseData(schemaName: string): Promise<{
       inventory,
       subStatuses,
       routingConfiguration,
+      schedulingDefaults: scope ? { defaultServiceMinutes: scope.defaultServiceMinutes,
+        defaultAppointmentToleranceMinutes: scope.defaultAppointmentToleranceMinutes } : undefined,
     };
   } finally {
     client.release();
@@ -1820,7 +1845,7 @@ async function backupProjectDatabaseData(schemaName: string): Promise<{
 
 // Restore project database from backup JSON
 export async function restoreProjectDatabase(
-  schemaName:string,backup:{workOrders:Array<Omit<ProjectWorkOrder,"id"|"createdAt"|"updatedAt">>;inventory?:InventoryBackup;subStatuses?:unknown[];routingConfiguration?:unknown},options:{clearExisting?:boolean}={}
+  schemaName:string,backup:{workOrders:Array<Omit<ProjectWorkOrder,"id"|"createdAt"|"updatedAt">>;inventory?:InventoryBackup;subStatuses?:unknown[];routingConfiguration?:unknown;schedulingDefaults?:unknown},options:{clearExisting?:boolean}={}
 ) {
   if (!auditingEnabled) return restoreProjectDatabaseData(schemaName,backup,options);
   const {rows:[scope]}=await pool.query("SELECT project_id,project_label FROM meterflo_audit.project_scopes WHERE schema_name=$1",[schemaName]);
@@ -1838,14 +1863,16 @@ export async function restoreProjectDatabaseInTransaction(
 
 async function restoreProjectDatabaseData(
   schemaName: string,
-  backup: { workOrders: Array<Omit<ProjectWorkOrder, "id" | "createdAt" | "updatedAt">>; inventory?: InventoryBackup; subStatuses?:unknown[];routingConfiguration?:unknown },
+  backup: { workOrders: Array<Omit<ProjectWorkOrder, "id" | "createdAt" | "updatedAt">>; inventory?: InventoryBackup; subStatuses?:unknown[];routingConfiguration?:unknown;schedulingDefaults?:unknown },
   options: { clearExisting?: boolean } = {},
   transactionClient?: PoolClient
 ): Promise<{ restored: number; errors: string[] }> {
+  backup.workOrders.forEach(validateVisitScheduling);
+  const schedulingDefaults = backup.schedulingDefaults === undefined ? undefined : schedulingDefaultsSchema.parse(backup.schedulingDefaults);
   if (!transactionClient) await migrateProjectSchema(schemaName);
   const client = transactionClient ?? await pool.connect();
   const errors: string[] = [];
-  const atomic = !!backup.inventory || !!backup.subStatuses || backup.routingConfiguration !== undefined;
+  const atomic = !!backup.inventory || !!backup.subStatuses || backup.routingConfiguration !== undefined || schedulingDefaults !== undefined;
   let restored = 0;
   
   try {
@@ -1863,6 +1890,9 @@ async function restoreProjectDatabaseData(
     }
     const subStatusMapping = backup.subStatuses ? await restoreSubStatusDefinitions(client,schemaName,backup.subStatuses) : new Map<string,string>();
     if(backup.routingConfiguration!==undefined)await restoreProjectRouting(client,schemaName,backup.routingConfiguration);
+    if(schedulingDefaults) await client.query(`UPDATE public.projects SET default_service_minutes=$2,
+      default_appointment_tolerance_minutes=$3 WHERE database_name=$1`,
+      [schemaName,schedulingDefaults.defaultServiceMinutes??null,schedulingDefaults.defaultAppointmentToleranceMinutes??null]);
     if (options.clearExisting) {
       await client.query(`DELETE FROM "${schemaName}".work_orders`);
     }
@@ -1922,6 +1952,7 @@ async function restoreProjectDatabaseData(
         );
         if (wo.subStatusId) await client.query(`UPDATE "${schemaName}".work_orders SET sub_status_id=$1 WHERE id=$2`,
           [subStatusMapping.get(wo.subStatusId) ?? wo.subStatusId,restoredOrder.rows[0].id]);
+        await writeVisitScheduling(client, schemaName, restoredOrder.rows[0].id, wo);
         restored++;
       } catch (error) {
         if (atomic || transactionClient) throw error;

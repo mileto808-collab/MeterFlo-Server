@@ -107,6 +107,8 @@ export const projects = pgTable("projects", {
   // Dedicated routing endpoints manage this metadata; ordinary project DTOs
   // redact it so environment references are not general project information.
   routingConfiguration: jsonb("routing_configuration"),
+  defaultServiceMinutes: integer("default_service_minutes"),
+  defaultAppointmentToleranceMinutes: integer("default_appointment_tolerance_minutes"),
   webhookUrl: varchar("webhook_url", { length: 500 }),
   webhookEnabled: boolean("webhook_enabled").default(false),
   customerApiEnabled: boolean("customer_api_enabled").default(false),
@@ -714,6 +716,8 @@ export const insertProjectSchema = z.object({
   operationalHoursEnd: z.string().max(10).optional().nullable(),
   operationalHoursDays: z.array(z.string()).optional().nullable(),
   timezone: z.string().max(100).optional().nullable(),
+  defaultServiceMinutes: z.number().int().min(1).max(480).nullable().optional(),
+  defaultAppointmentToleranceMinutes: z.number().int().min(0).max(240).nullable().optional(),
   wizardMode: z.enum(wizardModeEnum).optional().default("changeout"),
   wizardGpsMode: z.enum(gpsModeEnum).optional().default("automatic"),
   systemReadingDecimalPlaces: readingDecimalPlacesSchema.optional().default(3),
@@ -831,6 +835,9 @@ export const insertProjectWorkOrderSchema = z.object({
   status: z.string().max(50).optional().nullable(),
   subStatusId: z.string().uuid().optional().nullable(),
   scheduledAt: z.string().optional().nullable(),
+  serviceDurationMinutes: z.number().int().min(1).max(480).nullable().optional(),
+  appointmentWindowStart: z.string().datetime({ offset: true }).nullable().optional(),
+  appointmentWindowEnd: z.string().datetime({ offset: true }).nullable().optional(),
   scheduledBy: z.string().optional().nullable(),
   assignedUserId: z.string().optional().nullable(),
   assignedGroupId: z.string().optional().nullable(),
