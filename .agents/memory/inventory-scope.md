@@ -3,15 +3,15 @@ name: Inventory scope
 description: User-defined project inventory boundaries and reading-only distinction.
 ---
 
-Inventory is enabled by an admin per project. Projects can have multiple warehouses, including vehicles and physical warehouses. Inventory-enabled projects use work-order items instead of editable System Type and Module Type fields; inventory-disabled projects retain their current relevant fields and workflow.
+Inventory is enabled by an admin per project. Projects can have multiple warehouses, including vehicles and physical warehouses. Enabling inventory must not change existing file-import behavior or disable editable old/new System Type and Module Type fields on work orders; ordinary permissions and project equipment scope still apply.
 
 Readings do not require a changeout.
 
 Reserve stock when assigned to a work order; deduct it when the changeout is completed. Capture removed-equipment disposition as returned, scrapped, or left onsite; returned equipment is not automatically usable stock.
 
-**Why:** The user explicitly specified these product boundaries; inventory must not turn a reading-only visit into an equipment replacement.
+**Why:** The user explicitly specified these product boundaries; inventory must not turn a reading-only visit into an equipment replacement. The user subsequently reversed the earlier requirement to replace legacy import/type fields with inventory items and asked to undo that suppression and disabling.
 
-**How to apply:** Keep feature visibility, imports, work-order printing, web completion, and mobile synchronization consistent with project enablement and the actual work performed. Do not assume reading completion consumes replacement inventory.
+**How to apply:** Keep feature visibility, imports, work-order printing, web completion, and mobile synchronization consistent with the actual work performed. Do not use inventory enablement alone to hide, strip, or reject legacy type fields or require stock assignments for ordinary imports. Preserve safeguards for real inventory transactions, and do not assume reading completion consumes replacement inventory.
 
 Inventory retry comparisons must not depend on JSON object key order or optional-field defaults.
 
