@@ -65,14 +65,24 @@ export function removeCountRecovery(storage: Storage, prefix: string, record: Co
   if (storage.getItem(key) === JSON.stringify(record)) storage.removeItem(key);
 }
 
+export function matchesCountProduct(item: InventoryItem | undefined, raw: string) {
+  const query = raw.trim().toLowerCase();
+  return !query || !!item && [item.sku, item.name, item.barcode, item.description]
+    .some(value => value?.toLowerCase().includes(query));
+}
+
 export function resolveCountProductScan(items: InventoryItem[], raw: string, existingIds: string[]) {
   const code = raw.trim();
-  if (!code) return { error: "Scan or enter a product barcode or SKU." } as const;
+  if (!code) return { error: "Scan a barcode or search by SKU, name or description." } as const;
   // Exact text comparison preserves significant leading zeros. Barcodes take precedence over SKU.
   const barcodeMatches = items.filter(item => item.barcode?.trim() === code);
-  const matches = barcodeMatches.length ? barcodeMatches : items.filter(item => item.sku === code);
+  const skuMatches = items.filter(item => item.sku.toLowerCase() === code.toLowerCase());
+  const nameMatches = items.filter(item => item.active && item.name.toLowerCase() === code.toLowerCase());
+  const matches = barcodeMatches.length ? barcodeMatches : skuMatches.length ? skuMatches
+    : nameMatches.length ? nameMatches : items.filter(item => item.active &&
+      [item.sku, item.name, item.description].some(value => value?.toLowerCase().includes(code.toLowerCase())));
   if (!matches.length) return { error: `No catalog item matches "${code}". Nothing was added.` } as const;
-  if (matches.length !== 1) return { error: "More than one catalog item matches this code. Choose the product manually." } as const;
+  if (matches.length !== 1) return { error: "More than one catalog item matches. Refine the search or choose a product below." } as const;
   const item = matches[0];
   if (!item.active) return { error: `${item.name} is inactive. Nothing was added.` } as const;
   if (existingIds.includes(item.id)) return { error: `${item.name} is already included. Its quantity was not changed.` } as const;

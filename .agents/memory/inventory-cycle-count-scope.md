@@ -3,7 +3,7 @@ name: Inventory cycle count scope
 description: User-selected product counts and full-page count navigation.
 ---
 
-Start count must offer an explicit Full warehouse or Selected items choice. Selected items remains the default: operators may choose products in the start modal or add discovered products on the count page, without automatically adding every warehouse item. Selecting a warehouse and confirming Start count opens the count page immediately; Continue count opens the same page, not a modal.
+Start count must offer an explicit Full warehouse or Selected items choice, with location and scope only in the modal. Selected items remains the default: operators choose products on the count page, not in the start modal, without automatically adding every warehouse item. Selecting a warehouse and confirming Start count opens the count page immediately; Continue count opens the same page, not a modal.
 
 **Why:** The user requested both full-warehouse and selected-item workflows, after reporting that automatic warehouse-wide entry creation prevented selective counting. They also requested the same page-based editing used elsewhere in Inventory.
 
@@ -38,6 +38,12 @@ Product barcode scanning selects a catalog product once; it does not count units
 **Why:** The approved improvement was adding count products by barcode, not inferring physical quantities from repeated product scans. Serialized and quantity-tracked products still need an explicit physical count.
 
 **How to apply:** Keep product selection and serial capture separate. Preserve leading zeros, reject ambiguous product identities, and leave repeated product scans non-destructive.
+
+The count editor uses one master product search for barcode scans, SKU, name and partial description. It filters discovery choices and existing count entries; Enter or Tab adds an exact identity or uniquely matching product without increasing existing quantities.
+
+**Why:** The user rejected redundant barcode, discovery and count-entry search fields and requested product selection on the count page rather than in the start modal.
+
+**How to apply:** Keep ambiguous searches available for dropdown selection rather than guessing. Clearing a successful addition must reveal existing entries again, and filtering must never remove captured rows.
 
 Browser-local recovery is a best-effort safety net, not a server draft or an automatic stock adjustment. Restore must be an explicit choice and must retain the captured draft revision.
 

@@ -41,6 +41,7 @@ import { InventoryEditorSurface } from "@/components/inventory/inventory-editor-
 import { LocationTypesManager } from "@/components/inventory/location-types-manager";
 import { CountSerialsDialog } from "@/components/inventory/count-serials-dialog";
 import { CountProductScanner } from "@/components/inventory/count-product-scanner";
+import { matchesCountProduct } from "@/lib/inventory-count-recovery";
 import { CountRecoveryInbox, CountRecoveryNotice } from "@/components/inventory/count-recovery-notice";
 import { useCountRecovery } from "@/components/inventory/use-count-recovery";
 import { CountDiscrepancyReview, type CountDiscrepancyReviewPayload } from "@/components/inventory/count-discrepancy-review";
@@ -282,8 +283,6 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [operation, setOperation] = useState<"receive" | "dispatch" | "accept">("receive");
   const [countWarehouse, setCountWarehouse] = useState("");
   const [countStartScope, setCountStartScope] = useState<"selected" | "warehouse">("selected");
-  const [countStartItemIds, setCountStartItemIds] = useState<string[]>([]);
-  const [countStartProductSearch, setCountStartProductSearch] = useState("");
   const [countStartOpen, setCountStartOpen] = useState(false);
   const [countExportScope, setCountExportScope] = useState<"all" | "filtered" | "page">("all");
   const [countQuantities, setCountQuantities] = useState<Record<string, string>>({});
@@ -296,7 +295,6 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const [pendingCountReview, setPendingCountReview] = useState<CountDiscrepancyReviewPayload | null>(null);
   const [countPage, setCountPage] = useState(0);
   const [countSearch, setCountSearch] = useState("");
-  const [countProductSearch, setCountProductSearch] = useState("");
   const [countProduct, setCountProduct] = useState("");
   const [countToolsOpen, setCountToolsOpen] = useState(false);
   const countEntriesRef = useRef<HTMLDivElement>(null);
@@ -494,9 +492,6 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const pagedOrders = visibleOrders.slice(currentOrderPage * orderRowsPerPage, (currentOrderPage + 1) * orderRowsPerPage);
   const orderTitle = (id: string) => { const order = orderItems.find(order => order.id === id); return order ? orderLabel(order) : "Order reference unavailable"; };
   const activeWarehouses = warehouses.filter(value => value.active);
-  const matchingStartProducts = items.filter(item => item.active &&
-    `${item.sku} ${item.name} ${item.barcode}`.toLocaleLowerCase().includes(countStartProductSearch.trim().toLocaleLowerCase()));
-  const visibleStartProducts = matchingStartProducts.slice(0, 100);
   useEffect(() => {
     if (!can("inventory.view") || inventoryTab !== "stock") setSelectedStockRow(null);
   }, [inventoryTab, hasPermission]);
@@ -1070,7 +1065,6 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       setCountDraftId(count.id);
       setCountPage(0);
       setCountSearch("");
-      setCountProductSearch("");
       setCountProduct("");
     }
     setCountConflict(null);
@@ -1079,8 +1073,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   };
   const countRowIds = new Set(countRows.map(row => row.itemId));
   const discoveryProducts = items.filter(item => item.active && !countRowIds.has(item.id) &&
-    `${item.sku} ${item.name} ${item.barcode}`.toLowerCase().includes(countProductSearch.toLowerCase())).slice(0, 100);
-  const matchingCountRows = countRows.filter(row => `${row.item?.sku} ${row.item?.name}`.toLowerCase().includes(countSearch.toLowerCase()));
+    matchesCountProduct(item, countSearch)).slice(0, 100);
+  const matchingCountRows = countRows.filter(row => matchesCountProduct(row.item, countSearch));
   const lastCountPage = Math.max(0, Math.ceil(matchingCountRows.length / countPageSize) - 1);
   const currentCountPage = Math.min(countPage, lastCountPage);
   const visibleCountRows = matchingCountRows.slice(currentCountPage * countPageSize, (currentCountPage + 1) * countPageSize);
@@ -1158,10 +1152,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const startCount = () => {
     if (!countWarehouse || !can("inventory.count")) return;
     const id = freshId();
-    const itemIds = countStartScope === "selected" ? countStartItemIds : [];
     command.mutate({ action: "countStart", data: {
       id, warehouseId: countWarehouse, scope: countStartScope,
-      ...(itemIds.length ? { itemIds } : {}),
     } }, { onSuccess: result => {
       const count = (result.state as InventoryState).counts.find(value => value.id === id);
       if (!count) {
@@ -1169,19 +1161,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
         return;
       }
       setCountStartOpen(false);
-      setCountStartItemIds([]);
-      setCountStartProductSearch("");
       openCount(count, true);
     } });
-  };
-  const toggleCountStartItem = (itemId: string, checked: boolean) => {
-    setCountStartItemIds(current => {
-      if (checked) {
-        if (current.includes(itemId) || current.length >= COUNT_MAX_LINES) return current;
-        return [...current, itemId];
-      }
-      return current.filter(id => id !== itemId);
-    });
   };
   const closeCount = () => {
     countRecovery.clear();
@@ -1750,7 +1731,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
                 <label className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 ${countStartScope === "selected" ? "border-primary bg-primary/5" : "bg-background"}`}>
                   <input type="radio" name="count-scope" value="selected" checked={countStartScope === "selected"} disabled={command.isPending}
                     onChange={() => setCountStartScope("selected")} aria-label="Selected items only" data-testid="count-scope-selected" className="mt-1 accent-primary" />
-                  <span><span className="block text-sm font-medium">Selected items only</span><span className="mt-0.5 block text-xs text-muted-foreground">Choose products here, or add discovered products on the count page.</span></span>
+                  <span><span className="block text-sm font-medium">Selected items only</span><span className="mt-0.5 block text-xs text-muted-foreground">Start empty and select products on the count page by searching or scanning.</span></span>
                 </label>
                 <label className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 ${countStartScope === "warehouse" ? "border-primary bg-primary/5" : "bg-background"}`}>
                   <input type="radio" name="count-scope" value="warehouse" checked={countStartScope === "warehouse"} disabled={command.isPending}
@@ -1759,58 +1740,6 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
                 </label>
               </div>
             </fieldset>
-            {countStartScope === "selected" && <section className="space-y-2" aria-label="Choose products for selected-item count" data-testid="count-start-product-picker">
-              <CountProductScanner id="count-start-product-scanner" items={items} existingIds={countStartItemIds}
-                onAdd={id => toggleCountStartItem(id, true)} disabled={command.isPending || !can("inventory.count")} />
-              <div className="flex flex-wrap items-end justify-between gap-2">
-                <div>
-                  <Label htmlFor="count-start-product-search">Choose products (optional)</Label>
-                  <p className="text-xs text-muted-foreground">Selected products start as blank entries; the warehouse baseline remains fixed.</p>
-                </div>
-                <span className="text-xs font-medium tabular-nums" role="status" aria-live="polite" data-testid="count-start-selected-count">
-                  {countStartItemIds.length} selected · {COUNT_MAX_LINES} max
-                </span>
-              </div>
-              <div className="relative">
-                <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input id="count-start-product-search" type="search" autoComplete="off" disabled={command.isPending} value={countStartProductSearch}
-                  onChange={event => setCountStartProductSearch(event.target.value)}
-                  placeholder="Search SKU, product name or barcode" aria-label="Search products to include in count"
-                  data-testid="count-start-product-search" className="h-10 pl-9" />
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button type="button" variant="outline" size="sm" data-testid="count-start-select-visible"
-                  disabled={command.isPending || !visibleStartProducts.some(item => !countStartItemIds.includes(item.id)) || countStartItemIds.length >= COUNT_MAX_LINES}
-                  onClick={() => setCountStartItemIds(current => {
-                    const additions = visibleStartProducts.filter(item => !current.includes(item.id)).slice(0, COUNT_MAX_LINES - current.length).map(item => item.id);
-                    return [...current, ...additions];
-                  })}>Select visible</Button>
-                <Button type="button" variant="ghost" size="sm" data-testid="count-start-clear-selection"
-                  disabled={command.isPending || !countStartItemIds.length} onClick={() => setCountStartItemIds([])}>Clear selection</Button>
-                <span className="text-xs text-muted-foreground">{matchingStartProducts.length > 100 ? "Showing first 100 matches; refine your search." : `${matchingStartProducts.length} matching products`}</span>
-              </div>
-              <div className="max-h-[32dvh] min-h-24 space-y-1 overflow-y-auto overscroll-contain rounded-md border p-1" role="group" aria-label="Available products">
-                {visibleStartProducts.map(item => {
-                  const checked = countStartItemIds.includes(item.id);
-                  const disabled = command.isPending || !can("inventory.count") || (!checked && countStartItemIds.length >= COUNT_MAX_LINES);
-                  return <label key={item.id} htmlFor={`count-start-item-${item.id}`}
-                    className="flex min-h-11 cursor-pointer items-center gap-3 rounded px-2 py-2 hover:bg-muted/60 focus-within:bg-muted/60">
-                    <Checkbox id={`count-start-item-${item.id}`} checked={checked} disabled={disabled}
-                      onCheckedChange={value => toggleCountStartItem(item.id, value === true)}
-                      aria-label={`Include ${item.name}, SKU ${item.sku}`} data-testid={`count-start-item-${item.id}`} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">{item.name}</span>
-                      <span className="block truncate font-mono text-xs text-muted-foreground">{item.sku}{item.barcode ? ` · ${item.barcode}` : ""}</span>
-                    </span>
-                    <span className="shrink-0 text-xs text-muted-foreground">{item.tracking}</span>
-                  </label>;
-                })}
-                {!visibleStartProducts.length && <p className="px-3 py-6 text-center text-sm text-muted-foreground">No active products match this search.</p>}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                You can start with zero selected and add discovered items on the count page. Choosing items here creates a saved blank draft; enter actual quantities before posting.
-              </p>
-            </section>}
             <DialogFooter><Button variant="outline" disabled={command.isPending} onClick={() => setCountStartOpen(false)}>Cancel</Button>
               {can("inventory.count") && <Button onClick={startCount} disabled={!countWarehouse || command.isPending}>{command.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Start count</Button>}
             </DialogFooter>
@@ -1919,22 +1848,15 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
               }} />}
             {countToolsOpen && <div id="count-search-tools" className="mb-3 grid grid-cols-1 gap-3 rounded border bg-background p-3 sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
                 <div className="sm:col-span-2"><CountProductScanner id="count-product-scanner" items={items} existingIds={[...countRowIds]}
+                  value={countSearch} onValueChange={value => { setCountSearch(value); setCountProduct(""); setCountPage(0); }}
                   onAdd={addCountProduct} disabled={command.isPending || !can("inventory.count") || !!countRecovery.pending} /></div>
-                <div className="grid min-w-0 grid-cols-1 gap-2 rounded border p-3 sm:grid-cols-2">
-                  <div className="min-w-0 space-y-2">
-                    <Label htmlFor="count-discovery-search">Find discovery product</Label>
-                    <Input id="count-discovery-search" value={countProductSearch} disabled={command.isPending} onChange={event => { setCountProductSearch(event.target.value); setCountProduct(""); }} placeholder="Search the project catalog by SKU, name or barcode" />
-                  </div>
+                <div className="grid min-w-0 grid-cols-1 gap-2 sm:col-span-2 sm:grid-cols-[minmax(0,1fr)_auto]">
                   <div className="min-w-0 space-y-2">
                     <Label htmlFor="count-discovery-product">Discovery product</Label>
                     <Select value={countProduct} onValueChange={setCountProduct} disabled={command.isPending || !can("inventory.count")}><SelectTrigger id="count-discovery-product"><SelectValue placeholder="Choose a product found in this warehouse" /></SelectTrigger><SelectContent>{discoveryProducts.map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}</SelectItem>)}</SelectContent></Select>
                   </div>
-                  <p className="text-xs text-muted-foreground sm:col-span-2">Up to 100 matches shown. Refine the search for another product. Adding it creates an entry only; enter its actual quantity and scans before posting.</p>
-                  <Button className="w-full sm:col-span-2 sm:w-fit" variant="outline" onClick={() => addCountProduct()} disabled={!!countRecovery.pending || !can("inventory.count") || !countProduct || command.isPending || countRows.length >= COUNT_MAX_LINES}>Add discovery to count</Button>
-                </div>
-                <div className="min-w-0 space-y-2">
-                  <Label htmlFor="count-entry-search">Search count entries</Label>
-                  <Input id="count-entry-search" value={countSearch} onChange={event => { setCountSearch(event.target.value); setCountPage(0); }} placeholder="Filter entered items by SKU or name; hidden entries are still included" />
+                  <Button className="w-full self-end sm:w-fit" variant="outline" onClick={() => addCountProduct()} disabled={!!countRecovery.pending || !can("inventory.count") || !countProduct || command.isPending || countRows.length >= COUNT_MAX_LINES}>Add discovery to count</Button>
+                  <p className="text-xs text-muted-foreground sm:col-span-2">Up to 100 products not yet in this count are shown. Hidden count entries are still saved and posted. Adding a product leaves its actual quantity and serials blank.</p>
                 </div>
                 <div className="flex min-w-0 flex-wrap items-end gap-2 border-t pt-3 sm:col-span-2" data-testid="inventory-count-exports">
                   <div className="min-w-40 flex-1 space-y-1">

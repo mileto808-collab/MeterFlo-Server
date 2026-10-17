@@ -323,7 +323,7 @@ async function main() {
       await page.locator("#count-capacity-0").fill("0");
       await page.getByRole("button", { name: "Next count entries page", exact: true }).click();
       await page.locator("#count-capacity-50").fill("9");
-      await page.getByLabel("Search count entries", { exact: true }).fill("CAP-0599");
+      await page.getByLabel("Search products or scan barcode", { exact: true }).fill("CAP-0599");
       await page.locator("#count-capacity-599").fill("7");
       await addProduct("CAP-2999");
       await page.locator("#count-capacity-2999").fill("4");
@@ -334,7 +334,7 @@ async function main() {
       await page.reload();
       await openCounts();
       await continueCount((await state()).counts.length);
-      await page.getByLabel("Search count entries", { exact: true }).fill("CAP-2999");
+      await page.getByLabel("Search products or scan barcode", { exact: true }).fill("CAP-2999");
       assert.equal(await page.locator("#count-capacity-2999").inputValue(), "4");
       const largeResult = await post();
       assert.equal(largeResult.submitted.lines.length, 601);
@@ -371,9 +371,9 @@ async function main() {
     await assertUnload(true);
     await page.locator("#countserial-serial").fill(baselineSerials);
     await assertUnload(false);
-    await page.getByLabel("Search count entries", { exact: true }).fill("bulk");
+    await page.getByLabel("Search products or scan barcode", { exact: true }).fill("bulk");
     await assertUnload(false);
-    await page.getByLabel("Search count entries", { exact: true }).fill("");
+    await page.getByLabel("Search products or scan barcode", { exact: true }).fill("");
     let draftWrites = 0;
     const recordDraft = request => { if (request.url().endsWith(`${endpoint}/commands`) && request.postDataJSON()?.action === "countSaveDraft") draftWrites++; };
     page.on("request", recordDraft);

@@ -25,7 +25,8 @@ async function main() {
       ["serial", "serialized", serialBarcode, true], ["regular", "regular", `000456000${prefix}`, true],
       ["inactive", "regular", inactiveBarcode, false], ["ambiguous-one", "regular", duplicateBarcode, true],
       ["ambiguous-two", "regular", duplicateBarcode, true],
-    ]) await post("item", { id: `${prefix}-${suffix}`, sku: `${prefix}-${suffix}`, name: `Recovery ${suffix}`, tracking, barcode, active });
+    ]) await post("item", { id: `${prefix}-${suffix}`, sku: `${prefix}-${suffix}`, name: `Recovery ${suffix}`,
+      description: suffix === "regular" ? "Copper housing for residential installations" : "", tracking, barcode, active });
     let countId = `${prefix}-count`;
     await post("countStart", { id: countId, warehouseId: prefix, scope: "selected" });
     let page = await context.newPage();
@@ -51,23 +52,37 @@ async function main() {
       await expect(page.getByTestId("inventory-count-editor")).toBeVisible();
     };
     const editor = () => page.getByTestId("inventory-count-editor");
-    const scan = async (code, suffix = "Enter") => {
-      const input = page.getByTestId("count-product-scanner").getByLabel("Scan product barcode or SKU");
+    const scan = async (code, suffix = "Enter", added = false) => {
+      const input = page.getByTestId("count-product-scanner").getByLabel("Search products or scan barcode");
       await input.fill(code); await input.press(suffix);
       await expect(input).toBeFocused();
-      await expect(input).toHaveValue("");
+      await expect(input).toHaveValue(added ? "" : code);
     };
     const localRecords = () => page.evaluate(() => Object.keys(localStorage).filter(key =>
       key.startsWith("meterflo:count-capture:")).map(key => JSON.parse(localStorage.getItem(key))));
     const entry = async suffix => {
       const show = editor().getByRole("button", { name: "Show Search & Tools", exact: true });
       if (await show.isVisible()) await show.click();
-      await editor().getByLabel("Search count entries", { exact: true }).fill(`${prefix}-${suffix}`);
+      await editor().getByLabel("Search products or scan barcode", { exact: true }).fill(`${prefix}-${suffix}`);
       return editor().locator(`#count-${prefix}-${suffix}`);
     };
     await openEditor();
-    await scan(serialBarcode);
-    await scan(`${prefix}-regular`, "Tab");
+    const master = editor().getByLabel("Search products or scan barcode", { exact: true });
+    await expect(editor().locator('input[id$="-input"]')).toHaveCount(1);
+    await master.fill("Recovery");
+    await master.press("Enter");
+    await expect(page.getByTestId("count-product-scanner").getByRole("status")).toContainText("More than one");
+    await expect(master).toHaveValue("Recovery");
+    await expect(editor().locator('input[id^="count-recovery-"]')).toHaveCount(0);
+    await scan(serialBarcode, "Enter", true);
+    await master.fill("Copper housing");
+    await editor().getByLabel("Discovery product", { exact: true }).click();
+    await expect(page.getByRole("option")).toHaveCount(1);
+    await expect(page.getByRole("option")).toContainText("Recovery regular");
+    await page.keyboard.press("Escape");
+    await master.press("Tab");
+    await expect(master).toBeFocused();
+    await expect(master).toHaveValue("");
     await expect.poll(async () => (await localRecords()).find(record => record.countId === countId)?.rows.length).toBe(2);
     await expect(await entry("regular")).toHaveValue("");
     await scan(serialBarcode);
@@ -155,8 +170,8 @@ async function main() {
     await expect(editor().getByRole("button", { name: "Save draft", exact: true }).first()).toBeEnabled();
     assert.deepEqual(errors, []);
     await page.screenshot({ path: "generated-artifacts/inventory-count-recovery-phone.png" });
-    // A fresh document restores normal browser storage. Scan the start picker's barcode,
-    // then post a zero-stock regular count to verify the terminal cleanup path.
+    // A fresh document restores normal browser storage. Start with scope/location only,
+    // then choose products on the count screen and post to verify terminal cleanup.
     await page.close({ runBeforeUnload: false });
     page = await context.newPage(); connectPage();
     await page.goto(`/projects/${fixture.projectId}/inventory`);
@@ -169,13 +184,16 @@ async function main() {
     const start = page.getByRole("dialog", { name: "Start cycle count", exact: true });
     await start.getByLabel("Warehouse or vehicle", { exact: true }).click();
     await page.getByRole("option", { name: `${prefix} · Recovery warehouse`, exact: true }).click();
-    await start.getByTestId("count-start-product-scanner").getByLabel("Scan product barcode or SKU").fill(`000456000${prefix}`);
-    await start.getByTestId("count-start-product-scanner").getByLabel("Scan product barcode or SKU").press("Enter");
-    await expect(start.getByTestId(`count-start-item-${prefix}-regular`)).toBeChecked();
-    await expect(start.getByTestId("count-start-selected-count")).toContainText("1 selected");
+    await expect(start.getByTestId("inventory-count-scope-options")).toBeVisible();
+    await expect(start.getByTestId("count-scope-selected")).toBeChecked();
+    await expect(start.getByRole("textbox")).toHaveCount(0);
+    await expect(start.getByTestId("count-start-product-picker")).toHaveCount(0);
+    await page.screenshot({ path: "generated-artifacts/inventory-count-start-phone.png" });
     await start.getByRole("button", { name: "Start count", exact: true }).click();
     await expect(editor()).toBeVisible();
     countId = (await snapshot()).counts.at(-1).id;
+    assert.equal((await snapshot()).counts.at(-1).draft?.rows.length ?? 0, 0);
+    await scan(`000456000${prefix}`, "Enter", true);
     await expect(await entry("regular")).toHaveValue("");
     await (await entry("regular")).fill("0");
     await editor().getByLabel("Count adjustment reason").fill("Verified physical zero");
@@ -185,7 +203,7 @@ async function main() {
     assert.equal((await snapshot()).counts.find(count => count.id === countId).status, "posted");
     await expect.poll(async () => (await localRecords()).filter(record => record.countId === countId).length).toBe(0);
     assert.deepEqual(errors, []);
-    console.log("PASS: HID product scans in start/editor, duplicates/errors, serials, fresh-context recovery, phone/rotation, failed/successful saves, post cleanup, newer-draft safety and storage failure.");
+    console.log("PASS: unified barcode/name/description search, dropdown filtering, scope-only start, duplicates/errors, serials, fresh-context recovery, phone/rotation, failed/successful saves, post cleanup, newer-draft safety and storage failure.");
   } finally { await context.close(); await browser.close(); }
 }
 main().catch(error => { console.error(error); process.exitCode = 1; });

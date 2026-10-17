@@ -76,7 +76,7 @@ async function main() {
       await expect(entries.locator('input[type="number"]').first()).toHaveAttribute("id", firstId);
       const show = editor.getByRole("button", { name: "Show Search & Tools", exact: true });
       await show.click();
-      const search = editor.getByLabel("Search count entries", { exact: true });
+      const search = editor.getByLabel("Search products or scan barcode", { exact: true });
       await search.fill("Count product 01");
       await editor.locator(`#count-${itemId(1)}`).fill("7");
       await search.fill("no-such-count-product");
@@ -145,14 +145,18 @@ async function main() {
       await expect.poll(async () => (await snapshot()).counts.find(value => value.id === count.id)?.draft?.rows.find(row => row.itemId === itemId(1))?.quantity).toBe("7");
       await editor.getByTestId("inventory-editor-back").click();
       dialog = await start("selected");
-      await dialog.getByTestId("count-start-product-search").fill("Count product 00");
-      await dialog.getByTestId(`count-start-item-${itemId(0)}`).check();
-      await dialog.getByTestId("count-start-product-search").fill("Count product 01");
-      await dialog.getByTestId(`count-start-item-${itemId(1)}`).check();
-      await expect(dialog.getByTestId("count-start-selected-count")).toContainText("2 selected");
+      await expect(dialog.getByTestId("inventory-count-scope-options")).toBeVisible();
+      await expect(dialog.getByRole("textbox")).toHaveCount(0);
       await page.screenshot({ path: `generated-artifacts/count-start-${mode}.jpg` });
       await dialog.getByRole("button", { name: "Start count", exact: true }).click();
       await expect(editor).toBeVisible();
+      await expect(editor.locator('input[type="number"]')).toHaveCount(0);
+      for (const query of ["Count product 00", "Count product 01"]) {
+        const master = editor.getByLabel("Search products or scan barcode", { exact: true });
+        await master.fill(query);
+        await master.press("Enter");
+      }
+      await editor.getByRole("button", { name: "Save draft", exact: true }).click();
       state = await snapshot(); count = state.counts.at(-1);
       assert.equal(count.scope, "selected");
       assert.equal(count.snapshot.length, 26);
