@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Copy, Download, Eye, FileSpreadsheet, FileText, Filter, PackageCheck, PackageMinus, Plus, RefreshCw, Search } from "lucide-react";
+import { useRoute } from "wouter";
+import { Copy, Download, Eye, FileSpreadsheet, FileText, Filter, Link2, PackageCheck, PackageMinus, Plus, RefreshCw, Search } from "lucide-react";
 import { InventoryMobileTools } from "@/components/inventory-mobile-tools";
 import { InventoryDeleteAction } from "@/components/inventory-delete-action";
 import type { InventoryItem, Vendor } from "@shared/inventory";
@@ -10,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { TypeItemLinksDialog } from "@/components/inventory/type-item-links-dialog";
 
 type CatalogKind = "items" | "vendors";
 type Props = {
@@ -43,9 +45,11 @@ const sameOriginImage = (value: string) => {
   try { return new URL(value, window.location.origin).origin === window.location.origin ? value : null; }
   catch { return null; }
 };
-
 export function InventoryCatalogWorkspace({ kind, items, vendors, projectName, timezone, canMaintain, canAssemble = false, canInspectKits = false, onRefresh, onAdd, onAssemble, onDisassemble, onInspectKits, onEditItem, onCopyItem, onDeleteItem, itemDeleteBlockers, itemDeletePending = false, onEditVendor }: Props) {
   const { toast } = useToast();
+  const isItems = kind === "items";
+  const [, routeParams] = useRoute("/projects/:projectId/inventory");
+  const projectId = routeParams?.projectId;
   const [query, setQuery] = useState("");
   const [itemFilters, setItemFilters] = useState<ItemFilters>(initialItemFilters);
   const [vendorFilters, setVendorFilters] = useState<VendorFilters>(initialVendorFilters);
@@ -53,10 +57,10 @@ export function InventoryCatalogWorkspace({ kind, items, vendors, projectName, t
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(1);
   const [resultsElement, setResultsElement] = useState<HTMLDivElement | null>(null);
+  const [typeLinksOpen, setTypeLinksOpen] = useState(false);
   const rowHeightRef = useRef(0);
   const containerWidthRef = useRef(0);
   const containerHeightRef = useRef(0);
-  const isItems = kind === "items";
   const categories = useMemo(() => [...new Set(items.map(item => item.category.trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [items]);
   const matchingItems = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
@@ -179,6 +183,7 @@ export function InventoryCatalogWorkspace({ kind, items, vendors, projectName, t
         <DialogFooter className="flex-row justify-between sm:justify-between"><Button variant="ghost" onClick={resetFilters}>Clear filters</Button><Button onClick={() => setFiltersOpen(false)}>Show {matchingRows.length} {kind}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
+    <TypeItemLinksDialog open={typeLinksOpen} onOpenChange={setTypeLinksOpen} projectId={projectId} canMaintain={canMaintain} catalogItems={items} />
     <header className="sticky top-0 z-10 shrink-0 border-b bg-background px-1 pb-2 sm:pb-3" data-testid={`inventory-${kind}-subheader`}>
       <div className="min-h-8">
         <h2 className="text-base font-semibold tracking-tight sm:text-lg">{isItems ? "Item catalog" : "Project vendors"}</h2>
@@ -190,6 +195,7 @@ export function InventoryCatalogWorkspace({ kind, items, vendors, projectName, t
             {canMaintain && <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" aria-label={`Add ${isItems ? "item" : "vendor"}`} title={`Add ${isItems ? "item" : "vendor"}`} onClick={onAdd}><Plus className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Add {isItems ? "item" : "vendor"}</span></Button>}
             {isItems && canAssemble && <><Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="Assemble kit" title="Assemble kit" onClick={onAssemble}><PackageCheck className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Assemble kit</span></Button><Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="Disassemble kit" title="Disassemble kit" onClick={onDisassemble}><PackageMinus className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Disassemble kit</span></Button></>}
             {isItems && canInspectKits && <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="Inspect kit holds" title="Inspect kit holds" onClick={onInspectKits}><Eye className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Inspect kits</span></Button>}
+            {isItems && canMaintain && <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="Link equipment types to inventory items" title="Type item links" onClick={() => setTypeLinksOpen(true)}><Link2 className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Type links</span></Button>}
             <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label={`Refresh ${kind}`} title={`Refresh ${kind}`} onClick={onRefresh}><RefreshCw className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Refresh</span></Button>
             <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="CSV" title="CSV" disabled={!matchingRows.length} onClick={() => void exportFile("csv")}><Download className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">CSV</span></Button>
             <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" variant="outline" aria-label="Excel" title="Excel" disabled={!matchingRows.length} onClick={() => void exportFile("xlsx")}><FileSpreadsheet className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Excel</span></Button>

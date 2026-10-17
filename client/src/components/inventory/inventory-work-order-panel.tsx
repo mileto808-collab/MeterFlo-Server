@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Allocation, InventoryItem, Warehouse, WorkAllocation } from "@shared/inventory";
+import type { Allocation, InventoryItem, Warehouse, WorkAllocation, WorkRequirements } from "@shared/inventory";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useToast } from "@/hooks/use-toast";
 import { useInventoryEvents } from "@/hooks/useInventoryEvents";
@@ -15,7 +15,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Loader2, PackageCheck, Plus, Trash2 } from "lucide-react";
 
-type WorkInventorySnapshot = { enabled: boolean; allocation: WorkAllocation | null; items: InventoryItem[]; warehouses: Warehouse[] };
+type WorkInventorySnapshot = {
+  enabled: boolean; allocation: WorkAllocation | null; items: InventoryItem[]; warehouses: Warehouse[];
+  requirements?: WorkRequirements; canSelect?: boolean;
+};
 type DraftLine = Allocation;
 
 export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = false }: {
@@ -46,7 +49,7 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
   const draftEditEpoch = useRef(0);
   const [draftTouched, setDraftTouched] = useState(false);
   const [staleAllocation, setStaleAllocation] = useState(false);
-  const canAssign = hasPermission("inventory.assign");
+  const canAssign = hasPermission("inventory.assign") && data?.canSelect !== false;
 
   const mutation = useMutation({
     mutationFn: async ({ action, payload }: { action: string; payload: Record<string, unknown> }) => {
@@ -210,8 +213,18 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
         {inventoryEvents.status === "unavailable" && <Button type="button" size="sm" variant="outline" aria-label="Retry live inventory updates" onClick={inventoryEvents.reconnect}>Retry</Button>}
         {data.allocation && <Badge variant={data.allocation.mode ? "default" : "outline"}>{data.allocation.status === "consumed" ? "Used reviewed" : data.allocation.mode ? "Review complete" : "Reserved"}</Badge>}
       </div></div>
-      <p className="text-sm text-muted-foreground">Reserved stock stays tied to this work order; scan meter serials before saving.</p></CardHeader>
+      <p className="text-sm text-muted-foreground">Planned requirements are separate from reserved stock. Technicians record what they actually use from an accessible stock location during installation.</p></CardHeader>
     <CardContent className="space-y-4">
+      <section className="rounded-md border bg-muted/20 p-3" aria-label="Planned requirements">
+        <p className="mb-2 text-sm font-medium">Planned requirements <span className="ml-1 text-xs font-normal text-muted-foreground">No reservation created</span></p>
+        {(data.requirements?.lines ?? []).length ? <ul className="space-y-1.5 text-sm">
+          {(data.requirements?.lines ?? []).map((line, index) => {
+            const item = items.find(value => value.id === line.itemId);
+            return <li key={`${line.itemId}-${index}`} className="flex justify-between gap-3"><span className="min-w-0 break-words">{item?.name ?? line.itemId}{item?.components.length ? " · kit" : ""}</span><span className="shrink-0 tabular-nums">{line.quantity} {item?.unit ?? "units"}</span></li>;
+          })}
+        </ul> : <p className="text-xs text-muted-foreground">No items are mapped to the assigned equipment types.</p>}
+        {!!data.requirements?.missing.length && <p className="mt-2 rounded border border-amber-500/40 bg-amber-500/5 p-2 text-xs text-amber-900 dark:text-amber-200">Unmapped equipment types: {data.requirements.missing.map(row => `${row.equipment} ${row.typeId}`).join(", ")}</p>}
+      </section>
       {allocationConflict && <div data-testid="inventory-external-change" role="alert" className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
         <p className="font-medium">Work-order allocation changed elsewhere</p>
         <p className="text-muted-foreground">Your staged lines and scanner text remain local. Saving or confirming this review is paused so it cannot silently apply to a different allocation.</p>

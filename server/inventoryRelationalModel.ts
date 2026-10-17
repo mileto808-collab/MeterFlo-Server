@@ -18,6 +18,13 @@ export const relationalEntities: EntityModel[] = [
   { name: "inventory_vendors", field: "vendors", columns: { ...text("id", "name", "contact", "address", "phone", "email", "reference"), active: "boolean" } },
   { name: "inventory_items", field: "items", columns: { ...text("id", "sku", "name", "description", "unit", "tracking", "equipment", "barcode", "manufacturer", "model", "vendorId"), categoryId: "uuid", cost: "double precision", reorderPoint: "double precision", active: "boolean" },
     arrays: ["images"], children: [{ name: "inventory_kit_recipe_lines", paths: ["components"], columns: line }] },
+  { name: "inventory_type_links", field: "typeLinks",
+    columns: { ...text("id", "equipment", "itemId"), typeId: "integer", systemTypeId: "integer", moduleTypeId: "integer" } },
+  { name: "inventory_work_requirements", field: "workRequirements", key: "workOrderId",
+    columns: { workOrderId: "integer" }, children: [
+      { name: "inventory_work_requirement_lines", paths: ["lines"], columns: line },
+      { name: "inventory_work_requirement_missing", paths: ["missing"], columns: text("equipment", "typeId") },
+    ] },
   { name: "inventory_orders", field: "orders", columns: { ...text("id", "type", "vendorId", "sourceId", "destinationId", "orderNumber", "reference", "status", "notes", "createdAt", "archivedAt", "replacementFor") },
     json: ["closure"], children: [{ name: "inventory_order_lines", paths: ["lines", "received", "dispatched", "losses", "closure.unfulfilled"], columns: line, arrays: ["serials"] }] },
   { name: "inventory_counts", field: "counts", columns: text("id", "warehouseId", "status", "reason"), json: ["draft"],

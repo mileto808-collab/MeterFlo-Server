@@ -70,7 +70,6 @@ type ParsedWorkOrder = {
   oldGps?: string;
   oldSystemType?: string;
   newSystemType?: string;
-  inventoryItems?: string | Array<{ warehouseId: string; itemId: string; quantity: number; serials?: string[] }>;
   oldModuleId?: string;
   newModuleId?: string;
   oldModuleRead?: number;
@@ -113,7 +112,6 @@ type ColumnMapping = {
   newModuleRead: string;
   oldModuleType: string;
   newModuleType: string;
-  inventoryItems: string;
   status: string;
   scheduledAt: string;
   scheduledBy: string;
@@ -150,7 +148,6 @@ const defaultColumnMapping: ColumnMapping = {
   newModuleRead: "",
   oldModuleType: "",
   newModuleType: "",
-  inventoryItems: "",
   status: "",
   scheduledAt: "",
   scheduledBy: "",
@@ -415,9 +412,7 @@ export default function ProjectImport() {
 
   const openEditConfig = (config: FileImportConfig) => {
     const savedMapping: Record<string, string> = { ...defaultColumnMapping, ...(config.columnMapping as Record<string, string>) };
-    if (!inventoryEnabled) {
-      delete savedMapping.inventoryItems;
-    }
+    delete savedMapping.inventoryItems;
     setEditingConfig(config);
     setScheduleForm({
       name: config.name,
@@ -438,9 +433,7 @@ export default function ProjectImport() {
       return;
     }
     const columnMapping = { ...scheduleForm.columnMapping };
-    if (!inventoryEnabled) {
-      delete columnMapping.inventoryItems;
-    }
+    delete columnMapping.inventoryItems;
     const data = { ...scheduleForm, columnMapping };
     if (editingConfig) {
       updateConfigMutation.mutate({ id: editingConfig.id, data });
@@ -603,12 +596,6 @@ export default function ProjectImport() {
     ];
 
     const activeMappings = [...mappings];
-    if (inventoryEnabled) {
-      activeMappings.push({
-        field: "inventoryItems",
-        variants: ["inventory items", "inventory_items", "inventoryitems", "inventory assignments"],
-      });
-    }
 
     headerRow.forEach((header) => {
       const lower = header.toLowerCase().trim();
@@ -662,9 +649,6 @@ export default function ProjectImport() {
           oldModuleType: getValueByHeader(columnMapping.oldModuleType) || undefined,
           newModuleType: getValueByHeader(columnMapping.newModuleType) || undefined,
         }),
-        ...(inventoryEnabled && getValueByHeader(columnMapping.inventoryItems)
-          ? { inventoryItems: getValueByHeader(columnMapping.inventoryItems) }
-          : {}),
         oldModuleId: getValueByHeader(columnMapping.oldModuleId) || undefined,
         newModuleId: getValueByHeader(columnMapping.newModuleId) || undefined,
         oldModuleRead: columnMapping.oldModuleRead ? parseIntOrUndefined(getValueByHeader(columnMapping.oldModuleRead)) : undefined,
@@ -694,7 +678,13 @@ export default function ProjectImport() {
         toast({ title: "Invalid format: expected an array of work orders", variant: "destructive" });
         return;
       }
-      importMutation.mutate({ workOrders, fileName: "json_text_input", importSource: "json_text" });
+      const safeWorkOrders = workOrders.map((workOrder: unknown) => {
+        if (!workOrder || typeof workOrder !== "object" || Array.isArray(workOrder)) return workOrder;
+        const safe = { ...(workOrder as Record<string, unknown>) };
+        delete safe.inventoryItems;
+        return safe;
+      });
+      importMutation.mutate({ workOrders: safeWorkOrders, fileName: "json_text_input", importSource: "json_text" });
     } catch (error) {
       toast({ title: "Invalid JSON format", variant: "destructive" });
     }
@@ -753,9 +743,6 @@ export default function ProjectImport() {
           oldModuleType: getValueByHeader(columnMapping.oldModuleType) || undefined,
           newModuleType: getValueByHeader(columnMapping.newModuleType) || undefined,
         }),
-        ...(inventoryEnabled && getValueByHeader(columnMapping.inventoryItems)
-          ? { inventoryItems: getValueByHeader(columnMapping.inventoryItems) }
-          : {}),
         oldModuleId: getValueByHeader(columnMapping.oldModuleId) || undefined,
         newModuleId: getValueByHeader(columnMapping.newModuleId) || undefined,
         oldModuleRead: columnMapping.oldModuleRead ? parseIntOrUndefined(getValueByHeader(columnMapping.oldModuleRead)) : undefined,
@@ -993,7 +980,7 @@ export default function ProjectImport() {
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">old_module_id, new_module_id</span> - Module identifiers</div>
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">old_module_read, new_module_read</span> - Module readings</div>
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">old_module_type, new_module_type</span> - Module types</div>
-                    {inventoryEnabled && <div><span className="font-mono bg-muted px-2 py-1 rounded">inventoryItems</span> - JSON array of warehouse/item assignments, quantity, and optional serials</div>}
+                    {inventoryEnabled && <div className="rounded border border-primary/20 bg-primary/5 p-2 text-xs">New system and module types create planned inventory requirements from this project’s type item links. Imports never reserve stock.</div>}
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">status, scheduled_at, scheduled_by, trouble, notes</span> - Work order details</div>
                     <div><span className="font-mono bg-muted px-2 py-1 rounded">assigned_user_id, assigned_group_id, created_by, completed_at</span> - Assignment and tracking</div>
                   </div>
@@ -1007,13 +994,7 @@ WO-001,CUST-123,John Smith,123 Main St,Springfield,IL,62701,Water,Route A,Zone 1
 WO-002,CUST-456,Jane Doe,456 Oak Ave,Springfield,IL,62702,Electric,Route B,Zone 2,SYS-OLD-002
 WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,SYS-OLD-003`}
                   </pre>
-                  {inventoryEnabled && (
-                    <div className="mt-3 rounded-md border border-primary/20 bg-primary/5 p-3 text-xs">
-                      <p className="font-medium text-foreground">Optional inventory assignment column</p>
-                      <p className="mt-1 text-muted-foreground">Normal imports do not require inventory assignments. To reserve stock explicitly, map a column containing a JSON array using item and warehouse IDs from this project. Inventory assignment permission is required.</p>
-                      <code className="mt-2 block overflow-x-auto rounded bg-background p-2">[{"{\"warehouseId\":\"warehouse-id\",\"itemId\":\"item-id\",\"quantity\":2,\"serials\":[]}"}]</code>
-                    </div>
-                  )}
+                  {inventoryEnabled && <p className="mt-3 text-xs text-muted-foreground">When inventory is enabled, imported new system/module types create planned requirements from this project’s type item links. Imports never reserve stock.</p>}
                 </div>
               </div>
             </CardContent>
@@ -1052,7 +1033,6 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
                   <MappingSelect field="newModuleRead" label="New Module Reading" />
                   <MappingSelect field="oldModuleType" label="Old Module Type" />
                   <MappingSelect field="newModuleType" label="New Module Type" />
-                  {inventoryEnabled && <MappingSelect field="inventoryItems" label="Inventory items (JSON array)" />}
                   <MappingSelect field="status" label="Status" />
                   <MappingSelect field="scheduledAt" label="Scheduled At" />
                   <MappingSelect field="scheduledBy" label="Scheduled By" />
@@ -1064,12 +1044,6 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
                   <MappingSelect field="completedBy" label="Completed By" />
                   <MappingSelect field="completedAt" label="Completed At" />
                 </div>
-                {inventoryEnabled && (
-                  <p className="text-xs leading-relaxed text-muted-foreground">
-                    Example value: <code className="rounded bg-muted px-1 py-0.5">[{"{\"warehouseId\":\"warehouse-id\",\"itemId\":\"item-id\",\"quantity\":2,\"serials\":[]}"}]</code>.
-                    A serialized serials array is also accepted.
-                  </p>
-                )}
               </CardContent>
             </Card>
           )}
@@ -1098,7 +1072,6 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
                         <TableHead>New System Type</TableHead>
                         <TableHead>Old Module Type</TableHead>
                         <TableHead>New Module Type</TableHead>
-                        {inventoryEnabled && <TableHead>Inventory items</TableHead>}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1115,7 +1088,6 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
                           <TableCell>{wo.newSystemType || "-"}</TableCell>
                           <TableCell>{wo.oldModuleType || "-"}</TableCell>
                           <TableCell>{wo.newModuleType || "-"}</TableCell>
-                          {inventoryEnabled && <TableCell className="max-w-[240px] truncate font-mono text-xs">{typeof wo.inventoryItems === "string" ? wo.inventoryItems : JSON.stringify(wo.inventoryItems || [])}</TableCell>}
                         </TableRow>
                       ))}
                     </TableBody>
@@ -1148,13 +1120,7 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {inventoryEnabled && (
-                <p className="text-sm text-muted-foreground">
-                  Optionally include <code className="rounded bg-muted px-1">inventoryItems</code> to reserve stock with inventory assignment permission, for example{" "}
-                  <code className="rounded bg-muted px-1">[{"{\"warehouseId\":\"warehouse-id\",\"itemId\":\"item-id\",\"quantity\":2,\"serials\":[]}"}]</code>.
-                  Normal imports do not require this field and do not change stock.
-                </p>
-              )}
+              {inventoryEnabled && <p className="text-sm text-muted-foreground">Include newSystemType and newModuleType values to create planned requirements from this project’s type item links. Imports never reserve stock; technicians record actual use at installation.</p>}
               <div>
                 <Label>JSON Data</Label>
                 <Textarea
@@ -1645,15 +1611,11 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
               <p className="text-xs text-muted-foreground mb-2">
                 Enter the column names from your CSV/Excel files that map to each field
               </p>
-              {inventoryEnabled && <p className="mb-2 text-xs text-muted-foreground">For inventoryItems, use the source column containing a JSON array such as [{"{\"warehouseId\":\"warehouse-id\",\"itemId\":\"item-id\",\"quantity\":2,\"serials\":[]}"}].</p>}
+              {inventoryEnabled && <p className="mb-2 text-xs text-muted-foreground">New system/module type values create planned requirements from this project’s type item links; they do not reserve stock.</p>}
               <div className="grid grid-cols-2 gap-2 max-h-[300px] overflow-y-auto">
-                {Object.keys(defaultColumnMapping).filter(field =>
-                  inventoryEnabled || field !== "inventoryItems",
-                ).map((field) => (
+                {Object.keys(defaultColumnMapping).map((field) => (
                   <div key={field} className="flex items-center gap-2">
-                    <Label className="min-w-[120px] text-sm" title={field === "inventoryItems" ? "JSON array of warehouseId, itemId, quantity, and optional serials." : undefined}>
-                      {field === "inventoryItems" ? "Inventory items (JSON)" : field}
-                    </Label>
+                    <Label className="min-w-[120px] text-sm">{field}</Label>
                     <Input
                       value={scheduleForm.columnMapping[field] || ""}
                       onChange={(e) => setScheduleForm(prev => ({

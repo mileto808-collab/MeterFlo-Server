@@ -259,7 +259,7 @@ test("reading-only completion releases reservations without consuming", () => {
   const done = completeInventoryWorkOrder(s, 2, true);
   assert.deepEqual(done.stock, s.stock);
   assert.equal(done.allocations[0].status, "released");
-  assert.throws(() => post(s, "prepareUse", { workOrderId: 2, revision: 1, mode: "reading_only", used: [{ warehouseId: "main", itemId: "seal", quantity: 1 }], dispositions: [] }), /Reading-only/);
+  assert.throws(() => post(s, "prepareUse", { workOrderId: 2, revision: s.allocations.find(a => a.workOrderId === 2)!.revision, mode: "reading_only", used: [{ warehouseId: "main", itemId: "seal", quantity: 1 }], dispositions: [] }), /Reading-only/);
 });
 test("partial transfer dispatch/acceptance and cancellation retain stock", () => {
   let s = setup();

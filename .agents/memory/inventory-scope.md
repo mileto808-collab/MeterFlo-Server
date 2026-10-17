@@ -13,11 +13,11 @@ Only explicit manual item assignment while creating a work order or editing a no
 
 **Why:** The user clarified that the installed physical unit is unknown until the technician grabs it. Planned replacement requirements and physical reservations are different concepts. Customers may use kits containing systems/modules, hardware, and seals, with serialized or quantity-tracked components.
 
-**How to apply:** Preserve behavior when inventory is disabled. Never interpret import-created requirement lines as reservations or stock consumption. Resolve the type-to-item database relationship explicitly before implementation; do not assume independently generated numeric IDs identify the same entity.
+**How to apply:** Preserve behavior when inventory is disabled. Never interpret import-created requirement lines as reservations or stock consumption. Use explicit type-to-item references; do not assume independently generated numeric IDs identify the same entity.
 
-The user accepted explicit type-to-inventory-item references rather than equal primary keys. Support both preassembled kits and components collected during installation, as well as standalone system/module items with either serial or quantity tracking. Shipments may supply individual items or vendor kits.
+The user accepted explicit type-to-inventory-item references rather than equal primary keys. Keep those links project-specific and optional for inventory-disabled projects. Support both preassembled kits and components collected during installation, as well as standalone system/module items with either serial or quantity tracking. Shipments may supply individual items or vendor kits.
 
-**Why:** The user receives individual components unless the vendor supplies a kit, and not every work order uses a kit. Preassembly must not be required for standalone-item usage.
+**Why:** The user receives individual components unless the vendor supplies a kit, and not every work order uses a kit. Preassembly must not be required for standalone-item usage. Shared equipment types can serve projects with independent inventory catalogs, so a global item link would couple unrelated projects.
 
 **How to apply:** Keep type-to-item references optional for inventory-disabled operation. Deduct components at assembly for preassembled kits and consume the finished kit at installation; when collecting components during installation, consume the actual components at completion without also consuming a finished kit.
 

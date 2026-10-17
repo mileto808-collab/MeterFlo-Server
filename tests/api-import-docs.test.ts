@@ -39,8 +39,8 @@ test("target reference covers all fields, exact lengths, and safe-update checkbo
     assert.ok(cells[2].includes('"'), `Target needs a concrete value: ${field}`);
     assert.equal(cells[3], safeUpdateFields.includes(field as any) ? "Yes" : "No");
   }
-  assert.equal(safeUpdateFields.length, 18);
-  assert.equal(Object.keys(importFields).length, 22);
+  assert.equal(safeUpdateFields.length, 20);
+  assert.equal(Object.keys(importFields).length, 24);
 });
 
 test("all JSON blocks parse and four complete settings objects validate without network/database access", () => {

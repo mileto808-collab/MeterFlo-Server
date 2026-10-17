@@ -38,14 +38,13 @@ const fieldLabels: Record<string, string> = {
   address: "Address", city: "City", state: "State / region", zip: "ZIP / postal code", phone: "Phone",
   email: "Email", route: "Route", zone: "Zone", serviceType: "Service type", oldSystemId: "Old system ID",
   oldSystemReading: "Old system reading", oldGps: "Old GPS", oldSystemType: "Old system type",
+  newSystemType: "New system type",
   oldModuleId: "Old module ID", oldModuleRead: "Old module reading", oldModuleType: "Old module type",
+  newModuleType: "New module type",
   status: "Status", notes: "Notes",
-  inventoryItems: "Inventory items (JSON array)",
 };
-const cleanFieldMapping = (mapping: Record<string, string>, inventoryEnabled: boolean) =>
-  Object.fromEntries(Object.entries(mapping).filter(([, target]) =>
-    inventoryEnabled || target !== "inventoryItems",
-  ));
+const cleanFieldMapping = (mapping: Record<string, string>) =>
+  Object.fromEntries(Object.entries(mapping).filter(([, target]) => target !== "inventoryItems"));
 const defaults: ApiImportSettings = {
   name: "", endpoint: "", authType: "none", secretEnvVar: "", keyHeader: "X-API-Key",
   recordsPath: "", fieldMapping: { id: "customerWoId" }, queryParams: {}, pagination: "none",
@@ -116,12 +115,7 @@ export default function ProjectApiImport({ projectId: explicitProjectId }: { pro
     queryKey: ["/api/projects", projectId], enabled: !!projectId, retry: false,
   });
   const inventoryEnabled = Boolean(project?.inventoryEnabled);
-  const availableFieldKeys = useMemo(() => {
-    const fields = Object.keys(importFields);
-    return inventoryEnabled
-      ? [...fields.filter(field => field !== "inventoryItems"), "inventoryItems"]
-      : fields.filter(field => field !== "inventoryItems");
-  }, [inventoryEnabled]);
+  const availableFieldKeys = useMemo(() => Object.keys(importFields).filter(field => field !== "inventoryItems"), []);
   const { data: configs, isLoading: configsLoading, error: configsError, refetch: refetchConfigs } =
     useQuery<ApiImportConfig[]>({
       queryKey: [`/api/projects/${projectId}/api-import/configs`],
@@ -192,7 +186,7 @@ export default function ProjectApiImport({ projectId: explicitProjectId }: { pro
   }
   function openEdit(config: ApiImportConfig) {
     const settings = settingsFrom(config);
-    const fieldMapping = cleanFieldMapping(settings.fieldMapping as Record<string, string>, inventoryEnabled);
+    const fieldMapping = cleanFieldMapping(settings.fieldMapping as Record<string, string>);
     setEditingId(config.id); setDraft({ ...settings, fieldMapping: fieldMapping as ApiImportSettings["fieldMapping"] });
     setMappingText(JSON.stringify(fieldMapping, null, 2));
     setParamsText(JSON.stringify(settings.queryParams, null, 2));
@@ -204,7 +198,7 @@ export default function ProjectApiImport({ projectId: explicitProjectId }: { pro
       const queryParams = JSON.parse(paramsText);
       if (!parsedFieldMapping || Array.isArray(parsedFieldMapping) || typeof parsedFieldMapping !== "object") throw new Error("Field mapping must be a JSON object.");
       if (!queryParams || Array.isArray(queryParams) || typeof queryParams !== "object") throw new Error("Query parameters must be a JSON object.");
-      const fieldMapping = cleanFieldMapping(parsedFieldMapping as Record<string, string>, inventoryEnabled);
+      const fieldMapping = cleanFieldMapping(parsedFieldMapping as Record<string, string>);
       const mandatoryTargets: ImportField[] = ["customerWoId", "customerId", "customerName", "address", "serviceType"];
       const mappedTargets = Object.values(fieldMapping);
       const missingTargets = mandatoryTargets.filter(target => !mappedTargets.includes(target));
@@ -363,8 +357,8 @@ export default function ProjectApiImport({ projectId: explicitProjectId }: { pro
               <div className="space-y-3">
                 <Alert className="border-primary/20 bg-primary/5"><ShieldCheck className="h-4 w-4 text-primary" /><AlertTitle>Open baseline work orders only</AlertTitle><AlertDescription>Imported records use the Open baseline status. Every mapping must include these required targets: customerWoId, customerId, customerName, address, and serviceType.</AlertDescription></Alert>
                 <FormField label="Field mapping JSON" hint={inventoryEnabled
-                  ? 'Each sourcePath maps to one MeterFlo target. Example: { "workOrder.id": "customerWoId", "stock": "inventoryItems" }. The stock source must be an array (or a JSON string) of { "warehouseId": "warehouse-id", "itemId": "item-id", "quantity": 2, "serials": [] }.'
-                  : 'Each sourcePath maps to one unique MeterFlo target. Example: { "workOrder.id": "customerWoId", "customer.name": "customerName" }.'}>
+                  ? 'Each sourcePath maps to one unique MeterFlo target. Map newSystemType and newModuleType to assigned equipment types; those types create planned requirements from this project’s item links. Imports never reserve stock.'
+                  : 'Each sourcePath maps to one unique MeterFlo target. Example: { "workOrder.id": "customerWoId", "customer.name": "customerName" }. Old/new system and module type targets are available.'}>
                   <Textarea className="min-h-48 font-mono text-xs" value={mappingText} onChange={e => setMappingText(e.target.value)} spellCheck={false} />
                 </FormField>
               </div>

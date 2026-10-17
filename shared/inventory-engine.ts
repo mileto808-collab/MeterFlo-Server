@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { requirementsSatisfied } from "./inventory-requirements";
 import { itemDeletionBlockers, categoryDeletionBlockers } from "./inventory-deletion";
 import { normalizeInventoryCategories, inventoryCategoryLabels } from "./inventory-categories";
 import { allocateOrderNumber, uuidOrderId } from "./inventory-order-labels";
@@ -306,6 +307,25 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
       assert(o.dispatched.every(l => totals(o.received, l.itemId) >= totals(o.dispatched, l.itemId)), "Receive dispatched stock before cancelling remaining quantities.");
       o.status = "cancelled";
     }
+  } else if (a === "typeLink") {
+    const input = z.object({ equipment: z.enum(["system", "module"]), typeId: z.number().int(),
+      itemId: identifier.nullable() }).strict().parse(d);
+    const id = `${input.equipment}-${input.typeId}`;
+    if (input.itemId) {
+      const linked = item(s, input.itemId);
+      assert(linked.active, "Choose an active inventory item.");
+      const coversEquipment = (itemId: string, seen: string[] = []): boolean => {
+        assert(!seen.includes(itemId), "Kit recipe contains a cycle.");
+        const candidate = item(s, itemId);
+        return candidate.equipment === input.equipment ||
+          candidate.components.some(c => coversEquipment(c.itemId, [...seen, itemId]));
+      };
+      assert(coversEquipment(input.itemId), `Choose an item or kit containing ${input.equipment} equipment.`);
+      const link = { id, ...input, itemId: input.itemId,
+        systemTypeId: input.equipment === "system" ? input.typeId : null,
+        moduleTypeId: input.equipment === "module" ? input.typeId : null };
+      s.typeLinks = [...(s.typeLinks ?? []).filter(l => l.id !== id), link];
+    } else s.typeLinks = (s.typeLinks ?? []).filter(l => l.id !== id);
   } else if (a === "assign") {
     const { workOrderId, lines: input } = z.object({ workOrderId: workId, lines: allocations }).strict().parse(d);
     const old = s.allocations.find(a => a.workOrderId === workOrderId);
@@ -320,20 +340,32 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
   } else if (a === "prepareUse") {
     const input = z.object({ workOrderId: workId, revision: z.number().int(), mode: z.enum(["changeout", "reading_only"]),
       used: allocations, dispositions: z.array(dispositionSchema).max(2) }).strict().parse(d);
-    const allocation = s.allocations.find(a => a.workOrderId === input.workOrderId);
-    assert(allocation && allocation.status === "reserved" && allocation.revision === input.revision, "Assignments changed; refresh work-order items.");
+    let allocation = s.allocations.find(a => a.workOrderId === input.workOrderId);
+    if (!allocation) {
+      assert(input.revision === 0, "Inventory use changed; refresh work-order items.");
+      allocation = { workOrderId: input.workOrderId, lines: [], used: [], dispositions: [], mode: null, status: "reserved", revision: 0 };
+      s.allocations.push(allocation);
+    }
+    assert(allocation.status === "reserved" && allocation.revision === input.revision, "Assignments changed; refresh work-order items.");
     for (const l of allocation.lines) access(l.warehouseId);
     const keys = input.used.map(l => `${l.warehouseId}/${l.itemId}`);
     assert(new Set(keys).size === keys.length, "Combine duplicate used-item lines.");
     assert(input.mode !== "reading_only" || !input.used.length && !input.dispositions.length, "Reading-only work cannot consume replacement stock.");
     for (const l of input.used) {
+      access(l.warehouseId);
       validateLines(s, [l]);
       const assigned = allocation.lines.find(x => x.warehouseId === l.warehouseId && x.itemId === l.itemId);
-      assert(assigned && l.quantity <= assigned.quantity && l.serials.every(x => assigned.serials.includes(x)), "Used items must be reserved on this work order.");
+      if (assigned) assert(l.quantity <= assigned.quantity && l.serials.every(x => assigned.serials.includes(x)), "Used reserved items must match this work order's reservation.");
     }
+    // Check unreserved actual selections against current custody, excluding only
+    // this work order's own reservations. Preparation itself reserves nothing.
+    const trial = structuredClone(s);
+    const groups = new Map<string, Allocation[]>();
+    for (const l of input.used) groups.set(l.warehouseId, [...(groups.get(l.warehouseId) ?? []), l]);
+    for (const [warehouse, selected] of groups) move(trial, warehouse, selected, -1, input.workOrderId);
     assert(new Set(input.dispositions.map(x => x.equipment)).size === input.dispositions.length, "Only one disposition per removed equipment type.");
     for (const r of input.dispositions) if (r.disposition === "returned") { assert(r.warehouseId, "Choose a return warehouse."); access(r.warehouseId); }
-    allocation.used = input.used; allocation.dispositions = input.dispositions; allocation.mode = input.mode;
+    allocation.used = input.used; allocation.dispositions = input.dispositions; allocation.mode = input.mode; allocation.revision++;
   } else if (a === "assemble") {
     const { warehouseId, itemId, quantity, serials, components } = z.object({ warehouseId: identifier, itemId: identifier,
       quantity: z.number().int().positive().max(1000000), serials: z.array(identifier).default([]), components: lines }).strict().parse(d);
@@ -438,6 +470,9 @@ export function completeInventoryWorkOrder(original: InventoryState, workOrderId
   if (a.status === "consumed" || a.status === "released") return original;
   assert(!readingOnly || a.mode === "reading_only", "This project only permits reading-only work.");
   if (a.mode === "changeout") {
+    const requirements = s.workRequirements?.find(r => r.workOrderId === workOrderId);
+    assert(!requirements || requirementsSatisfied(s, requirements, a.used),
+      "Resolve missing type-to-item links and record every required item or kit component before completion.");
     const groups = new Map<string, Allocation[]>();
     for (const l of a.used) groups.set(l.warehouseId, [...(groups.get(l.warehouseId) || []), l]);
     for (const [w, ls] of groups) move(s, w, ls, -1, workOrderId, { to: { kind: "work", id: String(workOrderId) } });

@@ -113,6 +113,19 @@ export async function applyInventoryRelationalSchema(pool: Pool) {
     // Define all relations before installing cross-table constraints.
     for (const statement of statements) await client.query(statement);
     for (const constraint of constraints) await client.query(constraint);
+    await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS inventory_type_link_identity
+      ON public.inventory_type_links(project_id,equipment,type_id)`);
+    await client.query(`DO $$ BEGIN
+      IF NOT EXISTS(SELECT 1 FROM pg_constraint WHERE conname='inventory_type_link_system_fk') THEN
+        ALTER TABLE public.inventory_type_links ADD CONSTRAINT inventory_type_link_system_fk
+          FOREIGN KEY(system_type_id) REFERENCES public.system_types(id) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED;
+        ALTER TABLE public.inventory_type_links ADD CONSTRAINT inventory_type_link_module_fk
+          FOREIGN KEY(module_type_id) REFERENCES public.module_types(id) ON DELETE RESTRICT DEFERRABLE INITIALLY DEFERRED;
+        ALTER TABLE public.inventory_type_links ADD CONSTRAINT inventory_type_link_kind_check CHECK (
+          equipment='system' AND system_type_id=type_id AND system_type_id IS NOT NULL AND module_type_id IS NULL OR
+          equipment='module' AND module_type_id=type_id AND module_type_id IS NOT NULL AND system_type_id IS NULL);
+      END IF;
+    END $$`);
     await client.query(`CREATE OR REPLACE FUNCTION public.inventory_reject_legacy_write() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN
         IF EXISTS(SELECT 1 FROM public.inventory_relational_projects WHERE project_id=OLD.project_id) THEN

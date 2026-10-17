@@ -106,7 +106,6 @@ const workOrderFields = [
   { key: "oldGps", label: "Old GPS", required: false },
   { key: "oldSystemType", label: "Old System Type", required: false },
   { key: "newSystemType", label: "New System Type", required: false },
-  { key: "inventoryItems", label: "Inventory items (JSON array)", required: false },
   { key: "oldModuleId", label: "Old Module ID", required: false },
   { key: "newModuleId", label: "New Module ID", required: false },
   { key: "oldModuleRead", label: "Old Module Reading", required: false },
@@ -205,10 +204,8 @@ export default function ProjectDbImport() {
     retry: false,
   });
   const inventoryEnabled = Boolean((project as any)?.inventoryEnabled);
-  const visibleWorkOrderFields = workOrderFields.filter(field =>
-    inventoryEnabled || field.key !== "inventoryItems",
-  );
-  const visiblePreviewColumns = previewColumns;
+  const visibleWorkOrderFields = workOrderFields;
+  const visiblePreviewColumns = previewColumns.filter(column => column.toLowerCase() !== "inventoryitems");
 
   const { data: dbConfigs = [], refetch: refetchConfigs } = useQuery<ExternalDatabaseConfig[]>({
     queryKey: ["/api/projects", projectId, "database-configs"],
@@ -451,9 +448,8 @@ export default function ProjectDbImport() {
 
   const openEditImportConfig = (config: ImportConfig) => {
     const savedMapping = (config.columnMapping as Record<string, string>) || {};
-    const columnMapping = Object.fromEntries(Object.entries(savedMapping).filter(([key]) =>
-      inventoryEnabled || key !== "inventoryItems",
-    ));
+    const columnMapping = { ...savedMapping };
+    delete columnMapping.inventoryItems;
     setImportConfigForm({
       name: config.name,
       sqlQuery: config.sqlQuery,
@@ -502,9 +498,8 @@ export default function ProjectDbImport() {
 
   const handleSaveImportConfig = () => {
     if (!selectedDbConfigId) return;
-    const columnMapping = Object.fromEntries(Object.entries(importConfigForm.columnMapping).filter(([key]) =>
-      inventoryEnabled || key !== "inventoryItems",
-    ));
+    const columnMapping = { ...importConfigForm.columnMapping };
+    delete columnMapping.inventoryItems;
     const data = { ...importConfigForm, columnMapping };
     
     if (editingImportConfigId) {
@@ -942,12 +937,12 @@ export default function ProjectDbImport() {
               <div className="grid gap-2">
                 <Label>Column Mapping</Label>
                 <p className="text-sm text-muted-foreground">Map source columns to work order fields. Required fields are marked with *</p>
-                {inventoryEnabled && <p className="text-xs leading-relaxed text-muted-foreground">Map inventory items from a JSON array column, for example <code className="rounded bg-muted px-1">[{"{\"warehouseId\":\"warehouse-id\",\"itemId\":\"item-id\",\"quantity\":2,\"serials\":[]}"}]</code>. Serialized serials arrays are also accepted.</p>}
+                {inventoryEnabled && <p className="text-xs leading-relaxed text-muted-foreground">New system/module type values create planned requirements from this project’s type item links. Imports never reserve stock; technicians record actual use at installation.</p>}
                 <ScrollArea className="h-[250px] border rounded-md p-3">
                   <div className="grid gap-3">
                     {visibleWorkOrderFields.map((field) => (
                       <div key={field.key} className="grid grid-cols-2 gap-4 items-center">
-                        <Label className="text-sm" title={field.key === "inventoryItems" ? "JSON array: warehouseId, itemId, quantity, optional serials." : undefined}>
+                        <Label className="text-sm">
                           {field.label}
                           {field.required && <span className="text-red-500 ml-1">*</span>}
                         </Label>

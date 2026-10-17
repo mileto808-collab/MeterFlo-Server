@@ -39,6 +39,22 @@ export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: n
       throw new Error("Saved shipment draft references an unrelated receipt.");
   }
   const s = backup.state;
+  const typeLinks = z.array(z.object({
+    id: z.string().min(1), equipment: z.enum(["system", "module"]), typeId: z.number().int(),
+    itemId: z.string().min(1), systemTypeId: z.number().int().nullable(), moduleTypeId: z.number().int().nullable(),
+  }).strict()).parse(s.typeLinks ?? []);
+  if (new Set(typeLinks.map(l => `${l.equipment}/${l.typeId}`)).size !== typeLinks.length ||
+      typeLinks.some(l => l.id !== `${l.equipment}-${l.typeId}` || !s.items.some(i => i.id === l.itemId) ||
+        (l.equipment === "system" ? l.systemTypeId !== l.typeId || l.moduleTypeId !== null : l.moduleTypeId !== l.typeId || l.systemTypeId !== null)))
+    throw new Error("Inventory backup has invalid equipment type links.");
+  const requirements = z.array(z.object({
+    workOrderId: z.number().int().positive(),
+    lines: z.array(z.object({ itemId: z.string().min(1), quantity: z.number().int().positive() }).strict()),
+    missing: z.array(z.object({ equipment: z.enum(["system", "module"]), typeId: z.string().min(1) }).strict()),
+  }).strict()).parse(s.workRequirements ?? []);
+  if (new Set(requirements.map(r => r.workOrderId)).size !== requirements.length ||
+      requirements.some(r => !workOrderIds.includes(r.workOrderId) || r.lines.some(l => !s.items.some(i => i.id === l.itemId))))
+    throw new Error("Inventory backup has invalid planned work-order requirements.");
   z.array(warehouseSchema).parse(s.warehouses); z.array(itemSchema).parse(s.items); z.array(vendorSchema).parse(s.vendors);
   const categories = z.array(categoryNameSchema).parse(s.categories ?? []);
   if (new Set(categories.map(categoryKey)).size !== categories.length) throw new Error("Duplicate inventory categories in backup.");

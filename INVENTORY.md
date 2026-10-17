@@ -438,28 +438,23 @@ Open **Removed Equipment** to receive a pending returned system or module into q
 
 ## Work orders
 
-Work-order detail includes inventory assignment and review. Assign item, warehouse, quantity and exact serials; saving reserves available stock. Replace/remove assignments to release unused reservations. The actual changeout wizard shows the assigned items and includes **Inventory use & removed equipment review**.
+Work-order detail separates **Planned requirements** from **Reserved stock**. Configure **Items → Type item links** to link each project-assigned System/Module Type to a project inventory item or kit. Types keep their existing IDs; an explicit relational reference points to the inventory item. Shared types can link to different items in different projects. Old types describe installed equipment; new types specify expected replacements. Imports create planned lines only, never warehouse assignments or serial reservations. Missing links are shown explicitly.
 
-Review the quantities/serials actually used and the removed equipment's disposition before completing. Completion deducts only used stock and releases unused reservations in the same transaction as the work-order update. New equipment IDs must match used serialized inventory; repeated completion does not deduct a second time. Reading-only work consumes no replacement stock.
+Only explicit manual item assignment on an unfinished, non-closed work order reserves stock. Assign an item, warehouse, quantity and exact serials where required; saving reserves available stock. Replace/remove assignments to release unused reservations.
 
-System Type and Module Type controls are disabled for inventory-enabled projects; Service Type remains editable. Historical type values are preserved. Inventory-disabled projects retain their original forms, imports and PDFs.
+The **Perform Physical Changeout** wizard step shows requirements, kit components, and actual-use entry. Technicians can select standalone systems/modules, preassembled kits, or loose components collected from vehicle/warehouse stock. Preassembly is optional: a finished kit consumes components during assembly and consumes only the kit at installation; loose-component installation consumes only its actual components at completion. Matching system/module links to the same kit produce one planned kit, not duplicate requirements. Do not select a kit and its loose components for the same installation.
+
+Review actual quantities/serials and removed-equipment disposition before completing. Actual-use preparation does not reserve or deduct stock. Completion rechecks warehouse access, stock and other work orders' reservations, deducts actual stock and releases unused reservations in the same transaction as the work-order update. New equipment IDs must match used serialized equipment, including recorded preassembled-kit contents. Quantity-tracked systems/modules do not require inventory serial scans. Serial components inside purchased kits require trustworthy recorded contents; catalog recipes alone are not proof of physical serial identity. Repeated completion does not deduct twice. Reading-only and unable-to-change visits consume no replacement stock.
+
+Old/new System Type and Module Type controls remain editable under normal permissions and project equipment scope. Type validation continues against the existing type catalogs with inventory enabled or disabled. Inventory-disabled projects do not require inventory links and retain their original forms, imports and PDFs.
 
 Work-order PDFs include allocation/use, warehouse, serial and disposition details. Completed consumption cannot be silently reset, reopened, deleted or have its equipment identities changed. An authorized user must first **Reconcile work-order inventory**, enter a reason and explicitly choose whether used stock is physically returning. Do not restore quantities merely to correct paperwork. Reconciliation is blocked after removed returns have been accepted; resolve those physical stock records with an authorized operator rather than automatically undoing them.
 
 ## Import columns
 
-For enabled projects the file/JSON, external-database and Customer API Import pages offer `inventoryItems`, hide legacy system/module type targets, and show an example. Existing saved configurations must be reviewed when inventory is enabled. Baseline IDs/readings/GPS and required customer fields still apply.
+File/JSON, scheduled file, external database and customer API imports retain old/new system/module type targets. Map `newSystemType` and `newModuleType` using the configured project type product IDs. With inventory enabled, their item links generate planned requirements without selecting stock. Baseline IDs/readings/GPS and required customer fields still apply. An imported historical Completed status without selected stock does not manufacture stock consumption or installed-unit custody.
 
-`inventoryItems` is an array; a CSV/Excel/text cell may contain its JSON representation:
-
-```json
-[
-  {"warehouseId":"warehouse-id","itemId":"serialized-item-id","quantity":1,"serials":["0000456"]},
-  {"warehouseId":"warehouse-id","itemId":"seal-item-id","quantity":2,"serials":[]}
-]
-```
-
-Use IDs from the project's inventory, not warehouse names or SKUs. Serialized quantities must equal serial count. Omitting the field leaves assignments unchanged; sending `[]` releases existing open assignments. Invalid or unavailable assignments roll back that work-order row. Completed consumption cannot be overwritten by an import. The importing user needs assign permission and warehouse access. Scheduled file/DB imports require an authorized `file_import` account; configure its role, project membership and warehouse access before importing allocations. API Import safe updates intentionally do not overwrite inventory assignments; assign only during creation.
+Legacy `inventoryItems` mappings are ignored by imports, including their warehouses and serials. Imports cannot replace manual reservations or complete work that still has selected inventory; release selections or complete the changeout manually. No inventory assignment permission is required just to import planned requirements. Normal import permissions remain required. Customer API safe updates retain their untouched-Open-only and row-version safeguards.
 
 ## Item categories
 

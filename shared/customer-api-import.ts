@@ -5,6 +5,7 @@ export const importFields = {
   city: 100, state: 50, zip: 20, phone: 50, email: 100, route: 100, zone: 100,
   serviceType: 50, oldSystemId: 100, oldSystemReading: 100, oldGps: 100,
   oldSystemType: 100, oldModuleId: 100, oldModuleRead: 100, oldModuleType: 100,
+  newSystemType: 100, newModuleType: 100,
   status: 50, notes: 10000,
   inventoryItems: 100000,
 } as const;

@@ -18,6 +18,8 @@ export function itemDeletionBlockers(state: InventoryState, id: string): string[
   if (state.items.some(item => item.id !== id && item.components.some(component => component.itemId === id)))
     reasons.push("Used in another item's kit recipe.");
   const collections: Array<[unknown, string]> = [
+    [state.typeLinks, "Linked to a system/module type. Remove its inventory link first."],
+    [state.workRequirements, "Referenced by planned work-order requirements."],
     [state.orders, "Linked to an order, including cancelled, completed, or cleared orders."],
     [state.counts, "Referenced by a cycle count or its saved draft."],
     [state.allocations, "Referenced by work-order reservations or usage history."],

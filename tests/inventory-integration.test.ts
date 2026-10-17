@@ -73,7 +73,7 @@ test("transactional completion, mobile usage, concurrency, import rollback, and 
     assert.equal(poAudit.length, 4);
     assert.ok(poAudit.every(row => row.actor_id === user.id));
     const deleted = await work.createWorkOrder({ customerWoId: "deleted-gap" } as any);
-    await pool.query(`DELETE FROM "${schema}".work_orders WHERE id=$1`, [deleted.id]);
+    await work.deleteWorkOrder(deleted.id);
     const wo = await withAuditContext(scope(), () => work.createWorkOrder({ customerWoId: "fixture-wo", customerName: "Fixture", serviceType: "Electric", oldSystemId: "OLD1" } as any));
     const competitor = await work.createWorkOrder({ customerWoId: "competitor" } as any);
     const results = await Promise.allSettled([wo.id, competitor.id].map(id => command("assign", { workOrderId: id, lines: [{ itemId: "meter", warehouseId: "w", quantity: 1, serials: ["0001"] }] })));

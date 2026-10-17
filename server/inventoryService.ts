@@ -11,6 +11,8 @@ import type { SavedShipmentDraft } from "../shared/inventory-shipment-draft-mode
 import { readInventoryCategories, storedCategoryState, writeInventoryCategories, writeInventoryCategoryItem } from "./inventoryCategories";
 import { kitSerialContents } from "../shared/inventory-kits";
 import { readRelationalInventory, writeRelationalInventory } from "./inventoryRelational";
+import { setWorkRequirements, workRequirements } from "./inventoryRequirements";
+import { actualEquipmentLines } from "../shared/inventory-requirements";
 
 // Saved captures are temporary editing state, not another physical-stock
 // ledger. Record useful changes without duplicating every scan on every save.
@@ -67,7 +69,7 @@ export async function saveInventory(client: PoolClient, projectId: number, befor
         serialsBefore: prior?.serials || [], serialsAfter: b.serials };
     }).filter(b => b.before !== b.after || b.reservedBefore !== b.reservedAfter || JSON.stringify(b.serialsBefore) !== JSON.stringify(b.serialsAfter)),
   ];
-  const entityChanges: Array<{ field: string; before: unknown; after: unknown }> = (["warehouses", "vendors", "items", "orders", "allocations", "counts", "returns", "shipmentHolds", "shipmentDrafts", "kitAssemblies", "kitHolds"] as const).flatMap(kind => {
+  const entityChanges: Array<{ field: string; before: unknown; after: unknown }> = (["warehouses", "vendors", "items", "orders", "allocations", "counts", "returns", "shipmentHolds", "shipmentDrafts", "kitAssemblies", "kitHolds", "typeLinks", "workRequirements"] as const).flatMap(kind => {
     const previous = new Map((before[kind] ?? []).map(value => [((value as any).id ?? (value as any).workOrderId), value]));
     const updates = (after[kind] ?? []).flatMap(value => {
       const id = (value as any).id ?? (value as any).workOrderId;
@@ -76,8 +78,8 @@ export async function saveInventory(client: PoolClient, projectId: number, befor
         before: kind === "shipmentDrafts" ? shipmentDraftAudit(prior as SavedShipmentDraft | undefined) : prior || null,
         after: kind === "shipmentDrafts" ? shipmentDraftAudit(value as SavedShipmentDraft) : value }];
     });
-    if (kind === "shipmentDrafts" || kind === "items") for (const [id, prior] of previous) {
-      if (!(after[kind] ?? []).some(d => d.id === id))
+    if (["shipmentDrafts", "items", "typeLinks", "workRequirements"].includes(kind)) for (const [id, prior] of previous) {
+      if (!(after[kind] ?? []).some(d => ((d as any).id ?? (d as any).workOrderId) === id))
         updates.push({ field: `${kind}/${id}`, before: kind === "shipmentDrafts" ? shipmentDraftAudit(prior as SavedShipmentDraft) : prior, after: null as any });
     }
     return updates;
@@ -112,7 +114,14 @@ export async function postInventory(projectId: number, command: InventoryCommand
       if (!wo) throw new InventoryError("Work order not found in this project.");
       if (!admin && wo.assigned_user_id && wo.assigned_user_id !== actor) throw new InventoryError("Work order assigned to another user.");
       const { rows: labels } = await client.query("SELECT label FROM public.work_order_statuses WHERE lower(code)=lower($1)", [wo.status]);
-      if (String(wo.status).toLowerCase() === "completed" || labels.some(l => String(l.label).toLowerCase() === "completed")) throw new InventoryError("Reconcile completed work before changing inventory.");
+      if (["completed", "closed", "cancelled"].includes(String(wo.status).toLowerCase()) ||
+          labels.some(l => ["completed", "closed", "cancelled"].includes(String(l.label).toLowerCase())))
+        throw new InventoryError("Only unfinished, non-closed work orders can change inventory selections.");
+    }
+    if (command.action === "typeLink") {
+      const { equipment, typeId } = z.object({ equipment: z.enum(["system", "module"]), typeId: z.number().int() }).parse(command.data);
+      const { rows } = await client.query(`SELECT 1 FROM public.${equipment}_type_projects WHERE project_id=$1 AND ${equipment}_type_id=$2`, [projectId, typeId]);
+      if (!rows.length) throw new InventoryError("Choose an equipment type assigned to this project.");
     }
     if (command.action === "warehouse") {
       const input = command.data;
@@ -133,6 +142,15 @@ export async function postInventory(projectId: number, command: InventoryCommand
       }
     }
     const result = applyInventoryCommand(before, command, actor, admin);
+    if (!result.replay && command.action === "typeLink") {
+      const { rows: [project] } = await client.query("SELECT database_name FROM public.projects WHERE id=$1", [projectId]);
+      if (project?.database_name && /^[a-z0-9_]+$/.test(project.database_name)) {
+        const { rows: work } = await client.query(`SELECT * FROM "${project.database_name}".work_orders
+          WHERE lower(status) NOT IN ('completed','closed','cancelled') AND NOT EXISTS (
+            SELECT 1 FROM public.work_order_statuses s WHERE lower(s.code)=lower(status) AND lower(s.label) IN ('completed','closed','cancelled'))`);
+        for (const row of work) setWorkRequirements(result.state, await workRequirements(client, projectId, result.state, row));
+      }
+    }
     if (!result.replay) await saveInventory(client, projectId, before, result.state, command.operationId, command.action);
     await client.query("COMMIT");
     return result;
@@ -150,7 +168,7 @@ export async function postInventory(projectId: number, command: InventoryCommand
 export async function inventoryWorkOrderChange(client: PoolClient, schema: string, prior: any, next: any, usage?: unknown, importedItems?: unknown, ordinaryImport = false) {
   const { rows: [p] } = await client.query("SELECT id,inventory_enabled,wizard_mode,changeout_equipment_type FROM public.projects WHERE database_name=$1", [schema]);
   if (!p?.inventory_enabled) {
-    if (importedItems !== undefined && inventoryImportSchema.parse(importedItems).length) throw new InventoryError("Enable inventory before importing inventory items.");
+    if (!ordinaryImport && importedItems !== undefined && inventoryImportSchema.parse(importedItems).length) throw new InventoryError("Enable inventory before importing inventory items.");
     return;
   }
   const { rows: statuses } = await client.query("SELECT code,label FROM public.work_order_statuses");
@@ -162,7 +180,9 @@ export async function inventoryWorkOrderChange(client: PoolClient, schema: strin
   if (previouslyCompleted && completed && before.allocations.find(a => a.workOrderId === prior.id)?.status === "consumed" &&
       ["old_system_id", "new_system_id", "old_module_id", "new_module_id"].some(key => next[key] !== prior[key]))
     throw new InventoryError("Reconcile inventory before changing completed equipment IDs.");
-  if (importedItems !== undefined) {
+  // File/API imports describe requirements, never physical assignments. Ignore
+  // legacy inventoryItems mappings, including any warehouse or serial selections.
+  if (importedItems !== undefined && !ordinaryImport) {
     const input = inventoryImportSchema.parse(importedItems);
     const actorId = auditContext.getStore()?.actorId;
     const user = actorId ? await storage.getUser(actorId) : await storage.getUserByUsername("file_import");
@@ -176,7 +196,21 @@ export async function inventoryWorkOrderChange(client: PoolClient, schema: strin
   }
   if (previouslyCompleted && (!next || !completed) && before.allocations.find(a => a.workOrderId === prior.id)?.status === "consumed")
     throw new InventoryError("Inventory-completed work cannot be reset/deleted/reopened until an authorized stock correction is reconciled.");
-  if (usage) {
+  if (next && !previouslyCompleted) {
+    const requirements = await workRequirements(client, p.id, state, next);
+    const saved = state.workRequirements?.find(r => r.workOrderId === next.id);
+    if ((saved || requirements.lines.length || requirements.missing.length) &&
+        canonicalInventoryJson(saved) !== canonicalInventoryJson(requirements)) {
+      if (state === before) state = structuredClone(before);
+      setWorkRequirements(state, requirements);
+      state.revision++;
+    }
+  } else if (!next && state.workRequirements?.some(r => r.workOrderId === prior?.id)) {
+    if (state === before) state = structuredClone(before);
+    state.workRequirements = state.workRequirements?.filter(r => r.workOrderId !== prior.id);
+    state.revision++;
+  }
+  if (usage && !ordinaryImport) {
     const command = z.object({ operationId: z.string().uuid(), revision: z.number().int(), mode: z.enum(["changeout", "reading_only"]),
       used: z.array(allocationSchema), dispositions: z.array(dispositionSchema) }).strict().parse(usage);
     const actor = auditContext.getStore()?.actorId;
@@ -188,7 +222,7 @@ export async function inventoryWorkOrderChange(client: PoolClient, schema: strin
       throw new InventoryError("Inventory work order is not assigned to this user.");
     const existing = state.allocations.find(a => a.workOrderId === next.id);
     if (previouslyCompleted && existing) {
-      if (existing.revision !== command.revision || existing.mode !== command.mode ||
+      if (existing.revision !== command.revision + 1 || existing.mode !== command.mode ||
          canonicalInventoryJson(existing.used) !== canonicalInventoryJson(command.used) || canonicalInventoryJson(existing.dispositions) !== canonicalInventoryJson(command.dispositions))
         throw new InventoryError("Completed inventory use cannot be changed by another upload; reconcile it first.");
     } else state = applyInventoryCommand(state, { operationId: command.operationId, action: "prepareUse",
@@ -196,8 +230,12 @@ export async function inventoryWorkOrderChange(client: PoolClient, schema: strin
   }
   // Only trusted import callers opt in. Existing stock assignments, explicit item
   // imports and usage uploads must still go through the full completion checks.
-  const importedWithoutStock = ordinaryImport && importedItems === undefined && !usage &&
-    !state.allocations.some(a => a.workOrderId === next?.id);
+  if (ordinaryImport && completed && !previouslyCompleted) {
+    const allocation = state.allocations.find(a => a.workOrderId === next?.id);
+    if (allocation?.status === "reserved" && (allocation.lines.length || allocation.used.length))
+      throw new InventoryError("Imports cannot complete work with selected inventory. Complete the changeout or release its selections manually.");
+  }
+  const importedWithoutStock = ordinaryImport;
   if (completed && !previouslyCompleted && !importedWithoutStock) {
     const actorId = auditContext.getStore()?.actorId;
     const completionUser = actorId ? await storage.getUser(actorId) : await storage.getUserByUsername("file_import");
@@ -221,13 +259,11 @@ export async function inventoryWorkOrderChange(client: PoolClient, schema: strin
         const old = next[`old_${equipment}_id`], fresh = next[`new_${equipment}_id`];
         if (old && fresh && old !== fresh && !allocation.dispositions.some(d => d.equipment === equipment && d.serial === old))
           throw new InventoryError(`Record the removed ${equipment} disposition.`);
-        const expandedUse = (input: any[], ancestors: string[] = []): any[] => input.flatMap(l => {
-          if (ancestors.includes(l.itemId)) return [];
-          const contents = l.serials.flatMap((serial: string) => kitSerialContents(state, l.itemId, serial));
-          return [l, ...expandedUse(contents, [...ancestors, l.itemId])];
-        });
-        const serialized = expandedUse(allocation.used).filter(l => state.items.find(i => i.id === l.itemId)?.equipment === equipment).flatMap(l => l.serials);
-        if (fresh && !serialized.includes(fresh)) throw new InventoryError(`New ${equipment} ID must match a used serialized inventory item.`);
+        const equipmentLines = actualEquipmentLines(state, allocation.used)
+          .filter(l => state.items.find(i => i.id === l.itemId)?.equipment === equipment);
+        const serialized = equipmentLines.filter(l => state.items.find(i => i.id === l.itemId)?.tracking === "serialized").flatMap(l => l.serials);
+        const quantityTracked = equipmentLines.some(l => state.items.find(i => i.id === l.itemId)?.tracking === "regular");
+        if (fresh && !quantityTracked && !serialized.includes(fresh)) throw new InventoryError(`New ${equipment} ID must match a used serialized inventory item.`);
         if (serialized.length > 1) throw new InventoryError(`Use one serialized ${equipment} per changeout.`);
       }
       if (allocation.used.some(l => {

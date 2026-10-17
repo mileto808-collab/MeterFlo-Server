@@ -193,7 +193,7 @@ test("full-system inventory restore preserves identity IDs, JSON serials, sequen
     assert.ok(priorAudit.some(e => e.outcome === "success"), "authenticated identity is retained even though it is absent from the snapshot");
     assert.deepEqual((await client.query(`SELECT id FROM "${workSchema}".work_orders ORDER BY id`)).rows.map(r => r.id), [2, 3]);
     assert.deepEqual((await client.query("SELECT state FROM inventory_state WHERE project_id=42")).rows[0].state, storedCategoryState({ ...state, orderNumberCounters: advancedCounters }));
-    assert.equal((await client.query("SELECT category_id FROM inventory_items WHERE project_id=42")).rows[0].category_id, categoryId);
+    assert.equal((await client.query("SELECT category_id FROM inventory_items WHERE project_id=42 AND id='m'")).rows[0].category_id, categoryId);
     assert.equal((await client.query("SELECT name FROM inventory_categories WHERE project_id=42 AND id=$1", [categoryId])).rows[0].name, "Meters");
     assert.deepEqual((await readRelationalInventory(await transactional.connect(), 42)).stock[0].serials, ["00002", "QUARANTINE-0003"]);
     assert.equal((await client.query(`INSERT INTO "${workSchema}".work_orders(customer_wo_id,created_by) VALUES('after-full',NULL) RETURNING id`)).rows[0].id, 4);

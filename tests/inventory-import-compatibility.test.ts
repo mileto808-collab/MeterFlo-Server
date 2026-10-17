@@ -108,11 +108,13 @@ test("legacy imports and type editing are independent of inventory; real stock s
       const before = await inventoryState(p.id);
       assert.equal(before.allocations.length, 0);
       assert.equal(before.stock.length, 0);
-      assert.equal(before.revision, 0);
+      assert.ok(before.revision > 0, "imports may save planned requirements, never stock reservations");
       const command = (action: any, data: any) => withAuditContext(scope(), () => postInventory(p.id, { operationId: randomUUID(), action, data }, user.id, true));
       await command("warehouse", { id: "w", code: "W", name: "Test", type: "physical", address: "Test" });
       await command("vendor", { id: "v", name: "Test" });
       await command("item", { id: "meter", sku: "M", name: "Meter", tracking: "serialized", equipment: "system" });
+      for (const system of systems) await pool.query("INSERT INTO public.system_type_projects(system_type_id,project_id) VALUES($1,$2)", [system.id, p.id]);
+      for (const system of systems) await command("typeLink", { equipment: "system", typeId: system.id, itemId: "meter" });
       await command("order", { id: "po", type: "purchase", vendorId: "v", destinationId: "w", lines: [{ itemId: "meter", quantity: 1 }] });
       await command("release", { orderId: "po" });
       await command("receive", { orderId: "po", lines: [{ itemId: "meter", quantity: 1, serials: ["SERIAL-1"] }] });
@@ -122,8 +124,9 @@ test("legacy imports and type editing are independent of inventory; real stock s
       const failed = await work.importWorkOrders([{ ...baseline, customerWoId: "editable", status: "Completed" }]);
       assert.equal(failed.errors.length, 1, "ordinary import must not bypass a real reservation");
       assert.deepEqual(await inventoryState(p.id), assigned, "failed import leaves stock unchanged");
-      await assert.rejects(work.createWorkOrder({ ...baseline, customerWoId: "explicit", inventoryItems: lines } as any, undefined, true), /permission required/);
-      assert.equal(await work.getWorkOrderByCustomerWoId("explicit"), undefined);
+      await work.createWorkOrder({ ...baseline, customerWoId: "explicit", inventoryItems: lines } as any, undefined, true);
+      assert.ok(await work.getWorkOrderByCustomerWoId("explicit"));
+      assert.deepEqual((await inventoryState(p.id)).allocations, assigned.allocations, "legacy inventoryItems imports cannot reserve physical stock");
       const allocation = assigned.allocations.find(a => a.workOrderId === open.id)!;
       await withAuditContext(scope(), () => work.updateWorkOrder(open.id, { status: "Completed", newSystemId: "SERIAL-1", inventoryUsage: {
         operationId: randomUUID(), revision: allocation.revision, mode: "changeout", used: lines, dispositions: [],

@@ -114,10 +114,8 @@ export function mapImportRecord(record: unknown, config: ApiImportSettings, rule
     const raw = property(record, source);
     if (raw === undefined) continue;
     if (field === "inventoryItems") {
-      if (JSON.stringify(raw).length > importFields.inventoryItems) { errors.push("inventoryItems: value exceeds the field length"); continue; }
-      const parsed = inventoryImportSchema.safeParse(raw === null || raw === "" ? [] : raw);
-      if (!parsed.success) errors.push("inventoryItems: expected item, warehouse, quantity and matching serial assignments");
-      else mapped[field] = parsed.data;
+      // Retain compatibility with saved mappings, but imports must never choose
+      // warehouses, reserve physical units, or import actual serial usage.
       continue;
     }
     if (raw === null || raw === "") { mapped[field] = null; continue; }
@@ -139,6 +137,8 @@ export function mapImportRecord(record: unknown, config: ApiImportSettings, rule
   if (mapped.status && mapped.status !== rules.openStatus) errors.push("status: API imports only create Open work orders");
   if (mapped.oldSystemType && !rules.systems.includes(mapped.oldSystemType)) errors.push("oldSystemType: not configured for this project");
   if (mapped.oldModuleType && !rules.modules.includes(mapped.oldModuleType)) errors.push("oldModuleType: not configured for this project");
+  if (mapped.newSystemType && !rules.systems.includes(mapped.newSystemType)) errors.push("newSystemType: not configured for this project");
+  if (mapped.newModuleType && !rules.modules.includes(mapped.newModuleType)) errors.push("newModuleType: not configured for this project");
   if (mapped.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mapped.email)) errors.push("email: invalid email address");
   if (mapped.oldGps) {
     const parts = String(mapped.oldGps).split(",").map(value => value.trim());

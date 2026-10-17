@@ -19,6 +19,7 @@ export { inventoryPrint } from "./inventoryPrint";
 import { draftWarehouse, isShipmentDraftAction } from "../shared/inventory-shipment-drafts";
 import { serialQuerySchema, stockQuerySchema } from "../shared/inventory-stock-query";
 import { prepareStockQueries, queryStock, queryStockSerials, stockOptions, stockSummary } from "./inventoryStockQueries";
+import { workRequirements } from "./inventoryRequirements";
 
 export function inventoryVisibleState(state: InventoryState, actor: string, admin: boolean, canCount = true, permissions?: string[]) {
   // Project-level view permits finding stock at other locations and requesting
@@ -73,6 +74,13 @@ export function registerInventoryRoutes(app: Express) {
       state, permissions: c.permissions, users: users.map(u => ({ id: u.id, username: u.username || u.id })), actors };
   };
   app.use(base, isAuthenticated, auth);
+  app.get(`${base}/type-links`, handler(async (_req, res) => {
+    const c = res.locals.inventory;
+    const [state, systemTypes, moduleTypes] = await Promise.all([
+      inventoryState(c.project.id), storage.getSystemTypes(c.project.id), storage.getModuleTypes(c.project.id),
+    ]);
+    return { links: state.typeLinks ?? [], items: state.items, systemTypes, moduleTypes };
+  }));
   app.get(`${base}/events`, async (req: any, res) => {
     const { project, user } = res.locals.inventory;
     if (!project.inventoryEnabled) return res.status(403).json({ message: "Project inventory is disabled." });
@@ -228,7 +236,18 @@ export function registerInventoryRoutes(app: Express) {
   app.get("/api/projects/:projectId/work-orders/:workOrderId/inventory", isAuthenticated, auth, handler(async (req, res) => {
     const c = res.locals.inventory, s = inventoryVisibleState(await inventoryState(c.project.id), c.user.id, c.admin);
     const id = z.coerce.number().int().positive().parse(req.params.workOrderId);
-    return { enabled: !!c.project.inventoryEnabled, allocation: s.allocations.find(a => a.workOrderId === id) || null, items: s.items, warehouses: s.warehouses };
+    if (!c.project.databaseName || !/^[a-z0-9_]+$/.test(c.project.databaseName)) throw new InventoryError("Work-order storage unavailable.");
+    const { rows: [wo] } = await pool.query(`SELECT * FROM "${c.project.databaseName}".work_orders WHERE id=$1`, [id]);
+    if (!wo) throw new InventoryError("Work order not found.");
+    const allocation = s.allocations.find(a => a.workOrderId === id) || null;
+    const { rows: labels } = await pool.query("SELECT label FROM public.work_order_statuses WHERE lower(code)=lower($1)", [wo.status]);
+    const canSelect = ![String(wo.status).toLowerCase(), ...labels.map(l => String(l.label).toLowerCase())]
+      .some(status => ["completed", "closed", "cancelled"].includes(status));
+    const requirements = allocation?.status === "consumed"
+      ? s.workRequirements?.find(r => r.workOrderId === id)
+      : await workRequirements(pool as any, c.project.id, s, wo);
+    return { enabled: !!c.project.inventoryEnabled, canSelect, allocation, requirements: requirements ?? { workOrderId: id, lines: [], missing: [] },
+      items: s.items, warehouses: s.warehouses, revision: s.revision };
   }));
 }
 // insertAuditEvent only needs a query-capable connection for this single event.

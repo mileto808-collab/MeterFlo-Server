@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Allocation, Disposition, InventoryItem, Warehouse, WorkAllocation } from "@shared/inventory";
+import type { Allocation, Disposition, InventoryItem, Warehouse, WorkAllocation, WorkRequirements } from "@shared/inventory";
 import { usePermissions } from "@/hooks/usePermissions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,6 +31,7 @@ import { useGpsCapture, type GpsCaptureSource } from "@/hooks/use-gps-capture";
 import { isValidReading, getReadingInputValue, readingLimitMessage } from "@shared/reading-precision";
 import { GPSCapture } from "./gps-capture";
 import SignaturePad, { SignaturePadRef, SignatureType } from "./signature-pad";
+import { ActualUseCollector, actualUseLinesAreValid, initialActualUse, type ActualUseDraft } from "./inventory/actual-use-collector";
 import {
   ArrowLeft,
   ArrowRight,
@@ -253,12 +254,56 @@ export function SystemChangeoutWizard({
   const { toast } = useToast();
   const { hasPermission } = usePermissions();
   const inventoryQueryKey = ["/api/projects", projectId, "work-orders", workOrderId, "inventory"];
-  const { data: workInventory } = useQuery<{ enabled: boolean; allocation: WorkAllocation | null; items: InventoryItem[]; warehouses: Warehouse[] }>({
+  type WizardInventory = { enabled: boolean; allocation: WorkAllocation | null; items: InventoryItem[]; warehouses: Warehouse[];
+    requirements?: WorkRequirements;
+    revision?: number };
+  const { data: workInventory, isLoading: workInventoryLoading, isError: workInventoryError, refetch: refetchWorkInventory } = useQuery<WizardInventory>({
     queryKey: inventoryQueryKey,
     enabled: !!inventoryEnabled && isOpen,
   });
-  const [usedInventory, setUsedInventory] = useState<Record<string, { quantity: string; serials: string }>>({});
+  const [actualUse, setActualUse] = useState<ActualUseDraft[]>([]);
+  const actualUseInitializedFor = useRef<number | null>(null);
+  const actualUseBaseline = useRef<string | null>(null);
+  const actualUseTouched = useRef(false);
+  const [basisAccepted, setBasisAccepted] = useState(false);
+  const prepareAttempt = useRef<{
+    fingerprint: string; operationId: string; intent: string; revision: number;
+    requirements: string; reservedLines: string;
+    commandData: { workOrderId: number; revision: number; mode: "changeout" | "reading_only"; used: Allocation[]; dispositions: Disposition[] };
+  } | null>(null);
   const [removedMeters, setRemovedMeters] = useState<Record<string, { serial: string; disposition: string; warehouseId: string }>>({});
+  const inventoryBasis = JSON.stringify({
+    revision: workInventory?.revision ?? 0,
+    allocation: workInventory?.allocation ?? null,
+    requirements: workInventory?.requirements ?? null,
+  });
+  const actualUseConflict = actualUseTouched.current && actualUseBaseline.current !== null &&
+    actualUseBaseline.current !== inventoryBasis && !basisAccepted;
+
+  useEffect(() => {
+    // Accepting one refresh must not suppress warnings about later stock changes.
+    if (actualUseBaseline.current !== null && actualUseBaseline.current !== inventoryBasis)
+      setBasisAccepted(false);
+  }, [inventoryBasis]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      actualUseInitializedFor.current = null;
+      actualUseBaseline.current = null;
+      actualUseTouched.current = false;
+      prepareAttempt.current = null;
+      setActualUse([]);
+      setBasisAccepted(false);
+      return;
+    }
+    if (workInventory && actualUseInitializedFor.current !== workOrderId) {
+      actualUseInitializedFor.current = workOrderId;
+      setActualUse(initialActualUse(workInventory.allocation));
+      actualUseBaseline.current = inventoryBasis;
+      actualUseTouched.current = false;
+      setBasisAccepted(false);
+    }
+  }, [isOpen, workInventory, workOrderId, inventoryBasis]);
   
   // Default search method settings - all enabled by default
   const searchSettings: SearchMethodSettings = searchMethodSettings ?? {
@@ -623,7 +668,10 @@ export function SystemChangeoutWizard({
       case "beforePhotos":
         return data.beforePhotos.length >= 1;
       case "physicalChange":
-        return true;
+        return !inventoryEnabled || (!workInventoryLoading && !workInventoryError && !!workInventory && hasPermission("inventory.assign") &&
+          actualUseLinesAreValid(actualUse, workInventory?.items ?? []) &&
+          !actualUse.some(line => Number(line.quantity) > 0 && !workInventory?.warehouses.some(warehouse => warehouse.id === line.warehouseId && warehouse.active)) &&
+          !actualUseConflict);
       case "newSystemId": {
         // Validate based on scope
         const needsNewSystemId = (displayMode === "system" || displayMode === "both");
@@ -656,15 +704,7 @@ export function SystemChangeoutWizard({
         return !!data.signatureName.trim();
       case "inventoryReview": {
         if (!hasPermission("inventory.assign")) return false;
-        const lines = workInventory?.allocation?.lines ?? [];
-        const quantitiesValid = lines.every(line => {
-          const entry = usedInventory[`${line.warehouseId}/${line.itemId}`];
-          const quantity = Number(entry?.quantity ?? "0");
-          if (!Number.isInteger(quantity) || quantity < 0 || quantity > line.quantity) return false;
-          if (quantity === 0 || line.serials.length === 0) return true;
-          const serials = (entry?.serials || "").split(/[\\n,;]/).map(value => value.trim()).filter(Boolean);
-          return serials.length === quantity && serials.every(serial => line.serials.includes(serial));
-        });
+        const quantitiesValid = actualUseLinesAreValid(actualUse, workInventory?.items ?? []) && !actualUseConflict;
         const assets = [
           ...(oldSystemId ? [{ key: "system" as const }] : []),
           ...(oldModuleId ? [{ key: "module" as const }] : []),
@@ -896,37 +936,23 @@ export function SystemChangeoutWizard({
     setIsSubmitting(true);
     try {
       if (inventoryEnabled) {
-        if (!hasPermission("inventory.assign")) {
-          throw new Error("Inventory assignment permission is required to review stock before completion.");
+        if (!hasPermission("inventory.assign")) throw new Error("Inventory assignment permission is required to record actual stock use.");
+        const latest = await apiRequest("GET", `/api/projects/${projectId}/work-orders/${workOrderId}/inventory`)
+          .then(response => response.json() as Promise<WizardInventory>);
+        const latestBasis = JSON.stringify({ revision: latest.revision ?? 0, allocation: latest.allocation ?? null, requirements: latest.requirements ?? null });
+        if (!actualUseLinesAreValid(actualUse, latest.items ?? [])) throw new Error("Check used quantities and serials. Reserved lines can only use their reserved quantity and serials.");
+        if (actualUse.some(line => Number(line.quantity) > 0 && !latest.warehouses.some(warehouse => warehouse.id === line.warehouseId && warehouse.active))) {
+          queryClient.setQueryData(inventoryQueryKey, latest);
+          setBasisAccepted(false);
+          throw new Error("A selected stock location is no longer active. Your entries are retained; choose a current location.");
         }
-        const endpoint = `/api/projects/${projectId}/inventory/commands`;
-        const postCommand = async (action: string, commandData: Record<string, unknown>) => {
-          const response = await apiRequest("POST", endpoint, {
-            operationId: crypto.randomUUID(), action, data: commandData,
-          });
-          return response.json() as Promise<{ state: { allocations: WorkAllocation[] } }>;
-        };
-        let latest = await apiRequest("GET", `/api/projects/${projectId}/work-orders/${workOrderId}/inventory`)
-          .then(response => response.json() as Promise<{ allocation: WorkAllocation | null }>);
-        if (!latest.allocation) {
-          await postCommand("assign", { workOrderId, lines: [] });
-          latest = await apiRequest("GET", `/api/projects/${projectId}/work-orders/${workOrderId}/inventory`)
-            .then(response => response.json() as Promise<{ allocation: WorkAllocation | null }>);
-        }
-        if (!latest.allocation) throw new Error("Inventory assignment is not available. Refresh the work order and try again.");
-        const allocation = latest.allocation;
-        const mode = isReadingOnlyMode ? "reading_only" : "changeout";
-        const used: Allocation[] = mode === "reading_only" || !data.canChange ? [] : allocation.lines.flatMap(line => {
-          const key = `${line.warehouseId}/${line.itemId}`;
-          const entry = usedInventory[key];
-          const quantity = Number(entry?.quantity ?? "0");
-          if (!Number.isInteger(quantity) || quantity < 0 || quantity > line.quantity) throw new Error("Used quantity must be a whole number within the reserved amount.");
-          if (quantity === 0) return [];
-          const serials = line.serials.length ? (entry?.serials || "").split(/[\n,;]/).map(value => value.trim()).filter(Boolean) : [];
-          if (line.serials.length && (serials.length !== quantity || serials.some(serial => !line.serials.includes(serial)))) {
-            throw new Error(`Scan ${quantity} serial number${quantity === 1 ? "" : "s"} reserved to this work order.`);
-          }
-          return [{ ...line, quantity, serials }];
+        const mode = isReadingOnlyMode || !data.canChange ? "reading_only" : "changeout";
+        const used: Allocation[] = mode === "reading_only" || !data.canChange ? [] : actualUse.flatMap(line => {
+          const quantity = Number(line.quantity);
+          if (quantity <= 0) return [];
+          const item = latest.items.find(value => value.id === line.itemId);
+          const serials = item?.tracking === "serialized" ? line.serials.split(/[\n,;]/).map(value => value.trim()).filter(Boolean) : [];
+          return [{ itemId: line.itemId, warehouseId: line.warehouseId, quantity, serials }];
         });
         const removedAssets = [
           ...(oldSystemId ? [{ equipment: "system" as const, key: "system", oldSerial: oldSystemId }] : []),
@@ -940,7 +966,34 @@ export function SystemChangeoutWizard({
           if (entry.disposition === "returned" && !entry.warehouseId) throw new Error("Choose a warehouse for returned equipment.");
           return { equipment: asset.equipment, serial, disposition: entry.disposition as Disposition["disposition"], warehouseId: entry.disposition === "returned" ? entry.warehouseId : null };
         });
-        await postCommand("prepareUse", { workOrderId, revision: allocation.revision, mode, used, dispositions });
+        const intent = JSON.stringify({ workOrderId, mode, used, dispositions });
+        const priorAttempt = prepareAttempt.current;
+        const retryAfterPrepared = !!priorAttempt && priorAttempt.intent === intent &&
+          (latest.allocation?.revision ?? 0) === priorAttempt.revision + 1 &&
+          JSON.stringify(latest.requirements ?? null) === priorAttempt.requirements &&
+          JSON.stringify(latest.allocation?.lines ?? []) === priorAttempt.reservedLines;
+        if (actualUseBaseline.current !== null && latestBasis !== actualUseBaseline.current && !retryAfterPrepared) {
+          queryClient.setQueryData(inventoryQueryKey, latest);
+          setBasisAccepted(false);
+          throw new Error("Work-order inventory or planned requirements changed. Your entries are retained; review the updated basis before submitting.");
+        }
+        let commandData: NonNullable<typeof prepareAttempt.current>["commandData"];
+        if (retryAfterPrepared && priorAttempt) {
+          commandData = priorAttempt.commandData;
+        } else {
+          commandData = { workOrderId, revision: latest.allocation?.revision ?? 0, mode, used, dispositions };
+          const fingerprint = JSON.stringify(commandData);
+          if (prepareAttempt.current?.fingerprint !== fingerprint) {
+            prepareAttempt.current = {
+              fingerprint, operationId: crypto.randomUUID(), intent, revision: commandData.revision,
+              requirements: JSON.stringify(latest.requirements ?? null),
+              reservedLines: JSON.stringify(latest.allocation?.lines ?? []), commandData,
+            };
+          }
+        }
+        await apiRequest("POST", `/api/projects/${projectId}/inventory/commands`, {
+          operationId: prepareAttempt.current!.operationId, action: "prepareUse", data: commandData,
+        });
         await queryClient.invalidateQueries({ queryKey: inventoryQueryKey });
       }
       // For reading-only mode, set new IDs equal to old IDs (no equipment change)
@@ -956,6 +1009,7 @@ export function SystemChangeoutWizard({
       }
       
       await onComplete(submitData);
+      prepareAttempt.current = null;
       
       // Save time tracking data on successful submission
       if (sessionStartTime && projectId && workOrderId) {
@@ -1707,6 +1761,36 @@ export function SystemChangeoutWizard({
                 </ul>
               </CardContent>
             </Card>
+            {inventoryEnabled && <div className="space-y-3 text-left">
+              {!hasPermission("inventory.assign") ? <Card className="border-destructive/40"><CardContent className="pt-4 text-sm text-destructive">Inventory assignment permission is required to record stock used on this installation.</CardContent></Card> :
+                workInventoryLoading ? <Card><CardContent className="space-y-2 p-4"><div className="h-4 w-44 animate-pulse rounded bg-muted" /><div className="h-12 animate-pulse rounded bg-muted" /><div className="h-12 animate-pulse rounded bg-muted" /></CardContent></Card> :
+                workInventoryError || !workInventory ? <Card><CardContent className="p-4"><p className="text-sm text-destructive">Work-order inventory could not load.</p><Button className="mt-2" size="sm" variant="outline" onClick={() => void refetchWorkInventory()}>Retry</Button></CardContent></Card> :
+                <Card><CardContent className="pt-4">
+                  <ActualUseCollector
+                    value={actualUse}
+                    onChange={next => { actualUseTouched.current = true; setBasisAccepted(false); setActualUse(next); }}
+                    items={workInventory.items}
+                    warehouses={workInventory.warehouses}
+                    requirements={workInventory.requirements?.lines ?? []}
+                    missing={workInventory.requirements?.missing ?? []}
+                  />
+                  {actualUseConflict && <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm" role="alert">
+                    <p className="font-medium">Inventory basis changed while you were entering use</p>
+                    <p className="mt-1 text-muted-foreground">Your quantities and serials were kept. Recheck before continuing; current stock and access are still validated by the server.</p>
+                    <Button className="mt-2" type="button" size="sm" variant="outline" onClick={async () => {
+                      const checked = await refetchWorkInventory();
+                      if (checked.isError || !checked.data) return;
+                      actualUseBaseline.current = JSON.stringify({
+                        revision: checked.data.revision ?? 0,
+                        allocation: checked.data.allocation ?? null,
+                        requirements: checked.data.requirements ?? null,
+                      });
+                      setBasisAccepted(true);
+                    }}>Recheck and keep my entries</Button>
+                  </div>}
+                  <p className="mt-3 text-xs text-muted-foreground">Recording actual use does not reserve stock. Select a preassembled kit or add its loose components separately, never both for the same kit.</p>
+                </CardContent></Card>}
+            </div>}
           </div>
         );
       }
@@ -2357,31 +2441,10 @@ export function SystemChangeoutWizard({
             </div>
             {!hasPermission("inventory.assign") ? (
               <Card className="border-destructive/40"><CardContent className="pt-4 text-sm text-destructive">Inventory assignment permission is required to complete this work order.</CardContent></Card>
-            ) : (
-              <Card>
-                <CardHeader className="pb-3"><CardTitle className="text-base">Reserved replacement stock</CardTitle></CardHeader>
-                <CardContent className="space-y-4">
-                  {!workInventory?.allocation && <p className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">No stock assignment exists yet. An empty reservation will be created when this visit is submitted.</p>}
-                  {(workInventory?.allocation?.lines ?? []).length > 0 ? (
-                    <div className="space-y-3">
-                      {(workInventory?.allocation?.lines ?? []).map(line => {
-                        const item = workInventory?.items.find(value => value.id === line.itemId);
-                        const key = `${line.warehouseId}/${line.itemId}`;
-                        const current = usedInventory[key] ?? { quantity: "0", serials: "" };
-                        const warehouse = workInventory?.warehouses.find(value => value.id === line.warehouseId);
-                        return (
-                          <div key={key} className="grid gap-3 rounded-md border p-3 sm:grid-cols-[1fr_130px_1fr] sm:items-end">
-                            <div><div className="font-medium">{item?.name ?? line.itemId}</div><div className="text-xs text-muted-foreground">{warehouse?.code ?? line.warehouseId} · {line.quantity} reserved{line.serials.length ? ` · ${line.serials.join(", ")}` : ""}</div></div>
-                            <div className="space-y-1"><Label htmlFor={`wizard-used-${line.itemId}`}>Used quantity</Label><Input id={`wizard-used-${line.itemId}`} type="number" min="0" max={line.quantity} value={current.quantity} onChange={event => setUsedInventory(value => ({ ...value, [key]: { ...current, quantity: event.target.value } }))} /></div>
-                            {line.serials.length > 0 && <div className="space-y-1"><Label htmlFor={`wizard-serials-${line.itemId}`}>Installed serials</Label><Input id={`wizard-serials-${line.itemId}`} value={current.serials} onChange={event => setUsedInventory(value => ({ ...value, [key]: { ...current, serials: event.target.value } }))} placeholder="One reserved serial per unit used" /><span className="text-xs text-muted-foreground">Separate with commas or new lines.</span></div>}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : <p className="text-sm text-muted-foreground">No replacement stock was reserved for this work order.</p>}
-                </CardContent>
-              </Card>
-            )}
+            ) : <Card><CardContent className="pt-4 text-sm text-muted-foreground">
+              Actual stock use was entered during the physical installation step. No import reservation or empty assignment is created.
+              {actualUse.filter(line => Number(line.quantity) > 0).length > 0 && <ul className="mt-2 space-y-1 text-foreground">{actualUse.filter(line => Number(line.quantity) > 0).map(line => <li key={line.key}>{workInventory?.items.find(item => item.id === line.itemId)?.name ?? line.itemId} · {line.quantity} from {workInventory?.warehouses.find(warehouse => warehouse.id === line.warehouseId)?.code ?? line.warehouseId}</li>)}</ul>}
+            </CardContent></Card>}
             {(oldSystemId || oldModuleId) && (
               <Card>
                 <CardHeader className="pb-3"><CardTitle className="text-base">Removed Equipment</CardTitle></CardHeader>

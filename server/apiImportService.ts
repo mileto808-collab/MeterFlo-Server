@@ -139,7 +139,7 @@ export async function listApiImportRuns(projectId: number, limit = 25, offset = 
 }
 
 export function capturedWorkOrder(row: Record<string, any>, openStatus: string) {
-  const protectedFields = ["new_system_id", "new_system_reading", "new_system_type", "new_module_id", "new_module_read", "new_module_type",
+  const protectedFields = ["new_system_id", "new_system_reading", "new_module_id", "new_module_read",
     "new_gps", "signature_data", "signature_name", "notes", "trouble", "assigned_user_id", "assigned_group_id", "scheduled_at",
     "scheduled_by", "completed_at", "completed_by", "updated_by"];
   return row.status !== openStatus || protectedFields.some(field => row[field] !== null && row[field] !== undefined && row[field] !== "")
@@ -179,8 +179,9 @@ async function writeImportRecord(client: PoolClient, project: any, config: ApiIm
     for (const {key,column:c} of exactReadingFields) if (fields.includes(key as any)) {
       writeColumns.push(`${c}_text`); writeValues.push(mapped[key]);
     }
-    const result = await client.query(`UPDATE ${table} SET ${writeColumns.map((c,index) => `"${c}"=$${index+2}`).join(",")},updated_at=now() WHERE id=$1 RETURNING updated_at::text row_version`,
+    const result = await client.query(`UPDATE ${table} SET ${writeColumns.map((c,index) => `"${c}"=$${index+2}`).join(",")},updated_at=now() WHERE id=$1 RETURNING *,updated_at::text row_version`,
       [existing.id,...writeValues]);
+    await inventoryWorkOrderChange(client, project.database_name, existing, result.rows[0], undefined, undefined, true);
     await client.query(`UPDATE public.api_import_versions SET row_version=$3 WHERE project_id=$1 AND work_order_id=$2`,
       [project.id, existing.id, result.rows[0].row_version]);
     return { action: "updated", id: existing.id as number, message: "Updated selected baseline fields on an untouched Open work order" };
