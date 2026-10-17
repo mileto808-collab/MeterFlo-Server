@@ -83,6 +83,7 @@ import { WorkOrderPdf } from "@/components/work-order-pdf";
 import type { EquipmentVisibility } from "@shared/project-equipment-scope";
 import { InventoryWorkOrderPanel } from "@/components/inventory/inventory-work-order-panel";
 import type { WorkOrderSubStatus } from "@/components/work-order-sub-statuses/work-order-sub-status-manager";
+import { SubStatusBadge } from "@/components/work-order-sub-statuses/sub-status-badge";
 
 interface OperationalHoursConfig {
   enabled: boolean;
@@ -344,11 +345,12 @@ export function WorkOrderDetail({
     }
   }, [autoLaunchSystemChangeout, canSystemChangeout]);
 
-  const getWorkOrderSubStatusLabel = () => {
+  const getWorkOrderSubStatus = () => {
     const assignedId = (workOrder as any).subStatusId ?? (workOrder as any).sub_status_id;
-    if (!assignedId) return "";
-    return workOrderSubStatuses.find(definition => definition.id === assignedId)?.label || "";
+    if (!assignedId) return null;
+    return workOrderSubStatuses.find(definition => definition.id === assignedId) || null;
   };
+  const assignedSubStatus = getWorkOrderSubStatus();
 
   const getStatusBadge = (status: string) => {
     // Find status color from workOrderStatuses table
@@ -360,15 +362,10 @@ export function WorkOrderDetail({
     ) : (
       <Badge variant="outline">{status}</Badge>
     );
-    const subStatusLabel = getWorkOrderSubStatusLabel();
     return (
       <span className="inline-flex max-w-full flex-wrap items-center gap-x-2 gap-y-1">
         {parentBadge}
-        {subStatusLabel && (
-          <span className="max-w-[min(15rem,65vw)] whitespace-normal break-words text-xs font-medium text-muted-foreground" data-testid="work-order-sub-status-badge">
-            {subStatusLabel}
-          </span>
-        )}
+        {assignedSubStatus && <SubStatusBadge label={assignedSubStatus.label} color={assignedSubStatus.color} testId="work-order-sub-status-badge" className="max-w-[min(15rem,65vw)]" />}
       </span>
     );
   };
@@ -2418,12 +2415,12 @@ export function WorkOrderDetail({
                         </div>
                       </div>
                     )}
-                    {getWorkOrderSubStatusLabel() && (
+                    {assignedSubStatus && (
                       <div className="flex items-start gap-3" data-testid="mobile-readonly-sub-status">
                         <Flag className="h-4 w-4 text-muted-foreground mt-0.5" />
                         <div className="min-w-0">
                           <p className="text-xs text-muted-foreground">Sub-status</p>
-                          <p className="text-sm font-medium break-words" style={{ overflowWrap: "anywhere" }}>{getWorkOrderSubStatusLabel()}</p>
+                          <SubStatusBadge label={assignedSubStatus.label} color={assignedSubStatus.color} className="max-w-full" />
                         </div>
                       </div>
                     )}
@@ -2729,10 +2726,10 @@ export function WorkOrderDetail({
                         <p className="text-xs text-muted-foreground">Status</p>
                         <p className="text-sm font-medium" data-testid="desktop-status">{workOrder.status || "-"}</p>
                       </div>
-                      {getWorkOrderSubStatusLabel() && (
+                      {assignedSubStatus && (
                         <div className="min-w-0" data-testid="desktop-readonly-sub-status">
                           <p className="text-xs text-muted-foreground">Sub-status</p>
-                          <p className="text-sm font-medium break-words" style={{ overflowWrap: "anywhere" }}>{getWorkOrderSubStatusLabel()}</p>
+                          <SubStatusBadge label={assignedSubStatus.label} color={assignedSubStatus.color} className="max-w-full" />
                         </div>
                       )}
                       

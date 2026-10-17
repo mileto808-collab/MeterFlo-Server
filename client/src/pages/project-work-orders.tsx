@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, Link, useLocation } from "wouter";
-import { useState, useEffect, useMemo, useRef, useCallback, useLayoutEffect } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback, useLayoutEffect, type ReactNode } from "react";
 import { withExactReadings } from "@shared/exact-readings";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -96,6 +96,7 @@ import { Calendar as CalendarIcon, List } from "lucide-react";
 import { getReadingPrecision, normalizeReadingInput, validateCapturedReadings } from "@shared/reading-precision";
 import { getProjectEquipmentVisibility, omitInapplicableEquipmentFields } from "@shared/project-equipment-scope";
 import type { WorkOrderSubStatus } from "@/components/work-order-sub-statuses/work-order-sub-status-manager";
+import { SubStatusBadge } from "@/components/work-order-sub-statuses/sub-status-badge";
 
 type Assignee = {
   type: "user" | "group";
@@ -1420,31 +1421,33 @@ export default function ProjectWorkOrders() {
   };
 
   const getStatusBadge = (status: string, subStatusId?: string | null) => {
-    const activeStatusSubLabel = subStatusId
-      ? workOrderSubStatuses.find(definition => definition.id === subStatusId)?.label
+    const subStatus = subStatusId
+      ? workOrderSubStatuses.find(definition => definition.id === subStatusId)
       : undefined;
+    let parentBadge: ReactNode;
     if (!status) {
-      return <Badge variant="outline">Unknown</Badge>;
-    }
-    const statusRecord = workOrderStatuses.find(
-      s => s.code === status || s.label === status
-    );
-    if (statusRecord && statusRecord.color) {
-      const bgColor = getStatusColorHex(statusRecord.color);
-      const textColor = ['yellow', 'orange'].includes(statusRecord.color) ? '#000' : '#fff';
-      return (
-        <div className="flex flex-col items-start gap-1">
-          <Badge style={{ backgroundColor: bgColor, color: textColor, borderColor: bgColor }}>
-            {statusRecord.label}
-          </Badge>
-          {activeStatusSubLabel && <span className="text-xs text-muted-foreground">{activeStatusSubLabel}</span>}
-        </div>
-      );
+      parentBadge = <Badge variant="outline">Unknown</Badge>;
+    } else {
+      const statusRecord = workOrderStatuses.find(s => s.code === status || s.label === status);
+      if (statusRecord && statusRecord.color) {
+        const bgColor = getStatusColorHex(statusRecord.color);
+        const textColor = ['yellow', 'orange'].includes(statusRecord.color) ? '#000' : '#fff';
+        parentBadge = <Badge style={{ backgroundColor: bgColor, color: textColor, borderColor: bgColor }}>{statusRecord.label}</Badge>;
+      } else {
+        parentBadge = <Badge variant="outline">{status}</Badge>;
+      }
     }
     return (
-      <div className="flex flex-col items-start gap-1">
-        <Badge variant="outline">{status}</Badge>
-        {activeStatusSubLabel && <span className="text-xs text-muted-foreground">{activeStatusSubLabel}</span>}
+      <div className="flex max-w-full flex-col items-start gap-1">
+        {parentBadge}
+        {subStatus && (
+          <SubStatusBadge
+            label={subStatus.label}
+            color={subStatus.color}
+            testId="work-order-list-sub-status-badge"
+            className="max-w-[min(15rem,55vw)]"
+          />
+        )}
       </div>
     );
   };

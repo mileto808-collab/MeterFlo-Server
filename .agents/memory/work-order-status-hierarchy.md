@@ -14,3 +14,9 @@ Preserve existing core-code foreign keys when adding relational status links; va
 **Why:** An older database enforced unique status codes but had no numeric ID constraint despite the ORM declaration. Replacing its core-code relationships would risk existing project data.
 
 **How to apply:** Add the missing non-destructive ID key for new relationships; keep existing core status codes authoritative.
+
+Sub-statuses use their own configured color alongside the parent's separate color in work-order details and lists.
+
+**Why:** The user requested the configured Critical color in both places; inheritance concerns business rules, not replacing either status's visual identity.
+
+**How to apply:** Keep parent and sub-status colors independent, with readable labels in light and dark themes.
