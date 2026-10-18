@@ -50,7 +50,8 @@ export async function publishingPostgres() {
     pool = new pg.Pool({ connectionString });
     return { pool, directory, close, run, env: {
       ...env, DATABASE_URL: connectionString, DOTENV_CONFIG_PATH: join(directory, "absent.env"),
-      REPL_ID: "owned-publishing-test", NODE_ENV: "development", TSX_TSCONFIG_PATH: resolve("tsconfig.json"),
+      REPL_ID: "owned-publishing-test", REPLIT_DEV_DOMAIN: "owned-publishing-test.replit.dev",
+      REPLIT_ENVIRONMENT: "production", NODE_ENV: "development", TSX_TSCONFIG_PATH: resolve("tsconfig.json"),
     } };
   } catch (error) {
     await close();

@@ -20,3 +20,9 @@ Do not assume a schema comparison's table filter isolates its sequence changes.
 **Why:** The installed Drizzle tooling discovered an unrelated inventory identity sequence during a projects-only comparison and proposed dropping it, even with the table filter set.
 
 **How to apply:** Inspect every proposed statement before applying a focused comparison. Preserve independently owned sequences explicitly in disposable tests, and never use a broad forced schema push against this app's mixed declarative/application-managed schema as a shortcut.
+
+Do not use `REPLIT_ENVIRONMENT=production` to identify a published app.
+
+**Why:** Replit's editor and post-merge runner also supplied that platform label. Treating it as the app's deployment stage rejected legitimate development setup.
+
+**How to apply:** Use the documented published-runtime flag `REPLIT_DEPLOYMENT=1`; require workspace signals such as the dev domain for development-only scripts. Test the editor's production platform label separately from actual published-runtime rejection.

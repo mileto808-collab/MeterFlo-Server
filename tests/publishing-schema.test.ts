@@ -113,7 +113,10 @@ test("publishing retains active scheduling columns, constraints and populated bu
   ], { ...sandbox.env, NODE_ENV: "production" }), /restricted to the development workspace/);
   await assert.rejects(sandbox.run(process.execPath, [
     resolve("node_modules/tsx/dist/cli.mjs"), resolve("script/migrate-visit-scheduling.ts"), "--development",
-  ], { ...sandbox.env, REPLIT_ENVIRONMENT: "production" }), /restricted to the development workspace/);
+  ], { ...sandbox.env, REPLIT_DEPLOYMENT: "1" }), /restricted to the development workspace/);
+  await assert.rejects(sandbox.run(process.execPath, [
+    resolve("node_modules/tsx/dist/cli.mjs"), resolve("script/migrate-visit-scheduling.ts"), "--development",
+  ], { ...sandbox.env, REPLIT_DEV_DOMAIN: "" }), /restricted to the development workspace/);
   await assert.rejects(sandbox.run(process.execPath, [
     resolve("node_modules/tsx/dist/cli.mjs"), resolve("script/migrate-visit-scheduling.ts"),
   ], sandbox.env), /restricted to the development workspace/);

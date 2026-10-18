@@ -3,9 +3,13 @@
 import "dotenv/config";
 
 async function main() {
+  // REPLIT_ENVIRONMENT describes Replit's platform environment, not whether
+  // this process is a published app; it can be "production" in the editor too.
+  // REPLIT_DEPLOYMENT is the documented published-runtime flag. The dev domain
+  // is an additional workspace-only signal and is unavailable in published apps.
   if (process.argv.slice(2).join(" ") !== "--development" || !process.env.REPL_ID ||
-      process.env.NODE_ENV === "production" || process.env.REPLIT_DEPLOYMENT === "1" ||
-      process.env.REPLIT_ENVIRONMENT === "production") {
+      !process.env.REPLIT_DEV_DOMAIN || process.env.NODE_ENV === "production" ||
+      process.env.REPLIT_DEPLOYMENT === "1") {
     throw new Error("Visit scheduling setup is restricted to the development workspace. Managed production receives schema through Publish.");
   }
   const { pool } = await import("../server/db");
