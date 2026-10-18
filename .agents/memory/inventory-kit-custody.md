@@ -6,7 +6,7 @@ Kit breakdown must recover the original physically recorded contents, never toda
 
 **Why:** Kit recipes can change; quantity-only stock can mix batches. Inventing lineage can create components that were never consumed, or recover the same kit twice.
 
-**How to apply:** Preserve original assembly evidence across transfers, nesting, work use, teardown, retries, and backups. Admit older quantity-only assemblies only when their ownership is unambiguous. Separate damaged custody from usable stock; missing and scrapped identities remain unavailable.
+**How to apply:** Preserve original assembly evidence across transfers, nesting, work use, teardown, retries, and backups. Admit older quantity-only assemblies only when their ownership is unambiguous. Separate damaged custody from usable stock; missing and scrapped identities remain unavailable. In work-order screens and printed reports, distinguish the current planned recipe from original physical contents. A partial batch must not be presented as proof of individual component serials, and configured labor allowances are not proof of actual worked time.
 
 Purchased finished kits bring their components inside the kit, not from existing loose stock. Explicit inspection may establish their provenance, but it must never require those component serials to appear as separate purchase-receipt lines or loose balances.
 

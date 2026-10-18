@@ -346,7 +346,9 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
       assert(linked.active, "Choose an active inventory item.");
       const coversEquipment = (itemId: string, seen: string[] = []): boolean => {
         assert(!seen.includes(itemId), "Kit recipe contains a cycle.");
-        const candidate = item(s, itemId);
+        const candidate = s.items.find(value => value.id === itemId);
+        assert(candidate, "Kit component item does not exist.");
+        if (isLaborItem(candidate)) return false;
         return candidate.equipment === input.equipment ||
           candidate.components.some(c => coversEquipment(c.itemId, [...seen, itemId]));
       };

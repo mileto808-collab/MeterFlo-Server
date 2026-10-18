@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { useQuery } from "@tanstack/react-query";
 import type { EquipmentVisibility } from "@shared/project-equipment-scope";
 import { buildWorkOrderEquipmentHtml } from "./work-order-pdf-equipment";
+import { buildWorkOrderInventoryHtml, type WorkOrderPrintInventory } from "./work-order-pdf-inventory";
 
 interface TimeTrackingData {
   id: number;
@@ -63,12 +64,8 @@ export function WorkOrderPdf({
   const [isGenerating, setIsGenerating] = useState(false);
   const [showDialog, setShowDialog] = useState(false);
   const [photoOption, setPhotoOption] = useState<PhotoOption>("thumbnails");
-  const { data: inventoryWorkOrder, refetch: refetchInventory } = useQuery<{
-    enabled: boolean;
-    allocation: { lines: Array<{ itemId: string; warehouseId: string; quantity: number; serials: string[] }>; used: Array<{ itemId: string; warehouseId: string; quantity: number; serials: string[] }>; dispositions: Array<{ equipment: string; serial: string; disposition: string; warehouseId: string | null }>; mode: string | null; status: string; revision: number } | null;
-    items: Array<{ id: string; sku: string; name: string }>;
-    warehouses: Array<{ id: string; code: string; name: string }>;
-  }>({
+  const [printError, setPrintError] = useState<string | null>(null);
+  const { data: inventoryWorkOrder, refetch: refetchInventory } = useQuery<WorkOrderPrintInventory>({
     queryKey: ["/api/projects", projectId, "work-orders", workOrder.id, "inventory"],
     enabled: inventoryEnabled,
   });
@@ -120,7 +117,7 @@ export function WorkOrderPdf({
     return isImage && !isSignature;
   });
 
-  const buildPdfContent = (selectedPhotoOption: PhotoOption): string => {
+  const buildPdfContent = (selectedPhotoOption: PhotoOption, inventorySnapshot = inventoryWorkOrder): string => {
     const woId = workOrder.customerWoId || `WO-${workOrder.id}`;
     
     let photosHtml = "";
@@ -224,24 +221,7 @@ export function WorkOrderPdf({
       </div>
     ` : "";
 
-    const esc = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
-    const inventoryAllocation = inventoryWorkOrder?.allocation;
-    const inventoryHtml = inventoryEnabled && inventoryAllocation ? `
-      <div style="background-color:#f1f5f2;padding:9px;border-radius:4px;margin-bottom:10px;page-break-inside:avoid;border-left:4px solid #47715b;">
-        <h3 style="margin:0 0 6px;font-size:12px;font-weight:bold;color:#24392c;">Meter inventory & serial trace</h3>
-        <p style="margin:0 0 6px;font-size:10px;color:#555;">Review: ${inventoryAllocation.mode || "pending"} · Status: ${inventoryAllocation.status}</p>
-        <table style="width:100%;font-size:10px;border-collapse:collapse;">
-          <thead><tr><th style="text-align:left;padding:3px;border-bottom:1px solid #ccc;">Item</th><th style="text-align:left;padding:3px;border-bottom:1px solid #ccc;">Location</th><th style="text-align:right;padding:3px;border-bottom:1px solid #ccc;">Reserved</th><th style="text-align:left;padding:3px;border-bottom:1px solid #ccc;">Scanned serials</th></tr></thead>
-          <tbody>${inventoryAllocation.lines.map(line => {
-            const item = inventoryWorkOrder?.items.find(value => value.id === line.itemId);
-            const warehouse = inventoryWorkOrder?.warehouses.find(value => value.id === line.warehouseId);
-            const used = inventoryAllocation.used.find(value => value.itemId === line.itemId && value.warehouseId === line.warehouseId);
-            return `<tr><td style="padding:3px;border-bottom:1px solid #ddd;">${esc(item?.sku || line.itemId)} · ${esc(item?.name)}</td><td style="padding:3px;border-bottom:1px solid #ddd;">${esc(warehouse?.code || line.warehouseId)} · ${esc(warehouse?.name)}</td><td style="padding:3px;text-align:right;border-bottom:1px solid #ddd;">${line.quantity}${used ? ` (${used.quantity} used)` : ""}</td><td style="padding:3px;border-bottom:1px solid #ddd;font-family:monospace;">${esc(used?.serials.join(", ") || line.serials.join(", ") || "-")}</td></tr>`;
-          }).join("")}</tbody>
-        </table>
-        ${inventoryAllocation.dispositions.length ? `<p style="margin:6px 0 0;font-size:10px;"><strong>Removed equipment:</strong> ${inventoryAllocation.dispositions.map(value => `${esc(value.equipment)} ${esc(value.serial)} — ${esc(value.disposition)}${value.warehouseId ? ` to ${esc(inventoryWorkOrder?.warehouses.find(w => w.id === value.warehouseId)?.name || value.warehouseId)}` : ""}`).join("; ")}</p>` : ""}
-      </div>
-    ` : "";
+    const inventoryHtml = buildWorkOrderInventoryHtml(inventoryEnabled, inventorySnapshot);
 
     return `
       <div id="pdf-content" style="width: 194mm; padding: 8mm; padding-bottom: 0; background-color: white; color: black; font-family: Arial, sans-serif; font-size: 11px; line-height: 1.4;">
@@ -499,23 +479,31 @@ export function WorkOrderPdf({
 
   const handleGeneratePdf = async () => {
     setIsGenerating(true);
-    setShowDialog(false);
+    setPrintError(null);
 
     try {
+      let inventorySnapshot = inventoryWorkOrder;
+      if (inventoryEnabled) {
+        const result = await refetchInventory();
+        if (result.isError || !result.data) throw new Error("Inventory could not load. Please retry before printing.");
+        inventorySnapshot = result.data;
+      }
       const woId = workOrder.customerWoId || `WO-${workOrder.id}`;
       const filename = `WorkOrder_${woId}.pdf`;
-      const htmlContent = buildPdfContent(photoOption);
+      const htmlContent = buildPdfContent(photoOption, inventorySnapshot);
       
       await renderPdfInIframe(htmlContent, filename, workOrder.signatureData);
     } catch (err) {
       console.error("PDF generation error:", err);
+      setPrintError(err instanceof Error ? err.message : "PDF could not be generated. Please retry.");
+      setShowDialog(true);
     } finally {
       setIsGenerating(false);
     }
   };
 
   const handleOpenDialog = async () => {
-    if (inventoryEnabled) await refetchInventory();
+    setPrintError(null);
     setShowDialog(true);
   };
 
@@ -590,10 +578,11 @@ export function WorkOrderPdf({
           </div>
 
           <DialogFooter>
+            {printError && <p role="alert" className="text-sm text-destructive">{printError}</p>}
             <Button type="button" variant="outline" onClick={() => setShowDialog(false)} data-testid="button-cancel-pdf">
               Cancel
             </Button>
-            <Button type="button" onClick={handleGeneratePdf} data-testid="button-generate-pdf">
+            <Button type="button" disabled={isGenerating} onClick={handleGeneratePdf} data-testid="button-generate-pdf">
               <Printer className="mr-2 h-4 w-4" />
               Generate PDF
             </Button>

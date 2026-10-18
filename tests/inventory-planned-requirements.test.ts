@@ -15,7 +15,8 @@ function post(state: InventoryState, action: InventoryCommand["action"], data: R
 }
 function setup(serialized = true) {
   let s = emptyInventory();
-  s = post(s, "warehouse", { id: "van", code: "VAN", name: "Vehicle", type: "physical", address: "Test" });
+  s = post(s, "warehouse", { id: "van", code: "VAN", name: "Vehicle", type: "vehicle", userIds: ["tech"],
+    vin: "1HGCM82633A004352", plate: "TEST123", plateState: "CO", address: "Test" });
   s = post(s, "vendor", { id: "vendor", name: "Supplier" });
   s = post(s, "item", { id: "meter", sku: "M", name: "Meter", equipment: "system", tracking: serialized ? "serialized" : "regular" });
   s = post(s, "item", { id: "seal", sku: "S", name: "Seal", tracking: "regular" });

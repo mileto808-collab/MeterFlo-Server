@@ -19,7 +19,10 @@ export function deduplicateRequirements(state: InventoryState, ids: string[]) {
 export function requirementLeaves(state: InventoryState, lines: { itemId: string; quantity: number }[], seen: string[] = []): { itemId: string; quantity: number }[] {
   return lines.flatMap(line => {
     if (seen.includes(line.itemId)) throw new Error("Kit recipe contains a cycle.");
-    const components = state.items.find(i => i.id === line.itemId)?.components ?? [];
+    const item = state.items.find(i => i.id === line.itemId);
+    // Labor is a configured non-stock allowance, never a physical stock claim.
+    if (item?.kind === "labor") return [];
+    const components = item?.components ?? [];
     return components.length
       ? requirementLeaves(state, components.map(c => ({ itemId: c.itemId, quantity: c.quantity * line.quantity })), [...seen, line.itemId])
       : [line];

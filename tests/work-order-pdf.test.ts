@@ -4,6 +4,7 @@ import vm from "node:vm";
 import { readFile } from "node:fs/promises";
 import { build } from "esbuild";
 import { getProjectEquipmentVisibility } from "../shared/project-equipment-scope";
+import type { WorkOrderPrintInventory } from "../client/src/components/work-order-pdf-inventory";
 
 // Exercise the real print click handler and report template. Stub only React
 // hooks/UI wrappers and the browser/PDF download boundary; no app auth is changed.
@@ -15,10 +16,11 @@ const bundle = await build({
   plugins: [{
     name: "pdf-boundaries",
     setup(builder) {
-      builder.onResolve({ filter: /^(react|html2pdf\.js|lucide-react|@\/components\/ui\/.*)$/ },
+      builder.onResolve({ filter: /^(react|@tanstack\/react-query|html2pdf\.js|lucide-react|@\/components\/ui\/.*)$/ },
         args => ({ path: args.path, namespace: "pdf-boundaries" }));
       builder.onLoad({ filter: /.*/, namespace: "pdf-boundaries" }, args => {
         if (args.path === "react") return { contents: "export const useState = value => [value, () => {}];" };
+        if (args.path === "@tanstack/react-query") return { contents: "export const useQuery = () => ({data: inventorySnapshot, refetch: async () => ({data: inventorySnapshot, isError: inventoryFailed})});" };
         if (args.path === "html2pdf.js") return { contents: "export default () => capturePdf();" };
         const exports = args.path === "lucide-react" ? ["Loader2", "Printer"]
           : args.path.endsWith("/dialog") ? ["Dialog", "DialogContent", "DialogDescription", "DialogFooter", "DialogHeader", "DialogTitle"]
@@ -38,7 +40,7 @@ function find(node: any, testId: string): any {
   }
 }
 
-async function print(settings: Parameters<typeof getProjectEquipmentVisibility>[0], workOrder: object, files: string[] = []) {
+async function print(settings: Parameters<typeof getProjectEquipmentVisibility>[0], workOrder: object, files: string[] = [], inventorySnapshot?: WorkOrderPrintInventory, inventoryFailed = false) {
   let html = "";
   let options: any;
   let saved = false;
@@ -70,6 +72,7 @@ async function print(settings: Parameters<typeof getProjectEquipmentVisibility>[
     },
   };
   const context = vm.createContext({
+    inventorySnapshot, inventoryFailed,
     document, window: { location: { origin: "https://pdf-fixture.invalid" } },
     console, setTimeout: (callback: () => void) => callback(),
     requestAnimationFrame: (callback: () => void) => callback(),
@@ -86,6 +89,7 @@ async function print(settings: Parameters<typeof getProjectEquipmentVisibility>[
   const props = {
     workOrder, projectId: 42, projectName: "Print fixture",
     workOrderFiles: files, equipmentVisibility: getProjectEquipmentVisibility(settings),
+    inventoryEnabled: !!inventorySnapshot || inventoryFailed,
     formatDateTime: () => "FORMATTED-DATE",
     getAssignedUserName: () => "Assigned technician",
     serviceTypes: [], troubleCodes: [],
@@ -93,10 +97,24 @@ async function print(settings: Parameters<typeof getProjectEquipmentVisibility>[
   };
   const tree = context.PdfComponent.WorkOrderPdf(props);
   await find(tree, "button-generate-pdf").props.onClick();
-  assert.equal(saved, true, "generation must reach PDF save, not silently fail");
+  assert.equal(saved, !inventoryFailed, "printing must save successfully, or stop on inventory failure");
   assert.equal(nodes.size, 0, "print iframe and overlay are cleaned up");
   return { html, options };
 }
+
+test("real print handler includes unreserved kit components and rejects failed inventory refresh", async () => {
+  const inventory = {
+    enabled: true, allocation: null, warehouses: [], items: [
+      { id: "kit", sku: "KIT", name: "Print kit", unit: "each", components: [{ itemId: "labor", quantity: 1.5 }, { itemId: "seal", quantity: 2 }] },
+      { id: "labor", sku: "LABOR", name: "Print labor", kind: "labor", unit: "hours", components: [] },
+      { id: "seal", sku: "SEAL", name: "Print seal", unit: "each", components: [] },
+    ], requirements: { workOrderId: 7, missing: [], lines: [{ itemId: "kit", quantity: 1 }] },
+  } as unknown as WorkOrderPrintInventory;
+  const printed = await print({}, record, [], inventory);
+  for (const text of ["Print kit", "Print labor", "Print seal", "1.5 hours", "No reserved stock lines"]) assert.ok(printed.html.includes(text), text);
+  const failed = await print({}, record, [], undefined, true);
+  assert.equal(failed.html, "", "a failed inventory refresh must not produce an incomplete PDF");
+});
 
 const record = Object.freeze({
   id: 7, customerWoId: "PRINT-FIXTURE", customerName: "Retained customer",

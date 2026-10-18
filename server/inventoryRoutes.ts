@@ -20,6 +20,7 @@ import { draftWarehouse, isShipmentDraftAction } from "../shared/inventory-shipm
 import { serialQuerySchema, stockQuerySchema } from "../shared/inventory-stock-query";
 import { prepareStockQueries, queryStock, queryStockSerials, stockOptions, stockSummary } from "./inventoryStockQueries";
 import { workRequirements } from "./inventoryRequirements";
+import { workKitComponentTrace } from "../shared/inventory-component-details";
 import { warehouseAccessible } from "../shared/inventory-location-types";
 import { removalConfig } from "../shared/inventory-removal-policy";
 
@@ -256,6 +257,7 @@ export function registerInventoryRoutes(app: Express) {
       : await workRequirements(pool as any, c.project.id, s, wo);
     return { enabled: !!c.project.inventoryEnabled, canSelect, allocation, requirements: requirements ?? { workOrderId: id, lines: [], missing: [] },
       items: s.items, warehouses: s.warehouses, locationTypes: s.locationTypes, revision: s.revision,
+      componentTrace: workKitComponentTrace(s, id),
       removalRules: removalConfig(s).rules, removalPolicies: [removalConfig(s).policy],
       workflow: { wizardMode: c.project.wizardMode ?? "changeout", equipment: c.project.changeoutEquipmentType ?? "both", readingEquipment: c.project.readingEquipmentType ?? "both" } };
   }));

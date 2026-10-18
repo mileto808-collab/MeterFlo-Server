@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Allocation, InventoryItem, Warehouse, WorkAllocation, WorkRequirements } from "@shared/inventory";
+import { inventoryComponentDetails, type WorkKitComponentTrace } from "@shared/inventory-component-details";
 import { removalChoices, removalConfig, type RemovalRule, type RemovalPolicy, type RemovalWorkflow } from "@shared/inventory-removal-policy";
 import { locationTypeFor, locationTypeLabel, warehouseAccessible, type InventoryLocationType } from "@shared/inventory-location-types";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -21,6 +22,7 @@ import { Loader2, PackageCheck, Plus, Trash2 } from "lucide-react";
 type WorkInventorySnapshot = {
   enabled: boolean; allocation: WorkAllocation | null; items: InventoryItem[]; warehouses: Warehouse[];
   locationTypes?: InventoryLocationType[]; requirements?: WorkRequirements; canSelect?: boolean;
+  componentTrace?: WorkKitComponentTrace[];
   removalRules?: RemovalRule[]; removalPolicies?: RemovalPolicy[]; workflow?: RemovalWorkflow;
 };
 type DraftLine = Allocation;
@@ -174,6 +176,8 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
     setSerials(""); setQuantity("1");
   };
   const assigned = data.allocation?.lines ?? [];
+  const consumed = data.allocation?.status === "consumed";
+  const displayedStock = consumed ? data.allocation?.used ?? [] : assigned;
   const saveAssignment = async () => {
     if (allocationConflict || mutation.isPending) return;
     const epoch = draftEditEpoch.current;
@@ -259,7 +263,7 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
           {inventoryEvents.status === "live" ? "Live inventory" : inventoryEvents.status === "reconnecting" ? "Reconnecting" : inventoryEvents.status === "unavailable" ? "Live unavailable" : "Connecting"}
         </span>
         {inventoryEvents.status === "unavailable" && <Button type="button" size="sm" variant="outline" aria-label="Retry live inventory updates" onClick={inventoryEvents.reconnect}>Retry</Button>}
-        {data.allocation && <Badge variant={data.allocation.mode ? "default" : "outline"}>{data.allocation.status === "consumed" ? "Used reviewed" : data.allocation.mode ? "Review complete" : "Reserved"}</Badge>}
+        {data.allocation && <Badge variant={data.allocation.mode ? "default" : "outline"}>{consumed ? "Consumed" : data.allocation.mode ? "Review complete" : "Reserved"}</Badge>}
       </div></div>
       <p className="text-sm text-muted-foreground">Planned requirements are separate from reserved stock. Technicians record what they actually use from an accessible stock location during installation.</p></CardHeader>
     <CardContent className="space-y-4">
@@ -268,7 +272,18 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
         {(data.requirements?.lines ?? []).length ? <ul className="space-y-1.5 text-sm">
           {(data.requirements?.lines ?? []).map((line, index) => {
             const item = items.find(value => value.id === line.itemId);
-            return <li key={`${line.itemId}-${index}`} className="flex justify-between gap-3"><span className="min-w-0 break-words">{item?.name ?? line.itemId}{item?.components.length ? " · kit" : ""}</span><span className="shrink-0 tabular-nums">{line.quantity} {item?.unit ?? "units"}</span></li>;
+            const components = inventoryComponentDetails(line.itemId, line.quantity, items);
+            return <li key={`${line.itemId}-${index}`} className="rounded border p-2">
+              <div className="flex justify-between gap-3"><span className="min-w-0 break-words">{item?.name ?? line.itemId}{item?.components.length ? " · kit" : ""}</span><span className="shrink-0 tabular-nums">{line.quantity} {item?.unit ?? "units"}</span></div>
+              {!!components.length && <details className="mt-2 text-xs">
+                <summary className="cursor-pointer font-medium">View kit components</summary>
+                <p className="my-1 text-muted-foreground">Current planned recipe, not a reservation or proof of installed components.</p>
+                <ul aria-label={`Components for ${item?.name ?? line.itemId}`} className="space-y-1 border-l pl-3">{components.map((component, componentIndex) =>
+                  <li key={`${component.itemId}-${componentIndex}`} className="break-words" style={{ paddingLeft: (component.depth - 1) * 12 }}>
+                    {component.sku && `${component.sku} · `}{component.label} · {component.quantity} {component.unit}{component.labor ? " · Labor (non-stock)" : ""}
+                  </li>)}</ul>
+              </details>}
+            </li>;
           })}
         </ul> : <p className="text-xs text-muted-foreground">No items are mapped to the assigned equipment types.</p>}
         {!!data.requirements?.missing.length && <p className="mt-2 rounded border border-amber-500/40 bg-amber-500/5 p-2 text-xs text-amber-900 dark:text-amber-200">Unmapped equipment types: {data.requirements.missing.map(row => `${row.equipment} ${row.typeId}`).join(", ")}</p>}
@@ -298,7 +313,9 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
         <p className="font-medium">Selected stock location is no longer available</p>
         <p className="mt-1 text-muted-foreground">The location is missing, inactive, or its access changed. Any serial text remains captured locally and will not be submitted until you choose an accessible location.</p>
       </div>}
-      {!projectReadingOnly && (assigned.length > 0 ? <div className="space-y-2">{assigned.map(line => {
+      {(!projectReadingOnly || consumed) && <section aria-label={consumed ? "Consumed inventory" : "Reserved stock"}>
+      <h4 className="mb-2 text-sm font-medium">{consumed ? "Consumed inventory" : "Reserved stock"}</h4>
+      {displayedStock.length > 0 ? <div className="space-y-2">{displayedStock.map(line => {
         const item = items.find(value => value.id === line.itemId);
         const warehouse = warehouses.find(value => value.id === line.warehouseId);
         return <div key={`${line.warehouseId}/${line.itemId}`} className="flex flex-wrap items-start justify-between gap-2 rounded-md border p-3">
@@ -310,7 +327,19 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
             setItemId(line.itemId); setWarehouseId(line.warehouseId); setQuantity(String(line.quantity)); setSerials(line.serials.join("\n")); setLines([]);
           }}>Edit</Button><Button type="button" aria-label={`Remove ${item?.name ?? "item"} reservation`} variant="ghost" size="icon" disabled={mutation.isPending} onClick={() => void removeReservation(line)}><Trash2 className="h-4 w-4" /></Button></div>}
         </div>;
-      })}</div> : <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">No stock is reserved for this work order.</div>)}
+      })}</div> : <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">{consumed ? "No actual inventory use was recorded." : "No stock is reserved for this work order."}</div>}
+      {consumed && !!data.componentTrace?.length && <details className="mt-2 rounded border p-2 text-xs">
+        <summary className="cursor-pointer font-medium">Recorded original kit components</summary>
+        {data.componentTrace.map(trace => <div key={trace.sourceId} className="mt-2">
+          <p className="font-medium">{items.find(item => item.id === trace.kitItemId)?.name ?? trace.kitItemId} · {trace.quantity}</p>
+          <ul className="space-y-1 border-l pl-3">{trace.components.map((component, index) => {
+            const item = items.find(item => item.id === component.itemId);
+            return <li key={`${component.itemId}-${index}`}>{item?.sku} · {item?.name ?? component.itemId} · {component.quantity} {item?.unit ?? "units"}{component.serials.length ? ` · ${component.serials.join(", ")}` : ""}</li>;
+          })}</ul>
+          {trace.partialBatch && <p className="mt-1 text-muted-foreground">Partial quantity batch; individual component serial identities are not established.</p>}
+        </div>)}
+      </details>}
+      </section>}
 
       {canAssign && data.allocation?.status !== "consumed" && <div className="space-y-3 rounded-md bg-muted/40 p-3">
         {!data.allocation && <Button type="button" variant="outline" onClick={() => void createEmptyAssignment()} disabled={mutation.isPending}>Create empty assignment</Button>}

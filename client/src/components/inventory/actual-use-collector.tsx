@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { Allocation, InventoryItem, Warehouse } from "@shared/inventory";
+import { inventoryComponentDetails as expandedComponents } from "@shared/inventory-component-details";
 import { AlertTriangle, Boxes, Plus, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -46,19 +47,6 @@ export function actualUseLinesAreValid(lines: ActualUseDraft[], items: Inventory
   });
 }
 
-function expandedComponents(itemId: string, quantity: number, items: InventoryItem[], ancestors = new Set<string>()): Array<{ label: string; quantity: number; depth: number }> {
-  const item = items.find(value => value.id === itemId);
-  if (!item?.components.length || ancestors.has(itemId)) return [];
-  const nextAncestors = new Set(ancestors).add(itemId);
-  return item.components.flatMap(component => {
-    if (nextAncestors.has(component.itemId)) return [];
-    const total = quantity * component.quantity;
-    const child = items.find(value => value.id === component.itemId);
-    const row = { label: child?.name ?? component.itemId, quantity: total, depth: nextAncestors.size };
-    return [row, ...expandedComponents(component.itemId, total, items, nextAncestors)];
-  });
-}
-
 function recipeItemIds(itemId: string, items: InventoryItem[], ancestors = new Set<string>()): Set<string> {
   if (ancestors.has(itemId)) return new Set();
   const item = items.find(value => value.id === itemId);
@@ -101,7 +89,7 @@ export function ActualUseCollector({ value, onChange, items, warehouses, require
         const components = expandedComponents(itemId, quantity, items);
         return <li key={itemId} className="rounded border bg-background px-2.5 py-2">
           <div className="flex justify-between gap-2"><span className="font-medium">{item?.name ?? itemId}</span><span className="tabular-nums">{quantity} {item?.unit ?? "units"}</span></div>
-          {!!components.length && <ul className="mt-1 border-l pl-3 text-xs text-muted-foreground">{components.map((component, index) => <li key={`${itemId}-${index}`} className="py-0.5">{component.label} · {component.quantity} required</li>)}</ul>}
+          {!!components.length && <ul className="mt-1 border-l pl-3 text-xs text-muted-foreground">{components.map((component, index) => <li key={`${itemId}-${index}`} className="py-0.5">{component.label} · {component.quantity} {component.unit} required{component.labor ? " · Labor (non-stock)" : ""}</li>)}</ul>}
         </li>;
       })}</ul> : <p className="text-sm text-muted-foreground">No mapped items are required for the assigned equipment types.</p>}
       {!!missing.length && <div className="mt-2 flex gap-2 rounded border border-amber-500/40 bg-amber-500/5 p-2 text-xs text-amber-900 dark:text-amber-200"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>Some equipment types have no item mapping: {missing.map(row => `${row.equipment} type ${row.typeId}`).join(", ")}.</span></div>}
