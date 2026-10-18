@@ -146,7 +146,6 @@ function UpdateNotification() {
   const canSeeUpdates = user?.role === "admin" || hasPermission("settings.webUpdate");
 
   interface WebUpdateConfig {
-    webUpdateUrl: string | null;
     lastCheck: string | null;
     cachedRelease: {
       latestVersion: string;
@@ -157,7 +156,7 @@ function UpdateNotification() {
   }
 
   const { data } = useQuery<WebUpdateConfig>({
-    queryKey: ["/api/settings/web-update-config"],
+    queryKey: ["/api/settings/web-updates/status"],
     enabled: canSeeUpdates,
     refetchInterval: 1000 * 60 * 30,
   });

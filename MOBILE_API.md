@@ -598,12 +598,11 @@ The presence of `old_system_id` and/or `old_module_id` determines what type of c
 ### Get Work Order by System ID
 ```
 GET /api/projects/:projectId/work-orders/by-system/:systemId
-GET /api/projects/:projectId/work-orders/by-meter/:systemId  (legacy alias)
 ```
 
 Look up a work order by old system ID (`old_system_id`). Useful for barcode/QR scanning workflows.
 
-Both endpoints are supported - the `/by-meter` route is maintained for backward compatibility with existing mobile app implementations.
+Use the project-scoped `/by-system` endpoint for system-ID lookup.
 
 **Response:** Same snake_case format as above.
 
@@ -842,15 +841,15 @@ These supported compatibility endpoints accept JSON payloads with base64-encoded
 
 ### Report Trouble (JSON)
 ```
-POST /api/mobile/workorders/:workOrderId/trouble
+POST /api/mobile/projects/:projectId/work-orders/:workOrderId/trouble
 ```
 
-Report a trouble code with optional photos.
+Report a trouble code with optional photos. Project identity is required in the
+URL, not duplicated in the request body.
 
 **Request Body:**
 ```json
 {
-  "projectId": 2,
   "troubleCode": "d7bc9966-67d6-41b7-973e-723058f02561",
   "notes": "Customer refused meter change",
   "oldMeterReading": 12345,
@@ -864,7 +863,6 @@ Report a trouble code with optional photos.
 ```
 
 **Required Fields:**
-- `projectId` - Project ID
 - `troubleCode` - The selected definition's permanent UUID `ruleKey`, not its editable `code` or numeric `id`. Fetch choices from `/api/projects/:projectId/trouble-codes`.
 
 **Optional Fields:**
@@ -893,7 +891,7 @@ The `filename` field in the request is ignored - the server enforces standardize
 
 ### Complete Meter Changeout (JSON)
 ```
-POST /api/mobile/workorders/:workOrderId/complete
+POST /api/mobile/projects/:projectId/work-orders/:workOrderId/complete
 ```
 
 Complete a meter changeout with photos and signature. Supports system-only, module-only, or combined changeouts.

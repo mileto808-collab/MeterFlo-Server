@@ -32,10 +32,6 @@ function readingSetClauses(column: string, valueIndex: number, textIndex: number
   ];
 }
 
-// Service type enum for work orders
-export const serviceTypeEnum = ["Water", "Electric", "Gas"] as const;
-export type ServiceType = (typeof serviceTypeEnum)[number];
-
 // Work orders schema for project databases (within project-specific schemas)
 // Canonical schema matching Aurora project structure (36 columns)
 export const projectWorkOrders = pgTable("work_orders", {

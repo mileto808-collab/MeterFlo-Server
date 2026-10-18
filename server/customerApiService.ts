@@ -219,33 +219,3 @@ export async function retryCustomerDelivery(id: string, actorId: string) {
        AND d.status IN ('failed','retrying','paused') RETURNING d.*`, [id, actorId]);
   return row;
 }
-
-/** Historical fire-and-forget failures are only replayed after explicit admin action. */
-export async function retryLegacyCustomerLog(logId: number, actorId: string) {
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    const { rows: [log] } = await client.query(
-      `SELECT l.*,p.customer_api_enabled,p.name AS project_name FROM public.customer_api_logs l
-       JOIN public.projects p ON p.id=l.project_id WHERE l.id=$1 FOR UPDATE OF l`, [logId]);
-    if (!log) throw new Error("Log entry not found");
-    if (log.success || log.delivery_id) throw new Error("Only failed legacy log entries can be replayed");
-    if (!log.customer_api_enabled) throw new Error("Enable this project's Customer API before retrying");
-    if (!log.request_payload) throw new Error("This log has no saved payload to replay");
-    const original = JSON.parse(log.request_payload);
-    if (!original || typeof original !== "object" || Array.isArray(original)) throw new Error("Saved payload is not a JSON object");
-    const id = randomUUID();
-    const payload = original.workOrderId != null ? original :
-      buildCustomerPayload(original, { id: log.project_id, name: log.project_name }, id);
-    await client.query(
-      `INSERT INTO public.customer_api_deliveries (id,project_id,work_order_id,customer_wo_id,version_key,snapshot,payload,requested_by,attempt_count)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,1)`,
-      [id,log.project_id,log.work_order_id,log.customer_wo_id,`legacy-log:${log.id}`,JSON.stringify(original),JSON.stringify(payload),actorId]);
-    await client.query(`UPDATE public.customer_api_logs SET delivery_id=$2,attempt_number=1,triggered_by='legacy' WHERE id=$1`, [log.id,id]);
-    await client.query("COMMIT");
-    return id;
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally { client.release(); }
-}

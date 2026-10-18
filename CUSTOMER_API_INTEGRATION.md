@@ -683,7 +683,7 @@ The reference implementation is also in `examples/customer-image-receiver.mjs`. 
 - SQLite serializes concurrent writers using `BEGIN IMMEDIATE`; image BLOBs, work-order metadata and receipt commit together. A failed transaction leaves nothing partially accepted, so a retry can succeed after recovery. Multi-host deployments should use a shared transactional database or durable inbox with equivalent unique-key/locking semantics, not separate per-host SQLite files or a SQLite file on unsupported network storage.
 - This sample checks actual byte signatures against declared MIME types. **It is not a full image decoder or production security gateway.** Add a maintained image decoder/scanner with dimension, pixel/decompression and processing-time limits before displaying untrusted images. The PNG fixture is a real complete image; passing a byte-signature check alone does not prove an arbitrary image is complete or safe.
 - The default customer-side limits are **30 MiB JSON**, **8 MiB per decoded image**, **20 MiB decoded images total**, and **64 images**. They are demonstration receiver policies, not MeterFlo settings. Adjust them to the real contract, available memory and proxy limits.
-- Only schema-v2, matching-header requests are accepted by this example. Historical legacy replay payloads may require a separately validated adapter; do not assume old contracts have these fields.
+- Only schema-v2, matching-header requests are accepted by this example.
 
 ```javascript
 // Customer-side reference only. MeterFlo does not import or run this module.
@@ -972,7 +972,8 @@ Open **Settings → Customer API Logs**.
 
 The existing attempt history remains available, including logs from the old implementation. It supports project and success/failure filters and expandable payload/response details.
 
-For a failed older log without a delivery ID, an administrator can choose **Retry legacy delivery**. MeterFlo creates a persistent delivery from the saved outbound JSON (or maps a logged raw work-order record into the current contract), links the original attempt, and begins a new retry cycle. A missing/invalid payload or disabled integration produces a visible error instead of pretending to replay it. Older successes are not replayed.
+Attempt history is read-only. Retry a failed delivery through the current queue,
+using its delivery ID; there is no conversion/replay endpoint for pre-queue log records.
 
 ### Common failures
 
@@ -1000,12 +1001,11 @@ These routes use MeterFlo's authenticated local session cookie, not customer-bac
 | `GET /api/customer-api-deliveries` | Requires `settings.customerApiLogs`. Optional `projectId`, `status`, `limit` (1–500, default 50), `offset` (default 0). Returns `{deliveries, total, limit, offset}`; no image payloads in summaries. |
 | `GET /api/customer-api-deliveries/:deliveryId/attempts` | Same log permission; returns the attempts for that delivery, including saved request/response/error details. |
 | `POST /api/customer-api-deliveries/:deliveryId/retry` | Admin only. Returns 202 when queued, 404 if missing, 409 if integration is disabled or the state cannot be retried. |
-| `POST /api/customer-api-logs/:logId/retry` | Admin only. Returns 202 for an eligible historical failure with saved JSON; 409 for an ineligible replay. |
 | `GET /api/customer-api-logs` | Same log permission. Existing `projectId`, `success=true/false`, `limit` filters; limit defaults to 100 and is capped at 500. |
 
 Non-admin log viewers see only projects assigned to them; filtering is applied before limiting results. Permission to view logs does **not** grant manual retry rights.
 
-New attempt records include `deliveryId`, `attemptNumber` (lifetime one-based number), `triggeredBy` (`automatic` or `manual:<admin ID>`), `retryCount` (attempt number minus one), URL, payload, HTTP response, success/error, and timestamp. A replayed historical attempt is labeled `legacy`.
+New attempt records include `deliveryId`, `attemptNumber` (lifetime one-based number), `triggeredBy` (`automatic` or `manual:<admin ID>`), `retryCount` (attempt number minus one), URL, payload, HTTP response, success/error, and timestamp.
 
 Authentication headers are not saved. URL credentials/query values and known configured credential values in new response/error logs are redacted. Response bodies are limited to **64 KiB**. Work-order payloads can contain customer information and base64 images, so restrict log access and protect database backups. Existing historical logs are retained as they were originally recorded.
 

@@ -2,7 +2,6 @@ import type { Pool } from "pg";
 import { readRelationalInventory } from "./inventoryRelational";
 import { inventoryToRelational } from "./inventoryRelationalCodec";
 import { emptyInventory as emptyRelationalInventory } from "../shared/inventory";
-import archiver from "archiver";
 import unzipper from "unzipper";
 import * as fs from "fs";
 import * as path from "path";
@@ -168,105 +167,6 @@ export async function createFullSystemBackup(): Promise<{ backup: FullSystemBack
   } finally {
     client.release();
   }
-}
-
-function addDirectoryToArchive(
-  archive: archiver.Archiver,
-  dirPath: string,
-  archivePrefix: string,
-  skippedFiles: string[]
-): void {
-  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
-  
-  for (const entry of entries) {
-    const fullPath = path.join(dirPath, entry.name);
-    const archivePath = archivePrefix ? `${archivePrefix}/${entry.name}` : entry.name;
-    
-    if (entry.isDirectory()) {
-      addDirectoryToArchive(archive, fullPath, archivePath, skippedFiles);
-    } else if (entry.isFile()) {
-      try {
-        const fileStream = fs.createReadStream(fullPath);
-        archive.append(fileStream, { name: archivePath });
-      } catch (error: any) {
-        console.warn(`[Backup] Skipping locked/inaccessible file: ${fullPath} - ${error.message}`);
-        skippedFiles.push(fullPath);
-      }
-    }
-  }
-}
-
-export async function createBackupArchive(res:any):Promise<void> {
-  if(!auditingEnabled) return createBackupArchiveData(res);
-  return auditedOperation("systemBackup","legacy-json",()=>createBackupArchiveData(res));
-}
-async function createBackupArchiveData(res: any): Promise<void> {
-  console.log("[Backup] Starting full system backup...");
-  
-  let backup: FullSystemBackup;
-  let filesPath: string | null;
-  
-  try {
-    const result = await createFullSystemBackup();
-    backup = result.backup;
-    filesPath = result.filesPath;
-    console.log(`[Backup] Database backup complete. Projects: ${backup.projectDatabases.length}`);
-  } catch (error: any) {
-    console.error("[Backup] Failed to create database backup:", error);
-    throw new Error(`Database backup failed: ${error.message}`);
-  }
-  
-  const archive = archiver("zip", { zlib: { level: 6 } });
-  const skippedFiles: string[] = [];
-  
-  archive.on("error", (err) => {
-    console.error("[Backup] Archive error:", err);
-    if (!res.headersSent) {
-      res.status(500).json({ message: `Archive creation failed: ${err.message}` });
-    }
-  });
-  
-  archive.on("warning", (err) => {
-    if (err.code === "ENOENT") {
-      console.warn("[Backup] Archive warning (file not found):", err.message);
-    } else {
-      console.warn("[Backup] Archive warning:", err);
-    }
-  });
-  
-  res.setHeader("Content-Type", "application/zip");
-  res.setHeader("Content-Disposition", `attachment; filename="full_backup_${new Date().toISOString().slice(0, 10)}.zip"`);
-  
-  archive.pipe(res);
-  
-  archive.append(JSON.stringify(backup, null, 2), { name: "database_backup.json" });
-  console.log("[Backup] Added database_backup.json to archive");
-  
-  if (filesPath && fs.existsSync(filesPath)) {
-    console.log(`[Backup] Adding project files from: ${filesPath}`);
-    try {
-      addDirectoryToArchive(archive, filesPath, "project_files", skippedFiles);
-      if (skippedFiles.length > 0) {
-        console.warn(`[Backup] Skipped ${skippedFiles.length} locked/inaccessible files`);
-        archive.append(
-          JSON.stringify({ skippedFiles, reason: "Files were locked or inaccessible during backup" }, null, 2),
-          { name: "backup_warnings.json" }
-        );
-      }
-    } catch (error: any) {
-      console.error(`[Backup] Error reading project files directory: ${error.message}`);
-      archive.append(
-        JSON.stringify({ error: error.message, path: filesPath }, null, 2),
-        { name: "file_backup_error.json" }
-      );
-    }
-  } else {
-    console.log("[Backup] No project files directory to backup");
-  }
-  
-  console.log("[Backup] Finalizing archive...");
-  await archive.finalize();
-  console.log("[Backup] Archive complete");
 }
 
 async function getPrimaryKeyColumns(client: any, tableName: string): Promise<string[]> {
@@ -607,23 +507,5 @@ async function restoreFilesFromArchiveData(
   } catch (error: any) {
     errors.push(`Archive extraction failed: ${error.message}`);
     return { filesRestored, errors };
-  }
-}
-
-export async function extractDatabaseBackupFromArchive(zipBuffer: Buffer): Promise<FullSystemBackup | null> {
-  try {
-    const directory = await unzipper.Open.buffer(zipBuffer);
-    
-    for (const file of directory.files) {
-      if (file.path === "database_backup.json") {
-        const content = await file.buffer();
-        return JSON.parse(content.toString());
-      }
-    }
-    
-    return null;
-  } catch (error) {
-    console.error("Failed to extract database backup:", error);
-    return null;
   }
 }

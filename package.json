@@ -79,7 +79,6 @@
     "test:inventory-events": "tsx --test tests/inventory-events.test.ts",
     "test:inventory-live:browser": "node tests/inventory-live-ui.cjs",
     "test:inventory-stock-serials:browser": "node tests/inventory-stock-serial-ui.cjs",
-    "test:inventory-order-discovery:browser": "node tests/inventory-order-discovery-ui.cjs",
     "test:inventory-shipment-dismissal:browser": "node tests/inventory-shipment-dismissal-ui.cjs",
     "test:inventory-partial-holds:browser": "node tests/inventory-partial-holds-ui.cjs",
     "test:inventory-integration": "tsx --test tests/inventory-integration.test.ts",

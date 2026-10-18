@@ -90,9 +90,8 @@ export type GpsCaptureMode = "automatic" | "manual_step" | "disabled";
 
 export interface WizardConfig {
   wizardMode: WizardWorkflowMode;
-  gpsMode?: GpsCaptureMode;
+  gpsMode: GpsCaptureMode;
   showNotesStep: boolean;
-  showGpsStep: boolean; // Deprecated - use gpsMode instead
   showBeforePhotosStep: boolean;
   showAfterPhotosStep: boolean;
   showSignatureStep: boolean;
@@ -347,14 +346,12 @@ export function SystemChangeoutWizard({
     wizardMode: "changeout",
     gpsMode: "automatic",
     showNotesStep: true,
-    showGpsStep: true, // Deprecated - kept for backward compatibility
     showBeforePhotosStep: true,
     showAfterPhotosStep: true,
     showSignatureStep: true,
   };
   
-  // Derive effective GPS mode - use gpsMode if available, fall back to showGpsStep for backward compatibility
-  const effectiveGpsMode: GpsCaptureMode = config.gpsMode ?? (config.showGpsStep ? "manual_step" : "disabled");
+  const effectiveGpsMode = config.gpsMode;
   const systemReadingLimit = config.systemReadingDecimalPlaces ?? 3;
   const moduleReadingLimit = config.moduleReadingDecimalPlaces ?? 3;
   

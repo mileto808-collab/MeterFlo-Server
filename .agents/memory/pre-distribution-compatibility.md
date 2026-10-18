@@ -9,4 +9,4 @@ The user directs: "When I'm ready to distribute, we can worry about compatibilit
 
 **Why:** Designing around assumed external users or integrations can add unnecessary parallel fields, aliases, fallback paths, and maintenance burden before release.
 
-**How to apply:** Prefer a single clean model, migrations of existing development data, and coordinated updates to first-party consumers. Require an identified dependency before retaining permanent backward-compatibility machinery. Check the existing Windows development instance and mobile consumers before removing support; pre-distribution is not permission to delete data or perform unrelated broad cleanup.
+**How to apply:** The user requested actual removal of irrelevant old-version code, not an audit alone. Prefer a single clean model, migrations of existing development data, and coordinated updates to first-party consumers. Require an identified dependency before retaining permanent backward-compatibility machinery. Check the existing Windows development instance and mobile consumers before removing support; pre-distribution is not permission to delete data or perform unrelated broad cleanup.

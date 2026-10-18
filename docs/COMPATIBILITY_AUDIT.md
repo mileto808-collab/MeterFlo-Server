@@ -1,8 +1,61 @@
 # Pre-distribution compatibility audit
 
+## Cleanup implemented after the audit
+
+The audit is no longer just a list of proposals. The cleanup removes:
+
+- The obsolete web-update source editor, its save endpoint and unused URL state.
+  Current update status has a read-only `/api/settings/web-updates/status`
+  endpoint; numbered-release checks, previews and Windows instructions remain.
+- The duplicate unscoped mobile trouble/completion implementations. The single
+  maintained contract is `/api/mobile/projects/:projectId/work-orders/:id/...`.
+  Mobile API documentation and maintained tests use that contract.
+- The `/by-meter` lookup alias; system lookup uses `/by-system`.
+- Historical pre-outbox log replay: UI action, endpoint, conversion helper and
+  its obsolete test. Current durable delivery retries and history remain.
+- Deprecated wizard `showGpsStep` configuration and fallback. Current GPS capture
+  modes remain explicit.
+- Unused fixed service-type enums/types; the relational catalog remains.
+- Dead ZIP backup-writing helpers and duplicate unused JSON extraction helper.
+- Silent browser filter-preference upgrading. An obsolete visibility preference
+  defaults to showing available filter controls without writing an upgrade.
+  This does not add work-order filter values or restrict technicians to Scheduled.
+
+Removed APIs return JSON 404 responses rather than the application's HTML.
+There are no redirect aliases or alternate implementations for them.
+
+### What is deliberately retained
+
+JSON backup/restore is a requested MeterFlo capability, including the outstanding
+work to make JSON snapshots consistent while inventory changes. Its tested
+relational restore engine is not dead code merely because the old ZIP writer was.
+SQL backups and project JSON backups also remain.
+
+Attachment migration still protects existing development files, and role checks
+still support the current role/subrole management UI and administrator recovery.
+Inventory locking, historical custody checks, precision handling, Windows/Linux
+support and core/custom update boundaries retain current responsibilities.
+Removing those responsibilities requires a replacement design, not deletion
+of every occurrence of the word “legacy.”
+
+Separately maintained native mobile source is not in this repository. It must
+use the documented project-scoped endpoints before testing against this server.
+No installed mobile binary, customer files, user data or stored logs are deleted
+by this cleanup.
+
+### Verification boundary
+
+Cleanup-specific API/UI checks and reading capture regressions run in the owned
+workspace sandbox. The broader reading-precision suite also exposed an existing
+independent issue: startup initialization returns when the precision columns
+already exist, without verifying that their database range constraints exist.
+The database-only startup constraint assertion therefore fails on a schema
+created without those checks. This cleanup does not change that initializer;
+it is recorded separately rather than silently changing unrelated schema behavior.
+
 ## Scope and conclusion
 
-This is a source audit of `server`, `shared`, `client/src`, `script` and `deploy`,
+The original audit below covered `server`, `shared`, `client/src`, `script` and `deploy`,
 with consumer checks in the client router, tests and mobile API documentation.
 It is not a security scan, a measurement of production usage, or proof that a
 separately maintained mobile client no longer calls an endpoint.

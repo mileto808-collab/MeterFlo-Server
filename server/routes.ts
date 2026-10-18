@@ -61,10 +61,10 @@ import {
 } from "@shared/reading-precision";
 import { ensureProjectDirectory, renameProjectDirectory, saveWorkOrderFile, getWorkOrderFiles, deleteWorkOrderFile, deleteWorkOrderDirectory, getFilePath, getProjectFilesPath, setProjectFilesPath, deleteProjectDirectory, saveProjectFile, getProjectFiles, deleteProjectFile, getProjectFilePath, ensureProjectFtpDirectory, getProjectFtpFiles, deleteProjectFtpFile, getProjectFtpFilePath, saveProjectFtpFile, getProjectDirectoryName } from "./fileStorage";
 import { ExternalDatabaseService } from "./externalDbService";
-import { createBackupArchive, extractDatabaseBackupFromArchive, restoreFullSystem, restoreFilesFromArchive, SystemRestoreError } from "./systemBackup";
+import { restoreFullSystem, restoreFilesFromArchive, SystemRestoreError } from "./systemBackup";
 import { createPgBackupArchive, extractBackupFromArchive, restorePgBackup, restoreFilesFromPgArchive, restoreWebAppFilesFromArchive, BackupType } from "./pgBackup";
 import { projectEventEmitter, emitWorkOrderCreated, emitWorkOrderUpdated, emitWorkOrderDeleted, emitFileAdded, emitFileDeleted, type ProjectEvent } from "./eventEmitter";
-import { retryCustomerDelivery, retryLegacyCustomerLog } from "./customerApiService";
+import { retryCustomerDelivery } from "./customerApiService";
 import { registerApiImportRoutes } from "./apiImportRoutes";
 import { registerLogMaintenanceRoutes } from "./logMaintenanceRoutes";
 import { registerMobileReleaseRoutes } from "./mobileReleaseRoutes";
@@ -2570,8 +2570,7 @@ export async function registerRoutes(
 
   // Look up work order by system ID, address, customer ID, or work order ID
   // Used by system changeout wizard and mobile app to find work orders
-  // Note: /by-meter route kept for backward compatibility with mobile apps
-  app.get(["/api/projects/:projectId/work-orders/by-system/:systemId", "/api/projects/:projectId/work-orders/by-meter/:systemId"], isAuthenticated, async (req: any, res) => {
+  app.get("/api/projects/:projectId/work-orders/by-system/:systemId", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       if (!currentUser) {
@@ -5409,7 +5408,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/settings/web-update-config", isAuthenticated, async (req: any, res) => {
+  app.get("/api/settings/web-updates/status", isAuthenticated, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       if (!currentUser) {
@@ -5421,52 +5420,16 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Forbidden: You don't have permission to view web update configuration" });
       }
       
-      const webUpdateUrl = await storage.getSetting("webUpdateUrl");
       const webUpdateLastCheck = await storage.getSetting("webUpdateLastCheck");
       const webUpdateCachedRelease = await storage.getSetting("webUpdateCachedRelease");
       
       res.json({ 
-        webUpdateUrl: webUpdateUrl || null,
         lastCheck: webUpdateLastCheck || null,
         cachedRelease: webUpdateCachedRelease ? JSON.parse(webUpdateCachedRelease) : null
       });
     } catch (error) {
       console.error("Error fetching web update config:", error);
       res.status(500).json({ message: "Failed to fetch web update configuration" });
-    }
-  });
-
-  app.put("/api/settings/web-update-config", isAuthenticated, async (req: any, res) => {
-    try {
-      const currentUser = await storage.getUser(req.user.claims.sub);
-      if (!currentUser) {
-        return res.status(401).json({ message: "Unauthorized" });
-      }
-      
-      const hasWebUpdatePermission = await storage.hasPermission(currentUser, permissionKeys.SETTINGS_WEB_UPDATE);
-      if (!hasWebUpdatePermission) {
-        return res.status(403).json({ message: "Forbidden: You don't have permission to update web update configuration" });
-      }
-      
-      const { webUpdateUrl } = req.body;
-      
-      // Validate GitHub API URL format if provided
-      if (webUpdateUrl && webUpdateUrl.trim() !== "") {
-        const pattern = /^https:\/\/api\.github\.com\/repos\/[\w.-]+\/[\w.-]+\/releases\/(latest|\d+)$/;
-        if (!pattern.test(webUpdateUrl.trim())) {
-          return res.status(400).json({ 
-            message: "Invalid GitHub releases API URL format. Must be: https://api.github.com/repos/ORG/REPO/releases/latest" 
-          });
-        }
-        await storage.setSetting("webUpdateUrl", webUpdateUrl.trim(), "GitHub releases API URL for web app updates");
-      } else {
-        await storage.setSetting("webUpdateUrl", "", "GitHub releases API URL for web app updates");
-      }
-      
-      res.json({ message: "Web update configuration saved" });
-    } catch (error) {
-      console.error("Error updating web update config:", error);
-      res.status(500).json({ message: "Failed to update web update configuration" });
     }
   });
 
@@ -6149,25 +6112,6 @@ export async function registerRoutes(
     } catch (error) {
       console.error("[CustomerAPI] Manual retry failed:", error);
       res.status(500).json({ message: "Failed to queue delivery retry" });
-    }
-  });
-
-  app.post("/api/customer-api-logs/:logId/retry", isAuthenticated, async (req: any, res) => {
-    try {
-      const user = await storage.getUser(req.user.claims.sub);
-      if (!user || (user.role !== "admin" && !await storage.isAdminUser(user))) return res.status(403).json({ message: "Admin access required" });
-      const id = Number(req.params.logId);
-      if (!Number.isSafeInteger(id) || id < 1) return res.status(400).json({ message: "Invalid log ID" });
-      const deliveryId = await retryLegacyCustomerLog(id, user.id);
-      res.status(202).json({ deliveryId, status: "pending", message: "Historical delivery queued for retry" });
-    } catch (error: any) {
-      const expected = ["Log entry not found", "Only failed legacy log entries can be replayed",
-        "Enable this project's Customer API before retrying", "This log has no saved payload to replay",
-        "Saved payload is not a JSON object"];
-      if (error instanceof SyntaxError) return res.status(409).json({ message: "Saved payload is not valid JSON" });
-      if (expected.includes(error.message)) return res.status(409).json({ message: error.message });
-      console.error("[CustomerAPI] Historical retry failed:", error);
-      res.status(500).json({ message: "Failed to queue historical delivery" });
     }
   });
 
@@ -9902,468 +9846,6 @@ export async function registerRoutes(
       console.error("Error completing mobile system changeout:", error);
       if (error instanceof InventoryError) return res.status(error.status).json({ message: error.message, code: "INVENTORY_CONFLICT" });
       res.status(500).json({ message: "Failed to complete system changeout" });
-    }
-  });
-
-  // ========== NEW MOBILE ENDPOINTS (JSON with base64 photos) ==========
-  // These endpoints match what the mobile app expects: /api/mobile/workorders/:id/trouble and /api/mobile/workorders/:id/complete
-  
-  // Mobile trouble endpoint - accepts JSON with base64 photos
-  app.post("/api/mobile/workorders/:workOrderId/trouble", isAuthenticated, async (req: any, res) => {
-    try {
-      const currentUser = await storage.getUser(req.user.claims.sub);
-      const workOrderId = parseInt(req.params.workOrderId);
-      
-      if (!currentUser) {
-        return res.status(401).json({ message: "Unauthorized" });
-      }
-      
-      const { projectId, troubleCode, notes, oldSystemReading, photos } = req.body;
-      
-      if (!projectId) {
-        return res.status(400).json({ message: "projectId is required" });
-      }
-      
-      if (!troubleCode) {
-        return res.status(400).json({ message: "troubleCode is required" });
-      }
-      
-      // Validate trouble code exists
-      const troubleCodes = await storage.getTroubleCodes(Number(projectId));
-      const validTroubleCode = troubleCodes.find(tc => tc.ruleKey === troubleCode);
-      if (!validTroubleCode) {
-        return res.status(400).json({ message: `Invalid trouble code: ${troubleCode}` });
-      }
-      
-      // Check permission
-      const hasMeterChangeoutPermission = await storage.hasPermission(currentUser, "workOrders.meterChangeout");
-      if (!hasMeterChangeoutPermission) {
-        return res.status(403).json({ message: "You do not have permission to perform system changeouts" });
-      }
-      
-      // Must be assigned to project (unless admin)
-      if (currentUser.role !== "admin") {
-        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
-        if (!isAssigned) {
-          return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
-        }
-      }
-      
-      const project = await storage.getProject(projectId);
-      if (!project || !project.databaseName) {
-        return res.status(404).json({ message: "Project not found" });
-      }
-      
-      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
-      const workOrder = await workOrderStorage.getWorkOrder(workOrderId);
-      
-      if (!workOrder) {
-        return res.status(404).json({ message: "Work order not found" });
-      }
-      
-      const folderName = workOrder.customerWoId || String(workOrder.id);
-      const updatedByUsername = currentUser.username || currentUser.id;
-      
-      // Save photos if provided (base64 encoded) - always rename to standard format
-      const readingErrors = validateCapturedReadings({ oldSystemReading }, project, workOrder);
-      if (readingErrors.length) return res.status(400).json(readingValidationResponse(readingErrors));
-
-      if (photos && Array.isArray(photos) && photos.length > 0) {
-        const projectFilesPath = await getProjectFilesPath();
-        const projectDirName = getProjectDirectoryName(project.name, project.id);
-        const workOrderFolder = path.join(
-          projectFilesPath,
-          projectDirName,
-          "Work Orders",
-          folderName
-        );
-        
-        await fs.mkdir(workOrderFolder, { recursive: true });
-        
-        // Generate date string in YYYYMMDD format
-        const now = new Date();
-        const dateStr = now.getFullYear().toString() +
-          (now.getMonth() + 1).toString().padStart(2, '0') +
-          now.getDate().toString().padStart(2, '0');
-        
-        for (let i = 0; i < photos.length; i++) {
-          const photo = photos[i];
-          if (photo.base64) {
-            // Remove data URL prefix if present
-            let base64Data = photo.base64;
-            if (base64Data.includes(",")) {
-              base64Data = base64Data.split(",")[1];
-            }
-            
-            const buffer = Buffer.from(base64Data, "base64");
-            // Use randomUUID() for guaranteed unique collision-proof naming
-            const uniqueId = randomUUID();
-            // Use standardized filename: {customerWoId}-trouble-{YYYYMMDD}-{uniqueId}.jpg
-            const filename = `${folderName}-trouble-${dateStr}-${uniqueId}.jpg`;
-            const filePath = path.join(workOrderFolder, filename);
-            await fs.writeFile(filePath, buffer);
-          }
-        }
-      }
-      
-      // Build update data - troubleCode triggers auto-generated trouble note in updateWorkOrder
-      const updateData: any = {
-        status: "Trouble",
-        trouble: troubleCode,
-        updatedAt: new Date().toISOString(),
-      };
-      
-      // Append user notes to existing notes (mobile pattern) - don't replace
-      // Use project timezone if set, otherwise UTC
-      const projectTimezone = project.timezone || 'UTC';
-      const timestamp = new Date().toLocaleString('en-US', {
-        month: '2-digit',
-        day: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true,
-        timeZone: projectTimezone
-      });
-      
-      // Build trouble note entry with header, trouble code line, then user notes
-      const troubleCodeLine = `Trouble Code: ${validTroubleCode.code} - ${validTroubleCode.label} - ${timestamp} by ${currentUser.username || currentUser.id}`;
-      const noteEntry = notes && notes.trim()
-        ? `[Trouble Report - ${timestamp} by ${currentUser.username || currentUser.id}]\n${troubleCodeLine}\n${notes.trim()}`
-        : `[Trouble Report - ${timestamp} by ${currentUser.username || currentUser.id}]\n${troubleCodeLine}`;
-      updateData.notes = workOrder.notes 
-        ? `${workOrder.notes}\n\n${noteEntry}`
-        : noteEntry;
-      
-      if (oldSystemReading !== undefined && oldSystemReading !== null && oldSystemReading !== "") {
-        updateData.oldSystemReading = String(oldSystemReading).trim();
-      }
-      
-      // The trouble code is included in updateData.trouble, which triggers auto-generated trouble note in updateWorkOrder
-      const updatedWorkOrder = await workOrderStorage.updateWorkOrder(
-        workOrderId,
-        { ...updateData, inventoryUsage: mobileInventoryUsage(req) },
-        updatedByUsername
-      );
-      
-      // Trigger webhook if configured
-      await triggerProjectWebhook(project, "work_order.trouble", updatedWorkOrder, currentUser);
-      
-      // Emit SSE event to notify dashboard users
-      emitWorkOrderUpdated(projectId, workOrderId, currentUser.id);
-      
-      res.json({
-        success: true,
-        workOrder: updatedWorkOrder,
-        message: "Trouble reported successfully"
-      });
-    } catch (error: any) {
-      console.error("Error in mobile trouble endpoint:", error);
-      res.status(500).json({ message: error.message || "Failed to report trouble" });
-    }
-  });
-
-  // Mobile complete endpoint - accepts JSON with base64 photos
-  app.post("/api/mobile/workorders/:workOrderId/complete", isAuthenticated, async (req: any, res) => {
-    try {
-      const currentUser = await storage.getUser(req.user.claims.sub);
-      const workOrderId = parseInt(req.params.workOrderId);
-      
-      if (!currentUser) {
-        return res.status(401).json({ message: "Unauthorized" });
-      }
-      
-      const {
-        projectId,
-        oldSystemReading,
-        newSystemReading,
-        newSystemId,
-        newSystemType,
-        oldModuleReading,
-        oldModuleRead, // Alternative field name from mobile
-        newModuleReading,
-        newModuleRead, // Alternative field name from mobile
-        newModuleId,
-        oldModuleType,
-        newModuleType,
-        gpsCoordinates,
-        signatureData,
-        signatureName,
-        completedAt,
-        notes,
-        beforePhotos,
-        afterPhotos,
-        isReadingOnly, // true if reading-only mode
-        changeoutScope, // "system", "module", or "both" - explicit scope from request
-      } = req.body;
-      
-      // Normalize module reading field names (mobile may send oldModuleRead/newModuleRead instead of oldModuleReading/newModuleReading)
-      const effectiveOldModuleReading = oldModuleReading ?? oldModuleRead;
-      const effectiveNewModuleReading = newModuleReading ?? newModuleRead;
-      
-      if (!projectId) {
-        return res.status(400).json({ message: "projectId is required" });
-      }
-      
-      // Check permission
-      const hasMeterChangeoutPermission = await storage.hasPermission(currentUser, "workOrders.meterChangeout");
-      if (!hasMeterChangeoutPermission) {
-        return res.status(403).json({ message: "You do not have permission to perform system changeouts" });
-      }
-      
-      // Must be assigned to project (unless admin)
-      if (currentUser.role !== "admin") {
-        const isAssigned = await storage.isUserAssignedToProject(currentUser.id, projectId);
-        if (!isAssigned) {
-          return res.status(403).json({ message: "Forbidden: You are not assigned to this project" });
-        }
-      }
-      
-      const project = await storage.getProject(projectId);
-      if (!project || !project.databaseName) {
-        return res.status(404).json({ message: "Project not found" });
-      }
-      
-      const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
-      const workOrder = await workOrderStorage.getWorkOrder(workOrderId);
-      
-      if (!workOrder) {
-        return res.status(404).json({ message: "Work order not found" });
-      }
-      
-      const folderName = workOrder.customerWoId || String(workOrder.id);
-      const updatedByUsername = currentUser.username || currentUser.id;
-      
-      // Helper to save base64 photos - always rename to standard format with date and timestamp
-      const readingErrors = validateCapturedReadings({
-        newSystemReading, newModuleReading: effectiveNewModuleReading,
-        ...(!isReadingOnly ? { oldSystemReading, oldModuleReading: effectiveOldModuleReading } : {}),
-      }, project, workOrder);
-      if (readingErrors.length) return res.status(400).json(readingValidationResponse(readingErrors));
-
-      const saveBase64Photos = async (photos: any[], photoType: string) => {
-        if (!photos || !Array.isArray(photos) || photos.length === 0) return;
-        
-        const projectFilesPath = await getProjectFilesPath();
-        const projectDirName = getProjectDirectoryName(project.name, project.id);
-        const workOrderFolder = path.join(
-          projectFilesPath,
-          projectDirName,
-          "Work Orders",
-          folderName
-        );
-        
-        await fs.mkdir(workOrderFolder, { recursive: true });
-        
-        // Generate date string in YYYYMMDD format
-        const now = new Date();
-        const dateStr = now.getFullYear().toString() +
-          (now.getMonth() + 1).toString().padStart(2, '0') +
-          now.getDate().toString().padStart(2, '0');
-        
-        for (let i = 0; i < photos.length; i++) {
-          const photo = photos[i];
-          if (photo.base64) {
-            // Remove data URL prefix if present
-            let base64Data = photo.base64;
-            if (base64Data.includes(",")) {
-              base64Data = base64Data.split(",")[1];
-            }
-            
-            const buffer = Buffer.from(base64Data, "base64");
-            // Use randomUUID() for guaranteed unique collision-proof naming
-            const uniqueId = randomUUID();
-            // Use standardized filename: {customerWoId}-{type}-{YYYYMMDD}-{uniqueId}.jpg
-            const filename = `${folderName}-${photoType}-${dateStr}-${uniqueId}.jpg`;
-            const filePath = path.join(workOrderFolder, filename);
-            await fs.writeFile(filePath, buffer);
-          }
-        }
-      };
-      
-      // Save before photos
-      await saveBase64Photos(beforePhotos, "before");
-      
-      // Save after photos
-      await saveBase64Photos(afterPhotos, "after");
-      
-      // Save signature if provided
-      if (signatureData) {
-        const projectFilesPath = await getProjectFilesPath();
-        const projectDirName = getProjectDirectoryName(project.name, project.id);
-        const workOrderFolder = path.join(
-          projectFilesPath,
-          projectDirName,
-          "Work Orders",
-          folderName
-        );
-        
-        await fs.mkdir(workOrderFolder, { recursive: true });
-        
-        let sigBase64 = signatureData;
-        if (sigBase64.includes(",")) {
-          sigBase64 = sigBase64.split(",")[1];
-        }
-        
-        const sigBuffer = Buffer.from(sigBase64, "base64");
-        const sigFilename = `${folderName}-signature.png`;
-        const sigFilePath = path.join(workOrderFolder, sigFilename);
-        await fs.writeFile(sigFilePath, sigBuffer);
-      }
-      
-      // Validation for system changeout completion (numeric - integers or decimals)
-      const isValidSystemReading = (reading: any): boolean => {
-        if (reading === undefined || reading === null) return false;
-        const str = String(reading).trim();
-        return str.length > 0 && /^\d+(\.\d+)?$/.test(str);
-      };
-      
-      const isValidGps = (gps: string): boolean => {
-        if (!gps || !gps.trim()) return false;
-        const match = gps.trim().match(/^(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)$/);
-        if (!match) return false;
-        const lat = parseFloat(match[1]);
-        const lng = parseFloat(match[2]);
-        return !isNaN(lat) && !isNaN(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
-      };
-      
-      // Determine changeout scope from explicit changeoutScope or fall back to work order data
-      // Use type assertion for snake_case fallbacks (legacy imports may use snake_case)
-      const woAny = workOrder as any;
-      const hasSystemData = !!workOrder.oldSystemId || !!woAny.old_system_id;
-      const hasModuleData = !!workOrder.oldModuleId || !!woAny.old_module_id;
-      // For validation, use work order data; for notes prefix, honor explicit scope if provided
-      const needsSystem = changeoutScope ? (changeoutScope === "system" || changeoutScope === "both") : hasSystemData;
-      const needsModule = changeoutScope ? (changeoutScope === "module" || changeoutScope === "both") : hasModuleData;
-      
-      // Validate required fields for completion based on scope
-      if (needsSystem) {
-        if (!isValidSystemReading(oldSystemReading)) {
-          return res.status(400).json({ message: "oldSystemReading is required and must be numeric" });
-        }
-        if (!newSystemId) {
-          return res.status(400).json({ message: "newSystemId is required for completion" });
-        }
-        if (!isValidSystemReading(newSystemReading)) {
-          return res.status(400).json({ message: "newSystemReading is required and must be numeric" });
-        }
-      }
-      
-      if (needsModule) {
-        if (!isValidSystemReading(effectiveOldModuleReading)) {
-          return res.status(400).json({ message: "oldModuleReading is required and must be numeric" });
-        }
-        if (!newModuleId) {
-          return res.status(400).json({ message: "newModuleId is required for module changeout" });
-        }
-        if (!isValidSystemReading(effectiveNewModuleReading)) {
-          return res.status(400).json({ message: "newModuleReading is required and must be numeric" });
-        }
-      }
-      
-      if (gpsCoordinates && !isValidGps(gpsCoordinates)) {
-        return res.status(400).json({ message: "Invalid GPS coordinates format. Use 'lat,lng' format" });
-      }
-      
-      // Build update data - clear scheduledAt since status is changing to Completed
-      const updateData: any = {
-        status: "Completed",
-        trouble: null,
-        updatedAt: new Date().toISOString(),
-        completedAt: completedAt || new Date().toISOString(),
-        completedBy: currentUser.id,
-        scheduledAt: null,
-      };
-      
-      // System fields - only set if this is a system or both changeout
-      if (needsSystem) {
-        if (oldSystemReading !== undefined && oldSystemReading !== null) {
-          updateData.oldSystemReading = String(oldSystemReading).trim();
-        }
-        if (newSystemReading !== undefined && newSystemReading !== null) {
-          updateData.newSystemReading = String(newSystemReading).trim();
-        }
-        if (newSystemId) {
-          updateData.newSystemId = newSystemId;
-        }
-        if (newSystemType) {
-          updateData.newSystemType = newSystemType;
-        } else if (isReadingOnly) {
-          // In Reading Only mode, copy old system type to new system type if mobile doesn't provide it
-          const existingOldType = (workOrder as any).oldSystemType || (workOrder as any).old_system_type;
-          if (existingOldType) {
-            updateData.newSystemType = existingOldType;
-          }
-        }
-      }
-      
-      // Module fields - only set if this is a module or both changeout
-      if (needsModule) {
-        if (effectiveOldModuleReading !== undefined && effectiveOldModuleReading !== null) {
-          updateData.oldModuleRead = String(effectiveOldModuleReading).trim();
-        }
-        if (effectiveNewModuleReading !== undefined && effectiveNewModuleReading !== null) {
-          updateData.newModuleRead = String(effectiveNewModuleReading).trim();
-        }
-        if (newModuleId) {
-          updateData.newModuleId = newModuleId;
-        }
-        if (oldModuleType) {
-          updateData.oldModuleType = oldModuleType;
-        }
-        if (newModuleType) {
-          updateData.newModuleType = newModuleType;
-        } else if (isReadingOnly) {
-          // In Reading Only mode, copy old module type to new module type if mobile doesn't provide it
-          const existingOldModType = (workOrder as any).oldModuleType || (workOrder as any).old_module_type;
-          if (existingOldModType) {
-            updateData.newModuleType = existingOldModType;
-          }
-        }
-      }
-      
-      if (gpsCoordinates) {
-        updateData.newGps = gpsCoordinates;
-      }
-      if (signatureName) {
-        updateData.signatureName = signatureName;
-      }
-      if (signatureData) {
-        updateData.signatureData = signatureData;
-      }
-      // Always add completion report header (similar to Trouble Report format)
-      const timestamp = await getTimezoneFormattedTimestamp(project.timezone);
-      const reportType = isReadingOnly ? "Reading Report" : "Changeout Report";
-      const noteEntry = notes && notes.trim()
-        ? `[${reportType} - ${timestamp}]\n${notes.trim()}`
-        : `[${reportType} - ${timestamp}]`;
-      updateData.notes = workOrder.notes 
-        ? `${workOrder.notes}\n\n${noteEntry}`
-        : noteEntry;
-      
-      const updatedWorkOrder = await workOrderStorage.updateWorkOrder(
-        workOrderId,
-        { ...updateData, inventoryUsage: mobileInventoryUsage(req) },
-        updatedByUsername
-      );
-      
-      // Trigger webhook if configured
-      await triggerProjectWebhook(project, "work_order.completed", updatedWorkOrder, currentUser);
-      
-      // Customer delivery is recorded transactionally by updateWorkOrder.
-      
-      // Emit SSE event to notify dashboard users
-      emitWorkOrderUpdated(projectId, workOrderId, currentUser.id);
-      
-      res.json({
-        success: true,
-        workOrder: updatedWorkOrder,
-        message: "System changeout completed successfully"
-      });
-    } catch (error: any) {
-      console.error("Error in mobile complete endpoint:", error);
-      if (error instanceof InventoryError) return res.status(error.status).json({ message: error.message, code: "INVENTORY_CONFLICT" });
-      res.status(500).json({ message: error.message || "Failed to complete system changeout" });
     }
   });
 

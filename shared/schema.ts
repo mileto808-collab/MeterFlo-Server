@@ -613,14 +613,6 @@ export const workOrderTimeTracking = pgTable("work_order_time_tracking", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Default service type values (for backward compatibility and seeding)
-export const defaultServiceTypes = ["Water", "Electric", "Gas"] as const;
-export type DefaultServiceType = (typeof defaultServiceTypes)[number];
-
-// Service type enum for utility work orders (kept for backward compatibility)
-export const serviceTypeEnum = ["Water", "Electric", "Gas"] as const;
-export type ServiceType = (typeof serviceTypeEnum)[number];
-
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   userProjects: many(userProjects),

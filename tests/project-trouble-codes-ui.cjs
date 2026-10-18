@@ -144,7 +144,7 @@ const { Pool } = require("pg");
     await run("POST", `/api/mobile/projects/${p}/work-orders/${restoredWo.id}/trouble`, { troubleCode: foreign.ruleKey }, 400);
     await run("POST", `/api/mobile/projects/${p}/work-orders/${restoredWo.id}/trouble`, { troubleCode: custom.ruleKey, notes: "Scoped mobile fixture" });
     assert.equal((await run("GET", `${base}/work-orders/${restoredWo.id}`)).trouble, custom.ruleKey);
-    await run("POST", `/api/mobile/workorders/${restoredWo.id}/trouble`, { projectId: p, troubleCode: uiCode.ruleKey, notes: "Mobile fixture" });
+    await run("POST", `/api/mobile/projects/${p}/work-orders/${restoredWo.id}/trouble`, { troubleCode: uiCode.ruleKey, notes: "Mobile fixture" });
     assert.equal((await run("GET", `${base}/work-orders/${restoredWo.id}`)).trouble, uiCode.ruleKey);
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.getByTestId("mobile-trouble-code")).toContainText("Renamed through project settings");

@@ -94,8 +94,8 @@ test("startup migration is repeatable and preserves configured zero/six", async 
 
 // Uses real login and the running development API, without changing shared auth
 // configuration or production data. Isolated fixture users/projects are removed.
-test("live project permissions and all reading write APIs", { skip: !process.env.REPLIT_DEV_DOMAIN }, async t => {
-  const base = `https://${process.env.REPLIT_DEV_DOMAIN}`;
+test("live project permissions and all reading write APIs", { skip: !process.env.WORKSPACE_UI_SANDBOX_CONFIG }, async t => {
+  const base = (await import("./support/workspace-ui-base.cjs")).default();
   const suffix = randomUUID().slice(0, 8);
   const prefix = `Precision test ${suffix}`;
   const password = `${randomBytes(24).toString("hex")}!Aa1`;
@@ -235,11 +235,14 @@ test("live project permissions and all reading write APIs", { skip: !process.env
         assert.equal(record.new_module_read,"00000.123456");
       }
     });
-    await t.test("both mobile trouble captures validate before saving and do not truncate fractions", async () => {
+    await t.test("project-scoped mobile trouble captures validate before saving and do not truncate fractions", async () => {
       const wo = await createWorkOrder();
-      const troubleCode = (await storage.getTroubleCodes())[0].ruleKey;
+      const definition = await request(admin.cookie, `${root}/trouble-codes`, "POST", {
+        code: `PRECISION_${project.id}`, label: "Precision fixture",
+      });
+      assert.equal(definition.status, 201);
+      const troubleCode = definition.data.ruleKey;
       for (const route of [
-        `/api/mobile/workorders/${wo.id}/trouble`,
         `/api/mobile/projects/${project.id}/work-orders/${wo.id}/trouble`,
       ]) {
         const invalid = await request(operator.cookie, route, "POST",
@@ -254,14 +257,13 @@ test("live project permissions and all reading write APIs", { skip: !process.env
         assert.equal((await request(admin.cookie, root, "PATCH", { systemReadingDecimalPlaces: 0 })).status, 200);
       }
     });
-    await t.test("web wizard plus all three mobile completion routes enforce separate limits", async () => {
+    await t.test("web wizard and project-scoped mobile completion enforce separate limits", async () => {
       const wo = await createWorkOrder();
       const invalid = { canChange: true, projectId: project.id, oldSystemReading: "123",
         oldModuleReading: "123.123456", newSystemId: "new-s", newModuleId: "new-m",
         newSystemReading: "1.1", newModuleReading: "1.123456", changeoutScope: "both",
         gpsCoordinates: "40,-74", signatureName: "Fixture" };
       for (const route of [
-        `/api/mobile/workorders/${wo.id}/complete`,
         `/api/mobile/projects/${project.id}/work-orders/${wo.id}/complete`,
       ]) {
         const result = await request(operator.cookie, route, "POST", invalid);

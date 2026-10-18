@@ -106,7 +106,7 @@ export const accessLockMiddleware: RequestHandler = async (req: any, res, next) 
     }
     // Cross-project backup/restore and ambiguous legacy writes cannot safely
     // operate on a partial scope. Explicit project endpoints remain available.
-    const crossProject = /^\/api\/(?:system\/(?:backup|restore)|audit(?:\/|$)|maintenance(?:\/|$)|project-deletion-cleanups|mobile\/workorders\/)/.test(path) ||
+    const crossProject = /^\/api\/(?:system\/(?:backup|restore)|audit(?:\/|$)|maintenance(?:\/|$)|project-deletion-cleanups)/.test(path) ||
       (!projectIds.length && /^\/api\/(?:events|customer-api-(?:deliveries|logs)|(?:file-)?import-history)(?:\/|$)/.test(path));
     let affected = false;
     if (blocked.size && crossProject && user) {

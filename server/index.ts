@@ -115,6 +115,11 @@ app.use(requestLogging(log));
   await registerRoutes(httpServer, app);
   await registerCustomerExtensions(app, {auth:isAuthenticated, storage});
 
+  // Missing API routes must not fall through to the web application's HTML.
+  app.use("/api", (_req, res) => {
+    res.status(404).json({ message: "API endpoint not found." });
+  });
+
   app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";

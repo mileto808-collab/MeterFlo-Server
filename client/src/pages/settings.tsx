@@ -308,16 +308,6 @@ export default function Settings() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const isAdmin = user?.role === "admin";
-  const retryLegacyApiLog = useMutation({
-    mutationFn: async (id: number) => { await apiRequest("POST", `/api/customer-api-logs/${id}/retry`, {}); },
-    onSuccess: () => {
-      toast({ title: "Historical delivery queued for retry" });
-      queryClient.invalidateQueries({ queryKey: ["/api/customer-api-deliveries"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/customer-api-logs"] });
-    },
-    onError: (error: Error) => toast({ title: "Retry could not be queued", description: error.message, variant: "destructive" }),
-  });
-
   const { data: subroles, isLoading: loadingSubroles } = useQuery<Subrole[]>({
     queryKey: ["/api/subroles"],
     enabled: isAdmin || hasPermission("settings.accessLevels"),
@@ -563,11 +553,9 @@ export default function Settings() {
   });
 
   // Web Application Update state and queries
-  const [webUpdateUrl, setWebUpdateUrl] = useState("");
   const [showUpdatePreview, setShowUpdatePreview] = useState(false);
   
   interface WebUpdateConfig {
-    webUpdateUrl: string | null;
     lastCheck: string | null;
     cachedRelease: {
       latestVersion?: string;
@@ -588,7 +576,7 @@ export default function Settings() {
   }
 
   const { data: webUpdateConfigData } = useQuery<WebUpdateConfig>({
-    queryKey: ["/api/settings/web-update-config"],
+    queryKey: ["/api/settings/web-updates/status"],
     enabled: isAdmin || hasPermission("settings.webUpdate"),
   });
 
@@ -597,32 +585,13 @@ export default function Settings() {
     enabled: isAdmin || hasPermission("settings.webUpdate"),
   });
 
-  useEffect(() => {
-    if (webUpdateConfigData?.webUpdateUrl) {
-      setWebUpdateUrl(webUpdateConfigData.webUpdateUrl);
-    }
-  }, [webUpdateConfigData]);
-
-  const saveWebUpdateConfigMutation = useMutation({
-    mutationFn: async (url: string) => {
-      return apiRequest("PUT", "/api/settings/web-update-config", { webUpdateUrl: url });
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/settings/web-update-config"] });
-      toast({ title: "Web update configuration saved" });
-    },
-    onError: () => {
-      toast({ title: "Failed to save web update configuration", variant: "destructive" });
-    },
-  });
-
   const checkForUpdatesMutation = useMutation({
     mutationFn: async () => {
       const response = await apiRequest("POST", "/api/system/update-check", {});
       return response.json();
     },
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/settings/web-update-config"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/settings/web-updates/status"] });
       if (data.configurationRequired) {
         toast({ title: "Numbered release checks need configuration",
           description: "An approved source and baseline are required for staged releases. Windows Git update commands are available below and in Preview Changes; this is not a Windows updater failure." });
@@ -670,7 +639,7 @@ export default function Settings() {
     toast({ title: "Command copied to clipboard" });
   };
 
-  const validateGitHubApiUrl = (url: string): boolean => {
+  const validateMobileUpdateUrl = (url: string): boolean => {
     if (!url || url.trim() === "") return true; // Empty is valid (disables update checks)
     const pattern = /^https:\/\/api\.github\.com\/repos\/[\w.-]+\/[\w.-]+\/releases\/(latest|\d+)$/;
     return pattern.test(url.trim());
@@ -2188,10 +2157,6 @@ export default function Settings() {
                             </CollapsibleTrigger>
                             <CollapsibleContent>
                               <div className="border-t p-3 space-y-3 bg-muted/30">
-                                {isAdmin && !log.success && !log.deliveryId && (
-                                  <Button size="sm" disabled={retryLegacyApiLog.isPending}
-                                    onClick={() => retryLegacyApiLog.mutate(log.id)}>Retry legacy delivery</Button>
-                                )}
                                 {log.errorMessage && (
                                   <div>
                                     <Label className="text-xs text-muted-foreground">Error Message</Label>
@@ -2267,7 +2232,7 @@ export default function Settings() {
                       <br />
                       Format: https://api.github.com/repos/ORG/REPO/releases/latest
                     </p>
-                    {mobileUpdateUrl && !validateGitHubApiUrl(mobileUpdateUrl) && (
+                    {mobileUpdateUrl && !validateMobileUpdateUrl(mobileUpdateUrl) && (
                       <p className="text-xs text-destructive">
                         Invalid GitHub releases API URL format. Must be: https://api.github.com/repos/ORG/REPO/releases/latest
                       </p>
@@ -2358,7 +2323,7 @@ export default function Settings() {
 
                 <Button 
                   onClick={() => {
-                    if (mobileUpdateUrl && !validateGitHubApiUrl(mobileUpdateUrl)) {
+                    if (mobileUpdateUrl && !validateMobileUpdateUrl(mobileUpdateUrl)) {
                       toast({ title: "Invalid GitHub URL format", variant: "destructive" });
                       return;
                     }
@@ -2376,7 +2341,7 @@ export default function Settings() {
                       iosAppStoreId: iosAppStoreId.trim()
                     });
                   }}
-                  disabled={saveMobileConfigMutation.isPending || (mobileUpdateUrl !== "" && !validateGitHubApiUrl(mobileUpdateUrl)) || (iosUpdateSource === "appstore" && (!iosAppStoreId.trim() || !/^\d+$/.test(iosAppStoreId)))}
+                  disabled={saveMobileConfigMutation.isPending || (mobileUpdateUrl !== "" && !validateMobileUpdateUrl(mobileUpdateUrl)) || (iosUpdateSource === "appstore" && (!iosAppStoreId.trim() || !/^\d+$/.test(iosAppStoreId)))}
                   data-testid="button-save-mobile-config"
                 >
                   <Save className="h-4 w-4 mr-2" />
@@ -2438,45 +2403,7 @@ export default function Settings() {
                   )}
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="webUpdateUrl">Legacy GitHub Releases API URL</Label>
-                  <Input
-                    id="webUpdateUrl"
-                    placeholder="https://api.github.com/repos/yourorg/meterflo/releases/latest"
-                    value={webUpdateUrl}
-                    onChange={(e) => setWebUpdateUrl(e.target.value)}
-                    data-testid="input-web-update-url"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Retained for legacy configuration. Numbered release checks require the approved coreSource in the workspace instance manifest.
-                    <br />
-                    This URL does not configure the Windows origin/main updater or override the approved source for staged releases.
-                    <br />
-                    Format: https://api.github.com/repos/ORG/REPO/releases/latest
-                  </p>
-                  {webUpdateUrl && !validateGitHubApiUrl(webUpdateUrl) && (
-                    <p className="text-xs text-destructive">
-                      Invalid GitHub releases API URL format
-                    </p>
-                  )}
-                </div>
-
                 <div className="flex items-center gap-2 flex-wrap">
-                  <Button 
-                    onClick={() => {
-                      if (!validateGitHubApiUrl(webUpdateUrl)) {
-                        toast({ title: "Invalid GitHub URL format", variant: "destructive" });
-                        return;
-                      }
-                      saveWebUpdateConfigMutation.mutate(webUpdateUrl.trim());
-                    }}
-                    disabled={saveWebUpdateConfigMutation.isPending || (!validateGitHubApiUrl(webUpdateUrl))}
-                    data-testid="button-save-web-update-config"
-                  >
-                    <Save className="h-4 w-4 mr-2" />
-                    {saveWebUpdateConfigMutation.isPending ? "Saving..." : "Save Configuration"}
-                  </Button>
-                  
                   <Button 
                     variant="outline"
                     onClick={() => checkForUpdatesMutation.mutate()}

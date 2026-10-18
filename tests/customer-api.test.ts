@@ -7,7 +7,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { buildCustomerPayload, customerAuthHeaders, readDeliveryPhotos, retryDelay } from "../server/customerApiPayload";
-import { initializeCustomerApi, enqueueCustomerDelivery, runCustomerApiWorker, retryCustomerDelivery, retryLegacyCustomerLog } from "../server/customerApiService";
+import { initializeCustomerApi, enqueueCustomerDelivery, runCustomerApiWorker, retryCustomerDelivery } from "../server/customerApiService";
 import { pool } from "../server/db";
 import { createProjectSchema, getProjectWorkOrderStorage } from "../server/projectDb";
 import { storage } from "../server/storage";
@@ -83,7 +83,7 @@ test("all image categories are included; symlinks and nonimages are not read", a
   } finally { await fs.rm(folder, { recursive: true, force: true }); }
 });
 
-test("persistent outbox delivery, retries, recovery, and legacy replay", async t => {
+test("persistent outbox delivery, retries and recovery", async t => {
   await initializeCustomerApi();
   let responseStatus = 200;
   const requests: { body: string; id: string | undefined; key: string | undefined }[] = [];
@@ -205,18 +205,6 @@ test("persistent outbox delivery, retries, recovery, and legacy replay", async t
       await pool.query(`UPDATE public.projects SET customer_api_auth_type='none' WHERE id=$1`, [project.id]);
       await due(delivery.id); await runCustomerApiWorker(project.id);
       assert.equal((await job(delivery.id)).status, "delivered");
-    });
-    await t.test("failed historical logs can be manually replayed once and traced to the original attempt", async () => {
-      const saved = JSON.stringify({ workOrderId: 22, customerWoId: "OLD-22", status: "Completed", notes: "Legacy fixture" });
-      const { rows: [log] } = await pool.query(
-        `INSERT INTO public.customer_api_logs(project_id,work_order_id,customer_wo_id,request_url,request_payload,success) VALUES ($1,22,'OLD-22','http://fixture.invalid',$2,false) RETURNING id`,
-        [project.id,saved]);
-      const id = await retryLegacyCustomerLog(log.id, "fixture-admin");
-      await assert.rejects(retryLegacyCustomerLog(log.id, "fixture-admin"), /legacy/);
-      await runCustomerApiWorker(project.id);
-      assert.equal((await job(id)).status, "delivered");
-      assert.equal(requests.at(-1)!.body, saved);
-      assert.equal((await job(id)).attempt_count, 2);
     });
     await t.test("real finalized work-order saves and timing updates create transactional delivery events", async () => {
       createdSchema = await createProjectSchema("Customer API automated fixture", project.id);
