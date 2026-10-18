@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ArrowLeft, Check, ChevronRight, Loader2, Map, MapPin, Navigation, Route, Settings2 } from "lucide-react";
 import type { ProjectWorkOrder } from "../../../../server/projectDb";
-import type { AddressReview, RoutePoint, RoutingReadiness, RoutingResult } from "@shared/workOrderRouting";
+import type { AddressReview, DispatchedRouteSummary, RoutePoint, RoutingReadiness, RoutingResult } from "@shared/workOrderRouting";
 import { navigationLinks } from "@shared/workOrderRouting";
 import { useAuth } from "@/hooks/useAuth";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -193,6 +193,19 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [validationMessage, setValidationMessage] = useState("");
   const [pendingReview, setPendingReview] = useState<{ request: PlanningRequest; reviews: AddressReview[]; tokensById: Record<string, string> } | null>(null);
+  const [dispatchMessage, setDispatchMessage] = useState("");
+  const receivedUrl = `/api/projects/${projectId}/routing/dispatched`;
+  const { data: receivedRoutes = [], refetch: refreshReceived, isError: receivedError } = useQuery<DispatchedRouteSummary[]>({
+    queryKey: [receivedUrl, user?.id],
+    queryFn: async () => {
+      const response = await fetch(receivedUrl, { credentials: "include" });
+      if (!response.ok) throw new Error(await errorMessage(response));
+      return response.json();
+    },
+    enabled: !!user && hasPermission("workOrders.optimizeRoute"),
+    gcTime: 0,
+    retry: false,
+  });
   useEffect(() => { setPendingReview(null); }, [user?.id, projectId]);
   const [restoreChecked, setRestoreChecked] = useState(false);
   const resultOwnerRef = useRef<string | null>(null);
@@ -259,7 +272,7 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
       setRouteAccessValid(false);
       const response = await fetch(`/api/projects/${projectId}/routing/validate`, {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: routeRequestIds(route), fingerprint: route.fingerprint, configurationRevision: route.configurationRevision }),
+        body: JSON.stringify({ ids: routeRequestIds(route), fingerprint: route.fingerprint, configurationRevision: route.configurationRevision, receivedDispatchId: route.receivedDispatchId }),
       });
       if (!response.ok) {
         if (response.status === 401 || response.status === 403) {
@@ -298,7 +311,7 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
         if (!stored) { setRestoreChecked(true); return; }
         const parsed = JSON.parse(stored) as { expiresAt: string; result: RoutingResult; mode: DisplayMode; activeIndex: number; activeRouteId?: string; endedRouteIds?: string[] };
         if (new Date(parsed.expiresAt).getTime() <= Date.now() || routeExpired(parsed.result) || parsed.result.routes?.some(route => routeExpired(route)) || parsed.result.projectId !== projectId || !hasPlanningMetadata(parsed.result)) { sessionStorage.removeItem(activeKey); setValidationMessage("Saved route used an older planning format and was cleared. Re-plan to see current appointment estimates."); setRestoreChecked(true); return; }
-        const response = await fetch(`/api/projects/${projectId}/routing/validate`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: routeRequestIds(parsed.result), fingerprint: parsed.result.fingerprint, configurationRevision: parsed.result.configurationRevision }) });
+        const response = await fetch(`/api/projects/${projectId}/routing/validate`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: routeRequestIds(parsed.result), fingerprint: parsed.result.fingerprint, configurationRevision: parsed.result.configurationRevision, receivedDispatchId: parsed.result.receivedDispatchId }) });
         if (!response.ok) {
           sessionStorage.removeItem(activeKey);
           if (response.status === 401 || response.status === 403) { setValidationMessage("Saved route was removed because route access is no longer available."); onBack(); }
@@ -424,6 +437,40 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
   const activeRouteEnded = !!activeRoute?.assigneeId && endedRouteIds.includes(activeRoute.assigneeId);
   const activeBundleExpired = !!result && (routeExpired(result) || result.routes?.some(route => routeExpired(route)));
   const selectedStop = currentRoute?.stops[activeIndex];
+  const openDispatchedRoute = async (id: string) => {
+    setBusy(true); setValidationMessage("");
+    try {
+      const response = await fetch(`${receivedUrl}/${id}/open`, { method: "POST", credentials: "include" });
+      if (!response.ok) throw new Error(await errorMessage(response));
+      const route = await response.json() as RoutingResult;
+      if (!hasPlanningMetadata(route) || !hasRoutePlanningMetadata(route) || routeExpired(route) ||
+        route.assigneeId !== user?.id || route.routes!.length !== 1 || route.projectId !== projectId ||
+        route.receivedDispatchId !== id) throw new Error("This dispatched route could not be verified.");
+      resultOwnerRef.current = user?.id ?? null;
+      setResult(route as PlanningResult); setRouteAccessValid(true); setSetupOpen(false);
+      setPendingReview(null); setStaleMessage(""); setActiveIndex(0);
+      setActiveRouteId(route.assigneeId!); setEndedRouteIds([]); setDispatchMessage("");
+    } catch (error) {
+      setValidationMessage(error instanceof Error ? error.message : "Dispatched route could not be opened.");
+      void refreshReceived();
+    } finally { setBusy(false); }
+  };
+  const dispatchCurrentRoute = async () => {
+    if (!currentRoute?.dispatchPlanId || !result) return;
+    setBusy(true); setDispatchMessage("");
+    try {
+      if (await validateResult(result)) throw new Error("Review and re-plan before dispatching.");
+      const response = await fetch(`/api/projects/${projectId}/routing/dispatch`, {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ planId: currentRoute.dispatchPlanId }),
+      });
+      if (!response.ok) throw new Error(await errorMessage(response));
+      setDispatchMessage(`Sent to ${currentRoute.assigneeName}. They can open it under Routes from dispatch in this project's route planner until expiry. Server restarts clear shared plans.`);
+      void refreshReceived();
+    } catch (error) {
+      setDispatchMessage(error instanceof Error ? error.message : "Route could not be dispatched.");
+    } finally { setBusy(false); }
+  };
   useEffect(() => {
     if (!activeRoute) return;
     setActiveIndex(index => Math.min(Math.max(index, 0), Math.max(activeRoute.stops.length - 1, 0)));
@@ -473,7 +520,7 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
     setSetupOpen(true);
     setStaleMessage("");
   };
-  const navigateWithMaps = (provider: "apple" | "google") => {
+  const navigateWithMaps = async (provider: "apple" | "google") => {
     if (pendingReview || !result || !activeRoute || activeRouteEnded || !routeAccessValid || !hasPlanningMetadata(result) || staleMessage) {
       setValidationMessage("Review and re-plan the route before starting navigation.");
       toast({ title: "Route needs review", description: "Review and re-plan the route before starting navigation.", variant: "destructive" });
@@ -489,8 +536,13 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
       return;
     }
     if (!selectedStop) return;
+    // Recheck at the actual handoff, not only on the background polling timer.
+    if (await validateResult(result) || routeExpired(result)) {
+      setValidationMessage("Navigation stopped because the route is no longer current or access could not be verified.");
+      return;
+    }
     const links = navigationLinks(selectedStop.point);
-    // Direct navigation in the gesture handler: no asynchronous popup can be blocked.
+    // Same-window HTTPS handoff avoids asynchronous popup blockers.
     window.location.assign(links[provider]);
   };
   const preferredMapsProvider = /iPad|iPhone|iPod/.test(navigator.userAgent) ? "apple" : "google";
@@ -509,6 +561,7 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
         <div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Field route · {projectName}</p><h1 className="text-2xl font-semibold tracking-tight">Scheduled stops</h1></div>
         <div className="flex flex-wrap gap-2"><Button variant="outline" onClick={() => setSettingsOpen(true)} data-testid="project-routing-settings-open"><Settings2 className="mr-2 h-4 w-4" />Project settings</Button>{result && <Button variant="outline" onClick={startReplan} data-testid="route-replan"><Route className="mr-2 h-4 w-4" />Re-plan</Button>}</div>
       </div>
+      {result && <Button variant="outline" onClick={() => { void refreshReceived(); setSetupOpen(true); }} data-testid="show-dispatched-routes">Routes from dispatch</Button>}
       {readinessError && <div className="rounded-lg border border-destructive/30 p-4 text-sm"><span>Could not check routing access or readiness. </span><Button variant="ghost" onClick={() => refetch()}>Try again</Button></div>}
       {validationMessage && <div role="alert" className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"><AlertTriangle className="h-4 w-4 shrink-0" />{validationMessage}</div>}
       {result && <>
@@ -532,10 +585,14 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
             <p className="text-xs text-muted-foreground">Each route is planned and sequenced independently for its assigned technician. Starting point: {currentRoute?.originAddress?.trim() || `${currentRoute?.origin.lat}, ${currentRoute?.origin.lng}`} · departure {currentRoute ? new Intl.DateTimeFormat(undefined, { timeZone: timezone, dateStyle: "medium", timeStyle: "short" }).format(new Date(currentRoute.departureAt)) : "—"}.</p>
           </div>
           <div className="mt-3 flex flex-col gap-2 sm:mt-0 sm:flex-row">
+            {!result.receivedDispatchId && user?.subroleKey !== "field_technician" && <Button type="button" onClick={() => void dispatchCurrentRoute()} disabled={busy || !currentRoute?.dispatchPlanId || !currentRoute?.originAddress || !routeAccessValid || !!staleMessage || activeBundleExpired} data-testid="dispatch-current-route">Send to {currentRoute?.assigneeName}</Button>}
             <Button type="button" variant="outline" onClick={() => void printRoutes(false)} disabled={!!staleMessage || !!pendingReview || !routeAccessValid || activeBundleExpired} data-testid="route-print-current">Print this route</Button>
             <Button type="button" variant="outline" onClick={() => void printRoutes(true)} disabled={!!staleMessage || !!pendingReview || !routeAccessValid || activeBundleExpired} data-testid="route-print-all">Print all technician routes</Button>
           </div>
         </section>
+        {!result.receivedDispatchId && user?.subroleKey !== "field_technician" && <p className="text-xs text-muted-foreground">Dispatch sends only this technician's route and requires an entered starting address. Device-location origins cannot be shared. Shared routes expire with the plan and are cleared on server restart.</p>}
+        {result.receivedDispatchId && <p role="status" className="rounded-lg border p-3 text-sm">Route from dispatch · only your assigned stops are included. Address confirmations and scheduling assumptions apply only to this plan.</p>}
+        {dispatchMessage && <p role="status" className="rounded-lg border p-3 text-sm" data-testid="dispatch-message">{dispatchMessage}</p>}
         <div className="grid gap-3 sm:grid-cols-3"><Card><CardContent className="p-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Ordered stops · {currentRoute?.assigneeName}</p><p className="mt-1 text-2xl font-semibold">{currentRoute?.stops.length ?? 0}</p><p className="text-xs text-muted-foreground">{result.excluded.length} excluded across this plan</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Road travel estimate</p><p className="mt-1 text-2xl font-semibold">{Math.round((currentRoute?.totalTravelMeters ?? 0) / 1609.34 * 10) / 10} mi</p><p className="text-xs text-muted-foreground">About {Math.round((currentRoute?.totalTravelSeconds ?? 0) / 60)} min · provider estimate, no live traffic claim</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Planning assumptions</p><p className="mt-1 font-medium">{currentRoute?.serviceMinutes} min route default · {currentRoute?.toleranceMinutes} min tolerance</p><p className="text-xs text-muted-foreground">Project timezone: {timezone}</p></CardContent></Card></div>
         {visibleWarnings.length > 0 && <div className="space-y-1 rounded-xl border border-amber-200 bg-amber-50/60 p-3 text-sm">{visibleWarnings.map((warning, index) => <p key={index} className="flex gap-2"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-800" />{warning}</p>)}</div>}
         <div className="flex flex-wrap items-center justify-between gap-3"><div className="inline-flex rounded-lg border bg-muted/40 p-1" role="group" aria-label="Route display"><Button size="sm" variant={mode === "list" ? "default" : "ghost"} onClick={() => setMode("list")} data-testid="route-mode-list"><Route className="mr-1.5 h-4 w-4" />List</Button><Button size="sm" variant={mode === "map" ? "default" : "ghost"} onClick={() => setMode("map")} data-testid="route-mode-map"><Map className="mr-1.5 h-4 w-4" />Map</Button><Button size="sm" variant={mode === "both" ? "default" : "ghost"} onClick={() => setMode("both")} data-testid="route-mode-both">Both</Button></div><Button variant="ghost" size="sm" onClick={toggleActiveRouteEnded} disabled={!activeRoute}>{activeRouteEnded ? "Resume this route" : "End this route"}</Button></div>
@@ -552,7 +609,16 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
         {selectedStop && currentRoute && <div className="sticky bottom-2 z-20 flex flex-col gap-3 rounded-2xl border bg-background/95 p-3 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-center gap-2"><MapPin className="h-5 w-5 shrink-0 text-primary" /><span className="truncate text-sm"><strong>{activeRouteEnded ? "Route ended" : activeIndex === 0 ? "Next stop" : `Stop ${activeIndex + 1} of ${currentRoute.stops.length}`}</strong> · {selectedStop.label}</span></div><div className="flex flex-wrap gap-2"><Button className="flex-1 sm:flex-none" onClick={() => navigateWithMaps(preferredMapsProvider)} disabled={activeRouteEnded || !routeAccessValid || !!staleMessage || activeBundleExpired} data-testid="navigate-next-stop"><Navigation className="mr-2 h-4 w-4" />Navigate · {preferredMapsProvider === "apple" ? "Apple Maps" : "Google Maps"}</Button><Button variant="outline" onClick={() => navigateWithMaps(alternateMapsProvider)} disabled={activeRouteEnded || !routeAccessValid || !!staleMessage || activeBundleExpired} data-testid={`navigate-alternate-${alternateMapsProvider}`}>{alternateMapsProvider === "google" ? "Google Maps / web" : "Apple Maps"}</Button><Button variant="outline" onClick={() => setActiveIndex(index => Math.min(index + 1, currentRoute.stops.length - 1))} disabled={activeRouteEnded || !routeAccessValid || !!staleMessage || activeBundleExpired || activeIndex >= currentRoute.stops.length - 1} data-testid="route-next-stop"><Check className="mr-2 h-4 w-4" />Next</Button></div><span className="text-xs text-muted-foreground sm:w-full sm:text-right">HTTPS navigation opens the selected app when available, otherwise its web maps page. Navigation does not mark work complete.</span></div>}
         {result.excluded.length > 0 && <section className="rounded-xl border p-4" data-testid="route-exclusions"><h2 className="font-semibold">Not routed · {result.excluded.length}</h2><p className="mb-3 mt-1 text-sm text-muted-foreground">These exclusions apply to the full request. Assign unassigned orders or correct scheduling and locations before replanning.</p><div className="divide-y">{result.excluded.map(item => <div key={item.id} className="flex flex-wrap justify-between gap-2 py-2 text-sm"><span>{item.label}</span><span className="text-muted-foreground">{item.reason}</span></div>)}</div></section>}
       </>}
-      <Dialog open={setupOpen && !result} onOpenChange={open => { if (!open && !result) onBack(); else setSetupOpen(open); }}><DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-xl" data-testid="route-setup-dialog"><DialogHeader><DialogTitle>Plan technician routes</DialogTitle><DialogDescription>MeterFlo creates a distinct ordered route for each assigned technician. Orders without an assignee cannot be routed; assign them before planning. Location is sent to the configured provider to estimate road travel. Per-actor/project recovery lasts no more than four hours or the provider’s shorter expiry.</DialogDescription></DialogHeader>
+      <Dialog open={setupOpen} onOpenChange={open => { if (!open && !result) onBack(); else setSetupOpen(open); }}><DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-xl" data-testid="route-setup-dialog"><DialogHeader><DialogTitle>Plan technician routes</DialogTitle><DialogDescription>MeterFlo creates a distinct ordered route for each assigned technician. Orders without an assignee cannot be routed; assign them before planning. Location is sent to the configured provider to estimate road travel. Per-actor/project recovery lasts no more than four hours or the provider’s shorter expiry.</DialogDescription></DialogHeader>
+        <section className="space-y-2 rounded-lg border p-3" aria-label="Routes from dispatch" data-testid="dispatched-routes">
+          <div className="flex items-center justify-between gap-2"><h2 className="text-sm font-semibold">Routes from dispatch</h2><Button size="sm" variant="ghost" onClick={() => void refreshReceived()}>Refresh</Button></div>
+          <p className="text-xs text-muted-foreground">Only routes sent to you for this project appear here. Opening rechecks assignments, appointments, address review and access. Expired plans and server restarts require dispatch to send a new plan.</p>
+          {receivedError ? <p role="alert" className="text-sm">Could not check routes from dispatch. Try Refresh.</p> : !receivedRoutes.length ? <p className="text-sm text-muted-foreground">No current routes have been sent to you.</p> : receivedRoutes.map(route => <div key={route.id} className="space-y-2 rounded border p-2 text-sm">
+            <p>{route.stopCount} stops · {new Intl.DateTimeFormat(undefined, { timeZone: timezone, dateStyle: "short", timeStyle: "short" }).format(new Date(route.departureAt))}</p>
+            <p className="break-words text-xs text-muted-foreground">Start: {route.originAddress}</p>
+            <Button size="sm" disabled={busy} onClick={() => void openDispatchedRoute(route.id)} data-testid={`open-dispatched-${route.id}`}>Open my route</Button>
+          </div>)}
+        </section>
         {pendingReview ? <>
           <AddressMatchReviewPanel
             reviews={pendingReview.reviews}

@@ -57,3 +57,14 @@ Separate navigation-link correctness from geocoding accuracy. Geoapify's confide
 **Why:** A live address lookup returned a different numbered road while reporting full confidence, and Google Maps reverse-labeled the resulting coordinates with yet another address.
 
 **How to apply:** Verify both the selected-stop coordinates in the outgoing link and the provider's resolved address. Do not claim the physical property is verified from confidence scores or a passing handoff test alone.
+
+Dispatch must remain an explicit action for one assignee, and a manager's device
+location must not become that technician's shared origin.
+
+**Why:** Dispatch is an authorization and location-privacy boundary, not a
+different way to recover the manager's full planning session.
+
+**How to apply:** If durable or multi-instance dispatch is introduced later,
+persist business identities relationally and separate them from licensed provider
+payloads. Do not turn transient route geometry or one-plan address confirmations
+into permanent business evidence merely to improve recovery.

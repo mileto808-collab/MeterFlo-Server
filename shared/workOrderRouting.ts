@@ -71,6 +71,8 @@ export interface RoutingStop {
   travelMeters: number;
 }
 export interface RoutingResult {
+  dispatchPlanId?: string;
+  receivedDispatchId?: string;
   assignmentRoutingVersion?: 1;
   assigneeId?: string;
   assigneeName?: string;
@@ -95,6 +97,13 @@ export interface RoutingResult {
   totalTravelMeters: number;
   serviceMinutes: number;
   toleranceMinutes: number;
+}
+export interface DispatchedRouteSummary {
+  id: string;
+  departureAt: string;
+  expiresAt: string;
+  stopCount: number;
+  originAddress: string;
 }
 export const defaultRoutingConfiguration: RoutingConfiguration = {
   mode: "disabled", provider: "geoapify", serverKeyEnv: "",

@@ -12,6 +12,7 @@ import { destinationAddress, destinationPolicy, resolveDestination } from "./des
 import { createAddressReview, manualAddressFields, readAddressConfirmation, reviewHash } from "./addressReview";
 export { parseGps } from "./destinations";
 import { optimizeStops, type Candidate } from "./optimizer";
+import { DispatchCache, type DispatchEntry } from "./dispatchCache";
 import type { AddressMatchSummary, AddressReview, GeocodedPoint, RoutePoint, RoutingResult } from "../../shared/workOrderRouting";
 
 const point=z.object({lat:z.number().finite().min(-90).max(90),lng:z.number().finite().min(-180).max(180)}).strict();
@@ -32,6 +33,7 @@ export function routeFingerprint(orders:any[], definitions:any[], project?: { de
 // Dependency injection is limited to server construction for isolated acceptance
 // tests; it is never controlled by an HTTP parameter or persisted setting.
 export function registerRoutingRoutes(app:Express, services = { effectiveRouting, routingService, consumeRoutingQuota }) {
+  const dispatchCache = new DispatchCache();
   const { effectiveRouting: readEffective, routingService: makeProvider, consumeRoutingQuota: consumeQuota }=services;
   const wrap=(fn:(req:any,res:any)=>Promise<any>)=>async(req:any,res:any)=>{
     try{await fn(req,res);}catch(e:any){
@@ -75,6 +77,77 @@ export function registerRoutingRoutes(app:Express, services = { effectiveRouting
     const definitions=await listSubStatuses(project.id);
     return {...ctx,project,orders,definitions};
   }
+  async function assertDispatcher(user:any) {
+    const role=user.subroleId?await storage.getSubrole(user.subroleId):undefined;
+    if(!await storage.hasPermission(user,"workOrders.optimizeRoute") ||
+      role?.key==="field_technician"&&!await storage.isAdminUser(user))
+      throw new RoutingError(403,"Dispatch requires authorized support or manager access.");
+  }
+  async function checkDispatch(req:any,entry:DispatchEntry) {
+    const route=entry.route;
+    const ctx=await candidates(req,route.scopeIds!);
+    if(ctx.project.id!==route.projectId)throw new RoutingError(404,"Dispatched route not available.");
+    const planner=await storage.getUser(entry.plannerId);
+    if(!planner||planner.isLocked)throw new RoutingError(403,"Dispatch authorization is no longer available.");
+    await assertDispatcher(planner);
+    // Recheck both parties' project access, not just the actor's global view permission.
+    for(const actor of [planner,await storage.getUser(route.assigneeId!)]){
+      if(!actor||actor.isLocked||actor.role==="customer")
+        throw new RoutingError(403,"Dispatch project assignment or route permission is no longer available.");
+      if((!await storage.isAdminUser(actor)&&!await storage.isUserAssignedToProject(actor.id,route.projectId)) ||
+        !await storage.hasPermission(actor,"workOrders.view") ||
+        !await storage.hasPermission(actor,"workOrders.optimizeRoute"))
+        throw new RoutingError(403,"Dispatch project assignment or route permission is no longer available.");
+    }
+    if(ctx.project.isActive===false)throw new RoutingError(409,"Inactive projects cannot activate dispatched routes.");
+    if(ctx.orders.some(order=>order.status!=="Scheduled"||order.assignedUserId!==route.assigneeId))
+      throw new RoutingError(409,"Route assignments or work-order status changed. Ask dispatch to plan again.");
+    const config=await readEffective(ctx.project.id);
+    if(!config.result.ready||config.result.revision!==route.configurationRevision||
+      routeFingerprint(ctx.orders,ctx.definitions,ctx.project)!==route.fingerprint||
+      route.addressReviewVersion!==1||route.assignmentRoutingVersion!==1||
+      Date.parse(route.expiresAt)<=Date.now()||(!entry.activatedAt&&Date.parse(route.departureAt)<Date.now()-15*60000)||
+      Date.parse(route.departureAt)>Date.now()+7*86400000)
+      throw new RoutingError(409,"Route details, address review, departure assumptions or provider settings are out of date. Ask dispatch to plan again.");
+    return ctx;
+  }
+  const dispatchId=z.string().uuid();
+  app.post("/api/projects/:projectId/routing/dispatch",isAuthenticated,wrap(async(req,res)=>{
+    const {planId}=z.object({planId:dispatchId}).strict().parse(req.body);
+    const ctx=await access(req);
+    await assertDispatcher(ctx.user);
+    const entry=dispatchCache.get(planId);
+    if(!entry||entry.plannerId!==ctx.user.id||entry.route.projectId!==ctx.project!.id)
+      throw new RoutingError(404,"This plan is no longer available. Plan again before dispatching.");
+    if(!entry.shareableOrigin)throw new RoutingError(422,"Device locations cannot be dispatched. Plan from an entered warehouse or starting address.");
+    await checkDispatch(req,entry);
+    entry.dispatched=true;
+    res.set("Cache-Control","no-store").json({id:entry.id,expiresAt:entry.route.expiresAt});
+  }));
+  app.get("/api/projects/:projectId/routing/dispatched",isAuthenticated,wrap(async(req,res)=>{
+    const ctx=await access(req);
+    if(!await storage.hasPermission(ctx.user,"workOrders.optimizeRoute"))throw new RoutingError(403,"Optimize route permission required.");
+    const summaries=[];
+    for(const entry of dispatchCache.received(ctx.project!.id,ctx.user.id)){
+      try{await checkDispatch(req,entry);}
+      catch(error){if(error instanceof RoutingError)continue;throw error;}
+      summaries.push({id:entry.id,departureAt:entry.route.departureAt,expiresAt:entry.route.expiresAt,
+        stopCount:entry.route.stops.length,originAddress:entry.route.originAddress});
+    }
+    res.set("Cache-Control","no-store").json(summaries);
+  }));
+  app.post("/api/projects/:projectId/routing/dispatched/:dispatchId/open",isAuthenticated,wrap(async(req,res)=>{
+    const ctx=await access(req),id=dispatchId.parse(req.params.dispatchId);
+    const entry=dispatchCache.get(id);
+    if(!entry||!entry.dispatched||entry.route.projectId!==ctx.project!.id||entry.route.assigneeId!==ctx.user.id)
+      throw new RoutingError(404,"Dispatched route not available. Ask dispatch to send a current plan.");
+    await checkDispatch(req,entry);
+    // Once started, the original departure remains the route's baseline for
+    // estimates. Do not force a re-plan every fifteen minutes mid-route.
+    entry.activatedAt??=Date.now();
+    const route={...entry.route,receivedDispatchId:entry.id};
+    res.set("Cache-Control","no-store").json({...route,routes:[route]});
+  }));
   for(const base of ["/api/routing/settings","/api/projects/:projectId/routing/settings"]){
     const scoped=base.includes(":projectId");
     app.get(base,isAuthenticated,wrap(async(req,res)=>{
@@ -99,7 +172,16 @@ export function registerRoutingRoutes(app:Express, services = { effectiveRouting
     res.set("Cache-Control","no-store").json({provider:config.effective.provider,browserKey:config.browserKey});
   }));
   app.post("/api/projects/:projectId/routing/validate",isAuthenticated,wrap(async(req,res)=>{
-    const input=z.object({ids:idsSchema,fingerprint:z.string().length(64),configurationRevision:z.string().length(64)}).strict().parse(req.body);
+    const input=z.object({ids:idsSchema,fingerprint:z.string().length(64),configurationRevision:z.string().length(64),receivedDispatchId:dispatchId.optional()}).strict().parse(req.body);
+    if(input.receivedDispatchId){
+      const ctx=await access(req),entry=dispatchCache.get(input.receivedDispatchId);
+      if(!entry||!entry.dispatched||entry.route.projectId!==ctx.project!.id||entry.route.assigneeId!==ctx.user.id)
+        throw new RoutingError(403,"Dispatched route access is no longer available.");
+      await checkDispatch(req,entry);
+      return res.set("Cache-Control","no-store").json({stale:entry.route.fingerprint!==input.fingerprint||
+        entry.route.configurationRevision!==input.configurationRevision||
+        JSON.stringify([...entry.route.scopeIds!].sort((a,b)=>a-b))!==JSON.stringify([...input.ids].sort((a,b)=>a-b))});
+    }
     const ctx=await candidates(req,input.ids),config=await readEffective(ctx.project.id);
     res.set("Cache-Control","no-store").json({stale:!config.result.ready||config.result.revision!==input.configurationRevision||
       routeFingerprint(ctx.orders,ctx.definitions,ctx.project)!==input.fingerprint});
@@ -230,6 +312,14 @@ export function registerRoutingRoutes(app:Express, services = { effectiveRouting
         if(route.stops.some(stop=>stop.appointmentSource==="none"))route.warnings.push("Some Scheduled orders on this route have no appointment time or window.");
         if(route.excluded.length)route.warnings.push(`${route.excluded.length} orders assigned to this technician could not be routed. Review the exclusions.`);
         if(route.confirmedAddressMatches?.length)route.warnings.push(`${route.confirmedAddressMatches.length} address matches were manually confirmed for this route; no saved work-order address or GPS history was changed.`);
+        // Cache only this assignee's actual stops. Never leak the manager's
+        // full selection, other assignees' exclusions or their fingerprints.
+        const scopeIds=route.stops.map(stop=>stop.id);
+        const ownOrders=ctx.orders.filter(order=>scopeIds.includes(order.id));
+        const dispatchRoute={...route,scopeIds,excluded:[],
+          confirmedAddressMatches:route.confirmedAddressMatches?.filter(match=>match.kind==="origin"||scopeIds.includes(match.workOrderId!)),
+          fingerprint:routeFingerprint(ownOrders,ctx.definitions,ctx.project)};
+        route.dispatchPlanId=dispatchCache.add(ctx.user.id,dispatchRoute,"address" in input.origin);
       }
       const result:RoutingResult={...routes[0],assignmentRoutingVersion:1,routes,scopeIds:input.ids,addressReviewVersion:1,confirmedAddressMatches,projectId:ctx.project.id,provider:config.effective.provider,
         configurationRevision:config.result.revision,fingerprint:routeFingerprint(ctx.orders,ctx.definitions,ctx.project),

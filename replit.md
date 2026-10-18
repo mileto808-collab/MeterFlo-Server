@@ -1,5 +1,26 @@
 # MeterFlo - Utility Meter Work Order Management System
 
+## Technician route dispatch
+
+Authorized support/managers with `workOrders.optimizeRoute` can explicitly send
+one generated technician route using **Send to [technician]**. Technicians open
+**Routes from dispatch** in the project's route planner (under Search & Tools).
+Planning alone never shares a route, and device-location origins cannot be sent;
+use an entered warehouse/starting address instead. Received plans expose only
+the recipient's route and recheck current project membership, both parties'
+permissions, assignments, Scheduled status, address/scheduling fingerprints,
+provider configuration and expiry before use.
+
+Shared provider content lives only in a bounded, process-local cache, with the
+original maximum four-hour expiry; restarting or switching server instances can
+make a shared plan unavailable and requires dispatch to send a new plan. It is
+not permanent route history and is not included in backups. First activation
+requires a departure no more than fifteen minutes in the past; an activated
+route retains its original departure baseline until its original expiry.
+Acceptance: `npm run build && node tests/support/project-workspace-sandbox.mjs tests/routing-dispatch-ui.cjs`.
+This uses an owned temporary database, synthetic provider responses, and real
+signed-in browser sessions; it does not test live provider or native Maps apps.
+
 ## Optional project inventory
 
 Inventory has a dedicated permission-checked SSE stream shared by its workspace and work-order inventory panels. Commit-time PostgreSQL notifications cover inventory commands, work-order stock changes, and restores across server processes. Reconnects refresh active queries; all tabs and read-only detail dialogs use those cache updates. Editable dialogs retain local input and stable retry identities, and require review/reload when the relevant saved record or stock basis changes. Revoked access clears cached inventory instead of leaving stale authorized data visible. The stream includes changes from other sessions signed in as the same user.

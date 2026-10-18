@@ -4084,7 +4084,7 @@ export default function ProjectWorkOrders() {
                   New Work Order
                 </Button>
               )}
-              {hasPermission("workOrders.optimizeRoute") && hasScheduledRouteScope(filteredAndSortedWorkOrders) && (
+              {hasPermission("workOrders.optimizeRoute") && (
                 <Button
                   type="button"
                   variant="outline"
@@ -4093,7 +4093,7 @@ export default function ProjectWorkOrders() {
                   data-testid="optimize-work-order-route"
                 >
                   <Route className="h-3.5 w-3.5 mr-1" />
-                  Optimize route
+                  {hasScheduledRouteScope(filteredAndSortedWorkOrders) ? "Optimize route" : "Routes from dispatch"}
                 </Button>
               )}
               {/* Right-aligned: Export buttons */}
