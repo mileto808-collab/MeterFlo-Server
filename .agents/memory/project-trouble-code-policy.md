@@ -9,8 +9,8 @@ Core trouble codes must always be available. Custom trouble codes are project-sp
 
 **How to apply:** Keep shared and project scopes distinct, and use permanent IDs/keys for custom business-rule references rather than editable names. Renaming a trouble code or custom work-order status must not break a project's custom rule programming.
 
-Trouble-code machine keys remain unique across the installation, even though custom choices are project-scoped. Labels may be renamed; unused custom definitions are retired rather than identity-reused.
+Customer-facing trouble-code codes and names must be editable independently of their permanent internal identity. Keep legacy wire keys unambiguous for compatibility; do not treat a descriptive, user-facing code as the permanent identity.
 
-**Why:** Existing work orders, imports and customer integrations already reference immutable trouble-code strings. Allowing duplicate keys across projects without an explicit compatibility migration would make those references ambiguous.
+**Why:** The user expects descriptive codes to remain meaningful after a rename. Existing work orders, imports and custom integrations still use legacy strings, so allowing editable display codes requires a compatibility migration rather than simply removing the identity guard.
 
-**How to apply:** Preserve those wire keys and portable rule identities during future core updates and restores. Never implement a display-name change by deleting/recreating a definition or rewriting historical notes.
+**How to apply:** Use relational foreign keys for canonical work-order references and database cascading for any deliberately permitted referenced-key change. Preserve portable rule identities and legacy integrations; never rename by deleting/recreating definitions or rewriting historical notes. Renaming a trouble-code definition must not change a work order's main workflow status.
