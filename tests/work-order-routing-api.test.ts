@@ -54,9 +54,9 @@ test("protected planning, stale state, configuration isolation and quota boundar
       ready:true,mapReady:false,disabled:false,canManage:true,revision:configurationRevision,message:"Fixture provider"};
     const provider:RoutingService={
       geocode:async address=>{
-        if(address==="Manual start address")return {lat:39.9,lng:-105.2};
-        if(address==="Fixture first address")return {lat:40,lng:-105};
-        if(address==="Fixture second address")return {lat:40.1,lng:-105.1};
+        if(address==="Manual start address")return {lat:39.9,lng:-105.2,addressMatch:{formatted:address,street:address}};
+        if(address==="Fixture first address")return {lat:40,lng:-105,addressMatch:{formatted:address,street:address}};
+        if(address==="Fixture second address")return {lat:40.1,lng:-105.1,addressMatch:{formatted:address,street:address}};
         throw new Error("Unexpected fixture geocoding");
       },
       matrix:async points=>{providerCalls++;return points.map((_,i)=>points.map((_,j)=>({seconds:i===j?0:60,meters:i===j?0:1000})));},

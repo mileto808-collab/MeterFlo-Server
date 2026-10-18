@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ArrowLeft, Check, ChevronRight, Loader2, Map, MapPin, Navigation, Route, Settings2 } from "lucide-react";
 import type { ProjectWorkOrder } from "../../../../server/projectDb";
-import type { RoutePoint, RoutingReadiness, RoutingResult } from "@shared/workOrderRouting";
+import type { AddressReview, RoutePoint, RoutingReadiness, RoutingResult } from "@shared/workOrderRouting";
 import { navigationLinks } from "@shared/workOrderRouting";
 import { useAuth } from "@/hooks/useAuth";
+import { usePermissions } from "@/hooks/usePermissions";
 import { useToast } from "@/hooks/use-toast";
 import { usePageHeader } from "@/contexts/page-header-context";
 import { Button } from "@/components/ui/button";
@@ -14,10 +15,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { RoutingSettings } from "./routing-settings";
+import { AddressMatchReviewPanel } from "./address-match-review";
 import { routeSessionStorage as sessionStorage } from "./session-storage";
 
 type DisplayMode = "list" | "map" | "both";
 type OriginChoice = RoutePoint | { address: string };
+type PlanningRequest = { ids: number[]; origin: OriginChoice; departureAt: string; serviceMinutes: number; toleranceMinutes: number };
 type Props = {
   projectId: number;
   projectName: string;
@@ -40,7 +43,7 @@ type PlanningStop = RoutingResult["stops"][number] & {
 };
 type PlanningResult = Omit<RoutingResult, "stops"> & { stops: PlanningStop[] };
 const hasPlanningMetadata = (route: RoutingResult): route is PlanningResult =>
-  Array.isArray(route.stops) && route.stops.every(stop => {
+  route.addressReviewVersion === 1 && Array.isArray(route.stops) && route.stops.every(stop => {
     const value = stop as PlanningStop;
     return Number.isInteger(value.serviceDurationMinutes) && value.serviceDurationMinutes >= 1 && value.serviceDurationMinutes <= 480 &&
       ["work-order", "project", "route", "legacy"].includes(value.durationSource) &&
@@ -139,6 +142,7 @@ function MapView({ projectId, result, config, retryKey, configError }: { project
 export function RoutePlanner({ projectId, projectName, timezone, defaultServiceMinutes, defaultAppointmentToleranceMinutes, workOrders, selectedIds, onOpenWorkOrder, onBack }: Props) {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { hasPermission } = usePermissions();
   const { toast } = useToast();
   const { setHeaderContent } = usePageHeader();
   const readinessUrl = `/api/projects/${projectId}/routing/settings`;
@@ -162,6 +166,8 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
   const [mapRetry, setMapRetry] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [validationMessage, setValidationMessage] = useState("");
+  const [pendingReview, setPendingReview] = useState<{ request: PlanningRequest; reviews: AddressReview[]; tokensById: Record<string, string> } | null>(null);
+  useEffect(() => { setPendingReview(null); }, [user?.id, projectId]);
   const [restoreChecked, setRestoreChecked] = useState(false);
   const resultOwnerRef = useRef<string | null>(null);
   const activeKey = `meterflo:active-route:${user?.id ?? "unknown"}:${projectId}`;
@@ -302,7 +308,7 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
       reject(new Error(reasons[error.code] || "Device location failed. Enter a starting address to continue."));
     }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
   });
-  const plan = async () => {
+  const plan = async (confirmation?: { request: PlanningRequest; tokensById: Record<string, string> }) => {
     if (!candidates.length) { setValidationMessage("No scheduled work orders match this scope. Adjust the grid filters or select scheduled orders."); return; }
     if (readiness?.ready !== true) { setValidationMessage("Routing is not ready. Configure the provider before planning."); return; }
     if (candidates.length > readiness.effective.maxStops) { setValidationMessage(`This scope has ${candidates.length} scheduled orders; the configured limit is ${readiness.effective.maxStops}. Narrow the filters or configure a higher limit.`); return; }
@@ -313,15 +319,29 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
     setBusy(true); setValidationMessage(""); setLocationMessage("");
     try {
       let origin: OriginChoice;
-      if (originMode === "device") {
+      if (confirmation) origin = confirmation.request.origin;
+      else if (originMode === "device") {
         try { origin = await getDeviceOrigin(); }
         catch (error) { setLocationMessage(error instanceof Error ? error.message : "Device location unavailable."); setOriginMode("manual"); setBusy(false); return; }
       } else {
         if (!manualAddress.trim()) { setValidationMessage("Enter the starting address."); setBusy(false); return; }
         origin = { address: manualAddress.trim() };
       }
-      const response = await fetch(`/api/projects/${projectId}/routing/plan`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: candidates.map(order => order.id), origin, departureAt: isoFromZonedInput(departure, timezone), serviceMinutes: Number(serviceMinutes), toleranceMinutes: Number(toleranceMinutes) }) });
-      if (!response.ok) throw new Error(await errorMessage(response));
+      const request = confirmation?.request ?? { ids: candidates.map(order => order.id), origin, departureAt: isoFromZonedInput(departure, timezone), serviceMinutes: Number(serviceMinutes), toleranceMinutes: Number(toleranceMinutes) };
+      const response = await fetch(`/api/projects/${projectId}/routing/plan`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...request, addressConfirmations: confirmation ? Object.values(confirmation.tokensById) : undefined }) });
+      if (response.status === 409) {
+        const data = await response.json();
+        if (data.code !== "ADDRESS_REVIEW_REQUIRED" || !Array.isArray(data.addressReviews) || !data.addressReviews.length)
+          throw new Error(data.message || "Address review could not be loaded. Re-plan the route.");
+        setResult(null);
+        sessionStorage.removeItem(activeKey);
+        setPendingReview({ request, reviews: data.addressReviews, tokensById: confirmation?.tokensById ?? {} });
+        return;
+      }
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) setPendingReview(null);
+        throw new Error(await errorMessage(response));
+      }
       const planned = await response.json() as RoutingResult;
       if (!hasPlanningMetadata(planned)) throw new Error("The route response is missing current appointment-planning details. No route was activated.");
       if (!planned.stops?.length && !planned.excluded?.length) throw new Error("Provider returned no stops or exclusion details. No route was activated.");
@@ -333,6 +353,7 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
       if (clientExpiry <= Date.now()) throw new Error("The provider returned an already-expired route. Plan again.");
       const safelyExpiringResult = { ...planned, expiresAt: new Date(clientExpiry).toISOString() };
       resultOwnerRef.current = user?.id ?? null;
+      setPendingReview(null);
       setResult(safelyExpiringResult); setStaleMessage(""); setActiveIndex(0); setSetupOpen(false);
       await queryClient.invalidateQueries({ queryKey: [readinessUrl] });
     } catch (error) { setValidationMessage(error instanceof Error ? error.message : "Route could not be planned."); }
@@ -346,6 +367,11 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
     setStaleMessage("");
   };
   const navigateWithMaps = (provider: "apple" | "google") => {
+    if (pendingReview || !result || !hasPlanningMetadata(result) || staleMessage) {
+      setValidationMessage("Review and re-plan the route before starting navigation.");
+      toast({ title: "Route needs review", description: "Review and re-plan the route before starting navigation.", variant: "destructive" });
+      return;
+    }
     if (result && routeExpired(result)) {
       sessionStorage.removeItem(activeKey);
       resultOwnerRef.current = null;
@@ -375,6 +401,15 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
       {readinessError && <div className="rounded-lg border border-destructive/30 p-4 text-sm"><span>Could not check routing access or readiness. </span><Button variant="ghost" onClick={() => refetch()}>Try again</Button></div>}
       {validationMessage && <div role="alert" className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"><AlertTriangle className="h-4 w-4 shrink-0" />{validationMessage}</div>}
       {result && <>
+        {!!result.confirmedAddressMatches?.length && <details className="rounded-xl border border-amber-300 bg-amber-50/60 p-3 text-sm" data-testid="confirmed-address-matches">
+          <summary className="cursor-pointer font-semibold">{result.confirmedAddressMatches.length} address matches manually confirmed</summary>
+          <div className="mt-3 space-y-3">{result.confirmedAddressMatches.map(match => <div key={match.id} className="space-y-1 break-words">
+            <p className="font-medium">{match.label}</p>
+            <p>Submitted: {match.submittedAddress}</p>
+            <p>Confirmed map address: {match.resolvedAddress}</p>
+            <p className="text-xs text-muted-foreground">This confirmation applies only to this plan; the work order was not changed.</p>
+          </div>)}</div>
+        </details>}
         {result.stops.length === 0 && <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">No navigable route was produced. Review the exclusions below and correct locations or scheduling before trying again.</div>}
       {staleMessage && <div role="alert" className="flex flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950 sm:flex-row sm:items-center sm:justify-between" data-testid="route-stale-banner"><div className="flex gap-2 text-sm"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>{staleMessage}</span></div><Button size="sm" onClick={startReplan}>Re-plan route</Button></div>}
         <div className="grid gap-3 sm:grid-cols-3"><Card><CardContent className="p-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Ordered stops</p><p className="mt-1 text-2xl font-semibold">{result.stops.length}</p><p className="text-xs text-muted-foreground">{result.excluded.length} excluded for review</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Road travel</p><p className="mt-1 text-2xl font-semibold">{Math.round(result.totalTravelMeters / 1609.34 * 10) / 10} mi</p><p className="text-xs text-muted-foreground">About {Math.round(result.totalTravelSeconds / 60)} min · provider estimate, no live traffic claim</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Planning assumptions</p><p className="mt-1 font-medium">{result.serviceMinutes} min route default · {result.toleranceMinutes} min tolerance</p><p className="text-xs text-muted-foreground">Project timezone: {timezone}</p></CardContent></Card></div>
@@ -393,6 +428,22 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
         {result.excluded.length > 0 && <section className="rounded-xl border p-4" data-testid="route-exclusions"><h2 className="font-semibold">Not routed · {result.excluded.length}</h2><p className="mb-3 mt-1 text-sm text-muted-foreground">Review these scheduled orders before replanning.</p><div className="divide-y">{result.excluded.map(item => <div key={item.id} className="flex flex-wrap justify-between gap-2 py-2 text-sm"><span>{item.label}</span><span className="text-muted-foreground">{item.reason}</span></div>)}</div></section>}
       </>}
       <Dialog open={setupOpen && !result} onOpenChange={open => { if (!open && !result) onBack(); else setSetupOpen(open); }}><DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-xl" data-testid="route-setup-dialog"><DialogHeader><DialogTitle>Plan a protected route</DialogTitle><DialogDescription>MeterFlo keeps appointment order and selected work-order scope. Location is sent to the configured provider to calculate road travel. Minimal route recovery is scoped to your account and retained here for no more than four hours, or the provider’s shorter expiry.</DialogDescription></DialogHeader>
+        {pendingReview ? <>
+          <AddressMatchReviewPanel
+            reviews={pendingReview.reviews}
+            busy={busy}
+            onCancel={() => { setPendingReview(null); setValidationMessage(""); }}
+            onConfirm={tokens => void plan({
+              request: pendingReview.request,
+              tokensById: { ...pendingReview.tokensById, ...Object.fromEntries(pendingReview.reviews.map((review, index) => [review.id, tokens[index]])) },
+            })}
+            onCorrectWorkOrder={hasPermission("workOrders.edit") ? id => {
+              const order = workOrders.find(order => order.id === id);
+              if (order) { setPendingReview(null); setSetupOpen(false); onOpenWorkOrder(order); }
+            } : undefined}
+          />
+          {validationMessage && <div role="alert" className="rounded-md border border-destructive/30 p-3 text-sm text-destructive">{validationMessage}</div>}
+        </> : <>
         {readiness && <div className="rounded-lg border bg-muted/30 p-3 text-sm"><div className="flex items-center justify-between gap-3"><span className="font-medium">{readiness.ready ? "Provider ready" : readiness.message}</span><Button size="sm" variant="ghost" onClick={() => setSettingsOpen(true)}><Settings2 className="mr-1 h-4 w-4" />Settings</Button></div><p className="mt-1 text-xs text-muted-foreground">{readiness.effective.provider === "geoapify" ? "Geoapify" : "Google Maps"} · {readiness.effective.source === "site" ? "site default" : "project-specific"} · maximum {readiness.effective.maxStops}</p></div>}
         <div className="space-y-4 py-1">
           <div className="space-y-2"><Label>Work-order scope</Label><RadioGroup value={scope} onValueChange={value => setScope(value as "filtered" | "selected")} className="grid gap-2"><label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3"><RadioGroupItem value="filtered" className="mt-0.5" /><span><strong className="text-sm">Scheduled orders in current filters</strong><span className="block text-xs text-muted-foreground">{workOrders.filter(order => order.status?.toLowerCase() === "scheduled").length} candidates across all grid pages · {nonScheduled} non-scheduled excluded</span></span></label><label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 ${!selectedIds.length ? "opacity-50" : ""}`}><RadioGroupItem value="selected" disabled={!selectedIds.length} className="mt-0.5" /><span><strong className="text-sm">Selected orders</strong><span className="block text-xs text-muted-foreground">{selectedIds.length} selected · only Scheduled orders will be considered</span></span></label></RadioGroup></div>
@@ -402,6 +453,7 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
           {validationMessage && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{validationMessage}</div>}
         </div>
         <DialogFooter className="flex-col-reverse gap-2 sm:flex-row"><Button variant="outline" onClick={onBack}>Back to work orders</Button><Button onClick={() => void plan()} disabled={busy || !readiness?.ready || candidates.length === 0} data-testid="create-route-plan">{busy ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Resolving route…</> : <><Route className="mr-2 h-4 w-4" />Optimize {candidates.length} scheduled</>}</Button></DialogFooter>
+        </>}
       </DialogContent></Dialog>
       <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}><DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl"><DialogHeader><DialogTitle>Project routing settings</DialogTitle><DialogDescription>Use the site default or configure isolated project credentials.</DialogDescription></DialogHeader><RoutingSettings projectId={projectId} compact /></DialogContent></Dialog>
     </main>

@@ -28,6 +28,27 @@ export interface RoutingReadiness {
   message: string;
 }
 export interface RoutePoint { lat: number; lng: number }
+export interface GeocodedAddress {
+  formatted: string;
+  houseNumber?: string;
+  street?: string;
+  city?: string;
+  state?: string;
+  stateCode?: string;
+  postcode?: string;
+}
+export interface GeocodedPoint extends RoutePoint { addressMatch?: GeocodedAddress }
+export interface AddressMatchSummary {
+  id: string;
+  kind: "origin" | "stop";
+  workOrderId?: number;
+  label: string;
+  submittedAddress: string;
+  resolvedAddress: string;
+  point: RoutePoint;
+  reasons: string[];
+}
+export interface AddressReview extends AddressMatchSummary { token: string }
 export interface RoutingStop {
   id: number;
   label: string;
@@ -50,6 +71,8 @@ export interface RoutingStop {
   travelMeters: number;
 }
 export interface RoutingResult {
+  addressReviewVersion?: 1;
+  confirmedAddressMatches?: AddressMatchSummary[];
   projectId: number;
   provider: RoutingProvider;
   configurationRevision: string;

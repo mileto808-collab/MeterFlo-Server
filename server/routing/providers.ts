@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { RoutePoint, RoutingProvider } from "../../shared/workOrderRouting";
+import type { GeocodedPoint, RoutePoint, RoutingProvider } from "../../shared/workOrderRouting";
 import type { RoadLeg } from "./optimizer";
 
 export class RoutingError extends Error {
@@ -7,7 +7,7 @@ export class RoutingError extends Error {
 }
 const coordinate=z.object({lat:z.number().finite().min(-90).max(90),lng:z.number().finite().min(-180).max(180)});
 export interface RoutingService {
-  geocode(address:string):Promise<RoutePoint>;
+  geocode(address:string):Promise<GeocodedPoint>;
   matrix(points:RoutePoint[]):Promise<(RoadLeg|null)[][]>;
   geometry(points:RoutePoint[]):Promise<RoutePoint[]>;
 }
@@ -27,6 +27,8 @@ export function routingService(provider:RoutingProvider,key:string, signal?:Abor
   function geoUrl(path:string) {const url=new URL(path,"https://api.geoapify.com");url.searchParams.set("apiKey",key);return url;}
   function googleUrl(path:string){const url=new URL(path,"https://maps.googleapis.com");url.searchParams.set("key",key);return url;}
   const waypoint=(p:RoutePoint)=>({location:{latLng:{latitude:p.lat,longitude:p.lng}}});
+  const addressText=(value:unknown):string|undefined=>typeof value==="string"?value.trim().slice(0,500):
+    typeof value==="number"&&Number.isFinite(value)?String(value):undefined;
   function leg(seconds:unknown,meters:unknown):RoadLeg|null {
     const s=Number(seconds),m=Number(meters);
     return Number.isFinite(s)&&s>=0&&Number.isFinite(m)&&m>=0?{seconds:s,meters:m}:null;
@@ -39,7 +41,11 @@ export function routingService(provider:RoutingProvider,key:string, signal?:Abor
         const r=results[0];
         if(!r||!Number.isFinite(r.rank?.confidence)||r.rank.confidence<0.9||!["building","amenity"].includes(r.result_type)||results[1]&&results[1].rank?.confidence>=r.rank?.confidence)
           throw new RoutingError(422,"Address is unresolved or ambiguous. Correct it or capture verified GPS coordinates.");
-        return coordinate.parse({lat:r.lat,lng:r.lon});
+        return {...coordinate.parse({lat:r.lat,lng:r.lon}),addressMatch:{
+          formatted:addressText(r.formatted)||"",houseNumber:addressText(r.housenumber),street:addressText(r.street),
+          city:addressText(r.city||r.town||r.village||r.municipality),state:addressText(r.state),
+          stateCode:addressText(r.state_code),postcode:addressText(r.postcode),
+        }};
       }
       const url=googleUrl("/maps/api/geocode/json");url.searchParams.set("address",address);
       const data=await request(url);
@@ -48,7 +54,17 @@ export function routingService(provider:RoutingProvider,key:string, signal?:Abor
       if(data.status!=="OK"||data.results?.length!==1||data.results[0].partial_match||
         !["ROOFTOP","RANGE_INTERPOLATED"].includes(data.results[0].geometry?.location_type))
         throw new RoutingError(422,"Address is unresolved or ambiguous. Correct it or capture verified GPS coordinates.");
-      return coordinate.parse(data.results[0].geometry.location);
+      const result=data.results[0];
+      const component=(type:string,short=false)=>{
+        const value=result.address_components?.find((part:any)=>part.types?.includes(type));
+        return addressText(value?.[short?"short_name":"long_name"]);
+      };
+      return {...coordinate.parse(result.geometry.location),addressMatch:{
+        formatted:addressText(result.formatted_address)||"",houseNumber:component("street_number"),street:component("route"),
+        city:component("locality")||component("postal_town")||component("sublocality"),
+        state:component("administrative_area_level_1"),stateCode:component("administrative_area_level_1",true),
+        postcode:component("postal_code"),
+      }};
     },
     async matrix(points) {
       const matrix:(RoadLeg|null)[][]=points.map(()=>points.map(()=>null));

@@ -92,7 +92,7 @@ const assert = require("node:assert/strict");
     await expect(page.getByRole("dialog").first()).toContainText("Route optimization is disabled");
     await page.screenshot({path:`${out}/unconfigured-desktop.jpg`});
     await page.getByRole("button",{name:"Back to work orders",exact:true}).last().click();
-    let body,plannedStops,stale=false,deny=false;
+    let body,plannedStops,needsAddressReview=true,stale=false,deny=false;
     const readiness={configuration:{mode:"override",provider:"google",serverKeyEnv:"GOOGLE_MAPS_TEST_SERVER",browserKeyEnv:"GOOGLE_MAPS_TEST_BROWSER",maxStops:24,dailyPlans:10},
       effective:{provider:"google",source:"project",maxStops:24,dailyPlans:10},ready:true,mapReady:true,disabled:false,canManage:true,revision:"a".repeat(64),message:"Controlled fixture; not live provider access."};
     await page.route(`**${routeRoot}/settings`,route=>route.fulfill({json:readiness}));
@@ -110,7 +110,19 @@ const assert = require("node:assert/strict");
           departureAt:new Date(Date.now()+(i+1)*600000+300000).toISOString(),lateMinutes:0,travelSeconds:300,travelMeters:1000};
       });
       plannedStops=stops;
-      await route.fulfill({json:{projectId:fixture.projectId,provider:"google",configurationRevision:readiness.revision,fingerprint:"b".repeat(64),
+      if(needsAddressReview){
+        const reviews=stops.slice(0,2).map(stop=>({
+          id:`stop-${stop.id}`,kind:"stop",workOrderId:stop.id,label:`Work order ${stop.label}`,
+          submittedAddress:stop.address,resolvedAddress:"999 Different Road, Fixturetown, CO 80000",
+          point:stop.point,reasons:["Street name or road number differs."],token:`fixture-review-${stop.id}`,
+        }));
+        if(!reviews.every(review=>body.addressConfirmations?.includes(review.token))){
+          await route.fulfill({status:409,json:{code:"ADDRESS_REVIEW_REQUIRED",addressReviews:reviews}});
+          return;
+        }
+        needsAddressReview=false;
+      }
+      await route.fulfill({json:{addressReviewVersion:1,projectId:fixture.projectId,provider:"google",configurationRevision:readiness.revision,fingerprint:"b".repeat(64),
         createdAt:new Date().toISOString(),expiresAt:new Date(Date.now()+3600000).toISOString(),departureAt:body.departureAt,origin:body.origin,
         stops,excluded:[],warnings:["Controlled UI fixture. Road provider has not been live-verified."],geometry:[body.origin,...stops.map(s=>s.point)],
         totalTravelSeconds:300*stops.length,totalTravelMeters:1000*stops.length,serviceMinutes:body.serviceMinutes,toleranceMinutes:body.toleranceMinutes}});
@@ -126,6 +138,31 @@ const assert = require("node:assert/strict");
     await page.getByTestId("optimize-work-order-route").click();
     await expect(page.getByTestId("create-route-plan")).toBeEnabled();
     await page.getByTestId("create-route-plan").click();
+    await expect(page.getByTestId("address-match-review")).toBeVisible();
+    await expect(page.getByTestId("navigate-next-stop")).toHaveCount(0);
+    await expect(page.getByTestId("address-review-submit")).toBeDisabled();
+    const confirmations=page.locator('[data-testid^="address-confirm-"]');
+    await confirmations.first().check();
+    await expect(page.getByTestId("address-review-submit")).toBeDisabled();
+    await page.getByTestId("address-review-cancel").click();
+    await page.getByTestId("create-route-plan").click();
+    await expect(confirmations.first()).not.toBeChecked();
+    await page.locator('[data-testid^="address-correct-"]').first().click();
+    await expect(page.getByTestId("header-button-back-to-work-orders")).toBeVisible();
+    await page.getByTestId("header-button-back-to-work-orders").click();
+    await expect(page.getByTestId("create-route-plan")).toBeVisible();
+    await page.getByTestId("create-route-plan").click();
+    await expect(page.getByTestId("address-match-review")).toBeVisible();
+    for(const viewport of [{width:1365,height:950},{width:390,height:844}]){
+      await page.setViewportSize(viewport);
+      assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),
+        "Address review fits desktop and phone screens");
+      await page.screenshot({path:`${out}/address-review-${viewport.width}.jpg`});
+    }
+    for(const checkbox of await confirmations.all())await checkbox.check();
+    await expect(page.getByTestId("address-review-submit")).toBeEnabled();
+    await page.getByTestId("address-review-submit").click();
+    await page.setViewportSize({width:1365,height:950});
     await expect(page.getByTestId("route-mode-list")).toBeVisible();
     assert.equal(body.ids.length,scheduled.length,"Scope includes Scheduled rows across ALL pages");
     assert.deepEqual(body.origin,{lat:40,lng:-105});

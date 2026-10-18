@@ -1,11 +1,18 @@
 ---
 name: Route scheduling priorities
-description: User-approved routing precedence, navigation, provider and billing boundaries.
+description: User-approved routing precedence, navigation, address-review safety, provider and billing boundaries.
 ---
 
 Route optimization must protect appointment times before favoring higher-priority sub-statuses and reducing travel. Lower numeric sub-status ratings mean higher priority, for example Critical = 0 and Priority = 1.
 
 **Why:** The user explicitly selected “Protect appointment times, then prioritize stops” rather than visiting higher-priority stops regardless of lateness.
+
+Meaningful provider address discrepancies require explicit per-location review before a route is activated. A confirmed alternate address applies to that plan only, not a permanent alias or permission to rewrite work-order addresses or equipment GPS history.
+
+**Why:** The user approved address-match review after a high-confidence lookup resolved a different numbered road; provider confidence alone did not establish the correct service property.
+
+**How to apply:** Preserve this review boundary when adding providers or changing navigation. Recheck changed address/location results rather than carrying approval into another plan or customer context.
+
 
 **How to apply:** Keep appointment conflicts visible rather than silently treating urgency as permission to miss a scheduled visit. Preserve the separate core Scheduled status and sub-status identity.
 

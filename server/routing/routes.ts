@@ -9,15 +9,17 @@ import { listSubStatuses } from "../workOrderSubStatuses";
 import { assertProjectCredentialReferences, consumeRoutingQuota, effectiveRouting, readRoutingConfiguration, routingConfigurationSchema, saveRoutingConfiguration } from "./configuration";
 import { routingService, RoutingError } from "./providers";
 import { destinationAddress, destinationPolicy, resolveDestination } from "./destinations";
+import { createAddressReview, manualAddressFields, readAddressConfirmation, reviewHash } from "./addressReview";
 export { parseGps } from "./destinations";
 import { optimizeStops, type Candidate } from "./optimizer";
-import type { RoutePoint, RoutingResult } from "../../shared/workOrderRouting";
+import type { AddressMatchSummary, AddressReview, GeocodedPoint, RoutePoint, RoutingResult } from "../../shared/workOrderRouting";
 
 const point=z.object({lat:z.number().finite().min(-90).max(90),lng:z.number().finite().min(-180).max(180)}).strict();
 const idsSchema=z.array(z.number().int().positive()).min(1).max(50).refine(ids=>new Set(ids).size===ids.length);
 const planSchema=z.object({ids:idsSchema,origin:z.union([point,z.object({address:z.string().trim().min(5).max(400)}).strict()]),
-  departureAt:z.string().datetime({offset:true}),serviceMinutes:z.number().int().min(1).max(480).optional(),toleranceMinutes:z.number().int().min(0).max(240).optional()}).strict();
-const running=new Set<string>(),lastRequest=new Map<string,number>();
+  departureAt:z.string().datetime({offset:true}),serviceMinutes:z.number().int().min(1).max(480).optional(),toleranceMinutes:z.number().int().min(0).max(240).optional(),
+  addressConfirmations:z.array(z.string().min(1).max(1024)).max(51).optional()}).strict();
+const running=new Set<string>(),lastRequest=new Map<string,number>(),continuedAt=new Map<string,number>();
 export function routeFingerprint(orders:any[], definitions:any[], project?: { defaultServiceMinutes?: number | null; defaultAppointmentToleranceMinutes?: number | null }) {
   const defs=new Map(definitions.map(d=>[d.id,d]));
   return createHash("sha256").update(JSON.stringify([destinationPolicy,project?.defaultServiceMinutes??null,project?.defaultAppointmentToleranceMinutes??null,
@@ -109,9 +111,17 @@ export function registerRoutingRoutes(app:Express, services = { effectiveRouting
     const toleranceMinutes=input.toleranceMinutes??ctx.project.defaultAppointmentToleranceMinutes??10;
     const durationSource = input.serviceMinutes!==undefined && input.serviceMinutes!==(ctx.project.defaultServiceMinutes??45)
       ? "route" : ctx.project.defaultServiceMinutes!=null ? "project" : "legacy";
-    const actor=ctx.user.id;
-    if(running.has(actor)||Date.now()-(lastRequest.get(actor)??0)<10000)throw new RoutingError(429,"A route is already running or was just requested. Please wait before replanning.");
     const config=await readEffective(ctx.project.id);
+    const {addressConfirmations=[],...planningInput}=input;
+    const confirmationScope=reviewHash([ctx.user.id,ctx.project.id,planningInput,
+      routeFingerprint(ctx.orders,ctx.definitions,ctx.project),config.result.revision]);
+    const actor=ctx.user.id;
+    // One signed review continuation may proceed immediately; replays still
+    // observe the normal rate limit and every request consumes provider quota.
+    const continuation=Date.now()-(continuedAt.get(actor)??0)>=10000&&
+      addressConfirmations.some(token=>!!readAddressConfirmation(token,confirmationScope));
+    if(running.has(actor)||Date.now()-(lastRequest.get(actor)??0)<10000&&!continuation)
+      throw new RoutingError(429,"A route is already running or was just requested. Please wait before replanning.");
     if(!config.result.ready)throw new RoutingError(503,config.result.message);
     const scheduled=ctx.orders.filter(o=>o.status==="Scheduled");
     if(scheduled.length>config.effective.maxStops)throw new RoutingError(422,`This provider configuration allows ${config.effective.maxStops} stops. Narrow your filters or select fewer rows.`);
@@ -119,14 +129,28 @@ export function registerRoutingRoutes(app:Express, services = { effectiveRouting
     const departure=Date.parse(input.departureAt);
     if(departure<Date.now()-15*60000||departure>Date.now()+7*86400000)throw new RoutingError(422,"Choose a departure between now and seven days ahead.");
     running.add(actor);lastRequest.set(actor,Date.now());
+    if(continuation)continuedAt.set(actor,Date.now());
     // Map size is bounded even across long-running instances.
-    if(lastRequest.size>10000)for(const [id,t]of lastRequest)if(Date.now()-t>60000)lastRequest.delete(id);
+    if(lastRequest.size>10000)for(const [id,t]of lastRequest)if(Date.now()-t>60000){lastRequest.delete(id);continuedAt.delete(id);}
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),90000);
     const abort=()=>controller.abort();res.on("close",abort);
     try{
       await consumeQuota(config.effective.provider,config.serverKey,config.effective.dailyPlans);
       const provider=makeProvider(config.effective.provider,config.serverKey,controller.signal);
-      const origin="address" in input.origin?await provider.geocode(input.origin.address):input.origin;
+      const addressReviews:AddressReview[]=[],confirmedAddressMatches:AddressMatchSummary[]=[];
+      const review=(summary:Omit<AddressMatchSummary,"reasons"|"resolvedAddress">,
+        expected:Parameters<typeof createAddressReview>[1],geocoded:GeocodedPoint)=>{
+        const decision=createAddressReview(summary,expected,geocoded,confirmationScope,addressConfirmations);
+        if(decision.pending)addressReviews.push(decision.pending);
+        if(decision.confirmed)confirmedAddressMatches.push(decision.confirmed);
+      };
+      let origin:RoutePoint;
+      if("address" in input.origin){
+        const geocoded=await provider.geocode(input.origin.address);
+        origin={lat:geocoded.lat,lng:geocoded.lng};
+        review({id:"origin",kind:"origin",label:"Starting address",submittedAddress:input.origin.address,point:origin},
+          manualAddressFields(input.origin.address),geocoded);
+      }else origin=input.origin;
       const defs=new Map(ctx.definitions.map(d=>[d.id,d]));
       const resolved:Candidate[]=[],excluded:RoutingResult["excluded"]=ctx.orders.filter(o=>o.status!=="Scheduled")
         .map(o=>({id:o.id,label:String(o.customerWoId??o.id),reason:"Not Scheduled."}));
@@ -135,7 +159,10 @@ export function registerRoutingRoutes(app:Express, services = { effectiveRouting
         const address=destinationAddress(order);
         const label=String(order.customerWoId??order.id);
         try{
-          const destination=await resolveDestination(order,provider);
+          const destination=await resolveDestination(order,provider,geocoded=>review({
+            id:`stop-${order.id}`,kind:"stop",workOrderId:order.id,label:`Work order ${label}`,
+            submittedAddress:address,point:{lat:geocoded.lat,lng:geocoded.lng},
+          },{address:order.address||"",city:order.city,state:order.state,zip:order.zip},geocoded));
           const def=defs.get(order.subStatusId);
           resolved.push({id:order.id,label,address,point:destination,
             scheduledAt:order.scheduledAt?new Date(order.scheduledAt).toISOString():null,
@@ -146,6 +173,10 @@ export function registerRoutingRoutes(app:Express, services = { effectiveRouting
             priority:def?.routingPriority??null,subStatus:def?.label??null});
         }catch(e){if(!(e instanceof RoutingError)||e.status!==422)throw e;excluded.push({id:order.id,label,reason:e.message});}
       }
+      if(addressReviews.length)return res.status(409).set("Cache-Control","no-store").json({
+        code:"ADDRESS_REVIEW_REQUIRED",message:"Review address matches before creating a route. No driving route has been activated.",
+        addressReviews,
+      });
       if(!resolved.length)throw new RoutingError(422,"No stops have a verified destination. Correct addresses or capture GPS coordinates.");
       const matrix=await provider.matrix([origin,...resolved.map(s=>s.point)]);
       // Explicitly identify stops disconnected from the origin.
@@ -161,7 +192,8 @@ export function registerRoutingRoutes(app:Express, services = { effectiveRouting
       if(stops.some(s=>s.lateMinutes>0))warnings.push("Some appointments cannot be met within tolerance. Review the displayed lateness before driving.");
       if(stops.some(s=>s.appointmentSource==="none"))warnings.push("Some Scheduled orders have no appointment time or window; they are explicitly marked unscheduled.");
       if(excluded.length)warnings.push(`${excluded.length} selected orders were excluded. Review their reasons; they were not silently dropped.`);
-      const result:RoutingResult={projectId:ctx.project.id,provider:config.effective.provider,
+      if(confirmedAddressMatches.length)warnings.push(`${confirmedAddressMatches.length} address matches were manually confirmed for this plan; no work-order addresses or GPS history were changed.`);
+      const result:RoutingResult={addressReviewVersion:1,confirmedAddressMatches,projectId:ctx.project.id,provider:config.effective.provider,
         configurationRevision:config.result.revision,fingerprint:routeFingerprint(ctx.orders,ctx.definitions,ctx.project),
         createdAt:new Date().toISOString(),expiresAt:new Date(Date.now()+4*3600000).toISOString(),
         departureAt:input.departureAt,origin,stops,excluded,warnings,geometry,
