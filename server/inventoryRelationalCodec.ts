@@ -39,7 +39,8 @@ function addValues(table: RelationalRows, parent: Row, obj: Row, arrays: string[
 function decodeObject(row: Row, columns: Record<string, string>, json: string[] = []) {
   const result: Row = {};
   for (const field of [...Object.keys(columns), ...json])
-    if (row._fields.includes(field)) result[field] = row[columnName(field)];
+      if (row._fields.includes(field)) result[field] = columns[field] === "numeric" && row[columnName(field)] != null
+        ? Number(row[columnName(field)]) : row[columnName(field)];
   return result;
 }
 const keyOf = (row: Row, keys: string[]) => JSON.stringify(keys.map(key => row[key]));

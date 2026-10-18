@@ -11,6 +11,7 @@ import { allocationSchema, dispositionSchema, itemSchema, stockLineSchema, vendo
   categoryNameSchema, categoryKey, inventoryCategoryNames,
   type Allocation, type InventoryCommand, type InventoryState, type StockLine, type Stock } from "./inventory";
 import { InventoryError } from "./inventory-errors";
+import { isLaborItem, kitLaborCharges } from "./inventory-pricing";
 import { applyShipmentCommand, assertNotHeld, shipmentActions } from "./inventory-shipment-engine";
 import { settledLines } from "./inventory-shipment-model";
 import { applyShipmentDraftCommand, isShipmentDraftAction, validateDraftPosting, draftFingerprintCommand, validateDraftReplay } from "./inventory-shipment-drafts";
@@ -38,7 +39,9 @@ export function warehouseAccess(s: InventoryState, id: string, actor: string, ad
   return w;
 }
 function item(s: InventoryState, id: string) {
-  const i = s.items.find(i => i.id === id); assert(i && i.active, "Choose an active item in this project."); return i;
+  const i = s.items.find(i => i.id === id); assert(i && i.active, "Choose an active item in this project.");
+  assert(!isLaborItem(i), "Labor is a non-stock item; it cannot be received, transferred, reserved, counted or consumed as physical stock.");
+  return i;
 }
 function validateLines(s: InventoryState, input: StockLine[]) {
   const ids = new Set<string>();
@@ -119,7 +122,13 @@ function kitCycles(s: InventoryState) {
   const visit = (id: string, ancestors: string[]) => {
     assert(!ancestors.includes(id), "Kit components cannot contain a cycle.");
     const i = s.items.find(i => i.id === id); assert(i, "Kit component not found.");
-    for (const c of i.components) visit(c.itemId, [...ancestors, id]);
+    if (i.components.length) assert(i.components.some(c => !isLaborItem(s.items.find(child => child.id === c.itemId))),
+      "A stock kit needs a physical component. Use a standalone labor item for a labor-only service.");
+    for (const c of i.components) {
+      const child = s.items.find(child => child.id === c.itemId);
+      assert(isLaborItem(child) || Number.isInteger(c.quantity), "Physical kit components require whole-number quantities; labor supports fractional units.");
+      visit(c.itemId, [...ancestors, id]);
+    }
   };
   for (const i of s.items) visit(i.id, []);
 }
@@ -216,6 +225,14 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     }
     if (a === "item") {
       const i = value as any;
+      // Older editors omit newly introduced fields; never erase configured rates
+      // or accidentally turn a labor item back into stock on such an edit.
+      i.kind ??= old?.kind ?? "stock";
+      i.billingRate ??= old?.billingRate ?? 0;
+      if (isLaborItem(i)) assert(i.tracking === "regular" && i.equipment === "none" && !i.components.length && i.reorderPoint === 0,
+        "Labor cannot have serial tracking, equipment, stock reorder levels or its own kit recipe.");
+      if (old && (old.kind ?? "stock") !== i.kind)
+        assert(itemDeletionBlockers(s, i.id).length === 0, "Cannot change item type while stock or historical references exist. Create a separate labor/stock item.");
       // New clients submit an ID; accept names only from older clients that omit it.
       const category = i.categoryId === undefined
         ? s.categoryCatalog!.find(c => categoryKey(c.name) === categoryKey(i.category))
@@ -385,7 +402,8 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     const { kit, warehouseId } = vendorKitSource(s, data);
     access(warehouseId);
     validateLines(s, data.components);
-    assert(data.components.length === kit.components.length && kit.components.every(c =>
+    const physical = kit.components.filter(c => !isLaborItem(s.items.find(i => i.id === c.itemId)));
+    assert(data.components.length === physical.length && physical.every(c =>
       totals(data.components, c.itemId) === c.quantity * data.quantity), "Captured contents must exactly match the kit recipe.");
     assert(data.components.every(c => !item(s, c.itemId).components.length),
       "Nested vendor kits require their own verified contents; capture a leaf-component kit instead.");
@@ -408,10 +426,14 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     access(warehouseId); const kit = item(s, itemId); assert(kit.components.length, "Select a kit item.");
     if (components.some(c => c.serials.length))
       assert(kit.tracking === "serialized" && quantity === 1, "Kits containing serialized units require a kit serial and one-kit-at-a-time assembly for traceability.");
-    assert(components.length === kit.components.length && kit.components.every(c => totals(components, c.itemId) === c.quantity * quantity), "Scanned components must match the kit definition.");
+    const physical = kit.components.filter(c => !isLaborItem(s.items.find(i => i.id === c.itemId)));
+    for (const component of kit.components) assert(s.items.some(i => i.id === component.itemId && i.active), "Choose active kit components.");
+    assert(components.length === physical.length && physical.every(c => totals(components, c.itemId) === c.quantity * quantity), "Scanned physical components must match the kit definition; labor is recorded without consuming stock.");
     move(s, warehouseId, components, -1, undefined, { to: { kind: "assembly", id: command.operationId } });
     const output = [{ itemId, quantity, serials }]; move(s, warehouseId, output, 1);
     receipt(itemId, warehouseId, output, "Kit assembly", components);
+    const labor = kitLaborCharges(kit, s.items, quantity);
+    if (labor.length) s.receipts.at(-1)!.labor = labor;
     recordKitAssembly(s, command.operationId, warehouseId, output[0], components, now);
     occupy(s, components, null);
   } else if (a === "disassemble" || a === "resolveKitHold") {
@@ -426,7 +448,7 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     access(warehouseId); assert(!s.counts.some(c => c.id === id), "Count identifier already exists.");
     assert(!itemIds || scope === "selected", "Choose individual products only for a selected-item count.");
     assert(!itemIds || new Set(itemIds).size === itemIds.length, "Duplicate selected product.");
-    assert(!itemIds || itemIds.every(id => s.items.some(item => item.id === id && item.active)),
+    assert(!itemIds || itemIds.every(id => s.items.some(item => item.id === id && item.active && !isLaborItem(item))),
       "Selected count products must be active items in this project.");
     assert(scope === "selected" || s.stock.filter(b => b.warehouseId === warehouseId).length <= COUNT_MAX_LINES,
       `This warehouse exceeds the ${COUNT_MAX_LINES}-item complete-count limit; no items were omitted.`);
@@ -440,6 +462,7 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     assert(draft.revision === (c.draft?.revision ?? 0), "Count draft changed. Reload saved draft before saving or posting.");
     assert(new Set(draft.rows.map(row => row.itemId)).size === draft.rows.length, "Duplicate draft item.");
     assert(draft.rows.every(row => s.items.some(item => item.id === row.itemId)), "Draft item is not in this project.");
+    assert(draft.rows.every(row => s.items.some(item => item.id === row.itemId && !isLaborItem(item))), "Draft items must be physical stock products in this project.");
     const savedDraft = { ...draft, revision: draft.revision + 1, savedBy: actor, savedAt: now };
     assert(countPayloadFits(savedDraft), "Saved count draft exceeds the 8 MiB limit; no changes were saved.");
     c.draft = savedDraft;

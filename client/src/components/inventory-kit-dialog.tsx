@@ -3,6 +3,7 @@ import type { InventoryItem, InventoryState, StockLine } from "@shared/inventory
 import { kitAssemblyOptions, kitAvailable, kitDisassemblyContents, remainingKitHold } from "@shared/inventory-kits";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { isLaborItem } from "@shared/inventory-pricing";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -208,7 +209,7 @@ export function InventoryKitDialog({ state, projectId, mode, canResolve, onClose
     if (serialsDuplicated) throw new Error("A serial is duplicated within its item custody.");
     if (mode === "assemble") {
       if (!selectedItem) throw new Error("Choose a defined kit.");
-      const components = selectedItem.components.map(recipe => {
+      const components = selectedItem.components.filter(recipe => !isLaborItem(state.items.find(item => item.id === recipe.itemId))).map(recipe => {
         const item = state.items.find(value => value.id === recipe.itemId);
         if (!item) throw new Error("A kit component is missing from the catalog.");
         const required = recipe.quantity * Number(quantity);
@@ -426,6 +427,11 @@ export function InventoryKitDialog({ state, projectId, mode, canResolve, onClose
           {mode === "assemble" && selectedItem && <section className="space-y-2 rounded-md border p-3"><div><h3 className="font-medium">Required components</h3><p className="text-xs text-muted-foreground">Required and available quantities are checked at the selected location.</p></div>
             {selectedItem.components.map(recipe => {
               const item = state.items.find(value => value.id === recipe.itemId);
+              if (isLaborItem(item) && item) return <div key={item.id} className="rounded border bg-muted/20 p-2 text-sm">
+                <p className="font-medium">{item.sku} · {item.name} · Labor</p>
+                <p>{recipe.quantity * Number(quantity)} {item.unit} · Cost {item.cost.toFixed(2)} · Billed {(item.billingRate ?? 0).toFixed(2)} / {item.unit}</p>
+                <p className="text-xs text-muted-foreground">Pricing snapshot only. No stock or serial scans required; labor is not recovered during disassembly.</p>
+              </div>;
               const required = recipe.quantity * (validCount(quantity, 1) ? Number(quantity) : 1);
               const componentAvailable = warehouseId ? kitAvailable(state, warehouseId, recipe.itemId) : 0;
               const stock = state.stock.find(line => line.itemId === recipe.itemId && line.warehouseId === warehouseId);
@@ -470,7 +476,7 @@ export function InventoryKitDialog({ state, projectId, mode, canResolve, onClose
         </> : <section className="space-y-3 rounded-md border p-3" aria-label="Kit operation review">
           <div className="flex items-center gap-2"><PackageCheck className="h-5 w-5" /><h3 className="font-semibold">Review stock directions</h3></div>
           <p className="text-sm">{mode === "assemble" ? "Component stock is consumed and finished kits are added." : "Finished kits are removed. Usable components return to stock; damaged components enter inspection hold; missing components are recorded as shortage."}</p>
-          {mode === "assemble" ? <><p className="rounded border px-2 py-1 text-sm">{quantity} × {selectedItem?.name} → finished stock added</p>{selectedItem?.components.map(recipe => <p key={recipe.itemId} className="rounded border px-2 py-1 text-sm">{recipe.quantity * Number(quantity)} × {state.items.find(item => item.id === recipe.itemId)?.name ?? recipe.itemId} → consumed</p>)}</> :
+          {mode === "assemble" ? <><p className="rounded border px-2 py-1 text-sm">{quantity} × {selectedItem?.name} → finished stock added</p>{selectedItem?.components.map(recipe => <p key={recipe.itemId} className="rounded border px-2 py-1 text-sm">{recipe.quantity * Number(quantity)} × {state.items.find(item => item.id === recipe.itemId)?.name ?? recipe.itemId} → {isLaborItem(state.items.find(item => item.id === recipe.itemId)) ? "labor pricing snapshot only; no stock consumed" : "consumed"}</p>)}</> :
             contents.map(line => { const result = recoveryFor(line); return <p key={line.itemId} className="rounded border px-2 py-1 text-sm">{state.items.find(item => item.id === line.itemId)?.name ?? line.itemId}: {result.usable} usable → stock · {result.damaged} damaged → hold · {result.missing} missing → shortage</p>; })}
           <p className="rounded border bg-muted/30 p-2 text-sm">Location: {locations.find(location => location.id === warehouseId)?.name} · Kits: {quantity}</p>
           {mode === "disassemble" && <p className="text-sm"><strong>Reason:</strong> {reason}</p>}

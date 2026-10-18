@@ -39,9 +39,11 @@ export const itemSchema = z.object({
   id, sku: label, name: label, description: optional, category: optional, categoryId: z.string().uuid().nullable().optional(), unit: label.default("each"),
   tracking: z.enum(["regular", "serialized"]), equipment: z.enum(["none", "system", "module"]).default("none"),
   barcode: optional, manufacturer: optional, model: optional, vendorId: id.nullable().default(null),
-  cost: z.number().finite().nonnegative().default(0), reorderPoint: z.number().finite().nonnegative().default(0),
+  kind: z.enum(["stock", "labor"]).optional(),
+  cost: z.number().finite().nonnegative().default(0), billingRate: z.number().finite().nonnegative().optional(),
+  reorderPoint: z.number().finite().nonnegative().default(0),
   active: z.boolean().default(true), images: z.array(z.string().max(2000)).max(8).default([]),
-  components: z.array(z.object({ itemId: id, quantity: z.number().int().positive().max(1000000) })).max(100).default([]),
+  components: z.array(z.object({ itemId: id, quantity: z.number().finite().positive().max(1000000).multipleOf(0.001) })).max(100).default([]),
 });
 export const stockLineSchema = z.object({ itemId: id, quantity: z.number().int().positive().max(1000000),
   serials: z.array(z.string().trim().min(1).max(100)).max(10000).default([]) }).strict();
@@ -95,6 +97,7 @@ export type WorkRequirements = { workOrderId: number; lines: { itemId: string; q
 export type InventoryCount = { id: string; warehouseId: string; scope?: "selected" | "warehouse"; snapshot: Stock[]; status: "open" | "posted" | "cancelled"; reason?: string; lines?: StockLine[]; draft?: z.infer<typeof savedCountDraftSchema> };
 export type InventoryReceipt = { id: string; action: string; reference: string; warehouseId: string | null;
   lines: StockLine[]; actor: string; occurredAt: string; reason?: string; components?: StockLine[];
+  labor?: import("./inventory-pricing").LaborCharge[];
   damaged?: DamageLine[]; holdId?: string; resolution?: string; externalReference?: string; closedShort?: StockLine[]; sourceReceiptId?: string;
   holdDisposition?: HoldDisposition; kitHoldId?: string; kitInspection?: StockLine;
   kitConversion?: { assemblyId: string; recovered: Array<import("./inventory-kits").KitRecovery> } };

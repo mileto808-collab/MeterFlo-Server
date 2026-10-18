@@ -11,11 +11,11 @@ Inventory enablement is reversible even with unfinished inventory work. Disablin
 
 **How to apply:** Keep administrator/configuration authority. Warn users to review pending inventory work and reconcile physical stock before resuming, since off-period usage is deliberately untracked. Serialize enablement changes against inventory commands and work-order transaction owners.
 
-Labor must be an item with a user-configurable rate basis, such as hourly or daily, and must be usable as a kit component.
+Labor must be an item with a user-configurable rate basis, such as hourly or daily, and must be usable as a kit component. All item types, not just labor, need separate internal cost and customer billing rates.
 
-**Why:** The user explicitly requested configurable labor items and their inclusion in kits.
+**Why:** The user explicitly requested configurable labor items in kits, chose both cost and billing rates, and clarified that both rates must be available for other item types too.
 
-**How to apply:** Include labor when designing catalog and kit capabilities rather than treating it only as an unrelated project setting.
+**How to apply:** Include labor when designing catalog and kit capabilities rather than treating it only as an unrelated project setting. Labor is non-stock: kit allowances must not require stock, serials, receiving or recoverable components. Configuring rates is not authorization to generate invoices or actual worked-time entries.
 
 Readings do not require a changeout.
 

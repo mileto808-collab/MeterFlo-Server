@@ -8,6 +8,7 @@ import { storage } from "../../server/storage";
 import { createProjectSchema } from "../../server/projectDb";
 import { initializeInventory } from "../../server/inventoryMigration";
 import { applyInventoryCategorySchema } from "../../server/inventoryCategoryMigration";
+import { applyInventoryRelationalSchema } from "../../server/inventoryRelationalSchema";
 import { getProjectFilesPath } from "../../server/fileStorage";
 import path from "node:path";
 import { enableAuditing } from "../../server/auditContext";
@@ -18,7 +19,7 @@ async function main() {
   if (process.argv[2] === "cleanup") {
     const fixture = JSON.parse(await fs.readFile(file, "utf8"));
     await fs.rm(path.join(await getProjectFilesPath(), `inventory-${fixture.projectId}`), { recursive: true, force: true });
-    await pool.query(`DROP SCHEMA "${fixture.schema}" CASCADE`);
+    await pool.query(`DROP SCHEMA IF EXISTS "${fixture.schema}" CASCADE`);
     await clearRelationalInventory(pool, fixture.projectId);
     for (const table of ["inventory_movements", "inventory_state"]) await pool.query(`DELETE FROM public.${table} WHERE project_id=$1`, [fixture.projectId]);
     await pool.query("DELETE FROM public.projects WHERE id=$1", [fixture.projectId]);
@@ -37,6 +38,7 @@ async function main() {
   enableAuditing();
   await initializeInventory(pool);
   await applyInventoryCategorySchema(pool);
+  await applyInventoryRelationalSchema(pool);
   const suffix = randomUUID().slice(0, 8), password = `Fixture-${randomUUID()}!`;
   const admin = await storage.ensureAdministratorSubrole();
   const user = await storage.createLocalUser(`inventory-ui-${suffix}`, await bcrypt.hash(password, 4), "admin", "Inventory", "Fixture", null, admin.id);

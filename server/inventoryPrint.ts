@@ -43,6 +43,10 @@ export function inventoryPrint(kind: string, record: any, state: InventoryState,
      ${lineList.map((l: any) => `<tr><td>${escape(state.items.find(i => i.id === l.itemId)?.sku)}</td><td>${escape(state.items.find(i => i.id === l.itemId)?.name)}</td>
      <td>${escape(l.quantity)}</td><td>${kind === "receipt" ? receiptSerialSummary(l) : escape((l.serials || []).join(", "))}</td><td>${escape((record.dispatched || []).filter((x: any) => x.itemId === l.itemId).reduce((n: number, x: any) => n + x.quantity, 0))}</td>
     <td>${escape((record.received || []).filter((x: any) => x.itemId === l.itemId).reduce((n: number, x: any) => n + x.quantity, 0))}</td></tr>`).join("")}</tbody></table>
+    ${record.labor?.length ? `<h2>Labor pricing snapshot</h2><p>Configured labor allowance at assembly time. No physical stock was consumed or recovered for labor. This is not an invoice or time entry.</p>
+      <table><thead><tr><th>SKU</th><th>Labor</th><th>Units</th><th>Unit</th><th>Unit cost</th><th>Billing rate</th><th>Cost estimate</th><th>Billed estimate</th></tr></thead><tbody>
+      ${record.labor.map((line: any) => `<tr><td>${escape(line.sku)}</td><td>${escape(line.name)}</td><td>${escape(line.quantity)}</td><td>${escape(line.unit)}</td>
+        <td>${escape(Number(line.cost).toFixed(2))}</td><td>${escape(Number(line.billingRate).toFixed(2))}</td><td>${escape((line.quantity * line.cost).toFixed(2))}</td><td>${escape((line.quantity * line.billingRate).toFixed(2))}</td></tr>`).join("")}</tbody></table>` : ""}
     ${shipmentPrint(kind, record, state, actorLabel)}
       ${kitReceipt ? inventoryKitPrint(record, state) : record.components ? `<h2>Components</h2><p>${kind === "receipt" ? record.components.map((l: any) => `${escape(l.itemId)}: ${escape(l.quantity)} (${receiptSerialSummary(l)})`).join("; ") : escape(record.components.map((l: any) => `${l.itemId}: ${l.quantity} (${(l.serials || []).join(", ")})`).join("; "))}</p>` : ""}
      ${kind === "receipt" ? receiptSerialAppendix(record, state, project) : ""}</body></html>`;

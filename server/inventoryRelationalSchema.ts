@@ -72,11 +72,16 @@ export async function applyInventoryRelationalSchema(pool: Pool) {
         _fields text[] NOT NULL, PRIMARY KEY(project_id,parent_id,path,line_no))`);
       for (const [field, type] of Object.entries(child.columns))
         statements.push(`ALTER TABLE public.${child.name} ADD COLUMN IF NOT EXISTS ${q(columnName(field))} ${type}`);
+      if (child.name === "inventory_kit_recipe_lines")
+        statements.push(`DO $$ BEGIN IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public'
+          AND table_name='inventory_kit_recipe_lines' AND column_name='quantity' AND data_type <> 'numeric') THEN
+          ALTER TABLE public.inventory_kit_recipe_lines ALTER COLUMN quantity TYPE numeric USING quantity::numeric;
+          END IF; END $$`);
       fk(child.name, ["project_id", "parent_id"], model.name, ["project_id", "_key"]);
       for (const field of Object.keys(child.columns))
         if (referenceTables[field]) fk(child.name, ["project_id", columnName(field)], referenceTables[field]);
       if (child.arrays?.length) values(arrayTable(child.name), child.name, true);
-      if (child.columns.quantity === "integer")
+      if (["integer", "numeric"].includes(child.columns.quantity))
         constraints.push(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='public.${child.name}'::regclass AND conname='inventory_quantity_nonnegative') THEN
           ALTER TABLE public.${child.name} ADD CONSTRAINT inventory_quantity_nonnegative CHECK(quantity>=0); END IF; END $$`);
     }

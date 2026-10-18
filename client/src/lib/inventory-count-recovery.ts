@@ -66,12 +66,14 @@ export function removeCountRecovery(storage: Storage, prefix: string, record: Co
 }
 
 export function matchesCountProduct(item: InventoryItem | undefined, raw: string) {
+  if (item?.kind === "labor") return false;
   const query = raw.trim().toLowerCase();
   return !query || !!item && [item.sku, item.name, item.barcode, item.description]
     .some(value => value?.toLowerCase().includes(query));
 }
 
 export function resolveCountProductScan(items: InventoryItem[], raw: string, existingIds: string[]) {
+  items = items.filter(item => item.kind !== "labor");
   const code = raw.trim();
   if (!code) return { error: "Scan a barcode or search by SKU, name or description." } as const;
   // Exact text comparison preserves significant leading zeros. Barcodes take precedence over SKU.

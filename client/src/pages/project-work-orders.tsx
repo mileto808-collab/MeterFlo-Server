@@ -662,8 +662,16 @@ export default function ProjectWorkOrders() {
       const key = sessionStorage.key(index);
       if (key?.startsWith(routePrefix) && !key.startsWith(userPrefix)) sessionStorage.removeItem(key);
     }
-    if (sessionStorage.getItem(`${userPrefix}${projectId}`)) setShowRoutePlanner(true);
   }, [user?.id, projectId]);
+
+  useEffect(() => {
+    const navigate = (event: Event) => {
+      if ((event as CustomEvent<{ href: string }>).detail?.href === `/projects/${projectId}/work-orders`)
+        setShowRoutePlanner(false);
+    };
+    window.addEventListener("meterflo:navigate", navigate);
+    return () => window.removeEventListener("meterflo:navigate", navigate);
+  }, [projectId]);
 
   // Set default status filters for field technicians
   // Field technicians default to showing Open, Scheduled, and Trouble statuses

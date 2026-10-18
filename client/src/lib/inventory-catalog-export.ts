@@ -4,7 +4,7 @@ export type CatalogKind = "items" | "vendors";
 type Cell = string | number;
 type Context = { project: string; timezone: string };
 const headers = {
-  items: ["Product ID / SKU", "Name / product label", "Description", "Category", "Unit", "Tracking", "Equipment", "Barcode", "Manufacturer", "Model", "Vendor", "Cost", "Reorder point", "Status", "Kit components", "Image URLs"],
+  items: ["Product ID / SKU", "Name / product label", "Description", "Category", "Unit", "Tracking", "Equipment", "Barcode", "Manufacturer", "Model", "Vendor", "Cost", "Reorder point", "Status", "Kit components", "Image URLs", "Item type", "Billing rate"],
   vendors: ["Name", "Contact", "Address", "Phone", "Email", "Reference", "Status"],
 };
 const escape = (value: Cell) => String(value).replace(/[&<>"']/g, c =>
@@ -20,7 +20,7 @@ export function catalogExportRows(kind: CatalogKind, rows: readonly (InventoryIt
     const i = row as InventoryItem;
     return [i.sku, i.name, i.description, i.category, i.unit, i.tracking, i.equipment, i.barcode,
       i.manufacturer, i.model, i.vendorId ? vendorNames.get(i.vendorId) ?? "Unavailable vendor" : "",
-      i.cost, i.reorderPoint, i.active ? "Active" : "Inactive", i.components.length, i.images.join("\n")];
+      i.cost, i.reorderPoint, i.active ? "Active" : "Inactive", i.components.length, i.images.join("\n"), i.kind ?? "stock", i.billingRate ?? 0];
   });
 }
 
@@ -54,7 +54,7 @@ export async function catalogWorkbook(context: Context, kind: CatalogKind, rows:
 
 export function catalogPrintHtml(context: Context, kind: CatalogKind, rows: readonly (InventoryItem | Vendor)[], vendors: readonly Vendor[]) {
   // Keep printed columns legible; full catalog fields remain in CSV and Excel.
-  const indices = kind === "items" ? [0, 1, 3, 4, 5, 6, 10, 12, 13, 14] : headers.vendors.map((_, i) => i);
+  const indices = kind === "items" ? [0, 1, 4, 16, 11, 17, 13, 14] : headers.vendors.map((_, i) => i);
   const title = kind === "items" ? "Items" : "Vendors";
   return `<!doctype html><html><head><meta charset="utf-8"><title>${escape(context.project)} — ${title}</title>
 <style>body{font:12px Arial,sans-serif;margin:24px;color:#111}h1{font-size:22px}button{padding:10px}table{width:100%;table-layout:fixed;border-collapse:collapse}th,td{border:1px solid #bbb;padding:5px;text-align:left;vertical-align:top;overflow-wrap:anywhere}thead{display:table-header-group}tr{break-inside:avoid;page-break-inside:avoid}@page{size:landscape;margin:12mm}@media print{body{margin:0}button{display:none}table{font-size:9pt}}</style></head>

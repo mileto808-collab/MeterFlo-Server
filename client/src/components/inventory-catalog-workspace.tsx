@@ -217,7 +217,8 @@ export function InventoryCatalogWorkspace({ kind, items, vendors, projectName, t
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 sm:gap-3">
             <div className="flex min-w-0 items-center gap-3">{image && <img src={image} alt="" className="h-12 w-12 shrink-0 rounded object-cover" />}
               <div className="min-w-0"><div className="flex flex-wrap items-center gap-1.5"><h3 className="break-words font-medium">{item.name}</h3><span className="break-all font-mono text-xs text-muted-foreground">{item.sku}</span>{!item.active && <Badge variant="secondary">Inactive</Badge>}</div>
-                <p className="mt-0.5 break-words text-xs text-muted-foreground">{item.category || "Uncategorized"} · {item.tracking === "serialized" ? "Serial tracked" : "Quantity tracked"} · {item.unit}{item.equipment !== "none" ? ` · ${item.equipment}` : ""}{item.components.length ? ` · Kit of ${item.components.length}` : ""}</p>
+                <p className="mt-0.5 break-words text-xs text-muted-foreground">{item.category || "Uncategorized"} · {item.kind === "labor" ? "Labor · Non-stock" : item.tracking === "serialized" ? "Serial tracked" : "Quantity tracked"} · {item.unit}{item.equipment !== "none" ? ` · ${item.equipment}` : ""}{item.components.length ? ` · Kit of ${item.components.length}` : ""}</p>
+                <p className="mt-1 break-words text-xs text-muted-foreground">Cost {item.cost.toFixed(2)} · Billed {(item.billingRate ?? 0).toFixed(2)} / {item.unit}</p>
                 <p className="mt-1 break-words text-xs text-muted-foreground">{vendor ? `Vendor · ${vendor.name}` : "No vendor assigned"}{item.manufacturer ? ` · ${item.manufacturer}${item.model ? ` ${item.model}` : ""}` : ""}{item.barcode ? ` · Barcode ${item.barcode}` : ""}</p>
               </div>
             </div>

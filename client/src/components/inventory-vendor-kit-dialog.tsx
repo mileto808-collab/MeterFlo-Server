@@ -84,7 +84,9 @@ export function InventoryVendorKitDialog({ state, projectId, onClose, onSaved, o
       return order ? [{ id: receipt.id, reference: receipt.reference, warehouseId: receipt.warehouseId!, lines: receipt.lines }] : [];
     }), [state.receipts, state.orders]);
   const source = relevantSources.find(value => value.id === receiptId);
-  const kit = state.items.find(item => item.id === itemId);
+  const definedKit = state.items.find(item => item.id === itemId);
+  const kit = definedKit ? { ...definedKit, components: definedKit.components.filter(component =>
+    state.items.find(item => item.id === component.itemId)?.kind !== "labor") } : undefined;
   const sourceLineFor = (id: string) => source?.lines.find(line => line.itemId === id);
   const reserved = (id: string) => state.allocations.filter(allocation => allocation.status === "reserved")
     .flatMap(allocation => allocation.lines).filter(line => line.warehouseId === source?.warehouseId && line.itemId === id)

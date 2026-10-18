@@ -21,6 +21,8 @@ export function NavLink({
 
   const handleClick = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
+    // Also notify mounted screens when navigating to the same URL.
+    window.dispatchEvent(new CustomEvent("meterflo:navigate", { detail: { href } }));
     
     const keysToInvalidate = invalidateKeys || [];
     
