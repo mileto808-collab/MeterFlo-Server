@@ -11,6 +11,12 @@ Inventory enablement is reversible even with unfinished inventory work. Disablin
 
 **How to apply:** Keep administrator/configuration authority. Warn users to review pending inventory work and reconcile physical stock before resuming, since off-period usage is deliberately untracked. Serialize enablement changes against inventory commands and work-order transaction owners.
 
+Labor must be an item with a user-configurable rate basis, such as hourly or daily, and must be usable as a kit component.
+
+**Why:** The user explicitly requested configurable labor items and their inclusion in kits.
+
+**How to apply:** Include labor when designing catalog and kit capabilities rather than treating it only as an unrelated project setting.
+
 Readings do not require a changeout.
 
 Imports and customer API pulls must never reserve systems or modules to work orders. Imported old System/Module Type values describe installed equipment; new System/Module Type values describe expected replacements. Type values must continue to validate against the type catalogs regardless of inventory enablement. When inventory is enabled, new type values should resolve to inventory items and create planned work-order lines without selecting physical stock or serials.
