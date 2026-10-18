@@ -1885,13 +1885,8 @@ export async function registerRoutes(
             (!await storage.isAdminUser(currentUser) || !await storage.hasPermission(currentUser, permissionKeys.INVENTORY_CONFIGURE)))
           return res.status(403).json({ message: "Administrator and inventory configuration permission required." });
         if (typeof req.body.inventoryEnabled !== "boolean") return res.status(400).json({ message: "Inventory enablement must be true or false." });
-        if (existingProject.inventoryEnabled && !req.body.inventoryEnabled) {
-          const inv = await inventoryState(projectId);
-          if (inv.allocations.some(a => a.status === "reserved" && a.lines.length) ||
-              inv.orders.some(o => !["completed", "cancelled"].includes(o.status)) ||
-              inv.counts.some(c => c.status === "open") || inv.returns.some(r => r.disposition === "returned" && ["pending", "quarantine"].includes(r.status)))
-            return res.status(409).json({ message: "Resolve reservations, open orders, counts and equipment returns before disabling inventory. Historical stock is preserved." });
-        }
+        // Disabling pauses tracking; unfinished records and physical-stock
+        // evidence remain intact rather than blocking or cancelling the project.
       }
 
       if (hasReadingPrecisionSettings(req.body)) {

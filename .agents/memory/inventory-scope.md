@@ -5,6 +5,12 @@ description: User-defined project inventory boundaries and reading-only distinct
 
 Inventory is enabled by an admin per project. Projects can have multiple warehouses, including vehicles and physical warehouses. Enabling inventory must not change existing file-import behavior or disable editable old/new System Type and Module Type fields on work orders; ordinary permissions and project equipment scope still apply.
 
+Inventory enablement is reversible even with unfinished inventory work. Disabling is a non-destructive pause, not cancellation: preserve stock, serials, history, reservations, open orders, counts and returns. Existing reservations remain reserved. Ordinary work-order completion while disabled must not deduct stock; re-enabling must not invent retroactive consumption.
+
+**Why:** The user said an already configured customer project may stop using Inventory and should not need to be recreated. Preserving unfinished evidence avoids silently releasing custody or cancelling business records.
+
+**How to apply:** Keep administrator/configuration authority. Warn users to review pending inventory work and reconcile physical stock before resuming, since off-period usage is deliberately untracked. Serialize enablement changes against inventory commands and work-order transaction owners.
+
 Readings do not require a changeout.
 
 Imports and customer API pulls must never reserve systems or modules to work orders. Imported old System/Module Type values describe installed equipment; new System/Module Type values describe expected replacements. Type values must continue to validate against the type catalogs regardless of inventory enablement. When inventory is enabled, new type values should resolve to inventory items and create planned work-order lines without selecting physical stock or serials.

@@ -352,7 +352,9 @@ export default function ProjectForm() {
         setTimeout(() => { window.location.href = "/login"; }, 500);
         return;
       }
-      toast({ title: "Error", description: "Failed to update project", variant: "destructive" });
+      let message = error.message || "Failed to update project";
+      try { message = JSON.parse(message.replace(/^\d{3}:\s*/, "")).message || message; } catch { /* Keep the original non-JSON error. */ }
+      toast({ title: "Error", description: message, variant: "destructive" });
     },
   });
 
@@ -680,6 +682,11 @@ export default function ProjectForm() {
                         <FormDescription>
                           Enable project stock locations, meter serial tracking, receiving, transfers, and work-order reservations.
                         </FormDescription>
+                        {isEditing && <FormDescription data-testid="inventory-toggle-preservation-note">
+                          Turning Inventory off pauses tracking without deleting stock, serials, history, reservations, orders, counts or returns.
+                          Work completed while it is off will not deduct inventory. Existing reservations remain reserved.
+                          Before resuming tracking, review unfinished inventory work and reconcile physical stock; off-period usage is not deducted retroactively.
+                        </FormDescription>}
                       </div>
                       <FormControl>
                         <Switch
