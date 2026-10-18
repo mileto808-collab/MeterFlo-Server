@@ -1,5 +1,6 @@
 import { drizzleInventoryClient, readRelationalInventory } from "./inventoryRelational";
 import { sanitizeGenericProjectSettings } from "../shared/project-settings-boundary";
+import { deleteProjectCompletely } from "./projectDeletion";
 import {
   users,
   projects,
@@ -517,10 +518,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteProject(id: number): Promise<boolean> {
-    const inventory = await db.execute(sql`SELECT 1 FROM public.inventory_state WHERE project_id=${id}`);
-    if (inventory.rows.length) throw new InventoryError("Inventory history protects this project from deletion. Deactivate the project instead.");
-    await db.delete(projects).where(eq(projects.id, id));
-    return true;
+    return deleteProjectCompletely(id, await this.getSetting("project_files_path") || "Project Files");
   }
 
   // Project holiday operations

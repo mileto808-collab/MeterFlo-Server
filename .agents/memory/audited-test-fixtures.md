@@ -26,3 +26,13 @@ Serialize database suites that reinitialize global audit metadata against the sa
 **Why:** Concurrent audit initialization and permission-fixture writes can deadlock on the shared audit relations even when each business fixture uses a different project.
 
 **How to apply:** Use separate owned databases or run those suites with test concurrency set to one. Keep independent pure/browser checks parallel where they do not rebuild global audit metadata.
+
+Persist an inventory fixture's initial relational state before applying an
+incremental change; a legacy JSON root alone is not a persisted baseline.
+
+**Why:** Incremental persistence can skip unchanged default catalogs, leaving
+dependent locations with missing foreign-key targets even when the in-memory
+state contains the defaults.
+
+**How to apply:** Load/backfill the fixture through the normal inventory read
+path, or explicitly persist its relational baseline before incremental saves.

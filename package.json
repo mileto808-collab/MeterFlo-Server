@@ -8,6 +8,7 @@
     "build": "tsx script/build.ts",
     "test:windows-updates": "tsx --test tests/windows-updates.test.ts tests/windows-update-guidance.test.ts",
     "test:windows-update-guidance": "tsx --test tests/windows-update-guidance.test.ts",
+    "test:project-deletion": "tsx --test tests/project-deletion.test.ts",
     "start": "NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
     "stage:customer-release": "tsx script/customer-release-cli.ts stage",

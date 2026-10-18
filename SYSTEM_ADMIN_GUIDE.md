@@ -162,6 +162,22 @@ Permissions are grouped into:
 - **Settings** — access to individual settings cards
 - **Maintenance** — access to backup and restore features
 - **Project Actions** — create, edit, copy, or delete projects (`projects.viewInactive` controls visibility of inactive projects)
+
+**Deleting a project:** Users with `projects.delete` can permanently remove a
+project after confirming. This deletes its work-order schema, stock and serials,
+inventory catalog and history, reservations, orders, counts, imports, customer API
+records, routes, assignments, and project files (including inventory inspection
+photos). Inventory records are removed even if Inventory is currently disabled.
+Shared users, site-wide equipment catalogs and core statuses remain. The system's
+append-only security audit evidence is retained; it is not an active project.
+
+Database cleanup is transactional. If database deletion fails, its changes roll
+back. Files are staged for recovery before commit. If a file lock or permission
+error prevents final removal after database success, the Projects page explicitly
+shows **Project file cleanup / recovery pending** with a retry button. It does not
+report complete deletion until files are removed. Refreshing Projects also
+discovers interrupted file-staging journals; never manually delete recovery
+folders while a project deletion or recovery is in progress.
 - **Work Order Actions** — create, edit, assign, or delete work orders
 - **User Actions** — manage user accounts
 

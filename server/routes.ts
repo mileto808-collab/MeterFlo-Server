@@ -29,6 +29,7 @@ import { importedVisitScheduling, mapSqlImportRow, schedulingDto, validateVisitS
 import bcrypt from "bcryptjs";
 import multer from "multer";
 import { createProjectSchema, deleteProjectSchema, getProjectWorkOrderStorage, sanitizeSchemaName, backupProjectDatabase, restoreProjectDatabase, getProjectDatabaseStats } from "./projectDb";
+import { pendingProjectFileCleanups, retryProjectFileCleanup, ProjectDeletionCleanupPending } from "./projectDeletion";
 import { auditActorMiddleware, registerAuditRoutes } from "./auditRoutes";
 import { auditedOperation } from "./auditService";
 import { coreUpdatePreview, gitReader } from "./coreUpdatePreview";
@@ -1947,24 +1948,36 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Forbidden: You don't have permission to delete projects" });
       }
       
-      const project = await storage.getProject(parseInt(req.params.id));
-      if (!project) {
-        return res.status(404).json({ message: "Project not found" });
-      }
-      
-      if (project.databaseName) {
-        await deleteProjectSchema(project.databaseName);
-      }
-      
-      await deleteProjectDirectory(project.name, project.id);
-      
-      await storage.deleteProject(parseInt(req.params.id));
+      const id = Number(req.params.id);
+      if (!Number.isSafeInteger(id) || id <= 0 || id > 2147483647)
+        return res.status(400).json({ message: "Invalid project ID" });
+      if (!await storage.deleteProject(id)) return res.status(404).json({ message: "Project not found" });
       res.status(204).send();
     } catch (error) {
       console.error("Error deleting project:", error);
+      if (error instanceof ProjectDeletionCleanupPending)
+        return res.status(202).json({ fileCleanupPending: true, message: error.message });
       if (error instanceof InventoryError) return res.status(error.status).json({ message: error.message });
       res.status(500).json({ message: "Failed to delete project" });
     }
+  });
+
+  app.get("/api/project-deletion-cleanups", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.claims.sub);
+      if (!user || !await storage.hasPermission(user, permissionKeys.PROJECTS_DELETE))
+        return res.status(403).json({ message: "Project deletion permission required" });
+      res.json(await pendingProjectFileCleanups(await storage.getSetting("project_files_path") || "Project Files"));
+    } catch { res.status(500).json({ message: "Unable to verify pending project file recovery. No cleanup was reported as complete." }); }
+  });
+  app.post("/api/project-deletion-cleanups/:key/retry", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.user.claims.sub);
+      if (!user || !await storage.hasPermission(user, permissionKeys.PROJECTS_DELETE))
+        return res.status(403).json({ message: "Project deletion permission required" });
+      await retryProjectFileCleanup(req.params.key);
+      res.status(204).send();
+    } catch { res.status(500).json({ message: "Project file cleanup/recovery is still pending. Check file permissions or locks, then retry." }); }
   });
 
   // Project Holidays endpoints

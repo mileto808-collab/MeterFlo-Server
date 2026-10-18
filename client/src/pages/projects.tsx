@@ -88,18 +88,40 @@ export default function Projects() {
   const canEditProject = hasPermission("projects.edit");
   const canDeleteProject = hasPermission("projects.delete");
   const canViewInactive = hasPermission("projects.viewInactive");
+  const cleanups = useQuery<{ key: string; projectId: number; projectName: string; restore: boolean }[]>({
+    queryKey: ["/api/project-deletion-cleanups"], enabled: canDeleteProject, refetchInterval: 30000,
+  });
+  const retryCleanup = useMutation({
+    mutationFn: (key: string) => apiRequest("POST", `/api/project-deletion-cleanups/${key}/retry`, {}),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["/api/project-deletion-cleanups"] });
+      toast({ title: "Project file cleanup/recovery completed" });
+    },
+    onError: () => toast({ title: "File cleanup/recovery is still pending",
+      description: "Check Windows file locks and folder permissions, then retry.", variant: "destructive" }),
+  });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
-      await apiRequest("DELETE", `/api/projects/${id}`);
+      const response = await apiRequest("DELETE", `/api/projects/${id}`);
+      return response.status === 202 ? response.json() : null;
     },
-    onSuccess: () => {
+    onSuccess: (result, id) => {
+      queryClient.removeQueries({ predicate: query => {
+        const [first, second] = query.queryKey;
+        return typeof first === "string" && (first === `/api/projects/${id}` ||
+          first.startsWith(`/api/projects/${id}/`) || first === "/api/projects" && second === id);
+      } });
       void queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-      toast({ title: "Success", description: "Project deleted successfully" });
+      void queryClient.invalidateQueries({ queryKey: ["/api/project-deletion-cleanups"] });
+      toast(result?.fileCleanupPending
+        ? { title: "Project records deleted — file cleanup pending", description: result.message }
+        : { title: "Success", description: "Project and associated records and files deleted successfully" });
       setDeleteDialogOpen(false);
       setProjectToDelete(null);
     },
     onError: (error: Error) => {
+      void queryClient.invalidateQueries({ queryKey: ["/api/project-deletion-cleanups"] });
       if (isUnauthorizedError(error)) {
         toast({
           title: "Unauthorized",
@@ -109,7 +131,9 @@ export default function Projects() {
         setTimeout(() => { window.location.href = "/login"; }, 500);
         return;
       }
-      toast({ title: "Error", description: "Failed to delete project", variant: "destructive" });
+      let message = error.message.replace(/^\d{3}:\s*/, "");
+      try { message = JSON.parse(message).message || message; } catch {}
+      toast({ title: "Project deletion failed", description: message || "Failed to delete project", variant: "destructive" });
     },
   });
 
@@ -266,6 +290,19 @@ export default function Projects() {
       aria-label="Projects workspace"
     >
       <header className="sticky top-0 z-10 shrink-0 border-b bg-background pb-2 pt-2 sm:pb-3" data-testid="projects-workspace-header">
+        {canDeleteProject && cleanups.isError && <p role="alert" className="mb-2 text-sm text-destructive">
+          Pending project file cleanup could not be verified. Refresh before assuming deletion is complete.
+        </p>}
+        {!!cleanups.data?.length && <div className="mb-2 space-y-2 rounded-md border border-amber-400 p-3 text-sm" data-testid="project-deletion-cleanups">
+          <h2 className="font-semibold">Project file cleanup / recovery pending</h2>
+          {cleanups.data.map(job => <div key={job.key} className="flex flex-wrap items-center justify-between gap-2">
+            <span>{job.projectName} · #{job.projectId} — {job.restore ? "Project retained; files need recovery" : "Records deleted; remaining files need removal"}</span>
+            <Button type="button" size="sm" variant="outline" disabled={retryCleanup.isPending}
+              onClick={() => retryCleanup.mutate(job.key)} data-testid={`retry-project-cleanup-${job.projectId}`}>
+              {job.restore ? "Retry file recovery" : "Retry file cleanup"}
+            </Button>
+          </div>)}
+        </div>}
         <div className="flex min-h-9 items-center justify-between gap-2">
           <div className="min-w-0">
             <h1 className="truncate text-lg font-semibold tracking-tight sm:text-xl" data-testid="text-projects-title">Projects</h1>
@@ -543,7 +580,10 @@ export default function Projects() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Project</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this project? This action cannot be undone.
+              Permanently delete this project and its work orders, inventory and inventory history
+              (even when Inventory is disabled), routes, assignments, imports and files?
+              Shared users and site-wide catalogs are not deleted. System security audit evidence is retained.
+              This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
