@@ -29,3 +29,15 @@ line-ending checksums and missing inventory schema have each interrupted updates
 feature/schema changes. Preserve protected configuration, never invent migration
 approvals, and distinguish local/portable tests from real Windows PM2 acceptance
 and local tracking from a verified remote push.
+
+Keep the routine Windows update commands visible and copyable in Settings and
+Preview Changes even when staged customer-release verification is unconfigured.
+Do not describe a missing approved source/baseline as a Windows updater failure
+or weaken the staged-release guards to make the warning disappear.
+
+**Why:** The user asked for the every-update procedure to be documented and said
+Preview Changes used to show the commands, while showing an unconfigured
+staged-release preview as the reported error.
+
+**How to apply:** Explain the two workflows separately, maintain the in-app
+commands alongside the Windows guide, and retain a distinct first-time bootstrap.

@@ -1238,6 +1238,25 @@ cd /d C:\xampp\htdocs\meterflo
 git pull --ff-only origin main && deploy\Update-MeterFlo.cmd
 ```
 
+#### Commands in Settings and Preview Changes
+
+Find the same copyable commands under **Settings → Updates → Web Updates**
+and **Preview Changes**. The routine updater command is used on every standard
+Windows Git update; the bootstrap command is needed only when the updater file
+is not installed yet. Adjust the example installation directory if yours differs.
+
+**Check numbered releases** is a separate feature for the staged customer-release
+workflow. It requires an approved `coreSource` and verified `coreBaseline` in the
+private instance manifest. “Source not configured,” “baseline unknown,” or
+“staged release preparation is blocked” does **not** mean that the Windows
+command failed. It also does not prove Windows is up to date. Use the updater's
+terminal result and its exact-build HTTP verification to assess that update.
+
+Do not invent a source, version tag, baseline commit, schema version or migration
+approval just to remove a preview warning. Customer extensions and previously
+activated staged releases must continue to use the reviewed staged procedure.
+These web screens display instructions only; they do not execute Windows commands.
+
 Files must be committed **and pushed to the Git remote Windows pulls from**.
 A local checkpoint or file existing in a workspace alone does not distribute it.
 After pulling, verify distribution with:

@@ -6010,6 +6010,7 @@ export async function registerRoutes(
         hasGitUpdates:false,updateAvailable:preview.updateAvailable,currentVersion:preview.installed.version,
         latestVersion:preview.candidateVersion,releaseName:preview.candidateVersion ? `MeterFlo core ${preview.candidateVersion}` : "Unverified core source",
         blockers:preview.blockers,coreSource:preview.installed.coreSource,message:preview.message,
+        configurationRequired:preview.configurationRequired,
       };
       
       // Cache the result

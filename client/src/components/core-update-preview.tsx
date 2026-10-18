@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { coreUpdatePreview } from "../../../server/coreUpdatePreview";
+import { WindowsUpdateInstructions } from "./windows-update-instructions";
 
 export type UpdatePreview = Awaited<ReturnType<typeof coreUpdatePreview>>;
 const changeLabel = (status: string) => status === "??" ? "Untracked" :
@@ -16,7 +17,12 @@ export function CoreUpdatePreview({open, onOpenChange, preview, copy}: {
         <DialogTitle>Update Preview</DialogTitle>
         <DialogDescription>Informational only. Fetching references does not replace code, install dependencies, migrate data, stop the app or publish.</DialogDescription>
       </DialogHeader>
+      <WindowsUpdateInstructions copy={copy} />
       {preview && <div className="space-y-4 text-sm">
+        <h3 className="font-semibold">Numbered customer-release verification</h3>
+        <p className="text-muted-foreground">The checks below concern approved, numbered customer releases,
+          not the Windows origin/main updater. Missing release configuration does not mean a Windows update failed.
+          It also does not prove the installation is up to date.</p>
         <div className="p-3 border rounded-md space-y-1">
           <p>Installed core: {preview.installed.version} · Extension API: {preview.installed.extensionApiVersion}</p>
           <p>Schema: {preview.installed.schemaVersion} · Declared installed schema: {preview.installed.installedSchemaVersion ?? "Unknown"}</p>
@@ -28,7 +34,7 @@ export function CoreUpdatePreview({open, onOpenChange, preview, copy}: {
           {preview.installed.migrations.map(m=><p key={m.id}>Migration: {m.id} · {m.ownership} · {m.reversible ? "Declared reversible; review required" : "Not reversible by code rollback"}</p>)}
         </div>
         {!!preview.blockers.length && <div role="alert" className="p-3 border border-destructive rounded-md space-y-2">
-          <p className="font-medium">Do not overwrite this installation</p>
+          <p className="font-medium">Staged release preparation is blocked — do not overwrite this installation</p>
           <ul className="list-disc pl-5">{preview.blockers.map((b,i)=><li key={i}>{b}</li>)}</ul>
           <p>Back up customer work and reconcile conflicts in a separate workspace. A hard reset is not an update recovery procedure.</p>
         </div>}

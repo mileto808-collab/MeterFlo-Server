@@ -120,7 +120,8 @@ export async function coreUpdatePreview(release: CustomerRelease, git: GitRead, 
   }
   const uniqueBlockers=[...new Set(blockers)];
   const available=candidateVersion!==null && compareReleaseVersions(candidateVersion,release.version)>0;
-  return {isGitRepo,currentBranch,remoteBranch:tag,commitsAhead,commitsBehind,changes:changes.slice(0,100),
+  return {configurationRequired:!release.coreSource || !release.coreBaseline,
+    isGitRepo,currentBranch,remoteBranch:tag,commitsAhead,commitsBehind,changes:changes.slice(0,100),
     filesChanged:filesChanged.slice(0,200),diff,installed:publicRelease(release),candidateVersion,coreCommit,
     extensionCompatibility,blockers:uniqueBlockers,updateAvailable:available,canPrepare:available && !uniqueBlockers.length,
     updateCommand:available && !uniqueBlockers.length

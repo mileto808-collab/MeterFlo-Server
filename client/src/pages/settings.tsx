@@ -30,6 +30,7 @@ import { AlertTriangle } from "lucide-react";
 import { CustomerApiDeliveries } from "@/components/customer-api-deliveries";
 import { MobileReleaseManager } from "@/components/mobile-release-manager";
 import { CoreUpdatePreview, type UpdatePreview } from "@/components/core-update-preview";
+import { WindowsUpdateInstructions } from "@/components/windows-update-instructions";
 import { SettingsNavigation } from "@/components/settings-navigation";
 import { settingsGroups, type SettingsSectionKey } from "@/lib/settings-navigation";
 import { WorkOrderSubStatusManager } from "@/components/work-order-sub-statuses/work-order-sub-status-manager";
@@ -568,11 +569,15 @@ export default function Settings() {
 
   const checkForUpdatesMutation = useMutation({
     mutationFn: async () => {
-      return apiRequest("POST", "/api/system/update-check", {});
+      const response = await apiRequest("POST", "/api/system/update-check", {});
+      return response.json();
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/settings/web-update-config"] });
-      if (!data.latestVersion) {
+      if (data.configurationRequired) {
+        toast({ title: "Numbered release checks need configuration",
+          description: "An approved source and baseline are required for staged releases. Windows Git update commands are available below and in Preview Changes; this is not a Windows updater failure." });
+      } else if (!data.latestVersion) {
         toast({ title: "Core update status could not be verified", description: data.message || "Review Preview Changes for missing source/access settings.", variant: "destructive" });
       } else if (data.hasGitUpdates) {
         toast({ title: `${data.commitsBehind} commit${data.commitsBehind === 1 ? '' : 's'} behind origin/${data.remoteBranch}` });
@@ -2332,11 +2337,12 @@ export default function Settings() {
                   <ArrowUpCircle className="h-5 w-5 text-muted-foreground" />
                   <div>
                     <CardTitle>Web Application Updates</CardTitle>
-                    <CardDescription className="mt-1">Check for updates and preview changes before updating</CardDescription>
+                    <CardDescription className="mt-1">Windows Git update instructions and verified numbered customer-release checks</CardDescription>
                   </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-6">
+                <WindowsUpdateInstructions copy={copyToClipboard} />
                 <div className="flex items-center justify-between gap-4 flex-wrap p-3 bg-muted/50 rounded-md">
                   <div className="space-y-1">
                     <div className="text-sm text-muted-foreground">Current Version</div>
@@ -2384,9 +2390,9 @@ export default function Settings() {
                     data-testid="input-web-update-url"
                   />
                   <p className="text-xs text-muted-foreground">
-                    Retained for legacy configuration. Core update checks require the approved coreSource in the workspace instance manifest.
+                    Retained for legacy configuration. Numbered release checks require the approved coreSource in the workspace instance manifest.
                     <br />
-                    Core safety checks use the approved coreSource in meterflo.instance.json. This URL is retained for legacy configuration; it does not override the approved source.
+                    This URL does not configure the Windows origin/main updater or override the approved source for staged releases.
                     <br />
                     Format: https://api.github.com/repos/ORG/REPO/releases/latest
                   </p>
@@ -2420,7 +2426,7 @@ export default function Settings() {
                     data-testid="button-check-updates"
                   >
                     <RefreshCw className={`h-4 w-4 mr-2 ${checkForUpdatesMutation.isPending ? "animate-spin" : ""}`} />
-                    {checkForUpdatesMutation.isPending ? "Checking..." : "Check for Updates"}
+                    {checkForUpdatesMutation.isPending ? "Checking..." : "Check numbered releases"}
                   </Button>
 
                   <Button 
