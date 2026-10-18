@@ -21,6 +21,7 @@ import { ArrowLeft, Save, Loader2, Globe, Clock, Users, X, CalendarDays, Plus, W
 import type { ProjectHoliday } from "@shared/schema";
 import { Checkbox } from "@/components/ui/checkbox";
 import { usePermissions } from "@/hooks/usePermissions";
+import { AccessLockControl } from "@/components/access-locks/access-lock-control";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { getReadingPrecision } from "@shared/reading-precision";
 import { getProjectEquipmentVisibility } from "@shared/project-equipment-scope";
@@ -1621,6 +1622,11 @@ export default function ProjectForm() {
                       )}
                     </>
                   )}
+                </div>
+              )}
+              {isEditing && (hasPermission("projects.manageAccessLocks") || hasPermission("security.manageSiteAccessLocks")) && (
+                <div className="mt-6 border-t pt-6">
+                  <AccessLockControl key={`project-access-lock-${id}`} scope="project" projectId={Number(id)} />
                 </div>
               )}
               </div>

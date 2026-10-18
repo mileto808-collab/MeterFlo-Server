@@ -1,5 +1,6 @@
 import { drizzleInventoryClient, readRelationalInventory } from "./inventoryRelational";
 import { sanitizeGenericProjectSettings } from "../shared/project-settings-boundary";
+import { projectAccessVisible } from "./accessLockContext";
 import { deleteProjectCompletely } from "./projectDeletion";
 import {
   users,
@@ -455,10 +456,11 @@ export class DatabaseStorage implements IStorage {
 
   // Project operations
   async getProjects(): Promise<Project[]> {
-    return (await db.select().from(projects).orderBy(desc(projects.createdAt))).map(project=>({...project,routingConfiguration:null}));
+    return (await db.select().from(projects).orderBy(desc(projects.createdAt))).filter(project => projectAccessVisible(project.id)).map(project=>({...project,routingConfiguration:null}));
   }
 
   async getProject(id: number): Promise<Project | undefined> {
+    if (!projectAccessVisible(id)) return undefined;
     const [project] = await db.select().from(projects).where(eq(projects.id, id));
     return project ? {...project,routingConfiguration:null} : undefined;
   }
@@ -550,7 +552,7 @@ export class DatabaseStorage implements IStorage {
     
     for (const projectId of projectIds) {
       const [project] = await db.select().from(projects).where(eq(projects.id, projectId));
-      if (project) projectList.push({...project,routingConfiguration:null});
+      if (project && projectAccessVisible(project.id)) projectList.push({...project,routingConfiguration:null});
     }
     
     return projectList;

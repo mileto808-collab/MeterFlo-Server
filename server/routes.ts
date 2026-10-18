@@ -1,6 +1,8 @@
 import type { Express, RequestHandler } from "express";
 import { registerRoutingRoutes } from "./routing/routes";
 import { technicianAssignmentScope, visibleAssignedOrders } from "./workOrderVisibility";
+import { accessLockMiddleware, loginAccessLock, registerAccessLockRoutes, sendAccessLocked } from "./accessLocks";
+import { accessLockContext } from "./accessLockContext";
 import { sanitizeGenericProjectSettings } from "../shared/project-settings-boundary";
 const projectRoutingWriteBoundary: RequestHandler = (req, res, next) => {
   try { req.body = sanitizeGenericProjectSettings(req.body ?? {}); next(); }
@@ -89,6 +91,10 @@ interface ChunkedUploadSession {
   targetUrl?: string;
 }
 const chunkedUploadSessions = new Map<string, ChunkedUploadSession>();
+function lockedUploadTarget(targetUrl?: string) {
+  const match = targetUrl?.match(/\/projects\/(\d+)(?:\/|$)/);
+  return match ? accessLockContext.getStore()?.get(Number(match[1])) : undefined;
+}
 
 // Clean up old upload sessions (older than 1 hour)
 setInterval(() => {
@@ -227,6 +233,8 @@ export async function registerRoutes(
 ): Promise<Server> {
   await setupAuth(app);
   app.use(auditActorMiddleware);
+  app.use(accessLockMiddleware);
+  registerAccessLockRoutes(app);
   registerAuditRoutes(app);
   await initializeAdminUser();
   await storage.seedDefaultWorkOrderStatuses();
@@ -283,6 +291,8 @@ export async function registerRoutes(
       if (!isValid) {
         return res.status(401).json({ message: "Invalid username or password" });
       }
+      const accessLock = await loginAccessLock(user);
+      if (accessLock) return sendAccessLocked(res, accessLock);
       
       await storage.updateLastLogin(user.id);
       
@@ -8574,6 +8584,8 @@ export async function registerRoutes(
 
       const uploadId = randomUUID();
 
+      const targetLock = lockedUploadTarget(targetUrl);
+      if (targetLock) return sendAccessLocked(res, targetLock);
       chunkedUploadSessions.set(uploadId, {
         userId: currentUser.id,
         fileName,
@@ -8618,6 +8630,8 @@ export async function registerRoutes(
       if (session.userId !== currentUser.id) {
         return res.status(403).json({ message: "Forbidden: This upload session belongs to another user" });
       }
+      const targetLock = lockedUploadTarget(session.targetUrl);
+      if (targetLock) return sendAccessLocked(res, targetLock);
 
       if (!req.file) {
         return res.status(400).json({ message: "No chunk data provided" });
@@ -8681,6 +8695,8 @@ export async function registerRoutes(
       if (session.userId !== currentUser.id) {
         return res.status(403).json({ message: "Forbidden: This upload session belongs to another user" });
       }
+      const targetLock = lockedUploadTarget(session.targetUrl);
+      if (targetLock) return sendAccessLocked(res, targetLock);
 
       if (session.receivedChunks.size !== session.totalChunks) {
         return res.status(400).json({

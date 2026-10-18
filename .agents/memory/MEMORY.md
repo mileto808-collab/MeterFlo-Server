@@ -43,3 +43,4 @@
 - [Publishing schema ownership](publishing-schema-ownership.md) — active fields must exist in actual dev schema before publish; never replace production data to repair migration drift.
 - [Project configuration state](project-configuration-state.md) — section changes preserve drafts; independently saved managers must not submit or reset project fields.
 - [Project deletion scope](project-deletion-scope.md) — delete all project-owned inventory even when disabled; transact database cleanup and expose file recovery.
+- [Access lock policy](access-lock-policy.md) — site/project user lockout preserves data and authorized recovery; it is not background-job shutdown or offline data erasure.

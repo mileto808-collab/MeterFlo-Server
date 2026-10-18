@@ -1317,3 +1317,15 @@ export function getSubroleLevel(subroleKey: string | null | undefined): number {
 }
 
 export type PermissionKey = typeof permissionKeys[keyof typeof permissionKeys];
+
+export const accessLocks = pgTable("access_locks", {
+  id: varchar("id", { length: 80 }).primaryKey(),
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  locked: boolean("locked").notNull().default(false),
+  message: varchar("message", { length: 1000 }).notNull().default(""),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: varchar("updated_by").references(() => users.id, { onDelete: "set null" }),
+}, table => [
+  index("access_locks_active").on(table.projectId).where(sql`${table.locked}=true`),
+  check("access_lock_scope", sql`(${table.projectId} IS NULL AND ${table.id}='site') OR (${table.projectId} IS NOT NULL AND ${table.id}='project:'||${table.projectId}::text)`),
+]);

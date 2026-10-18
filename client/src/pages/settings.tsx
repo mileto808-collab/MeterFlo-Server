@@ -35,6 +35,7 @@ import { SettingsNavigation } from "@/components/settings-navigation";
 import { settingsGroups, type SettingsSectionKey } from "@/lib/settings-navigation";
 import { WorkOrderSubStatusManager } from "@/components/work-order-sub-statuses/work-order-sub-status-manager";
 import { RoutingSettings } from "@/components/work-order-routing/routing-settings";
+import { AccessLockControl } from "@/components/access-locks/access-lock-control";
 
 interface FileSettings {
   maxFileSizeMB: number;
@@ -2464,6 +2465,23 @@ export default function Settings() {
                 )}
               </CardContent>
             </Card>
+        )}
+
+        {hasPermission("security.manageSiteAccessLocks") && (
+          <Card data-settings-group="security" data-settings-section="access-locks" data-testid="settings-section-access-locks" hidden={effectiveSettingsSection !== "access-locks"}>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Lock className="h-5 w-5 text-muted-foreground" />
+                <div>
+                  <CardTitle>Access locks</CardTitle>
+                  <CardDescription className="mt-1">Pause site access while preserving permissions and work.</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <AccessLockControl scope="site" />
+            </CardContent>
+          </Card>
         )}
 
         <CoreUpdatePreview open={showUpdatePreview} onOpenChange={setShowUpdatePreview}

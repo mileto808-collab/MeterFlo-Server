@@ -5,7 +5,7 @@ export type SettingsSectionKey =
   | "system-types" | "module-types"
   | "project-files" | "upload-settings" | "file-import-history" | "external-import-history"
   | "contact-support" | "customer-api-logs"
-  | "security-settings"
+  | "security-settings" | "access-locks"
   | "mobile-updates" | "web-updates"
   | "timezone" | "log-maintenance";
 
@@ -54,6 +54,7 @@ export const settingsGroups: SettingsGroup[] = [
   ] },
   { key: "security", label: "Security", sections: [
     { key: "security-settings", label: "Security Settings", permission: "settings.security" },
+    { key: "access-locks", label: "Access locks", permission: "security.manageSiteAccessLocks" },
   ] },
   { key: "updates", label: "Updates", sections: [
     { key: "mobile-updates", label: "Mobile Updates", permission: "settings.mobileConfig" },

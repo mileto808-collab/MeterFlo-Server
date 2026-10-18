@@ -31,6 +31,7 @@ import { initializeInventory } from "./inventoryMigration";
 import { requestLogging } from "./requestLogging";
 import { initializeRouting } from "./routing/configuration";
 import { initializeVisitScheduling } from "./visitScheduling";
+import { initializeAccessLocks } from "./accessLocks";
 
 const app = express();
 
@@ -107,6 +108,7 @@ app.use(requestLogging(log));
   await initializeCustomerApi();
   await initializeApiImports();
   await initializeAudit(pool);
+  await initializeAccessLocks();
   await reconcileAuditOperations();
   
   await initializeInventory(pool);

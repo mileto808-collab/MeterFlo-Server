@@ -17,6 +17,7 @@ import { ArrowUpCircle } from "lucide-react";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { HttpLoginRecoveryAlert } from "@/components/http-login-recovery-alert";
 import { RouteSessionCleanup } from "@/components/work-order-routing/route-session-cleanup";
+import { AccessLockGate } from "@/components/access-locks/access-lock-gate";
 
 import Landing from "@/pages/landing";
 import LoginPage from "@/pages/login";
@@ -261,7 +262,9 @@ function AuthenticatedLayout() {
             </header>
             <HttpLoginRecoveryAlert />
             <main className="flex-1 overflow-auto">
-              <AuthenticatedRouter />
+              <AccessLockGate>
+                <AuthenticatedRouter />
+              </AccessLockGate>
             </main>
           </div>
         </div>

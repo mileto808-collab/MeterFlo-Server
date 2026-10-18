@@ -24,6 +24,12 @@ export interface PermissionDefinition {
 }
 
 export const permissionRegistry: PermissionDefinition[] = [
+  { key: "security.manageSiteAccessLocks", label: "Manage Sitewide Access Locks", category: "Settings",
+    description: "Lock/unlock sitewide user access and bypass site and project access locks for recovery. Does not grant project membership or other business permissions.",
+    defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false } },
+  { key: "projects.manageAccessLocks", label: "Manage Project Access Locks", category: "Project Actions",
+    description: "Lock/unlock access to assigned projects and bypass their project access locks. Cannot bypass a sitewide lock.",
+    defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false } },
   { key: "projects.manageSubStatuses", label: "Manage Project Work Order Sub-statuses", category: "Project Actions",
     description: "Create and maintain custom sub-statuses within assigned projects. Does not change core status rules or shared definitions.",
     defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false } },
