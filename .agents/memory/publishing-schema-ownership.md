@@ -5,7 +5,7 @@ description: Why runtime-only fields can appear as destructive removals during p
 
 Schema declarations alone do not protect active fields during publishing. Changes must exist in the actual development database before a user publishes, and declared constraints must agree with standalone upgrade rules.
 
-**Why:** A development snapshot lacked active visit-default columns that production startup could create. Publishing proposed dropping/recreating those columns and deleting their values. Startup-only upgrades depend on whether a preview has restarted and are not a reliable development schema application boundary.
+**Why:** A development snapshot lacked active visit-default columns that production startup could create. Publishing proposed dropping/recreating those columns and deleting their values. Startup-only upgrades depend on whether a preview has restarted and are not a reliable development schema application boundary. After schema alignment and the workspace guard correction, the user confirmed that republishing completed without errors; preservation of individual production values was not independently verified.
 
 **How to apply:** Keep additive development setup in post-merge maintenance and preserve nullable historical settings without backfilling business defaults. Test repeated reconciliation against a populated, owned PostgreSQL cluster, including column identities and constraint enforcement. Never use production data overwrite, publish-build database pushes, or new production startup DDL to repair the mismatch.
 
