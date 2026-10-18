@@ -354,11 +354,12 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
     }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
   });
   const plan = async (confirmation?: { request: PlanningRequest; tokensById: Record<string, string> }) => {
-    if (!candidates.length) { setValidationMessage("No scheduled work orders match this scope. Adjust the grid filters or select scheduled orders."); return; }
+    const requestedIds = confirmation?.request.ids ?? candidates.map(order => order.id);
+    if (!requestedIds.length) { setValidationMessage("No scheduled work orders match this scope. Adjust the grid filters or select scheduled orders."); return; }
     if (readiness?.ready !== true) { setValidationMessage("Routing is not ready. Configure the provider before planning."); return; }
-    if (candidates.length > 50) { setValidationMessage(`This request contains ${candidates.length} Scheduled work orders; route planning accepts at most 50 total Scheduled orders. Narrow the filters or selection, then plan again.`); return; }
-    const serviceValue = Number(serviceMinutes);
-    const toleranceValue = Number(toleranceMinutes);
+    if (requestedIds.length > 50) { setValidationMessage(`This request contains ${requestedIds.length} Scheduled work orders; route planning accepts at most 50 total Scheduled orders. Narrow the filters or selection, then plan again.`); return; }
+    const serviceValue = confirmation?.request.serviceMinutes ?? Number(serviceMinutes);
+    const toleranceValue = confirmation?.request.toleranceMinutes ?? Number(toleranceMinutes);
     if (!Number.isInteger(serviceValue) || serviceValue < 1 || serviceValue > 480) { setValidationMessage("On-site service must be a whole number from 1 to 480 minutes."); return; }
     if (!Number.isInteger(toleranceValue) || toleranceValue < 0 || toleranceValue > 240) { setValidationMessage("Appointment tolerance must be a whole number from 0 to 240 minutes."); return; }
     setBusy(true); setValidationMessage(""); setLocationMessage("");
@@ -372,7 +373,7 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
         if (!manualAddress.trim()) { setValidationMessage("Enter the starting address."); setBusy(false); return; }
         origin = { address: manualAddress.trim() };
       }
-      const request = confirmation?.request ?? { ids: candidates.map(order => order.id), origin, departureAt: isoFromZonedInput(departure, timezone), serviceMinutes: Number(serviceMinutes), toleranceMinutes: Number(toleranceMinutes) };
+      const request = confirmation?.request ?? { ids: requestedIds, origin, departureAt: isoFromZonedInput(departure, timezone), serviceMinutes: serviceValue, toleranceMinutes: toleranceValue };
       const response = await fetch(`/api/projects/${projectId}/routing/plan`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...request, addressConfirmations: confirmation ? Object.values(confirmation.tokensById) : undefined }) });
       if (response.status === 409) {
         const data = await response.json();
@@ -394,7 +395,9 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
       if (planned.routes!.some(route => route.stops.length > 0 && !route.geometry?.length)) throw new Error("Provider returned an assigned route without road geometry. No route was activated.");
       if (planned.routes!.some(route => route.stops.length > readiness.effective.maxStops))
         throw new Error(`A technician route exceeds the configured limit of ${readiness.effective.maxStops} stops per route. No route was activated.`);
-      if (planned.scopeIds!.length !== scopedOrders.length || scopedOrders.some(order => !planned.scopeIds!.includes(order.id)))
+      // Address review resumes the frozen request, not the mixed-status grid
+      // (which also contains orders intentionally excluded from this request).
+      if (planned.scopeIds!.length !== request.ids.length || request.ids.some(id => !planned.scopeIds!.includes(id)))
         throw new Error("Provider returned a route for a different work-order scope. No route was activated.");
       const providerExpiry = Date.parse(planned.expiresAt);
       const shortCacheExpiry = Date.parse(planned.createdAt) + 4 * 60 * 60 * 1000;
@@ -570,7 +573,7 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
         <div className="space-y-4 py-1">
           <div className="space-y-2"><Label>Work-order scope</Label><RadioGroup value={scope} onValueChange={value => setScope(value as "filtered" | "selected")} className="grid gap-2"><label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3"><RadioGroupItem value="filtered" className="mt-0.5" /><span><strong className="text-sm">Orders in current filters</strong><span className="block text-xs text-muted-foreground">{candidates.length} Scheduled candidates across all grid pages · {nonScheduled} non-Scheduled orders are excluded from routing</span></span></label><label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 ${!selectedIds.length ? "opacity-50" : ""}`}><RadioGroupItem value="selected" disabled={!selectedIds.length} className="mt-0.5" /><span><strong className="text-sm">Selected orders</strong><span className="block text-xs text-muted-foreground">{selectedIds.length} selected · only Scheduled orders will be routed</span></span></label></RadioGroup>
             {unassignedScheduled > 0 && <p role="alert" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">{unassignedScheduled} Scheduled {unassignedScheduled === 1 ? "order has" : "orders have"} no technician assignment. Assign {unassignedScheduled === 1 ? "it" : "them"} before planning a route.</p>}
-            {scopedOrders.length > 50 && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">The full request scope has {scopedOrders.length} orders. Narrow the filter or selection to 50 or fewer total orders.</p>}
+            {candidates.length > 50 && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">The request has {candidates.length} Scheduled orders. Narrow the filter or selection to 50 or fewer Scheduled orders.</p>}
           </div>
           <div className="grid gap-3 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="route-departure">Departure time ({timezone})</Label><Input id="route-departure" type="datetime-local" value={departure} onChange={event => setDeparture(event.target.value)} data-testid="route-departure" /></div><div className="space-y-2"><Label htmlFor="route-service-minutes">On-site service (minutes)</Label><Input id="route-service-minutes" type="number" min="1" max="480" value={serviceMinutes} onChange={event => setServiceMinutes(event.target.value)} data-testid="route-service-minutes" /><p className="text-xs text-muted-foreground">Route-wide default; work-order and project estimates can override it.</p></div><div className="space-y-2 sm:col-span-2"><Label htmlFor="route-tolerance">Appointment tolerance (minutes)</Label><Input id="route-tolerance" type="number" min="0" max="240" value={toleranceMinutes} onChange={event => setToleranceMinutes(event.target.value)} data-testid="route-tolerance" /><p className="text-xs text-muted-foreground">Planning assumption only. Appointment windows constrain service start and do not modify scheduled appointments.</p></div></div>
           <div className="space-y-2"><Label>Result view</Label><RadioGroup value={mode} onValueChange={value => setMode(value as DisplayMode)} className="grid grid-cols-3 gap-2">{(["list", "map", "both"] as const).map(value => <label key={value} className="flex cursor-pointer items-center gap-2 rounded-lg border p-3 capitalize"><RadioGroupItem value={value} />{value}</label>)}</RadioGroup></div>

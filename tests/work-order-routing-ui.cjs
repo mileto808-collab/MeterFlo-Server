@@ -102,7 +102,7 @@ const assert = require("node:assert/strict");
     await expect(page.getByRole("dialog").first()).toContainText("Route optimization is disabled");
     await page.screenshot({path:`${out}/unconfigured-desktop.jpg`});
     await page.getByRole("button",{name:"Back to work orders",exact:true}).last().click();
-    let body,plannedStops,plannedRoutes,needsAddressReview=true,stale=false,deny=false;
+    let body,plannedStops,plannedRoutes,needsAddressReview=true,wrongResponseScope=true,stale=false,deny=false;
     const readiness={configuration:{mode:"override",provider:"google",serverKeyEnv:"GOOGLE_MAPS_TEST_SERVER",browserKeyEnv:"GOOGLE_MAPS_TEST_BROWSER",maxStops:24,dailyPlans:10},
       effective:{provider:"google",source:"project",maxStops:24,dailyPlans:10},ready:true,mapReady:true,disabled:false,canManage:true,revision:"a".repeat(64),message:"Controlled fixture; not live provider access."};
     await page.route(`**${routeRoot}/settings`,route=>route.fulfill({json:readiness}));
@@ -145,7 +145,8 @@ const assert = require("node:assert/strict");
           totalTravelSeconds:300*assignedStops.length,totalTravelMeters:1000*assignedStops.length};
       });
       plannedStops=plannedRoutes[0].stops;
-      await route.fulfill({json:{...plannedRoutes[0],routes:plannedRoutes,excluded}});
+      const responseScope=wrongResponseScope?[...body.ids,orders.find(order=>order.status==="Open").id]:body.ids;
+      await route.fulfill({json:{...plannedRoutes[0],routes:plannedRoutes,excluded,scopeIds:responseScope}});
     });
     await page.route("https://maps.googleapis.com/maps/api/js?*",route=>route.fulfill({contentType:"application/javascript",body:`
       window.__routeMap={markers:[],paths:[]};window.google={maps:{
@@ -154,8 +155,16 @@ const assert = require("node:assert/strict");
         Marker:class{constructor(o){window.__routeMap.markers.push(o.label);}}
       }};window.initMap();`}));
     await page.reload();
-    await scheduledGrid();
+    // Keep Open and Scheduled orders together to reproduce the real confirmation
+    // path: only Scheduled IDs are submitted, even though the grid has more rows.
+    await expect(page.getByTestId("button-toggle-mobile-tools")).toBeVisible();
+    if(!await page.getByTestId("input-search-work-orders").isVisible())
+      await page.getByTestId("button-toggle-mobile-tools").click();
+    await page.getByTestId("button-filters-dialog").click();
+    await page.getByTestId("checkbox-status-scheduled").uncheck();
+    await page.getByTestId("button-dialog-close-filters").click();
     await page.getByTestId("optimize-work-order-route").click();
+    await expect(page.getByTestId("route-setup-dialog")).toContainText(/[1-9]\d* non-Scheduled orders are excluded/);
     await expect(page.getByTestId("create-route-plan")).toBeEnabled();
     await page.getByTestId("route-manual-origin").fill("100 Warehouse Road, Fixturetown, CO 80000");
     await page.getByTestId("create-route-plan").click();
@@ -184,9 +193,14 @@ const assert = require("node:assert/strict");
     for(const checkbox of await confirmations.all())await checkbox.check();
     await expect(page.getByTestId("address-review-submit")).toBeEnabled();
     await page.getByTestId("address-review-submit").click();
+    await expect(page.getByTestId("route-setup-dialog")).toContainText("different work-order scope");
+    await expect(page.getByTestId("route-mode-list")).toHaveCount(0);
+    wrongResponseScope=false;
+    await page.getByTestId("address-review-submit").click();
     await page.setViewportSize({width:1365,height:950});
     await expect(page.getByTestId("route-mode-list")).toBeVisible();
     assert.equal(body.ids.length,scheduled.length,"Scope includes Scheduled rows across ALL pages");
+    assert.ok(body.ids.every(id=>orders.find(order=>order.id===id).status==="Scheduled"),"Mixed grid submits only Scheduled orders");
     assert.deepEqual(body.origin,{address:"100 Warehouse Road, Fixturetown, CO 80000"});
     assert.equal(plannedRoutes.length,2);
     await page.getByTestId("routing-technician-select").selectOption(fixture.viewer.id);
