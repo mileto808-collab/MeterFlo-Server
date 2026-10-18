@@ -20,6 +20,10 @@ The audit is no longer just a list of proposals. The cleanup removes:
 - Silent browser filter-preference upgrading. An obsolete visibility preference
   defaults to showing available filter controls without writing an upgrade.
   This does not add work-order filter values or restrict technicians to Scheduled.
+- Per-access attachment folder migration. Normal file operations now use canonical
+  paths only; explicit offline maintenance performs reviewed relocation with
+  collision checks, verified copies and a resumable journal. See
+  [Attachment folder migration](ATTACHMENT_FOLDER_MIGRATION.md).
 
 Removed APIs return JSON 404 responses rather than the application's HTML.
 There are no redirect aliases or alternate implementations for them.
@@ -31,7 +35,7 @@ work to make JSON snapshots consistent while inventory changes. Its tested
 relational restore engine is not dead code merely because the old ZIP writer was.
 SQL backups and project JSON backups also remain.
 
-Attachment migration still protects existing development files, and role checks
+Explicit attachment maintenance protects existing development files, and role checks
 still support the current role/subrole management UI and administrator recovery.
 Inventory locking, historical custody checks, precision handling, Windows/Linux
 support and core/custom update boundaries retain current responsibilities.

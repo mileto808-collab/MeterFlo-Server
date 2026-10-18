@@ -11,6 +11,7 @@ process.env.TZ = 'UTC';
 import express, { type Request, Response, NextFunction } from "express";
 import cookieParser from "cookie-parser";
 import { registerRoutes } from "./routes";
+import { assertAttachmentLayoutReady } from "./attachmentMigrationCatalog";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { importScheduler } from "./importScheduler";
@@ -112,6 +113,7 @@ app.use(requestLogging(log));
   await reconcileAuditOperations();
   
   await initializeInventory(pool);
+  await assertAttachmentLayoutReady();
   await registerRoutes(httpServer, app);
   await registerCustomerExtensions(app, {auth:isAuthenticated, storage});
 

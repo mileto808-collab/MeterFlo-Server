@@ -2,6 +2,8 @@ import * as fs from "fs/promises";
 import * as path from "path";
 import { storage } from "./storage";
 import { writeAuditedFile,deleteAuditedFile,auditFileIdentifier } from "./auditFiles";
+import { getProjectDirectoryName, workOrderFolderName, attachmentChild } from "./attachmentPaths";
+export { getProjectDirectoryName } from "./attachmentPaths";
 
 // Default project files root directory
 const DEFAULT_PROJECT_FILES_PATH = "Project Files";
@@ -22,22 +24,10 @@ export async function setProjectFilesPath(newPath: string): Promise<void> {
 }
 
 // Get the directory path for a project
-export function getProjectDirectoryName(projectName: string, projectId: number): string {
-  const sanitized = projectName
-    .replace(/[^a-zA-Z0-9]/g, "_")
-    .replace(/_+/g, "_")
-    .replace(/^_|_$/g, "");
-  return `${sanitized}_${projectId}`;
-}
-
 // Ensure the project files root directory exists
 export async function ensureProjectFilesRoot(): Promise<string> {
   const rootPath = await getProjectFilesPath();
-  try {
-    await fs.mkdir(rootPath, { recursive: true });
-  } catch (error) {
-    // Directory might already exist
-  }
+  await fs.mkdir(rootPath, { recursive: true });
   return rootPath;
 }
 
@@ -47,11 +37,7 @@ export async function ensureProjectDirectory(projectName: string, projectId: num
   const projectDir = getProjectDirectoryName(projectName, projectId);
   const fullPath = path.join(rootPath, projectDir);
   
-  try {
-    await fs.mkdir(fullPath, { recursive: true });
-  } catch (error) {
-    // Directory might already exist
-  }
+  await fs.mkdir(fullPath, { recursive: true });
   
   return fullPath;
 }
@@ -97,146 +83,21 @@ export async function ensureWorkOrdersParentDirectory(projectName: string, proje
   const projectPath = await ensureProjectDirectory(projectName, projectId);
   const workOrdersDir = path.join(projectPath, "Work Orders");
   
-  try {
-    await fs.mkdir(workOrdersDir, { recursive: true });
-  } catch (error) {
-    // Directory might already exist
-  }
+  await fs.mkdir(workOrdersDir, { recursive: true });
   
   return workOrdersDir;
 }
 
-// Helper function to migrate files from legacy folder to new folder
-async function migrateWorkOrderFiles(legacyDir: string, newDir: string): Promise<void> {
-  try {
-    // Ensure destination exists
-    await fs.mkdir(newDir, { recursive: true });
-    
-    const legacyItems = await fs.readdir(legacyDir);
-    for (const item of legacyItems) {
-      const sourcePath = path.join(legacyDir, item);
-      const destPath = path.join(newDir, item);
-      
-      // Check if item is a directory
-      const stats = await fs.stat(sourcePath);
-      
-      if (stats.isDirectory()) {
-        // Recursively migrate subdirectories
-        await migrateWorkOrderFiles(sourcePath, destPath);
-      } else {
-        // Check if destination file already exists
-        let destExists = false;
-        try {
-          await fs.access(destPath);
-          destExists = true;
-        } catch {
-          // Destination doesn't exist
-        }
-        
-        if (destExists) {
-          // File exists in new folder - delete the legacy copy (keep the new one)
-          try {
-            await fs.unlink(sourcePath);
-          } catch (unlinkError) {
-            console.error(`Failed to remove duplicate legacy file ${item}:`, unlinkError);
-          }
-        } else {
-          // File doesn't exist in new folder, move it
-          try {
-            await fs.rename(sourcePath, destPath);
-          } catch (moveError) {
-            console.error(`Failed to migrate file ${item} from legacy work order folder:`, moveError);
-          }
-        }
-      }
-    }
-    
-    // Try to remove legacy folder if empty
-    try {
-      const remainingItems = await fs.readdir(legacyDir);
-      if (remainingItems.length === 0) {
-        await fs.rmdir(legacyDir);
-        console.log(`Removed empty legacy work order folder: ${legacyDir}`);
-      }
-    } catch {
-      // Folder may not be empty or removal failed - leave it
-    }
-  } catch (error) {
-    console.error(`Failed to migrate legacy work order folder: ${legacyDir}`, error);
-  }
-}
-
 // Ensure a work order directory exists within a project
 // Uses customerWoId (the customer's work order identifier) for the folder name
-// If legacyWorkOrderId is provided, checks for legacy folder first for backward compatibility
-// Work order folders are now stored under "Work Orders/" parent folder
-// Legacy folders at project root are automatically migrated to the new location
 export async function ensureWorkOrderDirectory(
   projectName: string,
   projectId: number,
-  customerWoId: string,
-  legacyWorkOrderId?: number
+  customerWoId: string
 ): Promise<string> {
-  const projectPath = await ensureProjectDirectory(projectName, projectId);
   const workOrdersParent = await ensureWorkOrdersParentDirectory(projectName, projectId);
-  
-  // Sanitize customerWoId for use as folder name
-  const sanitizedWoId = customerWoId.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const newWorkOrderDir = path.join(workOrdersParent, sanitizedWoId);
-  
-  // Check for legacy folders at project root and migrate if needed
-  // Legacy location 1: project root with numeric ID (oldest format)
-  if (legacyWorkOrderId !== undefined) {
-    const legacyNumericDir = path.join(projectPath, String(legacyWorkOrderId));
-    const migratedNumericDir = path.join(workOrdersParent, String(legacyWorkOrderId));
-    
-    let legacyNumericExists = false;
-    try {
-      await fs.access(legacyNumericDir);
-      legacyNumericExists = true;
-    } catch {
-      // Legacy doesn't exist
-    }
-    
-    if (legacyNumericExists) {
-      // Legacy numeric folder exists - migrate files and use the migrated location
-      await migrateWorkOrderFiles(legacyNumericDir, migratedNumericDir);
-      return migratedNumericDir;
-    }
-    
-    // Check if already migrated with numeric ID
-    try {
-      await fs.access(migratedNumericDir);
-      return migratedNumericDir;
-    } catch {
-      // Not in migrated location either, continue
-    }
-  }
-  
-  // Legacy location 2: project root with customerWoId (previous format)
-  const legacyWoIdDir = path.join(projectPath, sanitizedWoId);
-  
-  let legacyWoIdExists = false;
-  try {
-    await fs.access(legacyWoIdDir);
-    legacyWoIdExists = true;
-  } catch {
-    // Legacy doesn't exist
-  }
-  
-  if (legacyWoIdExists) {
-    // Legacy customerWoId folder exists - migrate files
-    await migrateWorkOrderFiles(legacyWoIdDir, newWorkOrderDir);
-    return newWorkOrderDir;
-  }
-  
-  // Create new work order directory in the Work Orders parent folder
-  try {
-    await fs.mkdir(newWorkOrderDir, { recursive: true });
-  } catch (error) {
-    // Directory might already exist
-  }
-  
+  const newWorkOrderDir = path.join(workOrdersParent, workOrderFolderName(customerWoId));
+  await fs.mkdir(newWorkOrderDir, { recursive: true });
   return newWorkOrderDir;
 }
 
@@ -247,14 +108,14 @@ export async function saveWorkOrderFile(
   customerWoId: string,
   filename: string,
   buffer: Buffer,
-  legacyWorkOrderId?: number
+  workOrderId?: number
 ): Promise<string> {
-  const workOrderDir = await ensureWorkOrderDirectory(projectName, projectId, customerWoId, legacyWorkOrderId);
+  const workOrderDir = await ensureWorkOrderDirectory(projectName, projectId, customerWoId);
   const sanitizedFilename = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
   const filePath = path.join(workOrderDir, sanitizedFilename);
   
   await writeAuditedFile(filePath,buffer,"workOrderFileUpload",projectId,projectName,
-    `${legacyWorkOrderId ?? customerWoId}:${auditFileIdentifier(sanitizedFilename)}`);
+    `${workOrderId ?? customerWoId}:${auditFileIdentifier(sanitizedFilename)}`);
   
   return filePath;
 }
@@ -264,9 +125,9 @@ export async function getWorkOrderFiles(
   projectName: string,
   projectId: number,
   customerWoId: string,
-  legacyWorkOrderId?: number
+  workOrderId?: number
 ): Promise<string[]> {
-  const workOrderDir = await ensureWorkOrderDirectory(projectName, projectId, customerWoId, legacyWorkOrderId);
+  const workOrderDir = await ensureWorkOrderDirectory(projectName, projectId, customerWoId);
   
   try {
     const files = await fs.readdir(workOrderDir);
@@ -286,7 +147,7 @@ export async function stageWorkOrderResetFiles(
   workOrderId: number,
   deleteAttachments: boolean,
 ) {
-  const directory = await ensureWorkOrderDirectory(projectName, projectId, customerWoId, workOrderId);
+  const directory = await ensureWorkOrderDirectory(projectName, projectId, customerWoId);
   const files = await fs.readdir(directory, { withFileTypes: true });
   const signatureNames = new Set([
     `${customerWoId}-signature.png`.replace(/[^a-zA-Z0-9._-]/g, "_"),
@@ -323,13 +184,13 @@ export async function deleteWorkOrderFile(
   projectId: number,
   customerWoId: string,
   filename: string,
-  legacyWorkOrderId?: number
+  workOrderId?: number
 ): Promise<boolean> {
-  const workOrderDir = await ensureWorkOrderDirectory(projectName, projectId, customerWoId, legacyWorkOrderId);
-  const filePath = path.join(workOrderDir, filename);
+  const workOrderDir = await ensureWorkOrderDirectory(projectName, projectId, customerWoId);
+  const filePath = attachmentChild(workOrderDir, filename);
   
   return deleteAuditedFile(filePath,"workOrderFileDelete",projectId,projectName,
-    `${legacyWorkOrderId ?? customerWoId}:${auditFileIdentifier(filename)}`);
+    `${workOrderId ?? customerWoId}:${auditFileIdentifier(filename)}`);
 }
 
 // Delete entire work order directory (all files and subdirectories)
@@ -337,41 +198,12 @@ export async function deleteWorkOrderDirectory(
   projectName: string,
   projectId: number,
   customerWoId: string,
-  legacyWorkOrderId?: number
+  workOrderId?: number
 ): Promise<boolean> {
   const workOrdersParent = await ensureWorkOrdersParentDirectory(projectName, projectId);
-  const projectPath = await ensureProjectDirectory(projectName, projectId);
-  const sanitizedWoId = customerWoId.replace(/[^a-zA-Z0-9._-]/g, "_");
-  
-  // Check if customerWoId is actually the numeric ID (fallback case when no real customerWoId exists)
-  const isNumericFallback = legacyWorkOrderId !== undefined && sanitizedWoId === String(legacyWorkOrderId);
-  
   try {
-    // Delete the primary work order directory
-    const workOrderDir = path.join(workOrdersParent, sanitizedWoId);
+    const workOrderDir = path.join(workOrdersParent, workOrderFolderName(customerWoId));
     await fs.rm(workOrderDir, { recursive: true, force: true });
-    
-    // Only check legacy locations if customerWoId is a real value (not the numeric fallback)
-    if (!isNumericFallback && legacyWorkOrderId !== undefined) {
-      // Legacy location 1: numeric ID folder at project root
-      const legacyNumericDir = path.join(projectPath, String(legacyWorkOrderId));
-      try {
-        await fs.rm(legacyNumericDir, { recursive: true, force: true });
-      } catch { /* Legacy dir may not exist */ }
-      
-      // Legacy location 2: migrated numeric ID folder in Work Orders
-      const migratedNumericDir = path.join(workOrdersParent, String(legacyWorkOrderId));
-      try {
-        await fs.rm(migratedNumericDir, { recursive: true, force: true });
-      } catch { /* Migrated dir may not exist */ }
-    }
-    
-    // Check for legacy customerWoId folder at project root (oldest format)
-    const legacyWoIdDir = path.join(projectPath, sanitizedWoId);
-    try {
-      await fs.rm(legacyWoIdDir, { recursive: true, force: true });
-    } catch { /* Legacy dir may not exist */ }
-    
     return true;
   } catch (error) {
     console.error("Error deleting work order directory:", error);
@@ -399,10 +231,10 @@ export async function getFilePath(
   projectId: number,
   customerWoId: string,
   filename: string,
-  legacyWorkOrderId?: number
+  workOrderId?: number
 ): Promise<string | null> {
-  const workOrderDir = await ensureWorkOrderDirectory(projectName, projectId, customerWoId, legacyWorkOrderId);
-  const filePath = path.join(workOrderDir, filename);
+  const workOrderDir = await ensureWorkOrderDirectory(projectName, projectId, customerWoId);
+  const filePath = attachmentChild(workOrderDir, filename);
   
   try {
     await fs.access(filePath);
@@ -545,64 +377,10 @@ export async function saveProjectFtpFile(
 // === PROJECT-LEVEL FILE FUNCTIONS ===
 
 // Ensure project documents folder exists (separate from work order folders)
-// Migrates legacy "_project_documents" folder to "Project Documents" if needed
 export async function ensureProjectDocumentsDirectory(projectName: string, projectId: number): Promise<string> {
   const projectPath = await ensureProjectDirectory(projectName, projectId);
-  const legacyDocsDir = path.join(projectPath, "_project_documents");
   const newDocsDir = path.join(projectPath, "Project Documents");
-  
-  // Check if legacy folder exists
-  let legacyExists = false;
-  try {
-    await fs.access(legacyDocsDir);
-    legacyExists = true;
-  } catch {
-    // Legacy folder doesn't exist
-  }
-  
-  // Ensure new folder exists
-  try {
-    await fs.mkdir(newDocsDir, { recursive: true });
-  } catch (error) {
-    // Directory might already exist
-  }
-  
-  // If legacy folder exists, migrate files from it to new folder
-  if (legacyExists) {
-    try {
-      const legacyFiles = await fs.readdir(legacyDocsDir);
-      for (const file of legacyFiles) {
-        const sourcePath = path.join(legacyDocsDir, file);
-        const destPath = path.join(newDocsDir, file);
-        
-        // Check if destination file already exists
-        try {
-          await fs.access(destPath);
-          // File exists in new folder, skip to avoid overwriting
-        } catch {
-          // File doesn't exist in new folder, move it
-          try {
-            await fs.rename(sourcePath, destPath);
-          } catch (moveError) {
-            console.error(`Failed to migrate file ${file} from legacy project documents:`, moveError);
-          }
-        }
-      }
-      
-      // Try to remove legacy folder if empty
-      try {
-        const remainingFiles = await fs.readdir(legacyDocsDir);
-        if (remainingFiles.length === 0) {
-          await fs.rmdir(legacyDocsDir);
-        }
-      } catch {
-        // Folder may not be empty or removal failed - leave it
-      }
-    } catch (error) {
-      console.error("Failed to migrate legacy project documents:", error);
-    }
-  }
-  
+  await fs.mkdir(newDocsDir, { recursive: true });
   return newDocsDir;
 }
 

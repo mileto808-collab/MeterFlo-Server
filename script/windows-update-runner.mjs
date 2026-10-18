@@ -9,6 +9,8 @@ export const requiredUpdateFiles = [
   "script/migrate-inventory-relational.ts", "server/inventoryRelationalModel.ts",
   "server/inventoryRelationalSchema.ts", "server/inventoryRelationalCodec.ts",
   "migrations/inventory-category-ids.sql", ".gitattributes", "package-lock.json",
+  "script/migrate-attachment-folders.ts", "server/attachmentMigration.ts",
+  "server/attachmentMigrationCatalog.ts", "server/attachmentPaths.ts",
 ];
 
 export async function completeWindowsUpdate(root, { run = execute, log = console.log } = {}) {
@@ -27,6 +29,8 @@ export async function completeWindowsUpdate(root, { run = execute, log = console
     run("npm", ["run", "build"], root);
     // Invoke the installed executable, never npx's download-on-missing behavior.
     run(process.execPath, ["--import", "tsx", "script/migrate-inventory-relational.ts", "--standalone"], root);
+    // Read-only gate. Older folders require explicit, reviewed offline maintenance.
+    run(process.execPath, ["--import", "tsx", "script/migrate-attachment-folders.ts", "--check"], root);
     run("pm2", ["restart", "meterflo"], root);
     run(process.execPath, ["script/windows-update-health.mjs"], root);
     const processes = verifyPm2(root, run);

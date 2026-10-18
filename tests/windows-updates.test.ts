@@ -136,15 +136,18 @@ test("update order includes build dependencies, physical schema, exact-build hea
     assert.ok(index("npm run test:windows-updates") < index("npm run build"));
     assert.ok(index("npm run build") < index("migrate-inventory-relational.ts --standalone"));
     assert.ok(index("migrate-inventory-relational.ts") < index("pm2 restart"));
+    assert.ok(index("migrate-inventory-relational.ts") < index("migrate-attachment-folders.ts --check"));
+    assert.ok(index("migrate-attachment-folders.ts --check") < index("pm2 restart"));
     assert.ok(index("pm2 restart") < index("windows-update-health.mjs"));
     assert.ok(index("windows-update-health.mjs") < index("pm2 save"));
     assert.ok(!f.calls.some(call => /\bnpx\b|audit fix|reset --hard|db:push|--update-env/.test(call)));
+    assert.ok(!f.calls.some(call => /migrate-attachment-folders.*--(?:apply|resume)/.test(call)));
     assert.equal(fs.readFileSync(path.join(f.root, ".env"), "utf8"), "protected fixture");
   } finally { f.cleanup(); }
 });
 
 for (const failure of ["npm ci", "npm run check", "npm run test:windows-updates", "npm run build",
-  "migrate-inventory-relational.ts", "pm2 restart", "windows-update-health.mjs"]) {
+  "migrate-inventory-relational.ts", "migrate-attachment-folders.ts", "pm2 restart", "windows-update-health.mjs"]) {
   test(`failure at ${failure} stops maintenance without saving an unhealthy process`, async () => {
     const f = fixture(failure);
     try {

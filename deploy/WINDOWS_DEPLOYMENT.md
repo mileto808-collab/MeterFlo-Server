@@ -1081,6 +1081,24 @@ netsh advfirewall firewall add rule name="HTTPS" dir=in action=allow protocol=TC
 
 ## 10. Updating the Application
 
+### One-time attachment folder maintenance
+
+Updates now check attachment layout before restarting. If maintenance is required,
+leave MeterFlo stopped and follow [Attachment folder migration](../docs/ATTACHMENT_FOLDER_MIGRATION.md).
+The exact sequence from this checkout is:
+
+```bat
+npx --no-install tsx script/migrate-attachment-folders.ts --dry-run
+npx --no-install tsx script/migrate-attachment-folders.ts --apply --offline
+npx --no-install tsx script/migrate-attachment-folders.ts --check
+deploy\Update-MeterFlo.cmd
+```
+
+Resolve every reported ownership/collision issue first. Stop all service/worker
+processes before `--apply --offline`; the flag confirms this, it does not stop them.
+After an interrupted run, use `--resume --offline`, not a fresh apply or deletion
+of the journal. Current uploads/downloads no longer relocate old folders.
+
 ### Deployment configuration migration
 
 **Plan a short outage and secure backup first.** Earlier configurations may contain credentials, hard-coded cookie/port settings or cached recovery flags. A pull deleting a formerly tracked file can remove a clean local copy; a modified copy can instead block the pull. Do not rely on Git preserving it, and do not force-reset before backup.

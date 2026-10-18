@@ -3,6 +3,7 @@
 *.apk
 *.part
 Project Files/
+**/.meterflo-attachment-migration/
 Mobile APK Releases/
 meterflo.activation.json
 meterflo.activation.json.*.pending

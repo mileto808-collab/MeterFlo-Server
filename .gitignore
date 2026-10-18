@@ -11,6 +11,7 @@ Project Files/
 .env.*
 !.env.example
 /generated-artifacts/
+**/.meterflo-attachment-migration/
 logs/
 meterflo.instance.json
 customer-packages/

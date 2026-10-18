@@ -4,6 +4,7 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
+    "test:attachments": "node --import tsx --test tests/attachment-migration.test.ts",
     "dev": "NODE_ENV=development tsx server/index.ts",
     "build": "tsx script/build.ts",
     "test:windows-updates": "tsx --test tests/windows-updates.test.ts tests/windows-update-guidance.test.ts",

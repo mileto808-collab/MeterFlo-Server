@@ -14,3 +14,17 @@ mtime_ms = 1792355696744
 storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:a55e897c-d53b-44bb-b370-bfc7f4d8c734/b65fbbd7-b8a5-4ed5-a9c7-8d5c6e060baa/5ee54d3a-0dee-4a05-b70f-a6471bb41e57"
 storage_version_token = "1792356562339086"
 content_type = "text/markdown"
+
+[[outputs]]
+id = "uo_dyYLWAN1Xu_iiNOT3H"
+uri = "file://docs/ATTACHMENT_FOLDER_MIGRATION.md"
+type = "text"
+title = "Attachment folder migration guide"
+description = "Exact Windows/Linux maintenance commands, collision review, safe resume, stale-lock recovery and verification limits."
+logical_id = "9596c99f-10c7-4630-950f-b18d5447e257"
+content_hash = "sha256:9bc23add3b8a62b9dc852a56539dcbc5199ce663b91a4662f23540ab541741dc"
+size = 6301
+mtime_ms = 1792358901195
+storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:a55e897c-d53b-44bb-b370-bfc7f4d8c734/9596c99f-10c7-4630-950f-b18d5447e257/fe8d4ce1-56e5-4e16-80eb-7828598dd722"
+storage_version_token = "1792359315443144"
+content_type = "text/markdown"

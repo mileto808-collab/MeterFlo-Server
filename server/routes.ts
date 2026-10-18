@@ -3715,7 +3715,7 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Work order not found" });
       }
       
-      // Use customerWoId if available, otherwise fall back to legacy numeric ID
+      // An order without a customer reference uses its own numeric identifier.
       const folderName = workOrder.customerWoId || String(workOrder.id);
       
       const filePath = await saveWorkOrderFile(
@@ -3724,7 +3724,7 @@ export async function registerRoutes(
         folderName,
         req.file.originalname,
         req.file.buffer,
-        workOrder.id // Legacy ID for backward compatibility
+        workOrder.id // Audit identity, not an alternate filesystem path.
       );
       
       res.status(201).json({ message: "File uploaded", path: filePath });
@@ -3768,7 +3768,7 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Work order not found" });
       }
       
-      // Use customerWoId if available, otherwise fall back to legacy numeric ID
+      // An order without a customer reference uses its own numeric identifier.
       const folderName = workOrder.customerWoId || String(workOrder.id);
       
       const files = await getWorkOrderFiles(project.name, project.id, folderName, workOrder.id);
@@ -3800,7 +3800,7 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Work order not found" });
       }
       
-      // Use customerWoId if available, otherwise fall back to legacy numeric ID
+      // An order without a customer reference uses its own numeric identifier.
       const folderName = workOrder.customerWoId || String(workOrder.id);
       
       await deleteWorkOrderFile(
@@ -3808,7 +3808,7 @@ export async function registerRoutes(
         project.id,
         folderName,
         req.params.filename,
-        workOrder.id // Legacy ID for backward compatibility
+        workOrder.id // Audit identity, not an alternate filesystem path.
       );
       
       res.status(204).send();

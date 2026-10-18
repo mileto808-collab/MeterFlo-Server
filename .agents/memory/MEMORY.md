@@ -47,3 +47,4 @@
 - [Administrative Settings navigation](settings-admin-navigation.md) — maintenance belongs in System and audit history in Security, not separate sidebar entries; retain delegated access.
 - [Project trouble codes](project-trouble-code-policy.md) — core choices always available, flat project-only custom codes, and permanent identities for rename-safe business rules.
 - [Pre-distribution compatibility](pre-distribution-compatibility.md) — no distributed users yet; prefer clean migrations over speculative permanent legacy layers.
+- [Attachment ownership](attachment-ownership-boundary.md) — a matching numeric project suffix cannot prove ownership of an old directory.
