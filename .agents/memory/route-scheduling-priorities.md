@@ -11,6 +11,13 @@ Field technicians see every work order assigned directly to them OR to a group t
 
 **Why:** The user explicitly clarified that technician visibility must include group assignments and all statuses, while rejecting combined manager routes across different technicians.
 
+The work-order grid must start without automatically applied status filters,
+including for field technicians. Scheduled-only filtering belongs to route
+candidate selection, not the default work-order list.
+
+**Why:** The user reported that the automatic Scheduled filter still hid their
+other assigned work even after server-side visibility was corrected.
+
 **How to apply:** Allow optimization when any Scheduled orders exist in the filtered grid, ignoring other statuses. A shared warehouse origin applies independently to each technician. Printing one or all routes must keep each technician's stops separate and start each route on a new printed page.
 
 Warehouse starting-point choices must include only fixed warehouses with a

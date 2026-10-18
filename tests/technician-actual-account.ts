@@ -44,6 +44,16 @@ try {
   await page.goto(`/projects/${chosen.id}/work-orders`);
   const showTools = page.getByRole("button", { name: "Show Search & Tools", exact: true });
   if (await showTools.isVisible()) await showTools.click();
+  await expect(page.locator('[data-testid^="row-work-order-"]').first()).toBeVisible();
+  await expect(page.getByTestId("button-clear-filters")).toHaveCount(0);
+  const defaultOrders = await (await context.request.get(`/api/projects/${chosen.id}/work-orders`)).json();
+  const nonScheduled = defaultOrders.find((order: any) => order.status !== "Scheduled");
+  if (nonScheduled) await expect(page.getByTestId(`row-work-order-${nonScheduled.id}`)).toBeVisible();
+  await page.reload();
+  const reopenedTools = page.getByRole("button", { name: "Show Search & Tools", exact: true });
+  if (await reopenedTools.isVisible()) await reopenedTools.click();
+  await expect(page.locator('[data-testid^="row-work-order-"]').first()).toBeVisible();
+  await expect(page.getByTestId("button-clear-filters")).toHaveCount(0);
   await expect(page.getByTestId("optimize-work-order-route")).toBeVisible();
   await page.getByTestId("optimize-work-order-route").click();
   await expect(page.getByTestId("route-setup-dialog")).toBeVisible();

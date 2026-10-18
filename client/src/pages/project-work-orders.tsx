@@ -673,28 +673,6 @@ export default function ProjectWorkOrders() {
     return () => window.removeEventListener("meterflo:navigate", navigate);
   }, [projectId]);
 
-  // Set default status filters for field technicians
-  // Field technicians default to showing Open, Scheduled, and Trouble statuses
-  // Track which project we last applied defaults for to reapply on project change
-  const lastAppliedProjectIdRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (!user?.subroleKey || workOrderStatuses.length === 0 || !projectId) {
-      return;
-    }
-    
-    // Only apply defaults once per project
-    if (lastAppliedProjectIdRef.current === projectId) {
-      return;
-    }
-    
-    if (user.subroleKey === "field_technician") {
-      const scheduledStatus = workOrderStatuses.find(s => s.code === "Scheduled");
-      if (scheduledStatus) setSelectedStatuses([scheduledStatus.code]);
-    }
-    
-    lastAppliedProjectIdRef.current = projectId;
-  }, [user?.subroleKey, workOrderStatuses, projectId]);
-
   // Handle ?edit=workOrderId&from=search query parameters OR history.state to auto-open a work order
   // This handles both deep links from search results AND browser back from Manage Attachments page
   useEffect(() => {
