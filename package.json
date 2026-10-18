@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "NODE_ENV=development tsx server/index.ts",
     "build": "tsx script/build.ts",
+    "test:windows-updates": "tsx --test tests/windows-updates.test.ts",
     "start": "NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
     "stage:customer-release": "tsx script/customer-release-cli.ts stage",

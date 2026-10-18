@@ -1,3 +1,4 @@
 # Released core migration checksums cover exact LF bytes, including on Windows.
 # Customer packages own their own attributes; do not normalize the whole worktree.
 /migrations/**/*.sql text eol=lf
+/deploy/*.cmd text eol=crlf

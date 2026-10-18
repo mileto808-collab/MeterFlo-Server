@@ -1,8 +1,10 @@
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
-import { rm, readFile, mkdir, writeFile } from "fs/promises";
+import { readFile, mkdir, writeFile } from "fs/promises";
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
+import { prepareBuildOutput } from "./build-output";
 import { loadCustomerRelease, ownedPath } from "../shared/customer-release";
 import { permissionKeys } from "../shared/schema";
 
@@ -46,16 +48,17 @@ async function buildAll() {
     throw new Error("Declared database schema is incompatible with this composed release");
   if(customerRelease.extensions.some(x=>!(Object.values(permissionKeys) as string[]).includes(x.permission)))
     throw new Error("Customer extension permission is not available through normal MeterFlo role management");
-  await rm("dist", { recursive: true, force: true });
-  await mkdir("dist/extensions", {recursive:true});
-  await writeFile("dist/customer-release.json",JSON.stringify(customerRelease,null,2));
+  const buildId = randomUUID();
+  await prepareBuildOutput(process.cwd(), async output => {
+  await mkdir(path.join(output,"extensions"), {recursive:true});
+  await writeFile(path.join(output,"customer-release.json"),JSON.stringify({...customerRelease,buildId},null,2));
   for (const extension of customerRelease.extensions) {
     await esbuild({entryPoints:[ownedPath(ownedPath(process.cwd(),extension.directory),extension.serverEntry)],
-      platform:"node",bundle:true,format:"cjs",outfile:path.join("dist/extensions",`${extension.id}.cjs`)});
+      platform:"node",bundle:true,format:"cjs",outfile:path.join(output,"extensions",`${extension.id}.cjs`)});
   }
 
   console.log("building client...");
-  await viteBuild();
+  await viteBuild({build:{outDir:path.join(output,"public")}});
 
   console.log("building server...");
   const pkg = JSON.parse(await readFile("package.json", "utf-8"));
@@ -70,13 +73,15 @@ async function buildAll() {
     platform: "node",
     bundle: true,
     format: "cjs",
-    outfile: "dist/index.cjs",
+    outfile: path.join(output,"index.cjs"),
     define: {
       "process.env.NODE_ENV": '"production"',
+      "__METERFLO_BUILD_ID__": JSON.stringify(buildId),
     },
     minify: true,
     external: externals,
     logLevel: "info",
+  });
   });
 }
 

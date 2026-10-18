@@ -1186,6 +1186,69 @@ git remote set-url origin https://github.com/your-username/meterflo-server.git
 
 ### 10.2 Pull Latest Changes
 
+**Recommended routine update (standard Git-based installations without customer
+extensions):** once you have pulled the release containing the updater, use the
+tracked command below rather than assembling npm/build/migration commands by hand.
+Run it as the Windows account that owns the existing PM2 service.
+
+```cmd
+cd /d C:\xampp\htdocs\meterflo
+deploy\Update-MeterFlo.cmd --check
+deploy\Update-MeterFlo.cmd
+```
+
+The preflight checks the current installation without pulling/installing or
+restarting. The normal command pulls `origin/main` with `--ff-only`, checks that
+the required scripts and migration files are tracked, and refuses tracked local
+edits, overlapping updates, incorrect PM2 working directories/entry points and
+instances using staged customer releases/extensions. Private `.env`, instance
+configuration, uploads and database contents are not reset or replaced.
+Untracked local backups/scripts are left alone; Git refuses a pull that would
+overwrite an untracked file. Never commit private backups just to pass preflight.
+
+Schedule downtime and use your normal database/protected-files backup procedure
+for customer/live installations. The updater stops PM2 before recreating
+`node_modules`, explicitly includes development **and optional** dependencies,
+runs type and updater regression checks, builds, applies the idempotent inventory
+maintenance script, restarts, and checks the **exact compiled build identity**
+twice over the configured loopback port before saving PM2.
+
+No `npx` downloads, `npm audit fix`, generic `db:push`, Git resets, automatic
+checksum approvals or database rollbacks are performed. A failure after the
+maintenance window starts leaves MeterFlo stopped with an error, not a false
+success. Fix the reported issue and rerun the updater; do not blindly restart.
+Check the normal Apache URL and sign in after success. Network, PostgreSQL,
+permissions and reviewed schema conflicts can still require operator attention.
+
+The bootstrap uses only Node built-ins, so it works even when `tsx`/`esbuild`
+are missing. It loads the newly pulled maintenance implementation after pulling.
+Build compilation happens outside `dist`; compiler failure retains the installed
+build. A successful replacement retains the previous compiled directory under
+`generated-artifacts/build-*/previous-dist`. These are **compiled-code backups,
+not complete dependency/database backups**, and are not automatically activated.
+Keep a sensible retention policy for that generated directory.
+
+If an interrupted updater leaves `generated-artifacts\windows-update.lock`,
+confirm no updater is still running before deleting that specific lock. Never
+delete another process's live lock.
+
+For the first installation of this command only:
+```cmd
+cd /d C:\xampp\htdocs\meterflo
+git pull --ff-only origin main && deploy\Update-MeterFlo.cmd
+```
+
+Files must be committed **and pushed to the Git remote Windows pulls from**.
+A local checkpoint or file existing in a workspace alone does not distribute it.
+After pulling, verify distribution with:
+```cmd
+git ls-files --error-unmatch deploy/Update-MeterFlo.cmd script/windows-update.mjs script/windows-update-runner.mjs script/windows-update-tools.mjs script/windows-update-health.mjs script/build-output.ts script/migrate-inventory-relational.ts
+```
+
+The remaining subsections document individual maintenance and recovery steps.
+Customized customer packages and staged activations must instead follow
+`CUSTOMER_CORE_UPDATES.md`; this in-place updater intentionally refuses them.
+
 ```cmd
 cd /d C:\xampp\htdocs\meterflo
 git status --short
@@ -1226,8 +1289,9 @@ npm run check
 npm run build
 ```
 
-Continue only after both succeed. The build's portability guard runs before it
-removes old output, but other build failures can leave incomplete `dist` output.
+Continue only after both succeed. Compilation is prepared separately and promoted
+only when the server, client and release metadata are complete. Failed compilation
+does not remove the installed `dist` directory.
 
 ### 10.4a Migration checksum failures on Windows
 
@@ -1306,8 +1370,9 @@ For the original Command Prompt chain
 a checksum failure stops execution before the restart. Release/checksum
 validation occurs before deleting old `dist` output, so this particular failure
 preserves the previous build. That does **not** guarantee the entire installation
-is unchanged: `npm install` may already have changed dependencies, and failures
-later in compilation can leave incomplete output. Prefer this guide's backed-up
+is unchanged: dependency installation may already have changed runtime packages.
+Compilation failures now preserve installed output, but that alone is not a
+complete dependency/database rollback. Prefer this guide's backed-up
 maintenance procedure over updating dependencies on an actively serving process.
 Do not restart unnecessarily merely to run the read-only checksum check.
 
@@ -1318,13 +1383,19 @@ native Windows/NTFS or live PM2 acceptance.
 
 ### 10.5 Apply Database Schema Changes (when required)
 
-If the release notes call out a schema change (new tables, new columns, dropped columns), run:
+For routine inventory updates, run the reviewed, repeatable inventory maintenance
+entry point while MeterFlo is stopped:
 
 ```cmd
-npm run db:push
+npm run migrate:inventory-relational -- --standalone
 ```
 
-against the production database before restarting PM2. If a release does not mention schema changes, you can skip this step. Always take a database backup first when running schema changes against production data — see "System Backup/Restore" in the System Admin Guide.
+This includes category setup and relational inventory upgrades, including new
+pricing/labor fields. It preserves existing inventory identities and history.
+The normal updater runs it automatically. For other schema changes, follow the
+release-specific reviewed migration procedure. Do not substitute generic
+`db:push`, reset production data, or fabricate migration approvals. Always take
+a database backup first for customer/live databases.
 
 ### 10.6 Restart the Application
 
@@ -1343,15 +1414,14 @@ or of a successful build. Review logs privately; redact credentials before shari
 ### 10.7 Quick Update Command (All-in-One)
 
 ```cmd
-cd /d C:\xampp\htdocs\meterflo && git pull --ff-only origin main && node script/check-dependency-portability.mjs --files && pm2 stop meterflo && npm ci --include=dev --registry=https://registry.npmjs.org && npm run check && npm run build && pm2 restart meterflo
+cd /d C:\xampp\htdocs\meterflo && deploy\Update-MeterFlo.cmd
 ```
 
-> Add `&& npm run db:push` before `&& pm2 restart meterflo` only when the release notes call for a schema change.
-
-Use this only after the manual preflight/backups above. With `&&`, a failing step
-skips everything after it, including the restart; PM2 can remain stopped. Prefer
-the individual commands while troubleshooting, and perform the health checks in
-Section 10.6 afterward. This command does not implement automatic rollback.
+Use this after the preflight/backups above. On the first update that introduces
+the script, pull it first as shown in Section 10.2. Failures stop the sequence;
+PM2 can remain stopped. The updater verifies direct application health; also
+check your normal Apache URL and sign-in flow. It does not roll back databases
+or guarantee that an older compiled build works with newly installed dependencies.
 
 #### Dependency failure: internal download hostname / Exit handler never called
 
@@ -1775,19 +1845,12 @@ Automated verification uses isolated Linux processes, temporary Git repositories
 ```cmd
 REM Example: subfolder checkout. Use your actual install root.
 cd /d C:\xampp\htdocs\meterflo
-git pull --ff-only origin main
-node script/check-dependency-portability.mjs --files
-pm2 stop meterflo
-npm ci --include=dev --registry=https://registry.npmjs.org
-npm run check
-npm run build
-REM npm run db:push        (only if release notes mention a schema change)
-pm2 restart meterflo
-pm2 logs meterflo --lines 50 --nostream
+deploy\Update-MeterFlo.cmd --check
+deploy\Update-MeterFlo.cmd
 ```
 
-Run these separately, stopping on each failure. See Section 10 for preflight,
-backups, recovery and health checks; do not restart a partially installed/built release.
+Stop if preflight fails. See Section 10 for initial bootstrap, backups, recovery
+and health checks; do not restart a partially installed/built release.
 
 ### Daily Operations
 ```cmd

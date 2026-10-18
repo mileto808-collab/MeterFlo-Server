@@ -6,6 +6,8 @@ import { pathToFileURL } from "node:url";
 import { loadCustomerRelease, publicRelease, ownedPath, type CustomerRelease } from "../shared/customer-release";
 import { permissionKeys } from "../shared/schema";
 
+declare const __METERFLO_BUILD_ID__: string;
+
 export type ReportResult = { title: string; columns: string[]; rows: (string | number | boolean | null)[][] };
 export type ReportContext = { apiVersion: 1; actor: {id: string; username: string | null};
   getProjects(): Promise<{id:number;name:string;isActive:boolean|null}[]> };
@@ -78,6 +80,7 @@ export async function registerCustomerExtensions(app: Express, dependencies: Dep
   });
   // No customer data, configuration, secrets or report output in the readiness response.
   app.get("/api/system/release-health",(_req,res)=>res.json({
+    buildId: typeof __METERFLO_BUILD_ID__ === "undefined" ? null : __METERFLO_BUILD_ID__,
     ready:true,version:release.version,extensions:release.extensions.map(x=>({id:x.id,version:x.version,contentHash:x.contentHash})),
   }));
 }
