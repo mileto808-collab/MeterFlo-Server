@@ -1191,6 +1191,15 @@ extensions):** once you have pulled the release containing the updater, use the
 tracked command below rather than assembling npm/build/migration commands by hand.
 Run it as the Windows account that owns the existing PM2 service.
 
+**Direct code customizations also count as custom work.** The routine updater
+does not merge MeterFlo core with a customer's modified application. For a
+customized fork, first merge/test the selected core release into the customer's
+own repository in a development workspace, then deploy that approved combined
+revision. Its `origin/main` must be the intended deployment source; do not point
+a customized instance straight at core and discard local changes to make it
+update. See **Documentation → Customer Core Updates & Extensions** (the
+`CUSTOMER_CORE_UPDATES.md` guide), including the separate Replit-project process.
+
 ```cmd
 cd /d C:\xampp\htdocs\meterflo
 deploy\Update-MeterFlo.cmd --check

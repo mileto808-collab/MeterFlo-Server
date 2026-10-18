@@ -9,6 +9,22 @@ Customers will have their own MeterFlo web app instance, hosted on the customer'
 
 **How to apply:** evaluate updates against independently hosted, customized customer instances, not only the core hosted app. Trusted, permission-scoped reports are the initial extension contract; existing direct edits to core still require a reviewed manual reconciliation.
 
+The user defines "custom work" as development on any standalone MeterFlo
+instance, including direct file edits, another development tool, local
+Windows/Linux work, and separate Replit projects in either their own or a
+customer's account. Core comes from this Git repository; separate development
+and production Replit projects are part of the supported hosting model.
+
+**Why:** The user explicitly clarified that preserving only supported extension
+packages is narrower than their intended customization/update requirement.
+
+**How to apply:** Preserve the full customer source history, not just extension
+directories. Distinguish developer-reviewed merges for arbitrary direct edits
+from the narrower staged-extension automation. Explain and document the
+core-to-customer merge, customer revision deployment, and explicit Replit
+publication separately; never claim a routine pull automatically reconciles
+customer business rules.
+
 Standalone updates prepare a new candidate outside the running installation, then retain the protected working directory and data when switching compiled code. On customer-owned Replit, updating the workspace is not publication; the operator publishes explicitly. Migration checksum approval is an operator attestation, not proof that the database was changed.
 
 **Why:** replacing files in place could discard customer edits or strand relative storage paths; automatic database rollback could destroy newer records. A hosted published snapshot does not automatically change when its workspace changes.

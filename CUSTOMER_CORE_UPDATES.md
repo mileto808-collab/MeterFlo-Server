@@ -1,5 +1,191 @@
 # Customer-Owned MeterFlo Updates
 
+## What counts as custom work
+
+Custom work includes **any customer/instance-specific development**, not just
+extensions: direct changes to core source files, new files, custom database
+tables/columns, forms, workflows, integrations and reports. It counts regardless
+of whether the work was done with Replit Agent, another editor, a local
+Windows/Linux development tool, or by editing files directly. It also counts
+regardless of whether a Replit project belongs to MeterFlo's operator or to the
+customer.
+
+The requirement is to deliver core improvements **without silently removing
+that work**. No updater can guarantee that arbitrary changes to the same code
+or business rules will combine correctly without review. Preserving a file is
+not proof that the customized application's behavior still works.
+
+### Two supported paths, with different limits
+
+| Installation | How core changes are combined | How it is deployed |
+|---|---|---|
+| Standard, uncustomized checkout | Fast-forward its approved `origin/main` | Routine Windows updater, or the host's reviewed build/publish process |
+| Customer-specific direct code changes / existing fork | Developer-reviewed Git merge into the customer's source history; resolve and test conflicts | Deploy the tested combined customer revision, not a fresh core checkout |
+| Customizations entirely in supported extension packages | Numbered core candidate plus unchanged customer packages, compatibility checks and review | Staged standalone activation, or reconciliation/build and explicit Replit publication |
+
+**Current automation boundary:** staging handles the supported extension
+contract described below. It does not automatically merge direct modifications
+to core files, arbitrary custom forms/workflows, or custom database changes.
+Those remain a developer-managed merge and migration process. Committing a
+direct modification does not convert it into a supported extension or make the
+staged updater accept it. Do not edit baseline metadata to bypass this check.
+
+## Understand the update message in Settings
+
+The message **"Numbered release checks need configuration"** means that the
+staged-release checker lacks its approved `coreSource` and/or verified baseline.
+It is not a report that a Windows `origin/main` update failed, and it is not an
+instruction to overwrite local changes.
+
+- The routine Windows command pulls that installation's `origin/main`.
+- Numbered-release checks use the approved `coreSource` and release metadata in
+  the private instance manifest, independently of `origin`.
+- The **Legacy GitHub Releases API URL** field does not configure either the
+  Windows Git remote or the approved staged-update source.
+- A push to core `main` is not automatically a compatible numbered release.
+  The core maintainer must publish the version/tag/metadata described below.
+  Example versions in this guide are not evidence those releases exist.
+- A "tracked local changes" stop means Git sees different source/index bytes.
+  Tools can produce those differences too; it does not prove a person edited
+  a customization. Review before deciding whether to keep or restore anything.
+
+## Source ownership for customized installations
+
+Use this model for Windows/Linux and for separate Replit projects/accounts:
+
+1. **Core repository:** this MeterFlo Git repository is the upstream source of
+   shared core releases. Customer changes should not be pushed into core merely
+   to make that customer's update succeed.
+2. **Customer repository or independently maintained customer branch:** contains
+   the customer's combined application source, including direct modifications.
+   Prefer a separate customer repository for clear ownership/access boundaries.
+   Its `origin` normally points to that customer repository, not directly to
+   core. Keep an additional remote such as `meterflo-core` for fetching core.
+3. **Instance configuration and data:** each actual instance retains its own
+   secrets, database, storage, uploaded files, environment settings and protected
+   process configuration. A source-code merge is not a database/file restore.
+
+Git remotes are configured separately in every checkout/Replit workspace. A
+remote in this core project does not configure remotes in a customer project.
+Use authenticated Git access appropriate to the repository; never embed tokens
+in a documented remote URL or commit private configuration.
+
+### First adoption for an existing customized installation
+
+Before the first core merge, preserve the actual customized source in private
+source control and identify the real common core ancestor. Review tracked,
+staged, untracked and ignored files: an ignored customer package is not backed
+up by committing the core repository. Commit only reviewed source files, not
+credentials, uploads, database dumps or build outputs.
+
+If the customer copy has unrelated/missing Git history, do not use a hard reset,
+copy core files over it, or blindly merge with `--allow-unrelated-histories`.
+Compare it against the known original core snapshot and reconstruct a reviewed
+customer baseline in a separate workspace. Existing direct edits require this
+one-time adoption even if they were made by an agent rather than a programmer.
+
+### Repeatable core-to-customer merge
+
+Perform these steps in the customer's **development checkout**, not in a
+running production directory:
+
+1. Save/review the customer's current changes in its own history and start from
+   a clean working tree. Record the currently deployed customer revision.
+2. Fetch the approved core repository through the separate core remote. Select
+   a maintainer-approved release and verify its full commit identity. Do not
+   substitute a guessed tag or change the source-ownership baseline.
+3. Create an update-review branch from the customer's current source. Merge the
+   selected core commit **into the customer branch**, not the reverse.
+4. Resolve conflicts while retaining the intended customer behavior and core
+   safety fixes. Review the entire result: Git can merge without textual
+   conflicts while still introducing a business-rule or API incompatibility.
+5. Review dependency and lockfile changes together. Use a controlled dependency
+   update if reconciliation is required; do not discard the customer lockfile
+   just to get a clean status. Review core and customer database migrations
+   separately, including custom columns/tables and any irreversible changes.
+6. Run type/build checks, relevant core tests and customer-specific regression
+   tests against an isolated development database/storage. Review imports,
+   permissions, integrations and custom workflows, not just whether it starts.
+7. Commit the reconciled result to the customer repository, record both the
+   core commit and resulting customer commit, and approve that exact revision
+   for deployment. A clean Git status alone is not this approval.
+
+The following illustrates the Git operations. Replace the uppercase values
+with reviewed values before running; configure `meterflo-core` once, and reuse
+it on later updates. Use a fresh branch name for each review:
+
+```sh
+git remote add meterflo-core APPROVED_CORE_HTTPS_URL
+git fetch meterflo-core
+git switch -c customer-core-update-YYYYMMDD
+git merge --no-commit --no-ff VERIFIED_CORE_COMMIT
+```
+
+The merge intentionally stops for review. On conflicts, resolve and stage only
+reviewed source files; do not select "take all incoming" as an update policy.
+Use `git merge --abort` to abandon an in-progress merge before committing if it
+cannot be safely reconciled. This is not a reset or rollback of production data.
+
+### Deploy a customized Windows/Linux installation
+
+Deploy the approved **combined customer revision** using its reviewed deployment
+procedure. The routine Windows command may deploy a clean customer
+`origin/main` only if its existing guards permit that installation; it does not
+fetch/merge core on the customer's behalf. Do not change `origin` from the
+customer repository back to core to bypass reconciliation.
+
+Instances already using staged activation or extension packages must use the
+staged procedure below, not the routine in-place Windows updater. The existing
+staged CLI accepts verified core plus supported packages, not a hand-modified
+fork with a fabricated staging receipt. Direct-code forks need their own
+reviewed deployment and schema-maintenance procedure.
+
+Keep production databases/files/secrets separate from code. Stop service for
+required maintenance, retain a compatible prior application build, apply only
+reviewed migrations, deploy the approved revision and verify actual health,
+login and custom behavior. A code rollback does not reverse database changes.
+
+### Deploy to separate Replit projects, including other accounts
+
+The operator/account owning a Replit project does not change the source model.
+There is no automatic propagation from this core project to another project.
+
+1. Connect the customer's development Replit workspace to its customer
+   repository/branch. Configure its separate core remote and perform the
+   reviewed merge above there, or pull the already reviewed customer revision
+   produced by an external developer. The developer can use any editor.
+2. Build/test with that development project's own database, storage and
+   environment settings. A Git push transfers source history, not Replit
+   secrets, database contents or uploaded files.
+3. If production is **another Replit project**, retrieve the exact approved
+   customer revision into that production project's workspace. Preserve that
+   project's production connections, secrets and storage; do not import the
+   development database or replace customer data to deploy code.
+4. If development and publication use **the same Replit project**, the tested
+   workspace revision is the source for publication, but development and
+   production database environments still need independent migration review.
+   Check the actual database/provider configuration rather than assuming
+   arbitrary external connections are separated automatically.
+5. Check dependency/build configuration and the files included in publication.
+   Apply reviewed production schema changes through the project's migration
+   process. Replit's schema-publishing flow must not be replaced with a data
+   overwrite/restore merely to clear an error.
+6. The authorized operator explicitly publishes/republishes the production app
+   from that workspace. A core Git push, customer Git push, workspace pull or
+   development preview does **not** update an already published app.
+7. Verify the published health, installed version/revision, sign-in and customer
+   regression cases. Record the core release and combined customer revision
+   deployed to each instance, including which production project received it.
+
+Private repositories require authorized access in each relevant account or
+workspace. Do not assume another Replit account inherits the core project's Git
+authentication or permission to publish the customer's app.
+
+Official Replit references:
+[Git pane](https://docs.replit.com/features/workspace-tools/git-interface),
+[publishing](https://docs.replit.com/features/publishing/overview), and
+[development/production databases](https://docs.replit.com/features/data-and-storage/development-and-production).
+
 ## Supported model
 
 Customer-owned Replit and standalone Windows/Linux instances keep three owners separate:
