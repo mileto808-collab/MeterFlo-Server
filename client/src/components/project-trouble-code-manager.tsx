@@ -54,7 +54,7 @@ export function ProjectTroubleCodeManager({ projectId, canEdit }: Props) {
   };
   const save = useMutation({
     mutationFn: async () => editing
-      ? apiRequest("PATCH", `${endpoint}/${editing.id}`, { label: form.label.trim(), description: form.description.trim() || null, sortOrder: Number(form.sortOrder) || 0 })
+      ? apiRequest("PATCH", `${endpoint}/${editing.id}`, { code: form.code.trim(), label: form.label.trim(), description: form.description.trim() || null, sortOrder: Number(form.sortOrder) || 0 })
       : apiRequest("POST", endpoint, { code: form.code.trim(), label: form.label.trim(), description: form.description.trim() || undefined, sortOrder: Number(form.sortOrder) || 0 }),
     onSuccess: () => {
       invalidateCodes();
@@ -85,9 +85,9 @@ export function ProjectTroubleCodeManager({ projectId, canEdit }: Props) {
   const copyIdentity = async (key: string) => {
     try {
       await navigator.clipboard.writeText(key);
-      toast({ title: "Rule key copied" });
+      toast({ title: "Rule ID copied" });
     } catch {
-      toast({ title: "Copy unavailable", description: "Select and copy the rule key manually.", variant: "destructive" });
+      toast({ title: "Copy unavailable", description: "Select and copy the Rule ID manually.", variant: "destructive" });
     }
   };
 
@@ -103,7 +103,7 @@ export function ProjectTroubleCodeManager({ projectId, canEdit }: Props) {
       <CardContent>
         <div className="mb-4 flex items-start gap-2 rounded-md border bg-muted/40 p-3 text-sm">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-          <p>Codes are permanent and unique across this installation because existing work orders refer to them. Labels can change; codes cannot.</p>
+          <p>Code and name can be edited. Saved work orders refer to the permanent Rule ID, not the code. Core codes must be unique across every project; project codes must be unique within their project and cannot match a core code.</p>
         </div>
         {isLoading ? <div className="space-y-3" aria-label="Loading trouble codes"><Skeleton className="h-14 w-full" /><Skeleton className="h-14 w-full" /></div>
           : isError ? <div className="flex items-center justify-between gap-3 rounded-md border border-destructive/30 p-4 text-sm"><span>Trouble codes could not be loaded.</span><Button type="button" variant="outline" size="sm" onClick={() => refetch()}>Try again</Button></div>
@@ -114,7 +114,7 @@ export function ProjectTroubleCodeManager({ projectId, canEdit }: Props) {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2"><span className="font-medium">{item.label}</span><code className="text-xs text-muted-foreground">{item.code}</code><Badge variant={item.projectId === null ? "secondary" : "outline"}>{item.projectId === null ? "Core · shared" : "Project custom"}</Badge>{!item.active && <Badge variant="outline">Retired</Badge>}</div>
                   {item.description && <p className="mt-1 text-sm text-muted-foreground">{item.description}</p>}
-                  <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground"><span>Rule key</span><code className="select-all break-all">{item.ruleKey}</code><Button type="button" size="icon" variant="ghost" className="h-7 w-7" aria-label={`Copy rule key for ${item.label}`} onClick={() => copyIdentity(item.ruleKey)}><Copy className="h-3.5 w-3.5" /></Button></div>
+                  <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground"><span>Rule ID</span><code className="select-all break-all">{item.ruleKey}</code><Button type="button" size="icon" variant="ghost" className="h-7 w-7" aria-label={`Copy Rule ID for ${item.label}`} onClick={() => copyIdentity(item.ruleKey)}><Copy className="h-3.5 w-3.5" /></Button></div>
                 </div>
                 {canEdit && item.projectId === projectId && <div className="flex shrink-0 gap-1 sm:justify-end">
                   <Button type="button" size="icon" variant="ghost" aria-label={`Edit ${item.label}`} onClick={() => openEdit(item)}><Pencil className="h-4 w-4" /></Button>
@@ -126,11 +126,12 @@ export function ProjectTroubleCodeManager({ projectId, canEdit }: Props) {
       </CardContent>
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-lg">
-          <DialogHeader><DialogTitle>{editing ? "Edit project trouble code" : "Add project trouble code"}</DialogTitle><DialogDescription>{editing ? "The permanent code is locked; only its display details can change." : "Create a project-specific choice. Its code is a permanent installation-wide identifier."}</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>{editing ? "Edit project trouble code" : "Add project trouble code"}</DialogTitle><DialogDescription>{editing ? "Update the code, name, or description. Saved work orders stay linked by the permanent Rule ID." : "Create a project-specific choice. Other projects may reuse this code; it must not match a core code or another code in this project."}</DialogDescription></DialogHeader>
           <div className="grid gap-4 py-2">
-            <div className="space-y-2"><Label htmlFor="project-trouble-code">Immutable code</Label><Input id="project-trouble-code" value={form.code} disabled={!!editing} onChange={event => setForm(previous => ({ ...previous, code: event.target.value }))} maxLength={100} placeholder="e.g. CABINET_SEAL_DAMAGED" data-testid="input-project-trouble-code" /><p className="text-xs text-muted-foreground">Must be unique across the installation. It cannot be changed later because saved work orders reference it.</p></div>
-            <div className="space-y-2"><Label htmlFor="project-trouble-label">Label</Label><Input id="project-trouble-label" value={form.label} onChange={event => setForm(previous => ({ ...previous, label: event.target.value }))} maxLength={120} autoFocus /></div>
-            <div className="space-y-2"><Label htmlFor="project-trouble-description">Description <span className="font-normal text-muted-foreground">(optional)</span></Label><Textarea id="project-trouble-description" value={form.description} onChange={event => setForm(previous => ({ ...previous, description: event.target.value }))} rows={3} maxLength={500} /></div>
+            <div className="space-y-2"><Label htmlFor="project-trouble-code">Code</Label><Input id="project-trouble-code" value={form.code} onChange={event => setForm(previous => ({ ...previous, code: event.target.value }))} maxLength={50} placeholder="e.g. CABINET_SEAL_DAMAGED" data-testid="input-project-trouble-code" /><p className="text-xs text-muted-foreground">Editable display code; saved work orders use the permanent Rule ID. Codes may repeat in unrelated projects.</p></div>
+            <div className="space-y-2"><Label htmlFor="project-trouble-label">Name</Label><Input id="project-trouble-label" value={form.label} onChange={event => setForm(previous => ({ ...previous, label: event.target.value }))} maxLength={100} autoFocus /></div>
+            <div className="space-y-2"><Label htmlFor="project-trouble-description">Description <span className="font-normal text-muted-foreground">(optional)</span></Label><Textarea id="project-trouble-description" value={form.description} onChange={event => setForm(previous => ({ ...previous, description: event.target.value }))} rows={3} maxLength={2000} /></div>
+            {editing && <div className="space-y-2"><Label htmlFor="project-trouble-rule-id">Generated Rule ID</Label><Input id="project-trouble-rule-id" value={editing.ruleKey} readOnly className="font-mono text-xs" /><p className="text-xs text-muted-foreground">Permanent identifier used by saved work orders. It cannot be changed.</p></div>}
             <div className="space-y-2"><Label htmlFor="project-trouble-order">Sort order</Label><Input id="project-trouble-order" type="number" value={form.sortOrder} onChange={event => setForm(previous => ({ ...previous, sortOrder: event.target.value }))} /></div>
             {save.isError && <p role="alert" className="text-sm text-destructive">{save.error.message}</p>}
           </div>

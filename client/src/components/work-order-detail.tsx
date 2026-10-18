@@ -110,7 +110,7 @@ interface WorkOrderDetailProps {
   systemTypes: Array<{ id: number; productId: string; productLabel: string }>;
   moduleTypes: Array<{ id: number; productId: string; productLabel: string }>;
   workOrderStatuses: Array<{ id: number; code: string; label: string; color?: string | null }>;
-  troubleCodes: Array<{ id: number; code: string; label: string; active?: boolean }>;
+  troubleCodes: Array<{ id: number; ruleKey: string; code: string; label: string; active?: boolean }>;
   assigneesData: any;
   workOrderFiles: string[];
   filesLoading: boolean;
@@ -2489,7 +2489,9 @@ export function WorkOrderDetail({
                         <div>
                           <p className="text-xs text-muted-foreground">Trouble Code</p>
                           <p className="text-sm font-medium" data-testid="mobile-trouble-code">
-                            {troubleCodes.find(code => code.code === workOrder.trouble)?.label || workOrder.trouble}
+                            {troubleCodes.find(code => code.ruleKey === workOrder.trouble)?.label
+                              ? `${troubleCodes.find(code => code.ruleKey === workOrder.trouble)?.code} - ${troubleCodes.find(code => code.ruleKey === workOrder.trouble)?.label}`
+                              : workOrder.trouble}
                           </p>
                         </div>
                       </div>
@@ -2691,8 +2693,8 @@ export function WorkOrderDetail({
                             </FormControl>
                             <SelectContent>
                               <SelectItem value="__none__">None</SelectItem>
-                              {troubleCodes.filter(tc => tc.active !== false || tc.code === field.value).map((tc) => (
-                                <SelectItem key={tc.id} value={tc.code}>
+                              {troubleCodes.filter(tc => tc.active !== false || tc.ruleKey === field.value).map((tc) => (
+                                <SelectItem key={tc.id} value={tc.ruleKey}>
                                   {tc.code} - {tc.label}{tc.active === false ? " (retired)" : ""}
                                 </SelectItem>
                               ))}
@@ -2788,8 +2790,8 @@ export function WorkOrderDetail({
                         <div>
                           <p className="text-xs text-muted-foreground">Trouble Code</p>
                           <p className="text-sm font-medium" data-testid="desktop-trouble-code">
-                            {troubleCodes.find(tc => tc.code === workOrder.trouble)?.label 
-                              ? `${workOrder.trouble} - ${troubleCodes.find(tc => tc.code === workOrder.trouble)?.label}`
+                            {troubleCodes.find(tc => tc.ruleKey === workOrder.trouble)?.label
+                              ? `${troubleCodes.find(tc => tc.ruleKey === workOrder.trouble)?.code} - ${troubleCodes.find(tc => tc.ruleKey === workOrder.trouble)?.label}`
                               : workOrder.trouble}
                           </p>
                         </div>
@@ -3007,8 +3009,8 @@ export function WorkOrderDetail({
                           </FormControl>
                           <SelectContent>
                             <SelectItem value="__none__">None</SelectItem>
-                            {troubleCodes.filter(tc => tc.active !== false || tc.code === field.value).map((tc) => (
-                              <SelectItem key={tc.id} value={tc.code}>
+                            {troubleCodes.filter(tc => tc.active !== false || tc.ruleKey === field.value).map((tc) => (
+                              <SelectItem key={tc.id} value={tc.ruleKey}>
                                 {tc.code} - {tc.label}{tc.active === false ? " (retired)" : ""}
                               </SelectItem>
                             ))}

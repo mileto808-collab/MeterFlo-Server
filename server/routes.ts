@@ -4265,12 +4265,13 @@ export async function registerRoutes(
         
         // Look up trouble code details for the note
         const allTroubleCodes = await storage.getTroubleCodes(projectId);
-        const troubleCodeDetails = allTroubleCodes.find(tc => tc.code === troubleCode);
-        const troubleCodeLabel = troubleCodeDetails?.label || troubleCode;
+        const troubleCodeDetails = allTroubleCodes.find(tc => tc.ruleKey === troubleCode);
+        if (!troubleCodeDetails?.active) return res.status(400).json({ message: "Choose an active trouble code for this project." });
+        const troubleCodeLabel = troubleCodeDetails.label;
         
         updateData.trouble = troubleCode;
         const timestamp = await getTimezoneFormattedTimestamp(project.timezone);
-        const troubleCodeLine = `Trouble Code: ${troubleCode} - ${troubleCodeLabel} - ${timestamp} by ${updatedByUsername}`;
+        const troubleCodeLine = `Trouble Code: ${troubleCodeDetails.code} - ${troubleCodeLabel} - ${timestamp} by ${updatedByUsername}`;
         const noteEntry = troubleNote && troubleNote.trim()
           ? `[Trouble Report - ${timestamp} by ${updatedByUsername}]\n${troubleCodeLine}\n${troubleNote.trim()}`
           : `[Trouble Report - ${timestamp} by ${updatedByUsername}]\n${troubleCodeLine}`;
@@ -9861,14 +9862,15 @@ export async function registerRoutes(
         
         // Look up trouble code details for the note
         const allTroubleCodes = await storage.getTroubleCodes(projectId);
-        const troubleCodeDetails = allTroubleCodes.find(tc => tc.code === troubleCode);
-        const troubleCodeLabel = troubleCodeDetails?.label || troubleCode;
+        const troubleCodeDetails = allTroubleCodes.find(tc => tc.ruleKey === troubleCode);
+        if (!troubleCodeDetails?.active) return res.status(400).json({ message: "Choose an active trouble code for this project." });
+        const troubleCodeLabel = troubleCodeDetails.label;
         
         updateData.status = "Trouble";
         updateData.trouble = troubleCode;
         // Append trouble notes to existing notes (mobile pattern)
         const timestamp = await getTimezoneFormattedTimestamp(project.timezone);
-        const troubleCodeLine = `Trouble Code: ${troubleCode} - ${troubleCodeLabel} - ${timestamp} by ${currentUser.username || currentUser.id}`;
+        const troubleCodeLine = `Trouble Code: ${troubleCodeDetails.code} - ${troubleCodeLabel} - ${timestamp} by ${currentUser.username || currentUser.id}`;
         const noteEntry = troubleNote && troubleNote.trim()
           ? `[Trouble Report - ${timestamp} by ${currentUser.username || currentUser.id}]\n${troubleCodeLine}\n${troubleNote.trim()}`
           : `[Trouble Report - ${timestamp} by ${currentUser.username || currentUser.id}]\n${troubleCodeLine}`;
@@ -9928,7 +9930,7 @@ export async function registerRoutes(
       
       // Validate trouble code exists
       const troubleCodes = await storage.getTroubleCodes(Number(projectId));
-      const validTroubleCode = troubleCodes.find(tc => tc.code === troubleCode);
+      const validTroubleCode = troubleCodes.find(tc => tc.ruleKey === troubleCode);
       if (!validTroubleCode) {
         return res.status(400).json({ message: `Invalid trouble code: ${troubleCode}` });
       }
@@ -10390,7 +10392,7 @@ export async function registerRoutes(
       
       // Validate trouble code exists
       const troubleCodes = await storage.getTroubleCodes(Number(projectId));
-      const validTroubleCode = troubleCodes.find(tc => tc.code === troubleCode);
+      const validTroubleCode = troubleCodes.find(tc => tc.ruleKey === troubleCode);
       if (!validTroubleCode) {
         return res.status(400).json({ message: `Invalid trouble code: ${troubleCode}` });
       }

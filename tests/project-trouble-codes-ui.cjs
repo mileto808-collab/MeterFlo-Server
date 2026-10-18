@@ -45,23 +45,42 @@ const { Pool } = require("pg");
     assert.ok(reportCodes.some(c => c.id === custom.id) && !reportCodes.some(c => c.id === foreign.id));
     await run("PATCH", `/api/trouble-codes/${custom.id}`, { label: "Wrong endpoint" }, 404);
     await run("PATCH", `${codes}/${core.id}`, { label: "Core override" }, 404);
-    for (const field of [{ code: "CHANGED" }, { projectId: other.id }, { ruleKey: foreign.ruleKey }, { id: 9999 }])
+    for (const field of [{ projectId: other.id }, { ruleKey: foreign.ruleKey }, { id: 9999 }])
       await run("PATCH", `${codes}/${custom.id}`, field, 400);
-    await assert.rejects(db.query("UPDATE public.trouble_codes SET code='IDENTITY_ATTACK' WHERE id=$1", [custom.id]), error => error.code === "23514");
+    await assert.rejects(db.query("UPDATE public.trouble_codes SET rule_key=gen_random_uuid() WHERE id=$1", [custom.id]), error => error.code === "23514");
+    await run("POST", `/api/projects/${other.id}/trouble-codes`, { code: custom.code, label: "Same code, unrelated project" }, 201);
+    await run("POST", codes, { code: custom.code.toLowerCase(), label: "Duplicate" }, 409);
+    await run("POST", codes, { code: core.code, label: "Core collision" }, 409);
+    await run("POST", "/api/trouble-codes", { code: custom.code, label: "Core collision with a project" }, 409);
+    const concurrent = await Promise.all([1, 2].map(() => admin.request.post(codes, {
+      data: { code: `RACE_${suffix}`, label: "Concurrent catalog choice" },
+    })));
+    assert.deepEqual(concurrent.map(r => r.status()).sort(), [201, 409]);
 
     const service = (await run("GET", "/api/service-types"))[0].code;
     const wo = await run("POST", `${base}/work-orders`, {
-      customerWoId: `TROUBLE_${suffix}`, serviceType: service, status: "Open", trouble: custom.code,
+      customerWoId: `TROUBLE_${suffix}`, serviceType: service, status: "Open", trouble: custom.ruleKey,
       customerId: "TROUBLE_FIXTURE", customerName: "Trouble-code fixture", address: "100 Fixture Street",
     }, 201);
     const before = await run("GET", `${base}/work-orders/${wo.id}`);
-    const renamed = await run("PATCH", `${codes}/${custom.id}`, { label: "Renamed project issue" });
-    assert.deepEqual([renamed.id, renamed.ruleKey, renamed.code], [custom.id, custom.ruleKey, custom.code]);
+    const renamed = await run("PATCH", `${codes}/${custom.id}`, { code: `RENAMED_${suffix}`, label: "Renamed project issue" });
+    assert.deepEqual([renamed.id, renamed.ruleKey], [custom.id, custom.ruleKey]);
+    assert.equal(renamed.code, `RENAMED_${suffix}`);
     const after = await run("GET", `${base}/work-orders/${wo.id}`);
-    assert.equal(after.trouble, custom.code);
+    assert.equal(after.trouble, custom.ruleKey);
     assert.equal(after.notes, before.notes, "Renaming never rewrites captured notes");
-    await run("PATCH", `${base}/work-orders/${wo.id}`, { trouble: foreign.code }, 400);
-    assert.equal((await run("GET", `${base}/work-orders/${wo.id}`)).trouble, custom.code);
+    assert.equal(after.status, before.status);
+    assert.equal(after.subStatusId, before.subStatusId);
+    assert.equal(after.updatedAt, before.updatedAt, "Catalog rename does not rewrite work-order rows");
+    await run("PATCH", `${base}/work-orders/${wo.id}`, { trouble: foreign.ruleKey }, 400);
+    await run("PATCH", `${base}/work-orders/${wo.id}`, { trouble: custom.code }, 400);
+    assert.equal((await run("GET", `${base}/work-orders/${wo.id}`)).trouble, custom.ruleKey);
+    const schema = fixture.schema || (await run("GET", `/api/projects/${p}`)).databaseName;
+    assert.match(schema, /^project_[a-z0-9_]+$/);
+    assert.equal((await db.query(`SELECT data_type FROM information_schema.columns WHERE table_schema=$1 AND table_name='work_orders' AND column_name='trouble'`, [schema])).rows[0].data_type, "uuid");
+    const constraint = (await db.query(`SELECT confupdtype,confdeltype FROM pg_constraint WHERE conrelid=$1::regclass AND conname='fk_trouble_code'`, [`"${schema}".work_orders`])).rows[0];
+    assert.deepEqual(constraint, { confupdtype: "c", confdeltype: "r" });
+    await assert.rejects(db.query(`UPDATE "${schema}".work_orders SET trouble=$1 WHERE id=$2`, [foreign.ruleKey, wo.id]), error => error.code === "23514");
     const archive = await run("GET", `${base}/database/backup`);
     assert.ok(archive.troubleCodes.some(c => c.ruleKey === custom.ruleKey));
     await run("PATCH", `/api/trouble-codes/${core.id}`, { label: "New shared label" });
@@ -79,7 +98,7 @@ const { Pool } = require("pg");
     assert.equal(retired.active, false);
     await run("PATCH", `${base}/work-orders/${restoredWo.id}`, { notes: "Existing retired reference retained" });
     await run("POST", `${base}/work-orders`, {
-      customerWoId: `RETIRED_${suffix}`, serviceType: service, status: "Open", trouble: custom.code,
+      customerWoId: `RETIRED_${suffix}`, serviceType: service, status: "Open", trouble: custom.ruleKey,
       customerId: "RETIRED_FIXTURE", customerName: "Retired-code fixture", address: "100 Fixture Street",
     }, 400);
     await run("PATCH", `${codes}/${custom.id}`, { active: true });
@@ -101,6 +120,12 @@ const { Pool } = require("pg");
     await expect(manager.getByText("Created in project settings", { exact: true })).toBeVisible();
     const uiCode = (await run("GET", codes)).find(c => c.code === `UI_${suffix}`);
     assert.ok(uiCode);
+    await manager.getByRole("button", { name: "Edit Created in project settings", exact: true }).click();
+    await page.getByTestId("input-project-trouble-code").fill(`UI_RENAMED_${suffix}`);
+    await page.locator("#project-trouble-label").fill("Renamed through project settings");
+    await page.getByRole("button", { name: "Save changes", exact: true }).click();
+    await expect(page.getByRole("dialog")).toBeHidden();
+    await expect(manager.getByText(`UI_RENAMED_${suffix}`, { exact: true })).toBeVisible();
     await fs.mkdir("generated-artifacts/project-trouble-codes", { recursive: true });
     await page.screenshot({ path: "generated-artifacts/project-trouble-codes/manager-desktop.jpg" });
     await page.goto(`/projects/${p}/work-orders`);
@@ -109,20 +134,20 @@ const { Pool } = require("pg");
     if (await scheduling.getAttribute("aria-expanded") !== "true") await scheduling.click();
     await page.getByTestId("button-desktop-scheduling-edit").click();
     await page.getByTestId("select-trouble").click();
-    await expect(page.getByRole("option", { name: /Created in project settings/ })).toBeVisible();
+    await expect(page.getByRole("option", { name: /Renamed through project settings/ })).toBeVisible();
     await expect(page.getByRole("option", { name: /New shared label/ })).toBeVisible();
     await expect(page.getByRole("option", { name: /Other project issue/ })).toHaveCount(0);
-    await page.getByRole("option", { name: /Created in project settings/ }).click();
+    await page.getByRole("option", { name: /Renamed through project settings/ }).click();
     await page.getByTestId("button-desktop-scheduling-done").click();
     await page.getByTestId("button-save").click();
-    await expect.poll(async () => (await run("GET", `${base}/work-orders/${restoredWo.id}`)).trouble).toBe(uiCode.code);
-    await run("POST", `/api/mobile/projects/${p}/work-orders/${restoredWo.id}/trouble`, { troubleCode: foreign.code }, 400);
-    await run("POST", `/api/mobile/projects/${p}/work-orders/${restoredWo.id}/trouble`, { troubleCode: custom.code, notes: "Scoped mobile fixture" });
-    assert.equal((await run("GET", `${base}/work-orders/${restoredWo.id}`)).trouble, custom.code);
-    await run("POST", `/api/mobile/workorders/${restoredWo.id}/trouble`, { projectId: p, troubleCode: uiCode.code, notes: "Legacy mobile fixture" });
-    assert.equal((await run("GET", `${base}/work-orders/${restoredWo.id}`)).trouble, uiCode.code);
+    await expect.poll(async () => (await run("GET", `${base}/work-orders/${restoredWo.id}`)).trouble).toBe(uiCode.ruleKey);
+    await run("POST", `/api/mobile/projects/${p}/work-orders/${restoredWo.id}/trouble`, { troubleCode: foreign.ruleKey }, 400);
+    await run("POST", `/api/mobile/projects/${p}/work-orders/${restoredWo.id}/trouble`, { troubleCode: custom.ruleKey, notes: "Scoped mobile fixture" });
+    assert.equal((await run("GET", `${base}/work-orders/${restoredWo.id}`)).trouble, custom.ruleKey);
+    await run("POST", `/api/mobile/workorders/${restoredWo.id}/trouble`, { projectId: p, troubleCode: uiCode.ruleKey, notes: "Mobile fixture" });
+    assert.equal((await run("GET", `${base}/work-orders/${restoredWo.id}`)).trouble, uiCode.ruleKey);
     await page.setViewportSize({ width: 390, height: 844 });
-    await expect(page.getByTestId("mobile-trouble-code")).toHaveText("Created in project settings");
+    await expect(page.getByTestId("mobile-trouble-code")).toContainText("Renamed through project settings");
     await page.screenshot({ path: "generated-artifacts/project-trouble-codes/detail-phone.jpg" });
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
     assert.deepEqual(errors, []);
@@ -130,7 +155,11 @@ const { Pool } = require("pg");
     assert.ok(audit.rows[0].n > 0, "Project definition changes remain audited");
     await run("DELETE", `/api/projects/${other.id}`, undefined, 204);
     assert.equal((await db.query("SELECT count(*)::int n FROM public.trouble_codes WHERE project_id=$1", [other.id])).rows[0].n, 0);
-    console.log("PASS: core/project scopes, normal delegated grants, immutable rule/code identity, rename-safe saved orders, foreign-code rejection, retirement/reactivation, backup roundtrip, real project manager, detail selector/save, phone width, audit and deletion cleanup.");
+    require("node:child_process").execFileSync(process.execPath,
+      ["--import", "tsx", "--test", "tests/trouble-code-relational.test.ts"], { stdio: "inherit", env: process.env });
+    require("node:child_process").execFileSync(process.execPath,
+      ["--import", "tsx", "--test", "tests/customer-api.test.ts"], { stdio: "inherit", env: process.env });
+    console.log("PASS: scoped code uniqueness and concurrent writes, delegated grants, immutable UUID and real FK, editable Code/Name without rewriting work orders, cross-project rejection, retirement/reactivation, backup roundtrip, project UI edit, detail UUID selector/save, mobile UUID inputs, phone width, audit and deletion cleanup.");
   } finally {
     await admin.close(); await member.close(); await browser.close(); await db.end();
   }

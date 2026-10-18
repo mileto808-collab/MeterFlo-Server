@@ -74,7 +74,7 @@ export function StartSystemChangeoutDialog({
   });
   
   // Fetch trouble codes to display labels
-  const { data: troubleCodes = [] } = useQuery<TroubleCode[]>({
+  const { data: troubleCodes = [] } = useQuery<Array<TroubleCode & { ruleKey: string }>>({
     queryKey: ["/api/projects", projectId, "trouble-codes"],
     queryFn: async () => {
       if (!Number.isInteger(projectId) || projectId <= 0) return [];
@@ -88,8 +88,8 @@ export function StartSystemChangeoutDialog({
   // Helper to get trouble code label (case-insensitive comparison)
   const getTroubleCodeLabel = (code: string | null | undefined): string | null => {
     if (!code) return null;
-    const troubleCode = troubleCodes.find(tc => tc.code.toLowerCase() === code.toLowerCase());
-    return troubleCode ? troubleCode.label : null;
+    const troubleCode = troubleCodes.find(tc => tc.ruleKey === code);
+    return troubleCode ? `${troubleCode.code} - ${troubleCode.label}` : null;
   };
   
   const [scanMode, setScanMode] = useState<ScanMode>("select");

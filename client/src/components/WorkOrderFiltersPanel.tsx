@@ -23,7 +23,7 @@ interface FilterDataSources {
   statuses?: WorkOrderStatus[];
   systemTypes?: SystemType[];
   moduleTypes?: ModuleType[];
-  troubleCodes?: TroubleCode[];
+  troubleCodes?: Array<TroubleCode & { ruleKey: string }>;
   users?: User[];
   userGroups?: UserGroup[];
 }
@@ -168,7 +168,7 @@ export function WorkOrderFiltersPanel({
             <SelectContent>
               <SelectItem value="all">All Trouble Codes</SelectItem>
               {troubleCodes.map((tc) => (
-                <SelectItem key={tc.id} value={tc.code}>{tc.label || tc.code}</SelectItem>
+                <SelectItem key={tc.id} value={tc.ruleKey}>{tc.code} - {tc.label || tc.code}</SelectItem>
               ))}
             </SelectContent>
           </Select>

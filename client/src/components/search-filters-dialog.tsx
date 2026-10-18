@@ -126,7 +126,7 @@ interface SearchFiltersDialogProps {
   userGroups: UserGroup[];
   workOrderStatuses: WorkOrderStatus[];
   serviceTypes: ServiceTypeRecord[];
-  troubleCodes: TroubleCode[];
+  troubleCodes: Array<TroubleCode & { ruleKey: string; projectName?: string | null }>;
   hasActiveFilters: boolean;
   activeFilterCount: number;
   clearAllFilters: () => void;
@@ -380,7 +380,9 @@ export function SearchFiltersDialog({
                     <SelectContent>
                       <SelectItem value="all">All Trouble Codes</SelectItem>
                       {troubleCodes.map((tc) => (
-                        <SelectItem key={tc.id} value={tc.code}>{tc.code} - {tc.description}</SelectItem>
+                        <SelectItem key={tc.ruleKey} value={tc.ruleKey}>
+                          {tc.code} - {tc.label}{tc.projectName ? ` · ${tc.projectName}` : ""}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

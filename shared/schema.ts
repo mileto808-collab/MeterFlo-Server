@@ -533,7 +533,7 @@ export const workOrderSubStatuses = pgTable("work_order_sub_statuses", {
 // Trouble codes table - configurable trouble/issue codes for work orders
 export const troubleCodes = pgTable("trouble_codes", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  code: varchar("code", { length: 50 }).notNull().unique(),
+  code: varchar("code", { length: 50 }).notNull(),
   label: varchar("label", { length: 100 }).notNull(),
   description: text("description"),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }),
@@ -542,7 +542,10 @@ export const troubleCodes = pgTable("trouble_codes", {
   sortOrder: integer("sort_order").default(0),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  uniqueIndex("trouble_codes_core_code_unique").on(sql`lower(${table.code})`).where(sql`${table.projectId} IS NULL`),
+  uniqueIndex("trouble_codes_project_code_unique").on(table.projectId, sql`lower(${table.code})`).where(sql`${table.projectId} IS NOT NULL`),
+]);
 
 // Service types table - configurable service type codes
 export const serviceTypes = pgTable("service_types", {
@@ -883,7 +886,7 @@ export const insertProjectWorkOrderSchema = z.object({
   assignedGroupId: z.string().optional().nullable(),
   createdBy: z.string().optional().nullable(),
   completedBy: z.string().optional().nullable(),
-  trouble: z.string().max(100).optional().nullable(),
+  trouble: z.string().uuid().optional().nullable().or(z.literal("")),
   notes: z.string().optional().nullable(),
   attachments: z.array(z.string()).optional().nullable(),
   oldSystemType: z.string().max(255).optional().nullable(),

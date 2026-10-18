@@ -1,0 +1,16 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "jt02iTt1pskaPHOcVKuUc"
+uri = "file://docs/COMPATIBILITY_AUDIT.md"
+type = "text"
+title = "MeterFlo compatibility audit"
+description = "Existing compatibility layers, actual dependencies, cleanup candidates, and the simpler pre-distribution approach."
+logical_id = "b65fbbd7-b8a5-4ed5-a9c7-8d5c6e060baa"
+content_hash = "sha256:66c4e2e547baf47db3c863330fb5bdd05efca17bc0e595cd3f755892639f1bca"
+size = 9045
+mtime_ms = 1792355696744
+storage_uri = "gcs://replit-rams-assets-picard/rams/assets/repl:a55e897c-d53b-44bb-b370-bfc7f4d8c734/b65fbbd7-b8a5-4ed5-a9c7-8d5c6e060baa/5ee54d3a-0dee-4a05-b70f-a6471bb41e57"
+storage_version_token = "1792356562339086"
+content_type = "text/markdown"

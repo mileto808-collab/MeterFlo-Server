@@ -237,7 +237,7 @@ test("live project permissions and all reading write APIs", { skip: !process.env
     });
     await t.test("both mobile trouble captures validate before saving and do not truncate fractions", async () => {
       const wo = await createWorkOrder();
-      const troubleCode = (await storage.getTroubleCodes())[0].code;
+      const troubleCode = (await storage.getTroubleCodes())[0].ruleKey;
       for (const route of [
         `/api/mobile/workorders/${wo.id}/trouble`,
         `/api/mobile/projects/${project.id}/work-orders/${wo.id}/trouble`,

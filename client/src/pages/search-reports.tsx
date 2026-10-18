@@ -358,7 +358,7 @@ export default function SearchReports() {
     },
   });
 
-  const { data: troubleCodes = [] } = useQuery<TroubleCode[]>({
+  const { data: troubleCodes = [] } = useQuery<Array<TroubleCode & { ruleKey: string; projectId?: number | null; projectName?: string | null }>>({
     queryKey: ["/api/trouble-codes?includeProjects=true"],
     queryFn: async () => {
       const response = await fetch("/api/trouble-codes?includeProjects=true", { credentials: "include" });
@@ -367,11 +367,18 @@ export default function SearchReports() {
     },
   });
   const projectScopedTroubleCodes = useMemo(
-    () => selectedProject === "all"
-      ? troubleCodes
-      : troubleCodes.filter(code => (code as TroubleCode & { projectId?: number | null }).projectId == null ||
-        String((code as TroubleCode & { projectId?: number | null }).projectId) === selectedProject),
-    [troubleCodes, selectedProject],
+    () => {
+      const scoped = selectedProject === "all"
+        ? troubleCodes
+        : troubleCodes.filter(code => code.projectId == null || String(code.projectId) === selectedProject);
+      return scoped.map(code => ({
+        ...code,
+        projectName: code.projectId == null
+          ? "Core"
+          : projects.find(project => project.id === code.projectId)?.name || `Project ${code.projectId}`,
+      }));
+    },
+    [troubleCodes, selectedProject, projects],
   );
 
   const { data: users = [] } = useQuery<User[]>({
@@ -404,11 +411,11 @@ export default function SearchReports() {
     return group?.name || null;
   };
 
-  // Helper to get trouble code label from code
-  const getTroubleCodeLabel = (code: string | null | undefined): string | null => {
-    if (!code) return null;
-    const troubleCode = troubleCodes.find(tc => tc.code === code);
-    return troubleCode?.label || code;
+  // Work orders carry ruleKey; editable codes are display-only.
+  const getTroubleCodeLabel = (ruleKey: string | null | undefined): string | null => {
+    if (!ruleKey) return null;
+    const troubleCode = troubleCodes.find(tc => tc.ruleKey === ruleKey);
+    return troubleCode ? `${troubleCode.code} - ${troubleCode.label}` : ruleKey;
   };
 
   // Helper to get color hex from color name
@@ -857,13 +864,9 @@ export default function SearchReports() {
     }
     if (filterTroubleCode !== "all") {
       if (filterTroubleCode === "none") {
-        results = results.filter(r => !((r.workOrder as any).trouble) && !((r.workOrder as any).troubleCode));
+        results = results.filter(r => !r.workOrder.trouble);
       } else {
-        results = results.filter(r => {
-          const trouble = (r.workOrder as any).trouble || '';
-          const troubleCode = (r.workOrder as any).troubleCode || '';
-          return trouble === filterTroubleCode || troubleCode === filterTroubleCode;
-        });
+        results = results.filter(r => r.workOrder.trouble === filterTroubleCode);
       }
     }
     if (filterNotes) {

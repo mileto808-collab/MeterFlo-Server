@@ -574,7 +574,8 @@ New deliveries use **schemaVersion 2**. The original meter-named fields remain f
 | `projectId`, `projectName`, `workOrderId` | MeterFlo project ID/name and project-scoped internal work-order ID. |
 | `customerWoId` | Customer's external work-order identifier; empty string if absent. |
 | `customerId`, `customerName`, `phone`, `email`, `route`, `zone` | Stored customer/contact and route information. |
-| `status`, `serviceType`, `troubleCode`, `notes` | Saved work-order outcome and notes, including trouble information. |
+| `status`, `serviceType`, `notes` | Saved work-order outcome and notes. |
+| `troubleCodeId`, `troubleCode`, `troubleCodeName` | Permanent trouble-code UUID plus descriptive Code and Name captured at the work-order action. Renames never rewrite saved delivery snapshots. |
 | `oldSystemId`, `newSystemId`, `oldSystemReading`, `newSystemReading`, `oldSystemType`, `newSystemType` | Old/new system identifiers, readings, and types. |
 | `oldMeterNumber`, `newMeterNumber`, `oldMeterReading`, `newMeterReading` | Compatibility aliases for the corresponding system identifiers/readings. |
 | `meterType` | New system type, falling back to old system type. |

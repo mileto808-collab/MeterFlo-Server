@@ -21,6 +21,12 @@ export async function enqueueCustomerDelivery(client: PoolClient, schemaName: st
     `SELECT code, label FROM public.work_order_statuses WHERE lower(code) = lower($1)`, [row.status]);
   const status = `${row.status} ${statuses[0]?.label ?? ""}`.toLowerCase();
   if (!/\bcompleted\b|\btrouble\b|\bunable\b/.test(status)) return;
+  if (row.trouble) {
+    const { rows: [definition] } = await client.query(
+      "SELECT code,label FROM public.trouble_codes WHERE rule_key=$1", [row.trouble]);
+    if (!definition) throw new Error("Customer delivery trouble-code identity could not be resolved.");
+    row = { ...row, troubleCodeValue: definition.code, troubleCodeName: definition.label };
+  }
   const version = versionKey ?? String(row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at);
   if (project.inventory_enabled) {
     const inventory = { state: await readRelationalInventory(client, project.id) };

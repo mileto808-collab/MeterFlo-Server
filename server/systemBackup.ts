@@ -64,8 +64,8 @@ TABLE_PRIMARY_KEYS.inventory_relational_projects = ["project_id"];
 const MAIN_TABLES = Object.keys(TABLE_PRIMARY_KEYS);
 
 const TABLE_RESTORE_ORDER = [
-  "users",
   "subroles",
+  "users",
   "permissions",
   "subrole_permissions",
   "projects",
@@ -357,7 +357,7 @@ export async function restoreFullSystemData(
     }
     const lookupReferences = [
       { table: "work_order_statuses", key: "code", fields: ["status"] },
-      { table: "trouble_codes", key: "code", fields: ["trouble"] },
+      { table: "trouble_codes", key: "rule_key", fields: ["trouble"] },
       { table: "service_types", key: "code", fields: ["serviceType"] },
       { table: "system_types", key: "product_id", fields: ["oldSystemType", "newSystemType"] },
       { table: "module_types", key: "product_id", fields: ["oldModuleType", "newModuleType"] },
@@ -369,7 +369,7 @@ export async function restoreFullSystemData(
       // Older archives omitted equipment/service catalogs. Allow them only if
       // matching configuration is already installed, and preserve that catalog.
       const rows = backupData.mainDatabase[table] ??
-        (await client.query(`SELECT "${key}" FROM public.${table} WHERE "${key}" = ANY($1::text[])`, [[...required]])).rows;
+        (await client.query(`SELECT "${key}" FROM public.${table} WHERE "${key}"::text = ANY($1::text[])`, [[...required]])).rows;
       const available = new Set(rows.map(row => row[key]));
       const missing = [...required].filter(value => !available.has(value));
       if (missing.length) throw new Error(`Missing ${table} configuration: ${missing.join(", ")}. Restore matching lookup configuration or use a newer complete JSON backup.`);

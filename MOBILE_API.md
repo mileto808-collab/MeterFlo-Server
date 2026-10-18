@@ -428,7 +428,7 @@ Downloads work orders with incremental sync support.
       {"id": 2, "code": "In Progress", "label": "In Progress"}
     ],
     "troubleCodes": [
-      {"id": 1, "code": "TC001", "label": "Meter locked", "description": "Meter locked/inaccessible"}
+      {"id": 1, "ruleKey": "d7bc9966-67d6-41b7-973e-723058f02561", "code": "TC001", "label": "Meter locked", "description": "Meter locked/inaccessible", "projectId": null, "active": true}
     ],
     "systemTypes": [
       {"id": 1, "productId": "FLOWIQ2200", "productLabel": "FLOWIQ 2200"}
@@ -727,7 +727,7 @@ For reading-only submissions, send `isReadingOnly: true`. Only the relevant new 
 ```json
 {
   "canChange": false,
-  "troubleCode": "TC001",
+  "troubleCode": "d7bc9966-67d6-41b7-973e-723058f02561",
   "troubleNote": "Meter locked in cabinet, no key available",
   "gpsCoordinates": "40.7128,-74.0060",
   "photoTypes": ["trouble", "trouble"]
@@ -851,7 +851,7 @@ Report a trouble code with optional photos.
 ```json
 {
   "projectId": 2,
-  "troubleCode": "02",
+  "troubleCode": "d7bc9966-67d6-41b7-973e-723058f02561",
   "notes": "Customer refused meter change",
   "oldMeterReading": 12345,
   "photos": [
@@ -865,7 +865,7 @@ Report a trouble code with optional photos.
 
 **Required Fields:**
 - `projectId` - Project ID
-- `troubleCode` - Trouble code (e.g., "01", "02", "03")
+- `troubleCode` - The selected definition's permanent UUID `ruleKey`, not its editable `code` or numeric `id`. Fetch choices from `/api/projects/:projectId/trouble-codes`.
 
 **Optional Fields:**
 - `notes` - Additional notes

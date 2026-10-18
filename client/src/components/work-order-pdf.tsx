@@ -33,7 +33,7 @@ interface WorkOrderPdfProps {
   formatDateTime: (date: string | Date) => string;
   getAssignedUserName: (userId: string | null | undefined) => string | null;
   serviceTypes: Array<{ id: number; code: string; label: string }>;
-  troubleCodes: Array<{ id: number; code: string; label: string }>;
+  troubleCodes: Array<{ id: number; ruleKey: string; code: string; label: string }>;
   equipmentVisibility: EquipmentVisibility;
   timeTracking?: TimeTrackingData | null;
   inventoryEnabled?: boolean;
@@ -100,10 +100,10 @@ export function WorkOrderPdf({
     return st ? st.label : code;
   };
 
-  const getTroubleLabel = (code: string | null | undefined) => {
-    if (!code) return "-";
-    const tc = troubleCodes.find((t) => t.code === code);
-    return tc ? `${tc.code} - ${tc.label}` : code;
+  const getTroubleLabel = (ruleKey: string | null | undefined) => {
+    if (!ruleKey) return "-";
+    const tc = troubleCodes.find((t) => t.ruleKey === ruleKey);
+    return tc ? `${tc.code} - ${tc.label}` : ruleKey;
   };
 
   const signatureFile = workOrderFiles.find((f) => {

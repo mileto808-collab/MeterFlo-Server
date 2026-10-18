@@ -35,6 +35,13 @@ test("payload retains the existing contract and includes canonical captured/cust
   const fallback = buildCustomerPayload({ id: 1, status: "Trouble", oldGps: "1,2" }, { id: 1, name: "P" }, "D");
   assert.equal(fallback.latitude, "1");
   assert.equal(fallback.completedAt, null);
+  const trouble = buildCustomerPayload({
+    id: 2, status: "Trouble", trouble: "848d73e1-03a9-4302-b09d-6629b49bab21",
+    troubleCodeValue: "ACCESS_DENIED", troubleCodeName: "Access denied",
+  }, { id: 1, name: "P" }, "T");
+  assert.equal(trouble.troubleCodeId, "848d73e1-03a9-4302-b09d-6629b49bab21");
+  assert.equal(trouble.troubleCode, "ACCESS_DENIED");
+  assert.equal(trouble.troubleCodeName, "Access denied");
 });
 
 test("auth modes are explicit and missing credentials never result in unauthenticated delivery", () => {

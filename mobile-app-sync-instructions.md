@@ -397,7 +397,7 @@ The `data` JSON body uses these field names (all optional unless noted; field na
 | Field | Type | Notes |
 |-------|------|-------|
 | `canChange` | boolean | **Required.** `true` for the success path (changeout or reading-only). `false` for the trouble path. |
-| `troubleCode` | string \| null | Trouble code value selected from `/api/trouble-codes`. Used when `canChange === false`. |
+| `troubleCode` | UUID string \| null | The selected definition's permanent `ruleKey` from `/api/projects/:projectId/trouble-codes`. Never send its editable `code` or numeric `id`. Used when `canChange === false`. |
 | `troubleNote` | string | Free-text trouble note. **Singular** — the field is `troubleNote`, not `troubleNotes`. |
 | `oldSystemReading` | string | Captured pre-changeout reading. |
 | `oldModuleReading` | string | Captured pre-changeout module reading. |
@@ -833,7 +833,7 @@ Use the contract in Section 3.4 with the following adjustments:
 | Field | Trouble path value |
 |-------|--------------------|
 | `canChange` | `false` |
-| `troubleCode` | The selected trouble code (required) |
+| `troubleCode` | The selected trouble-code definition's UUID `ruleKey` (required); its Code and Name can change without changing this identity. |
 | `troubleNote` | Optional free-text note. **Singular field name (`troubleNote`).** |
 | `photoTypes` | One `"trouble"` entry per uploaded photo (the trouble photos travel inside the same `photos` multipart array — there is no separate `troublePhotos` field on the wire) |
 | `gpsCoordinates` | Send `""` (empty string) — see 10.4 |

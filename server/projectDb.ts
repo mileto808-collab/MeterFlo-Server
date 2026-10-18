@@ -14,7 +14,7 @@ import { exactReadingDto, exactReadingFields, capturedReadingText, readingParame
 import { inventoryWorkOrderChange, lockInventoryForSchema } from "./inventoryService";
 import { exportInventory, restoreInventory, validateInventoryBackup, type InventoryBackup } from "./inventoryBackup";
 import { installProjectSubStatuses, listSubStatuses, restoreSubStatusDefinitions } from "./workOrderSubStatuses";
-import { installProjectTroubleCodes, exportTroubleCodes, restoreTroubleCodes } from "./projectTroubleCodes";
+import { migrateProjectTroubleCodeReferences, exportTroubleCodes, restoreTroubleCodes } from "./projectTroubleCodes";
 import { exportProjectRouting, restoreProjectRouting } from "./routing/configuration";
 import { installVisitScheduling, writeVisitScheduling } from "./visitScheduling";
 import { schedulingDto, validateVisitScheduling, schedulingDefaultsSchema } from "../shared/visitScheduling";
@@ -71,7 +71,8 @@ export const projectWorkOrders = pgTable("work_orders", {
   appointmentWindowStart: timestamp("appointment_window_start", { withTimezone: true }),
   appointmentWindowEnd: timestamp("appointment_window_end", { withTimezone: true }),
   updatedBy: varchar("updated_by", { length: 100 }),
-  trouble: varchar("trouble", { length: 50 }),
+  // Permanent trouble_codes.rule_key; Code/Name are editable catalog values.
+  trouble: uuid("trouble"),
   oldSystemType: varchar("old_system_type", { length: 100 }),
   newSystemType: varchar("new_system_type", { length: 100 }),
   oldModuleId: varchar("old_module_id", { length: 100 }),
@@ -146,7 +147,7 @@ export async function createProjectSchema(projectName: string, projectId: number
         new_system_reading NUMERIC,
         scheduled_at TIMESTAMP,
         updated_by VARCHAR(100),
-        trouble VARCHAR(50),
+        trouble UUID,
         old_system_type VARCHAR(100),
         new_system_type VARCHAR(100),
         old_module_id VARCHAR(100),
@@ -163,7 +164,7 @@ export async function createProjectSchema(projectName: string, projectId: number
         scheduled_by VARCHAR(50),
         CONSTRAINT fk_status_code FOREIGN KEY (status) REFERENCES public.work_order_statuses(code) ON DELETE RESTRICT ON UPDATE CASCADE,
         CONSTRAINT fk_service_types FOREIGN KEY (service_type) REFERENCES public.service_types(code) ON DELETE RESTRICT ON UPDATE CASCADE,
-        CONSTRAINT fk_trouble_code FOREIGN KEY (trouble) REFERENCES public.trouble_codes(code) ON DELETE RESTRICT ON UPDATE CASCADE,
+        CONSTRAINT fk_trouble_code FOREIGN KEY (trouble) REFERENCES public.trouble_codes(rule_key) ON DELETE RESTRICT ON UPDATE CASCADE,
         CONSTRAINT fk_old_system_type FOREIGN KEY (old_system_type) REFERENCES public.system_types(product_id) ON DELETE RESTRICT ON UPDATE CASCADE,
         CONSTRAINT fk_new_system_type FOREIGN KEY (new_system_type) REFERENCES public.system_types(product_id) ON DELETE RESTRICT ON UPDATE CASCADE,
         CONSTRAINT fk_old_module_type FOREIGN KEY (old_module_type) REFERENCES public.module_types(product_id) ON DELETE RESTRICT ON UPDATE CASCADE,
@@ -202,7 +203,7 @@ export async function createProjectSchema(projectName: string, projectId: number
     
     await initializeExactReadings(client,schemaName);
     await installProjectSubStatuses(client,schemaName);
-    await installProjectTroubleCodes(client,schemaName);
+    await migrateProjectTroubleCodeReferences(schemaName,connectionPool);
     await installVisitScheduling(client,schemaName);
     if (auditingEnabled) {
       await client.query(`INSERT INTO meterflo_audit.project_scopes(schema_name,project_id,project_label) VALUES($1,$2,$3)
@@ -249,7 +250,7 @@ export async function migrateProjectSchema(schemaName: string, connectionPool: P
       { name: 'scheduled_by', type: 'VARCHAR(50)' },
       { name: 'signature_data', type: 'TEXT' },
       { name: 'signature_name', type: 'VARCHAR(100)' },
-      { name: 'trouble', type: 'VARCHAR(50)' },
+      { name: 'trouble', type: 'UUID' },
       { name: 'old_module_id', type: 'VARCHAR(100)' },
       { name: 'new_module_id', type: 'VARCHAR(100)' },
       { name: 'old_module_read', type: 'NUMERIC' },
@@ -391,7 +392,7 @@ export async function migrateProjectSchema(schemaName: string, connectionPool: P
     
     await initializeExactReadings(client,schemaName);
     await installProjectSubStatuses(client,schemaName);
-    await installProjectTroubleCodes(client,schemaName);
+    await migrateProjectTroubleCodeReferences(schemaName,connectionPool);
     await installVisitScheduling(client,schemaName);
     if (auditingEnabled) await installProjectAudit(client,schemaName);
 
@@ -428,7 +429,7 @@ export async function migrateProjectSchema(schemaName: string, connectionPool: P
     const fkConstraints = [
       { column: 'status', ref_table: 'public.work_order_statuses', ref_column: 'code', constraint_name: 'fk_status_code' },
       { column: 'service_type', ref_table: 'public.service_types', ref_column: 'code', constraint_name: 'fk_service_types' },
-      { column: 'trouble', ref_table: 'public.trouble_codes', ref_column: 'code', constraint_name: 'fk_trouble_code' },
+      { column: 'trouble', ref_table: 'public.trouble_codes', ref_column: 'rule_key', constraint_name: 'fk_trouble_code' },
       { column: 'old_system_type', ref_table: 'public.system_types', ref_column: 'product_id', constraint_name: 'fk_old_system_type' },
       { column: 'new_system_type', ref_table: 'public.system_types', ref_column: 'product_id', constraint_name: 'fk_new_system_type' },
       { column: 'old_module_type', ref_table: 'public.module_types', ref_column: 'product_id', constraint_name: 'fk_old_module_type' },
@@ -475,8 +476,8 @@ export async function migrateProjectSchema(schemaName: string, connectionPool: P
     
     console.log(`Migration completed for ${schemaName}.work_orders to canonical Aurora schema`);
   } catch (error) {
-    // Log but don't fail - table might not exist yet
-    console.log(`Migration check for ${schemaName}: ${error}`);
+    // Never serve a partially migrated project as if its references were valid.
+    throw error;
   } finally {
     client.release();
   }
@@ -812,7 +813,7 @@ export class ProjectWorkOrderStorage {
     try {
       const project = await pool.query("SELECT id FROM public.projects WHERE database_name=$1", [this.schemaName]);
       const troubleCodes = await storage.getTroubleCodes(project.rows[0]?.id);
-      const found = troubleCodes.find(tc => tc.code === troubleCodeValue);
+      const found = troubleCodes.find(tc => tc.ruleKey === troubleCodeValue);
       if (found) {
         return { id: found.id, code: found.code, label: found.label };
       }
@@ -1115,9 +1116,6 @@ export class ProjectWorkOrderStorage {
       let completedNoteToAdd: string | null = null;
       let forceStatusToTrouble = false;
       
-      if (troubleCode) {
-        forceStatusToTrouble = true;
-      }
 
       if (updates.customerWoId !== undefined) {
         setClauses.push(`customer_wo_id = $${paramCount++}`);
@@ -1220,6 +1218,7 @@ export class ProjectWorkOrderStorage {
       existingScheduledAt = existingStateResult.rows[0]?.scheduled_at || null;
       existingStatus = existingStateResult.rows[0]?.status || null;
       existingTroubleCode = existingStateResult.rows[0]?.trouble || null;
+      forceStatusToTrouble = !!troubleCode && troubleCode !== existingTroubleCode;
       const existingAssignedUserId = existingStateResult.rows[0]?.assigned_user_id || null;
       
       // Check if the work order was already in a completed status
@@ -2031,7 +2030,7 @@ export async function migrateProjectSchemaAddTrouble(schemaName: string): Promis
     
     if (checkResult.rows.length === 0) {
       // Add trouble column
-      await client.query(`ALTER TABLE "${schemaName}".work_orders ADD COLUMN trouble VARCHAR(100)`);
+      await client.query(`ALTER TABLE "${schemaName}".work_orders ADD COLUMN trouble UUID`);
       console.log(`Added trouble column to ${schemaName}.work_orders`);
       return true;
     }

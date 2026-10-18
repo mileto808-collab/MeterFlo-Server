@@ -834,7 +834,7 @@ export default function Settings() {
   });
 
   const updateTroubleCodeMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: { label?: string; description?: string } }) => {
+    mutationFn: async ({ id, data }: { id: number; data: { code?: string; label?: string; description?: string } }) => {
       return apiRequest("PATCH", `/api/trouble-codes/${id}`, data);
     },
     onSuccess: () => {
@@ -1256,6 +1256,7 @@ export default function Settings() {
       updateTroubleCodeMutation.mutate({
         id: selectedTroubleCode.id,
         data: {
+          code: troubleCodeForm.code,
           label: troubleCodeForm.label,
           description: troubleCodeForm.description || undefined,
         },
@@ -2826,7 +2827,7 @@ export default function Settings() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Code</TableHead>
-                        <TableHead>Label</TableHead>
+                        <TableHead>Name</TableHead>
                         <TableHead>Color</TableHead>
                         <TableHead>Default</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
@@ -2917,7 +2918,7 @@ export default function Settings() {
                         <TableHead>Code</TableHead>
                         <TableHead>Label</TableHead>
                         <TableHead>Description</TableHead>
-                        <TableHead>Permanent rule key</TableHead>
+                        <TableHead>Permanent Rule ID</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -3746,7 +3747,7 @@ export default function Settings() {
           <DialogHeader>
             <DialogTitle>{selectedTroubleCode ? "Edit Trouble Code" : "Create Trouble Code"}</DialogTitle>
             <DialogDescription>
-              {selectedTroubleCode ? "Update the display details for this shared definition. Its code is immutable." : "Define a shared core trouble code for work orders."}
+              {selectedTroubleCode ? "Update this shared core definition. Saved work orders remain linked by its permanent Rule ID." : "Define a shared core trouble code for work orders."}
             </DialogDescription>
           </DialogHeader>
           
@@ -3756,26 +3757,27 @@ export default function Settings() {
               <Input
                 id="trouble-code-code"
                 value={troubleCodeForm.code}
-                disabled={!!selectedTroubleCode}
                 onChange={(e) => setTroubleCodeForm(prev => ({ ...prev, code: e.target.value }))}
+                maxLength={50}
                 placeholder="e.g. DAMAGED, NO_ACCESS"
                 className="mt-2"
                 data-testid="input-trouble-code-code"
               />
-              <p className="text-sm text-muted-foreground mt-1">Unique and permanent across this installation because legacy work orders reference it.</p>
+              <p className="text-sm text-muted-foreground mt-1">Editable display code. Core codes must not match any project code; saved work orders use the permanent Rule ID.</p>
             </div>
 
             <div>
-              <Label htmlFor="trouble-code-label">Label</Label>
+              <Label htmlFor="trouble-code-label">Name</Label>
               <Input
                 id="trouble-code-label"
                 value={troubleCodeForm.label}
                 onChange={(e) => setTroubleCodeForm(prev => ({ ...prev, label: e.target.value }))}
+                maxLength={100}
                 placeholder="e.g. Damaged System, No Access"
                 className="mt-2"
                 data-testid="input-trouble-code-label"
               />
-              <p className="text-sm text-muted-foreground mt-1">Display name for the trouble code</p>
+              <p className="text-sm text-muted-foreground mt-1">Display name shown with the code</p>
             </div>
 
             <div>
@@ -3787,6 +3789,7 @@ export default function Settings() {
                 placeholder="Describe when this trouble code should be used"
                 className="mt-2"
                 rows={3}
+                maxLength={2000}
                 data-testid="input-trouble-code-description"
               />
             </div>

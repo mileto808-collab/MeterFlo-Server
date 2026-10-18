@@ -555,7 +555,7 @@ export default function ProjectWorkOrders() {
     enabled: !!projectId && !accessDenied,
   });
 
-  const { data: troubleCodes = [] } = useQuery<TroubleCode[]>({
+  const { data: troubleCodes = [] } = useQuery<Array<TroubleCode & { ruleKey: string; active?: boolean }>>({
     queryKey: ["/api/projects", projectId, "trouble-codes"],
     queryFn: async () => {
       if (!projectId || !Number.isInteger(projectId)) return [];
@@ -1495,11 +1495,11 @@ export default function ProjectWorkOrders() {
     return group?.label || String(groupId);
   };
 
-  // Helper to get trouble code label from code
-  const getTroubleCodeLabel = (code: string | null | undefined): string => {
-    if (!code) return "";
-    const troubleCode = troubleCodes.find(tc => tc.code === code);
-    return troubleCode?.label || code;
+  // Work orders store the permanent rule key; code and name are display-only.
+  const getTroubleCodeLabel = (ruleKey: string | null | undefined): string => {
+    if (!ruleKey) return "";
+    const troubleCode = troubleCodes.find(tc => tc.ruleKey === ruleKey);
+    return troubleCode ? `${troubleCode.code} - ${troubleCode.label}` : ruleKey;
   };
 
   // Helper to get combined assignment display (for exports and legacy display)
@@ -1838,36 +1838,12 @@ export default function ProjectWorkOrders() {
       });
     }
     
-    // Filter by trouble code (handle null, empty, whitespace, array/JSON, and comma-delimited values)
+    // Work-order trouble stores one permanent ruleKey.
     if (selectedTrouble !== "all") {
       if (selectedTrouble === "none") {
-        result = result.filter(wo => {
-          const trouble = (wo as any).trouble;
-          if (!trouble || trouble === null) return true;
-          const troubleStr = String(trouble).trim();
-          if (troubleStr === "" || troubleStr === "[]" || troubleStr === "null") return true;
-          return false;
-        });
+        result = result.filter(wo => !(wo as any).trouble);
       } else {
-        result = result.filter(wo => {
-          const trouble = (wo as any).trouble;
-          if (!trouble) return false;
-          const troubleStr = String(trouble);
-          // Handle JSON array format
-          if (troubleStr.startsWith("[")) {
-            try {
-              const troubleArray = JSON.parse(troubleStr);
-              if (Array.isArray(troubleArray)) {
-                return troubleArray.some(t => String(t).trim() === selectedTrouble);
-              }
-            } catch {
-              // Not valid JSON, fall through to comma-split
-            }
-          }
-          // Handle comma-delimited format
-          const troubleValues = troubleStr.split(",").map(t => t.trim());
-          return troubleValues.includes(selectedTrouble);
-        });
+        result = result.filter(wo => (wo as any).trouble === selectedTrouble);
       }
     }
     
@@ -3386,8 +3362,8 @@ export default function ProjectWorkOrders() {
                             </FormControl>
                             <SelectContent>
                               <SelectItem value="__none__">None</SelectItem>
-                              {troubleCodes.filter(tc => (tc as TroubleCode & { active?: boolean }).active !== false).map((tc) => (
-                                <SelectItem key={tc.id} value={tc.code}>
+                                  {troubleCodes.filter(tc => tc.active !== false).map((tc) => (
+                                <SelectItem key={tc.id} value={tc.ruleKey}>
                                   {tc.code} - {tc.label}
                                 </SelectItem>
                               ))}

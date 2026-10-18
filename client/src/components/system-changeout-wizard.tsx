@@ -147,7 +147,7 @@ interface SystemChangeoutWizardProps {
   notes?: string | null;
   projectId: number;
   inventoryEnabled?: boolean;
-  troubleCodes: Array<{ id: number; code: string; label: string }>;
+  troubleCodes: Array<{ id: number; ruleKey: string; code: string; label: string }>;
   existingOldReading?: string | null;
   existingNewReading?: string | null;
   existingOldModuleReading?: string | null;
@@ -1411,10 +1411,10 @@ export function SystemChangeoutWizard({
       
       case "canChange": {
         const isTrouble = status?.toLowerCase() === "trouble";
-        const getTroubleCodeLabel = (code: string | null | undefined): string | null => {
-          if (!code) return null;
-          const troubleCode = troubleCodes.find(tc => tc.code.toLowerCase() === code.toLowerCase());
-          return troubleCode ? troubleCode.label : null;
+        const getTroubleCodeLabel = (ruleKey: string | null | undefined): string | null => {
+          if (!ruleKey) return null;
+          const troubleCode = troubleCodes.find(tc => tc.ruleKey === ruleKey);
+          return troubleCode ? `${troubleCode.code} - ${troubleCode.label}` : null;
         };
         
         // Dynamic question text based on scope and workflow mode
@@ -1554,7 +1554,7 @@ export function SystemChangeoutWizard({
                 </SelectTrigger>
                 <SelectContent>
                   {troubleCodes.map((tc) => (
-                    <SelectItem key={tc.id} value={tc.code}>
+                    <SelectItem key={tc.id} value={tc.ruleKey}>
                       {tc.code} - {tc.label}
                     </SelectItem>
                   ))}
@@ -2618,7 +2618,7 @@ export function SystemChangeoutWizard({
                       <span className="font-medium">{customerWoId}</span>
                       
                       <span className="text-muted-foreground">Trouble Code:</span>
-                      <span className="font-medium">{data.troubleCode}</span>
+                      <span className="font-medium">{troubleCodes.find(tc => tc.ruleKey === data.troubleCode)?.code || data.troubleCode}{troubleCodes.find(tc => tc.ruleKey === data.troubleCode)?.label ? ` - ${troubleCodes.find(tc => tc.ruleKey === data.troubleCode)?.label}` : ""}</span>
                       
                       <span className="text-muted-foreground">Photos:</span>
                       <span className="font-medium">{data.troublePhotos.length}</span>
@@ -2756,7 +2756,7 @@ export function SystemChangeoutWizard({
                     <span className="font-medium">{customerWoId}</span>
                     
                     <span className="text-muted-foreground">Trouble Code:</span>
-                    <span className="font-medium">{data.troubleCode}</span>
+                    <span className="font-medium">{troubleCodes.find(tc => tc.ruleKey === data.troubleCode)?.code || data.troubleCode}{troubleCodes.find(tc => tc.ruleKey === data.troubleCode)?.label ? ` - ${troubleCodes.find(tc => tc.ruleKey === data.troubleCode)?.label}` : ""}</span>
                     
                     <span className="text-muted-foreground">Photos:</span>
                     <span className="font-medium">{data.troublePhotos.length}</span>

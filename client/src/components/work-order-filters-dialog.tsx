@@ -125,7 +125,7 @@ interface WorkOrderFiltersDialogProps {
   workOrderStatuses: WorkOrderStatus[];
   workOrderSubStatuses: WorkOrderSubStatus[];
   serviceTypes: ServiceTypeRecord[];
-  troubleCodes: TroubleCode[];
+  troubleCodes: Array<TroubleCode & { ruleKey: string }>;
   hasActiveFilters: boolean;
   activeFilterCount: number;
   clearAllFilters: () => void;
@@ -424,7 +424,7 @@ export function WorkOrderFiltersDialog({
                       <SelectItem value="all">All Trouble Codes</SelectItem>
                       <SelectItem value="none">No Trouble</SelectItem>
                       {troubleCodes.map((tc) => (
-                        <SelectItem key={tc.id} value={tc.code}>{tc.label}</SelectItem>
+                        <SelectItem key={tc.id} value={tc.ruleKey}>{tc.code} - {tc.label}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

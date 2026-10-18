@@ -1,5 +1,13 @@
 # MeterFlo - Utility Meter Work Order Management System
 
+## Pre-distribution trouble-code contract
+
+See `docs/COMPATIBILITY_AUDIT.md` for existing compatibility-layer findings.
+Project work-order `trouble` stores `trouble_codes.rule_key` (UUID), not the
+editable descriptive `code`. UI and mobile actions select/submit `ruleKey`;
+Code and Name can change without changing work-order identities or history.
+See `docs/TROUBLE_CODE_IDENTITIES.md` for migration, scope and API details.
+
 ## Technician route dispatch
 
 Authorized support/managers with `workOrders.optimizeRoute` can explicitly send
