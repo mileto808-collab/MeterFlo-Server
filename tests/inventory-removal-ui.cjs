@@ -83,12 +83,15 @@ async function main() {
       await page.keyboard.press("Escape");
       await page.goto(`/projects/${f.projectId}/work-orders?edit=${work.id}`);
       const system = page.getByTestId("accordion-system");
-      if (await system.getAttribute("data-state") === "closed") await system.click();
+      if (await system.getAttribute("data-state") === "open") await system.click();
+      const inventory = page.getByTestId("accordion-inventory");
+      await expect(inventory).toHaveText("Inventory");
+      await inventory.click();
       const section = page.getByTestId("equipment-inventory-section");
       await expect(section).toBeVisible();
-      await section.locator("summary").click();
       await expect(section.getByRole("region", { name: "Planned requirements", exact: true })).toBeVisible();
-      await expect(page.getByText("Inventory for this visit", { exact: true })).toHaveCount(2);
+      await expect(section.getByText("Inventory", { exact: true })).toBeVisible();
+      await expect(system).toHaveAttribute("data-state","closed");
       await page.screenshot({ path: `generated-artifacts/removal-work-details-${name}.jpg`, fullPage: true });
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
       await page.getByRole("button", { name: "Start Changeout", exact: true }).click();

@@ -74,6 +74,7 @@ import {
   Home,
   Pencil,
   Flag,
+  PackageCheck,
 } from "lucide-react";
 import { FileIcon } from "lucide-react";
 import SignaturePad, { type SignaturePadRef } from "@/components/signature-pad";
@@ -84,8 +85,7 @@ import type { EquipmentVisibility } from "@shared/project-equipment-scope";
 import { InventoryWorkOrderPanel } from "@/components/inventory/inventory-work-order-panel";
 import type { WorkOrderSubStatus } from "@/components/work-order-sub-statuses/work-order-sub-status-manager";
 import { SubStatusBadge } from "@/components/work-order-sub-statuses/sub-status-badge";
-import { WorkOrderPlanningFields } from "@/components/work-order-routing/work-order-planning-fields";
-import { formatProjectTimestamp } from "@/lib/project-scheduling-time";
+import { WorkOrderPlanningFields, WorkOrderPlanningSummary } from "@/components/work-order-routing/work-order-planning-fields";
 
 interface OperationalHoursConfig {
   enabled: boolean;
@@ -103,6 +103,8 @@ interface WorkOrderDetailProps {
   projectId: string | number;
   projectName?: string;
   projectTimezone?: string;
+  defaultServiceMinutes?: number | null;
+  defaultAppointmentToleranceMinutes?: number | null;
   cameFromSearch?: boolean;
   serviceTypes: Array<{ id: number; code: string; label: string; color?: string | null }>;
   systemTypes: Array<{ id: number; productId: string; productLabel: string }>;
@@ -147,6 +149,8 @@ export function WorkOrderDetail({
   projectId,
   projectName,
   projectTimezone = "UTC",
+  defaultServiceMinutes,
+  defaultAppointmentToleranceMinutes,
   cameFromSearch,
   serviceTypes = [],
   systemTypes = [],
@@ -175,6 +179,12 @@ export function WorkOrderDetail({
   equipmentVisibility = { showSystem: true, showModule: true },
   inventoryEnabled = false,
 }: WorkOrderDetailProps) {
+  const planningDefaults = { defaultServiceMinutes, defaultAppointmentToleranceMinutes };
+  const planningSummary = <section className="space-y-3 rounded-lg border bg-muted/20 p-3 sm:p-4">
+    <h3 className="text-sm font-semibold">Route planning details</h3>
+    <WorkOrderPlanningSummary {...workOrder} timezone={projectTimezone} {...planningDefaults} />
+  </section>;
+  const planningEditor = <WorkOrderPlanningFields form={form} timezone={projectTimezone} {...planningDefaults} />;
   const equipmentDetailsLabel = equipmentVisibility.showSystem && equipmentVisibility.showModule
     ? "System | Module Details" : equipmentVisibility.showSystem ? "System Details" : "Module Details";
   const { setHeaderContent } = usePageHeader();
@@ -2358,14 +2368,19 @@ export function WorkOrderDetail({
                     </div>
                   </div>
                 )}
-                {inventoryEnabled && <details className="mt-4 min-w-0 rounded-md border p-3" data-testid="equipment-inventory-section">
-                  <summary className="cursor-pointer text-sm font-medium">Inventory for this visit</summary>
-                  <div className="mt-3 min-w-0"><InventoryWorkOrderPanel projectId={projectId} workOrderId={workOrder.id} readingOnly={wizardConfig?.wizardMode === "reading_only"} /></div>
-                </details>}
               </AccordionContent>
             </AccordionItem>
 
             {/* Scheduling & Assignments */}
+            {inventoryEnabled && <AccordionItem value="inventory" className="min-w-0 rounded-lg border px-4">
+              <AccordionTrigger className="py-4 hover:no-underline" data-testid="accordion-inventory">
+                <div className="flex items-center gap-2"><PackageCheck className="h-4 w-4 text-primary" /><span className="font-medium">Inventory</span></div>
+              </AccordionTrigger>
+              <AccordionContent className="min-w-0 pb-4" data-testid="equipment-inventory-section">
+                <InventoryWorkOrderPanel projectId={projectId} workOrderId={workOrder.id} readingOnly={wizardConfig?.wizardMode === "reading_only"} />
+              </AccordionContent>
+            </AccordionItem>}
+
             <AccordionItem value="scheduling" className="border rounded-lg px-4">
               <AccordionTrigger className="hover:no-underline py-4" data-testid="accordion-scheduling">
                 <div className="flex items-center gap-2">
@@ -2467,13 +2482,6 @@ export function WorkOrderDetail({
                         </div>
                       </div>
                     )}
-                    <div className="rounded-md border bg-muted/20 p-3" data-testid="mobile-work-order-planning-summary">
-                      <p className="text-xs text-muted-foreground">Planning duration</p>
-                      <p className="text-sm font-medium">{(workOrder as any).serviceDurationMinutes ?? "Project / route default"}{(workOrder as any).serviceDurationMinutes != null ? " min" : ""}</p>
-                      <p className="mt-2 text-xs text-muted-foreground">Service-start window · {projectTimezone}</p>
-                      <p className="text-sm font-medium">{formatProjectTimestamp((workOrder as any).appointmentWindowStart, projectTimezone)} – {formatProjectTimestamp((workOrder as any).appointmentWindowEnd, projectTimezone)}</p>
-                    </div>
-
                     {/* Trouble Code - only show if has value */}
                     {workOrder.trouble && (
                       <div className="flex items-start gap-3">
@@ -2504,7 +2512,6 @@ export function WorkOrderDetail({
                         Done
                       </Button>
                     </div>
-                    <WorkOrderPlanningFields form={form} timezone={projectTimezone} disabled={!canEdit} />
 
                     <FormField
                       control={form.control}
@@ -2775,12 +2782,6 @@ export function WorkOrderDetail({
                           </p>
                         </div>
                       )}
-                      <div className="rounded-md border bg-muted/20 p-3 sm:col-span-2" data-testid="desktop-work-order-planning-summary">
-                        <p className="text-xs text-muted-foreground">Planning duration</p>
-                        <p className="text-sm font-medium">{(workOrder as any).serviceDurationMinutes ?? "Project / route default"}{(workOrder as any).serviceDurationMinutes != null ? " min" : ""}</p>
-                        <p className="mt-2 text-xs text-muted-foreground">Service-start window · {projectTimezone}</p>
-                        <p className="text-sm font-medium">{formatProjectTimestamp((workOrder as any).appointmentWindowStart, projectTimezone)} – {formatProjectTimestamp((workOrder as any).appointmentWindowEnd, projectTimezone)}</p>
-                      </div>
                       
                       {/* Trouble Code - show if has value */}
                       {workOrder.trouble && (
@@ -2812,7 +2813,6 @@ export function WorkOrderDetail({
                         Done
                       </Button>
                     </div>
-                    <WorkOrderPlanningFields form={form} timezone={projectTimezone} disabled={!canEdit} />
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <FormField
                     control={form.control}
@@ -3021,6 +3021,12 @@ export function WorkOrderDetail({
                     </div>
                   </div>
                 )}
+                <div className="mt-4 md:hidden" data-testid="mobile-work-order-planning-summary">
+                  {mobileSchedulingEditMode && canEdit ? planningEditor : planningSummary}
+                </div>
+                <div className="mt-4 hidden md:block" data-testid="desktop-work-order-planning-summary">
+                  {desktopSchedulingEditMode && canEdit ? planningEditor : planningSummary}
+                </div>
               </AccordionContent>
             </AccordionItem>
 

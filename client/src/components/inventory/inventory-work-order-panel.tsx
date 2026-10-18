@@ -253,7 +253,7 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
   };
 
   return <Card className="border-l-4 border-l-primary/60">
-    <CardHeader className="pb-3"><div className="flex items-center justify-between gap-2"><CardTitle className="flex items-center gap-2 text-base"><PackageCheck className="h-4 w-4 text-primary" />Inventory for this visit</CardTitle>
+    <CardHeader className="pb-3"><div className="flex items-center justify-between gap-2"><CardTitle className="flex items-center gap-2 text-base"><PackageCheck className="h-4 w-4 text-primary" />Inventory</CardTitle>
       <div className="flex flex-wrap items-center justify-end gap-2">
         <span data-testid="inventory-live-indicator" aria-live="polite" className="text-[11px] text-muted-foreground">
           {inventoryEvents.status === "live" ? "Live inventory" : inventoryEvents.status === "reconnecting" ? "Reconnecting" : inventoryEvents.status === "unavailable" ? "Live unavailable" : "Connecting"}

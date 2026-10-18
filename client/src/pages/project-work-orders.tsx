@@ -2643,6 +2643,8 @@ export default function ProjectWorkOrders() {
           projectId={projectId!}
           projectName={project?.name}
           projectTimezone={effectiveTimezone}
+          defaultServiceMinutes={project?.defaultServiceMinutes}
+          defaultAppointmentToleranceMinutes={project?.defaultAppointmentToleranceMinutes}
           cameFromSearch={cameFromSearch}
           serviceTypes={serviceTypes}
           systemTypes={systemTypes}
@@ -3286,7 +3288,8 @@ export default function ProjectWorkOrders() {
                   <p className="mb-3 text-sm text-muted-foreground">
                     New work orders start as <span className="font-medium text-foreground">{createStatusLabel}</span>. A sub-status adds detail without changing its workflow.
                   </p>
-                  <WorkOrderPlanningFields form={form} timezone={effectiveTimezone} disabled={!hasPermission("workOrders.edit")} />
+                  <WorkOrderPlanningFields form={form} timezone={effectiveTimezone} defaultServiceMinutes={project?.defaultServiceMinutes}
+                    defaultAppointmentToleranceMinutes={project?.defaultAppointmentToleranceMinutes} disabled={!hasPermission("workOrders.edit")} />
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField
                       control={form.control}
