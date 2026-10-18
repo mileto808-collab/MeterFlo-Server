@@ -2,8 +2,24 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { optimizeStops, type Candidate } from "../server/routing/optimizer";
 import { routingService, RoutingError } from "../server/routing/providers";
-import { navigationLinks, isRoutingBrowserReference, isRoutingServerReference } from "../shared/workOrderRouting";
+import { navigationLinks, isRoutingBrowserReference, isRoutingServerReference, isScheduledOnlyRouteScope } from "../shared/workOrderRouting";
 import { sanitizeGenericProjectSettings } from "../shared/project-settings-boundary";
+
+test("route button requires a nonempty Scheduled-only filtered scope, including parented sub-statuses", () => {
+  assert.equal(isScheduledOnlyRouteScope([]), false);
+  assert.equal(isScheduledOnlyRouteScope([{ status: "Scheduled" }]), true);
+  assert.equal(isScheduledOnlyRouteScope([
+    { status: "Scheduled", subStatusId: "critical" },
+    { status: "Scheduled", subStatusId: "priority" },
+  ]), true);
+  for (const status of ["Open", "Trouble", "Completed", "Closed", null, undefined]) {
+    assert.equal(isScheduledOnlyRouteScope([{ status: "Scheduled" }, { status }]), false);
+  }
+  assert.equal(isScheduledOnlyRouteScope([{ status: "Trouble", subStatusId: "critical" }]), false,
+    "A sub-status label never overrides its core parent status");
+  const acrossPages = [...Array.from({ length: 30 }, () => ({ status: "Scheduled" })), { status: "Open" }];
+  assert.equal(isScheduledOnlyRouteScope(acrossPages), false, "Non-Scheduled results on later pages hide the button");
+});
 
 test("generic project writes cannot select credentials and browser references cannot select server-only secrets",()=>{
   for(const field of ["routingConfiguration","routing_configuration"]){

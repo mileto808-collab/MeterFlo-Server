@@ -99,6 +99,7 @@ import { getProjectEquipmentVisibility, omitInapplicableEquipmentFields } from "
 import type { WorkOrderSubStatus } from "@/components/work-order-sub-statuses/work-order-sub-status-manager";
 import { SubStatusBadge } from "@/components/work-order-sub-statuses/sub-status-badge";
 import { RoutePlanner } from "@/components/work-order-routing/route-planner";
+import { isScheduledOnlyRouteScope } from "@shared/workOrderRouting";
 
 type Assignee = {
   type: "user" | "group";
@@ -2150,20 +2151,6 @@ export default function ProjectWorkOrders() {
           <span className="font-semibold text-sm truncate">{project.name}</span>
           <span className="text-xs text-muted-foreground">Work Orders</span>
         </div>
-        {hasPermission("workOrders.optimizeRoute") && (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="ml-auto shrink-0"
-            onClick={() => setShowRoutePlanner(true)}
-            data-testid="optimize-work-order-route"
-          >
-            <Route className="mr-2 h-4 w-4" />
-            <span className="hidden sm:inline">Optimize route</span>
-            <span className="sm:hidden">Route</span>
-          </Button>
-        )}
       </div>
     );
     
@@ -4102,6 +4089,18 @@ export default function ProjectWorkOrders() {
                 <Button variant="outline" size="sm" onClick={() => setIsCreatingWorkOrder(true)} data-testid="button-create-work-order">
                   <Plus className="h-3.5 w-3.5 mr-1" />
                   New Work Order
+                </Button>
+              )}
+              {hasPermission("workOrders.optimizeRoute") && isScheduledOnlyRouteScope(filteredAndSortedWorkOrders) && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowRoutePlanner(true)}
+                  data-testid="optimize-work-order-route"
+                >
+                  <Route className="h-3.5 w-3.5 mr-1" />
+                  Optimize route
                 </Button>
               )}
               {/* Right-aligned: Export buttons */}

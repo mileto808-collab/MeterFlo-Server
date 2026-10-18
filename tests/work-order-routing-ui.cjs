@@ -57,7 +57,36 @@ const assert = require("node:assert/strict");
     await viewer.close();
     const page=await context.newPage();const errors=[];
     page.on("pageerror",e=>errors.push(e.message));
+    const scheduledGrid = async () => {
+      await expect(page.getByTestId("button-toggle-mobile-tools")).toBeVisible();
+      if(!await page.getByTestId("input-search-work-orders").isVisible())
+        await page.getByTestId("button-toggle-mobile-tools").click();
+      await page.getByTestId("button-filters-dialog").click();
+      await page.getByTestId("checkbox-status-scheduled").check();
+      await page.getByTestId("button-dialog-close-filters").click();
+    };
     await page.goto(`/projects/${fixture.projectId}/work-orders`);
+    // The action lives in Search & Tools and is limited to Scheduled-only grids.
+    await expect(page.getByTestId("input-search-work-orders")).toBeVisible();
+    await expect(page.getByTestId("optimize-work-order-route")).toHaveCount(0);
+    await scheduledGrid();
+    const optimize=page.getByTestId("optimize-work-order-route");
+    await expect(optimize).toBeVisible();
+    assert.equal(await optimize.evaluate(el=>el.previousElementSibling?.getAttribute("data-testid")),
+      "button-create-work-order","Optimize route immediately follows New Work Order");
+    await page.getByTestId("input-search-work-orders").fill("NO-MATCHING-ROUTE-FIXTURE");
+    await expect(optimize).toHaveCount(0);
+    await page.getByTestId("input-search-work-orders").fill("");
+    await expect(optimize).toBeVisible();
+    for(const viewport of [{width:1365,height:950},{width:390,height:844}]){
+      await page.setViewportSize(viewport);
+      await optimize.scrollIntoViewIfNeeded();
+      await expect(optimize).toHaveText("Optimize route");
+      assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),
+        "Toolbar fits desktop and phone screens");
+      await page.screenshot({path:`${out}/toolbar-${viewport.width}.jpg`});
+    }
+    await page.setViewportSize({width:1365,height:950});
     await page.getByTestId("optimize-work-order-route").click();
     await expect(page.getByTestId("create-route-plan")).toBeDisabled();
     await expect(page.getByRole("dialog").first()).toContainText("Route optimization is disabled");
@@ -92,6 +121,7 @@ const assert = require("node:assert/strict");
         Marker:class{constructor(o){window.__routeMap.markers.push(o.label);}}
       }};window.initMap();`}));
     await page.reload();
+    await scheduledGrid();
     await page.getByTestId("optimize-work-order-route").click();
     await expect(page.getByTestId("create-route-plan")).toBeEnabled();
     await page.getByTestId("create-route-plan").click();
