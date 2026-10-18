@@ -63,7 +63,7 @@ const baseURL = require("./support/workspace-ui-base.cjs")();
         lateMinutes: 0, travelSeconds: 60, travelMeters: 1000,
       }],
     };
-    let sent = false, stale = false, validations = 0;
+    let sent = false, stale = false, validations = 0, freshReviewAccepted = false;
     const readiness = {
       configuration: { mode: "override", provider: "geoapify", maxStops: 20, dailyPlans: 50 },
       effective: { provider: "geoapify", source: "project", maxStops: 20, dailyPlans: 50 },
@@ -90,9 +90,16 @@ const baseURL = require("./support/workspace-ui-base.cjs")();
           id: planId, departureAt: route.departureAt, expiresAt: route.expiresAt,
           stopCount: 1, originAddress: route.originAddress,
         }] : []);
-        if (path.endsWith(`/dispatched/${planId}/open`)) return json({
-          ...route, receivedDispatchId: planId, routes: [{ ...route, receivedDispatchId: planId }],
-        });
+        if (path.endsWith(`/dispatched/${planId}/open`)) {
+          const confirmations=request.request().postDataJSON().addressConfirmations;
+          if(!confirmations.includes("fresh-dispatch-review"))return request.fulfill({status:409,json:{
+            code:"ADDRESS_REVIEW_REQUIRED",addressReviews:[{
+              ...route.confirmedAddressMatches[0],token:"fresh-dispatch-review",
+            }],
+          }});
+          freshReviewAccepted=true;
+          return json({...route,receivedDispatchId:planId,routes:[{...route,receivedDispatchId:planId}]});
+        }
         if (path.endsWith("/plan")) return json({ ...route, routes: [route] });
         return request.continue();
       });
@@ -118,7 +125,13 @@ const baseURL = require("./support/workspace-ui-base.cjs")();
     await techPage.getByTestId("optimize-work-order-route").click();
     await expect(techPage.getByTestId("dispatched-routes")).toContainText("1 stops");
     await techPage.getByTestId(`open-dispatched-${planId}`).click();
+    await expect(techPage.getByTestId("address-match-review")).toBeVisible();
+    await expect(techPage.getByTestId("route-start")).toHaveCount(0);
+    await expect(techPage.getByTestId("address-review-submit")).toBeDisabled();
+    await techPage.getByTestId(`address-confirm-stop-${order.id}`).click();
+    await techPage.getByTestId("address-review-submit").click();
     await expect(techPage.getByTestId("routing-technician-select")).toHaveValue(fixture.viewer.id);
+    assert.equal(freshReviewAccepted,true,"Fresh reviews submit to dispatch opening, not the ordinary plan endpoint");
     assert.equal(await techPage.getByTestId("routing-technician-select").locator("option").count(), 1);
     await expect(techPage.getByTestId("dispatch-current-route")).toHaveCount(0);
     await expect(techPage.getByTestId("confirmed-address-matches")).toBeVisible();
@@ -130,7 +143,9 @@ const baseURL = require("./support/workspace-ui-base.cjs")();
     await expect(techPage.getByTestId("navigate-next-stop")).toBeEnabled();
     stale = true;
     const before = validations;
-    await techPage.getByTestId("navigate-next-stop").click();
+    // Background validation may disable this control before Playwright's actionability
+    // wait completes. Attempt immediately; either path must revoke navigation.
+    await techPage.getByTestId("navigate-next-stop").evaluate(button => button.click());
     await expect(techPage.getByTestId("navigate-next-stop")).toBeDisabled();
     assert.ok(validations > before, "Navigation performs fresh server validation");
     await expect(techPage.getByText("Navigation stopped because the route is no longer current or access could not be verified.")).toBeVisible();

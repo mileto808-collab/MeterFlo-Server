@@ -10,6 +10,9 @@ import { getProjectWorkOrderStorage } from "../server/projectDb";
 import { enableAuditing, serviceAuditContext, withAuditContext } from "../server/auditContext";
 import { registerRoutingRoutes } from "../server/routing/routes";
 import type { RoutingService } from "../server/routing/providers";
+import { fork, type ChildProcess } from "node:child_process";
+import { once } from "node:events";
+import { resolve } from "node:path";
 
 test("dispatch produces separate per-assignee routes; technician authorization cannot be bypassed", async t => {
   t.after(() => pool.end());
@@ -69,6 +72,26 @@ test("dispatch produces separate per-assignee routes; technician authorization c
       const response = await fetch(url + "/dispatched", { headers: { "x-test-actor": actor } });
       return { status: response.status, body: await response.json() };
     };
+    const instances:ChildProcess[]=[];
+    const startInstance=async()=>{
+      const child=fork(resolve("tests/support/routing-instance.ts"),[],{
+        execArgv:["--import","tsx"],stdio:["ignore","inherit","inherit","ipc"],env:process.env,
+      });
+      instances.push(child);
+      const [message]=await Promise.race([once(child,"message"),once(child,"exit").then(()=>{throw new Error("Routing fixture exited before ready");})]);
+      const url=`http://127.0.0.1:${message.port}/api/projects/${fixture.projectId}/routing`;
+      return {child,call:async(path:string,body?:unknown,mode="",actor="viewer")=>{
+        offset+=11000;
+        const response=await fetch(url+path,{method:body===undefined?"GET":"POST",headers:{
+          "Content-Type":"application/json","x-test-actor":actor,"x-test-offset":String(offset),"x-test-provider":mode,
+        },body:body===undefined?undefined:JSON.stringify(body)});
+        return {status:response.status,body:await response.json()};
+      }};
+    };
+    const stopInstance=async(child:ChildProcess)=>{
+      if(child.exitCode!==null)return;
+      const exited=once(child,"exit");child.disconnect();await exited;
+    };
     try {
       const planned = await post("/plan", input);
       assert.equal(planned.status, 200, JSON.stringify(planned.body));
@@ -101,6 +124,11 @@ test("dispatch produces separate per-assignee routes; technician authorization c
       assert.deepEqual((await received()).body, [], "Planning alone does not share anything");
       assert.equal((await openRoute(ownPlan.dispatchPlanId)).status, 404);
       assert.equal((await send(ownPlan.dispatchPlanId, "viewer")).status, 404, "Support cannot send another planner's cached plan");
+      const instanceB=await startInstance();
+      assert.deepEqual((await instanceB.call("/dispatched")).body,[],"A durable draft is private until explicitly sent");
+      assert.equal((await instanceB.call("/dispatch",{planId:ownPlan.dispatchPlanId},"","viewer")).status,404);
+      assert.equal((await instanceB.call("/dispatch",{planId:ownPlan.dispatchPlanId},"","admin")).status,200,
+        "Send may reach a different process than planning");
       assert.equal((await send(ownPlan.dispatchPlanId)).status, 200);
       assert.equal((await send(otherPlan.dispatchPlanId)).status, 200);
       const inbox = await received();
@@ -123,6 +151,54 @@ test("dispatch produces separate per-assignee routes; technician authorization c
         configurationRevision: opened.body.configurationRevision, receivedDispatchId: opened.body.receivedDispatchId };
       assert.equal((await post("/validate", sharedValidation, "viewer")).body.stale, false);
       assert.equal((await post("/validate", { ...sharedValidation, ids: [first.id] }, "viewer")).body.stale, true);
+      assert.equal((await instanceB.call("/dispatched")).body[0].id,ownPlan.dispatchPlanId,
+        "Another process discovers dispatch without a local plan cache");
+      assert.equal((await instanceB.call("/validate",sharedValidation)).body.stale,false);
+      assert.equal((await instanceB.call(`/dispatched/${otherPlan.dispatchPlanId}/open`,{})).status,404);
+      const remote=await instanceB.call(`/dispatched/${ownPlan.dispatchPlanId}/open`,{});
+      assert.equal(remote.status,200,JSON.stringify(remote.body));
+      assert.deepEqual(remote.body.stops.map((s:any)=>s.id),opened.body.scopeIds);
+      assert.equal(remote.body.expiresAt,opened.body.expiresAt,"Regeneration never renews provider expiry");
+      assert.equal(remote.body.stops[0].travelSeconds,90,"An empty process fetches fresh provider data");
+      await pool.query(`UPDATE "${fixture.schema}".work_orders SET address='Changed cross-instance destination' WHERE id=$1`,[second.id]);
+      assert.equal((await instanceB.call(`/dispatched/${ownPlan.dispatchPlanId}/open`,{})).status,409,
+        "Even a process with a local payload rechecks the current destination fingerprint");
+      await pool.query(`UPDATE "${fixture.schema}".work_orders SET address=$1 WHERE id=$2`,[second.address,second.id]);
+      const firstActivation=(await pool.query("SELECT activated_at FROM public.route_dispatches WHERE id=$1",[ownPlan.dispatchPlanId])).rows[0].activated_at;
+      await stopInstance(instanceB.child);
+      const restarted=await startInstance();
+      const recovered=await restarted.call(`/dispatched/${ownPlan.dispatchPlanId}/open`,{});
+      assert.equal(recovered.status,200,JSON.stringify(recovered.body));
+      assert.equal(recovered.body.expiresAt,opened.body.expiresAt);
+      assert.equal((await pool.query("SELECT activated_at FROM public.route_dispatches WHERE id=$1",[ownPlan.dispatchPlanId])).rows[0].activated_at.toISOString(),
+        firstActivation.toISOString(),"Restart and repeated opening cannot move first activation");
+      await stopInstance(restarted.child);
+      const reviewInstance=await startInstance();
+      const reviewPath=`/dispatched/${ownPlan.dispatchPlanId}/open`;
+      const freshReview=await reviewInstance.call(reviewPath,{},"mismatch");
+      assert.equal(freshReview.status,409);
+      assert.equal(freshReview.body.code,"ADDRESS_REVIEW_REQUIRED","Regeneration requires fresh review of discrepancies");
+      const tokens=freshReview.body.addressReviews.map((r:any)=>r.token);
+      const changedMatch=await reviewInstance.call(reviewPath,{addressConfirmations:tokens},"shifted");
+      assert.equal(changedMatch.status,409,"An old match approval cannot authorize new provider coordinates");
+      assert.equal(changedMatch.body.code,"ADDRESS_REVIEW_REQUIRED");
+      const freshTokens=changedMatch.body.addressReviews.map((r:any)=>r.token);
+      const confirmed=await reviewInstance.call(reviewPath,{addressConfirmations:freshTokens},"shifted");
+      assert.equal(confirmed.status,200,JSON.stringify(confirmed.body));
+      assert.ok(confirmed.body.confirmedAddressMatches.length);
+      assert.equal(confirmed.body.expiresAt,opened.body.expiresAt);
+      await stopInstance(reviewInstance.child);
+      const failureInstance=await startInstance();
+      assert.equal((await failureInstance.call(reviewPath,{},"failure")).status,500,
+        "A provider outage fails explicitly without replacing the durable dispatch");
+      assert.equal((await failureInstance.call("/dispatched")).body[0].id,ownPlan.dispatchPlanId);
+      assert.equal((await failureInstance.call(reviewPath,{})).status,200,"The same dispatch recovers after provider service returns");
+      await stopInstance(failureInstance.child);
+      const business=(await pool.query(`SELECT d.*,array_agg(o.work_order_id) AS ids FROM public.route_dispatches d
+        JOIN public.route_dispatch_orders o ON o.dispatch_id=d.id WHERE d.id=$1 GROUP BY d.id`,[ownPlan.dispatchPlanId])).rows[0];
+      assert.deepEqual(business.ids,[second.id]);
+      for(const forbidden of ["geometry","origin","point","addressConfirmations","confirmedAddressMatches","payload"])
+        assert.equal(business[forbidden],undefined,"Business records contain no licensed payload or review tokens");
       assert.equal((await post("/dispatch", { planId: ownPlan.dispatchPlanId, route: opened.body })).status, 400, "Clients cannot supply route content");
       const wrongProject = await fetch(base.replace(`/projects/${fixture.projectId}/`, "/projects/999999999/") +
         `/dispatched/${ownPlan.dispatchPlanId}/open`, { method: "POST", headers: { "x-test-actor": "viewer" } });
@@ -188,6 +264,7 @@ test("dispatch produces separate per-assignee routes; technician authorization c
       assert.equal((await openRoute(ownPlan.dispatchPlanId)).status, 404, "Expired content is evicted");
       assert.equal((await send(ownPlan.dispatchPlanId)).status, 404);
     } finally {
+      for(const instance of instances)await stopInstance(instance);
       await storage.setSubrolePermissions(fixture.viewerRoleId, ["workOrders.view", "projects.view"]);
       await pool.query(`UPDATE "${fixture.schema}".work_orders SET assigned_user_id=$1 WHERE id=$2`, [second.assignedUserId, second.id]);
       await new Promise<void>(resolve => server.close(() => resolve()));

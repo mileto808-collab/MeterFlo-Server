@@ -12,7 +12,9 @@ import { destinationAddress, destinationPolicy, resolveDestination } from "./des
 import { createAddressReview, manualAddressFields, readAddressConfirmation, reviewHash } from "./addressReview";
 export { parseGps } from "./destinations";
 import { optimizeStops, type Candidate } from "./optimizer";
-import { DispatchCache, type DispatchEntry } from "./dispatchCache";
+import { DispatchCache } from "./dispatchCache";
+import { DispatchStore, type StoredDispatch, type DispatchMetadata } from "./dispatchStore";
+import { dispatchReviewScope, regenerateDispatch } from "./regenerateDispatch";
 import type { AddressMatchSummary, AddressReview, GeocodedPoint, RoutePoint, RoutingResult } from "../../shared/workOrderRouting";
 
 const point=z.object({lat:z.number().finite().min(-90).max(90),lng:z.number().finite().min(-180).max(180)}).strict();
@@ -34,6 +36,7 @@ export function routeFingerprint(orders:any[], definitions:any[], project?: { de
 // tests; it is never controlled by an HTTP parameter or persisted setting.
 export function registerRoutingRoutes(app:Express, services = { effectiveRouting, routingService, consumeRoutingQuota }) {
   const dispatchCache = new DispatchCache();
+  const dispatchStore = new DispatchStore();
   const { effectiveRouting: readEffective, routingService: makeProvider, consumeRoutingQuota: consumeQuota }=services;
   const wrap=(fn:(req:any,res:any)=>Promise<any>)=>async(req:any,res:any)=>{
     try{await fn(req,res);}catch(e:any){
@@ -83,7 +86,9 @@ export function registerRoutingRoutes(app:Express, services = { effectiveRouting
       role?.key==="field_technician"&&!await storage.isAdminUser(user))
       throw new RoutingError(403,"Dispatch requires authorized support or manager access.");
   }
-  async function checkDispatch(req:any,entry:DispatchEntry) {
+  async function checkDispatch(req:any,entry:Pick<StoredDispatch,"plannerId"|"activatedAt">&{
+    route:Omit<DispatchMetadata,"scopeIds">&{scopeIds?:number[]}
+  }) {
     const route=entry.route;
     const ctx=await candidates(req,route.scopeIds!);
     if(ctx.project.id!==route.projectId)throw new RoutingError(404,"Dispatched route not available.");
@@ -116,36 +121,65 @@ export function registerRoutingRoutes(app:Express, services = { effectiveRouting
     const {planId}=z.object({planId:dispatchId}).strict().parse(req.body);
     const ctx=await access(req);
     await assertDispatcher(ctx.user);
-    const entry=dispatchCache.get(planId);
+    const entry=await dispatchStore.planned(ctx.project!.id,ctx.user.id,planId)??dispatchCache.get(planId);
     if(!entry||entry.plannerId!==ctx.user.id||entry.route.projectId!==ctx.project!.id)
       throw new RoutingError(404,"This plan is no longer available. Plan again before dispatching.");
-    if(!entry.shareableOrigin)throw new RoutingError(422,"Device locations cannot be dispatched. Plan from an entered warehouse or starting address.");
+    if(!entry.route.originAddress)throw new RoutingError(422,"Device locations cannot be dispatched. Plan from an entered warehouse or starting address.");
     await checkDispatch(req,entry);
-    entry.dispatched=true;
+    if(!await dispatchStore.dispatch(entry.id))throw new RoutingError(409,"This plan expired before dispatch. Plan again.");
     res.set("Cache-Control","no-store").json({id:entry.id,expiresAt:entry.route.expiresAt});
   }));
   app.get("/api/projects/:projectId/routing/dispatched",isAuthenticated,wrap(async(req,res)=>{
     const ctx=await access(req);
     if(!await storage.hasPermission(ctx.user,"workOrders.optimizeRoute"))throw new RoutingError(403,"Optimize route permission required.");
     const summaries=[];
-    for(const entry of dispatchCache.received(ctx.project!.id,ctx.user.id)){
+    for(const entry of await dispatchStore.received(ctx.project!.id,ctx.user.id)){
       try{await checkDispatch(req,entry);}
       catch(error){if(error instanceof RoutingError)continue;throw error;}
       summaries.push({id:entry.id,departureAt:entry.route.departureAt,expiresAt:entry.route.expiresAt,
-        stopCount:entry.route.stops.length,originAddress:entry.route.originAddress});
+        stopCount:entry.route.scopeIds.length,originAddress:entry.route.originAddress});
     }
     res.set("Cache-Control","no-store").json(summaries);
   }));
   app.post("/api/projects/:projectId/routing/dispatched/:dispatchId/open",isAuthenticated,wrap(async(req,res)=>{
     const ctx=await access(req),id=dispatchId.parse(req.params.dispatchId);
-    const entry=dispatchCache.get(id);
-    if(!entry||!entry.dispatched||entry.route.projectId!==ctx.project!.id||entry.route.assigneeId!==ctx.user.id)
+    const {addressConfirmations=[]}=z.object({addressConfirmations:z.array(z.string().min(1).max(1024)).max(51).optional()}).strict().parse(req.body??{});
+    const entry=await dispatchStore.get(ctx.project!.id,ctx.user.id,id);
+    if(!entry)
       throw new RoutingError(404,"Dispatched route not available. Ask dispatch to send a current plan.");
-    await checkDispatch(req,entry);
+    const checked=await checkDispatch(req,entry);
+    let payload=dispatchCache.get(id)?.route;
+    if(!payload) {
+      const actor=ctx.user.id,scope=dispatchReviewScope(entry,actor);
+      const continuation=Date.now()-(continuedAt.get(actor)??0)>=10000&&
+        addressConfirmations.some(token=>!!readAddressConfirmation(token,scope));
+      if(running.has(actor)||Date.now()-(lastRequest.get(actor)??0)<10000&&!continuation)
+        throw new RoutingError(429,"A route is already running or was just requested. Please wait before reopening.");
+      running.add(actor);lastRequest.set(actor,Date.now());
+      if(continuation)continuedAt.set(actor,Date.now());
+      const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),90000);
+      const abort=()=>controller.abort();res.on("close",abort);
+      try {
+        const config=await readEffective(ctx.project!.id);
+        await consumeQuota(config.effective.provider,config.serverKey,config.effective.dailyPlans);
+        const assignee=await storage.getUser(ctx.user.id);
+        const name=[assignee?.firstName,assignee?.lastName].filter(Boolean).join(" ")||assignee?.username||"Assigned technician";
+        const rebuilt=await regenerateDispatch(entry,checked.orders,checked.definitions,checked.project,name,
+          config.effective.provider,makeProvider(config.effective.provider,config.serverKey,controller.signal),
+          actor,addressConfirmations);
+        if(rebuilt.reviews)return res.status(409).set("Cache-Control","no-store").json({
+          code:"ADDRESS_REVIEW_REQUIRED",message:"Review fresh provider address matches before opening this dispatched route.",
+          addressReviews:rebuilt.reviews,
+        });
+        payload=rebuilt.route!;
+        await checkDispatch(req,entry);
+        dispatchCache.remember({...entry,route:payload,shareableOrigin:true,dispatched:true});
+      } finally {clearTimeout(timer);res.off("close",abort);running.delete(actor);}
+    }
     // Once started, the original departure remains the route's baseline for
     // estimates. Do not force a re-plan every fifteen minutes mid-route.
-    entry.activatedAt??=Date.now();
-    const route={...entry.route,receivedDispatchId:entry.id};
+    if(!await dispatchStore.activate(id))throw new RoutingError(409,"This dispatched route expired while opening. Ask dispatch to plan again.");
+    const route={...payload,receivedDispatchId:entry.id};
     res.set("Cache-Control","no-store").json({...route,routes:[route]});
   }));
   for(const base of ["/api/routing/settings","/api/projects/:projectId/routing/settings"]){
@@ -174,8 +208,8 @@ export function registerRoutingRoutes(app:Express, services = { effectiveRouting
   app.post("/api/projects/:projectId/routing/validate",isAuthenticated,wrap(async(req,res)=>{
     const input=z.object({ids:idsSchema,fingerprint:z.string().length(64),configurationRevision:z.string().length(64),receivedDispatchId:dispatchId.optional()}).strict().parse(req.body);
     if(input.receivedDispatchId){
-      const ctx=await access(req),entry=dispatchCache.get(input.receivedDispatchId);
-      if(!entry||!entry.dispatched||entry.route.projectId!==ctx.project!.id||entry.route.assigneeId!==ctx.user.id)
+      const ctx=await access(req),entry=await dispatchStore.get(ctx.project!.id,ctx.user.id,input.receivedDispatchId);
+      if(!entry)
         throw new RoutingError(403,"Dispatched route access is no longer available.");
       await checkDispatch(req,entry);
       return res.set("Cache-Control","no-store").json({stale:entry.route.fingerprint!==input.fingerprint||
@@ -320,6 +354,9 @@ export function registerRoutingRoutes(app:Express, services = { effectiveRouting
           confirmedAddressMatches:route.confirmedAddressMatches?.filter(match=>match.kind==="origin"||scopeIds.includes(match.workOrderId!)),
           fingerprint:routeFingerprint(ownOrders,ctx.definitions,ctx.project)};
         route.dispatchPlanId=dispatchCache.add(ctx.user.id,dispatchRoute,"address" in input.origin);
+        // Save only business inputs, so an explicit Send can reach another
+        // instance too. Drafts are never visible in the recipient's inbox.
+        if("address" in input.origin)await dispatchStore.save(dispatchCache.get(route.dispatchPlanId)!);
       }
       const result:RoutingResult={...routes[0],assignmentRoutingVersion:1,routes,scopeIds:input.ids,addressReviewVersion:1,confirmedAddressMatches,projectId:ctx.project.id,provider:config.effective.provider,
         configurationRevision:config.result.revision,fingerprint:routeFingerprint(ctx.orders,ctx.definitions,ctx.project),

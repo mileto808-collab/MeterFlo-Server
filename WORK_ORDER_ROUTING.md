@@ -206,6 +206,36 @@ loss or tab closure. Do not treat a shared browser profile as a confidentiality
 boundary; use separate OS/browser profiles for users requiring that boundary.
 Do not extend the cache duration without reviewing current provider terms.
 
+Address-origin plans additionally retain relational business identities
+and ordered work-order references (`route_dispatches` / `route_dispatch_orders`).
+Only the entered starting address, scheduling inputs, original expiry, sender and
+recipient identities, configuration revision and work-order fingerprint are saved.
+Device origins cannot be dispatched. No resolved coordinates, provider response,
+geometry, address-review tokens or confirmations are stored in these tables.
+The composite work-order reference is resolved through the dispatch's project;
+work orders reside in project schemas and are not public-table foreign keys.
+
+Dispatch discovery and validation work across app instances and restarts. Opening
+on an instance without the transient payload fetches fresh geocodes, a road matrix
+and geometry, consuming provider quota. It preserves the sent stop sequence and
+original expiry; restarting does not add four hours. Every regenerated discrepancy
+requires fresh, exact-match review by the recipient before any route is activated.
+Approvals are scoped to that dispatch, recipient, current fingerprint/configuration
+and exact provider match, and expire after ten minutes. A changed match is reviewed
+again, not authorized by a previous token. Provider failures leave the business
+dispatch available for retry, never a fabricated or stale map.
+
+Current sender and recipient permissions, project membership, assignment, Scheduled
+status, destination/scheduling fingerprint and configuration are checked before
+opening/validation, and again after regeneration. First activation is saved
+atomically across instances and is never moved by retries. Unstarted departures
+over fifteen minutes old still require dispatch to plan again; started routes keep
+their original departure baseline until expiry. Planning-only provider payloads
+remain local. Private business-input drafts allow Send to reach another instance,
+but only a successful explicit Send makes the dispatch visible to its recipient.
+A full SQL database
+backup may contain dispatch business inputs, never licensed route payloads.
+
 JSON project backups include non-secret provider settings/reference names.
 Project restore deliberately disables restored routing configuration so it cannot silently
 activate customer billing; an authorized operator must review and enable it.
@@ -237,6 +267,7 @@ addresses or technician origins. Free quota alone does not resolve that issue.
 ## Verification
 
 - `npx tsx --test tests/work-order-routing.test.ts`
+- `npx tsx --test tests/routing-dispatch-regeneration.test.ts`
 - `npx tsx --test tests/visit-scheduling.test.ts`
 - Create a disposable fixture with `npx tsx tests/support/inventory-ui-fixture.ts`.
 - `npx tsx --test tests/work-order-routing-api.test.ts`

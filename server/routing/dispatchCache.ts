@@ -35,6 +35,11 @@ export class DispatchCache {
     return id;
   }
   get(id: string) { this.prune(); return this.entries.get(id); }
+  remember(entry: DispatchEntry) {
+    this.prune();
+    while (this.entries.size >= 500) this.entries.delete(this.entries.keys().next().value!);
+    this.entries.set(entry.id, structuredClone(entry));
+  }
   received(projectId: number, assigneeId: string) {
     this.prune();
     return [...this.entries.values()].filter(entry =>

@@ -311,6 +311,38 @@ export const systemSettings = pgTable("system_settings", {
 });
 
 // Operational quota state, deliberately excluded from business backup payloads.
+// Dispatch inputs are durable; provider payloads and device origins are not.
+export const routeDispatches = pgTable("route_dispatches", {
+  id: uuid("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  plannerId: varchar("planner_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  assigneeId: varchar("assignee_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  originAddress: text("origin_address").notNull(),
+  departureAt: timestamp("departure_at", { withTimezone: true }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  configurationRevision: varchar("configuration_revision", { length: 64 }).notNull(),
+  fingerprint: varchar("fingerprint", { length: 64 }).notNull(),
+  serviceMinutes: integer("service_minutes").notNull(),
+  toleranceMinutes: integer("tolerance_minutes").notNull(),
+  addressReviewVersion: integer("address_review_version").notNull(),
+  assignmentRoutingVersion: integer("assignment_routing_version").notNull(),
+  activatedAt: timestamp("activated_at", { withTimezone: true }),
+  dispatchedAt: timestamp("dispatched_at", { withTimezone: true }),
+}, t => [
+  index("route_dispatches_inbox").on(t.projectId,t.assigneeId,t.expiresAt),
+  check("route_dispatches_check", sql`${t.expiresAt} > ${t.departureAt} - interval '7 days'`),
+]);
+export const routeDispatchOrders = pgTable("route_dispatch_orders", {
+  dispatchId: uuid("dispatch_id").notNull().references(() => routeDispatches.id, { onDelete: "cascade" }),
+  // Work orders live in project schemas. Resolve this reference only through
+  // its dispatch's project and always recheck its current assignment.
+  workOrderId: integer("work_order_id").notNull(),
+  position: integer("position").notNull(),
+}, t => [
+  primaryKey({ columns: [t.dispatchId,t.workOrderId] }),
+  uniqueIndex("route_dispatch_orders_dispatch_id_position_key").on(t.dispatchId,t.position),
+]);
+
 export const routingDailyUsage = pgTable("routing_daily_usage", {
   accountHash: varchar("account_hash", { length: 64 }).notNull(),
   usageDay: date("usage_day").notNull(),

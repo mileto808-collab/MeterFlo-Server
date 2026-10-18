@@ -11,15 +11,22 @@ the recipient's route and recheck current project membership, both parties'
 permissions, assignments, Scheduled status, address/scheduling fingerprints,
 provider configuration and expiry before use.
 
-Shared provider content lives only in a bounded, process-local cache, with the
-original maximum four-hour expiry; restarting or switching server instances can
-make a shared plan unavailable and requires dispatch to send a new plan. It is
-not permanent route history and is not included in backups. First activation
-requires a departure no more than fifteen minutes in the past; an activated
-route retains its original departure baseline until its original expiry.
+Plan/dispatch identities, entered starting addresses, assumptions and ordered work-order
+references are relational business records. Shared provider content lives only in
+a bounded, process-local cache. After a restart or on another instance, opening
+regenerates provider content without changing the original maximum four-hour
+expiry or dispatched stop sequence. Fresh mismatched address results require the
+recipient's explicit review; old confirmations are never persisted or reused.
+Regeneration consumes provider quota and fails explicitly during provider outages.
+Planning stores only private business inputs so Send can reach a different instance;
+recipients cannot discover or open a plan until its planner explicitly sends it.
+First activation is atomic across instances and requires a departure no more than
+fifteen minutes in the past; an activated route retains its original departure
+baseline until its original expiry. This is not permanent provider route history.
 Acceptance: `npm run build && node tests/support/project-workspace-sandbox.mjs tests/routing-dispatch-ui.cjs`.
 This uses an owned temporary database, synthetic provider responses, and real
-signed-in browser sessions; it does not test live provider or native Maps apps.
+signed-in browser sessions, two server processes and subprocess restart recovery;
+it does not test live provider or native Maps apps.
 
 ## Optional project inventory
 

@@ -64,7 +64,21 @@ location must not become that technician's shared origin.
 **Why:** Dispatch is an authorization and location-privacy boundary, not a
 different way to recover the manager's full planning session.
 
-**How to apply:** If durable or multi-instance dispatch is introduced later,
-persist business identities relationally and separate them from licensed provider
-payloads. Do not turn transient route geometry or one-plan address confirmations
-into permanent business evidence merely to improve recovery.
+**How to apply:** Persist business identities relationally and separate them from
+licensed provider payloads. Private business-input drafts are needed before Send
+because that request may reach a different instance than planning; drafts must
+not be discoverable by recipients until explicitly sent.
+
+Recover dispatch by regenerating provider content rather than retaining licensed
+payloads in the database. Preserve the original stop sequence and expiry, and
+require fresh exact-match review for any regenerated address discrepancy.
+
+**Why:** Durable business identities must survive app restarts and load balancing
+without making provider geometry or one-plan address approvals permanent evidence.
+Storing only already-sent identities would still leave Send dependent on the
+planning process and fail when load balancing sends it elsewhere.
+
+**How to apply:** Never save provider responses, resolved coordinates, device
+origins or review tokens as dispatch business inputs. Fresh content does not
+renew the dispatch's expiry; provider outages must fail explicitly and leave
+the business dispatch retryable.

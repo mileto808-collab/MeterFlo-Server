@@ -12,4 +12,5 @@ if [ -n "${REPL_ID:-}" ]; then
   # Install additive scheduling fields before a publish, even if no preview was
   # opened after the merge. Never run this command in a production build hook.
   npx tsx script/migrate-visit-scheduling.ts --development
+  npx tsx script/migrate-route-dispatch.ts --development
 fi

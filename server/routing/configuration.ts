@@ -5,6 +5,7 @@ import { pool } from "../db";
 import { storage } from "../storage";
 import { defaultRoutingConfiguration, isRoutingBrowserReference, isRoutingServerReference, type RoutingConfiguration, type RoutingReadiness } from "../../shared/workOrderRouting";
 import { RoutingError } from "./providers";
+import { initializeDispatch } from "./dispatchStore";
 
 // References only, never credential values. Prevent selecting unrelated process
 // secrets (e.g. SESSION_SECRET) and transmitting them to a mapping provider.
@@ -28,6 +29,7 @@ export function assertProjectCredentialReferences(config:RoutingConfiguration,pr
   }
 }
 export async function initializeRouting() {
+  await initializeDispatch();
   await pool.query(`ALTER TABLE public.projects ADD COLUMN IF NOT EXISTS routing_configuration jsonb;
     CREATE TABLE IF NOT EXISTS public.routing_daily_usage (
       account_hash varchar(64) NOT NULL, usage_day date NOT NULL, plans integer NOT NULL DEFAULT 0,

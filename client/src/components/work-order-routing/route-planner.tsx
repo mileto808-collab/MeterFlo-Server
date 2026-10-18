@@ -192,7 +192,9 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
   const [mapRetry, setMapRetry] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [validationMessage, setValidationMessage] = useState("");
-  const [pendingReview, setPendingReview] = useState<{ request: PlanningRequest; reviews: AddressReview[]; tokensById: Record<string, string> } | null>(null);
+  const [pendingReview, setPendingReview] = useState<{
+    reviews: AddressReview[]; tokensById: Record<string, string>;
+  } & ({ request: PlanningRequest; dispatchId?: never } | { dispatchId: string; request?: never }) | null>(null);
   const [dispatchMessage, setDispatchMessage] = useState("");
   const receivedUrl = `/api/projects/${projectId}/routing/dispatched`;
   const { data: receivedRoutes = [], refetch: refreshReceived, isError: receivedError } = useQuery<DispatchedRouteSummary[]>({
@@ -437,10 +439,20 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
   const activeRouteEnded = !!activeRoute?.assigneeId && endedRouteIds.includes(activeRoute.assigneeId);
   const activeBundleExpired = !!result && (routeExpired(result) || result.routes?.some(route => routeExpired(route)));
   const selectedStop = currentRoute?.stops[activeIndex];
-  const openDispatchedRoute = async (id: string) => {
+  const openDispatchedRoute = async (id: string, tokensById: Record<string,string> = {}) => {
     setBusy(true); setValidationMessage("");
     try {
-      const response = await fetch(`${receivedUrl}/${id}/open`, { method: "POST", credentials: "include" });
+      const response = await fetch(`${receivedUrl}/${id}/open`, { method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ addressConfirmations: Object.values(tokensById) }) });
+      if (response.status === 409) {
+        const data = await response.json();
+        if (data.code !== "ADDRESS_REVIEW_REQUIRED" || !Array.isArray(data.addressReviews) || !data.addressReviews.length)
+          throw new Error(data.message || "Dispatched route is out of date. Ask dispatch to plan again.");
+        setResult(null); setRouteAccessValid(false); sessionStorage.removeItem(activeKey);
+        setPendingReview({ dispatchId: id, reviews: data.addressReviews, tokensById });
+        return;
+      }
+      if (response.status === 401 || response.status === 403) setPendingReview(null);
       if (!response.ok) throw new Error(await errorMessage(response));
       const route = await response.json() as RoutingResult;
       if (!hasPlanningMetadata(route) || !hasRoutePlanningMetadata(route) || routeExpired(route) ||
@@ -465,7 +477,7 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
         body: JSON.stringify({ planId: currentRoute.dispatchPlanId }),
       });
       if (!response.ok) throw new Error(await errorMessage(response));
-      setDispatchMessage(`Sent to ${currentRoute.assigneeName}. They can open it under Routes from dispatch in this project's route planner until expiry. Server restarts clear shared plans.`);
+      setDispatchMessage(`Sent to ${currentRoute.assigneeName}. They can open it under Routes from dispatch in this project's route planner until expiry, including after a server restart. Refreshed address matches may require review.`);
       void refreshReceived();
     } catch (error) {
       setDispatchMessage(error instanceof Error ? error.message : "Route could not be dispatched.");
@@ -624,10 +636,11 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
             reviews={pendingReview.reviews}
             busy={busy}
             onCancel={() => { setPendingReview(null); setValidationMessage(""); }}
-            onConfirm={tokens => void plan({
-              request: pendingReview.request,
-              tokensById: { ...pendingReview.tokensById, ...Object.fromEntries(pendingReview.reviews.map((review, index) => [review.id, tokens[index]])) },
-            })}
+            onConfirm={tokens => {
+              const tokensById = { ...pendingReview.tokensById, ...Object.fromEntries(pendingReview.reviews.map((review, index) => [review.id, tokens[index]])) };
+              if (pendingReview.dispatchId) void openDispatchedRoute(pendingReview.dispatchId, tokensById);
+              else if (pendingReview.request) void plan({ request: pendingReview.request, tokensById });
+            }}
             onCorrectWorkOrder={hasPermission("workOrders.edit") ? id => {
               const order = workOrders.find(order => order.id === id);
               if (order) { setPendingReview(null); setSetupOpen(false); onOpenWorkOrder(order); }
