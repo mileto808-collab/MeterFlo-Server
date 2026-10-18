@@ -4,9 +4,10 @@ const fs = require("node:fs/promises");
 const { chromium, expect } = require("@playwright/test");
 
 async function main() {
+  if (!process.env.WORKSPACE_UI_SANDBOX_CONFIG) throw new Error("Run this test through the owned workspace sandbox.");
   const f = JSON.parse(await fs.readFile("/tmp/meterflo-inventory-ui-fixture.json", "utf8"));
   const browser = await chromium.launch({ executablePath: "/repl/tools/bin/chromium", args: ["--no-sandbox"] });
-  const context = await browser.newContext({ baseURL: `https://${process.env.REPLIT_DEV_DOMAIN}`, viewport: { width: 1280, height: 900 } });
+  const context = await browser.newContext({ baseURL: require("./support/workspace-ui-base.cjs")(), viewport: { width: 1280, height: 900 } });
   const api = async (method, path, data) => {
     const r = await context.request.fetch(path, { method, data });
     assert.ok(r.ok(), `${method} ${path}: ${r.status()} ${await r.text()}`);
@@ -59,7 +60,6 @@ async function main() {
     for (const mobile of [false, true]) {
       await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1280, height: 900 });
       await page.goto(`${base.replace("/api", "")}/work-orders?edit=${work.id}`);
-      await expect(page.getByRole("region", { name: "Planned requirements", exact: true })).toBeVisible();
       await page.getByRole("button", { name: "Start Changeout", exact: true }).click();
       const next = page.getByTestId("button-wizard-next");
       await page.getByTestId("button-system-can-change").click();
@@ -68,7 +68,9 @@ async function main() {
       await page.getByTestId("input-old-system-reading").fill("1");
       await next.click();
       await expect(page.getByText("Perform Physical Changeout", { exact: true })).toBeVisible();
-      await expect(page.locator('section[aria-label="Planned work-order requirements"]')).toContainText("Planned installation kit");
+      await expect(page.locator('section[aria-label="Planned work-order requirements"]')).toContainText("Planned test system");
+      await expect(page.locator('section[aria-label="Planned work-order requirements"]')).not.toContainText("Planned installation kit");
+      await expect(page.getByRole("region", { name: "Actual items used", exact: true })).toHaveCount(0);
       await page.screenshot({ path: `generated-artifacts/planned-use-${mobile ? "phone" : "desktop"}.jpg`, fullPage: true });
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1);
       assert.equal(overflow, false, "wizard must fit viewport");
@@ -78,7 +80,8 @@ async function main() {
     snapshot = await api("GET", `${base}/work-orders/${work.id}/inventory`);
     assert.equal(snapshot.allocation, null);
     await command("prepareUse", { workOrderId: work.id, revision: 0, mode: "changeout",
-      dispositions: [{ equipment: "system", serial: oldSerial, disposition: "scrapped", warehouseId: null }],
+      dispositions: [{ equipment: "system", serial: oldSerial, disposition: "returned", warehouseId: "planned-van",
+        ruleId: snapshot.removalRules.find(rule => rule.active && rule.stage === "field" && rule.outcome === "returned").id }],
       used: [{ itemId: "planned-meter", warehouseId: "planned-van", quantity: 1, serials: ["PLANNED-001"] },
         { itemId: "planned-seal", warehouseId: "planned-van", quantity: 2, serials: [] }] });
     const prepared = await api("GET", `${base}/inventory`);

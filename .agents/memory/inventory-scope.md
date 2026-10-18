@@ -5,6 +5,12 @@ description: User-defined project inventory boundaries and reading-only distinct
 
 Inventory is enabled by an admin per project. Projects can have multiple warehouses, including vehicles and physical warehouses. Enabling inventory must not change existing file-import behavior or disable editable old/new System Type and Module Type fields on work orders; ordinary permissions and project equipment scope still apply.
 
+In the inventory-enabled changeout wizard, planned inventory should appear as an inline Inventory label/list, without repeating a long kit title. Show the manual “Actual items used” picker only when there are no planned items and no supplied-but-unmapped new equipment types. Serialized systems/modules selected through a kit use the wizard's new-device serial capture, not a duplicate equipment-serial entry.
+
+**Why:** The user wants imported type mappings to supply the inventory plan without making the field tech select those items again. They explicitly clarified that inventory-disabled projects must retain the previous workflow.
+
+**How to apply:** Keep stock-source selection and the distinction between assembled-kit custody and loose component stock explicit. Defer equipment-serial validation until the wizard capture step, but require exact validated identities at completion. Missing type mappings are configuration problems, not permission to bypass the plan.
+
 Inventory enablement is reversible even with unfinished inventory work. Disabling is a non-destructive pause, not cancellation: preserve stock, serials, history, reservations, open orders, counts and returns. Existing reservations remain reserved. Ordinary work-order completion while disabled must not deduct stock; re-enabling must not invent retroactive consumption.
 
 **Why:** The user said an already configured customer project may stop using Inventory and should not need to be recreated. Preserving unfinished evidence avoids silently releasing custody or cancelling business records.

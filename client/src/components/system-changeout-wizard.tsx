@@ -35,6 +35,7 @@ import { isValidReading, getReadingInputValue, readingLimitMessage } from "@shar
 import { GPSCapture } from "./gps-capture";
 import SignaturePad, { SignaturePadRef, SignatureType } from "./signature-pad";
 import { ActualUseCollector, actualUseLinesAreValid, initialActualUse, type ActualUseDraft } from "./inventory/actual-use-collector";
+import { bindWizardEquipmentSerials } from "@shared/inventory-wizard-use";
 import {
   ArrowLeft,
   ArrowRight,
@@ -325,7 +326,7 @@ export function SystemChangeoutWizard({
     }
     if (workInventory && actualUseInitializedFor.current !== workOrderId) {
       actualUseInitializedFor.current = workOrderId;
-      setActualUse(initialActualUse(workInventory.allocation));
+      setActualUse(initialActualUse(workInventory.allocation, workInventory.requirements?.lines, workInventory.items));
       captureLocationBasis(workInventory, (workInventory.allocation?.lines ?? []).map(line => line.warehouseId));
       actualUseBaseline.current = inventoryBasis;
       actualUseTouched.current = false;
@@ -425,6 +426,8 @@ export function SystemChangeoutWizard({
     signatureName: "",
     signatureType: null,
   });
+  const wizardActualUse = inventoryEnabled ? bindWizardEquipmentSerials(actualUse, workInventory?.items ?? [],
+    { system: data.newSystemId, module: data.newModuleId }) : actualUse;
   
   // Determine the effective display mode based on presence of system/module IDs
   // This is now data-driven instead of scope-driven
@@ -697,7 +700,9 @@ export function SystemChangeoutWizard({
         return data.beforePhotos.length >= 1;
       case "physicalChange":
         return !inventoryEnabled || (!workInventoryLoading && !workInventoryError && !!workInventory && hasPermission("inventory.assign") &&
-          actualUseLinesAreValid(actualUse, workInventory?.items ?? []) &&
+          !workInventory.requirements?.missing.length &&
+          actualUse.some(line => Number(line.quantity) > 0) &&
+          actualUseLinesAreValid(actualUse, workInventory?.items ?? [], true) &&
           !actualUse.some(line => Number(line.quantity) > 0 && !accessibleWarehouses(workInventory).some(warehouse => warehouse.id === line.warehouseId)) &&
           !actualUseConflict);
       case "newSystemId": {
@@ -708,7 +713,8 @@ export function SystemChangeoutWizard({
         const systemIdValid = !needsNewSystemId || !!data.newSystemId.trim();
         const moduleIdValid = !needsNewModuleId || !!data.newModuleId.trim();
         
-        return systemIdValid && moduleIdValid;
+        return systemIdValid && moduleIdValid && (!inventoryEnabled ||
+          actualUseLinesAreValid(wizardActualUse, workInventory?.items ?? []));
       }
       case "newReading": {
         // Validate based on scope
@@ -732,7 +738,7 @@ export function SystemChangeoutWizard({
         return !!data.signatureName.trim();
       case "inventoryReview": {
         if (!hasPermission("inventory.assign")) return false;
-        const quantitiesValid = actualUseLinesAreValid(actualUse, workInventory?.items ?? []) && !actualUseConflict;
+        const quantitiesValid = actualUseLinesAreValid(wizardActualUse, workInventory?.items ?? []) && !actualUseConflict;
         const assets = [
           ...(oldSystemId && displayMode !== "module" && data.newSystemId !== oldSystemId ? [{ key: "system" as const }] : []),
           ...(oldModuleId && displayMode !== "system" && data.newModuleId !== oldModuleId ? [{ key: "module" as const }] : []),
@@ -793,6 +799,7 @@ export function SystemChangeoutWizard({
           const signatureValid = !config.showSignatureStep || (!!data.signatureName.trim() && !!data.signatureType);
           
           return (
+            (!inventoryEnabled || (actualUseLinesAreValid(wizardActualUse, workInventory?.items ?? []) && !actualUseConflict)) &&
             oldSystemReadingValid &&
             newSystemIdValid &&
             newSystemReadingValid &&
@@ -970,7 +977,9 @@ export function SystemChangeoutWizard({
           .then(response => response.json() as Promise<WizardInventory>);
         const latestBasis = JSON.stringify({ revision: latest.revision ?? 0, allocation: latest.allocation ?? null, requirements: latest.requirements ?? null,
           removal: removalConfig(latest), workflow: latest.workflow });
-        if (!actualUseLinesAreValid(actualUse, latest.items ?? [])) throw new Error("Check used quantities and serials. Reserved lines can only use their reserved quantity and serials.");
+        if (!actualUseLinesAreValid(bindWizardEquipmentSerials(actualUse, latest.items ?? [],
+          { system: data.newSystemId, module: data.newModuleId }), latest.items ?? []))
+          throw new Error("Check used quantities and serials. Reserved lines can only use their reserved quantity and serials.");
         if (actualUse.some(line => Number(line.quantity) > 0 && !accessibleWarehouses(latest).some(warehouse => warehouse.id === line.warehouseId))) {
           queryClient.setQueryData(inventoryQueryKey, latest);
           setBasisAccepted(false);
@@ -983,7 +992,8 @@ export function SystemChangeoutWizard({
           throw new Error("A selected location type or access policy changed. Your entries are retained; recheck the current location details.");
         }
         const mode = isReadingOnlyMode || !data.canChange ? "reading_only" : "changeout";
-        const used: Allocation[] = mode === "reading_only" || !data.canChange ? [] : actualUse.flatMap(line => {
+        const used: Allocation[] = mode === "reading_only" || !data.canChange ? [] : bindWizardEquipmentSerials(actualUse, latest.items,
+          { system: data.newSystemId, module: data.newModuleId }).flatMap(line => {
           const quantity = Number(line.quantity);
           if (quantity <= 0) return [];
           const item = latest.items.find(value => value.id === line.itemId);
@@ -1803,7 +1813,7 @@ export function SystemChangeoutWizard({
               {!hasPermission("inventory.assign") ? <Card className="border-destructive/40"><CardContent className="pt-4 text-sm text-destructive">Inventory assignment permission is required to record stock used on this installation.</CardContent></Card> :
                 workInventoryLoading ? <Card><CardContent className="space-y-2 p-4"><div className="h-4 w-44 animate-pulse rounded bg-muted" /><div className="h-12 animate-pulse rounded bg-muted" /><div className="h-12 animate-pulse rounded bg-muted" /></CardContent></Card> :
                 workInventoryError || !workInventory ? <Card><CardContent className="p-4"><p className="text-sm text-destructive">Work-order inventory could not load.</p><Button className="mt-2" size="sm" variant="outline" onClick={() => void refetchWorkInventory()}>Retry</Button></CardContent></Card> :
-                <Card><CardContent className="pt-4">
+                <div className="space-y-3">
                   <ActualUseCollector
                     value={actualUse}
                     onChange={next => {
@@ -1814,6 +1824,7 @@ export function SystemChangeoutWizard({
                     warehouses={accessibleWarehouses(workInventory)}
                     requirements={workInventory.requirements?.lines ?? []}
                     missing={workInventory.requirements?.missing ?? []}
+                    reservations={workInventory.allocation?.lines ?? []}
                   />
                   {actualUseConflict && <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm" role="alert">
                     <p className="font-medium">Inventory basis changed while you were entering use</p>
@@ -1831,8 +1842,7 @@ export function SystemChangeoutWizard({
                       setBasisAccepted(true);
                     }}>Recheck and keep my entries</Button>
                   </div>}
-                  <p className="mt-3 text-xs text-muted-foreground">Recording actual use does not reserve stock. Select a preassembled kit or add its loose components separately, never both for the same kit.</p>
-                </CardContent></Card>}
+                </div>}
             </div>}
           </div>
         );
@@ -1921,6 +1931,8 @@ export function SystemChangeoutWizard({
                 </CardContent>
               </Card>
             )}
+            {inventoryEnabled && allCaptured && !actualUseLinesAreValid(wizardActualUse, workInventory?.items ?? []) &&
+              <p role="alert" className="text-sm text-destructive">The new device serial does not match the selected or reserved inventory. Recheck the scan and stock selection.</p>}
             
             {/* Show input controls when not all IDs are captured */}
             {!allCaptured && (
@@ -2486,7 +2498,7 @@ export function SystemChangeoutWizard({
               <Card className="border-destructive/40"><CardContent className="pt-4 text-sm text-destructive">Inventory assignment permission is required to complete this work order.</CardContent></Card>
             ) : <Card><CardContent className="pt-4 text-sm text-muted-foreground">
               Actual stock use was entered during the physical installation step. No import reservation or empty assignment is created.
-              {actualUse.filter(line => Number(line.quantity) > 0).length > 0 && <ul className="mt-2 space-y-1 text-foreground">{actualUse.filter(line => Number(line.quantity) > 0).map(line => {
+              {wizardActualUse.filter(line => Number(line.quantity) > 0).length > 0 && <ul className="mt-2 space-y-1 text-foreground">{wizardActualUse.filter(line => Number(line.quantity) > 0).map(line => {
                 const warehouse = workInventory?.warehouses.find(value => value.id === line.warehouseId);
                 return <li key={line.key}>{workInventory?.items.find(item => item.id === line.itemId)?.name ?? line.itemId} · {line.quantity} from {warehouse?.code ?? line.warehouseId}{warehouse && workInventory ? ` · ${locationTypeLabel({ locationTypes: workInventory.locationTypes ?? [] }, warehouse)}` : ""}</li>;
               })}</ul>}

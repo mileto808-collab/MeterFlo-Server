@@ -16,7 +16,7 @@ export function deduplicateRequirements(state: InventoryState, ids: string[]) {
 }
 
 /** Expand planned kits to leaves; never deduct this expansion as finished-kit usage. */
-export function requirementLeaves(state: InventoryState, lines: { itemId: string; quantity: number }[], seen: string[] = []): { itemId: string; quantity: number }[] {
+export function requirementLeaves(state: Pick<InventoryState, "items">, lines: { itemId: string; quantity: number }[], seen: string[] = []): { itemId: string; quantity: number }[] {
   return lines.flatMap(line => {
     if (seen.includes(line.itemId)) throw new Error("Kit recipe contains a cycle.");
     const item = state.items.find(i => i.id === line.itemId);
