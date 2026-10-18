@@ -12,8 +12,10 @@ Customers will have their own MeterFlo web app instance, hosted on the customer'
 The user defines "custom work" as development on any standalone MeterFlo
 instance, including direct file edits, another development tool, local
 Windows/Linux work, and separate Replit projects in either their own or a
-customer's account. Core comes from this Git repository; separate development
-and production Replit projects are part of the supported hosting model.
+customer's account. This Replit project and its Git repository are the
+authoritative CORE MeterFlo server source for all other MeterFlo instances.
+Separate development and production Replit projects are part of the supported
+hosting model.
 
 **Why:** The user explicitly clarified that preserving only supported extension
 packages is narrower than their intended customization/update requirement.

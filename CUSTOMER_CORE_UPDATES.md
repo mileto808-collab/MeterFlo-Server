@@ -1,5 +1,17 @@
 # Customer-Owned MeterFlo Updates
 
+## Authoritative MeterFlo Core source
+
+This Replit project and its Git repository are the authoritative **MeterFlo
+Core server** source. All other MeterFlo instances receive shared core updates
+from this repository, including Windows/Linux installations and separate Replit
+projects owned by the MeterFlo operator or a customer. Customer-specific source
+history stays separate; updating core is not permission to replace it.
+
+Administrators should follow the applicable step-by-step procedure below.
+Direct-code conflicts require a qualified developer's review before deployment;
+do not discard custom work to make an update pass.
+
 ## What counts as custom work
 
 Custom work includes **any customer/instance-specific development**, not just
