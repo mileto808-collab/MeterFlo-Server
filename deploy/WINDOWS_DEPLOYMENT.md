@@ -1229,6 +1229,93 @@ npm run build
 Continue only after both succeed. The build's portability guard runs before it
 removes old output, but other build failures can leave incomplete `dist` output.
 
+### 10.4a Migration checksum failures on Windows
+
+If the build stops with **“Migration file does not match its declared checksum”**,
+do not edit `meterflo.release.json`, change checksum approvals, or run database
+commands to get past it. The npm deprecation/vulnerability warnings are separate;
+`npm audit fix --force` is not a checksum repair.
+
+Git for Windows may have checked out an older SQL migration with CRLF line
+endings, while the reviewed release checksum covers LF bytes. The repository's
+`.gitattributes` now pins core files under `migrations/` to LF, including nested
+directories. This protects new checkouts but does not guarantee that Git will
+rewrite an already existing SQL file when only attributes change.
+
+After the fix is available in your approved branch, run these commands from the
+actual MeterFlo checkout in **Command Prompt**:
+
+```cmd
+cd /d C:\xampp\htdocs\meterflo
+git status --short
+git pull origin main
+npx --no-install tsx script/migration-checksums.ts --check
+```
+
+Run commands separately and stop on unexpected failures. Preserve/reconcile local
+changes before pulling; do not reset Git or re-check out the whole worktree.
+`--no-install` uses the already installed `tsx`; if it is unavailable, follow the
+normal backed-up dependency installation procedure rather than downloading an
+unreviewed tool. The same checksum command works in PowerShell from this directory.
+
+The check is read-only and prints each migration's owner, ID, relative file,
+expected SHA-256, current SHA-256, candidate LF SHA-256, and status. It never prints
+SQL contents or reads `.env`. A nonzero exit with `crlf-only` means that removing
+**only** CR bytes immediately before LF recreates the existing declared checksum.
+It is not permission to approve a different migration.
+
+Only when the report identifies `core.inventory-category-ids` as `crlf-only`,
+and no other migration has a mismatch, explicitly repair that one core file:
+
+```cmd
+npx --no-install tsx script/migration-checksums.ts --repair-core core.inventory-category-ids
+npx --no-install tsx script/migration-checksums.ts --check
+```
+
+Repair saves an original-byte backup under the ignored
+`generated-artifacts/migration-checksum-backups/` directory **before** writing.
+Retain that backup until the update is verified and do not run concurrent Git,
+build, or file-edit commands during repair. No database is contacted; no SQL,
+schema revision change, migration approval, Git reset, or PM2 command is executed.
+The manifest and existing approvals remain unchanged. Repeating a successful
+repair is a no-op.
+
+Any other `mismatch`, unsupported encoding/BOM, or extension-owned mismatch must
+be investigated against the trusted release or by the extension maintainer.
+The command refuses to guess encodings, strip BOMs, accept changed SQL, or repair
+extension files. It also refuses partial core repair when another migration
+still has a checksum mismatch. Never replace a declared hash with the hash of
+whatever happens to be on disk.
+
+Once checksums match, resume the update using the already installed dependencies:
+
+```cmd
+npm run check
+npx tsx script/build.ts
+pm2 restart meterflo
+pm2 list
+```
+
+Run separately, **continue only on success**, and verify the app through its usual
+URL and local health checks. Checksum success alone is not proof of database
+schema readiness or migration approval; follow the release's reviewed maintenance
+instructions if the build reports those separate blockers.
+
+For the original Command Prompt chain
+`git pull origin main && npm install && npx tsx script/build.ts && pm2 restart meterflo`,
+a checksum failure stops execution before the restart. Release/checksum
+validation occurs before deleting old `dist` output, so this particular failure
+preserves the previous build. That does **not** guarantee the entire installation
+is unchanged: `npm install` may already have changed dependencies, and failures
+later in compilation can leave incomplete output. Prefer this guide's backed-up
+maintenance procedure over updating dependencies on an actively serving process.
+Do not restart unnecessarily merely to run the read-only checksum check.
+
+The automated suite (`npm run test:migration-checksums`) uses actual temporary
+Git checkouts with `core.autocrlf=true`, `false`, and `input`, plus CRLF/encoding
+fixtures and the real build failure path. Linux execution of these checks is not
+native Windows/NTFS or live PM2 acceptance.
+
 ### 10.5 Apply Database Schema Changes (when required)
 
 If the release notes call out a schema change (new tables, new columns, dropped columns), run:

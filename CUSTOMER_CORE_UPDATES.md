@@ -123,6 +123,33 @@ Core migrations declare `ownership: "core"`; extension migrations declare their 
 
 No migration SQL is executed by these tools. Approval is a human attestation after DBA review/application, not evidence that the tool inspected a database. Schema-changing updates require a separate controlled maintenance procedure. Automated PM2 activation/recovery is restricted to the same schema revision, and irreversible migration declarations must not be represented as safe code-only rollbacks.
 
+### Exact bytes and Windows line endings
+
+Migration checksums are SHA-256 hashes of the **exact file bytes**, not normalized
+SQL. Build, staging and activation retain strict validation; a CRLF file is not
+silently accepted in place of a declared LF migration.
+
+Core `migrations/**/*.sql` files are pinned to LF by `.gitattributes`. Keep
+released migration contents and checksum approvals immutable. Customer packages
+remain customer-owned: their maintainers should declare their own appropriate
+Git attributes and publish file bytes that match their approved checksums. Core
+attributes and the repair command do not normalize customer package source or
+alter package content hashes.
+
+Use `npx --no-install tsx script/migration-checksums.ts --check` from the install
+root for read-only diagnostics across core and configured extension migrations.
+An explicit `--repair-core <migration-id>` can repair one reported `crlf-only`
+core migration only if the LF candidate matches the already declared checksum
+and every other migration is valid. It retains an original-byte backup and does
+not approve or execute SQL. Genuine edits, wrong manifests, unsupported encodings
+and extension mismatches remain blocked. No checksums, approvals or schema
+revisions are automatically recalculated.
+
+See [Windows checksum recovery](deploy/WINDOWS_DEPLOYMENT.md#104a-migration-checksum-failures-on-windows)
+for exact existing-checkout recovery commands and update precautions. Do not
+repair an already prepared candidate in place: its receipt may depend on those
+bytes. Repair the protected source checkout first, then prepare a fresh candidate.
+
 ## Existing forks with direct core edits
 
 Back up and commit customer work, fetch the reviewed core release and perform a manual merge in a separate workspace. Resolve conflicts, review non-conflicting semantic changes, move suitable reports into owned packages, and test before promotion. A clean merge is not a compatibility guarantee. Missing history or unrelated forks require maintainer reconciliation, not resetting or overwriting the instance.
@@ -145,6 +172,13 @@ customer-composed release until they have been reconciled or moved into extensio
 ## Verification coverage
 
 `npm run test:customer-updates` covers real local Git tags/previews, simulated staged installs/build failures, content preservation, incompatible metadata/migrations, authenticated report permissions/project scopes, and injected PM2/health activation/recovery. Actual build checks compile the composed application and report packages.
+
+`npm run test:migration-checksums` covers strict owner-labelled diagnostics,
+read-only checks, explicit backed-up core repair, tampering and encoding
+rejection, unchanged approvals/private files, extension boundaries, actual Git
+autocrlf checkouts, and the real build's early-failure preservation of `dist`
+and chained-restart suppression. This suite never uses a customer database or
+invokes PM2.
 
 The automated PM2 tests use a controlled runner, not a live Windows service. Native Windows, the customer's real extensions/database migration and a customer-owned Replit publish require those environments and explicit operator access. Report their results separately from local tests.
 

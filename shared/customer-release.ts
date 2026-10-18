@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { inspectMigrationBytes } from "./migration-integrity";
 
 export const EXTENSION_API_VERSION = 1;
 export type Migration = { id: string; file: string; sha256: string; ownership: string; reversible: boolean };
@@ -61,16 +62,29 @@ function readJson(file: string): any {
   try{return JSON.parse(fs.readFileSync(file,"utf8"));}
   catch{throw new Error("Customer/core JSON could not be read; check file access and structure without sharing private values");}
 }
-function migrationList(root: string, entries: any, owner: string): Migration[] {
+export function declaredMigrationFiles(root: string, entries: any, owner: string): { migration: Migration; file: string }[] {
   if (!Array.isArray(entries)) throw new Error("Migration declarations must be an array");
   return entries.map(m => {
     if (!m || typeof m.id !== "string" || !/^[a-z0-9][a-z0-9._-]{0,95}$/.test(m.id) ||
         !/^[a-f0-9]{64}$/.test(m.sha256) || m.ownership !== owner || typeof m.reversible !== "boolean")
       throw new Error("Invalid migration ownership or checksum declaration");
     const file = ownedPath(root,m.file);
-    if (!file.endsWith(".sql") || createHash("sha256").update(fs.readFileSync(file)).digest("hex") !== m.sha256)
-      throw new Error("Migration file does not match its declared checksum");
-    return {id:m.id,file:m.file,sha256:m.sha256,ownership:owner,reversible:m.reversible};
+    if (!file.endsWith(".sql")) throw new Error(`Migration ${owner}/${m.id} must reference an SQL file`);
+    return {migration:{id:m.id,file:m.file,sha256:m.sha256,ownership:owner,reversible:m.reversible},file};
+  });
+}
+function migrationList(root: string, entries: any, owner: string): Migration[] {
+  return declaredMigrationFiles(root,entries,owner).map(({migration,file}) => {
+    const result = inspectMigrationBytes(fs.readFileSync(file), migration.sha256);
+    if (result.status !== "match") {
+      const hint = result.status === "crlf-only"
+        ? "Only CRLF-to-LF conversion matches the declared checksum. Run npx --no-install tsx script/migration-checksums.ts --check; repair is explicit and core-only."
+        : result.status === "unsupported-encoding"
+          ? "Unsupported encoding for line-ending repair; retrieve the reviewed UTF-8 file without changing checksum approvals."
+          : "Not a verified line-ending-only mismatch. Review the file against the trusted release; do not change the declared checksum.";
+      throw new Error(`Migration file does not match its declared checksum: ${owner}/${migration.id} (${JSON.stringify(migration.file)}). ${hint}`);
+    }
+    return migration;
   });
 }
 export function loadCustomerRelease(root = process.cwd(), instanceFile = path.join(root,"meterflo.instance.json"), coreRoot = root): CustomerRelease {

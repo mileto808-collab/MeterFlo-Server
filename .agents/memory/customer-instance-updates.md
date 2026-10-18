@@ -14,3 +14,9 @@ Standalone updates prepare a new candidate outside the running installation, the
 **Why:** replacing files in place could discard customer edits or strand relative storage paths; automatic database rollback could destroy newer records. A hosted published snapshot does not automatically change when its workspace changes.
 
 **How to apply:** keep future contracts versioned and customer-owned source separate from core. Require controlled database maintenance for schema changes and never claim a customer-hosted rollout was verified solely from local checks.
+
+Preserve exact-byte migration checksums and approval identities across platforms. Fix checkout portability rather than silently normalizing SQL during release validation. Recovery must reproduce an already declared checksum and remain explicit and core-only; customer extension source stays with its owner.
+
+**Why:** Windows-style Git line-ending conversion reproduced a checksum failure for unchanged reviewed SQL. Accepting normalized hashes during validation would blur the boundary between the bytes reviewed/approved and those actually distributed.
+
+**How to apply:** Pin distributed core SQL line endings and retain original bytes before a targeted repair. Genuine SQL changes, wrong manifests, and unsupported repair encodings remain failures; checksum repair never implies database migration or approval.
