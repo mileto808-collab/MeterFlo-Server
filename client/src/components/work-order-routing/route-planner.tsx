@@ -17,6 +17,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { RoutingSettings } from "./routing-settings";
 import { AddressMatchReviewPanel } from "./address-match-review";
 import { routeSessionStorage as sessionStorage } from "./session-storage";
+import { writeRoutePrintDocument } from "./route-print";
 
 type DisplayMode = "list" | "map" | "both";
 type OriginChoice = RoutePoint | { address: string };
@@ -42,7 +43,7 @@ type PlanningStop = RoutingResult["stops"][number] & {
   waitingMinutes: number;
 };
 type PlanningResult = Omit<RoutingResult, "stops"> & { stops: PlanningStop[] };
-const hasPlanningMetadata = (route: RoutingResult): route is PlanningResult =>
+const hasRoutePlanningMetadata = (route: RoutingResult): route is PlanningResult =>
   route.addressReviewVersion === 1 && Array.isArray(route.stops) && route.stops.every(stop => {
     const value = stop as PlanningStop;
     return Number.isInteger(value.serviceDurationMinutes) && value.serviceDurationMinutes >= 1 && value.serviceDurationMinutes <= 480 &&
@@ -52,15 +53,37 @@ const hasPlanningMetadata = (route: RoutingResult): route is PlanningResult =>
       (value.appointmentWindowStart === null || typeof value.appointmentWindowStart === "string") &&
       (value.appointmentWindowEnd === null || typeof value.appointmentWindowEnd === "string");
   });
+const hasPlanningMetadata = (bundle: RoutingResult): boolean =>
+  bundle.assignmentRoutingVersion === 1 &&
+  bundle.addressReviewVersion === 1 &&
+  Array.isArray(bundle.scopeIds) &&
+  bundle.scopeIds.length > 0 &&
+  bundle.scopeIds.every(id => Number.isInteger(id) && id > 0) &&
+  new Set(bundle.scopeIds).size === bundle.scopeIds.length &&
+  Array.isArray(bundle.routes) &&
+  bundle.routes.length > 0 &&
+  new Set(bundle.routes.map(route => route.assigneeId)).size === bundle.routes.length &&
+  bundle.routes.every(route =>
+    typeof route.assigneeId === "string" && !!route.assigneeId.trim() &&
+    typeof route.assigneeName === "string" && !!route.assigneeName.trim() &&
+    route.projectId === bundle.projectId &&
+    Number.isFinite(route.origin?.lat) && Number.isFinite(route.origin?.lng) &&
+    Array.isArray(route.geometry) &&
+    route.geometry.every(point => Number.isFinite(point.lat) && Number.isFinite(point.lng)) &&
+    Array.isArray(route.warnings) &&
+    Array.isArray(route.excluded) &&
+    route.stops.every(stop => bundle.scopeIds!.includes(stop.id)) &&
+    hasRoutePlanningMetadata(route) &&
+    (!route.stops.length || route.geometry.length > 0)
+  ) &&
+  Array.isArray(bundle.excluded) &&
+  bundle.excluded.every(item => bundle.scopeIds!.includes(item.id));
 
 const errorMessage = async (response: Response) => {
   try { const payload = await response.json(); return payload.message || payload.error || "Route request failed"; }
   catch { return `Route request failed (${response.status})`; }
 };
-const routeRequestIds = (route: RoutingResult) => [
-  ...route.stops.map(stop => stop.id),
-  ...route.excluded.map(stop => stop.id),
-];
+const routeRequestIds = (route: RoutingResult) => route.scopeIds ?? [];
 const routeExpired = (route: RoutingResult) => {
   const expiresAt = Date.parse(route.expiresAt);
   return !Number.isFinite(expiresAt) || Date.now() >= expiresAt;
@@ -156,13 +179,16 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
   const [departure, setDeparture] = useState(() => localInputForTimezone(new Date(Date.now() + 15 * 60000), timezone));
   const [serviceMinutes, setServiceMinutes] = useState(String(defaultServiceMinutes ?? 45));
   const [toleranceMinutes, setToleranceMinutes] = useState(String(defaultAppointmentToleranceMinutes ?? 10));
-  const [originMode, setOriginMode] = useState<"device" | "manual">("device");
+  const [originMode, setOriginMode] = useState<"device" | "manual">(() => user?.subroleKey === "field_technician" ? "device" : "manual");
   const [manualAddress, setManualAddress] = useState("");
   const [locationMessage, setLocationMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<PlanningResult | null>(null);
   const [staleMessage, setStaleMessage] = useState("");
+  const [routeAccessValid, setRouteAccessValid] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [activeRouteId, setActiveRouteId] = useState("");
+  const [endedRouteIds, setEndedRouteIds] = useState<string[]>([]);
   const [mapRetry, setMapRetry] = useState(0);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [validationMessage, setValidationMessage] = useState("");
@@ -171,6 +197,9 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
   const [restoreChecked, setRestoreChecked] = useState(false);
   const resultOwnerRef = useRef<string | null>(null);
   const activeKey = `meterflo:active-route:${user?.id ?? "unknown"}:${projectId}`;
+  useEffect(() => {
+    if (user?.subroleKey === "field_technician") setOriginMode("device");
+  }, [user?.subroleKey]);
   useEffect(() => {
     setHeaderContent(
       <div className="flex min-w-0 items-center gap-3">
@@ -194,14 +223,14 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
       if (key?.startsWith(prefix) && (!allowed || !key.startsWith(allowed))) sessionStorage.removeItem(key);
     }
   }, [user?.id, user === null]);
-  const candidates = useMemo(() => {
-    const source = scope === "selected" && selectedIds.length ? workOrders.filter(order => selectedIds.includes(order.id)) : workOrders;
-    return source.filter(order => order.status?.toLowerCase() === "scheduled");
-  }, [scope, selectedIds, workOrders]);
+  const scopedOrders = useMemo(() =>
+    scope === "selected" && selectedIds.length ? workOrders.filter(order => selectedIds.includes(order.id)) : workOrders,
+  [scope, selectedIds, workOrders]);
+  const candidates = useMemo(() => scopedOrders.filter(order => order.status?.toLowerCase() === "scheduled"), [scopedOrders]);
   const nonScheduled = useMemo(() => {
-    const source = scope === "selected" && selectedIds.length ? workOrders.filter(order => selectedIds.includes(order.id)) : workOrders;
-    return source.length - source.filter(order => order.status?.toLowerCase() === "scheduled").length;
-  }, [scope, selectedIds, workOrders]);
+    return scopedOrders.length - candidates.length;
+  }, [scopedOrders, candidates]);
+  const unassignedScheduled = useMemo(() => candidates.filter(order => !order.assignedUserId).length, [candidates]);
   const fetchMapConfig = useCallback(async (): Promise<MapConfig> => {
     const response = await fetch(`/api/projects/${projectId}/routing/map-config`, { credentials: "include" });
     if (!response.ok) throw new Error(await errorMessage(response));
@@ -216,7 +245,8 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
   const mapConfigError = mapConfigFailed ? (mapConfigQueryError instanceof Error ? mapConfigQueryError.message : "Public map configuration could not be loaded.") : undefined;
 
   const validateResult = useCallback(async (route: RoutingResult, signalStale = true) => {
-    if (routeExpired(route)) {
+    if (!hasPlanningMetadata(route) || route.routes?.some(child => routeExpired(child)) || routeExpired(route)) {
+      setRouteAccessValid(false);
       sessionStorage.removeItem(activeKey);
       resultOwnerRef.current = null;
       setResult(null);
@@ -226,12 +256,14 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
       return true;
     }
     try {
+      setRouteAccessValid(false);
       const response = await fetch(`/api/projects/${projectId}/routing/validate`, {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: routeRequestIds(route), fingerprint: route.fingerprint, configurationRevision: route.configurationRevision }),
       });
       if (!response.ok) {
         if (response.status === 401 || response.status === 403) {
+          setRouteAccessValid(false);
           sessionStorage.removeItem(activeKey);
           resultOwnerRef.current = null;
           setResult(null);
@@ -243,10 +275,12 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
         throw new Error(await errorMessage(response));
       }
       const state = await response.json() as { stale: boolean };
+      setRouteAccessValid(!state.stale);
       if (state.stale && signalStale) setStaleMessage("Appointments, order details, priorities or routing settings changed. This sequence is preserved but needs review.");
       if (!state.stale && signalStale) setStaleMessage("");
       return state.stale;
     } catch (error) {
+      setRouteAccessValid(false);
       setValidationMessage(error instanceof Error ? error.message : "Route access could not be verified.");
       return true;
     }
@@ -256,13 +290,14 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
     let cancelled = false;
     resultOwnerRef.current = null;
     setResult(null);
+    setRouteAccessValid(false);
     setRestoreChecked(false);
     const restore = async () => {
       try {
         const stored = sessionStorage.getItem(activeKey);
         if (!stored) { setRestoreChecked(true); return; }
-        const parsed = JSON.parse(stored) as { expiresAt: string; result: RoutingResult; mode: DisplayMode; activeIndex: number };
-        if (new Date(parsed.expiresAt).getTime() <= Date.now() || routeExpired(parsed.result) || parsed.result.projectId !== projectId || !hasPlanningMetadata(parsed.result)) { sessionStorage.removeItem(activeKey); setValidationMessage("Saved route used an older planning format and was cleared. Re-plan to see current appointment estimates."); setRestoreChecked(true); return; }
+        const parsed = JSON.parse(stored) as { expiresAt: string; result: RoutingResult; mode: DisplayMode; activeIndex: number; activeRouteId?: string; endedRouteIds?: string[] };
+        if (new Date(parsed.expiresAt).getTime() <= Date.now() || routeExpired(parsed.result) || parsed.result.routes?.some(route => routeExpired(route)) || parsed.result.projectId !== projectId || !hasPlanningMetadata(parsed.result)) { sessionStorage.removeItem(activeKey); setValidationMessage("Saved route used an older planning format and was cleared. Re-plan to see current appointment estimates."); setRestoreChecked(true); return; }
         const response = await fetch(`/api/projects/${projectId}/routing/validate`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: routeRequestIds(parsed.result), fingerprint: parsed.result.fingerprint, configurationRevision: parsed.result.configurationRevision }) });
         if (!response.ok) {
           sessionStorage.removeItem(activeKey);
@@ -273,8 +308,18 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
         }
         const validity = await response.json() as { stale: boolean };
         if (cancelled) return;
-        if (validity.stale) { sessionStorage.removeItem(activeKey); setValidationMessage("Saved route is out of date and was not restored. Re-plan from current scheduled work."); }
-        else { resultOwnerRef.current = user?.id ?? null; setResult(parsed.result); setMode(parsed.mode); setActiveIndex(parsed.activeIndex || 0); setSetupOpen(false); }
+        if (validity.stale) { sessionStorage.removeItem(activeKey); setRouteAccessValid(false); setValidationMessage("Saved route is out of date and was not restored. Re-plan from current scheduled work."); }
+        else {
+          setRouteAccessValid(true);
+          resultOwnerRef.current = user?.id ?? null;
+          setResult(parsed.result as PlanningResult);
+          setMode(parsed.mode);
+          setActiveRouteId(parsed.result.routes?.some(route => route.assigneeId === parsed.activeRouteId) ? parsed.activeRouteId! : parsed.result.routes![0].assigneeId!);
+          const restoredRoute = parsed.result.routes!.find(route => route.assigneeId === parsed.activeRouteId) ?? parsed.result.routes![0];
+          setActiveIndex(Math.min(Math.max(parsed.activeIndex || 0, 0), Math.max(restoredRoute.stops.length - 1, 0)));
+          setEndedRouteIds(Array.isArray(parsed.endedRouteIds) ? parsed.endedRouteIds.filter(id => parsed.result.routes!.some(route => route.assigneeId === id)) : []);
+          setSetupOpen(false);
+        }
       } catch { sessionStorage.removeItem(activeKey); }
       if (!cancelled) setRestoreChecked(true);
     };
@@ -283,9 +328,9 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
   }, [activeKey, projectId, user?.id, onBack]);
   useEffect(() => {
     if (!restoreChecked || !result || resultOwnerRef.current !== user?.id) return;
-    if (!sessionStorage.setItem(activeKey, JSON.stringify({ expiresAt: result.expiresAt, result, mode, activeIndex })))
+    if (!sessionStorage.setItem(activeKey, JSON.stringify({ expiresAt: result.expiresAt, result, mode, activeIndex, activeRouteId, endedRouteIds })))
       setValidationMessage("Browser storage is unavailable. This route works here, but cannot be recovered after refresh.");
-  }, [activeKey, result, mode, activeIndex, restoreChecked, user?.id]);
+  }, [activeKey, result, mode, activeIndex, activeRouteId, endedRouteIds, restoreChecked, user?.id]);
   useEffect(() => {
     const check = () => { if (result) void validateResult(result); };
     check();
@@ -311,7 +356,7 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
   const plan = async (confirmation?: { request: PlanningRequest; tokensById: Record<string, string> }) => {
     if (!candidates.length) { setValidationMessage("No scheduled work orders match this scope. Adjust the grid filters or select scheduled orders."); return; }
     if (readiness?.ready !== true) { setValidationMessage("Routing is not ready. Configure the provider before planning."); return; }
-    if (candidates.length > readiness.effective.maxStops) { setValidationMessage(`This scope has ${candidates.length} scheduled orders; the configured limit is ${readiness.effective.maxStops}. Narrow the filters or configure a higher limit.`); return; }
+    if (candidates.length > 50) { setValidationMessage(`This request contains ${candidates.length} Scheduled work orders; route planning accepts at most 50 total Scheduled orders. Narrow the filters or selection, then plan again.`); return; }
     const serviceValue = Number(serviceMinutes);
     const toleranceValue = Number(toleranceMinutes);
     if (!Number.isInteger(serviceValue) || serviceValue < 1 || serviceValue > 480) { setValidationMessage("On-site service must be a whole number from 1 to 480 minutes."); return; }
@@ -334,6 +379,7 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
         if (data.code !== "ADDRESS_REVIEW_REQUIRED" || !Array.isArray(data.addressReviews) || !data.addressReviews.length)
           throw new Error(data.message || "Address review could not be loaded. Re-plan the route.");
         setResult(null);
+        setRouteAccessValid(false);
         sessionStorage.removeItem(activeKey);
         setPendingReview({ request, reviews: data.addressReviews, tokensById: confirmation?.tokensById ?? {} });
         return;
@@ -343,36 +389,95 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
         throw new Error(await errorMessage(response));
       }
       const planned = await response.json() as RoutingResult;
-      if (!hasPlanningMetadata(planned)) throw new Error("The route response is missing current appointment-planning details. No route was activated.");
-      if (!planned.stops?.length && !planned.excluded?.length) throw new Error("Provider returned no stops or exclusion details. No route was activated.");
-      if (planned.stops.length > 0 && !planned.geometry?.length) throw new Error("Provider returned stops without road geometry. No route was activated.");
+      if (!hasPlanningMetadata(planned) || !hasRoutePlanningMetadata(planned)) throw new Error("The route response is missing the current assignment and appointment-planning format. No route was activated.");
+      if (planned.routes!.every(route => !route.stops.length) && !planned.excluded?.length) throw new Error("Provider returned no stops or exclusion details. No route was activated.");
+      if (planned.routes!.some(route => route.stops.length > 0 && !route.geometry?.length)) throw new Error("Provider returned an assigned route without road geometry. No route was activated.");
+      if (planned.routes!.some(route => route.stops.length > readiness.effective.maxStops))
+        throw new Error(`A technician route exceeds the configured limit of ${readiness.effective.maxStops} stops per route. No route was activated.`);
+      if (planned.scopeIds!.length !== scopedOrders.length || scopedOrders.some(order => !planned.scopeIds!.includes(order.id)))
+        throw new Error("Provider returned a route for a different work-order scope. No route was activated.");
       const providerExpiry = Date.parse(planned.expiresAt);
       const shortCacheExpiry = Date.parse(planned.createdAt) + 4 * 60 * 60 * 1000;
       if (!Number.isFinite(providerExpiry) || !Number.isFinite(shortCacheExpiry)) throw new Error("Route provider returned an invalid expiry; no route was activated.");
       const clientExpiry = Math.min(providerExpiry, shortCacheExpiry);
       if (clientExpiry <= Date.now()) throw new Error("The provider returned an already-expired route. Plan again.");
-      const safelyExpiringResult = { ...planned, expiresAt: new Date(clientExpiry).toISOString() };
+      const normalizedExpiry = new Date(clientExpiry).toISOString();
+      const safelyExpiringResult = {
+        ...planned,
+        expiresAt: normalizedExpiry,
+        routes: planned.routes!.map(route => ({ ...route, expiresAt: normalizedExpiry })) as RoutingResult[],
+      };
       resultOwnerRef.current = user?.id ?? null;
       setPendingReview(null);
-      setResult(safelyExpiringResult); setStaleMessage(""); setActiveIndex(0); setSetupOpen(false);
+      setResult(safelyExpiringResult as PlanningResult); setStaleMessage(""); setActiveIndex(0);
+      setActiveRouteId(planned.routes![0].assigneeId!); setEndedRouteIds([]); setRouteAccessValid(true); setSetupOpen(false);
       await queryClient.invalidateQueries({ queryKey: [readinessUrl] });
     } catch (error) { setValidationMessage(error instanceof Error ? error.message : "Route could not be planned."); }
     finally { setBusy(false); }
   };
-  const selectedStop = result?.stops[activeIndex];
+  const activeRoute = useMemo(() => result?.routes?.find(route => route.assigneeId === activeRouteId) ?? result?.routes?.[0], [result, activeRouteId]);
+  const currentRoute = activeRoute as PlanningResult | undefined;
+  const visibleWarnings = [...new Set([...(result?.warnings ?? []), ...(currentRoute?.warnings ?? [])])];
+  const activeRouteEnded = !!activeRoute?.assigneeId && endedRouteIds.includes(activeRoute.assigneeId);
+  const activeBundleExpired = !!result && (routeExpired(result) || result.routes?.some(route => routeExpired(route)));
+  const selectedStop = currentRoute?.stops[activeIndex];
+  useEffect(() => {
+    if (!activeRoute) return;
+    setActiveIndex(index => Math.min(Math.max(index, 0), Math.max(activeRoute.stops.length - 1, 0)));
+  }, [activeRoute]);
+  const selectRoute = (assigneeId: string) => {
+    setActiveRouteId(assigneeId);
+    setActiveIndex(0);
+  };
+  const printRoutes = async (printAll: boolean) => {
+    if (!result || !activeRoute || pendingReview || staleMessage || !routeAccessValid || !hasPlanningMetadata(result) ||
+        routeExpired(result) || result.routes?.some(route => routeExpired(route))) {
+      setValidationMessage("This route cannot be printed until it is current, verified, and address review is complete.");
+      return;
+    }
+    const popup = window.open("", "_blank", "width=900,height=700");
+    if (!popup) {
+      setValidationMessage("The print window was blocked. Allow pop-ups for MeterFlo and try again.");
+      return;
+    }
+    popup.document.write("<!doctype html><title>Verifying route</title><p style='font:16px system-ui;padding:24px'>Verifying route access before printing…</p>");
+    const stale = await validateResult(result, false);
+    if (stale || routeExpired(result) || result.routes?.some(route => routeExpired(route))) {
+      popup.close();
+      setValidationMessage("Printing stopped because route access could not be verified or the route is stale or expired. Re-plan before printing.");
+      return;
+    }
+    const routes = printAll ? result.routes! : [activeRoute];
+    try {
+      writeRoutePrintDocument(popup, routes, result.warnings, result.excluded, timezone, projectName);
+      popup.focus();
+      window.setTimeout(() => {
+        try {
+          if (!popup.closed) popup.print();
+        } catch {
+          setValidationMessage("The print dialog could not be opened. Use your browser’s print command from the route document.");
+        }
+      }, 200);
+    } catch {
+      popup.close();
+      setValidationMessage("The printable route could not be prepared. Check pop-up permissions and try again.");
+    }
+  };
   const startReplan = () => {
     sessionStorage.removeItem(activeKey);
     setResult(null);
+    setRouteAccessValid(false);
     setSetupOpen(true);
     setStaleMessage("");
   };
   const navigateWithMaps = (provider: "apple" | "google") => {
-    if (pendingReview || !result || !hasPlanningMetadata(result) || staleMessage) {
+    if (pendingReview || !result || !activeRoute || activeRouteEnded || !routeAccessValid || !hasPlanningMetadata(result) || staleMessage) {
       setValidationMessage("Review and re-plan the route before starting navigation.");
       toast({ title: "Route needs review", description: "Review and re-plan the route before starting navigation.", variant: "destructive" });
       return;
     }
-    if (result && routeExpired(result)) {
+    if (result && (routeExpired(result) || result.routes?.some(route => routeExpired(route)))) {
+      setRouteAccessValid(false);
       sessionStorage.removeItem(activeKey);
       resultOwnerRef.current = null;
       setResult(null);
@@ -387,8 +492,11 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
   };
   const preferredMapsProvider = /iPad|iPhone|iPod/.test(navigator.userAgent) ? "apple" : "google";
   const alternateMapsProvider = preferredMapsProvider === "apple" ? "google" : "apple";
-  const clearRoute = () => {
-    sessionStorage.removeItem(activeKey); resultOwnerRef.current = null; setResult(null); setStaleMessage(""); setSetupOpen(true); setActiveIndex(0);
+  const toggleActiveRouteEnded = () => {
+    if (!activeRoute?.assigneeId) return;
+    setEndedRouteIds(ids => ids.includes(activeRoute.assigneeId!)
+      ? ids.filter(id => id !== activeRoute.assigneeId)
+      : [...ids, activeRoute.assigneeId!]);
   };
 
   if (!restoreChecked || readinessLoading || (result !== null && resultOwnerRef.current !== (user?.id ?? null))) return <main className="mx-auto max-w-5xl space-y-4 p-4 sm:p-6" data-testid="routing-loading"><div className="h-8 w-44 animate-pulse rounded bg-muted" /><div className="h-48 animate-pulse rounded-xl bg-muted" /></main>;
@@ -410,24 +518,38 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
             <p className="text-xs text-muted-foreground">This confirmation applies only to this plan; the work order was not changed.</p>
           </div>)}</div>
         </details>}
-        {result.stops.length === 0 && <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">No navigable route was produced. Review the exclusions below and correct locations or scheduling before trying again.</div>}
-      {staleMessage && <div role="alert" className="flex flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950 sm:flex-row sm:items-center sm:justify-between" data-testid="route-stale-banner"><div className="flex gap-2 text-sm"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>{staleMessage}</span></div><Button size="sm" onClick={startReplan}>Re-plan route</Button></div>}
-        <div className="grid gap-3 sm:grid-cols-3"><Card><CardContent className="p-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Ordered stops</p><p className="mt-1 text-2xl font-semibold">{result.stops.length}</p><p className="text-xs text-muted-foreground">{result.excluded.length} excluded for review</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Road travel</p><p className="mt-1 text-2xl font-semibold">{Math.round(result.totalTravelMeters / 1609.34 * 10) / 10} mi</p><p className="text-xs text-muted-foreground">About {Math.round(result.totalTravelSeconds / 60)} min · provider estimate, no live traffic claim</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Planning assumptions</p><p className="mt-1 font-medium">{result.serviceMinutes} min route default · {result.toleranceMinutes} min tolerance</p><p className="text-xs text-muted-foreground">Project timezone: {timezone}</p></CardContent></Card></div>
-        {result.warnings.length > 0 && <div className="space-y-1 rounded-xl border border-amber-200 bg-amber-50/60 p-3 text-sm">{result.warnings.map((warning, index) => <p key={index} className="flex gap-2"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-800" />{warning}</p>)}</div>}
-        <div className="flex flex-wrap items-center justify-between gap-3"><div className="inline-flex rounded-lg border bg-muted/40 p-1" role="group" aria-label="Route display"><Button size="sm" variant={mode === "list" ? "default" : "ghost"} onClick={() => setMode("list")} data-testid="route-mode-list"><Route className="mr-1.5 h-4 w-4" />List</Button><Button size="sm" variant={mode === "map" ? "default" : "ghost"} onClick={() => setMode("map")} data-testid="route-mode-map"><Map className="mr-1.5 h-4 w-4" />Map</Button><Button size="sm" variant={mode === "both" ? "default" : "ghost"} onClick={() => setMode("both")} data-testid="route-mode-both">Both</Button></div><Button variant="ghost" size="sm" onClick={clearRoute}>End route</Button></div>
+        {!!currentRoute && currentRoute.stops.length === 0 && <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">This technician has no navigable stops. Review the exclusions below and correct locations or scheduling before trying again.</div>}
+        {(staleMessage || activeBundleExpired) && <div role="alert" className="flex flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-950 sm:flex-row sm:items-center sm:justify-between" data-testid="route-stale-banner"><div className="flex gap-2 text-sm"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>{staleMessage || "This route has expired. Navigation and printing are unavailable; plan again to continue."}</span></div><Button size="sm" onClick={startReplan}>Re-plan route</Button></div>}
+        <section className="rounded-xl border bg-card p-4 sm:flex sm:items-end sm:justify-between sm:gap-5">
+          <div className="min-w-0 flex-1 space-y-2">
+            <Label htmlFor="routing-technician-select">Technician route</Label>
+            <select id="routing-technician-select" value={currentRoute?.assigneeId ?? ""} onChange={event => selectRoute(event.target.value)} className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" data-testid="routing-technician-select">
+              {result.routes!.map(route => <option key={route.assigneeId} value={route.assigneeId}>{route.assigneeName} · {route.stops.length} stops</option>)}
+            </select>
+            <p className="text-xs text-muted-foreground">Each route is planned and sequenced independently for its assigned technician. Starting point: {currentRoute?.originAddress?.trim() || `${currentRoute?.origin.lat}, ${currentRoute?.origin.lng}`} · departure {currentRoute ? new Intl.DateTimeFormat(undefined, { timeZone: timezone, dateStyle: "medium", timeStyle: "short" }).format(new Date(currentRoute.departureAt)) : "—"}.</p>
+          </div>
+          <div className="mt-3 flex flex-col gap-2 sm:mt-0 sm:flex-row">
+            <Button type="button" variant="outline" onClick={() => void printRoutes(false)} disabled={!!staleMessage || !!pendingReview || !routeAccessValid || activeBundleExpired} data-testid="route-print-current">Print this route</Button>
+            <Button type="button" variant="outline" onClick={() => void printRoutes(true)} disabled={!!staleMessage || !!pendingReview || !routeAccessValid || activeBundleExpired} data-testid="route-print-all">Print all technician routes</Button>
+          </div>
+        </section>
+        <div className="grid gap-3 sm:grid-cols-3"><Card><CardContent className="p-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Ordered stops · {currentRoute?.assigneeName}</p><p className="mt-1 text-2xl font-semibold">{currentRoute?.stops.length ?? 0}</p><p className="text-xs text-muted-foreground">{result.excluded.length} excluded across this plan</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Road travel estimate</p><p className="mt-1 text-2xl font-semibold">{Math.round((currentRoute?.totalTravelMeters ?? 0) / 1609.34 * 10) / 10} mi</p><p className="text-xs text-muted-foreground">About {Math.round((currentRoute?.totalTravelSeconds ?? 0) / 60)} min · provider estimate, no live traffic claim</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Planning assumptions</p><p className="mt-1 font-medium">{currentRoute?.serviceMinutes} min route default · {currentRoute?.toleranceMinutes} min tolerance</p><p className="text-xs text-muted-foreground">Project timezone: {timezone}</p></CardContent></Card></div>
+        {visibleWarnings.length > 0 && <div className="space-y-1 rounded-xl border border-amber-200 bg-amber-50/60 p-3 text-sm">{visibleWarnings.map((warning, index) => <p key={index} className="flex gap-2"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-800" />{warning}</p>)}</div>}
+        <div className="flex flex-wrap items-center justify-between gap-3"><div className="inline-flex rounded-lg border bg-muted/40 p-1" role="group" aria-label="Route display"><Button size="sm" variant={mode === "list" ? "default" : "ghost"} onClick={() => setMode("list")} data-testid="route-mode-list"><Route className="mr-1.5 h-4 w-4" />List</Button><Button size="sm" variant={mode === "map" ? "default" : "ghost"} onClick={() => setMode("map")} data-testid="route-mode-map"><Map className="mr-1.5 h-4 w-4" />Map</Button><Button size="sm" variant={mode === "both" ? "default" : "ghost"} onClick={() => setMode("both")} data-testid="route-mode-both">Both</Button></div><Button variant="ghost" size="sm" onClick={toggleActiveRouteEnded} disabled={!activeRoute}>{activeRouteEnded ? "Resume this route" : "End this route"}</Button></div>
+        {activeRouteEnded && <div role="status" className="rounded-lg border border-slate-300 bg-muted/40 p-3 text-sm">This route is ended for {activeRoute?.assigneeName}. Navigation and stop progression are paused; other technicians’ routes remain available.</div>}
         <div className={`grid gap-5 ${mode === "both" ? "lg:grid-cols-[minmax(300px,0.85fr)_minmax(0,1.15fr)]" : "grid-cols-1"}`}>
-          {(mode === "list" || mode === "both") && <section className="space-y-3" aria-label="Ordered route stops"><h2 className="font-semibold">Sequence · {result.stops.length} stops</h2>{result.stops.length === 0 && <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">No stops could be placed on this route.</p>}{result.stops.map((stop, index) => {
+          {(mode === "list" || mode === "both") && <section className="space-y-3" aria-label="Ordered route stops"><h2 className="font-semibold">Sequence · {currentRoute?.stops.length ?? 0} stops</h2>{!currentRoute?.stops.length && <p className="rounded-xl border border-dashed p-6 text-sm text-muted-foreground">No stops could be placed on this technician’s route.</p>}{currentRoute?.stops.map((stop, index) => {
             const order = workOrders.find(item => item.id === stop.id);
             return <button key={stop.id} type="button" onClick={() => { setActiveIndex(index); if (order) onOpenWorkOrder(order); }} className={`w-full rounded-xl border p-4 text-left transition-colors ${index === activeIndex ? "border-primary bg-primary/5" : "bg-card hover:bg-muted/40"}`} data-testid={`route-stop-${stop.id}`}>
               <div className="flex items-start gap-3"><span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold ${index === activeIndex ? "bg-primary text-primary-foreground" : "bg-muted"}`}>{index + 1}</span><span className="min-w-0 flex-1"><span className="flex flex-wrap items-center gap-2 font-semibold">{stop.label}{stop.priority !== null && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] text-amber-900">Priority {stop.priority}</span>}<ChevronRight className="h-4 w-4 text-muted-foreground" /></span><span className="mt-1 block text-sm text-muted-foreground">{stop.address}</span><span className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs"><span>Scheduled {stop.scheduledAt ? new Intl.DateTimeFormat(undefined, { timeZone: timezone, hour: "numeric", minute: "2-digit" }).format(new Date(stop.scheduledAt)) : "Unscheduled"}</span><span>Arrive {new Intl.DateTimeFormat(undefined, { timeZone: timezone, hour: "numeric", minute: "2-digit" }).format(new Date(stop.arrivalAt))}</span><span>Service {stop.serviceDurationMinutes} min · {stop.durationSource}</span><span>Waiting {stop.waitingMinutes} min</span><span>Appointment source: {stop.appointmentSource}</span>{stop.subStatus && <span>{stop.subStatus}</span>}</span>{stop.appointmentSource === "window" && <span className="mt-2 block text-xs">Service-start window: {stop.appointmentWindowStart ? new Intl.DateTimeFormat(undefined, { timeZone: timezone, dateStyle: "short", timeStyle: "short" }).format(new Date(stop.appointmentWindowStart)) : "—"} – {stop.appointmentWindowEnd ? new Intl.DateTimeFormat(undefined, { timeZone: timezone, dateStyle: "short", timeStyle: "short" }).format(new Date(stop.appointmentWindowEnd)) : "—"} ({timezone})</span>}<span className={`mt-2 block text-xs font-medium ${stop.lateMinutes > 0 ? "text-amber-800" : "text-muted-foreground"}`}>{stop.lateMinutes > 0 ? `Estimated ${stop.lateMinutes} min late` : "Estimated on time"}</span></span></div>
             </button>;
           })}</section>}
-          {(mode === "map" || mode === "both") && <section className="min-w-0 space-y-3"><h2 className="font-semibold">Road route <span className="font-normal text-muted-foreground">· {result.provider === "geoapify" ? "Geoapify" : "Google Maps"}</span></h2>{result.stops.length ? <MapView projectId={projectId} result={result} config={mapConfig} retryKey={mapRetry} configError={mapConfigError} /> : <div className="flex min-h-64 items-center justify-center rounded-xl border border-dashed bg-muted/20 p-6 text-center text-sm text-muted-foreground">No route geometry is available because no stops were resolved.</div>}{mapConfig && result.stops.length > 0 && <Button variant="outline" size="sm" onClick={() => setMapRetry(value => value + 1)}>Reload map</Button>}</section>}
+          {(mode === "map" || mode === "both") && <section className="min-w-0 space-y-3"><h2 className="font-semibold">Road route <span className="font-normal text-muted-foreground">· {result.provider === "geoapify" ? "Geoapify" : "Google Maps"}</span></h2>{currentRoute?.stops.length ? <MapView key={currentRoute.assigneeId} projectId={projectId} result={currentRoute} config={mapConfig} retryKey={mapRetry} configError={mapConfigError} /> : <div className="flex min-h-64 items-center justify-center rounded-xl border border-dashed bg-muted/20 p-6 text-center text-sm text-muted-foreground">No route geometry is available because no stops were resolved for this technician.</div>}{mapConfig && !!currentRoute?.stops.length && <Button variant="outline" size="sm" onClick={() => setMapRetry(value => value + 1)}>Reload map</Button>}</section>}
         </div>
-        {selectedStop && <div className="sticky bottom-2 z-20 flex flex-col gap-3 rounded-2xl border bg-background/95 p-3 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-center gap-2"><MapPin className="h-5 w-5 shrink-0 text-primary" /><span className="truncate text-sm"><strong>{activeIndex === 0 ? "Next stop" : `Stop ${activeIndex + 1} of ${result.stops.length}`}</strong> · {selectedStop.label}</span></div><div className="flex flex-wrap gap-2"><Button className="flex-1 sm:flex-none" onClick={() => navigateWithMaps(preferredMapsProvider)} data-testid="navigate-next-stop"><Navigation className="mr-2 h-4 w-4" />Navigate · {preferredMapsProvider === "apple" ? "Apple Maps" : "Google Maps"}</Button><Button variant="outline" onClick={() => navigateWithMaps(alternateMapsProvider)} data-testid={`navigate-alternate-${alternateMapsProvider}`}>{alternateMapsProvider === "google" ? "Google Maps / web" : "Apple Maps"}</Button><Button variant="outline" onClick={() => setActiveIndex(index => Math.min(index + 1, result.stops.length - 1))} disabled={activeIndex >= result.stops.length - 1} data-testid="route-next-stop"><Check className="mr-2 h-4 w-4" />Next</Button></div><span className="text-xs text-muted-foreground sm:w-full sm:text-right">HTTPS navigation opens the selected app when available, otherwise its web maps page. Navigation does not mark work complete.</span></div>}
-        {result.excluded.length > 0 && <section className="rounded-xl border p-4" data-testid="route-exclusions"><h2 className="font-semibold">Not routed · {result.excluded.length}</h2><p className="mb-3 mt-1 text-sm text-muted-foreground">Review these scheduled orders before replanning.</p><div className="divide-y">{result.excluded.map(item => <div key={item.id} className="flex flex-wrap justify-between gap-2 py-2 text-sm"><span>{item.label}</span><span className="text-muted-foreground">{item.reason}</span></div>)}</div></section>}
+        {selectedStop && currentRoute && <div className="sticky bottom-2 z-20 flex flex-col gap-3 rounded-2xl border bg-background/95 p-3 shadow-lg backdrop-blur sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-center gap-2"><MapPin className="h-5 w-5 shrink-0 text-primary" /><span className="truncate text-sm"><strong>{activeRouteEnded ? "Route ended" : activeIndex === 0 ? "Next stop" : `Stop ${activeIndex + 1} of ${currentRoute.stops.length}`}</strong> · {selectedStop.label}</span></div><div className="flex flex-wrap gap-2"><Button className="flex-1 sm:flex-none" onClick={() => navigateWithMaps(preferredMapsProvider)} disabled={activeRouteEnded || !routeAccessValid || !!staleMessage || activeBundleExpired} data-testid="navigate-next-stop"><Navigation className="mr-2 h-4 w-4" />Navigate · {preferredMapsProvider === "apple" ? "Apple Maps" : "Google Maps"}</Button><Button variant="outline" onClick={() => navigateWithMaps(alternateMapsProvider)} disabled={activeRouteEnded || !routeAccessValid || !!staleMessage || activeBundleExpired} data-testid={`navigate-alternate-${alternateMapsProvider}`}>{alternateMapsProvider === "google" ? "Google Maps / web" : "Apple Maps"}</Button><Button variant="outline" onClick={() => setActiveIndex(index => Math.min(index + 1, currentRoute.stops.length - 1))} disabled={activeRouteEnded || !routeAccessValid || !!staleMessage || activeBundleExpired || activeIndex >= currentRoute.stops.length - 1} data-testid="route-next-stop"><Check className="mr-2 h-4 w-4" />Next</Button></div><span className="text-xs text-muted-foreground sm:w-full sm:text-right">HTTPS navigation opens the selected app when available, otherwise its web maps page. Navigation does not mark work complete.</span></div>}
+        {result.excluded.length > 0 && <section className="rounded-xl border p-4" data-testid="route-exclusions"><h2 className="font-semibold">Not routed · {result.excluded.length}</h2><p className="mb-3 mt-1 text-sm text-muted-foreground">These exclusions apply to the full request. Assign unassigned orders or correct scheduling and locations before replanning.</p><div className="divide-y">{result.excluded.map(item => <div key={item.id} className="flex flex-wrap justify-between gap-2 py-2 text-sm"><span>{item.label}</span><span className="text-muted-foreground">{item.reason}</span></div>)}</div></section>}
       </>}
-      <Dialog open={setupOpen && !result} onOpenChange={open => { if (!open && !result) onBack(); else setSetupOpen(open); }}><DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-xl" data-testid="route-setup-dialog"><DialogHeader><DialogTitle>Plan a protected route</DialogTitle><DialogDescription>MeterFlo keeps appointment order and selected work-order scope. Location is sent to the configured provider to calculate road travel. Minimal route recovery is scoped to your account and retained here for no more than four hours, or the provider’s shorter expiry.</DialogDescription></DialogHeader>
+      <Dialog open={setupOpen && !result} onOpenChange={open => { if (!open && !result) onBack(); else setSetupOpen(open); }}><DialogContent className="max-h-[92dvh] overflow-y-auto sm:max-w-xl" data-testid="route-setup-dialog"><DialogHeader><DialogTitle>Plan technician routes</DialogTitle><DialogDescription>MeterFlo creates a distinct ordered route for each assigned technician. Orders without an assignee cannot be routed; assign them before planning. Location is sent to the configured provider to estimate road travel. Per-actor/project recovery lasts no more than four hours or the provider’s shorter expiry.</DialogDescription></DialogHeader>
         {pendingReview ? <>
           <AddressMatchReviewPanel
             reviews={pendingReview.reviews}
@@ -444,12 +566,15 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
           />
           {validationMessage && <div role="alert" className="rounded-md border border-destructive/30 p-3 text-sm text-destructive">{validationMessage}</div>}
         </> : <>
-        {readiness && <div className="rounded-lg border bg-muted/30 p-3 text-sm"><div className="flex items-center justify-between gap-3"><span className="font-medium">{readiness.ready ? "Provider ready" : readiness.message}</span><Button size="sm" variant="ghost" onClick={() => setSettingsOpen(true)}><Settings2 className="mr-1 h-4 w-4" />Settings</Button></div><p className="mt-1 text-xs text-muted-foreground">{readiness.effective.provider === "geoapify" ? "Geoapify" : "Google Maps"} · {readiness.effective.source === "site" ? "site default" : "project-specific"} · maximum {readiness.effective.maxStops}</p></div>}
+        {readiness && <div className="rounded-lg border bg-muted/30 p-3 text-sm"><div className="flex items-center justify-between gap-3"><span className="font-medium">{readiness.ready ? "Provider ready" : readiness.message}</span><Button size="sm" variant="ghost" onClick={() => setSettingsOpen(true)}><Settings2 className="mr-1 h-4 w-4" />Settings</Button></div><p className="mt-1 text-xs text-muted-foreground">{readiness.effective.provider === "geoapify" ? "Geoapify" : "Google Maps"} · {readiness.effective.source === "site" ? "site default" : "project-specific"} · up to {readiness.effective.maxStops} stops per technician route · 50 orders per request</p></div>}
         <div className="space-y-4 py-1">
-          <div className="space-y-2"><Label>Work-order scope</Label><RadioGroup value={scope} onValueChange={value => setScope(value as "filtered" | "selected")} className="grid gap-2"><label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3"><RadioGroupItem value="filtered" className="mt-0.5" /><span><strong className="text-sm">Scheduled orders in current filters</strong><span className="block text-xs text-muted-foreground">{workOrders.filter(order => order.status?.toLowerCase() === "scheduled").length} candidates across all grid pages · {nonScheduled} non-scheduled excluded</span></span></label><label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 ${!selectedIds.length ? "opacity-50" : ""}`}><RadioGroupItem value="selected" disabled={!selectedIds.length} className="mt-0.5" /><span><strong className="text-sm">Selected orders</strong><span className="block text-xs text-muted-foreground">{selectedIds.length} selected · only Scheduled orders will be considered</span></span></label></RadioGroup></div>
+          <div className="space-y-2"><Label>Work-order scope</Label><RadioGroup value={scope} onValueChange={value => setScope(value as "filtered" | "selected")} className="grid gap-2"><label className="flex cursor-pointer items-start gap-3 rounded-lg border p-3"><RadioGroupItem value="filtered" className="mt-0.5" /><span><strong className="text-sm">Orders in current filters</strong><span className="block text-xs text-muted-foreground">{candidates.length} Scheduled candidates across all grid pages · {nonScheduled} non-Scheduled orders are excluded from routing</span></span></label><label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 ${!selectedIds.length ? "opacity-50" : ""}`}><RadioGroupItem value="selected" disabled={!selectedIds.length} className="mt-0.5" /><span><strong className="text-sm">Selected orders</strong><span className="block text-xs text-muted-foreground">{selectedIds.length} selected · only Scheduled orders will be routed</span></span></label></RadioGroup>
+            {unassignedScheduled > 0 && <p role="alert" className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">{unassignedScheduled} Scheduled {unassignedScheduled === 1 ? "order has" : "orders have"} no technician assignment. Assign {unassignedScheduled === 1 ? "it" : "them"} before planning a route.</p>}
+            {scopedOrders.length > 50 && <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">The full request scope has {scopedOrders.length} orders. Narrow the filter or selection to 50 or fewer total orders.</p>}
+          </div>
           <div className="grid gap-3 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="route-departure">Departure time ({timezone})</Label><Input id="route-departure" type="datetime-local" value={departure} onChange={event => setDeparture(event.target.value)} data-testid="route-departure" /></div><div className="space-y-2"><Label htmlFor="route-service-minutes">On-site service (minutes)</Label><Input id="route-service-minutes" type="number" min="1" max="480" value={serviceMinutes} onChange={event => setServiceMinutes(event.target.value)} data-testid="route-service-minutes" /><p className="text-xs text-muted-foreground">Route-wide default; work-order and project estimates can override it.</p></div><div className="space-y-2 sm:col-span-2"><Label htmlFor="route-tolerance">Appointment tolerance (minutes)</Label><Input id="route-tolerance" type="number" min="0" max="240" value={toleranceMinutes} onChange={event => setToleranceMinutes(event.target.value)} data-testid="route-tolerance" /><p className="text-xs text-muted-foreground">Planning assumption only. Appointment windows constrain service start and do not modify scheduled appointments.</p></div></div>
           <div className="space-y-2"><Label>Result view</Label><RadioGroup value={mode} onValueChange={value => setMode(value as DisplayMode)} className="grid grid-cols-3 gap-2">{(["list", "map", "both"] as const).map(value => <label key={value} className="flex cursor-pointer items-center gap-2 rounded-lg border p-3 capitalize"><RadioGroupItem value={value} />{value}</label>)}</RadioGroup></div>
-          <div className="space-y-2"><Label>Starting point</Label><RadioGroup value={originMode} onValueChange={value => setOriginMode(value as "device" | "manual")} className="grid grid-cols-2 gap-2"><label className="flex cursor-pointer items-center gap-2 rounded-lg border p-3 text-sm"><RadioGroupItem value="device" />Device location</label><label className="flex cursor-pointer items-center gap-2 rounded-lg border p-3 text-sm"><RadioGroupItem value="manual" />Enter address</label></RadioGroup>{originMode === "manual" && <Input value={manualAddress} onChange={event => setManualAddress(event.target.value)} placeholder="Street, city, region" aria-label="Starting address" data-testid="route-manual-origin" />}{locationMessage && <p className="text-sm text-amber-800" role="status">{locationMessage}</p>}</div>
+          <div className="space-y-2"><Label>Starting point</Label><RadioGroup value={originMode} onValueChange={value => setOriginMode(value as "device" | "manual")} className="grid grid-cols-2 gap-2"><label className="flex cursor-pointer items-center gap-2 rounded-lg border p-3 text-sm"><RadioGroupItem value="device" />Device location</label><label className="flex cursor-pointer items-center gap-2 rounded-lg border p-3 text-sm"><RadioGroupItem value="manual" />Warehouse / starting address</label></RadioGroup>{originMode === "manual" && <Input value={manualAddress} onChange={event => setManualAddress(event.target.value)} placeholder="Warehouse street, city, region" aria-label="Warehouse or starting address" data-testid="route-manual-origin" />}{locationMessage && <p className="text-sm text-amber-800" role="status">{locationMessage}</p>}</div>
           {validationMessage && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{validationMessage}</div>}
         </div>
         <DialogFooter className="flex-col-reverse gap-2 sm:flex-row"><Button variant="outline" onClick={onBack}>Back to work orders</Button><Button onClick={() => void plan()} disabled={busy || !readiness?.ready || candidates.length === 0} data-testid="create-route-plan">{busy ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Resolving route…</> : <><Route className="mr-2 h-4 w-4" />Optimize {candidates.length} scheduled</>}</Button></DialogFooter>

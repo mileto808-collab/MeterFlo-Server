@@ -2210,6 +2210,8 @@ export async function registerRoutes(
       }
       
       const allWorkOrders: any[] = [];
+      const fieldTechnician = currentUser.subroleId && !await storage.isAdminUser(currentUser) &&
+        (await storage.getSubrole(currentUser.subroleId))?.key === "field_technician";
       
       for (const project of projects) {
         if (!project.databaseName) continue;
@@ -2217,6 +2219,8 @@ export async function registerRoutes(
         try {
           const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
           let workOrders = await workOrderStorage.getWorkOrders({});
+          if (fieldTechnician) workOrders = workOrders.filter(wo =>
+            wo.status === "Scheduled" && wo.assignedUserId === currentUser.id);
           
           // Add project info to each work order
           workOrders = workOrders.map((wo: any) => ({
@@ -2337,23 +2341,11 @@ export async function registerRoutes(
       
       let workOrders = await workOrderStorage.getWorkOrders(filters);
       
-      // Filter for field technicians - only show work orders assigned to them or their groups
-      // IMPORTANT: Work orders claimed by other users should NOT be shown
+      // Technician dispatch lists contain only their personally assigned Scheduled work.
       if (currentUser?.subroleId) {
         const subrole = await storage.getSubrole(currentUser.subroleId);
-        if (subrole?.key === "field_technician") {
-          const userGroups = await storage.getUserGroupMemberships(currentUser.id);
-          // assignedGroupId stores group names, not numeric IDs
-          const userGroupNames = userGroups.map(g => g.name);
-          
-          workOrders = workOrders.filter(wo => {
-            // Check if directly assigned to user (claimed by current user)
-            if (wo.assignedUserId === currentUser.id) return true;
-            // Check if assigned to one of user's groups AND not yet claimed by another user
-            // (assignedUserId must be null for unclaimed group work orders)
-            if (wo.assignedGroupId && userGroupNames.includes(wo.assignedGroupId) && !wo.assignedUserId) return true;
-            return false;
-          });
+        if (subrole?.key === "field_technician" && !await storage.isAdminUser(currentUser)) {
+          workOrders = workOrders.filter(wo => wo.status === "Scheduled" && wo.assignedUserId === currentUser.id);
         }
       }
       
@@ -2396,19 +2388,9 @@ export async function registerRoutes(
       // IMPORTANT: Work orders claimed by other users should NOT be counted
       if (currentUser?.subroleId) {
         const subrole = await storage.getSubrole(currentUser.subroleId);
-        if (subrole?.key === "field_technician") {
-          const userGroups = await storage.getUserGroupMemberships(currentUser.id);
-          // assignedGroupId stores group names, not numeric IDs
-          const userGroupNames = userGroups.map(g => g.name);
-          
+        if (subrole?.key === "field_technician" && !await storage.isAdminUser(currentUser)) {
           const allWorkOrders = await workOrderStorage.getWorkOrders({});
-          const filteredWorkOrders = allWorkOrders.filter(wo => {
-            // Check if directly assigned to user (claimed by current user)
-            if (wo.assignedUserId === currentUser.id) return true;
-            // Check if assigned to one of user's groups AND not yet claimed by another user
-            if (wo.assignedGroupId && userGroupNames.includes(wo.assignedGroupId) && !wo.assignedUserId) return true;
-            return false;
-          });
+          const filteredWorkOrders = allWorkOrders.filter(wo => wo.status === "Scheduled" && wo.assignedUserId === currentUser.id);
           
           // Compute stats from filtered work orders
           const statusCounts: Record<string, number> = {};
@@ -9210,15 +9192,12 @@ export async function registerRoutes(
       
       const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
       
-      // Check if user is a field technician - they can only see work orders assigned to them or their groups
+      // Field dispatch is restricted to the technician's personally assigned Scheduled work.
       let isFieldTechnician = false;
-      let userGroupNames: string[] = [];
       if (currentUser.subroleId) {
         const subrole = await storage.getSubrole(currentUser.subroleId);
-        if (subrole?.key === "field_technician") {
+        if (subrole?.key === "field_technician" && !await storage.isAdminUser(currentUser)) {
           isFieldTechnician = true;
-          const userGroups = await storage.getUserGroupMemberships(currentUser.id);
-          userGroupNames = userGroups.map(g => g.name);
         }
       }
       
@@ -9251,20 +9230,11 @@ export async function registerRoutes(
         const values: any[] = [];
         let paramCount = 1;
         
-        // Field technician filtering - only show work orders assigned to them or their groups
-        // IMPORTANT: Work orders claimed by other users should NOT be shown
+        // Keep mobile dispatch in the same personally assigned Scheduled scope as the grid.
         if (isFieldTechnician) {
-          const assignmentConditions: string[] = [];
-          // Assigned directly to user (claimed by current user)
-          assignmentConditions.push(`w.assigned_user_id = $${paramCount++}`);
+          conditions.push(`w.assigned_user_id = $${paramCount++}`);
           values.push(currentUser.id);
-          // Assigned to one of user's groups AND not yet claimed by another user
-          // (assigned_user_id must be null for unclaimed group work orders)
-          if (userGroupNames.length > 0) {
-            assignmentConditions.push(`(w.assigned_group_id = ANY($${paramCount++}) AND w.assigned_user_id IS NULL)`);
-            values.push(userGroupNames);
-          }
-          conditions.push(`(${assignmentConditions.join(" OR ")})`);
+          conditions.push(`w.status = 'Scheduled'`);
         }
         
         // Filter by last sync timestamp (incremental sync)

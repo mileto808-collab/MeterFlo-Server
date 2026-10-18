@@ -1,8 +1,8 @@
 export type RoutingProvider = "google" | "geoapify";
 // Sub-statuses retain the core parent status on the work order. Check the
 // complete filtered grid scope, not the selected rows or current page.
-export function isScheduledOnlyRouteScope<T extends { status?: string | null }>(orders: readonly T[]): boolean {
-  return orders.length > 0 && orders.every(order => order.status === "Scheduled");
+export function hasScheduledRouteScope<T extends { status?: string | null }>(orders: readonly T[]): boolean {
+  return orders.some(order => order.status === "Scheduled");
 }
 const routingReference = /^(?:(?:METERFLO_ROUTING|GOOGLE_MAPS|GEOAPIFY)_[A-Z0-9_]+)?$/;
 export const isRoutingServerReference = (value:string) => value.length<=100 && routingReference.test(value) &&
@@ -71,6 +71,12 @@ export interface RoutingStop {
   travelMeters: number;
 }
 export interface RoutingResult {
+  assignmentRoutingVersion?: 1;
+  assigneeId?: string;
+  assigneeName?: string;
+  originAddress?: string;
+  scopeIds?: number[];
+  routes?: RoutingResult[];
   addressReviewVersion?: 1;
   confirmedAddressMatches?: AddressMatchSummary[];
   projectId: number;

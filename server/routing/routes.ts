@@ -24,7 +24,7 @@ export function routeFingerprint(orders:any[], definitions:any[], project?: { de
   const defs=new Map(definitions.map(d=>[d.id,d]));
   return createHash("sha256").update(JSON.stringify([destinationPolicy,project?.defaultServiceMinutes??null,project?.defaultAppointmentToleranceMinutes??null,
     [...orders].sort((a,b)=>a.id-b.id).map(wo=>[
-    "visit-scheduling-v1",wo.id,wo.status,wo.scheduledAt,wo.serviceDurationMinutes,wo.appointmentWindowStart,wo.appointmentWindowEnd,wo.updatedAt,wo.address,wo.city,wo.state,wo.zip,
+    "per-assignee-routing-v1",wo.id,wo.status,wo.scheduledAt,wo.serviceDurationMinutes,wo.appointmentWindowStart,wo.appointmentWindowEnd,wo.updatedAt,wo.address,wo.city,wo.state,wo.zip,
     wo.oldGps,wo.newGps,wo.assignedUserId,wo.assignedGroupId,wo.subStatusId,
     defs.get(wo.subStatusId)?.routingPriority??null,defs.get(wo.subStatusId)?.label??null,
   ])])).digest("hex");
@@ -61,14 +61,13 @@ export function registerRoutingRoutes(app:Express, services = { effectiveRouting
     if(!await storage.hasPermission(ctx.user,"workOrders.optimizeRoute"))throw new RoutingError(403,"Optimize route permission required.");
     const project=ctx.project!;
     if(!project.databaseName)throw new RoutingError(404,"Project database unavailable.");
-    // Match existing Work Orders visibility exactly, including claimed group work.
+    // Match the technician grid scope, not unclaimed group work or another technician.
     const all=await getProjectWorkOrderStorage(project.databaseName).getWorkOrders();
     let visible=all;
     if(ctx.user.subroleId){
       const role=await storage.getSubrole(ctx.user.subroleId);
-      if(role?.key==="field_technician"){
-        const groups=(await storage.getUserGroupMemberships(ctx.user.id)).map(g=>g.name);
-        visible=all.filter(wo=>wo.assignedUserId===ctx.user.id||!!wo.assignedGroupId&&groups.includes(wo.assignedGroupId)&&!wo.assignedUserId);
+      if(role?.key==="field_technician"&&!ctx.admin){
+        visible=all.filter(wo=>wo.status==="Scheduled"&&wo.assignedUserId===ctx.user.id);
       }
     }
     const wanted=new Set(ids),orders=visible.filter(wo=>wanted.has(wo.id));
@@ -112,6 +111,17 @@ export function registerRoutingRoutes(app:Express, services = { effectiveRouting
     const durationSource = input.serviceMinutes!==undefined && input.serviceMinutes!==(ctx.project.defaultServiceMinutes??45)
       ? "route" : ctx.project.defaultServiceMinutes!=null ? "project" : "legacy";
     const config=await readEffective(ctx.project.id);
+    const scheduled=ctx.orders.filter(o=>o.status==="Scheduled");
+    if(!scheduled.length)throw new RoutingError(422,"No Scheduled work orders remain in this scope.");
+    const assigned=scheduled.filter(o=>!!o.assignedUserId);
+    if(!assigned.length)throw new RoutingError(422,"The Scheduled work orders are unassigned. Assign them to a technician before optimizing routes.");
+    const assignments=new Map<string,typeof assigned>();
+    for(const order of assigned){
+      const group=assignments.get(order.assignedUserId!)??[];
+      group.push(order);assignments.set(order.assignedUserId!,group);
+    }
+    if([...assignments.values()].some(group=>group.length>config.effective.maxStops))
+      throw new RoutingError(422,`This provider configuration allows ${config.effective.maxStops} stops per technician. Narrow your filters or select fewer rows for that technician.`);
     const {addressConfirmations=[],...planningInput}=input;
     const confirmationScope=reviewHash([ctx.user.id,ctx.project.id,planningInput,
       routeFingerprint(ctx.orders,ctx.definitions,ctx.project),config.result.revision]);
@@ -123,9 +133,6 @@ export function registerRoutingRoutes(app:Express, services = { effectiveRouting
     if(running.has(actor)||Date.now()-(lastRequest.get(actor)??0)<10000&&!continuation)
       throw new RoutingError(429,"A route is already running or was just requested. Please wait before replanning.");
     if(!config.result.ready)throw new RoutingError(503,config.result.message);
-    const scheduled=ctx.orders.filter(o=>o.status==="Scheduled");
-    if(scheduled.length>config.effective.maxStops)throw new RoutingError(422,`This provider configuration allows ${config.effective.maxStops} stops. Narrow your filters or select fewer rows.`);
-    if(!scheduled.length)throw new RoutingError(422,"No Scheduled work orders remain in this scope.");
     const departure=Date.parse(input.departureAt);
     if(departure<Date.now()-15*60000||departure>Date.now()+7*86400000)throw new RoutingError(422,"Choose a departure between now and seven days ahead.");
     running.add(actor);lastRequest.set(actor,Date.now());
@@ -152,9 +159,9 @@ export function registerRoutingRoutes(app:Express, services = { effectiveRouting
           manualAddressFields(input.origin.address),geocoded);
       }else origin=input.origin;
       const defs=new Map(ctx.definitions.map(d=>[d.id,d]));
-      const resolved:Candidate[]=[],excluded:RoutingResult["excluded"]=ctx.orders.filter(o=>o.status!=="Scheduled")
-        .map(o=>({id:o.id,label:String(o.customerWoId??o.id),reason:"Not Scheduled."}));
-      for(const order of scheduled){
+      const resolved:(Candidate&{assigneeId:string})[]=[],excluded:RoutingResult["excluded"]=ctx.orders.filter(o=>o.status!=="Scheduled"||!o.assignedUserId)
+        .map(o=>({id:o.id,label:String(o.customerWoId??o.id),reason:o.status!=="Scheduled"?"Not Scheduled.":"Unassigned. Assign this work order to a technician before optimizing."}));
+      for(const order of assigned){
         if(controller.signal.aborted)throw new RoutingError(504,"Route planning timed out. Narrow the stop selection.");
         const address=destinationAddress(order);
         const label=String(order.customerWoId??order.id);
@@ -164,7 +171,7 @@ export function registerRoutingRoutes(app:Express, services = { effectiveRouting
             submittedAddress:address,point:{lat:geocoded.lat,lng:geocoded.lng},
           },{address:order.address||"",city:order.city,state:order.state,zip:order.zip},geocoded));
           const def=defs.get(order.subStatusId);
-          resolved.push({id:order.id,label,address,point:destination,
+          resolved.push({id:order.id,label,address,point:destination,assigneeId:order.assignedUserId!,
             scheduledAt:order.scheduledAt?new Date(order.scheduledAt).toISOString():null,
             appointmentWindowStart:order.appointmentWindowStart?new Date(order.appointmentWindowStart).toISOString():null,
             appointmentWindowEnd:order.appointmentWindowEnd?new Date(order.appointmentWindowEnd).toISOString():null,
@@ -178,26 +185,56 @@ export function registerRoutingRoutes(app:Express, services = { effectiveRouting
         addressReviews,
       });
       if(!resolved.length)throw new RoutingError(422,"No stops have a verified destination. Correct addresses or capture GPS coordinates.");
-      const matrix=await provider.matrix([origin,...resolved.map(s=>s.point)]);
-      // Explicitly identify stops disconnected from the origin.
-      const unreachable=resolved.map((s,i)=>({s,i})).filter(({i})=>!matrix[0][i+1]);
-      for(const {s}of unreachable)excluded.push({id:s.id,label:s.label,reason:"No driving route from the starting location."});
-      const keep=resolved.map((_,i)=>i).filter(i=>!unreachable.some(u=>u.i===i));
-      if(!keep.length)throw new RoutingError(422,"No selected stops are reachable by road.");
-      const indices=[0,...keep.map(i=>i+1)],roadMatrix=indices.map(i=>indices.map(j=>matrix[i][j]));
-      const stops=optimizeStops(keep.map(i=>resolved[i]),roadMatrix,departure,serviceMinutes,toleranceMinutes);
-      const geometry=await provider.geometry([origin,...stops.map(s=>s.point)]);
+      const routes:RoutingResult[]=[];
+      let matrixRequests=0;
+      for(const [assigneeId,orders] of assignments){
+        const group=resolved.filter(stop=>stop.assigneeId===assigneeId);
+        if(!group.length)continue;
+        const assignee=await storage.getUser(assigneeId);
+        if(!assignee){
+          for(const stop of group)excluded.push({id:stop.id,label:stop.label,reason:"Assigned user is unavailable. Reassign before optimizing."});
+          continue;
+        }
+        if(matrixRequests++)await consumeQuota(config.effective.provider,config.serverKey,config.effective.dailyPlans);
+        const matrix=await provider.matrix([origin,...group.map(s=>s.point)]);
+        const unreachable=group.map((s,i)=>({s,i})).filter(({i})=>!matrix[0][i+1]);
+        for(const {s}of unreachable)excluded.push({id:s.id,label:s.label,reason:"No driving route from the starting location."});
+        const keep=group.map((_,i)=>i).filter(i=>!unreachable.some(u=>u.i===i));
+        if(!keep.length)continue;
+        const indices=[0,...keep.map(i=>i+1)],roadMatrix=indices.map(i=>indices.map(j=>matrix[i][j]));
+        const stops=optimizeStops(keep.map(i=>group[i]),roadMatrix,departure,serviceMinutes,toleranceMinutes);
+        const geometry=await provider.geometry([origin,...stops.map(s=>s.point)]);
+        const ids=new Set(orders.map(order=>order.id));
+        routes.push({assignmentRoutingVersion:1,addressReviewVersion:1,assigneeId,
+          assigneeName:[assignee.firstName,assignee.lastName].filter(Boolean).join(" ")||assignee.username||"Assigned technician",
+          originAddress:"address" in input.origin?input.origin.address:undefined,scopeIds:input.ids,
+          projectId:ctx.project.id,provider:config.effective.provider,configurationRevision:config.result.revision,
+          fingerprint:routeFingerprint(ctx.orders,ctx.definitions,ctx.project),createdAt:new Date().toISOString(),
+          expiresAt:new Date(Date.now()+4*3600000).toISOString(),departureAt:input.departureAt,origin,stops,geometry,
+          confirmedAddressMatches:confirmedAddressMatches.filter(match=>match.kind==="origin"||ids.has(match.workOrderId!)),
+          excluded:excluded.filter(entry=>ids.has(entry.id)),warnings:[],
+          totalTravelSeconds:stops.reduce((sum,stop)=>sum+stop.travelSeconds,0),
+          totalTravelMeters:stops.reduce((sum,stop)=>sum+stop.travelMeters,0),serviceMinutes,toleranceMinutes});
+      }
+      if(!routes.length)throw new RoutingError(422,"No assigned Scheduled stops are reachable by road. Review addresses and assignments.");
+      const stops=routes.flatMap(route=>route.stops);
       const warnings=["Driving times are estimates, not live traffic. This bounded planning method does not guarantee a mathematically optimal route.",
         `Explicit windows constrain service start without extra tolerance. Other appointments remain start times with ${toleranceMinutes} minutes tolerance. Early arrivals wait. Default service: ${serviceMinutes} minutes; individual overrides are shown per stop.`];
       if(stops.some(s=>s.lateMinutes>0))warnings.push("Some appointments cannot be met within tolerance. Review the displayed lateness before driving.");
       if(stops.some(s=>s.appointmentSource==="none"))warnings.push("Some Scheduled orders have no appointment time or window; they are explicitly marked unscheduled.");
       if(excluded.length)warnings.push(`${excluded.length} selected orders were excluded. Review their reasons; they were not silently dropped.`);
       if(confirmedAddressMatches.length)warnings.push(`${confirmedAddressMatches.length} address matches were manually confirmed for this plan; no work-order addresses or GPS history were changed.`);
-      const result:RoutingResult={addressReviewVersion:1,confirmedAddressMatches,projectId:ctx.project.id,provider:config.effective.provider,
+      for(const route of routes){
+        route.warnings=warnings.slice(0,2);
+        if(route.stops.some(stop=>stop.lateMinutes>0))route.warnings.push("Some appointments on this technician's route cannot be met within tolerance.");
+        if(route.stops.some(stop=>stop.appointmentSource==="none"))route.warnings.push("Some Scheduled orders on this route have no appointment time or window.");
+        if(route.excluded.length)route.warnings.push(`${route.excluded.length} orders assigned to this technician could not be routed. Review the exclusions.`);
+        if(route.confirmedAddressMatches?.length)route.warnings.push(`${route.confirmedAddressMatches.length} address matches were manually confirmed for this route; no saved work-order address or GPS history was changed.`);
+      }
+      const result:RoutingResult={...routes[0],assignmentRoutingVersion:1,routes,scopeIds:input.ids,addressReviewVersion:1,confirmedAddressMatches,projectId:ctx.project.id,provider:config.effective.provider,
         configurationRevision:config.result.revision,fingerprint:routeFingerprint(ctx.orders,ctx.definitions,ctx.project),
-        createdAt:new Date().toISOString(),expiresAt:new Date(Date.now()+4*3600000).toISOString(),
-        departureAt:input.departureAt,origin,stops,excluded,warnings,geometry,
-        totalTravelSeconds:stops.reduce((s,c)=>s+c.travelSeconds,0),totalTravelMeters:stops.reduce((s,c)=>s+c.travelMeters,0),
+        createdAt:routes[0].createdAt,expiresAt:new Date(Math.min(...routes.map(route=>Date.parse(route.expiresAt)))).toISOString(),
+        departureAt:input.departureAt,origin,excluded,warnings,
         serviceMinutes,toleranceMinutes};
       res.set("Cache-Control","no-store").json(result);
     }finally{clearTimeout(timer);res.off("close",abort);running.delete(actor);}

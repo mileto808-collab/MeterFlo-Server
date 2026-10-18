@@ -99,7 +99,7 @@ import { getProjectEquipmentVisibility, omitInapplicableEquipmentFields } from "
 import type { WorkOrderSubStatus } from "@/components/work-order-sub-statuses/work-order-sub-status-manager";
 import { SubStatusBadge } from "@/components/work-order-sub-statuses/sub-status-badge";
 import { RoutePlanner } from "@/components/work-order-routing/route-planner";
-import { isScheduledOnlyRouteScope } from "@shared/workOrderRouting";
+import { hasScheduledRouteScope } from "@shared/workOrderRouting";
 
 type Assignee = {
   type: "user" | "group";
@@ -680,18 +680,8 @@ export default function ProjectWorkOrders() {
     }
     
     if (user.subroleKey === "field_technician") {
-      const defaultStatuses: string[] = [];
-      const openStatus = workOrderStatuses.find(s => s.label === "Open");
-      const scheduledStatus = workOrderStatuses.find(s => s.label === "Scheduled");
-      const troubleStatus = workOrderStatuses.find(s => s.label === "Trouble");
-      
-      if (openStatus) defaultStatuses.push(openStatus.label);
-      if (scheduledStatus) defaultStatuses.push(scheduledStatus.label);
-      if (troubleStatus) defaultStatuses.push(troubleStatus.label);
-      
-      if (defaultStatuses.length > 0) {
-        setSelectedStatuses(defaultStatuses);
-      }
+      const scheduledStatus = workOrderStatuses.find(s => s.code === "Scheduled");
+      if (scheduledStatus) setSelectedStatuses([scheduledStatus.code]);
     }
     
     lastAppliedProjectIdRef.current = projectId;
@@ -4091,7 +4081,7 @@ export default function ProjectWorkOrders() {
                   New Work Order
                 </Button>
               )}
-              {hasPermission("workOrders.optimizeRoute") && isScheduledOnlyRouteScope(filteredAndSortedWorkOrders) && (
+              {hasPermission("workOrders.optimizeRoute") && hasScheduledRouteScope(filteredAndSortedWorkOrders) && (
                 <Button
                   type="button"
                   variant="outline"

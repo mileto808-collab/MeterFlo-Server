@@ -7,6 +7,12 @@ Route optimization must protect appointment times before favoring higher-priorit
 
 **Why:** The user explicitly selected “Protect appointment times, then prioritize stops” rather than visiting higher-priority stops regardless of lateness.
 
+Field technicians' dispatch lists contain only Scheduled orders personally assigned to them, not unclaimed group work. Authorized support staff and managers can see across technicians, but must generate separate routes per assignee, never a combined technician route. Unassigned orders require assignment and must not be silently routed.
+
+**Why:** The user explicitly rejected combining different technicians' work into one route.
+
+**How to apply:** Allow optimization when any Scheduled orders exist in the filtered grid, ignoring other statuses. A shared warehouse origin applies independently to each technician. Printing one or all routes must keep each technician's stops separate and start each route on a new printed page.
+
 Meaningful provider address discrepancies require explicit per-location review before a route is activated. A confirmed alternate address applies to that plan only, not a permanent alias or permission to rewrite work-order addresses or equipment GPS history.
 
 **Why:** The user approved address-match review after a high-confidence lookup resolved a different numbered road; provider confidence alone did not establish the correct service property.

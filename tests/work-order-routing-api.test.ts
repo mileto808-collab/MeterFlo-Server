@@ -38,9 +38,9 @@ test("protected planning, stale state, configuration isolation and quota boundar
     const first=await wo.createWorkOrder({customerWoId:"ROUTE-URGENT",serviceType:service,status:"Scheduled",subStatusId:critical,
       address:"Fixture first address",oldGps:"40.7128,-74.0097",assignedUserId:fixture.id} as any,fixture.username);
     const second=await wo.createWorkOrder({customerWoId:"ROUTE-APPOINTMENT",serviceType:service,status:"Scheduled",
-      address:"Fixture second address",oldGps:"40.7128,-74.0098",scheduledAt:new Date(Date.now()+10*60000)} as any,fixture.username);
+      address:"Fixture second address",oldGps:"40.7128,-74.0098",assignedUserId:fixture.id,scheduledAt:new Date(Date.now()+10*60000)} as any,fixture.username);
     const open=await wo.createWorkOrder({customerWoId:"ROUTE-OPEN",serviceType:service,status:"Open"} as any,fixture.username);
-    const unresolved=await wo.createWorkOrder({customerWoId:"ROUTE-MISSING",serviceType:service,status:"Scheduled"} as any,fixture.username);
+    const unresolved=await wo.createWorkOrder({customerWoId:"ROUTE-MISSING",serviceType:service,status:"Scheduled",assignedUserId:fixture.id} as any,fixture.username);
     const before=await wo.getWorkOrders();
     const app=express();app.use(express.json());
     app.use((req:any,_res,next)=>{

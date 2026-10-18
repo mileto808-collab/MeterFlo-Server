@@ -18,7 +18,7 @@ test("server withholds driving routes until every exact origin/stop match is con
   await withAuditContext(serviceAuditContext("address-review-acceptance"), async () => {
     const wo = getProjectWorkOrderStorage(fixture.schema);
     const orders = await wo.getWorkOrders();
-    const target = orders.find(order => order.status === "Scheduled" && !!order.address?.trim())!;
+    const target = orders.find(order => order.status === "Scheduled" && !!order.address?.trim() && !!order.assignedUserId)!;
     assert.ok(target, "Run work-order-routing-api.test.ts first to seed an address-based Scheduled stop");
     const originalNow = Date.now.bind(Date);
     let offset = 0, changedPoint = false, revision = "a".repeat(64), roads = 0;
