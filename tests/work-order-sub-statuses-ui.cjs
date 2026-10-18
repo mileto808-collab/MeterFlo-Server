@@ -2,7 +2,7 @@ const { chromium, expect } = require("@playwright/test");
 const fs = require("node:fs");
 const assert = require("node:assert/strict");
 const f = JSON.parse(fs.readFileSync("/tmp/meterflo-inventory-ui-fixture.json", "utf8"));
-const baseURL = `https://${process.env.REPLIT_DEV_DOMAIN}`;
+const baseURL = require("./support/workspace-ui-base.cjs")();
 
 (async () => {
   const browser = await chromium.launch({ executablePath: "/repl/tools/bin/chromium", headless: true, args: ["--no-sandbox"] });
@@ -102,6 +102,13 @@ const baseURL = `https://${process.env.REPLIT_DEV_DOMAIN}`;
       assert.equal(current.status,"Trouble");
       assert.equal(current.sub_status_id,name === "desktop" ? shared.id : null);
       await page.goto(`/projects/${f.projectId}/edit`);
+      if (name === "desktop") {
+        await page.getByRole("tab", { name: "Work Orders", exact: true }).click();
+        await page.getByRole("tab", { name: "Sub-statuses", exact: true }).click();
+      } else {
+        await page.getByTestId("project-mobile-menu").click();
+        await page.getByRole("option", { name: "Sub-statuses", exact: true }).click();
+      }
       const manager = page.getByTestId("project-work-order-sub-statuses");
       await manager.scrollIntoViewIfNeeded();
       await expect(manager).toContainText("Awaiting customer permit");

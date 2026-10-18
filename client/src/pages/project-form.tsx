@@ -26,6 +26,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { getReadingPrecision } from "@shared/reading-precision";
 import { getProjectEquipmentVisibility } from "@shared/project-equipment-scope";
 import { WorkOrderSubStatusManager } from "@/components/work-order-sub-statuses/work-order-sub-status-manager";
+import { ProjectTroubleCodeManager } from "@/components/project-trouble-code-manager";
 
 const DAYS_OF_WEEK = [
   { value: 'monday', label: 'Mon' },
@@ -103,9 +104,10 @@ export default function ProjectForm() {
   const { hasPermission, isLoading: permissionsLoading } = usePermissions();
   const canConfigureReadingPrecision = hasPermission("projects.readingPrecision");
   const canManageSubStatuses = hasPermission("projects.manageSubStatuses");
+  const canManageTroubleCodes = hasPermission("projects.manageTroubleCodes");
   const isMobile = useIsMobile();
   type ProjectSection = "details" | "work-orders" | "schedule" | "people" | "integrations";
-  type WorkOrderSection = "wizard" | "search" | "service-types" | "sub-statuses";
+  type WorkOrderSection = "wizard" | "search" | "service-types" | "sub-statuses" | "trouble-codes";
   const [activeSection, setActiveSection] = useState<ProjectSection>("details");
   const [activeWorkOrderSection, setActiveWorkOrderSection] = useState<WorkOrderSection>("wizard");
   const [focusAfterSectionChange, setFocusAfterSectionChange] = useState<keyof ProjectFormValues | null>(null);
@@ -127,6 +129,7 @@ export default function ProjectForm() {
     ...(isEditing ? [
       { id: "service-types" as const, label: "Service types" },
       { id: "sub-statuses" as const, label: "Sub-statuses" },
+      { id: "trouble-codes" as const, label: "Trouble codes" },
     ] : []),
   ];
 
@@ -840,6 +843,13 @@ export default function ProjectForm() {
 
             <div id="project-panel-work-orders" data-project-section="work-orders" role="tabpanel" aria-label="Work Orders"
               hidden={activeSection !== "work-orders"} className="space-y-5 pb-5">
+              {isEditing && (
+                <div id="work-orders-panel-trouble-codes" role="tabpanel" aria-label="Trouble codes"
+                  hidden={activeWorkOrderSection !== "trouble-codes"} className="border-t pt-6 mt-6">
+                  <ProjectTroubleCodeManager projectId={Number(id)} canEdit={canManageTroubleCodes} />
+                </div>
+              )}
+
               {isEditing && (
                 <div id="work-orders-panel-sub-statuses" role="tabpanel" aria-label="Sub-statuses"
                   hidden={activeWorkOrderSection !== "sub-statuses"} className="border-t pt-6 mt-6">

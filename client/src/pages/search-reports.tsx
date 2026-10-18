@@ -359,8 +359,20 @@ export default function SearchReports() {
   });
 
   const { data: troubleCodes = [] } = useQuery<TroubleCode[]>({
-    queryKey: ["/api/trouble-codes"],
+    queryKey: ["/api/trouble-codes?includeProjects=true"],
+    queryFn: async () => {
+      const response = await fetch("/api/trouble-codes?includeProjects=true", { credentials: "include" });
+      if (!response.ok) throw new Error("Failed to load trouble code labels");
+      return response.json();
+    },
   });
+  const projectScopedTroubleCodes = useMemo(
+    () => selectedProject === "all"
+      ? troubleCodes
+      : troubleCodes.filter(code => (code as TroubleCode & { projectId?: number | null }).projectId == null ||
+        String((code as TroubleCode & { projectId?: number | null }).projectId) === selectedProject),
+    [troubleCodes, selectedProject],
+  );
 
   const { data: users = [] } = useQuery<User[]>({
     queryKey: ["/api/users"],
@@ -1388,7 +1400,7 @@ export default function SearchReports() {
               userGroups={userGroups}
               workOrderStatuses={workOrderStatuses}
               serviceTypes={serviceTypes}
-              troubleCodes={troubleCodes}
+              troubleCodes={projectScopedTroubleCodes}
               hasActiveFilters={hasActiveFilters}
               activeFilterCount={activeFilterCount}
               clearAllFilters={clearFilters}

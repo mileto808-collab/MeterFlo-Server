@@ -26,6 +26,7 @@ import { storage } from "./storage";
 import { loginUserResponse, userResponse } from "./userResponse";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { initializeWorkOrderSubStatuses, registerWorkOrderSubStatusRoutes, listSubStatuses } from "./workOrderSubStatuses";
+import { initializeAllProjectTroubleCodes, registerProjectTroubleCodeRoutes, createTroubleCodeFields, patchTroubleCodeFields, troubleCodeError } from "./projectTroubleCodes";
 import { insertProjectWorkOrderSchema, insertProjectSchema, createUserSchema, updateUserSchema, resetPasswordSchema, changePasswordSchema, updateProfileSchema, permissionKeys, insertExternalDatabaseConfigSchema, updateExternalDatabaseConfigSchema, insertImportConfigSchema, updateImportConfigSchema, databaseTypeEnum, importScheduleFrequencyEnum, ADMINISTRATOR_SUBROLE_KEY, getSubroleLevel, insertSupportSubmissionSchema, type CustomerApiAuthType, type GpsMode, type WizardMode } from "@shared/schema";
 import { z } from "zod";
 import { importedVisitScheduling, mapSqlImportRow, schedulingDto, validateVisitScheduling, visitSchedulingKeys } from "../shared/visitScheduling";
@@ -239,6 +240,8 @@ export async function registerRoutes(
   await initializeAdminUser();
   await storage.seedDefaultWorkOrderStatuses();
   await initializeWorkOrderSubStatuses();
+  await initializeAllProjectTroubleCodes();
+  registerProjectTroubleCodeRoutes(app);
   registerWorkOrderSubStatusRoutes(app);
   registerRoutingRoutes(app);
   await storage.syncPermissionsFromRegistry();
@@ -4261,7 +4264,7 @@ export async function registerRoutes(
         }
         
         // Look up trouble code details for the note
-        const allTroubleCodes = await storage.getTroubleCodes();
+        const allTroubleCodes = await storage.getTroubleCodes(projectId);
         const troubleCodeDetails = allTroubleCodes.find(tc => tc.code === troubleCode);
         const troubleCodeLabel = troubleCodeDetails?.label || troubleCode;
         
@@ -7447,7 +7450,18 @@ export async function registerRoutes(
   // Trouble Codes API Routes
   app.get("/api/trouble-codes", isAuthenticated, async (req: any, res) => {
     try {
+      const user = await storage.getUser(req.user.claims.sub);
+      if (!user || user.isLocked) return res.status(401).json({ message: "Sign in required." });
       const codes = await storage.getTroubleCodes();
+      if (req.query.includeProjects === "true") {
+        const allProjects = user.role === "admin" || await storage.isAdminUser(user)
+          ? await storage.getProjects() : await storage.getUserProjects(user.id);
+        const inactiveAllowed = await storage.hasPermission(user, "projects.viewInactive");
+        for (const project of allProjects) {
+          if (project.isActive === false && !inactiveAllowed) continue;
+          codes.push(...(await storage.getTroubleCodes(project.id)).filter(c => c.projectId === project.id));
+        }
+      }
       res.json(codes);
     } catch (error) {
       console.error("Error fetching trouble codes:", error);
@@ -7462,14 +7476,11 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Forbidden: Admin access required" });
       }
       
-      const code = await storage.createTroubleCode(req.body);
+      const fields = createTroubleCodeFields.parse(req.body);
+      const code = await storage.createTroubleCode({ ...fields, projectId: null, active: true });
       res.status(201).json(code);
     } catch (error: any) {
-      console.error("Error creating trouble code:", error);
-      if (error.code === "23505") {
-        return res.status(400).json({ message: "Trouble code already exists" });
-      }
-      res.status(500).json({ message: "Failed to create trouble code" });
+      return troubleCodeError(error, res);
     }
   });
 
@@ -7481,7 +7492,11 @@ export async function registerRoutes(
       }
       
       const id = parseInt(req.params.id);
-      const code = await storage.updateTroubleCode(id, req.body);
+      const existing = await storage.getTroubleCode(id);
+      if (!existing || existing.projectId !== null) return res.status(404).json({ message: "Core trouble code not found." });
+      const fields = patchTroubleCodeFields.parse(req.body);
+      if (fields.active === false) return res.status(400).json({ message: "Core codes remain available to all projects." });
+      const code = await storage.updateTroubleCode(id, fields);
       
       if (!code) {
         return res.status(404).json({ message: "Trouble code not found" });
@@ -7489,11 +7504,7 @@ export async function registerRoutes(
       
       res.json(code);
     } catch (error: any) {
-      console.error("Error updating trouble code:", error);
-      if (error.code === "23505") {
-        return res.status(400).json({ message: "Trouble code already exists" });
-      }
-      res.status(500).json({ message: "Failed to update trouble code" });
+      return troubleCodeError(error, res);
     }
   });
 
@@ -7507,15 +7518,14 @@ export async function registerRoutes(
       const id = parseInt(req.params.id);
       const code = await storage.getTroubleCode(id);
       
-      if (!code) {
+      if (!code || code.projectId !== null) {
         return res.status(404).json({ message: "Trouble code not found" });
       }
       
       await storage.deleteTroubleCode(id);
       res.status(204).send();
     } catch (error) {
-      console.error("Error deleting trouble code:", error);
-      res.status(500).json({ message: "Failed to delete trouble code" });
+      return troubleCodeError(error, res);
     }
   });
 
@@ -9311,7 +9321,7 @@ export async function registerRoutes(
         // Get reference data for offline use (including assignees)
         const [workOrderStatuses, troubleCodes, systemTypes, moduleTypes, serviceTypes, projectUsers, allGroupsWithProjects] = await Promise.all([
           storage.getWorkOrderStatuses(),
-          storage.getTroubleCodes(),
+          storage.getTroubleCodes(projectId),
           storage.getSystemTypes(),
           storage.getModuleTypes(),
           storage.getServiceTypes(),
@@ -9850,7 +9860,7 @@ export async function registerRoutes(
         }
         
         // Look up trouble code details for the note
-        const allTroubleCodes = await storage.getTroubleCodes();
+        const allTroubleCodes = await storage.getTroubleCodes(projectId);
         const troubleCodeDetails = allTroubleCodes.find(tc => tc.code === troubleCode);
         const troubleCodeLabel = troubleCodeDetails?.label || troubleCode;
         
@@ -9917,7 +9927,7 @@ export async function registerRoutes(
       }
       
       // Validate trouble code exists
-      const troubleCodes = await storage.getTroubleCodes();
+      const troubleCodes = await storage.getTroubleCodes(Number(projectId));
       const validTroubleCode = troubleCodes.find(tc => tc.code === troubleCode);
       if (!validTroubleCode) {
         return res.status(400).json({ message: `Invalid trouble code: ${troubleCode}` });
@@ -10379,7 +10389,7 @@ export async function registerRoutes(
       }
       
       // Validate trouble code exists
-      const troubleCodes = await storage.getTroubleCodes();
+      const troubleCodes = await storage.getTroubleCodes(Number(projectId));
       const validTroubleCode = troubleCodes.find(tc => tc.code === troubleCode);
       if (!validTroubleCode) {
         return res.status(400).json({ message: `Invalid trouble code: ${troubleCode}` });

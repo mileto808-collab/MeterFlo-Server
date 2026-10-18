@@ -75,8 +75,14 @@ export function StartSystemChangeoutDialog({
   
   // Fetch trouble codes to display labels
   const { data: troubleCodes = [] } = useQuery<TroubleCode[]>({
-    queryKey: ["/api/trouble-codes"],
-    enabled: isOpen,
+    queryKey: ["/api/projects", projectId, "trouble-codes"],
+    queryFn: async () => {
+      if (!Number.isInteger(projectId) || projectId <= 0) return [];
+      const response = await fetch(`/api/projects/${projectId}/trouble-codes`, { credentials: "include" });
+      if (!response.ok) throw new Error("Unable to load project trouble codes");
+      return response.json();
+    },
+    enabled: isOpen && Number.isInteger(projectId) && projectId > 0,
   });
   
   // Helper to get trouble code label (case-insensitive comparison)

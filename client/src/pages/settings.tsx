@@ -822,6 +822,8 @@ export default function Settings() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/trouble-codes"] });
+      queryClient.invalidateQueries({ predicate: query => Array.isArray(query.queryKey) && (String(query.queryKey[0] || "").includes("/api/trouble-codes") || query.queryKey[2] === "trouble-codes") });
+      queryClient.invalidateQueries({ queryKey: ["/api/search/work-orders"] });
       toast({ title: "Trouble code created successfully" });
       setTroubleCodeDialogOpen(false);
       resetTroubleCodeForm();
@@ -832,11 +834,13 @@ export default function Settings() {
   });
 
   const updateTroubleCodeMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: number; data: { code?: string; label?: string; description?: string } }) => {
+    mutationFn: async ({ id, data }: { id: number; data: { label?: string; description?: string } }) => {
       return apiRequest("PATCH", `/api/trouble-codes/${id}`, data);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/trouble-codes"] });
+      queryClient.invalidateQueries({ predicate: query => Array.isArray(query.queryKey) && (String(query.queryKey[0] || "").includes("/api/trouble-codes") || query.queryKey[2] === "trouble-codes") });
+      queryClient.invalidateQueries({ queryKey: ["/api/search/work-orders"] });
       toast({ title: "Trouble code updated successfully" });
       setTroubleCodeDialogOpen(false);
       setSelectedTroubleCode(null);
@@ -853,6 +857,8 @@ export default function Settings() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/trouble-codes"] });
+      queryClient.invalidateQueries({ predicate: query => Array.isArray(query.queryKey) && (String(query.queryKey[0] || "").includes("/api/trouble-codes") || query.queryKey[2] === "trouble-codes") });
+      queryClient.invalidateQueries({ queryKey: ["/api/search/work-orders"] });
       toast({ title: "Trouble code deleted successfully" });
       setDeleteTroubleCodeDialogOpen(false);
       setSelectedTroubleCode(null);
@@ -1250,7 +1256,6 @@ export default function Settings() {
       updateTroubleCodeMutation.mutate({
         id: selectedTroubleCode.id,
         data: {
-          code: troubleCodeForm.code,
           label: troubleCodeForm.label,
           description: troubleCodeForm.description || undefined,
         },
@@ -2892,8 +2897,8 @@ export default function Settings() {
                   <div className="flex items-center gap-2">
                     <AlertTriangle className="h-5 w-5 text-muted-foreground" />
                     <div>
-                      <CardTitle>Trouble Codes</CardTitle>
-                      <CardDescription className="mt-1">Define trouble/issue codes that can be assigned to work orders</CardDescription>
+                      <CardTitle>Core Trouble Codes</CardTitle>
+                      <CardDescription className="mt-1">Shared installation-wide definitions. Project-specific choices are managed in Edit Project → Work Orders. Codes are permanent because saved work orders reference them.</CardDescription>
                     </div>
                   </div>
                   <Button onClick={openCreateTroubleCodeDialog} data-testid="button-add-trouble-code">
@@ -2912,6 +2917,7 @@ export default function Settings() {
                         <TableHead>Code</TableHead>
                         <TableHead>Label</TableHead>
                         <TableHead>Description</TableHead>
+                        <TableHead>Permanent rule key</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -2921,6 +2927,7 @@ export default function Settings() {
                           <TableCell className="font-medium">{troubleCode.code}</TableCell>
                           <TableCell>{troubleCode.label}</TableCell>
                           <TableCell className="text-muted-foreground">{troubleCode.description || "—"}</TableCell>
+                          <TableCell className="max-w-[260px] select-all break-all font-mono text-xs">{(troubleCode as TroubleCode & { ruleKey?: string }).ruleKey || "—"}</TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">
                               <Button 
@@ -3739,7 +3746,7 @@ export default function Settings() {
           <DialogHeader>
             <DialogTitle>{selectedTroubleCode ? "Edit Trouble Code" : "Create Trouble Code"}</DialogTitle>
             <DialogDescription>
-              {selectedTroubleCode ? "Update the trouble code settings" : "Define a new trouble code for work orders"}
+              {selectedTroubleCode ? "Update the display details for this shared definition. Its code is immutable." : "Define a shared core trouble code for work orders."}
             </DialogDescription>
           </DialogHeader>
           
@@ -3749,12 +3756,13 @@ export default function Settings() {
               <Input
                 id="trouble-code-code"
                 value={troubleCodeForm.code}
+                disabled={!!selectedTroubleCode}
                 onChange={(e) => setTroubleCodeForm(prev => ({ ...prev, code: e.target.value }))}
                 placeholder="e.g. DAMAGED, NO_ACCESS"
                 className="mt-2"
                 data-testid="input-trouble-code-code"
               />
-              <p className="text-sm text-muted-foreground mt-1">A unique identifier for the trouble code</p>
+              <p className="text-sm text-muted-foreground mt-1">Unique and permanent across this installation because legacy work orders reference it.</p>
             </div>
 
             <div>

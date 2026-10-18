@@ -556,7 +556,14 @@ export default function ProjectWorkOrders() {
   });
 
   const { data: troubleCodes = [] } = useQuery<TroubleCode[]>({
-    queryKey: ["/api/trouble-codes"],
+    queryKey: ["/api/projects", projectId, "trouble-codes"],
+    queryFn: async () => {
+      if (!projectId || !Number.isInteger(projectId)) return [];
+      const response = await fetch(`/api/projects/${projectId}/trouble-codes`, { credentials: "include" });
+      if (!response.ok) throw new Error("Unable to load project trouble codes");
+      return response.json();
+    },
+    enabled: !!projectId && !accessDenied,
   });
 
   const { data: allServiceTypes = [], isLoading: allServiceTypesLoading } = useQuery<ServiceTypeRecord[]>({
@@ -3379,7 +3386,7 @@ export default function ProjectWorkOrders() {
                             </FormControl>
                             <SelectContent>
                               <SelectItem value="__none__">None</SelectItem>
-                              {troubleCodes.map((tc) => (
+                              {troubleCodes.filter(tc => (tc as TroubleCode & { active?: boolean }).active !== false).map((tc) => (
                                 <SelectItem key={tc.id} value={tc.code}>
                                   {tc.code} - {tc.label}
                                 </SelectItem>

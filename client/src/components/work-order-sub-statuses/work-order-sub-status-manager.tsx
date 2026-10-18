@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, Copy, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -171,6 +171,14 @@ export function WorkOrderSubStatusManager({ projectId, canEdit }: Props) {
   };
   const updateForm = (patch: Partial<FormState>) => setForm(previous => ({ ...previous, ...patch }));
   const routingPriorityValid = form.routingPriority.trim() === "" || (/^\d+$/.test(form.routingPriority.trim()) && Number(form.routingPriority) <= 100000);
+  const copyIdentity = async (id: string) => {
+    try {
+      await navigator.clipboard.writeText(id);
+      toast({ title: "Sub-status ID copied" });
+    } catch {
+      toast({ title: "Copy unavailable", description: "Select and copy the UUID manually.", variant: "destructive" });
+    }
+  };
 
   return (
     <Card data-testid={projectId ? "project-work-order-sub-statuses" : "global-work-order-sub-statuses"}>
@@ -219,6 +227,12 @@ export function WorkOrderSubStatusManager({ projectId, canEdit }: Props) {
                       {!definition.active && <Badge variant="outline">Inactive</Badge>}
                     </div>
                     {definition.description && <p className="mt-1 text-sm text-muted-foreground">{definition.description}</p>}
+                    {projectId && definition.projectId === projectId && (
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <span>Immutable ID</span><code className="select-all break-all">{definition.id}</code>
+                        <Button type="button" size="icon" variant="ghost" className="h-7 w-7" aria-label={`Copy ID for ${definition.label}`} onClick={() => copyIdentity(definition.id)}><Copy className="h-3.5 w-3.5" /></Button>
+                      </div>
+                    )}
                   </div>
                 </div>
                 {canEdit && (projectId ? definition.projectId === projectId : definition.projectId === null) && (

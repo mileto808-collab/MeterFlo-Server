@@ -110,7 +110,7 @@ interface WorkOrderDetailProps {
   systemTypes: Array<{ id: number; productId: string; productLabel: string }>;
   moduleTypes: Array<{ id: number; productId: string; productLabel: string }>;
   workOrderStatuses: Array<{ id: number; code: string; label: string; color?: string | null }>;
-  troubleCodes: Array<{ id: number; code: string; label: string }>;
+  troubleCodes: Array<{ id: number; code: string; label: string; active?: boolean }>;
   assigneesData: any;
   workOrderFiles: string[];
   filesLoading: boolean;
@@ -2489,7 +2489,7 @@ export function WorkOrderDetail({
                         <div>
                           <p className="text-xs text-muted-foreground">Trouble Code</p>
                           <p className="text-sm font-medium" data-testid="mobile-trouble-code">
-                            {workOrder.trouble}
+                            {troubleCodes.find(code => code.code === workOrder.trouble)?.label || workOrder.trouble}
                           </p>
                         </div>
                       </div>
@@ -2691,9 +2691,9 @@ export function WorkOrderDetail({
                             </FormControl>
                             <SelectContent>
                               <SelectItem value="__none__">None</SelectItem>
-                              {troubleCodes.map((tc) => (
+                              {troubleCodes.filter(tc => tc.active !== false || tc.code === field.value).map((tc) => (
                                 <SelectItem key={tc.id} value={tc.code}>
-                                  {tc.code} - {tc.label}
+                                  {tc.code} - {tc.label}{tc.active === false ? " (retired)" : ""}
                                 </SelectItem>
                               ))}
                             </SelectContent>
@@ -3007,9 +3007,9 @@ export function WorkOrderDetail({
                           </FormControl>
                           <SelectContent>
                             <SelectItem value="__none__">None</SelectItem>
-                            {troubleCodes.map((tc) => (
+                            {troubleCodes.filter(tc => tc.active !== false || tc.code === field.value).map((tc) => (
                               <SelectItem key={tc.id} value={tc.code}>
-                                {tc.code} - {tc.label}
+                                {tc.code} - {tc.label}{tc.active === false ? " (retired)" : ""}
                               </SelectItem>
                             ))}
                           </SelectContent>

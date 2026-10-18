@@ -90,7 +90,7 @@ import {
 } from "@shared/schema";
 import { db, pool } from "./db";
 import { enqueueCustomerDelivery } from "./customerApiService";
-import { eq, desc, and, inArray, sql } from "drizzle-orm";
+import { eq, desc, and, inArray, sql, isNull, or } from "drizzle-orm";
 import type { InventoryState } from "../shared/inventory";
 import { InventoryError } from "../shared/inventory-engine";
 
@@ -215,9 +215,9 @@ export interface IStorage {
   seedDefaultWorkOrderStatuses(): Promise<void>;
 
   // Trouble code operations
-  getTroubleCodes(): Promise<TroubleCode[]>;
+  getTroubleCodes(projectId?: number): Promise<TroubleCode[]>;
   getTroubleCode(id: number): Promise<TroubleCode | undefined>;
-  createTroubleCode(data: InsertTroubleCode): Promise<TroubleCode>;
+  createTroubleCode(data: InsertTroubleCode & Partial<Pick<TroubleCode, "projectId" | "ruleKey" | "active">>): Promise<TroubleCode>;
   updateTroubleCode(id: number, data: UpdateTroubleCode): Promise<TroubleCode | undefined>;
   deleteTroubleCode(id: number): Promise<boolean>;
 
@@ -1355,10 +1355,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Trouble code operations
-  async getTroubleCodes(): Promise<TroubleCode[]> {
+  async getTroubleCodes(projectId?: number): Promise<TroubleCode[]> {
     return await db
       .select()
       .from(troubleCodes)
+      .where(projectId === undefined ? isNull(troubleCodes.projectId) : or(isNull(troubleCodes.projectId), eq(troubleCodes.projectId, projectId)))
       .orderBy(troubleCodes.sortOrder);
   }
 
@@ -1370,7 +1371,7 @@ export class DatabaseStorage implements IStorage {
     return code;
   }
 
-  async createTroubleCode(data: InsertTroubleCode): Promise<TroubleCode> {
+  async createTroubleCode(data: InsertTroubleCode & Partial<Pick<TroubleCode, "projectId" | "ruleKey" | "active">>): Promise<TroubleCode> {
     const [code] = await db
       .insert(troubleCodes)
       .values(data)

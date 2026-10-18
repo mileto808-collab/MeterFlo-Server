@@ -14,6 +14,7 @@ import { exactReadingDto, exactReadingFields, capturedReadingText, readingParame
 import { inventoryWorkOrderChange, lockInventoryForSchema } from "./inventoryService";
 import { exportInventory, restoreInventory, validateInventoryBackup, type InventoryBackup } from "./inventoryBackup";
 import { installProjectSubStatuses, listSubStatuses, restoreSubStatusDefinitions } from "./workOrderSubStatuses";
+import { installProjectTroubleCodes, exportTroubleCodes, restoreTroubleCodes } from "./projectTroubleCodes";
 import { exportProjectRouting, restoreProjectRouting } from "./routing/configuration";
 import { installVisitScheduling, writeVisitScheduling } from "./visitScheduling";
 import { schedulingDto, validateVisitScheduling, schedulingDefaultsSchema } from "../shared/visitScheduling";
@@ -201,6 +202,7 @@ export async function createProjectSchema(projectName: string, projectId: number
     
     await initializeExactReadings(client,schemaName);
     await installProjectSubStatuses(client,schemaName);
+    await installProjectTroubleCodes(client,schemaName);
     await installVisitScheduling(client,schemaName);
     if (auditingEnabled) {
       await client.query(`INSERT INTO meterflo_audit.project_scopes(schema_name,project_id,project_label) VALUES($1,$2,$3)
@@ -389,6 +391,7 @@ export async function migrateProjectSchema(schemaName: string, connectionPool: P
     
     await initializeExactReadings(client,schemaName);
     await installProjectSubStatuses(client,schemaName);
+    await installProjectTroubleCodes(client,schemaName);
     await installVisitScheduling(client,schemaName);
     if (auditingEnabled) await installProjectAudit(client,schemaName);
 
@@ -807,7 +810,8 @@ export class ProjectWorkOrderStorage {
   
   private async getTroubleCodeDetails(troubleCodeValue: string): Promise<{ id: number; code: string; label: string } | null> {
     try {
-      const troubleCodes = await storage.getTroubleCodes();
+      const project = await pool.query("SELECT id FROM public.projects WHERE database_name=$1", [this.schemaName]);
+      const troubleCodes = await storage.getTroubleCodes(project.rows[0]?.id);
       const found = troubleCodes.find(tc => tc.code === troubleCodeValue);
       if (found) {
         return { id: found.id, code: found.code, label: found.label };
@@ -1761,6 +1765,7 @@ async function backupProjectDatabaseData(schemaName: string): Promise<{
   version: string;
   inventory?: InventoryBackup;
   subStatuses?: unknown[];
+  troubleCodes?: unknown[];
   routingConfiguration?: unknown;
   schedulingDefaults?: unknown;
 }> {
@@ -1825,6 +1830,7 @@ async function backupProjectDatabaseData(schemaName: string): Promise<{
     const { rows:[scope] } = await client.query(`SELECT id, default_service_minutes AS "defaultServiceMinutes",
       default_appointment_tolerance_minutes AS "defaultAppointmentToleranceMinutes" FROM public.projects WHERE database_name=$1`,[schemaName]);
     const subStatuses = await listSubStatuses(scope?.id,client);
+    const troubleCodeDefinitions = scope?.id ? await exportTroubleCodes(client, scope.id) : [];
     const routingConfiguration = scope?.id ? await exportProjectRouting(client,scope.id) : null;
     await client.query("COMMIT");
     return {
@@ -1834,6 +1840,7 @@ async function backupProjectDatabaseData(schemaName: string): Promise<{
       version: "2.6",
       inventory,
       subStatuses,
+      troubleCodes: troubleCodeDefinitions,
       routingConfiguration,
       schedulingDefaults: scope ? { defaultServiceMinutes: scope.defaultServiceMinutes,
         defaultAppointmentToleranceMinutes: scope.defaultAppointmentToleranceMinutes } : undefined,
@@ -1845,7 +1852,7 @@ async function backupProjectDatabaseData(schemaName: string): Promise<{
 
 // Restore project database from backup JSON
 export async function restoreProjectDatabase(
-  schemaName:string,backup:{workOrders:Array<Omit<ProjectWorkOrder,"id"|"createdAt"|"updatedAt">>;inventory?:InventoryBackup;subStatuses?:unknown[];routingConfiguration?:unknown;schedulingDefaults?:unknown},options:{clearExisting?:boolean}={}
+  schemaName:string,backup:{workOrders:Array<Omit<ProjectWorkOrder,"id"|"createdAt"|"updatedAt">>;inventory?:InventoryBackup;subStatuses?:unknown[];troubleCodes?:unknown[];routingConfiguration?:unknown;schedulingDefaults?:unknown},options:{clearExisting?:boolean}={}
 ) {
   if (!auditingEnabled) return restoreProjectDatabaseData(schemaName,backup,options);
   const {rows:[scope]}=await pool.query("SELECT project_id,project_label FROM meterflo_audit.project_scopes WHERE schema_name=$1",[schemaName]);
@@ -1863,7 +1870,7 @@ export async function restoreProjectDatabaseInTransaction(
 
 async function restoreProjectDatabaseData(
   schemaName: string,
-  backup: { workOrders: Array<Omit<ProjectWorkOrder, "id" | "createdAt" | "updatedAt">>; inventory?: InventoryBackup; subStatuses?:unknown[];routingConfiguration?:unknown;schedulingDefaults?:unknown },
+  backup: { workOrders: Array<Omit<ProjectWorkOrder, "id" | "createdAt" | "updatedAt">>; inventory?: InventoryBackup; subStatuses?:unknown[];troubleCodes?:unknown[];routingConfiguration?:unknown;schedulingDefaults?:unknown },
   options: { clearExisting?: boolean } = {},
   transactionClient?: PoolClient
 ): Promise<{ restored: number; errors: string[] }> {
@@ -1889,6 +1896,9 @@ async function restoreProjectDatabaseData(
         throw new Error("This backup has no inventory snapshot. Restore an inventory-aware backup to protect stock and work-order links.");
     }
     const subStatusMapping = backup.subStatuses ? await restoreSubStatusDefinitions(client,schemaName,backup.subStatuses) : new Map<string,string>();
+    if (backup.troubleCodes) await restoreTroubleCodes(client, schemaName, backup.troubleCodes);
+    // Restoring history may retain retired codes; scope and FK checks still apply.
+    await client.query("SELECT set_config('meterflo.restore_trouble_codes','on',true)");
     if(backup.routingConfiguration!==undefined)await restoreProjectRouting(client,schemaName,backup.routingConfiguration);
     if(schedulingDefaults) await client.query(`UPDATE public.projects SET default_service_minutes=$2,
       default_appointment_tolerance_minutes=$3 WHERE database_name=$1`,
