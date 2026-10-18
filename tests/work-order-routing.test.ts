@@ -71,8 +71,16 @@ test("unreachable inter-stop roads fail instead of inventing distances",()=>{
 test("Apple and Google handoffs are single-destination HTTPS links",()=>{
   const links=navigationLinks({lat:40.1,lng:-105.2});
   assert.match(links.apple,/^https:\/\/maps.apple.com/);
-  assert.match(links.google,/api=1.*destination=40.1%2C-105.2/);
-  assert.ok(!links.google.includes("waypoints"));
+  const google = new URL(links.google);
+  assert.equal(google.protocol,"https:");
+  assert.equal(google.hostname,"www.google.com");
+  assert.equal(google.pathname,"/maps/dir/");
+  assert.equal(google.searchParams.get("api"),"1");
+  assert.equal(google.searchParams.get("destination"),"40.1,-105.2","Latitude precedes longitude");
+  assert.equal(google.searchParams.get("travelmode"),"driving");
+  assert.equal(google.searchParams.get("dir_action"),"navigate");
+  assert.equal(google.searchParams.has("origin"),false,"Use current device location, not a stale planning origin");
+  assert.equal(google.searchParams.has("waypoints"),false,"Navigate only to the active stop");
 });
 test("Geoapify adapter uses fixed hosts, real road matrix and geometry; rejects ambiguous addresses",async()=>{
   const original=globalThis.fetch,requests:string[]=[];

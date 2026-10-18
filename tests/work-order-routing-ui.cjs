@@ -92,7 +92,7 @@ const assert = require("node:assert/strict");
     await expect(page.getByRole("dialog").first()).toContainText("Route optimization is disabled");
     await page.screenshot({path:`${out}/unconfigured-desktop.jpg`});
     await page.getByRole("button",{name:"Back to work orders",exact:true}).last().click();
-    let body,stale=false,deny=false;
+    let body,plannedStops,stale=false,deny=false;
     const readiness={configuration:{mode:"override",provider:"google",serverKeyEnv:"GOOGLE_MAPS_TEST_SERVER",browserKeyEnv:"GOOGLE_MAPS_TEST_BROWSER",maxStops:24,dailyPlans:10},
       effective:{provider:"google",source:"project",maxStops:24,dailyPlans:10},ready:true,mapReady:true,disabled:false,canManage:true,revision:"a".repeat(64),message:"Controlled fixture; not live provider access."};
     await page.route(`**${routeRoot}/settings`,route=>route.fulfill({json:readiness}));
@@ -109,6 +109,7 @@ const assert = require("node:assert/strict");
           arrivalAt:new Date(Date.now()+(i+1)*600000).toISOString(),serviceAt:new Date(Date.now()+(i+1)*600000).toISOString(),
           departureAt:new Date(Date.now()+(i+1)*600000+300000).toISOString(),lateMinutes:0,travelSeconds:300,travelMeters:1000};
       });
+      plannedStops=stops;
       await route.fulfill({json:{projectId:fixture.projectId,provider:"google",configurationRevision:readiness.revision,fingerprint:"b".repeat(64),
         createdAt:new Date().toISOString(),expiresAt:new Date(Date.now()+3600000).toISOString(),departureAt:body.departureAt,origin:body.origin,
         stops,excluded:[],warnings:["Controlled UI fixture. Road provider has not been live-verified."],geometry:[body.origin,...stops.map(s=>s.point)],
@@ -151,7 +152,16 @@ const assert = require("node:assert/strict");
     await page.route("https://www.google.com/maps/dir/**",async route=>{handoff=route.request().url();await route.abort();});
     await page.getByTestId("navigate-next-stop").click().catch(()=>{});
     await expect.poll(()=>handoff).toBeTruthy();
-    assert.ok(handoff.includes("api=1")&&!handoff.includes("waypoints"));
+    const googleHandoff = new URL(handoff);
+    assert.equal(googleHandoff.hostname,"www.google.com");
+    assert.equal(googleHandoff.pathname,"/maps/dir/");
+    assert.equal(googleHandoff.searchParams.get("destination"),`${plannedStops[1].point.lat},${plannedStops[1].point.lng}`,
+      "After advancing, refreshing and viewing details, navigation targets the selected second stop—not the origin or first stop");
+    assert.equal(googleHandoff.searchParams.get("api"),"1");
+    assert.equal(googleHandoff.searchParams.get("travelmode"),"driving");
+    assert.equal(googleHandoff.searchParams.get("dir_action"),"navigate");
+    assert.equal(googleHandoff.searchParams.has("origin"),false);
+    assert.equal(googleHandoff.searchParams.has("waypoints"),false);
     // A failed external navigation may leave an error page: refresh original route.
     await page.goto(`/projects/${fixture.projectId}/work-orders`);
     await expect(page.getByTestId("navigate-next-stop")).toBeVisible();

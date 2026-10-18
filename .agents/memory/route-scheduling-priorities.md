@@ -38,3 +38,9 @@ Use the work-order street address for route destinations when present. Saved equ
 **Why:** Imported or historical equipment GPS can point to a different region than the displayed service address. Syntactically valid coordinates are not proof they represent the current job site.
 
 **How to apply:** Preserve historical GPS rather than rewriting it to correct routing. Keep manual/device origins independent of stop resolution, and invalidate saved routes whenever destination-resolution policy changes.
+
+Separate navigation-link correctness from geocoding accuracy. Geoapify's confidence of 1 and `full_match` do not guarantee that the returned street name matches the submitted street.
+
+**Why:** A live address lookup returned a different numbered road while reporting full confidence, and Google Maps reverse-labeled the resulting coordinates with yet another address.
+
+**How to apply:** Verify both the selected-stop coordinates in the outgoing link and the provider's resolved address. Do not claim the physical property is verified from confidence scores or a passing handoff test alone.
