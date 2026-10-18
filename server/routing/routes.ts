@@ -8,6 +8,8 @@ import { getProjectWorkOrderStorage } from "../projectDb";
 import { listSubStatuses } from "../workOrderSubStatuses";
 import { assertProjectCredentialReferences, consumeRoutingQuota, effectiveRouting, readRoutingConfiguration, routingConfigurationSchema, saveRoutingConfiguration } from "./configuration";
 import { routingService, RoutingError } from "./providers";
+import { destinationAddress, destinationPolicy, resolveDestination } from "./destinations";
+export { parseGps } from "./destinations";
 import { optimizeStops, type Candidate } from "./optimizer";
 import type { RoutePoint, RoutingResult } from "../../shared/workOrderRouting";
 
@@ -16,16 +18,9 @@ const idsSchema=z.array(z.number().int().positive()).min(1).max(50).refine(ids=>
 const planSchema=z.object({ids:idsSchema,origin:z.union([point,z.object({address:z.string().trim().min(5).max(400)}).strict()]),
   departureAt:z.string().datetime({offset:true}),serviceMinutes:z.number().int().min(1).max(480).optional(),toleranceMinutes:z.number().int().min(0).max(240).optional()}).strict();
 const running=new Set<string>(),lastRequest=new Map<string,number>();
-export function parseGps(value:unknown):RoutePoint|null {
-  if(typeof value!=="string")return null;
-  const match=value.trim().match(/^(-?\d+(?:\.\d+)?)\s*[,;]\s*(-?\d+(?:\.\d+)?)$/);
-  if(!match)return null;
-  const parsed=point.safeParse({lat:Number(match[1]),lng:Number(match[2])});
-  return parsed.success?parsed.data:null;
-}
 export function routeFingerprint(orders:any[], definitions:any[], project?: { defaultServiceMinutes?: number | null; defaultAppointmentToleranceMinutes?: number | null }) {
   const defs=new Map(definitions.map(d=>[d.id,d]));
-  return createHash("sha256").update(JSON.stringify([project?.defaultServiceMinutes??null,project?.defaultAppointmentToleranceMinutes??null,
+  return createHash("sha256").update(JSON.stringify([destinationPolicy,project?.defaultServiceMinutes??null,project?.defaultAppointmentToleranceMinutes??null,
     [...orders].sort((a,b)=>a.id-b.id).map(wo=>[
     "visit-scheduling-v1",wo.id,wo.status,wo.scheduledAt,wo.serviceDurationMinutes,wo.appointmentWindowStart,wo.appointmentWindowEnd,wo.updatedAt,wo.address,wo.city,wo.state,wo.zip,
     wo.oldGps,wo.newGps,wo.assignedUserId,wo.assignedGroupId,wo.subStatusId,
@@ -137,11 +132,10 @@ export function registerRoutingRoutes(app:Express, services = { effectiveRouting
         .map(o=>({id:o.id,label:String(o.customerWoId??o.id),reason:"Not Scheduled."}));
       for(const order of scheduled){
         if(controller.signal.aborted)throw new RoutingError(504,"Route planning timed out. Narrow the stop selection.");
-        const address=[order.address,order.city,order.state,order.zip].filter(Boolean).join(", ");
+        const address=destinationAddress(order);
         const label=String(order.customerWoId??order.id);
         try{
-          const destination=parseGps(order.newGps)||parseGps(order.oldGps)||(address?await provider.geocode(address):null);
-          if(!destination)throw new RoutingError(422,"Missing address and verified GPS coordinates.");
+          const destination=await resolveDestination(order,provider);
           const def=defs.get(order.subStatusId);
           resolved.push({id:order.id,label,address,point:destination,
             scheduledAt:order.scheduledAt?new Date(order.scheduledAt).toISOString():null,

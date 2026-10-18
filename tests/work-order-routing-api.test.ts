@@ -36,9 +36,9 @@ test("protected planning, stale state, configuration isolation and quota boundar
     await pool.query(`INSERT INTO public.work_order_sub_statuses(id,project_id,parent_status_id,code,label,routing_priority)
       VALUES($1,$2,$3,$4,'Critical',0)`,[critical,fixture.projectId,parent,`ROUTE-${critical}`]);
     const first=await wo.createWorkOrder({customerWoId:"ROUTE-URGENT",serviceType:service,status:"Scheduled",subStatusId:critical,
-      address:"Fixture only",oldGps:"40,-105",assignedUserId:fixture.id} as any,fixture.username);
+      address:"Fixture first address",oldGps:"40.7128,-74.0097",assignedUserId:fixture.id} as any,fixture.username);
     const second=await wo.createWorkOrder({customerWoId:"ROUTE-APPOINTMENT",serviceType:service,status:"Scheduled",
-      address:"Fixture only",oldGps:"40.1,-105.1",scheduledAt:new Date(Date.now()+10*60000)} as any,fixture.username);
+      address:"Fixture second address",oldGps:"40.7128,-74.0098",scheduledAt:new Date(Date.now()+10*60000)} as any,fixture.username);
     const open=await wo.createWorkOrder({customerWoId:"ROUTE-OPEN",serviceType:service,status:"Open"} as any,fixture.username);
     const unresolved=await wo.createWorkOrder({customerWoId:"ROUTE-MISSING",serviceType:service,status:"Scheduled"} as any,fixture.username);
     const before=await wo.getWorkOrders();
@@ -53,7 +53,12 @@ test("protected planning, stale state, configuration isolation and quota boundar
       effective:{provider:"geoapify" as const,source:"project" as const,maxStops:24,dailyPlans:10},
       ready:true,mapReady:false,disabled:false,canManage:true,revision:configurationRevision,message:"Fixture provider"};
     const provider:RoutingService={
-      geocode:async()=>{throw new Error("Fixture has verified coordinates; unexpected geocoding");},
+      geocode:async address=>{
+        if(address==="Manual start address")return {lat:39.9,lng:-105.2};
+        if(address==="Fixture first address")return {lat:40,lng:-105};
+        if(address==="Fixture second address")return {lat:40.1,lng:-105.1};
+        throw new Error("Unexpected fixture geocoding");
+      },
       matrix:async points=>{providerCalls++;return points.map((_,i)=>points.map((_,j)=>({seconds:i===j?0:60,meters:i===j?0:1000})));},
       geometry:async points=>{providerCalls++;return points;},
     };
@@ -67,7 +72,7 @@ test("protected planning, stale state, configuration isolation and quota boundar
       const response=await fetch(base+path,{method:"POST",headers:{"Content-Type":"application/json","x-test-actor":actor},body:JSON.stringify(data)});
       return {status:response.status,body:await response.json()};
     };
-    const input={ids:[first.id,second.id,open.id,unresolved.id],origin:{lat:40,lng:-105},departureAt:new Date().toISOString(),serviceMinutes:15,toleranceMinutes:0};
+    const input={ids:[first.id,second.id,open.id,unresolved.id],origin:{address:"Manual start address"},departureAt:new Date().toISOString(),serviceMinutes:15,toleranceMinutes:0};
     try{
       assert.equal((await post("/plan",input,"anonymous")).status,401);
       assert.equal((await post("/plan",input,"viewer")).status,403);
@@ -75,7 +80,10 @@ test("protected planning, stale state, configuration isolation and quota boundar
       assert.equal(providerCalls,0,"Access checks precede provider traffic");
       const planned=await post("/plan",input);
       assert.equal(planned.status,200,JSON.stringify(planned.body));
+      assert.deepEqual(planned.body.origin,{lat:39.9,lng:-105.2},"Manual starting address determines origin");
       assert.deepEqual(planned.body.stops.map((s:any)=>s.id),[second.id,first.id],"Appointment precedes Critical");
+      assert.deepEqual(planned.body.stops.map((s:any)=>s.point),[{lat:40.1,lng:-105.1},{lat:40,lng:-105}],
+        "Street addresses override conflicting saved New York equipment GPS");
       assert.equal(planned.body.stops[1].priority,0);
       assert.equal(planned.body.excluded.length,2);
       assert.equal(quotaCalls,1);

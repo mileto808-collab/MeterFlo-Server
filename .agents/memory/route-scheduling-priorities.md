@@ -32,3 +32,9 @@ Protected project configuration requires runtime write isolation across every ge
 **Why:** Existing general project updates preserve unknown settings. Adding a protected ORM column can therefore create a new write path around its dedicated permission and account restrictions; masking returned project fields does not close that path.
 
 **How to apply:** Before adding credential-backed project settings, inspect ordinary create/edit/copy, storage and restore paths. Keep normal DTO round-trips harmless, validate dedicated writes, and verify rejected injection cannot become a public credential response.
+
+Use the work-order street address for route destinations when present. Saved equipment GPS is a fallback only for orders without a street address; an unresolved address must not silently fall back to those coordinates.
+
+**Why:** Imported or historical equipment GPS can point to a different region than the displayed service address. Syntactically valid coordinates are not proof they represent the current job site.
+
+**How to apply:** Preserve historical GPS rather than rewriting it to correct routing. Keep manual/device origins independent of stop resolution, and invalidate saved routes whenever destination-resolution policy changes.
