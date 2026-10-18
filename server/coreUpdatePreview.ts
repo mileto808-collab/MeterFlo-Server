@@ -13,7 +13,7 @@ export async function coreUpdatePreview(release: CustomerRelease, git: GitRead, 
   const blockers=[...release.blockers];
   let isGitRepo=false,currentBranch="",commitsAhead:number|null=null,commitsBehind:number|null=null;
   let changes:{status:string;file:string}[]=[], filesChanged:string[]=[],diff="",tag="",candidateVersion:string|null=null;
-  let coreCommit="",candidateMetadata:any=null;
+  let coreCommit="",candidateMetadata:any=null,baselineVerified=false;
   const extensionCompatibility:{id:string;version:string;compatible:boolean}[]=[];
   try {
     isGitRepo=(await git(["rev-parse","--is-inside-work-tree"])).trim()==="true";
@@ -88,7 +88,9 @@ export async function coreUpdatePreview(release: CustomerRelease, git: GitRead, 
       const baselineRef=await fetchTag(`v${checkoutVersion}`);
       if ((await git(["rev-parse",`${baselineRef}^{commit}`])).trim() !== release.coreBaseline.commit)
         throw new Error("Core baseline tag no longer matches the approved commit");
-      await git(["merge-base","HEAD",release.coreBaseline.commit]);
+       await git(["merge-base","--is-ancestor",release.coreBaseline.commit,"HEAD"]);
+       await git(["merge-base","--is-ancestor",release.coreBaseline.commit,coreCommit]);
+       baselineVerified=true;
       const directEdits=(await git(["diff","--name-only",`${baselineRef}^{commit}`,"HEAD"])).trim().split("\n").filter(Boolean);
       if(directEdits.some(file=>!release.extensions.some(x=>file.startsWith(x.directory.replaceAll("\\","/")+"/"))))
         blockers.push("This customer fork contains direct core modifications; merge/review them separately before adopting an unmodified core release");
@@ -120,7 +122,16 @@ export async function coreUpdatePreview(release: CustomerRelease, git: GitRead, 
   }
   const uniqueBlockers=[...new Set(blockers)];
   const available=candidateVersion!==null && compareReleaseVersions(candidateVersion,release.version)>0;
-  return {configurationRequired:!release.coreSource || !release.coreBaseline,
+   const forkBlockers:string[]=[];
+   if(!isGitRepo)forkBlockers.push("Use the customer development Git checkout, not a published runtime.");
+   if(!release.coreSource || !release.coreBaseline)forkBlockers.push("Configure an approved core source and independently verified numbered baseline first.");
+   if(!baselineVerified || !candidateVersion || !coreCommit)forkBlockers.push("Selected core release and baseline ancestry must be verified; no release is assumed available.");
+   if(changes.length)forkBlockers.push("Review and commit staged, unstaged and untracked source changes before preparing a separate merge.");
+   if(candidateVersion && release.coreBaseline && compareReleaseVersions(candidateVersion,release.coreBaseline.version)<=0)
+     forkBlockers.push("Select a core release newer than the verified source baseline.");
+   return {configurationRequired:!release.coreSource || !release.coreBaseline,
+     forkReview:{canPrepare:forkBlockers.length===0,blockers:forkBlockers,
+       command:forkBlockers.length===0 ? `npm run prepare:customer-fork -- --tag ${tag} --commit ${coreCommit} --target "ABSOLUTE_NEW_REVIEW_DIRECTORY"` : ""},
     isGitRepo,currentBranch,remoteBranch:tag,commitsAhead,commitsBehind,changes:changes.slice(0,100),
     filesChanged:filesChanged.slice(0,200),diff,installed:publicRelease(release),candidateVersion,coreCommit,
     extensionCompatibility,blockers:uniqueBlockers,updateAvailable:available,canPrepare:available && !uniqueBlockers.length,

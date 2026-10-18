@@ -27,6 +27,20 @@ core-to-customer merge, customer revision deployment, and explicit Replit
 publication separately; never claim a routine pull automatically reconciles
 customer business rules.
 
+Keep direct-code merge-review approvals separate from unmodified-core staging
+receipts. A merge review records an operator's attestations for an exact combined
+customer revision; it is not automatic test evidence, database readiness proof
+or deployment authorization.
+
+**Why:** Arbitrary customer forks can retain intentional core changes that the
+package-staging trust contract must continue to reject. Conflating the receipts
+would let a customized fork bypass exact-core and schema compatibility checks.
+
+**How to apply:** Prepare direct-code reviews in an outside checkout, retain
+conflict/interruption evidence, require semantic/customer regression review,
+and deploy/publish the approved customer revision through a separate explicit
+handoff. Never add a fallback that fabricates a package-staging receipt.
+
 Standalone updates prepare a new candidate outside the running installation, then retain the protected working directory and data when switching compiled code. On customer-owned Replit, updating the workspace is not publication; the operator publishes explicitly. Migration checksum approval is an operator attestation, not proof that the database was changed.
 
 **Why:** replacing files in place could discard customer edits or strand relative storage paths; automatic database rollback could destroy newer records. A hosted published snapshot does not automatically change when its workspace changes.

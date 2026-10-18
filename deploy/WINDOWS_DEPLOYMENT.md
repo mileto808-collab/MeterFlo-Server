@@ -1200,6 +1200,14 @@ a customized instance straight at core and discard local changes to make it
 update. See **Documentation → Customer Core Updates & Extensions** (the
 `CUSTOMER_CORE_UPDATES.md` guide), including the separate Replit-project process.
 
+For direct-code forks, follow **Guided direct-code updates: exact administrator
+procedure** in that guide. The `prepare:customer-fork` and `review:customer-fork`
+commands use a new outside checkout, retain conflicts and record operator
+approval of an exact combined customer revision. They never overwrite the live
+checkout, apply SQL, restart PM2 or publish. This review journal is not a
+supported-extension staging receipt; the routine command below remains only
+the standard clean `origin/main` update path.
+
 ```cmd
 cd /d C:\xampp\htdocs\meterflo
 deploy\Update-MeterFlo.cmd --check

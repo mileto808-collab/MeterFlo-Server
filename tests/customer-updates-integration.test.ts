@@ -71,10 +71,20 @@ test("composed report screen honors normal role grants and preserves customer DB
     };
     fs.copyFileSync("package.json",path.join(temporary,"package.json"));
     fs.copyFileSync("meterflo.release.json",path.join(temporary,"meterflo.release.json"));
+    // The isolated composed-app fixture must include today's declared core SQL,
+    // not just the old pre-inventory manifest. No migration SQL is run here.
+    const coreMetadata=JSON.parse(fs.readFileSync("meterflo.release.json","utf8"));
+    for(const migration of coreMetadata.migrations){
+      const destination=path.join(temporary,migration.file);
+      fs.mkdirSync(path.dirname(destination),{recursive:true});
+      fs.copyFileSync(migration.file,destination);
+    }
     const packageDir=path.join(temporary,"customer-packages/project-report");
     fs.cpSync("examples/customer-report",packageDir,{recursive:true});
     fs.writeFileSync(path.join(temporary,"meterflo.instance.json"),JSON.stringify({
-      installedSchemaVersion:1,extensions:[{directory:"customer-packages/project-report"}]}));
+      installedSchemaVersion:coreMetadata.schemaVersion,
+      approvedMigrations:coreMetadata.migrations.map(({id,sha256}:any)=>({id,sha256})),
+      extensions:[{directory:"customer-packages/project-report"}]}));
     await build({entryPoints:[path.join(packageDir,"server.mjs")],bundle:true,platform:"node",format:"cjs",
       outfile:path.join(temporary,"report.cjs")});
     const require=createRequire(path.join(temporary,"package.json"));

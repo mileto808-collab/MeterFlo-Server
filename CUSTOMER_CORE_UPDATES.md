@@ -35,12 +35,13 @@ not proof that the customized application's behavior still works.
 | Customer-specific direct code changes / existing fork | Developer-reviewed Git merge into the customer's source history; resolve and test conflicts | Deploy the tested combined customer revision, not a fresh core checkout |
 | Customizations entirely in supported extension packages | Numbered core candidate plus unchanged customer packages, compatibility checks and review | Staged standalone activation, or reconciliation/build and explicit Replit publication |
 
-**Current automation boundary:** staging handles the supported extension
-contract described below. It does not automatically merge direct modifications
-to core files, arbitrary custom forms/workflows, or custom database changes.
-Those remain a developer-managed merge and migration process. Committing a
-direct modification does not convert it into a supported extension or make the
-staged updater accept it. Do not edit baseline metadata to bypass this check.
+**Current automation boundary:** package staging handles the supported extension
+contract described below. The separate **customer-fork review CLI** now prepares
+an isolated Git merge for direct-code forks, reports conflicts and records
+operator approval of a combined revision. It never resolves conflicting business
+rules, applies SQL, deploys or publishes automatically. Committing a direct
+modification does not convert it into a supported extension or make the package
+stager accept it. Do not edit baseline metadata to bypass this check.
 
 ## Understand the update message in Settings
 
@@ -137,6 +138,229 @@ The merge intentionally stops for review. On conflicts, resolve and stage only
 reviewed source files; do not select "take all incoming" as an update policy.
 Use `git merge --abort` to abandon an in-progress merge before committing if it
 cannot be safely reconciled. This is not a reset or rollback of production data.
+
+## Guided direct-code updates: exact administrator procedure
+
+Use this for direct customizations made with **any** editor, agent, hosting
+account or development tool. Commands run under the developer/operator's normal
+OS/Git permissions. The web app displays guidance, but cannot execute merges or
+write arbitrary server paths through an HTTP request.
+
+### A. One-time setup and adoption
+
+1. Keep the customer's customized source in its own private repository/history.
+   Save reviewed source changes there; do not commit secrets, data, uploads or
+   protected PM2 configuration. Inspect `git status --short`, including new
+   source files; Git-ignored customer packages need independent source control.
+2. Choose the **customer development checkout**, not a running production
+   directory. It must contain this release's review scripts. Older copies must
+   first receive those tools through a reviewed adoption merge; downloading one
+   script into an incompatible checkout is not an upgrade. In that development
+   checkout install its reviewed locked build tools with
+   `npm ci --include=dev --include=optional`; the CLI needs the local `tsx`
+   dependency. Do not substitute an unpinned `npx` download.
+3. Configure the private root `meterflo.instance.json` using the existing
+   instance template and the field table below. If the manifest exists, edit
+   the necessary fields rather than replacing the file. Set `coreSource` to
+   this authoritative core repository's approved HTTPS URL. Use normal Git
+   authentication, never a token embedded in that URL.
+4. Obtain a **real numbered baseline tag and full commit** from the core
+   maintainer. Confirm that baseline is an ancestor of the customer source and
+   the selected newer core release. Record that baseline in `coreBaseline`.
+   Do not use the customer HEAD or invent a tag. If historical copies have no
+   verified common ancestry, stop for developer-led adoption; these tools do not
+   use unrelated-history merges.
+5. Have the database maintainer verify the instance's installed schema and
+   precise migration approvals. The manifest is an operator declaration, not
+   proof of database contents. Missing approvals can be reviewed later in the
+   isolated candidate; preparation never creates approvals or runs SQL.
+6. Review tracked private files and submodules before adoption. The CLI refuses
+   currently tracked protected instance files and submodules instead of silently
+   omitting them. A clone preserves Git history, which can include historical
+   credentials: audit/rotate those separately and keep the review private.
+
+### B. Prepare each update
+
+1. Commit reviewed customer source and obtain the selected core release's
+   **tag and full 40-character commit independently from the maintainer**.
+   Settings → Updates → Web Updates → Preview Changes shows the verified
+   candidate identity and, when prerequisites pass, a copyable fork command.
+   A displayed command prepares review only, not a production-ready upgrade.
+2. Pick a **new absolute directory outside the source installation**, not a
+   parent directory. Do not pre-create it. The tool retains failed directories
+   rather than deleting or overwriting them.
+3. From the customer development checkout, run the applicable example below.
+   Replace the example tag/commit with the real approved values. The example
+   `v2.2.0` is not a claim that such a release exists.
+
+Windows Command Prompt:
+
+```cmd
+cd /d C:\xampp\htdocs\meterflo
+npm run prepare:customer-fork -- --tag v2.2.0 --commit FULL_40_CHARACTER_CORE_COMMIT --target "C:\meterflo-reviews\customer-v2.2.0"
+```
+
+Linux / Replit Shell:
+
+```sh
+cd /path/to/customer-development-checkout
+npm run prepare:customer-fork -- --tag v2.2.0 --commit FULL_40_CHARACTER_CORE_COMMIT --target "/path/outside-checkout/customer-v2.2.0"
+```
+
+**Replit directory setup:** do not put the target inside an existing project-root
+customer checkout or rely on disposable `/tmp` storage for retained review
+evidence. Use a dedicated, nonpublished review project with a source subdirectory
+and sibling review directory. For example, from that project's workspace root:
+
+```sh
+git clone CUSTOMER_REPOSITORY_URL customer-source
+cd customer-source
+npm ci --include=dev --include=optional
+# Configure this checkout's private instance manifest using the verified metadata.
+npm run prepare:customer-fork -- --tag v2.2.0 --commit FULL_40_CHARACTER_CORE_COMMIT --target "$(dirname "$PWD")/reviews/customer-v2.2.0"
+```
+
+Use the customer's authorized repository and the approved source revision, not
+an unrelated core-only clone. Ignore `/customer-source/` and `/reviews/` in the
+outer review project's Git so checkpoints do not accidentally publish nested
+repositories or private journals; the nested customer repository retains its
+own version history and remote. Bring independently versioned configured
+customer packages into that source checkout before preparation. Do not copy
+production credentials/data into the review project or publish it. Keep review
+evidence private and retain it according to the customer's policy.
+
+Preparation checks clean tracked/staged/untracked source, clones its exact
+committed history, verifies both core tags/identities and ancestry, and performs
+an uncommitted merge in `TARGET/checkout/`. The original checkout/branch/index,
+Git remotes, database, ignored runtime secrets and uploads stay untouched.
+Configured supported package source is copied byte-for-byte after conflicts
+are resolved; ignored arbitrary directories are **not** silently assumed to be
+source packages. Preserve those through separate adoption/backups.
+
+The review checkout has **no origin remote** after cloning so it cannot
+accidentally push into the original installation. Its private journal is
+`TARGET/review.json`, outside the source tree. Keep both together; do not move,
+forge or commit the journal. This is not a sandbox for untrusted Git
+configuration/customer code and not a credential-history scrubber.
+
+4. Read the returned `state`, `phase`, filenames and review requirements:
+   - `conflicts`: resolve them in the review checkout, never in the live copy.
+   - `review`: no textual conflicts remain, but semantic review/tests are still
+     required. The merge is intentionally not automatically committed.
+   - An error retains the target and journal. Check status before retrying; do
+     not delete evidence or reset the original installation.
+
+### C. Status, interruption, conflict resolution and abandonment
+
+Run these from the original customer development checkout, substituting the
+same absolute target. Linux/Replit uses the same commands with Unix paths:
+
+```cmd
+npm run review:customer-fork -- status --target "C:\meterflo-reviews\customer-v2.2.0"
+npm run review:customer-fork -- resume --target "C:\meterflo-reviews\customer-v2.2.0"
+```
+
+`status` reports/verifies the journal and current review state; `resume`
+continues supported interrupted preparation and re-examines real Git conflict
+state. It does not reset a changed checkout. Resolve conflicts and stage only
+reviewed source in `TARGET/checkout/`. Run `resume` after resolving conflicts
+so configured package/manifest copying completes, then review and commit there:
+
+```cmd
+cd /d C:\meterflo-reviews\customer-v2.2.0\checkout
+git status --short
+git diff --stat
+git diff --cached --stat
+git add REVIEWED_SOURCE_FILE
+git commit -m "Review core update with customer customizations"
+```
+
+Replace `REVIEWED_SOURCE_FILE` with each intended source path; do not blindly
+stage ignored instance configuration, data or all files. Review actual diffs
+privately, not just statistics. Use your normal Git identity; the preparation
+tool does not supply an identity for your approval commit.
+
+To abandon preparation:
+
+```cmd
+cd /d C:\xampp\htdocs\meterflo
+npm run review:customer-fork -- abort --target "C:\meterflo-reviews\customer-v2.2.0"
+```
+
+`abort` marks the review abandoned and **retains all files and merge evidence**;
+it does not run a destructive Git cleanup. An abandoned review cannot be
+resumed; use a new target. An interrupted clone/checkout whose files cannot be
+verified also requires retained evidence and a fresh target. If a process
+crashed leaving `.review.lock`, confirm it has exited before an administrator
+removes that one lock. Never remove an active process's lock.
+
+### D. Test, reconcile and approve the exact combined revision
+
+1. Review all combined behavior, including non-conflicting changes to customer
+   forms, rules, API integrations, permissions and reports.
+2. Reconcile dependency manifests and their lockfiles together, then install
+   locked dependencies and run checks/build/customer tests in the review
+   checkout. Start it from a clean nonproduction environment with isolated
+   database/storage and test-only credentials. **Do not inherit production
+   database/session/mail settings or copy the production `.env`.**
+3. Use the existing build procedure (`npm ci --include=dev --include=optional`,
+   `npm run check`, `npm run build` and relevant regression commands), but do not
+   assume the core unit suite alone tests customer behavior. Builds/customer
+   scripts are trusted executable code, not a sandbox.
+4. Review core/customer schema changes separately. A schema-changing candidate
+   needs controlled migration testing and an explicit production maintenance
+   plan; update only its private review manifest with genuinely reviewed
+   installed-schema/approval declarations. The CLI does not inspect or migrate
+   a database. It refuses missing core migrations, altered exact checksums,
+   incompatible supported packages and inconsistent root dependency lockfiles.
+5. Commit any source reconciliation and rerun the affected checks. The original
+   customer source must still be clean at the recorded starting revision.
+   If new customer work was added there, prepare a fresh review so it cannot be
+   lost by deploying this older snapshot.
+6. From the original checkout, record explicit attestations:
+
+```cmd
+npm run review:customer-fork -- approve --target "C:\meterflo-reviews\customer-v2.2.0" --confirm-tests --confirm-customizations --confirm-dependencies --confirm-migrations
+npm run review:customer-fork -- status --target "C:\meterflo-reviews\customer-v2.2.0"
+```
+
+Approval requires a clean committed review containing both original customer
+and selected core history. It records `coreCommit`, `customerStart`,
+`combinedCommit` and operator attestations. The flags **do not run tests or
+prove a migration was applied**. Changed approved source/configuration/package
+snapshots invalidate verification. This journal is not tamper-proof release
+signing, a package-staging receipt or authority to activate/publish.
+
+### E. Hand the approved customer revision to deployment
+
+1. In the review checkout, add the intended **customer repository** remote using
+   normal protected Git authentication. Push the approved revision to a new
+   customer review branch, not directly into core:
+
+```sh
+git remote add customer CUSTOMER_REPOSITORY_URL
+git push customer HEAD:refs/heads/core-update-review-YYYYMMDD
+```
+
+2. Review/promote that exact revision through the customer's normal approval
+   process. If promotion creates a different merge/reconciliation commit,
+   retest and record the new deployed identity; do not describe it as the
+   already tested commit.
+3. For Windows/Linux, deploy the approved combined customer revision through
+   the reviewed standalone maintenance procedure below. The fork journal
+   cannot be passed to `activate:customer-release`. Do not feed it to the
+   unmodified-core package stager or fabricate a staging receipt.
+4. For separate Replit development/production projects, fetch the customer
+   repository in the production workspace, verify its clean source and the
+   approved full customer revision, and retrieve that exact revision without
+   forcing local changes away. Preserve production settings, secrets,
+   database/storage and reviewed migrations, then explicitly republish. Follow
+   the Replit procedure above; another account needs its own authorized Git
+   access and publication permission.
+5. Verify actual production health, login, core fixes and customer regression
+   cases. Record the deployed customer commit plus selected core commit/tag for
+   that particular instance. Publishing, PM2 and databases are deliberately not
+   controlled by the merge-preparation CLI.
 
 ### Deploy a customized Windows/Linux installation
 
@@ -270,6 +494,35 @@ Maintain core code separately. Increment the core package version (and matching 
 
 For public GitHub sources, publish a GitHub Release at that tag so published instances without Git can receive a release notice. Their notices do not authorize an in-place update: preparation still happens in the workspace. Private/non-GitHub sources require authenticated workspace access.
 
+### Maintainer release-readiness checklist
+
+1. Choose the real next core version, update package/root lockfile metadata
+   together, declare schema/API compatibility and immutable exact-byte
+   migrations, then commit the reviewed source. Do not use version labels as
+   evidence that an unreleased main branch is a numbered release.
+2. Run type checks, the build, core/customer regression suites,
+   `npm run test:customer-forks`, and any affected feature acceptance checks.
+   Record results for that exact commit; a later source change invalidates
+   earlier checks of the changed behavior.
+3. Run the read-only readiness command (replace the example version):
+
+```sh
+npm run check:core-release -- --tag v2.2.0
+```
+
+It checks clean source, package/lock/tag agreement, root dependency
+declarations, schema/API metadata, regular-file migration ownership and exact
+checksums, and whether an existing local tag has moved relative to HEAD. It
+does not run tests, contact a database, approve SQL, create a tag or push.
+4. Review the reported full commit and your test results. An authorized
+   maintainer explicitly creates the immutable tag only after approval, pushes
+   the approved commit/tag to this core repository and publishes release notes.
+   Check the remote tag/peeled commit before distributing that identity. Local
+   readiness does not prove a remote release exists or authorize replacing one.
+5. Supply administrators with the exact tag/commit, compatibility/migration
+   requirements and rollback limitations. Do not silently move released tags
+   or advise changing customer baselines to suppress a conflict.
+
 ## Preview Changes
 
 **Settings → Web Application Updates → Preview Changes** displays installed/candidate core versions, the approved source, extension compatibility, local tracked/staged/untracked changes and blocking reasons. Git-backed previews fetch references only; they do not check out code, install packages, stop PM2, apply SQL or publish.
@@ -368,6 +621,14 @@ continue to block the unmodified-core staging path; use a maintainer-reviewed
 customer-composed release until they have been reconciled or moved into extensions.
 
 ## Verification coverage
+
+`npm run test:customer-forks` exercises real disposable Git repositories for clean
+uncommitted merges, conflicts and manual resolution, staged/unstaged/untracked
+source, protected tracked files, independent histories, changed/moved identities,
+lost access, interrupted checkout/fetch/merge recovery, approval attestations,
+later customer work, changed approved files/configuration/packages, dependency
+and schema reconciliation, maintainer readiness, and blocked/available UI
+guidance. It does not connect to a customer database, run PM2 or publish.
 
 `npm run test:customer-updates` covers real local Git tags/previews, simulated staged installs/build failures, content preservation, incompatible metadata/migrations, authenticated report permissions/project scopes, and injected PM2/health activation/recovery. Actual build checks compile the composed application and report packages.
 

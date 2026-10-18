@@ -1,9 +1,12 @@
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { coreUpdatePreview } from "../../../server/coreUpdatePreview";
+import { CustomerForkInstructions, type CustomerForkReview } from "./customer-fork-instructions";
 import { WindowsUpdateInstructions } from "./windows-update-instructions";
 
-export type UpdatePreview = Awaited<ReturnType<typeof coreUpdatePreview>>;
+export type UpdatePreview = Awaited<ReturnType<typeof coreUpdatePreview>> & {
+  forkReview?: CustomerForkReview;
+};
 const changeLabel = (status: string) => status === "??" ? "Untracked" :
   status.includes("U") || status === "AA" || status === "DD" ? "Unresolved conflict" :
   [status[0] !== " " ? "Staged" : "", status[1] !== " " ? "Working-tree change" : ""].filter(Boolean).join(" + ");
@@ -18,6 +21,7 @@ export function CoreUpdatePreview({open, onOpenChange, preview, copy}: {
         <DialogDescription>Informational only. Fetching references does not replace code, install dependencies, migrate data, stop the app or publish.</DialogDescription>
       </DialogHeader>
       <WindowsUpdateInstructions copy={copy} />
+      <CustomerForkInstructions forkReview={preview?.forkReview} copy={copy} />
       {preview && <div className="space-y-4 text-sm">
         <h3 className="font-semibold">Numbered customer-release verification</h3>
         <p className="text-muted-foreground">The checks below concern approved, numbered customer releases,
