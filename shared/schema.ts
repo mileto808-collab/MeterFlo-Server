@@ -146,6 +146,8 @@ export const projects = pgTable("projects", {
   // not remove rules which the next standalone startup would recreate.
   check("visit_default_duration_range", sql`${table.defaultServiceMinutes} BETWEEN 1 AND 480`),
   check("visit_default_tolerance_range", sql`${table.defaultAppointmentToleranceMinutes} BETWEEN 0 AND 240`),
+  check("projects_system_reading_decimal_places_check", sql`${table.systemReadingDecimalPlaces} BETWEEN 0 AND 6`),
+  check("projects_module_reading_decimal_places_check", sql`${table.moduleReadingDecimalPlaces} BETWEEN 0 AND 6`),
 ]);
 
 // Project Holidays - dates to exclude from scheduling

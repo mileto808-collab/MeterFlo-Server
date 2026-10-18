@@ -49,9 +49,30 @@ Cleanup-specific API/UI checks and reading capture regressions run in the owned
 workspace sandbox. The broader reading-precision suite also exposed an existing
 independent issue: startup initialization returns when the precision columns
 already exist, without verifying that their database range constraints exist.
-The database-only startup constraint assertion therefore fails on a schema
-created without those checks. This cleanup does not change that initializer;
-it is recorded separately rather than silently changing unrelated schema behavior.
+The database-only startup constraint assertion therefore failed on a schema
+created without those checks. That issue was excluded from the cleanup itself.
+The subsequent reading-precision integrity fix now verifies and installs named,
+validated relational checks, coordinated with the schema-tool definitions.
+It reports invalid settings without rewriting them and preserves DBA-prepared
+read-only runtimes. See `docs/READING_PRECISION_UPGRADE.md` for preparation,
+diagnostics, and the isolated regression command.
+
+Integrity-fix verification (2026-10-18):
+
+- `npm run test:reading-precision-migration`: 10 passing tests, including
+  disposable PostgreSQL setup/cleanup and all migration preparation cases.
+- `node tests/support/project-workspace-sandbox.mjs tests/compatibility-cleanup-ui.cjs`:
+  signed-in cleanup UI/API acceptance passed; the complete reading-precision
+  suite passed all 9 tests with **no exclusion or skipped startup assertion**.
+- `npm run test:windows-updates`: 24 passing tests.
+- `npm run test:migration-checksums`: 9 passing tests.
+- `npm run check` and `npm run build`: passed. Existing bundle-size,
+  Browserslist-age, and PostCSS warnings remain informational.
+- Development workflow restarted successfully and the public landing page
+  rendered. Signed-in acceptance was verified separately in the owned sandbox.
+
+These checks use Linux-owned disposable databases and portable update fixtures;
+they do not claim real Windows/PM2, native mobile binary, or production acceptance.
 
 ## Scope and conclusion
 

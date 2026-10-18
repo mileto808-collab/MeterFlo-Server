@@ -11,6 +11,8 @@
     "test:project-deletion": "tsx --test tests/project-deletion.test.ts",
     "start": "NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
+    "test:reading-precision-migration": "tsx --test tests/reading-precision-migration.test.ts",
+    "migrate:reading-precision": "tsx script/migrate-reading-precision.ts",
     "stage:customer-release": "tsx script/customer-release-cli.ts stage",
     "prepare:customer-fork": "tsx script/customer-fork-cli.ts prepare",
     "review:customer-fork": "tsx script/customer-fork-cli.ts",

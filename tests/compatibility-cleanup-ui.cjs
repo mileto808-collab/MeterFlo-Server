@@ -66,7 +66,6 @@ const { chromium, expect } = require("@playwright/test");
     console.log("PASS: obsolete endpoints return JSON 404, status permissions remain enforced, current mobile UUID/reading flow works, old Settings controls are absent, current checks and previews remain.");
     require("node:child_process").execFileSync(process.execPath,
       ["--import", "tsx", "--test",
-        "--test-name-pattern=wizard input|independent precision|live project permissions",
         "tests/reading-precision.test.ts"], { stdio: "inherit", env: process.env });
   } finally {
     await admin.close(); await viewer.close(); await anon.close(); await browser.close();
