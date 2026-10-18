@@ -1846,7 +1846,7 @@ Automated verification uses isolated Linux processes, temporary Git repositories
    - Store passwords securely (`.env` file or Windows credential store, never in committed config files)
 
 5. **Regular Backups**
-   - Use the built-in backup feature in the application's Maintenance page
+   - Use the built-in backup feature under **Settings → System → Backup & Restore**
    - Also schedule PostgreSQL backups via Windows Task Scheduler
 
 6. **Keep Software Updated**

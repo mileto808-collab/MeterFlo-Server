@@ -47,7 +47,7 @@ export const permissionRegistry: PermissionDefinition[] = [
         `Permission to ${name} project inventory; project and warehouse access are also required.`,
     defaultAccess: { administrator: true, projectManager: false, fieldTechnician: false, viewer: false, customer: false },
   })),
-  { key:"audit.view",label:"View Audit Logs",category:"Maintenance",description:"Read audit events for assigned projects; does not grant settings or cleanup access.",
+  { key:"audit.view",label:"View Audit Logs",category:"Maintenance",description:"Read audit events for assigned projects in Settings > Security; does not grant other settings or cleanup access.",
     defaultAccess:{administrator:true,projectManager:false,fieldTechnician:false,viewer:false,customer:false} },
   { key:"audit.viewAllProjects",label:"View All Audit Projects",category:"Maintenance",description:"Read all project and global audit events, including deleted-project history. Requires View Audit Logs.",
     defaultAccess:{administrator:true,projectManager:false,fieldTechnician:false,viewer:false,customer:false} },

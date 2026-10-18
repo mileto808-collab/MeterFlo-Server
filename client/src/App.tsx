@@ -39,11 +39,9 @@ import ProjectFtpFiles from "@/pages/project-ftp-files";
 import ProjectFiles from "@/pages/project-files";
 import WorkOrderFiles from "@/pages/work-order-files";
 import SearchReports from "@/pages/search-reports";
-import Maintenance from "@/pages/maintenance";
 import Users from "@/pages/users";
 import Settings from "@/pages/settings";
 import Documentation from "@/pages/documentation";
-import AuditLogs from "@/pages/audit-logs";
 import NotFound from "@/pages/not-found";
 
 function LoadingScreen() {
@@ -97,15 +95,23 @@ function AuthenticatedRouter() {
         <Route path="/users" component={Users} />
       )}
       
-      {hasPermission("nav.maintenance") && (
-        <Route path="/maintenance" component={Maintenance} />
+      {(hasPermission("nav.maintenance") || hasPermission("maintenance.projectBackup") || hasPermission("maintenance.projectRestore") ||
+        hasPermission("maintenance.systemBackup") || hasPermission("maintenance.systemRestore") || hasPermission("maintenance.logManagement")) && (
+        <Route path="/maintenance">
+          <Redirect to={`/settings?section=${window.location.hash === "#log-maintenance" ? "log-maintenance" : "backup-restore"}${window.location.hash}`} />
+        </Route>
       )}
 
       {hasPermission("audit.view") && (
-        <Route path="/audit-logs" component={AuditLogs} />
+        <Route path="/audit-logs">
+          <Redirect to={`/settings?section=audit-logs${window.location.hash}`} />
+        </Route>
       )}
-      
-      {hasPermission("nav.settings") && (
+
+      {(hasPermission("nav.settings") || hasPermission("audit.view") || hasPermission("nav.maintenance") ||
+        hasPermission("maintenance.projectBackup") || hasPermission("maintenance.projectRestore") ||
+        hasPermission("maintenance.systemBackup") || hasPermission("maintenance.systemRestore") ||
+        hasPermission("maintenance.logManagement")) && (
         <Route path="/settings" component={Settings} />
       )}
       

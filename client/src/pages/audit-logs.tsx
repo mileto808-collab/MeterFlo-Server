@@ -50,7 +50,7 @@ function formatFilterScope(filters: AuditFilters) {
   return selected.length ? `All matching authorized events · ${selected.join(" · ")}` : "All matching authorized events · no filters";
 }
 
-export default function AuditLogs() {
+export default function AuditLogs({ embedded = false, active = true }: { embedded?: boolean; active?: boolean }) {
   const shellRef = useRef<HTMLElement | null>(null);
   const { hasPermission, isLoading: permissionLoading } = usePermissions();
   const { toast } = useToast();
@@ -66,7 +66,7 @@ export default function AuditLogs() {
   const optionsQuery = useQuery<AuditOptions>({
     queryKey: ["/api/audit/options"],
     queryFn: () => getJson<AuditOptions>("/api/audit/options"),
-    enabled: canView && !permissionLoading,
+    enabled: active && canView && !permissionLoading,
   });
   const timezone = optionsQuery.data?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const listUrl = useMemo(() => {
@@ -85,12 +85,12 @@ export default function AuditLogs() {
   const eventsQuery = useQuery<AuditList>({
     queryKey: ["/api/audit", applied, offset, limit, timezone],
     queryFn: () => getJson<AuditList>(listUrl),
-    enabled: canView && !permissionLoading,
+    enabled: active && canView && !permissionLoading,
   });
   const detailQuery = useQuery<ReadableAuditEvent>({
     queryKey: ["/api/audit/detail", selectedId],
     queryFn: () => getJson<AuditEvent>(`/api/audit/${encodeURIComponent(selectedId || "")}`) as Promise<ReadableAuditEvent>,
-    enabled: Boolean(selectedId),
+    enabled: active && Boolean(selectedId),
   });
 
   const updateDraft = (key: keyof AuditFilters, value: string) => setDraft(current => ({ ...current, [key]: value }));
@@ -100,8 +100,15 @@ export default function AuditLogs() {
   const total = eventsQuery.data?.total ?? 0;
   const options = optionsQuery.data;
   const canManageRetention = Boolean(options?.canManage && options.canViewAll && canViewAll);
+  useEffect(() => {
+    if (!active) {
+      setSelectedId(null);
+      setRetentionOpen(false);
+    }
+  }, [active]);
 
   useEffect(() => {
+    if (!active) return;
     const shell = shellRef.current;
     if (!shell) return;
     const oldHeight = shell.style.height;
@@ -123,7 +130,21 @@ export default function AuditLogs() {
       window.visualViewport?.removeEventListener("scroll", fit);
       shell.style.height = oldHeight;
     };
-  }, []);
+  }, [active]);
+
+  useEffect(() => {
+    if (!active || !canManageRetention) return;
+    const openRetentionLink = () => {
+      if (window.location.hash === "#retention") setRetentionOpen(true);
+    };
+    openRetentionLink();
+    window.addEventListener("hashchange", openRetentionLink);
+    window.addEventListener("popstate", openRetentionLink);
+    return () => {
+      window.removeEventListener("hashchange", openRetentionLink);
+      window.removeEventListener("popstate", openRetentionLink);
+    };
+  }, [active, canManageRetention]);
 
   const onExport = async (format: "csv" | "xlsx" | "pdf") => {
     if (!total) return;
@@ -161,10 +182,10 @@ export default function AuditLogs() {
     } finally { setExporting(false); }
   };
 
-  if (permissionLoading) return <div className="audit-page-shell mx-auto flex min-h-[100dvh] max-w-[1600px] flex-col gap-4 p-4"><Skeleton className="h-12 w-full" /><Skeleton className="h-24 w-full" /><Skeleton className="h-64 w-full" /></div>;
-  if (!canView) return <div className="audit-page-shell mx-auto max-w-4xl p-4 md:p-8"><Alert><Shield className="h-4 w-4" /><AlertTitle>Audit access required</AlertTitle><AlertDescription>Your account does not have permission to view audit events.</AlertDescription></Alert></div>;
+  if (permissionLoading) return <div className={`audit-page-shell mx-auto flex ${embedded ? "min-h-[60dvh]" : "min-h-[100dvh] p-4"} max-w-[1600px] flex-col gap-4`}><Skeleton className="h-12 w-full" /><Skeleton className="h-24 w-full" /><Skeleton className="h-64 w-full" /></div>;
+  if (!canView) return <div className={`audit-page-shell mx-auto max-w-4xl ${embedded ? "py-4" : "p-4 md:p-8"}`}><Alert><Shield className="h-4 w-4" /><AlertTitle>Audit access required</AlertTitle><AlertDescription>Your account does not have permission to view audit events.</AlertDescription></Alert></div>;
 
-  return <main ref={shellRef} className="audit-page-shell mx-auto flex h-[100dvh] min-h-0 w-full max-w-[1600px] flex-col px-2 pb-1 pt-2 sm:px-4">
+  return <main ref={shellRef} hidden={!active} className={`audit-page-shell mx-auto flex ${embedded ? "h-full min-h-[60dvh] px-0 py-0" : "h-[100dvh] px-2 pb-1 pt-2 sm:px-4"} min-h-0 w-full max-w-[1600px] flex-col`}>
     <div className="mb-1 flex justify-end">
       <details className="audit-coverage-note max-w-2xl text-right">
         <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-[10px] text-muted-foreground"><Info className="h-3 w-3" />Coverage and scope</summary>
@@ -180,17 +201,17 @@ export default function AuditLogs() {
       onPageSizeChange={next => { setLimit(next); setOffset(0); }}
       onRefresh={() => { void optionsQuery.refetch(); void eventsQuery.refetch(); }}
       onRetry={() => { void eventsQuery.refetch(); }} onExport={format => void onExport(format)}
-      onSelect={id => setSelectedId(id)} onRetention={canManageRetention ? () => setRetentionOpen(true) : undefined}
+      onSelect={id => setSelectedId(id)} onRetention={canManageRetention ? () => setRetentionOpen(true) : undefined} active={active}
     />
     <Dialog open={Boolean(selectedId)} onOpenChange={open => { if (!open) setSelectedId(null); }}>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-3xl">
+      <DialogContent onCloseAutoFocus={event => { if (!active) event.preventDefault(); }} className="max-h-[90dvh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader><DialogTitle>Audit event</DialogTitle><DialogDescription>Readable event evidence. Internal identifiers and original payloads are available only in the collapsed evidence section.</DialogDescription></DialogHeader>
         {detailQuery.isLoading ? <div className="space-y-2"><Skeleton className="h-16 w-full" /><Skeleton className="h-28 w-full" /><Skeleton className="h-24 w-full" /></div>
           : detailQuery.isError ? <Alert variant="destructive"><AlertTitle>Could not load event details</AlertTitle><AlertDescription className="flex flex-wrap items-center gap-3"><span>{detailQuery.error instanceof Error ? detailQuery.error.message : "The event request failed."}</span><Button size="sm" variant="outline" onClick={() => detailQuery.refetch()}>Retry</Button></AlertDescription></Alert>
           : detailQuery.data ? <AuditEventDetails event={detailQuery.data} timezone={timezone} /> : null}
       </DialogContent>
     </Dialog>
-    <AuditWorkspaceDialog open={retentionOpen} onOpenChange={setRetentionOpen} title="Audit retention" description="Administrative retention and cleanup controls; global scope across projects.">
+    <AuditWorkspaceDialog open={retentionOpen} onOpenChange={setRetentionOpen} title="Audit retention" description="Administrative retention and cleanup controls; global scope across projects." suppressCloseFocus={!active}>
       <AuditRetention timezone={timezone} />
     </AuditWorkspaceDialog>
   </main>;

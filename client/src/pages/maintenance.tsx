@@ -51,7 +51,6 @@ import {
 import { useTimezone } from "@/hooks/use-timezone";
 import { usePermissions } from "@/hooks/usePermissions";
 import type { Project } from "@shared/schema";
-import { LogMaintenance } from "@/components/log-maintenance";
 
 interface ProjectWithStats extends Project {
   stats: {
@@ -69,7 +68,7 @@ interface FileStats {
   sizeFormatted: string;
 }
 
-export default function Maintenance() {
+export default function Maintenance({ embedded = false, active = true }: { embedded?: boolean; active?: boolean }) {
   const { toast } = useToast();
   const { formatDateTime } = useTimezone();
   const { hasPermission, isLoading: isPermissionsLoading } = usePermissions();
@@ -94,6 +93,13 @@ export default function Maintenance() {
     percent: number;
     message: string;
   } | null>(null);
+  useEffect(() => {
+    if (!active) {
+      setRestoreDialogOpen(false);
+      setSystemRestoreDialogOpen(false);
+      setFilesRestoreDialogOpen(false);
+    }
+  }, [active]);
 
   const canProjectBackup = !isPermissionsLoading && hasPermission("maintenance.projectBackup");
   const canProjectRestore = !isPermissionsLoading && hasPermission("maintenance.projectRestore");
@@ -104,7 +110,7 @@ export default function Maintenance() {
 
   const { data: projects = [], isLoading, refetch } = useQuery<ProjectWithStats[]>({
     queryKey: ["/api/maintenance/projects"],
-    enabled: canAccessAnyBackupRestore,
+    enabled: active && canAccessAnyBackupRestore,
   });
 
   useEffect(() => {
@@ -123,10 +129,10 @@ export default function Maintenance() {
       }
       setFileStats(stats);
     };
-    if (canAccessProjectMaintenance && projects.length > 0) {
+    if (active && canAccessProjectMaintenance && projects.length > 0) {
       fetchFileStats();
     }
-  }, [projects, canAccessProjectMaintenance]);
+  }, [projects, canAccessProjectMaintenance, active]);
 
   const handleBackup = async (project: ProjectWithStats) => {
     try {
@@ -561,8 +567,8 @@ export default function Maintenance() {
   };
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
+    <div className={embedded ? "space-y-6" : "p-6 space-y-6"}>
+      {!embedded && <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">
             <Wrench className="h-6 w-6" />
@@ -578,9 +584,7 @@ export default function Maintenance() {
             Refresh Stats
           </Button>
         )}
-      </div>
-
-      <LogMaintenance />
+      </div>}
 
       {(canSystemBackup || canSystemRestore) && (
         <Card>
@@ -985,7 +989,7 @@ export default function Maintenance() {
       </Card>}
 
       <Dialog open={restoreDialogOpen} onOpenChange={setRestoreDialogOpen}>
-        <DialogContent>
+        <DialogContent onCloseAutoFocus={event => { if (!active) event.preventDefault(); }}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Upload className="h-5 w-5" />
@@ -1057,7 +1061,7 @@ export default function Maintenance() {
       </Dialog>
 
       <Dialog open={systemRestoreDialogOpen} onOpenChange={setSystemRestoreDialogOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent onCloseAutoFocus={event => { if (!active) event.preventDefault(); }} className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Archive className="h-5 w-5" />
@@ -1149,7 +1153,7 @@ export default function Maintenance() {
       </Dialog>
 
       <Dialog open={filesRestoreDialogOpen} onOpenChange={setFilesRestoreDialogOpen}>
-        <DialogContent>
+        <DialogContent onCloseAutoFocus={event => { if (!active) event.preventDefault(); }}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Files className="h-5 w-5" />

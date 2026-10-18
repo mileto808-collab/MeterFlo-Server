@@ -28,14 +28,12 @@ import {
   LogOut,
   ChevronRight,
   Search,
-  Wrench,
   FileText,
   Database,
   Cable,
   Upload,
   FolderSync,
   HelpCircle,
-  ScrollText,
   Package,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -191,37 +189,10 @@ export function AppSidebar() {
                 </SidebarMenuItem>
               )}
 
-              {hasPermission("nav.maintenance") && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={location === "/maintenance"}
-                    data-testid="nav-maintenance"
-                  >
-                    <NavLink href="/maintenance">
-                      <Wrench className="h-4 w-4" />
-                      <span>Maintenance</span>
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
-
-              {hasPermission("audit.view") && (
-                <SidebarMenuItem>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={location === "/audit-logs"}
-                    data-testid="nav-audit-logs"
-                  >
-                    <NavLink href="/audit-logs">
-                      <ScrollText className="h-4 w-4" />
-                      <span>Audit logs</span>
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              )}
-
-              {hasPermission("nav.settings") && (
+              {(hasPermission("nav.settings") || hasPermission("audit.view") ||
+                hasPermission("maintenance.projectBackup") || hasPermission("maintenance.projectRestore") ||
+                hasPermission("maintenance.systemBackup") || hasPermission("maintenance.systemRestore") ||
+                hasPermission("maintenance.logManagement")) && (
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     asChild

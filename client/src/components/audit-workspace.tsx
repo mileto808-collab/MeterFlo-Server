@@ -37,6 +37,7 @@ type Props = {
   onExport: (format: "csv" | "xlsx" | "pdf") => void;
   onSelect: (id: string) => void;
   onRetention?: () => void;
+  active?: boolean;
 };
 
 const selectClass = "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -59,13 +60,14 @@ function Field({ id, label, value, options, placeholder, onChange }: {
   </div>;
 }
 
-function FilterDialog({ open, onOpenChange, draft, options, timezone, onDraftChange, onApply, onClear }: {
+function FilterDialog({ open, onOpenChange, draft, options, timezone, onDraftChange, onApply, onClear, suppressCloseFocus }: {
   open: boolean; onOpenChange: (open: boolean) => void; draft: AuditFilters; options?: AuditOptions;
   timezone: string; onDraftChange: Props["onDraftChange"]; onApply: () => void; onClear: () => void;
+  suppressCloseFocus: boolean;
 }) {
   const apply = () => { onApply(); onOpenChange(false); };
   return <Dialog open={open} onOpenChange={onOpenChange}>
-    <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
+    <DialogContent onCloseAutoFocus={event => { if (suppressCloseFocus) event.preventDefault(); }} className="max-h-[90dvh] overflow-y-auto sm:max-w-2xl">
       <DialogHeader><DialogTitle>Filter audit events</DialogTitle><DialogDescription>Filters apply across authorized matching events and exports. Local date and time values use {timezone}.</DialogDescription></DialogHeader>
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5"><Label htmlFor="audit-from">From</Label><Input id="audit-from" type="datetime-local" value={draft.from} onChange={event => onDraftChange("from", event.target.value)} /></div>
@@ -113,6 +115,7 @@ export function AuditWorkspace(props: Props) {
   const first = total ? offset + 1 : 0;
   const last = Math.min(total, offset + events.length);
   useEffect(() => { setToolsOpen(!mobile); }, [mobile]);
+  useEffect(() => { if (props.active === false) setFilterOpen(false); }, [props.active]);
 
   useEffect(() => {
     if (!resultsElement) return;
@@ -142,7 +145,7 @@ export function AuditWorkspace(props: Props) {
   useEffect(() => { rowHeight.current = 0; }, [mobile]);
   const applySearch = () => props.onApply();
   return <section className="audit-workspace flex min-h-0 flex-1 flex-col" data-testid="audit-workspace" aria-label="Audit logs">
-    <FilterDialog open={filterOpen} onOpenChange={setFilterOpen} draft={draft} options={options} timezone={timezone} onDraftChange={props.onDraftChange} onApply={props.onApply} onClear={props.onClear} />
+    <FilterDialog open={filterOpen} onOpenChange={setFilterOpen} draft={draft} options={options} timezone={timezone} onDraftChange={props.onDraftChange} onApply={props.onApply} onClear={props.onClear} suppressCloseFocus={props.active === false} />
     <header className="audit-subheader sticky top-0 z-20 shrink-0 border-b border-[hsl(var(--audit-line))] bg-[hsl(var(--audit-paper))] px-3 pb-2 pt-2 sm:px-5" data-testid="audit-subheader">
       <div className="flex min-h-8 items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2.5"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[hsl(var(--audit-ink))] text-[hsl(var(--audit-paper))]"><Shield className="h-4 w-4" /></span>
@@ -228,8 +231,8 @@ export function AuditEventDetails({ event, timezone }: { event: ReadableAuditEve
   </div>;
 }
 
-export function AuditWorkspaceDialog({ children, open, onOpenChange, title, description }: {
-  children: ReactNode; open: boolean; onOpenChange: (open: boolean) => void; title: string; description: string;
+export function AuditWorkspaceDialog({ children, open, onOpenChange, title, description, suppressCloseFocus = false }: {
+  children: ReactNode; open: boolean; onOpenChange: (open: boolean) => void; title: string; description: string; suppressCloseFocus?: boolean;
 }) {
-  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-3xl"><DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription>{description}</DialogDescription></DialogHeader>{children}</DialogContent></Dialog>;
+  return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent onCloseAutoFocus={event => { if (suppressCloseFocus) event.preventDefault(); }} className="max-h-[90dvh] overflow-y-auto sm:max-w-3xl"><DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription>{description}</DialogDescription></DialogHeader>{children}</DialogContent></Dialog>;
 }

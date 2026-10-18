@@ -52,14 +52,14 @@ async function sendJson<T>(method: string, url: string, body: unknown): Promise<
   return response.json();
 }
 
-export function LogMaintenance() {
+export function LogMaintenance({ active = true }: { active?: boolean }) {
   const { hasPermission, isLoading: permissionsLoading } = usePermissions();
   const allowed = !permissionsLoading && hasPermission("maintenance.logManagement");
   const canViewAudit = !permissionsLoading && hasPermission("audit.view");
   const { data: summary, isLoading, isError, error, refetch } = useQuery<LogSummary>({
     queryKey: ["/api/maintenance/logs"],
     queryFn: () => fetchJson<LogSummary>("/api/maintenance/logs"),
-    enabled: allowed,
+    enabled: active && allowed,
   });
   const [policy, setPolicy] = useState<LogPolicy>(defaultPolicy);
   const [policyInitialized, setPolicyInitialized] = useState(false);
@@ -69,6 +69,9 @@ export function LogMaintenance() {
   const [preview, setPreview] = useState<CleanupPreview | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [actionError, setActionError] = useState("");
+  useEffect(() => {
+    if (!active) setConfirmOpen(false);
+  }, [active]);
   useEffect(() => {
     if (summary && !policyInitialized) {
       setPolicy(summary.policy);
@@ -141,7 +144,7 @@ export function LogMaintenance() {
     <div id="log-maintenance" className="mb-5 rounded-lg border border-border/80 bg-muted/20 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div><p className="font-medium">Audit activity</p><p className="text-sm text-muted-foreground">Review application changes in the audit ledger.</p></div>
-        <Link href="/audit-logs" className="inline-flex h-9 items-center rounded-md border bg-background px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground">Open audit logs</Link>
+        <Link href="/settings?section=audit-logs" className="inline-flex h-9 items-center rounded-md border bg-background px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground">Open audit logs</Link>
       </div>
     </div>
   ) : <div id="log-maintenance" />;
@@ -157,7 +160,7 @@ export function LogMaintenance() {
           <p className="mt-1 max-w-3xl text-sm text-muted-foreground">Review operational log storage, set retention behavior, and selectively clean up old records.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {canViewAudit && <Link href="/audit-logs" className="inline-flex h-9 items-center rounded-md border bg-background px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground">Audit logs</Link>}
+          {canViewAudit && <Link href="/settings?section=audit-logs" className="inline-flex h-9 items-center rounded-md border bg-background px-3 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground">Audit logs</Link>}
           <Button variant="outline" onClick={() => refetch()} disabled={isLoading} aria-label="Refresh log summary">
             <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? "animate-spin" : ""}`} /> Refresh
           </Button>
@@ -181,7 +184,7 @@ export function LogMaintenance() {
           <span>{summary.auditInventory.count.toLocaleString()} events</span>
           <span>{formatBytes(summary.auditInventory.bytes)} allocated</span>
           <span>Oldest: {formatDate(summary.auditInventory.oldest)}</span>
-          <Link href="/audit-logs" className="text-primary underline">Manage audit retention</Link>
+          <Link href="/settings?section=audit-logs#retention" className="text-primary underline">Manage audit retention</Link>
         </CardContent>
       </Card>}
       <Alert>
@@ -410,7 +413,7 @@ export function LogMaintenance() {
       )}
 
       <Dialog open={confirmOpen} onOpenChange={(open) => { if (!cleanup.isPending) setConfirmOpen(open); }}>
-        <DialogContent>
+        <DialogContent onCloseAutoFocus={event => { if (!active) event.preventDefault(); }}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><AlertTriangle className="h-5 w-5 text-destructive" />Confirm irreversible cleanup</DialogTitle>
             <DialogDescription>

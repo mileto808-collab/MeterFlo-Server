@@ -1,5 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
+import { useSearch } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,6 +37,10 @@ import { settingsGroups, type SettingsSectionKey } from "@/lib/settings-navigati
 import { WorkOrderSubStatusManager } from "@/components/work-order-sub-statuses/work-order-sub-status-manager";
 import { RoutingSettings } from "@/components/work-order-routing/routing-settings";
 import { AccessLockControl } from "@/components/access-locks/access-lock-control";
+import { LogMaintenance } from "@/components/log-maintenance";
+
+const MaintenanceWorkspace = lazy(() => import("@/pages/maintenance"));
+const AuditWorkspacePage = lazy(() => import("@/pages/audit-logs"));
 
 interface FileSettings {
   maxFileSizeMB: number;
@@ -134,23 +139,66 @@ export default function Settings() {
     if (user?.role === "admin") return true;
     return userPermissions.includes(permission);
   };
+  const canOpenSettings = hasPermission("nav.settings");
+  const canBackupRestore = ["maintenance.projectBackup", "maintenance.projectRestore", "maintenance.systemBackup", "maintenance.systemRestore"]
+    .some(hasPermission);
   const visibleSettingsGroups = settingsGroups
     .map(group => ({ ...group, sections: group.sections.filter(section =>
       (!section.adminOnly || user?.subroleKey === "administrator") &&
-      (!section.permission || hasPermission(section.permission))) }))
+      (section.key !== "backup-restore" || canBackupRestore) &&
+      (!section.permission || hasPermission(section.permission)) &&
+      (canOpenSettings || section.key === "audit-logs" || section.key === "log-maintenance" || section.key === "backup-restore")) }))
+    .filter(group => canOpenSettings || group.key === "security" || group.key === "system")
     .filter(group => group.sections.length > 0);
+  const settingsSearch = useSearch();
   const [settingsGroup, setSettingsGroup] = useState("account");
-  const [settingsSection, setSettingsSection] = useState<SettingsSectionKey>("profile");
+  const sectionFromUrl = (): SettingsSectionKey => {
+    const requested = new URLSearchParams(window.location.search).get("section");
+    return (settingsGroups.flatMap(group => group.sections).some(section => section.key === requested)
+      ? requested : "profile") as SettingsSectionKey;
+  };
+  const [settingsSection, setSettingsSection] = useState<SettingsSectionKey>(sectionFromUrl);
+  const [visitedSections, setVisitedSections] = useState<Set<SettingsSectionKey>>(() => new Set([sectionFromUrl()]));
+  const permissionStamp = userPermissions.join("|");
   const effectiveSettingsGroup = visibleSettingsGroups.find(group => group.key === settingsGroup) ?? visibleSettingsGroups[0];
   const effectiveSettingsSection = effectiveSettingsGroup?.sections.find(section => section.key === settingsSection)?.key
-    ?? effectiveSettingsGroup?.sections[0]?.key ?? "profile";
+    ?? effectiveSettingsGroup?.sections[0]?.key ?? null;
+  const selectSection = (section: SettingsSectionKey, push = true) => {
+    setSettingsSection(section);
+    setVisitedSections(previous => new Set(previous).add(section));
+    const group = visibleSettingsGroups.find(item => item.sections.some(candidate => candidate.key === section));
+    if (group) setSettingsGroup(group.key);
+    if (push) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("section", section);
+      if (section !== "audit-logs") url.hash = "";
+      const destination = `${url.pathname}${url.search}${url.hash}`;
+      if (destination !== `${window.location.pathname}${window.location.search}${window.location.hash}`)
+        window.history.pushState({}, "", destination);
+    }
+  };
+  useEffect(() => {
+    const applyUrlSection = () => {
+      const requested = sectionFromUrl();
+      if (visibleSettingsGroups.some(group => group.sections.some(section => section.key === requested))) {
+        selectSection(requested, false);
+      } else {
+        const fallback = visibleSettingsGroups[0]?.sections[0]?.key;
+        if (fallback) selectSection(fallback, false);
+      }
+    };
+    applyUrlSection();
+    window.addEventListener("popstate", applyUrlSection);
+    return () => window.removeEventListener("popstate", applyUrlSection);
+  // Permission changes may reveal the requested delegated workspace after hydration.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [permissionStamp, canOpenSettings, settingsSearch]);
   useEffect(() => {
     settingsContentRef.current?.scrollTo({ top: 0, left: 0 });
   }, [effectiveSettingsSection]);
   const changeSettingsGroup = (key: string) => {
-    setSettingsGroup(key);
     const next = visibleSettingsGroups.find(group => group.key === key);
-    if (next) setSettingsSection(next.sections[0].key);
+    if (next) selectSection(next.sections[0].key);
   };
   
   const [subroleDialogOpen, setSubroleDialogOpen] = useState(false);
@@ -1624,34 +1672,37 @@ export default function Settings() {
           </div>
         </div>
         <SettingsNavigation groups={visibleSettingsGroups} activeGroup={effectiveSettingsGroup?.key ?? "account"}
-          activeSection={effectiveSettingsSection} onGroupChange={changeSettingsGroup} onSectionChange={setSettingsSection} />
+          activeSection={effectiveSettingsSection ?? "profile"} onGroupChange={changeSettingsGroup} onSectionChange={selectSection} />
       </header>
 
       <div ref={settingsContentRef} id="settings-panel" role={settingsMobile ? "region" : "tabpanel"} aria-label={settingsMobile ? "Settings section" : undefined}
         aria-labelledby={settingsMobile ? undefined : `settings-group-${effectiveSettingsGroup?.key ?? "account"}`}
         data-testid="settings-content" className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain py-3">
         <div className="space-y-4">
+        {visitedSections.has("backup-restore") && (
+          <section data-testid="settings-section-backup-restore" data-settings-group="system" data-settings-section="backup-restore"
+            hidden={effectiveSettingsSection !== "backup-restore"}>
+            <Suspense fallback={<div className="space-y-3" aria-label="Loading backup and restore"><div className="h-8 w-56 animate-pulse rounded bg-muted" /><div className="h-48 animate-pulse rounded bg-muted" /></div>}>
+              <MaintenanceWorkspace embedded active={effectiveSettingsSection === "backup-restore"} />
+            </Suspense>
+          </section>
+        )}
+        {visitedSections.has("log-maintenance") && (
+          <section data-testid="settings-section-log-maintenance" data-settings-group="system" data-settings-section="log-maintenance"
+            hidden={effectiveSettingsSection !== "log-maintenance"}>
+            <LogMaintenance active={effectiveSettingsSection === "log-maintenance"} />
+          </section>
+        )}
+        {visitedSections.has("audit-logs") && (
+          <section id="audit-logs-workspace" data-testid="settings-section-audit-logs" data-settings-group="security" data-settings-section="audit-logs"
+            hidden={effectiveSettingsSection !== "audit-logs"}>
+            <Suspense fallback={<div className="space-y-3" aria-label="Loading audit logs"><div className="h-8 w-56 animate-pulse rounded bg-muted" /><div className="h-64 animate-pulse rounded bg-muted" /></div>}>
+              <AuditWorkspacePage embedded active={effectiveSettingsSection === "audit-logs"} />
+            </Suspense>
+          </section>
+        )}
         {hasPermission("maintenance.logManagement") && (
-          <Card data-testid="logs-card" data-settings-group="system" data-settings-section="log-maintenance" hidden={effectiveSettingsSection !== "log-maintenance"}>
-            <span data-testid="settings-section-log-maintenance" className="sr-only" />
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Database className="h-5 w-5 text-muted-foreground" />
-                <div>
-                  <CardTitle>Log maintenance</CardTitle>
-                  <CardDescription className="mt-1">Review operational log storage and manage retention.</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <a
-                href="/maintenance#log-maintenance"
-                className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              >
-                Open log maintenance
-              </a>
-            </CardContent>
-          </Card>
+          <span className="sr-only" data-testid="logs-card" />
         )}
         <Card data-settings-group="account" data-settings-section="profile" data-testid="settings-section-profile" hidden={effectiveSettingsSection !== "profile"}>
           <CardHeader>

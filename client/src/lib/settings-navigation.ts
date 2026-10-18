@@ -7,7 +7,7 @@ export type SettingsSectionKey =
   | "contact-support" | "customer-api-logs"
   | "security-settings" | "access-locks"
   | "mobile-updates" | "web-updates"
-  | "timezone" | "log-maintenance";
+  | "timezone" | "log-maintenance" | "backup-restore" | "audit-logs";
 
 export type SettingsSection = {
   key: SettingsSectionKey;
@@ -53,6 +53,7 @@ export const settingsGroups: SettingsGroup[] = [
     { key: "customer-api-logs", label: "Customer API Logs", permission: "settings.customerApiLogs" },
   ] },
   { key: "security", label: "Security", sections: [
+    { key: "audit-logs", label: "Audit logs", permission: "audit.view" },
     { key: "security-settings", label: "Security Settings", permission: "settings.security" },
     { key: "access-locks", label: "Access locks", permission: "security.manageSiteAccessLocks" },
   ] },
@@ -62,6 +63,7 @@ export const settingsGroups: SettingsGroup[] = [
   ] },
   { key: "system", label: "System", sections: [
     { key: "timezone", label: "Timezone", permission: "settings.timezone" },
+    { key: "backup-restore", label: "Backup & Restore" },
     { key: "log-maintenance", label: "Log Maintenance", permission: "maintenance.logManagement" },
   ] },
 ];
