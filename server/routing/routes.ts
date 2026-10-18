@@ -5,6 +5,9 @@ import { storage } from "../storage";
 import { pool } from "../db";
 import { isAuthenticated } from "../replitAuth";
 import { getProjectWorkOrderStorage } from "../projectDb";
+import { technicianAssignmentScope, visibleAssignedOrders } from "../workOrderVisibility";
+import { inventoryState } from "../inventoryService";
+import { warehouseRouteOrigins } from "../../shared/routing-origins";
 import { listSubStatuses } from "../workOrderSubStatuses";
 import { assertProjectCredentialReferences, consumeRoutingQuota, effectiveRouting, readRoutingConfiguration, routingConfigurationSchema, saveRoutingConfiguration } from "./configuration";
 import { routingService, RoutingError } from "./providers";
@@ -66,19 +69,14 @@ export function registerRoutingRoutes(app:Express, services = { effectiveRouting
     if(!await storage.hasPermission(ctx.user,"workOrders.optimizeRoute"))throw new RoutingError(403,"Optimize route permission required.");
     const project=ctx.project!;
     if(!project.databaseName)throw new RoutingError(404,"Project database unavailable.");
-    // Match the technician grid scope, not unclaimed group work or another technician.
+    // Visibility follows direct/group assignments; routing alone filters Scheduled.
     const all=await getProjectWorkOrderStorage(project.databaseName).getWorkOrders();
-    let visible=all;
-    if(ctx.user.subroleId){
-      const role=await storage.getSubrole(ctx.user.subroleId);
-      if(role?.key==="field_technician"&&!ctx.admin){
-        visible=all.filter(wo=>wo.status==="Scheduled"&&wo.assignedUserId===ctx.user.id);
-      }
-    }
+    const technicianScope=await technicianAssignmentScope(ctx.user);
+    const visible=await visibleAssignedOrders(ctx.user,all);
     const wanted=new Set(ids),orders=visible.filter(wo=>wanted.has(wo.id));
     if(orders.length!==ids.length)throw new RoutingError(403,"One or more selected work orders are no longer available. Refresh the list.");
     const definitions=await listSubStatuses(project.id);
-    return {...ctx,project,orders,definitions};
+    return {...ctx,project,orders,definitions,technicianScope};
   }
   async function assertDispatcher(user:any) {
     const role=user.subroleId?await storage.getSubrole(user.subroleId):undefined;
@@ -198,6 +196,13 @@ export function registerRoutingRoutes(app:Express, services = { effectiveRouting
       res.json((await readEffective(ctx.project?.id,true)).result);
     }));
   }
+  app.get("/api/projects/:projectId/routing/origins",isAuthenticated,wrap(async(req,res)=>{
+    const ctx=await access(req);
+    if(!await storage.hasPermission(ctx.user,"workOrders.optimizeRoute"))throw new RoutingError(403,"Optimize route permission required.");
+    const warehouses=ctx.project!.inventoryEnabled
+      ?warehouseRouteOrigins(await inventoryState(ctx.project!.id),ctx.user.id,ctx.admin):[];
+    res.set("Cache-Control","no-store").json({warehouses});
+  }));
   app.get("/api/projects/:projectId/routing/map-config",isAuthenticated,wrap(async(req,res)=>{
     const ctx=await access(req);
     if(!await storage.hasPermission(ctx.user,"workOrders.optimizeRoute"))throw new RoutingError(403,"Optimize route permission required.");
@@ -229,7 +234,9 @@ export function registerRoutingRoutes(app:Express, services = { effectiveRouting
     const config=await readEffective(ctx.project.id);
     const scheduled=ctx.orders.filter(o=>o.status==="Scheduled");
     if(!scheduled.length)throw new RoutingError(422,"No Scheduled work orders remain in this scope.");
-    const assigned=scheduled.filter(o=>!!o.assignedUserId);
+    // A technician's group-accessible work belongs to their personal plan for
+    // this request only. Never claim/reassign the underlying work orders here.
+    const assigned=scheduled.map(o=>ctx.technicianScope?{...o,assignedUserId:ctx.user.id}:o).filter(o=>!!o.assignedUserId);
     if(!assigned.length)throw new RoutingError(422,"The Scheduled work orders are unassigned. Assign them to a technician before optimizing routes.");
     const assignments=new Map<string,typeof assigned>();
     for(const order of assigned){
@@ -275,7 +282,8 @@ export function registerRoutingRoutes(app:Express, services = { effectiveRouting
           manualAddressFields(input.origin.address),geocoded);
       }else origin=input.origin;
       const defs=new Map(ctx.definitions.map(d=>[d.id,d]));
-      const resolved:(Candidate&{assigneeId:string})[]=[],excluded:RoutingResult["excluded"]=ctx.orders.filter(o=>o.status!=="Scheduled"||!o.assignedUserId)
+      const includedIds=new Set(assigned.map(o=>o.id));
+      const resolved:(Candidate&{assigneeId:string})[]=[],excluded:RoutingResult["excluded"]=ctx.orders.filter(o=>!includedIds.has(o.id))
         .map(o=>({id:o.id,label:String(o.customerWoId??o.id),reason:o.status!=="Scheduled"?"Not Scheduled.":"Unassigned. Assign this work order to a technician before optimizing."}));
       for(const order of assigned){
         if(controller.signal.aborted)throw new RoutingError(504,"Route planning timed out. Narrow the stop selection.");

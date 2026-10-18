@@ -1,5 +1,6 @@
 import type { Express, RequestHandler } from "express";
 import { registerRoutingRoutes } from "./routing/routes";
+import { technicianAssignmentScope, visibleAssignedOrders } from "./workOrderVisibility";
 import { sanitizeGenericProjectSettings } from "../shared/project-settings-boundary";
 const projectRoutingWriteBoundary: RequestHandler = (req, res, next) => {
   try { req.body = sanitizeGenericProjectSettings(req.body ?? {}); next(); }
@@ -2218,8 +2219,6 @@ export async function registerRoutes(
       }
       
       const allWorkOrders: any[] = [];
-      const fieldTechnician = currentUser.subroleId && !await storage.isAdminUser(currentUser) &&
-        (await storage.getSubrole(currentUser.subroleId))?.key === "field_technician";
       
       for (const project of projects) {
         if (!project.databaseName) continue;
@@ -2227,8 +2226,7 @@ export async function registerRoutes(
         try {
           const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
           let workOrders = await workOrderStorage.getWorkOrders({});
-          if (fieldTechnician) workOrders = workOrders.filter(wo =>
-            wo.status === "Scheduled" && wo.assignedUserId === currentUser.id);
+          workOrders = await visibleAssignedOrders(currentUser, workOrders);
           
           // Add project info to each work order
           workOrders = workOrders.map((wo: any) => ({
@@ -2283,7 +2281,7 @@ export async function registerRoutes(
           const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
           const workOrder = await workOrderStorage.getWorkOrder(workOrderId);
           
-          if (workOrder) {
+          if (workOrder && (await visibleAssignedOrders(currentUser, [workOrder])).length) {
             return res.json({
               ...workOrder,
               projectId: project.id,
@@ -2349,13 +2347,8 @@ export async function registerRoutes(
       
       let workOrders = await workOrderStorage.getWorkOrders(filters);
       
-      // Technician dispatch lists contain only their personally assigned Scheduled work.
-      if (currentUser?.subroleId) {
-        const subrole = await storage.getSubrole(currentUser.subroleId);
-        if (subrole?.key === "field_technician" && !await storage.isAdminUser(currentUser)) {
-          workOrders = workOrders.filter(wo => wo.status === "Scheduled" && wo.assignedUserId === currentUser.id);
-        }
-      }
+      // Visibility follows direct/group assignment; Scheduled is a routing filter only.
+      workOrders = await visibleAssignedOrders(currentUser, workOrders);
       
       res.json(workOrders);
     } catch (error) {
@@ -2398,7 +2391,7 @@ export async function registerRoutes(
         const subrole = await storage.getSubrole(currentUser.subroleId);
         if (subrole?.key === "field_technician" && !await storage.isAdminUser(currentUser)) {
           const allWorkOrders = await workOrderStorage.getWorkOrders({});
-          const filteredWorkOrders = allWorkOrders.filter(wo => wo.status === "Scheduled" && wo.assignedUserId === currentUser.id);
+          const filteredWorkOrders = await visibleAssignedOrders(currentUser, allWorkOrders);
           
           // Compute stats from filtered work orders
           const statusCounts: Record<string, number> = {};
@@ -2544,6 +2537,9 @@ export async function registerRoutes(
         }
         
         const workOrder = result.rows[0];
+        if (!(await visibleAssignedOrders(currentUser, [{
+          assignedUserId: workOrder.assigned_user_id, assignedGroupId: workOrder.assigned_group_id,
+        }])).length) return res.status(404).json({ message: "Work order not found" });
         
         if (currentUser?.role === "customer" && workOrder.status !== "completed") {
           return res.status(403).json({ message: "Forbidden: Customers can only view completed work orders" });
@@ -9201,7 +9197,7 @@ export async function registerRoutes(
       
       const workOrderStorage = getProjectWorkOrderStorage(project.databaseName);
       
-      // Field dispatch is restricted to the technician's personally assigned Scheduled work.
+      // Mobile keeps its existing active-only synchronization policy, but includes group assignments.
       let isFieldTechnician = false;
       if (currentUser.subroleId) {
         const subrole = await storage.getSubrole(currentUser.subroleId);
@@ -9239,11 +9235,12 @@ export async function registerRoutes(
         const values: any[] = [];
         let paramCount = 1;
         
-        // Keep mobile dispatch in the same personally assigned Scheduled scope as the grid.
+        // Personal/group scope is independent of status; active-only policy is applied below.
         if (isFieldTechnician) {
-          conditions.push(`w.assigned_user_id = $${paramCount++}`);
+          const scope = await technicianAssignmentScope(currentUser);
+          conditions.push(`(w.assigned_user_id = $${paramCount++} OR w.assigned_group_id = ANY($${paramCount++}::text[]))`);
           values.push(currentUser.id);
-          conditions.push(`w.status = 'Scheduled'`);
+          values.push(scope?.groupNames ?? []);
         }
         
         // Filter by last sync timestamp (incremental sync)

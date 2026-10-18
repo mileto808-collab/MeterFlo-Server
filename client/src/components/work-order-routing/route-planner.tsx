@@ -21,6 +21,7 @@ import { writeRoutePrintDocument } from "./route-print";
 
 type DisplayMode = "list" | "map" | "both";
 type OriginChoice = RoutePoint | { address: string };
+type OriginWarehouse = { id: string; name: string; address: string };
 type PlanningRequest = { ids: number[]; origin: OriginChoice; departureAt: string; serviceMinutes: number; toleranceMinutes: number };
 type Props = {
   projectId: number;
@@ -169,6 +170,7 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
   const { toast } = useToast();
   const { setHeaderContent } = usePageHeader();
   const readinessUrl = `/api/projects/${projectId}/routing/settings`;
+  const originsUrl = `/api/projects/${projectId}/routing/origins`;
   const { data: readiness, isLoading: readinessLoading, isError: readinessError, refetch } = useQuery<RoutingReadiness>({
     queryKey: [readinessUrl],
     queryFn: async () => { const response = await fetch(readinessUrl, { credentials: "include" }); if (!response.ok) throw new Error(await errorMessage(response)); return response.json(); },
@@ -181,6 +183,7 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
   const [toleranceMinutes, setToleranceMinutes] = useState(String(defaultAppointmentToleranceMinutes ?? 10));
   const [originMode, setOriginMode] = useState<"device" | "manual">(() => user?.subroleKey === "field_technician" ? "device" : "manual");
   const [manualAddress, setManualAddress] = useState("");
+  const [originSource, setOriginSource] = useState<{ projectId: number; value: string }>({ projectId, value: "manual" });
   const [locationMessage, setLocationMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<PlanningResult | null>(null);
@@ -197,6 +200,34 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
   } & ({ request: PlanningRequest; dispatchId?: never } | { dispatchId: string; request?: never }) | null>(null);
   const [dispatchMessage, setDispatchMessage] = useState("");
   const receivedUrl = `/api/projects/${projectId}/routing/dispatched`;
+  const { data: origins, isLoading: originsLoading, isFetching: originsFetching, isError: originsError, error: originsQueryError, refetch: refetchOrigins } = useQuery<{ warehouses: OriginWarehouse[] }>({
+    queryKey: ["/api/projects", projectId, "routing", "origins"],
+    queryFn: async () => {
+      const response = await fetch(originsUrl, { credentials: "include" });
+      if (!response.ok) throw new Error(await errorMessage(response));
+      const payload = await response.json() as { warehouses?: unknown };
+      if (!Array.isArray(payload.warehouses) || !payload.warehouses.every((warehouse: any) =>
+        warehouse && typeof warehouse.id === "string" && typeof warehouse.name === "string" && typeof warehouse.address === "string"))
+        throw new Error("Warehouse starting points could not be read.");
+      return { warehouses: payload.warehouses as OriginWarehouse[] };
+    },
+    enabled: originMode === "manual",
+    staleTime: 0,
+    retry: false,
+    refetchOnMount: "always",
+  });
+  const selectedOriginSource = originSource.projectId === projectId && !originsError ? originSource.value : "manual";
+  const selectedWarehouse = selectedOriginSource !== "manual"
+    ? origins?.warehouses.find(warehouse => warehouse.id === selectedOriginSource)
+    : undefined;
+  useEffect(() => {
+    setOriginSource({ projectId, value: "manual" });
+    setManualAddress("");
+  }, [projectId]);
+  useEffect(() => {
+    if (originsError && originSource.projectId === projectId && originSource.value !== "manual")
+      setOriginSource({ projectId, value: "manual" });
+  }, [originsError, originSource.projectId, originSource.value, projectId]);
   const { data: receivedRoutes = [], refetch: refreshReceived, isError: receivedError } = useQuery<DispatchedRouteSummary[]>({
     queryKey: [receivedUrl, user?.id],
     queryFn: async () => {
@@ -245,7 +276,8 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
   const nonScheduled = useMemo(() => {
     return scopedOrders.length - candidates.length;
   }, [scopedOrders, candidates]);
-  const unassignedScheduled = useMemo(() => candidates.filter(order => !order.assignedUserId).length, [candidates]);
+  const unassignedScheduled = useMemo(() => user?.subroleKey === "field_technician" ? 0 :
+    candidates.filter(order => !order.assignedUserId).length, [candidates, user?.subroleKey]);
   const fetchMapConfig = useCallback(async (): Promise<MapConfig> => {
     const response = await fetch(`/api/projects/${projectId}/routing/map-config`, { credentials: "include" });
     if (!response.ok) throw new Error(await errorMessage(response));
@@ -385,8 +417,27 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
         try { origin = await getDeviceOrigin(); }
         catch (error) { setLocationMessage(error instanceof Error ? error.message : "Device location unavailable."); setOriginMode("manual"); setBusy(false); return; }
       } else {
-        if (!manualAddress.trim()) { setValidationMessage("Enter the starting address."); setBusy(false); return; }
-        origin = { address: manualAddress.trim() };
+        if (selectedOriginSource !== "manual") {
+          if (originsError) {
+            setValidationMessage("Warehouse availability could not be checked. Retry the lookup or choose manual entry before planning.");
+            setBusy(false);
+            return;
+          }
+          if (originsFetching) {
+            setValidationMessage("Checking the selected warehouse for this project. Wait for the lookup to finish or choose manual entry.");
+            setBusy(false);
+            return;
+          }
+          if (!selectedWarehouse) {
+            setValidationMessage("The selected warehouse is no longer available for this project. Choose a current warehouse or enter a starting address.");
+            setBusy(false);
+            return;
+          }
+          origin = { address: selectedWarehouse.address.trim() };
+        } else {
+          if (!manualAddress.trim()) { setValidationMessage("Enter the starting address."); setBusy(false); return; }
+          origin = { address: manualAddress.trim() };
+        }
       }
       const request = confirmation?.request ?? { ids: requestedIds, origin, departureAt: isoFromZonedInput(departure, timezone), serviceMinutes: serviceValue, toleranceMinutes: toleranceValue };
       const response = await fetch(`/api/projects/${projectId}/routing/plan`, { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...request, addressConfirmations: confirmation ? Object.values(confirmation.tokensById) : undefined }) });
@@ -656,7 +707,45 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
           </div>
           <div className="grid gap-3 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="route-departure">Departure time ({timezone})</Label><Input id="route-departure" type="datetime-local" value={departure} onChange={event => setDeparture(event.target.value)} data-testid="route-departure" /></div><div className="space-y-2"><Label htmlFor="route-service-minutes">On-site service (minutes)</Label><Input id="route-service-minutes" type="number" min="1" max="480" value={serviceMinutes} onChange={event => setServiceMinutes(event.target.value)} data-testid="route-service-minutes" /><p className="text-xs text-muted-foreground">Route-wide default; work-order and project estimates can override it.</p></div><div className="space-y-2 sm:col-span-2"><Label htmlFor="route-tolerance">Appointment tolerance (minutes)</Label><Input id="route-tolerance" type="number" min="0" max="240" value={toleranceMinutes} onChange={event => setToleranceMinutes(event.target.value)} data-testid="route-tolerance" /><p className="text-xs text-muted-foreground">Planning assumption only. Appointment windows constrain service start and do not modify scheduled appointments.</p></div></div>
           <div className="space-y-2"><Label>Result view</Label><RadioGroup value={mode} onValueChange={value => setMode(value as DisplayMode)} className="grid grid-cols-3 gap-2">{(["list", "map", "both"] as const).map(value => <label key={value} className="flex cursor-pointer items-center gap-2 rounded-lg border p-3 capitalize"><RadioGroupItem value={value} />{value}</label>)}</RadioGroup></div>
-          <div className="space-y-2"><Label>Starting point</Label><RadioGroup value={originMode} onValueChange={value => setOriginMode(value as "device" | "manual")} className="grid grid-cols-2 gap-2"><label className="flex cursor-pointer items-center gap-2 rounded-lg border p-3 text-sm"><RadioGroupItem value="device" />Device location</label><label className="flex cursor-pointer items-center gap-2 rounded-lg border p-3 text-sm"><RadioGroupItem value="manual" />Warehouse / starting address</label></RadioGroup>{originMode === "manual" && <Input value={manualAddress} onChange={event => setManualAddress(event.target.value)} placeholder="Warehouse street, city, region" aria-label="Warehouse or starting address" data-testid="route-manual-origin" />}{locationMessage && <p className="text-sm text-amber-800" role="status">{locationMessage}</p>}</div>
+           <div className="space-y-2">
+             <Label>Starting point</Label>
+             <RadioGroup value={originMode} onValueChange={value => setOriginMode(value as "device" | "manual")} className="grid grid-cols-2 gap-2">
+               <label className="flex cursor-pointer items-center gap-2 rounded-lg border p-3 text-sm"><RadioGroupItem value="device" />Device location</label>
+               <label className="flex cursor-pointer items-center gap-2 rounded-lg border p-3 text-sm"><RadioGroupItem value="manual" />Warehouse / starting address</label>
+             </RadioGroup>
+             {originMode === "manual" && <>
+               {origins?.warehouses.length ? <>
+                 <Label htmlFor="route-origin-warehouse">Warehouse or manual entry</Label>
+                 <select
+                   id="route-origin-warehouse"
+                   value={selectedWarehouse ? selectedOriginSource : "manual"}
+                   onChange={event => setOriginSource({ projectId, value: event.target.value })}
+                   className="h-11 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                   data-testid="route-origin-warehouse"
+                 >
+                   <option value="manual">Enter an address manually</option>
+                   {origins.warehouses.map(warehouse => <option key={warehouse.id} value={warehouse.id}>{warehouse.name} · {warehouse.address}</option>)}
+                 </select>
+               </> : null}
+               {originsLoading && <p role="status" className="text-xs text-muted-foreground">Checking available warehouse starting points… Manual entry remains available.</p>}
+               {originsError && <div role="alert" className="flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-sm text-amber-950">
+                 <AlertTriangle className="h-4 w-4 shrink-0" />
+                 <span>{originsQueryError instanceof Error ? originsQueryError.message : "Warehouse lookup failed."} Enter an address manually or retry.</span>
+                 <Button type="button" size="sm" variant="outline" onClick={() => void refetchOrigins()}>Retry lookup</Button>
+               </div>}
+               {selectedWarehouse && !originsError && <p className="rounded-md border bg-muted/30 p-2 text-sm" role="status">
+                 <span className="block text-xs font-medium text-muted-foreground">Starting address to be submitted</span>
+                 <span className="break-words">{selectedWarehouse.name} · {selectedWarehouse.address}</span>
+               </p>}
+               {selectedOriginSource !== "manual" && !selectedWarehouse && !originsError && !originsLoading && <p role="alert" className="text-sm text-amber-800">That warehouse is no longer available. Choose another warehouse or enter an address manually.</p>}
+               {(selectedOriginSource === "manual" || (!!selectedOriginSource && selectedOriginSource !== "manual" && !selectedWarehouse)) && <div className="space-y-1">
+                 <Label htmlFor="route-manual-origin">Starting address</Label>
+                 <Input id="route-manual-origin" value={manualAddress} onChange={event => { setManualAddress(event.target.value); setOriginSource({ projectId, value: "manual" }); }} placeholder="Street, city, region" aria-describedby="route-manual-origin-help" data-testid="route-manual-origin" />
+                 <p id="route-manual-origin-help" className="text-xs text-muted-foreground">Review the address before planning. It is sent to the configured routing provider.</p>
+               </div>}
+             </>}
+             {locationMessage && <p className="text-sm text-amber-800" role="status">{locationMessage}</p>}
+           </div>
           {validationMessage && <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{validationMessage}</div>}
         </div>
         <DialogFooter className="flex-col-reverse gap-2 sm:flex-row"><Button variant="outline" onClick={onBack}>Back to work orders</Button><Button onClick={() => void plan()} disabled={busy || !readiness?.ready || candidates.length === 0} data-testid="create-route-plan">{busy ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Resolving route…</> : <><Route className="mr-2 h-4 w-4" />Optimize {candidates.length} scheduled</>}</Button></DialogFooter>

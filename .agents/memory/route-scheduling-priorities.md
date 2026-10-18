@@ -7,11 +7,21 @@ Route optimization must protect appointment times before favoring higher-priorit
 
 **Why:** The user explicitly selected “Protect appointment times, then prioritize stops” rather than visiting higher-priority stops regardless of lateness.
 
-Field technicians' dispatch lists contain only Scheduled orders personally assigned to them, not unclaimed group work. Authorized support staff and managers can see across technicians, but must generate separate routes per assignee, never a combined technician route. Unassigned orders require assignment and must not be silently routed.
+Field technicians see every work order assigned directly to them OR to a group they belong to, regardless of status. Their personal route uses only Scheduled orders from that accessible scope, including group-assigned work, without claiming or changing saved assignments. Authorized support staff and managers generate separate routes per named assignee; their unassigned work still requires assignment.
 
-**Why:** The user explicitly rejected combining different technicians' work into one route.
+**Why:** The user explicitly clarified that technician visibility must include group assignments and all statuses, while rejecting combined manager routes across different technicians.
 
 **How to apply:** Allow optimization when any Scheduled orders exist in the filtered grid, ignoring other statuses. A shared warehouse origin applies independently to each technician. Printing one or all routes must keep each technician's stops separate and start each route on a new printed page.
+
+Warehouse starting-point choices must include only fixed warehouses with a
+configured address, never vehicle/mobile locations. Manual address entry remains
+available when no warehouse address is configured.
+
+**Why:** The user explicitly requested address-based warehouse selection and
+excluded vehicle warehouses as starting-address choices.
+
+**How to apply:** Keep route origins independent of vehicle custody/location
+assignments, and preserve manual entry when warehouse lookup fails.
 
 Meaningful provider address discrepancies require explicit per-location review before a route is activated. A confirmed alternate address applies to that plan only, not a permanent alias or permission to rewrite work-order addresses or equipment GPS history.
 
