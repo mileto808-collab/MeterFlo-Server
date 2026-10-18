@@ -4,11 +4,12 @@ const { chromium, webkit, expect } = require("@playwright/test");
 const fs = require("node:fs");
 const fsp = require("node:fs/promises");
 const assert = require("node:assert/strict");
+const { randomUUID } = require("node:crypto");
 
 (async()=>{
   const fixture=JSON.parse(fs.readFileSync("/tmp/meterflo-inventory-ui-fixture.json","utf8"));
   const out="generated-artifacts/work-order-routing";await fsp.mkdir(out,{recursive:true});
-  const baseURL=`https://${process.env.REPLIT_DEV_DOMAIN}`;
+  const baseURL=require("./support/workspace-ui-base.cjs")();
   const browser=await chromium.launch({executablePath:"/repl/tools/bin/chromium",args:["--no-sandbox"]});
   const context=await browser.newContext({baseURL,viewport:{width:1365,height:950},geolocation:{latitude:40,longitude:-105},permissions:["geolocation"]});
   const root=`/api/projects/${fixture.projectId}`,routeRoot=`${root}/routing`;
@@ -23,7 +24,10 @@ const assert = require("node:assert/strict");
     assert.equal(actualSettings.ready,false);
     assert.equal(actualSettings.disabled,true);
     const definitions=await request("GET",`${root}/work-order-sub-statuses`);
-    const critical=definitions.find(d=>d.label==="Critical");
+    const parent=(await request("GET","/api/work-order-statuses")).find(status=>status.code==="Scheduled");
+    const critical=definitions.find(d=>d.label==="Critical") ?? await request("POST",`${root}/work-order-sub-statuses`,{
+      code:"ROUTING-CRITICAL",label:"Critical",parentStatusId:parent.id,routingPriority:0,
+    },201);
     assert.ok(critical);assert.ok(Number.isInteger(critical.routingPriority));
     await request("PATCH",`${root}/work-order-sub-statuses/${critical.id}`,{routingPriority:0});
     assert.equal((await request("GET",`${root}/work-order-sub-statuses`)).find(d=>d.id===critical.id).routingPriority,0);
@@ -72,12 +76,18 @@ const assert = require("node:assert/strict");
       await page.getByTestId("checkbox-status-scheduled").check();
       await page.getByTestId("button-dialog-close-filters").click();
     };
+    const reopenSavedPlanner = async () => {
+      await expect(page.getByTestId("button-toggle-mobile-tools")).toBeVisible();
+      const showTools=page.getByRole("button",{name:"Show Search & Tools",exact:true});
+      if(await showTools.isVisible())await showTools.click();
+      await page.getByTestId("optimize-work-order-route").click();
+    };
     await page.goto(`/projects/${fixture.projectId}/work-orders`);
     // Mixed grids with any Scheduled work are eligible; empty/non-Scheduled-only grids are not.
     await expect(page.getByTestId("input-search-work-orders")).toBeVisible();
     await expect(page.getByTestId("optimize-work-order-route")).toBeVisible();
     await page.getByTestId("input-search-work-orders").fill("ROUTE-FIELD-OPEN");
-    await expect(page.getByTestId("optimize-work-order-route")).toHaveCount(0);
+    await expect(page.getByTestId("optimize-work-order-route")).toHaveText("Routes from dispatch");
     await page.getByTestId("input-search-work-orders").fill("");
     await scheduledGrid();
     const optimize=page.getByTestId("optimize-work-order-route");
@@ -85,7 +95,7 @@ const assert = require("node:assert/strict");
     assert.equal(await optimize.evaluate(el=>el.previousElementSibling?.getAttribute("data-testid")),
       "button-create-work-order","Optimize route immediately follows New Work Order");
     await page.getByTestId("input-search-work-orders").fill("NO-MATCHING-ROUTE-FIXTURE");
-    await expect(optimize).toHaveCount(0);
+    await expect(optimize).toHaveText("Routes from dispatch");
     await page.getByTestId("input-search-work-orders").fill("");
     await expect(optimize).toBeVisible();
     for(const viewport of [{width:1365,height:950},{width:390,height:844}]){
@@ -141,6 +151,7 @@ const assert = require("node:assert/strict");
       plannedRoutes=assignees.map(assigneeId=>{
         const assignedStops=stops.filter(stop=>orders.find(order=>order.id===stop.id).assignedUserId===assigneeId);
         return {...common,assigneeId,assigneeName:assigneeId===fixture.id?"Dispatch technician":"Field technician",
+          dispatchPlanId:randomUUID(),
           stops:assignedStops,excluded:[],geometry:[common.origin,...assignedStops.map(stop=>stop.point)],
           totalTravelSeconds:300*assignedStops.length,totalTravelMeters:1000*assignedStops.length};
       });
@@ -203,6 +214,60 @@ const assert = require("node:assert/strict");
     assert.ok(body.ids.every(id=>orders.find(order=>order.id===id).status==="Scheduled"),"Mixed grid submits only Scheduled orders");
     assert.deepEqual(body.origin,{address:"100 Warehouse Road, Fixturetown, CO 80000"});
     assert.equal(plannedRoutes.length,2);
+    // Simulated provider plans exercise real bulk-send presentation without
+    // delivering synthetic plan IDs to the live dispatch endpoint.
+    const dispatchCalls=[];
+    let failPlan=plannedRoutes[1].dispatchPlanId;
+    await page.route(`**${routeRoot}/dispatch`,async route=>{
+      const payload=route.request().postDataJSON();
+      assert.deepEqual(Object.keys(payload),["planId"],"Only the selected individual plan identity is sent");
+      assert.ok(plannedRoutes.some(plan=>plan.dispatchPlanId===payload.planId));
+      dispatchCalls.push(payload.planId);
+      await new Promise(resolve=>setTimeout(resolve,120));
+      if(payload.planId===failPlan) {
+        failPlan=null;
+        return route.fulfill({status:503,json:{message:"Controlled dispatch failure"}});
+      }
+      await route.fulfill({json:{id:payload.planId,expiresAt:plannedRoutes[0].expiresAt}});
+    });
+    await expect(page.getByTestId("dispatch-selected-routes")).toBeDisabled();
+    await page.getByTestId(`route-dispatch-select-${fixture.id}`).check();
+    await page.getByTestId("dispatch-selected-routes").click();
+    await expect(page.getByTestId(`route-dispatch-status-${fixture.id}`)).toContainText(/sent/i);
+    assert.deepEqual(dispatchCalls,[plannedRoutes[0].dispatchPlanId],"Selected sending never sends another technician's plan");
+    await page.getByTestId("dispatch-all-routes").click();
+    await expect(page.getByTestId(`route-dispatch-status-${fixture.viewer.id}`)).toContainText(/fail/i);
+    assert.deepEqual(dispatchCalls,plannedRoutes.map(plan=>plan.dispatchPlanId),"Send all skips routes already sent");
+    await page.getByTestId("dispatch-retry-failed").click();
+    await expect(page.getByTestId(`route-dispatch-status-${fixture.viewer.id}`)).toContainText(/sent/i);
+    assert.deepEqual(dispatchCalls,[plannedRoutes[0].dispatchPlanId,plannedRoutes[1].dispatchPlanId,plannedRoutes[1].dispatchPlanId],
+      "Retry failed does not resend a successful technician's plan");
+    await page.setViewportSize({width:390,height:844});
+    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1),"Bulk controls fit phone width");
+    await page.screenshot({path:`${out}/bulk-dispatch-phone.jpg`,fullPage:true});
+    await page.setViewportSize({width:1365,height:950});
+    if(process.env.METERFLO_BULK_DISPATCH_ONLY==="1"){
+      await page.getByTestId("route-replan").click();
+      await page.getByTestId("create-route-plan").click();
+      await expect(page.getByTestId("route-setup-dialog")).toBeHidden();
+      await expect(page.getByTestId(`route-dispatch-select-${fixture.id}`)).not.toBeChecked();
+      await expect(page.getByTestId(`route-dispatch-status-${fixture.id}`)).toHaveText("Not sent");
+      dispatchCalls.length=0;
+      failPlan=plannedRoutes[0].dispatchPlanId;
+      await page.getByTestId("dispatch-all-routes").evaluate(button=>{button.click();button.click();});
+      await expect(page.getByTestId(`route-dispatch-status-${fixture.id}`)).toContainText(/fail/i);
+      await expect(page.getByTestId(`route-dispatch-status-${fixture.viewer.id}`)).toContainText(/sent/i);
+      assert.deepEqual(dispatchCalls,plannedRoutes.map(plan=>plan.dispatchPlanId),
+        "A failed first send does not block later technicians or duplicate requests");
+      await page.getByTestId("dispatch-retry-failed").click();
+      await expect(page.getByTestId(`route-dispatch-status-${fixture.id}`)).toContainText(/sent/i);
+      assert.equal(dispatchCalls.length,3);
+      assert.equal(dispatchCalls[2],plannedRoutes[0].dispatchPlanId);
+      await page.screenshot({path:`${out}/bulk-dispatch-desktop.jpg`,fullPage:true});
+      assert.deepEqual(errors,[]);
+      console.log("Bulk-route UI passed: normal manager login, selected recipient scope, per-plan requests, already-sent skipping, partial failure, failed-only retry and phone-width layout. Provider/dispatch responses were simulated.");
+      return;
+    }
     await page.getByTestId("routing-technician-select").selectOption(fixture.viewer.id);
     await expect(page.getByText("Next stop",{exact:true})).toBeVisible();
     await expect(page.getByTestId(`route-stop-${plannedStops[0].id}`)).toHaveCount(0);
@@ -234,6 +299,7 @@ const assert = require("node:assert/strict");
     await page.screenshot({path:`${out}/desktop.jpg`,fullPage:true});
     await page.getByTestId("route-next-stop").click();
     await page.reload();
+    await reopenSavedPlanner();
     await expect(page.getByTestId("navigate-next-stop")).toBeVisible();
     await expect(page.getByText(`Stop 2 of ${plannedStops.length}`,{exact:true})).toBeVisible();
     await page.getByTestId(`route-stop-${body.ids[1]}`).click();
@@ -246,8 +312,11 @@ const assert = require("node:assert/strict");
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),"Phone page has no horizontal overflow");
     // Verify HTTPS target interception without launching an app or navigating away.
     let handoff;
-    await page.route("https://www.google.com/maps/dir/**",async route=>{handoff=route.request().url();await route.abort();});
-    await page.getByTestId("navigate-next-stop").click().catch(()=>{});
+    await page.route("https://www.google.com/maps/dir/**",async route=>{handoff=route.request().url();await route.fulfill({contentType:"text/html",body:"<!doctype html><title>Intercepted Maps handoff</title>"});});
+    await Promise.all([
+      page.waitForURL("https://www.google.com/maps/dir/**"),
+      page.getByTestId("navigate-next-stop").click(),
+    ]);
     await expect.poll(()=>handoff).toBeTruthy();
     const googleHandoff = new URL(handoff);
     assert.equal(googleHandoff.hostname,"www.google.com");
@@ -259,8 +328,9 @@ const assert = require("node:assert/strict");
     assert.equal(googleHandoff.searchParams.get("dir_action"),"navigate");
     assert.equal(googleHandoff.searchParams.has("origin"),false);
     assert.equal(googleHandoff.searchParams.has("waypoints"),false);
-    // A failed external navigation may leave an error page: refresh original route.
+    // Return from the fully settled simulated handoff, not a pending error navigation.
     await page.goto(`/projects/${fixture.projectId}/work-orders`);
+    await reopenSavedPlanner();
     await expect(page.getByTestId("navigate-next-stop")).toBeVisible();
     stale=true;
     await page.evaluate(()=>window.dispatchEvent(new Event("focus")));
@@ -298,10 +368,14 @@ const assert = require("node:assert/strict");
     await page.addInitScript(()=>Object.defineProperty(navigator,"userAgent",{get:()=>"Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)"}));
     await page.setViewportSize({width:390,height:844});
     await page.reload();
+    await reopenSavedPlanner();
     await expect(page.getByTestId("navigate-next-stop")).toHaveText(/Apple Maps/);
-    await page.route("https://maps.apple.com/**",async route=>{handoff=route.request().url();await route.abort();});
+    await page.route("https://maps.apple.com/**",async route=>{handoff=route.request().url();await route.fulfill({contentType:"text/html",body:"<!doctype html><title>Intercepted Maps handoff</title>"});});
     handoff=null;
-    await page.getByTestId("navigate-next-stop").click().catch(()=>{});
+    await Promise.all([
+      page.waitForURL("https://maps.apple.com/**"),
+      page.getByTestId("navigate-next-stop").click(),
+    ]);
     await expect.poll(()=>handoff).toMatch(/^https:\/\/maps\.apple\.com\/\?daddr=/);
     // Use the real built-in technician role without changing its permissions.
     const fieldRole=(await request("GET","/api/subroles")).find(role=>role.key==="field_technician");
@@ -331,6 +405,8 @@ const assert = require("node:assert/strict");
       await expect(technicianPage.getByText("ROUTE-FIELD-0",{exact:true})).toBeVisible();
       await expect(technicianPage.getByText("ROUTE-FIELD-1",{exact:true})).toBeVisible();
       await expect(technicianPage.getByText("ROUTE-FIELD-OPEN",{exact:true})).toBeVisible();
+      await expect(technicianPage.getByTestId("dispatch-all-routes")).toHaveCount(0);
+      await expect(technicianPage.getByTestId("dispatch-selected-routes")).toHaveCount(0);
       await technicianPage.screenshot({path:`${out}/technician-grid-phone.jpg`});
     }finally{
       await technician.close();

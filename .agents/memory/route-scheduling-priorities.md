@@ -20,6 +20,17 @@ other assigned work even after server-side visibility was corrected.
 
 **How to apply:** Allow optimization when any Scheduled orders exist in the filtered grid, ignoring other statuses. A shared warehouse origin applies independently to each technician. Printing one or all routes must keep each technician's stops separate and start each route on a new printed page.
 
+Bulk dispatch must preserve independent technician deliveries and explicit
+partial-success reporting, rather than treating several plans as one combined
+route or claiming an all-or-nothing send.
+
+**Why:** The user approved both Send all and Send selected. An individual stale
+or rejected plan should not obscure successful deliveries or prevent other
+eligible technicians from receiving their plans.
+
+**How to apply:** Reuse each plan's identity for retries, retain recipient-only
+access and original expiry, and retry failures without resending known successes.
+
 Warehouse starting-point choices must include only fixed warehouses with a
 configured address, never vehicle/mobile locations. Manual address entry remains
 available when no warehouse address is configured.

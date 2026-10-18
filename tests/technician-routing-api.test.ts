@@ -130,6 +130,11 @@ test("dispatch produces separate per-assignee routes; technician authorization c
       assert.equal((await instanceB.call("/dispatch",{planId:ownPlan.dispatchPlanId},"","admin")).status,200,
         "Send may reach a different process than planning");
       assert.equal((await send(ownPlan.dispatchPlanId)).status, 200);
+      const firstDispatch=(await pool.query("SELECT dispatched_at,expires_at FROM public.route_dispatches WHERE id=$1",[ownPlan.dispatchPlanId])).rows[0];
+      assert.equal((await send(ownPlan.dispatchPlanId)).status,200,"Retrying an uncertain bulk-send outcome reuses the same plan");
+      const retryDispatch=(await pool.query("SELECT dispatched_at,expires_at FROM public.route_dispatches WHERE id=$1",[ownPlan.dispatchPlanId])).rows[0];
+      assert.equal(retryDispatch.dispatched_at.getTime(),firstDispatch.dispatched_at.getTime(),"Retries do not move delivery time forward");
+      assert.equal(retryDispatch.expires_at.getTime(),firstDispatch.expires_at.getTime(),"Retries never renew expiry");
       assert.equal((await send(otherPlan.dispatchPlanId)).status, 200);
       const inbox = await received();
       assert.equal(inbox.status, 200);

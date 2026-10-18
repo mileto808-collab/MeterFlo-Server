@@ -44,6 +44,9 @@ type PlanningStop = RoutingResult["stops"][number] & {
   waitingMinutes: number;
 };
 type PlanningResult = Omit<RoutingResult, "stops"> & { stops: PlanningStop[] };
+type RouteDispatchState = { status: "sent" | "failed" | "not-sendable"; message: string };
+type RouteDispatchStateSet = { context: string; byAssignee: Record<string, RouteDispatchState> };
+type RouteSelectionState = { context: string; ids: string[] };
 const hasRoutePlanningMetadata = (route: RoutingResult): route is PlanningResult =>
   route.addressReviewVersion === 1 && Array.isArray(route.stops) && route.stops.every(stop => {
     const value = stop as PlanningStop;
@@ -199,6 +202,10 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
     reviews: AddressReview[]; tokensById: Record<string, string>;
   } & ({ request: PlanningRequest; dispatchId?: never } | { dispatchId: string; request?: never }) | null>(null);
   const [dispatchMessage, setDispatchMessage] = useState("");
+  const [dispatchStates, setDispatchStates] = useState<RouteDispatchStateSet>({ context: "", byAssignee: {} });
+  const [dispatchSelection, setDispatchSelection] = useState<RouteSelectionState>({ context: "", ids: [] });
+  const [dispatchSending, setDispatchSending] = useState(false);
+  const dispatchLockRef = useRef(false);
   const receivedUrl = `/api/projects/${projectId}/routing/dispatched`;
   const { data: origins, isLoading: originsLoading, isFetching: originsFetching, isError: originsError, error: originsQueryError, refetch: refetchOrigins } = useQuery<{ warehouses: OriginWarehouse[] }>({
     queryKey: ["/api/projects", projectId, "routing", "origins"],
@@ -490,6 +497,100 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
   const activeRouteEnded = !!activeRoute?.assigneeId && endedRouteIds.includes(activeRoute.assigneeId);
   const activeBundleExpired = !!result && (routeExpired(result) || result.routes?.some(route => routeExpired(route)));
   const selectedStop = currentRoute?.stops[activeIndex];
+  const dispatchContext = result ? JSON.stringify([
+    projectId,
+    result.fingerprint,
+    result.createdAt,
+    result.scopeIds,
+    result.routes?.map(route => [route.assigneeId, route.dispatchPlanId ?? null, route.stops.map(stop => stop.id)]),
+  ]) : "";
+  const currentDispatchStates: Record<string, RouteDispatchState> =
+    dispatchStates.context === dispatchContext ? dispatchStates.byAssignee : {};
+  const selectedDispatchIds: string[] = dispatchSelection.context === dispatchContext ? dispatchSelection.ids : [];
+  const hasDeviceOrigin = !!result?.routes?.some(route => !route.originAddress?.trim());
+  const canShowDispatchControls = !!result && !result.receivedDispatchId && user?.subroleKey !== "field_technician" && !hasDeviceOrigin;
+  const dispatchableRouteReason = (route: RoutingResult) => {
+    if (!route.dispatchPlanId) return "No dispatch plan ID is available.";
+    if (!route.stops.length) return "This route has no stops.";
+    if (!route.originAddress?.trim()) return "Device-origin routes cannot be sent; plan from an entered starting address.";
+    if (routeExpired(route) || (result && routeExpired(result))) return "This route plan has expired.";
+    if (result?.receivedDispatchId) return "Routes received from dispatch cannot be re-sent.";
+    if (staleMessage) return "This plan is stale and needs review before it can be sent.";
+    if (pendingReview) return "Address review is pending for this plan.";
+    if (!routeAccessValid) return "Route access has not been verified; retry validation or re-plan.";
+    return "";
+  };
+  const dispatchRoutesIndividually = async (routesToSend: RoutingResult[], routeResult: PlanningResult) => {
+    if (dispatchLockRef.current || !routesToSend.length) return;
+    dispatchLockRef.current = true;
+    setDispatchSending(true);
+    setBusy(true);
+    setDispatchMessage("");
+    const context = JSON.stringify([
+      projectId,
+      routeResult.fingerprint,
+      routeResult.createdAt,
+      routeResult.scopeIds,
+      routeResult.routes?.map(route => [route.assigneeId, route.dispatchPlanId ?? null, route.stops.map(stop => stop.id)]),
+    ]);
+    const updateStatus = (assigneeId: string, state: RouteDispatchState) => {
+      setDispatchStates(previous => ({
+        context,
+        byAssignee: { ...(previous.context === context ? previous.byAssignee : {}), [assigneeId]: state },
+      }));
+    };
+    try {
+      let stale = false;
+      try {
+        stale = await validateResult(routeResult);
+      } catch {
+        stale = true;
+      }
+      let sent = 0;
+      let failed = 0;
+      let notSendable = 0;
+      let alreadySent = 0;
+      for (const route of routesToSend) {
+        const assigneeId = route.assigneeId!;
+        if (currentDispatchStates[assigneeId]?.status === "sent") {
+          alreadySent += 1;
+          continue;
+        }
+        const reason = dispatchableRouteReason(route) ||
+          (stale ? "Plan is stale or access could not be verified. Review and re-plan before sending." : "");
+        if (reason) {
+          updateStatus(assigneeId, { status: "not-sendable", message: reason });
+          notSendable += 1;
+          continue;
+        }
+        try {
+          const response = await fetch(`/api/projects/${projectId}/routing/dispatch`, {
+            method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ planId: route.dispatchPlanId }),
+          });
+          if (!response.ok) throw new Error(await errorMessage(response));
+          updateStatus(assigneeId, { status: "sent", message: `Sent to ${route.assigneeName}.` });
+          sent += 1;
+          void refreshReceived();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Route could not be dispatched.";
+          updateStatus(assigneeId, { status: "failed", message });
+          failed += 1;
+        }
+      }
+      const skippedCount = Math.max(0, (routeResult.routes?.length ?? routesToSend.length) - routesToSend.length) +
+        Math.max(0, routesToSend.length - sent - failed - notSendable - alreadySent);
+      const summary = `${sent} sent · ${failed} failed · ${notSendable} not sendable · ${alreadySent} already sent${skippedCount ? ` · ${skippedCount} skipped (outside this send)` : ""}.`;
+      const successInstruction = sent
+        ? " Technicians can open sent routes under Routes from dispatch in this project's route planner until expiry, including after a server restart. Refreshed address matches may require review."
+        : "";
+      setDispatchMessage(`This send: ${summary}${successInstruction}`);
+    } finally {
+      dispatchLockRef.current = false;
+      setDispatchSending(false);
+      setBusy(false);
+    }
+  };
   const openDispatchedRoute = async (id: string, tokensById: Record<string,string> = {}) => {
     setBusy(true); setValidationMessage("");
     try {
@@ -519,20 +620,8 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
     } finally { setBusy(false); }
   };
   const dispatchCurrentRoute = async () => {
-    if (!currentRoute?.dispatchPlanId || !result) return;
-    setBusy(true); setDispatchMessage("");
-    try {
-      if (await validateResult(result)) throw new Error("Review and re-plan before dispatching.");
-      const response = await fetch(`/api/projects/${projectId}/routing/dispatch`, {
-        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planId: currentRoute.dispatchPlanId }),
-      });
-      if (!response.ok) throw new Error(await errorMessage(response));
-      setDispatchMessage(`Sent to ${currentRoute.assigneeName}. They can open it under Routes from dispatch in this project's route planner until expiry, including after a server restart. Refreshed address matches may require review.`);
-      void refreshReceived();
-    } catch (error) {
-      setDispatchMessage(error instanceof Error ? error.message : "Route could not be dispatched.");
-    } finally { setBusy(false); }
+    if (!currentRoute || !result) return;
+    await dispatchRoutesIndividually([currentRoute], result);
   };
   useEffect(() => {
     if (!activeRoute) return;
@@ -648,14 +737,42 @@ export function RoutePlanner({ projectId, projectName, timezone, defaultServiceM
             <p className="text-xs text-muted-foreground">Each route is planned and sequenced independently for its assigned technician. Starting point: {currentRoute?.originAddress?.trim() || `${currentRoute?.origin.lat}, ${currentRoute?.origin.lng}`} · departure {currentRoute ? new Intl.DateTimeFormat(undefined, { timeZone: timezone, dateStyle: "medium", timeStyle: "short" }).format(new Date(currentRoute.departureAt)) : "—"}.</p>
           </div>
           <div className="mt-3 flex flex-col gap-2 sm:mt-0 sm:flex-row">
-            {!result.receivedDispatchId && user?.subroleKey !== "field_technician" && <Button type="button" onClick={() => void dispatchCurrentRoute()} disabled={busy || !currentRoute?.dispatchPlanId || !currentRoute?.originAddress || !routeAccessValid || !!staleMessage || activeBundleExpired} data-testid="dispatch-current-route">Send to {currentRoute?.assigneeName}</Button>}
+            {canShowDispatchControls && <Button type="button" onClick={() => void dispatchCurrentRoute()} disabled={busy || dispatchSending || !currentRoute?.dispatchPlanId || !currentRoute?.stops.length || !routeAccessValid || !!staleMessage || activeBundleExpired} data-testid="dispatch-current-route">Send to {currentRoute?.assigneeName}</Button>}
             <Button type="button" variant="outline" onClick={() => void printRoutes(false)} disabled={!!staleMessage || !!pendingReview || !routeAccessValid || activeBundleExpired} data-testid="route-print-current">Print this route</Button>
             <Button type="button" variant="outline" onClick={() => void printRoutes(true)} disabled={!!staleMessage || !!pendingReview || !routeAccessValid || activeBundleExpired} data-testid="route-print-all">Print all technician routes</Button>
           </div>
         </section>
-        {!result.receivedDispatchId && user?.subroleKey !== "field_technician" && <p className="text-xs text-muted-foreground">Dispatch sends only this technician's route and requires an entered starting address. Device-location origins cannot be shared. Shared routes expire with the plan and are cleared on server restart.</p>}
+        {canShowDispatchControls && <section className="space-y-3 rounded-xl border bg-card p-4" aria-label="Send technician routes" data-testid="route-dispatch-controls">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div><h2 className="text-sm font-semibold">Send routes to technicians</h2><p className="text-xs text-muted-foreground">Each technician receives a separate appointment-aware route. Routes are checked before dispatch and expire with the plan.</p></div>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="outline" onClick={() => void dispatchRoutesIndividually(result.routes!, result)} disabled={busy || dispatchSending || !result.routes!.length || !routeAccessValid || !!staleMessage || !!pendingReview || activeBundleExpired} data-testid="dispatch-all-routes">Send all routes</Button>
+              <Button type="button" onClick={() => void dispatchRoutesIndividually(result.routes!.filter(route => selectedDispatchIds.includes(route.assigneeId!)), result)} disabled={busy || dispatchSending || selectedDispatchIds.length === 0 || !routeAccessValid || !!staleMessage || !!pendingReview || activeBundleExpired} data-testid="dispatch-selected-routes">Send selected routes</Button>
+              <Button type="button" variant="ghost" onClick={() => void dispatchRoutesIndividually(result.routes!.filter(route => currentDispatchStates[route.assigneeId!]?.status === "failed"), result)} disabled={busy || dispatchSending || !result.routes!.some(route => currentDispatchStates[route.assigneeId!]?.status === "failed")} data-testid="dispatch-retry-failed">Retry failed</Button>
+            </div>
+          </div>
+          <fieldset disabled={dispatchSending || busy} className="space-y-2 border-t pt-3" aria-label="Select routes to send">
+            <legend className="sr-only">Select technician routes to send</legend>
+            {result.routes!.map(route => <label key={route.assigneeId} className="flex min-h-11 cursor-pointer items-start gap-3 rounded-md border border-transparent px-2 py-2 hover:bg-muted/40">
+              <input type="checkbox" className="mt-1 h-4 w-4 accent-primary" checked={selectedDispatchIds.includes(route.assigneeId!)}
+                onChange={event => setDispatchSelection(previous => {
+                  const selected = previous.context === dispatchContext ? previous.ids : [];
+                  return { context: dispatchContext, ids: event.target.checked ? [...new Set([...selected, route.assigneeId!])] : selected.filter(id => id !== route.assigneeId) };
+                })}
+                aria-label={`Select ${route.assigneeName}'s route`} data-testid={`route-dispatch-select-${route.assigneeId}`} />
+              <span className="min-w-0 flex-1"><span className="block text-sm font-medium">{route.assigneeName} · {route.stops.length} stops</span>
+                <span className="block break-words text-xs text-muted-foreground" role="status" data-testid={`route-dispatch-status-${route.assigneeId}`}>
+                  {currentDispatchStates[route.assigneeId!]
+                    ? `${currentDispatchStates[route.assigneeId!].status === "not-sendable" ? "Not sendable" : currentDispatchStates[route.assigneeId!].status === "sent" ? "Sent" : "Failed"} · ${currentDispatchStates[route.assigneeId!].message}`
+                    : dispatchableRouteReason(route) ? `Not sendable · ${dispatchableRouteReason(route)}` : "Not sent"}
+                </span>
+              </span>
+            </label>)}
+          </fieldset>
+          {dispatchMessage && <p role="status" className="rounded-md border bg-muted/30 p-3 text-sm" data-testid="dispatch-message">{dispatchMessage}</p>}
+          <p className="text-xs text-muted-foreground">Device-location origins cannot be shared. A successful send is never repeated by Send all; failed routes can be retried without resending successful plans.</p>
+        </section>}
         {result.receivedDispatchId && <p role="status" className="rounded-lg border p-3 text-sm">Route from dispatch · only your assigned stops are included. Address confirmations and scheduling assumptions apply only to this plan.</p>}
-        {dispatchMessage && <p role="status" className="rounded-lg border p-3 text-sm" data-testid="dispatch-message">{dispatchMessage}</p>}
         <div className="grid gap-3 sm:grid-cols-3"><Card><CardContent className="p-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Ordered stops · {currentRoute?.assigneeName}</p><p className="mt-1 text-2xl font-semibold">{currentRoute?.stops.length ?? 0}</p><p className="text-xs text-muted-foreground">{result.excluded.length} excluded across this plan</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Road travel estimate</p><p className="mt-1 text-2xl font-semibold">{Math.round((currentRoute?.totalTravelMeters ?? 0) / 1609.34 * 10) / 10} mi</p><p className="text-xs text-muted-foreground">About {Math.round((currentRoute?.totalTravelSeconds ?? 0) / 60)} min · provider estimate, no live traffic claim</p></CardContent></Card><Card><CardContent className="p-4"><p className="text-xs uppercase tracking-wide text-muted-foreground">Planning assumptions</p><p className="mt-1 font-medium">{currentRoute?.serviceMinutes} min route default · {currentRoute?.toleranceMinutes} min tolerance</p><p className="text-xs text-muted-foreground">Project timezone: {timezone}</p></CardContent></Card></div>
         {visibleWarnings.length > 0 && <div className="space-y-1 rounded-xl border border-amber-200 bg-amber-50/60 p-3 text-sm">{visibleWarnings.map((warning, index) => <p key={index} className="flex gap-2"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-800" />{warning}</p>)}</div>}
         <div className="flex flex-wrap items-center justify-between gap-3"><div className="inline-flex rounded-lg border bg-muted/40 p-1" role="group" aria-label="Route display"><Button size="sm" variant={mode === "list" ? "default" : "ghost"} onClick={() => setMode("list")} data-testid="route-mode-list"><Route className="mr-1.5 h-4 w-4" />List</Button><Button size="sm" variant={mode === "map" ? "default" : "ghost"} onClick={() => setMode("map")} data-testid="route-mode-map"><Map className="mr-1.5 h-4 w-4" />Map</Button><Button size="sm" variant={mode === "both" ? "default" : "ghost"} onClick={() => setMode("both")} data-testid="route-mode-both">Both</Button></div><Button variant="ghost" size="sm" onClick={toggleActiveRouteEnded} disabled={!activeRoute}>{activeRouteEnded ? "Resume this route" : "End this route"}</Button></div>
