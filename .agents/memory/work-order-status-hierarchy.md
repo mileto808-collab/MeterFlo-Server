@@ -20,3 +20,9 @@ Sub-statuses use their own configured color alongside the parent's separate colo
 **Why:** The user requested the configured Critical color in both places; inheritance concerns business rules, not replacing either status's visual identity.
 
 **How to apply:** Keep parent and sub-status colors independent, with readable labels in light and dark themes.
+
+Custom business rules must use permanent status/sub-status identities rather than editable display names.
+
+**Why:** The user explicitly requires renaming custom statuses not to break project-specific business-rule programming.
+
+**How to apply:** Treat names as labels. Preserve existing authoritative core codes and relationships; introduce or use immutable IDs/keys for custom rule references without rewriting historical evidence.

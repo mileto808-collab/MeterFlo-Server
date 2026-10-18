@@ -45,3 +45,4 @@
 - [Project deletion scope](project-deletion-scope.md) — delete all project-owned inventory even when disabled; transact database cleanup and expose file recovery.
 - [Access lock policy](access-lock-policy.md) — site/project user lockout preserves data and authorized recovery; it is not background-job shutdown or offline data erasure.
 - [Administrative Settings navigation](settings-admin-navigation.md) — maintenance belongs in System and audit history in Security, not separate sidebar entries; retain delegated access.
+- [Project trouble codes](project-trouble-code-policy.md) — core choices always available, flat project-only custom codes, and permanent identities for rename-safe business rules.
