@@ -19,7 +19,7 @@ Keep persistent page controls outside a bounded content scroller when an ancesto
 
 **Why:** Inventory's sticky styling passed a static visual check but scrolled off-screen in the authenticated layout; its overflow ancestor was not the surface the visitor was scrolling.
 
-**How to apply:** Verify that real content scrolls and controls retain their viewport position on desktop and phone. Check the scrolled screenshot for content leaking above or behind the header, not just its bounding box.
+**How to apply:** Verify that real content scrolls and controls retain their viewport position on desktop and phone. Check the scrolled screenshot for content leaking above or behind the header, not just its bounding box. After resizing a scrolled page from tall to short, compare persistent titles against the bottom of the app header, not merely against viewport zero: an on-screen title can still be obscured by sticky app chrome.
 
 Start responsive measurements when the actual results element attaches, not
 only when the selected-tab state changes.

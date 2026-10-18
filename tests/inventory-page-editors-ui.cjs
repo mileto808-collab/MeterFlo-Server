@@ -10,7 +10,7 @@ async function main() {
     for (const size of (process.env.INVENTORY_EDITOR_SIZES || "desktop,phone,landscape").split(",")) {
       const viewport = size === "desktop" ? { width: 1280, height: 900 }
         : size === "phone" ? { width: 390, height: 844 } : { width: 844, height: 390 };
-      const context = await browser.newContext({ baseURL: `https://${process.env.REPLIT_DEV_DOMAIN}`,
+      const context = await browser.newContext({ baseURL: require("./support/workspace-ui-base.cjs")(),
         viewport, isMobile: size !== "desktop", hasTouch: size !== "desktop" });
       const login = await context.request.post("/api/auth/local/login", { data: { username: fixture.username, password: fixture.password } });
       assert.equal(login.status(), 200);
@@ -70,10 +70,10 @@ async function main() {
       await page.getByRole("button", { name: "Add location", exact: true }).click();
       await checkEditor("Add location");
       await editor.getByLabel("Name", { exact: true }).fill(`Page warehouse ${size}`);
-      await editor.getByLabel("Street address", { exact: true }).fill("Disposable fixture only");
+      await editor.getByRole("textbox", { name: "Street address", exact: true }).fill("Disposable fixture only");
       await save.click();
       await expect(editor.getByRole("alert")).toContainText("Code");
-      await editor.getByLabel("Code", { exact: true }).fill(`PAGE-${size}`);
+      await editor.getByRole("textbox", { name: "Code", exact: true }).fill(`PAGE-${size}`);
       await back.click();
       const warning = page.getByRole("dialog", { name: "Unsaved inventory details", exact: true });
       await expect(warning).toBeVisible();

@@ -8,7 +8,7 @@ async function main() {
   const fixture = JSON.parse(await fs.readFile("/tmp/meterflo-inventory-ui-fixture.json", "utf8"));
   const browser = await chromium.launch({ executablePath: "/repl/tools/bin/chromium", args: ["--no-sandbox"] });
   try {
-    const context = await browser.newContext({ baseURL: `https://${process.env.REPLIT_DEV_DOMAIN}`, viewport: { width: 390, height: 720 }, isMobile: true, hasTouch: true });
+    const context = await browser.newContext({ baseURL: require("./support/workspace-ui-base.cjs")(), viewport: { width: 390, height: 720 }, isMobile: true, hasTouch: true });
     assert.equal((await context.request.post("/api/auth/local/login", { data: fixture })).status(), 200);
     const endpoint = `/api/projects/${fixture.projectId}/inventory`;
     const before = await (await context.request.get(endpoint)).json();
@@ -56,15 +56,15 @@ async function main() {
         const box = await create.boundingBox();
         assert.ok(box.width >= 36 && box.height >= 36, "Create action matches catalog icon sizing");
         await create.click();
-        await expect(page.getByRole("dialog")).toBeVisible();
-        await page.getByRole("dialog").getByRole("button", { name: "Cancel", exact: true }).click();
-        await expect(page.getByRole("dialog")).toBeHidden();
+        await expect(page.getByTestId("inventory-page-editor")).toBeVisible();
+        await page.getByTestId("inventory-editor-back").click();
+        await expect(page.getByTestId("inventory-page-editor")).toBeHidden();
         await page.setViewportSize({ width: 844, height: 390 });
         await expect(create).toBeVisible();
         await create.click();
-        await expect(page.getByRole("dialog")).toBeVisible();
-        await page.getByRole("dialog").getByRole("button", { name: "Cancel", exact: true }).click();
-        await expect(page.getByRole("dialog")).toBeHidden();
+        await expect(page.getByTestId("inventory-page-editor")).toBeVisible();
+        await page.getByTestId("inventory-editor-back").click();
+        await expect(page.getByTestId("inventory-page-editor")).toBeHidden();
         await page.screenshot({ path: `${out}/${kind}-landscape-create-action.jpg` });
         await page.setViewportSize({ width: 390, height: 720 });
         await page.screenshot({ path: `${out}/${kind}-create-action.jpg` });
@@ -95,16 +95,19 @@ async function main() {
       await toggle.click();
     }
     await page.getByTestId("inventory-mobile-menu").click();
-    await page.getByRole("menuitem", { name: "Build an order draft", exact: true }).click();
-    await expect(page.getByRole("dialog", { name: "Build an order draft", exact: true })).toBeVisible();
-    await page.keyboard.press("Escape");
+    await page.getByTestId("inventory-mobile-menu-item-orders").click();
+    const orderTools = page.getByTestId("inventory-mobile-tools-orders-toggle");
+    if (await orderTools.getAttribute("aria-expanded") === "false") await orderTools.click();
+    await page.getByRole("button", { name: "Build an order draft", exact: true }).click();
+    await expect(page.getByTestId("inventory-page-editor")).toBeVisible();
+    await page.getByTestId("inventory-editor-back").click();
     await page.setViewportSize({ width: 1440, height: 1000 });
     const desktopCreate = page.getByTestId("inventory-orders-subheader").getByRole("button", { name: "Build an order draft", exact: true });
     await expect(desktopCreate).toHaveText("Build an order draft");
     await desktopCreate.click();
-    await expect(page.getByRole("dialog", { name: "Build an order draft", exact: true })).toBeVisible();
-    await page.getByRole("dialog").getByRole("button", { name: "Cancel", exact: true }).click();
-    await expect(page.getByRole("dialog")).toBeHidden();
+    await expect(page.getByTestId("inventory-page-editor")).toBeVisible();
+    await page.getByTestId("inventory-editor-back").click();
+    await expect(page.getByTestId("inventory-page-editor")).toBeHidden();
     await expect(page.getByRole("tab", { name: "Locations", exact: true })).toBeVisible();
     await page.getByRole("tab", { name: "Locations", exact: true }).click();
     await expect(page.getByRole("searchbox", { name: "Search locations", exact: true })).toBeVisible();

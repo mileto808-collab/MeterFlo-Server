@@ -6,7 +6,7 @@ const expect = baseExpect.configure({ timeout: 20000 });
 async function main() {
   const f = JSON.parse(await fs.readFile("/tmp/meterflo-inventory-ui-fixture.json", "utf8"));
   const browser = await chromium.launch({ executablePath: "/repl/tools/bin/chromium", args: ["--no-sandbox"] });
-  const baseURL = `https://${process.env.REPLIT_DEV_DOMAIN}`, root = `/api/projects/${f.projectId}`;
+  const baseURL = require("./support/workspace-ui-base.cjs")(), root = `/api/projects/${f.projectId}`;
   const admin = await browser.newContext({ baseURL, viewport: { width: 1280, height: 900 }, hasTouch: true });
   const member = await browser.newContext({ baseURL });
   const request = async (context, method, path, data, status = 200) => {
@@ -59,6 +59,13 @@ async function main() {
       const menu = page.getByTestId("inventory-mobile-menu");
       if (await menu.isVisible()) { await menu.click(); await page.getByRole("menuitem", { name: "Removed Equipment", exact: true }).click(); }
       else await page.getByRole("tab", { name: "Removed Equipment", exact: true }).click();
+      const toggle = page.getByTestId("inventory-mobile-tools-returns-toggle");
+      if (await toggle.isVisible() && await toggle.getAttribute("aria-expanded") === "false") await toggle.click();
+      await expect(page.getByTestId("inventory-returns-action-toolbar").getByRole("button", { name: "Removal rules", exact: true })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Removal rules", exact: true })).toHaveCount(1);
+      const titleBounds = await page.getByTestId("inventory-returns-subheader").getByRole("heading").boundingBox();
+      const actionBounds = await page.getByRole("button", { name: "Removal rules", exact: true }).boundingBox();
+      assert.ok(actionBounds.y >= titleBounds.y + titleBounds.height, "Removal rules sit below the section title");
       await page.getByRole("button", { name: "Removal rules", exact: true }).click();
       const dialog = page.getByRole("dialog");
       await expect(dialog).toContainText("All removed systems must return to warehouse");
@@ -120,6 +127,8 @@ async function main() {
     await page.getByRole("menuitem", { name: "Removed Equipment", exact: true }).click();
     await page.getByLabel("Inspection reason", { exact: true }).fill("Retained inspection note");
     const releaseRule = s.removalRules.find(r => r.stage === "warehouse" && r.outcome === "released");
+    const rulesTools = page.getByTestId("inventory-mobile-tools-returns-toggle");
+    if (await rulesTools.isVisible() && await rulesTools.getAttribute("aria-expanded") === "false") await rulesTools.click();
     await page.getByRole("button", { name: "Removal rules", exact: true }).click();
     const manager = page.getByRole("dialog");
     await manager.locator("article").filter({ hasText: releaseRule.name }).getByRole("button", { name: "Edit", exact: true }).click();

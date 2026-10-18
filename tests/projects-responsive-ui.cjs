@@ -8,7 +8,7 @@ const XLSX = require("xlsx");
 async function main() {
   const fixture = JSON.parse(await fs.readFile("/tmp/meterflo-inventory-ui-fixture.json", "utf8"));
   const browser = await chromium.launch({ executablePath: "/repl/tools/bin/chromium", args: ["--no-sandbox"] });
-  const context = await browser.newContext({ baseURL: `https://${process.env.REPLIT_DEV_DOMAIN}`,
+  const context = await browser.newContext({ baseURL: require("./support/workspace-ui-base.cjs")(),
     viewport: { width: 1440, height: 1000 }, hasTouch: true, acceptDownloads: true });
   const prefix = `projects-ui-${crypto.randomUUID().slice(0, 8)}`, owned = [];
   const out = "generated-artifacts/projects-responsive";
@@ -164,7 +164,7 @@ async function main() {
     assert.ok((await context.request.put(`/api/subroles/${fixture.viewerRoleId}/permissions`, { data: {
       permissions: ["nav.projects", "projects.view", "workOrders.view"],
     } })).ok());
-    const viewer = await browser.newContext({ baseURL: `https://${process.env.REPLIT_DEV_DOMAIN}`,
+    const viewer = await browser.newContext({ baseURL: require("./support/workspace-ui-base.cjs")(),
       viewport: { width: 390, height: 844 }, hasTouch: true });
     assert.equal((await viewer.request.post("/api/auth/local/login", { data: fixture.viewer })).status(), 200);
     const viewerPage = await viewer.newPage();

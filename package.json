@@ -66,6 +66,8 @@
     "test:inventory-stock-layout:browser": "node tests/inventory-stock-layout-ui.cjs",
     "test:inventory-stock-paging:browser": "node tests/inventory-stock-paging-ui.cjs",
     "test:projects-responsive:browser": "node tests/projects-responsive-ui.cjs",
+    "test:project-configuration:browser": "node tests/project-configuration-ui.cjs",
+    "test:project-workspace:acceptance": "npm run build && node tests/support/project-workspace-sandbox.mjs",
     "test:inventory-events": "tsx --test tests/inventory-events.test.ts",
     "test:inventory-live:browser": "node tests/inventory-live-ui.cjs",
     "test:inventory-stock-serials:browser": "node tests/inventory-stock-serial-ui.cjs",

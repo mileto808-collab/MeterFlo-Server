@@ -7,7 +7,7 @@ expect.configure({ timeout: 20000 });
 async function main() {
   const fixture = JSON.parse(await fs.readFile("/tmp/meterflo-inventory-ui-fixture.json", "utf8"));
   const browser = await chromium.launch({ executablePath: "/repl/tools/bin/chromium", args: ["--no-sandbox"] });
-  const baseURL = `https://${process.env.REPLIT_DEV_DOMAIN}`, endpoint = `/api/projects/${fixture.projectId}/inventory`;
+  const baseURL = require("./support/workspace-ui-base.cjs")(), endpoint = `/api/projects/${fixture.projectId}/inventory`;
   const run = crypto.randomUUID().slice(0, 8);
   const admin = await browser.newContext({ baseURL });
   assert.equal((await admin.request.post("/api/auth/local/login", { data: fixture })).status(), 200);
@@ -45,6 +45,13 @@ async function main() {
       const showTools = async () => {
         const header = page.getByTestId("inventory-locations-subheader");
         await expect(header).toBeVisible();
+        const toggle = page.getByTestId("inventory-mobile-tools-locations-toggle");
+        if (await toggle.isVisible() && await toggle.getAttribute("aria-expanded") === "false") await toggle.click();
+        await expect(page.getByTestId("inventory-locations-action-toolbar").getByRole("button", { name: "Manage location types", exact: true })).toBeVisible();
+        await expect(page.getByRole("button", { name: "Manage location types", exact: true })).toHaveCount(1);
+        const heading = await header.getByRole("heading", { name: "Warehouses & vehicles", exact: true }).boundingBox();
+        const action = await manage().boundingBox();
+        assert.ok(action.y >= heading.y + heading.height, "Configuration actions sit below the section title");
       };
       const manager = () => page.getByTestId("inventory-location-types-manager");
       const editor = () => page.getByTestId("inventory-page-editor");

@@ -1243,7 +1243,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     } });
   };
 
-  return <main ref={inventoryMainRef} className="inventory-workspace-shell relative mx-auto flex h-[calc(100dvh-72px)] min-h-0 w-full max-w-7xl flex-col overflow-hidden p-2 sm:p-4 md:p-7" data-testid="inventory-workspace">
+  return <main ref={inventoryMainRef} className={`inventory-workspace-shell relative mx-auto flex h-[calc(100dvh-72px)] min-h-0 w-full max-w-7xl flex-col overflow-hidden p-2 sm:p-4 md:p-7 ${["locations", "returns"].includes(inventoryTab) ? "[@media(max-height:500px)]:pb-2" : ""}`} data-testid="inventory-workspace">
     <div
       ref={editorHostRef}
       className={inlineEditorOpen ? "absolute inset-0 z-30" : "hidden"}
@@ -1440,7 +1440,9 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
         </TabsList>
       </div>
 
-    <div className={`min-h-0 flex-1 ${["orders", "stock", "items", "vendors", "categories", "locations", "exceptions", "counts", "returns", "activity"].includes(inventoryTab) ? "flex flex-col overflow-hidden" : "space-y-5 overflow-y-auto overscroll-contain pb-8 pr-1"}`} data-testid="inventory-scroll-content" role="region" aria-label="Inventory content" tabIndex={0}>
+    {/* Preserve the existing navigation policy, but let these toolbar surfaces
+        scroll into view when that navigation leaves very little desktop height. */}
+    <div className={`min-h-0 flex-1 ${["locations", "returns"].includes(inventoryTab) ? "flex flex-col overflow-y-auto overscroll-contain" : ["orders", "stock", "items", "vendors", "categories", "exceptions", "counts", "activity"].includes(inventoryTab) ? "flex flex-col overflow-hidden" : "space-y-5 overflow-y-auto overscroll-contain pb-8 pr-1"}`} data-testid="inventory-scroll-content" role="region" aria-label="Inventory content" tabIndex={0}>
     {!hasAny && <Alert hidden={["orders", "stock", "items", "vendors", "categories"].includes(inventoryTab)}><Boxes className="h-4 w-4" /><AlertTitle>Set up the first stock location</AlertTitle><AlertDescription>Add a warehouse or service vehicle, then add catalog items and begin receiving meters.</AlertDescription></Alert>}
 
       <TabsContent value="stock" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -1456,9 +1458,9 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
             { onSuccess: () => onSuccess(), onError: error => onError(error instanceof Error ? error : new Error("Location type could not be saved.")) },
           )} /> :
         <InventoryRecordsWorkspace kind="locations" title="Warehouses & vehicles" description="Access is enforced by the project inventory service for every operation." dataset={locationsDataset} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
-          persistentHeaderAction={(canManageLocationTypes || can("inventory.maintain")) && <div className="flex shrink-0 items-center gap-2">
-            {canManageLocationTypes && <Button className="h-9 px-2.5 sm:px-3" size="sm" variant="outline" aria-label="Manage location types" title="Manage location types" onClick={() => setLocationTypesManagerOpen(true)}><span className="sm:hidden">Types</span><span className="hidden sm:inline">Manage location types</span></Button>}
+          headerAction={(canManageLocationTypes || can("inventory.maintain")) && <div className="flex flex-wrap items-center gap-1.5">
             {canManageLocationTypes && can("inventory.maintain") && <Button className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" size="sm" aria-label="Add location" title="Add location" onClick={() => openResource("warehouse")}><Plus className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Add location</span></Button>}
+            {canManageLocationTypes && <Button className="h-9 px-2.5 sm:px-3" size="sm" variant="outline" aria-label="Manage location types" title="Manage location types" onClick={() => setLocationTypesManagerOpen(true)}><span className="sm:hidden">Types</span><span className="hidden sm:inline">Manage location types</span></Button>}
           </div>}
           renderRow={row => { const warehouse = warehouses.find(value => value.id === row.id); if (!warehouse) return null;
             const assigned = data.users.find(user => user.id === warehouse.assignedUserId)?.username ?? (warehouse.assignedUserId ? inventoryActorLabel(warehouse.assignedUserId, data.actors ?? data.users) : "None");
@@ -1977,7 +1979,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           </Alert>;
         })}
         <InventoryRecordsWorkspace kind="returns" title="Removed Equipment" description="Returned systems and modules enter quarantine first. Release to usable inventory only after inspection." dataset={returnsDataset} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
-          persistentHeaderAction={<RemovalRulesManager state={state} authorized={can("inventory.manageRemovalRules")} post={(action, payload, operationId) => command.mutateAsync({ action, data: payload, operationId })} />}
+          headerAction={<RemovalRulesManager state={state} authorized={can("inventory.manageRemovalRules")} post={(action, payload, operationId) => command.mutateAsync({ action, data: payload, operationId })} />}
           renderRow={row => { const returned = state.returns.find(value => value.id === row.id); if (!returned) return null;
             return <article className="flex min-w-0 flex-col justify-between gap-3 rounded-md border bg-card px-3 py-3 sm:flex-row sm:items-start sm:px-4">
               <div className="min-w-0"><div className="flex flex-wrap items-center gap-2 font-medium"><span>{returned.equipment === "system" ? "System" : "Module"}</span><span className="break-all font-mono text-sm">{returned.serial}</span><Badge variant={returned.status === "released" ? "default" : "outline"}>{returned.status}</Badge></div>

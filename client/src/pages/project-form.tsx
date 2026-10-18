@@ -11,16 +11,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import type { Project, User, ServiceTypeRecord } from "@shared/schema";
-import { ArrowLeft, Save, Loader2, Globe, Clock, Users, X, CalendarDays, Plus, Wand2, Zap, Check, Copy, Scan } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Globe, Clock, Users, X, CalendarDays, Plus, Wand2, Zap, Copy, Scan, Settings2, ClipboardList, CalendarClock, Cable } from "lucide-react";
 import type { ProjectHoliday } from "@shared/schema";
 import { Checkbox } from "@/components/ui/checkbox";
 import { usePermissions } from "@/hooks/usePermissions";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { getReadingPrecision } from "@shared/reading-precision";
 import { getProjectEquipmentVisibility } from "@shared/project-equipment-scope";
 import { WorkOrderSubStatusManager } from "@/components/work-order-sub-statuses/work-order-sub-status-manager";
@@ -71,14 +72,22 @@ const projectFormSchema = z.object({
   searchShowHidScanner: z.boolean().optional().default(true),
   systemReadingDecimalPlaces: z.number().int().min(0).max(6).default(3),
   moduleReadingDecimalPlaces: z.number().int().min(0).max(6).default(3),
-}).refine((data) => {
-  if (data.operationalHoursEnabled) {
-    return data.operationalHoursStart && data.operationalHoursEnd;
+}).superRefine((data, context) => {
+  if (!data.operationalHoursEnabled) return;
+  if (!data.operationalHoursStart) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Both start and end times are required when operational hours are enabled",
+      path: ["operationalHoursStart"],
+    });
   }
-  return true;
-}, {
-  message: "Both start and end times are required when operational hours are enabled",
-  path: ["operationalHoursStart"],
+  if (!data.operationalHoursEnd) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Both start and end times are required when operational hours are enabled",
+      path: ["operationalHoursEnd"],
+    });
+  }
 });
 
 type ProjectFormValues = z.infer<typeof projectFormSchema>;
@@ -93,14 +102,100 @@ export default function ProjectForm() {
   const { hasPermission, isLoading: permissionsLoading } = usePermissions();
   const canConfigureReadingPrecision = hasPermission("projects.readingPrecision");
   const canManageSubStatuses = hasPermission("projects.manageSubStatuses");
+  const isMobile = useIsMobile();
+  type ProjectSection = "details" | "work-orders" | "schedule" | "people" | "integrations";
+  type WorkOrderSection = "wizard" | "search" | "service-types" | "sub-statuses";
+  const [activeSection, setActiveSection] = useState<ProjectSection>("details");
+  const [activeWorkOrderSection, setActiveWorkOrderSection] = useState<WorkOrderSection>("wizard");
+  const [focusAfterSectionChange, setFocusAfterSectionChange] = useState<keyof ProjectFormValues | null>(null);
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  const sections = [
+    { id: "details" as const, label: "Details", icon: Settings2 },
+    { id: "work-orders" as const, label: "Work Orders", icon: ClipboardList },
+    { id: "schedule" as const, label: "Schedule", icon: CalendarClock },
+    ...(isEditing ? [
+      { id: "people" as const, label: "People", icon: Users },
+      { id: "integrations" as const, label: "Integrations", icon: Cable },
+    ] : []),
+  ];
+  const workOrderSections = [
+    { id: "wizard" as const, label: "Wizard" },
+    { id: "search" as const, label: "Search" },
+    ...(isEditing ? [
+      { id: "service-types" as const, label: "Service types" },
+      { id: "sub-statuses" as const, label: "Sub-statuses" },
+    ] : []),
+  ];
+
+  useEffect(() => {
+    if (!sections.some(section => section.id === activeSection)) setActiveSection("details");
+  }, [isEditing]);
+  useEffect(() => {
+    if (!workOrderSections.some(section => section.id === activeWorkOrderSection)) setActiveWorkOrderSection("wizard");
+  }, [isEditing]);
 
   const { data: project, isLoading: projectLoading } = useQuery<Project>({
     queryKey: ["/api/projects", id],
     enabled: isEditing,
   });
 
+  useEffect(() => {
+    const workspace = workspaceRef.current;
+    if (!workspace || permissionsLoading || (isEditing && projectLoading)) return;
+    const host = workspace.closest("main");
+    const previousHostStyle = host ? {
+      height: host.style.height, overflow: host.style.overflow, flex: host.style.flex,
+    } : null;
+    const previousDocumentOverflow = document.documentElement.style.overflow;
+    const previousBodyOverflow = document.body.style.overflow;
+    // This screen owns its content scroller. The sidebar may be taller than a
+    // short window, but must not make the document scroll our persistent title.
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    const fit = () => {
+      if (window.scrollY || window.scrollX) window.scrollTo(0, 0);
+      const viewport = window.visualViewport;
+      const height = viewport?.height ?? window.innerHeight;
+      // Measure the layout origin, not a position shifted by an ancestor's
+      // scroll. Otherwise resizing a previously scrolled page can grow the
+      // workspace under the sticky app header and hide its title.
+      const top = (host ?? workspace).getBoundingClientRect().top + window.scrollY - (viewport?.offsetTop ?? 0);
+      const available = `${Math.max(0, height - Math.max(0, top))}px`;
+      if (host) {
+        host.style.height = available;
+        host.style.flex = "none";
+        host.style.overflow = "hidden";
+        host.scrollTop = 0;
+      }
+      workspace.style.height = available;
+    };
+    const observer = new ResizeObserver(fit);
+    if (workspace.parentElement) observer.observe(workspace.parentElement);
+    window.addEventListener("resize", fit);
+    window.addEventListener("scroll", fit);
+    host?.addEventListener("scroll", fit);
+    window.visualViewport?.addEventListener("resize", fit);
+    window.visualViewport?.addEventListener("scroll", fit);
+    fit();
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", fit);
+      window.removeEventListener("scroll", fit);
+      host?.removeEventListener("scroll", fit);
+      window.visualViewport?.removeEventListener("resize", fit);
+      window.visualViewport?.removeEventListener("scroll", fit);
+      workspace.style.height = "";
+      if (host && previousHostStyle) Object.assign(host.style, previousHostStyle);
+      document.documentElement.style.overflow = previousDocumentOverflow;
+      document.body.style.overflow = previousBodyOverflow;
+    };
+  }, [permissionsLoading, projectLoading, isEditing]);
+
   const form = useForm<ProjectFormValues>({
     resolver: zodResolver(projectFormSchema),
+    shouldFocusError: false,
     defaultValues: { 
       name: "", 
       description: "", 
@@ -135,6 +230,42 @@ export default function ProjectForm() {
       moduleReadingDecimalPlaces: 3,
     },
   });
+  useEffect(() => {
+    contentRef.current?.scrollTo({ top: 0, left: 0 });
+  }, [activeSection, activeWorkOrderSection]);
+  useEffect(() => {
+    if (!focusAfterSectionChange) return;
+    const frame = requestAnimationFrame(() => {
+      form.setFocus(focusAfterSectionChange);
+      setFocusAfterSectionChange(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeSection, activeWorkOrderSection, focusAfterSectionChange, form]);
+
+  const handleInvalid = (errors: Record<string, any>) => {
+    const firstPath = (tree: Record<string, any>, prefix = ""): string | undefined => {
+      for (const [key, value] of Object.entries(tree)) {
+        const path = prefix ? `${prefix}.${key}` : key;
+        if (value && typeof value === "object" && "message" in value) return path;
+        if (value && typeof value === "object") {
+          const nested = firstPath(value, path);
+          if (nested) return nested;
+        }
+      }
+      return undefined;
+    };
+    const field = firstPath(errors) as keyof ProjectFormValues | undefined;
+    if (!field) return;
+    const section: ProjectSection = field === "operationalHoursEnabled" || field === "operationalHoursStart" ||
+      field === "operationalHoursEnd" || field === "operationalHoursDays" || field === "timezone"
+      ? "schedule"
+      : field === "defaultServiceMinutes" || field === "defaultAppointmentToleranceMinutes"
+        ? "schedule"
+      : ["name", "description", "isActive", "inventoryEnabled", "customerEmail", "phone", "address", "city", "state", "zip", "notes"].includes(field)
+        ? "details" : "work-orders";
+    setFocusAfterSectionChange(field);
+    setActiveSection(section);
+  };
   const wizardMode = form.watch("wizardMode");
   const changeoutEquipmentType = form.watch("changeoutEquipmentType");
   const readingEquipmentType = form.watch("readingEquipmentType");
@@ -408,29 +539,112 @@ export default function ProjectForm() {
   }
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
-      <div className="flex items-center gap-4 mb-6">
-        <Link href="/projects">
-          <Button variant="ghost" size="icon" data-testid="button-back"><ArrowLeft className="h-4 w-4" /></Button>
-        </Link>
-        <div>
-          <h1 className="text-3xl font-bold" data-testid="text-form-title">
-            {isEditing ? "Edit Project" : "New Project"}
-          </h1>
-          <p className="text-muted-foreground mt-1">
-            {isEditing ? "Update project details" : "Create a new project"}
-          </p>
+    <div ref={workspaceRef} data-testid="project-workspace" className="flex min-h-0 w-full flex-col overflow-hidden px-3 pb-3 pt-2 sm:px-5 sm:pb-4 [@media(max-height:450px)]:pb-2">
+      <header data-testid="project-workspace-header" className="mb-3 flex shrink-0 items-center justify-between gap-3 border-b border-border/70 pb-3 [@media(max-height:450px)]:mb-2 [@media(max-height:450px)]:pb-2">
+        <div className="flex min-w-0 items-center gap-3">
+          <Link href="/projects" className="inline-flex">
+            <Button variant="ghost" size="icon" data-testid="button-back" aria-label="Back to projects"><ArrowLeft className="h-4 w-4" /></Button>
+          </Link>
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground [@media(max-height:450px)]:hidden">Project configuration</p>
+            <h1 className="truncate text-xl font-semibold tracking-tight sm:text-2xl" data-testid="text-form-title">
+              {isEditing ? "Edit Project" : "New Project"}
+            </h1>
+          </div>
         </div>
+        <div className="hidden shrink-0 text-right text-xs text-muted-foreground sm:block">
+          {isEditing ? `Project ${id}` : "Set up a new field workspace"}
+        </div>
+      </header>
+
+      <div className="mb-3 flex shrink-0 flex-col gap-2 [@media(max-height:450px)]:mb-2">
+        {isMobile ? (
+          <div className="flex items-center gap-2">
+            <Select
+              value={activeSection === "work-orders" ? `work-orders:${activeWorkOrderSection}` : activeSection}
+              onValueChange={(value) => {
+                if (value.startsWith("work-orders:")) {
+                  setActiveSection("work-orders");
+                  setActiveWorkOrderSection(value.slice("work-orders:".length) as WorkOrderSection);
+                } else {
+                  setActiveSection(value as ProjectSection);
+                }
+              }}>
+            <SelectTrigger className="h-10 w-full" data-testid="project-mobile-menu" aria-label="Choose project section">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectLabel>Project</SelectLabel>
+                  {sections.map(section => <SelectItem key={section.id} value={section.id} data-testid={`project-section-nav-${section.id}`}>{section.label}</SelectItem>)}
+                </SelectGroup>
+                <SelectGroup>
+                  <SelectLabel>Work orders</SelectLabel>
+                  {workOrderSections.map(section =>
+                    <SelectItem key={section.id} value={`work-orders:${section.id}`} data-testid={`project-section-nav-${section.id}`}>
+                      {section.label}
+                    </SelectItem>)}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
+        ) : (
+          <nav aria-label="Project settings sections" className="flex min-w-0 gap-1 overflow-x-auto" role="tablist"
+            onKeyDown={event => {
+              const index = sections.findIndex(section => section.id === activeSection);
+              const next = event.key === "ArrowRight" ? (index + 1) % sections.length :
+                event.key === "ArrowLeft" ? (index - 1 + sections.length) % sections.length :
+                event.key === "Home" ? 0 : event.key === "End" ? sections.length - 1 : -1;
+              if (next < 0) return;
+              event.preventDefault();
+              setActiveSection(sections[next].id);
+              document.getElementById(`project-section-${sections[next].id}`)?.focus();
+            }}>
+            {sections.map(section => {
+              const Icon = section.icon;
+              const selected = activeSection === section.id;
+              return <Button key={section.id} id={`project-section-${section.id}`} type="button" role="tab"
+                  aria-selected={selected} aria-controls={`project-panel-${section.id}`} tabIndex={selected ? 0 : -1}
+                  variant={selected ? "secondary" : "ghost"} size="sm" className="h-9 gap-2 px-3"
+                  onClick={() => setActiveSection(section.id)} data-testid={`project-tab-${section.id}`}>
+                  <span data-testid={`project-section-nav-${section.id}`} className="inline-flex items-center gap-2">
+                    <Icon className="h-4 w-4" aria-hidden="true" />{section.label}
+                  </span>
+                </Button>;
+            })}
+          </nav>
+        )}
+        {!isMobile && activeSection === "work-orders" && (
+          <nav aria-label="Work Orders sections" className="flex min-w-0 gap-1 overflow-x-auto border-t pt-2" role="tablist"
+            onKeyDown={event => {
+              const index = workOrderSections.findIndex(section => section.id === activeWorkOrderSection);
+              const next = event.key === "ArrowRight" ? (index + 1) % workOrderSections.length :
+                event.key === "ArrowLeft" ? (index - 1 + workOrderSections.length) % workOrderSections.length :
+                event.key === "Home" ? 0 : event.key === "End" ? workOrderSections.length - 1 : -1;
+              if (next < 0) return;
+              event.preventDefault();
+              setActiveWorkOrderSection(workOrderSections[next].id);
+              document.getElementById(`project-section-nav-${workOrderSections[next].id}`)?.focus();
+            }}>
+            {workOrderSections.map(section => (
+              <Button key={section.id} id={`project-section-nav-${section.id}`} type="button" role="tab" aria-selected={activeWorkOrderSection === section.id}
+                aria-controls={`work-orders-panel-${section.id}`} tabIndex={activeWorkOrderSection === section.id ? 0 : -1}
+                variant={activeWorkOrderSection === section.id ? "outline" : "ghost"} size="sm"
+                className="h-8 shrink-0 px-2.5 text-xs"
+                onClick={() => setActiveWorkOrderSection(section.id)}
+                data-testid={`project-section-nav-${section.id}`}>
+                {section.label}
+              </Button>
+            ))}
+          </nav>
+        )}
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Project Details</CardTitle>
-          <CardDescription>Fill in the information below</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+      <Form {...form}>
+        <form noValidate onSubmit={form.handleSubmit(onSubmit, handleInvalid)} className="flex min-h-0 flex-1 flex-col">
+          <div ref={contentRef} data-testid="project-content" className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
+            <div id="project-panel-details" data-project-section="details" role="tabpanel" aria-label="Details"
+              hidden={activeSection !== "details"} className="space-y-5 pb-5">
               <FormField
                 control={form.control}
                 name="name"
@@ -455,30 +669,6 @@ export default function ProjectForm() {
                   </FormItem>
                 )}
               />
-              {hasPermission("projects.edit") && (
-                <section className="space-y-4 rounded-lg border border-l-4 border-l-primary/60 p-4" data-testid="project-planning-defaults">
-                  <div>
-                    <h2 className="font-semibold">Route planning defaults</h2>
-                    <p className="mt-1 text-sm text-muted-foreground">Defaults for planning only. They never reschedule customer appointments.</p>
-                  </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <FormField control={form.control} name="defaultServiceMinutes" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Default service duration (minutes)</FormLabel>
-                        <FormControl><Input type="number" min="1" max="480" step="1" value={field.value ?? ""} onChange={event => field.onChange(event.target.value === "" ? null : Number(event.target.value))} placeholder="No project default" data-testid="input-project-service-default" /></FormControl>
-                        <FormDescription>Whole number from 1 to 480. Empty retains the legacy planner fallback.</FormDescription><FormMessage />
-                      </FormItem>
-                    )} />
-                    <FormField control={form.control} name="defaultAppointmentToleranceMinutes" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Default appointment tolerance (minutes)</FormLabel>
-                        <FormControl><Input type="number" min="0" max="240" step="1" value={field.value ?? ""} onChange={event => field.onChange(event.target.value === "" ? null : Number(event.target.value))} placeholder="No project default" data-testid="input-project-tolerance-default" /></FormControl>
-                        <FormDescription>Whole number from 0 to 240. Empty retains the legacy planner fallback.</FormDescription><FormMessage />
-                      </FormItem>
-                    )} />
-                  </div>
-                </section>
-              )}
               {hasPermission("inventory.configure") && (
                 <FormField
                   control={form.control}
@@ -567,7 +757,7 @@ export default function ProjectForm() {
                   </FormItem>
                 )}
               />
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
                 <FormField
                   control={form.control}
                   name="city"
@@ -615,34 +805,43 @@ export default function ProjectForm() {
                   </FormItem>
                 )}
               />
+              {!isEditing && (
+                <div className="flex gap-3 rounded-lg border bg-muted/30 p-4 text-sm">
+                  <Globe className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  <p className="text-muted-foreground">Customer API connections can be configured from the Customer API hub immediately after this project is created.</p>
+                </div>
+              )}
 
-              <div className="border-t pt-6 mt-6">
+            </div>
+
+            {isEditing && <div id="project-panel-integrations" data-project-section="integrations" role="tabpanel" aria-label="Integrations"
+              hidden={activeSection !== "integrations"} className="space-y-5 pb-5">
+              <section className="rounded-xl border bg-card p-5">
                 <div className="flex items-center gap-2 mb-2">
                   <Globe className="h-5 w-5 text-muted-foreground" />
                   <h3 className="text-lg font-medium">Customer API</h3>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  {isEditing
-                    ? "Push delivery and inbound work-order imports are configured independently in the Customer API hub."
-                    : "Create this project first, then configure its Customer API connections without changing project details."}
+                  Push delivery and inbound work-order imports are configured independently in the Customer API hub.
                 </p>
-                {isEditing ? (
-                  <Link href={`/projects/${id}/customer-api`} className="mt-3 inline-flex">
-                    <Button type="button" variant="outline">Open Customer API setup</Button>
-                  </Link>
-                ) : (
-                  <p className="mt-3 text-sm font-medium">Setup is available immediately after creation.</p>
-                )}
-              </div>
+                <Link href={`/projects/${id}/customer-api`} className="mt-3 inline-flex">
+                  <Button type="button" variant="outline">Open Customer API setup</Button>
+                </Link>
+              </section>
+            </div>}
 
+            <div id="project-panel-work-orders" data-project-section="work-orders" role="tabpanel" aria-label="Work Orders"
+              hidden={activeSection !== "work-orders"} className="space-y-5 pb-5">
               {isEditing && (
-                <div className="border-t pt-6 mt-6">
+                <div id="work-orders-panel-sub-statuses" role="tabpanel" aria-label="Sub-statuses"
+                  hidden={activeWorkOrderSection !== "sub-statuses"} className="border-t pt-6 mt-6">
                   <WorkOrderSubStatusManager projectId={Number(id)} canEdit={canManageSubStatuses} />
                 </div>
               )}
 
               {isEditing && (
-                <div className="border-t pt-6 mt-6">
+                <div id="work-orders-panel-service-types" role="tabpanel" aria-label="Service types"
+                  hidden={activeWorkOrderSection !== "service-types"} className="border-t pt-6 mt-6">
                   <div className="flex items-center gap-2 mb-4">
                     <Zap className="h-5 w-5 text-muted-foreground" />
                     <h3 className="text-lg font-medium">Service Types</h3>
@@ -716,7 +915,8 @@ export default function ProjectForm() {
                 </div>
               )}
 
-              <div className="border-t pt-6 mt-6">
+              <div id="work-orders-panel-wizard" role="tabpanel" aria-label="Wizard"
+                hidden={activeWorkOrderSection !== "wizard"} className="border-t pt-6 mt-6">
                 <div className="flex items-center gap-2 mb-4">
                   <Wand2 className="h-5 w-5 text-muted-foreground" />
                   <h3 className="text-lg font-medium">Wizard Configuration</h3>
@@ -982,7 +1182,8 @@ export default function ProjectForm() {
                 </div>
               </div>
 
-              <div className="border-t pt-6 mt-6">
+              <div id="work-orders-panel-search" role="tabpanel" aria-label="Search"
+                hidden={activeWorkOrderSection !== "search"} className="border-t pt-6 mt-6">
                 <div className="flex items-center gap-2 mb-4">
                   <Scan className="h-5 w-5 text-muted-foreground" />
                   <h3 className="text-lg font-medium">Search Method Configuration</h3>
@@ -1082,6 +1283,34 @@ export default function ProjectForm() {
                 </div>
               </div>
 
+            </div>
+
+            <div id="project-panel-schedule" data-project-section="schedule" role="tabpanel" aria-label="Schedule"
+              hidden={activeSection !== "schedule"} className="space-y-5 pb-5">
+              {hasPermission("projects.edit") && (
+                <section className="space-y-4 rounded-lg border border-l-4 border-l-primary/60 p-4" data-testid="project-planning-defaults">
+                  <div>
+                    <h2 className="font-semibold">Route planning defaults</h2>
+                    <p className="mt-1 text-sm text-muted-foreground">Defaults for planning only. They never reschedule customer appointments.</p>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <FormField control={form.control} name="defaultServiceMinutes" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Default service duration (minutes)</FormLabel>
+                        <FormControl><Input ref={field.ref} onBlur={field.onBlur} type="number" min="1" max="480" step="1" value={field.value ?? ""} onChange={event => field.onChange(event.target.value === "" ? null : Number(event.target.value))} placeholder="No project default" data-testid="input-project-service-default" /></FormControl>
+                        <FormDescription>Whole number from 1 to 480. Empty retains the legacy planner fallback.</FormDescription><FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="defaultAppointmentToleranceMinutes" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Default appointment tolerance (minutes)</FormLabel>
+                        <FormControl><Input ref={field.ref} onBlur={field.onBlur} type="number" min="0" max="240" step="1" value={field.value ?? ""} onChange={event => field.onChange(event.target.value === "" ? null : Number(event.target.value))} placeholder="No project default" data-testid="input-project-tolerance-default" /></FormControl>
+                        <FormDescription>Whole number from 0 to 240. Empty retains the legacy planner fallback.</FormDescription><FormMessage />
+                      </FormItem>
+                    )} />
+                  </div>
+                </section>
+              )}
               <div className="border-t pt-6 mt-6">
                 <div className="flex items-center gap-2 mb-4">
                   <Clock className="h-5 w-5 text-muted-foreground" />
@@ -1115,7 +1344,7 @@ export default function ProjectForm() {
 
                 {form.watch("operationalHoursEnabled") && (
                   <div className="space-y-4 pl-4 border-l-2 border-muted">
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                       <FormField
                         control={form.control}
                         name="operationalHoursStart"
@@ -1305,6 +1534,11 @@ export default function ProjectForm() {
                 )}
               </div>
 
+            </div>
+
+            {isEditing && (
+              <div id="project-panel-people" data-project-section="people" role="tabpanel" aria-label="People"
+                hidden={activeSection !== "people"} className="space-y-5 pb-5">
               {isEditing && (
                 <div className="border-t pt-6 mt-6">
                   <div className="flex items-center gap-2 mb-4">
@@ -1382,8 +1616,13 @@ export default function ProjectForm() {
                   )}
                 </div>
               )}
+              </div>
+            )}
+          </div>
 
-              <div className="flex items-center justify-end gap-4 pt-4">
+          <footer data-testid="project-workspace-actions" className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t bg-background/95 pt-3 [@media(max-height:450px)]:pt-2">
+            {!isMobile && <p className="text-xs text-muted-foreground">Project settings save on submit. Standalone managers save independently.</p>}
+            <div className="ml-auto flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto sm:gap-3">
                 <Link href="/projects">
                   <Button variant="outline" type="button" data-testid="button-cancel">Cancel</Button>
                 </Link>
@@ -1398,18 +1637,17 @@ export default function ProjectForm() {
                     {copyMutation.isPending ? (
                       <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Copying...</>
                     ) : (
-                      <><Copy className="h-4 w-4 mr-2" />Copy Project</>
+                      <><Copy className="h-4 w-4 mr-2" />{isMobile ? "Copy" : "Copy Project"}</>
                     )}
                   </Button>
                 )}
                 <Button type="submit" disabled={isPending} data-testid="button-submit">
-                  {isPending ? (<><Loader2 className="h-4 w-4 mr-2 animate-spin" />{isEditing ? "Updating..." : "Creating..."}</>) : (<><Save className="h-4 w-4 mr-2" />{isEditing ? "Update" : "Create"} Project</>)}
+                  {isPending ? (<><Loader2 className="h-4 w-4 mr-2 animate-spin" />{isEditing ? "Updating..." : "Creating..."}</>) : (<><Save className="h-4 w-4 mr-2" />{isEditing ? "Update" : "Create"}{!isMobile && " Project"}</>)}
                 </Button>
-              </div>
-            </form>
-          </Form>
-        </CardContent>
-      </Card>
+            </div>
+          </footer>
+        </form>
+      </Form>
     </div>
   );
 }

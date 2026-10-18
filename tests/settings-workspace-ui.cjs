@@ -20,7 +20,7 @@ async function main() {
   const out = "generated-artifacts/settings-workspace";
   await fs.mkdir(out,{recursive:true});
   try {
-    const context = await browser.newContext({baseURL:`https://${process.env.REPLIT_DEV_DOMAIN}`,
+    const context = await browser.newContext({baseURL:require("./support/workspace-ui-base.cjs")(),
       viewport:{width:1440,height:1000},hasTouch:true,isMobile:true});
     assert.equal((await context.request.post("/api/auth/local/login",{data:fixture})).status(),200);
     const page = await context.newPage(), errors=[], writes=[];
@@ -105,7 +105,7 @@ async function main() {
     // A delegated role sees only personal settings plus the explicitly granted section.
     assert.equal((await context.request.put(`/api/subroles/${fixture.viewerRoleId}/permissions`,
       {data:{permissions:["nav.settings","settings.fileUpload"]}})).status(),200);
-    const delegated = await browser.newContext({baseURL:`https://${process.env.REPLIT_DEV_DOMAIN}`,viewport:{width:1440,height:1000}});
+    const delegated = await browser.newContext({baseURL:require("./support/workspace-ui-base.cjs")(),viewport:{width:1440,height:1000}});
     assert.equal((await delegated.request.post("/api/auth/local/login",{data:fixture.viewer})).status(),200);
     const limited = await delegated.newPage();
     await limited.goto("/settings");
