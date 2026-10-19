@@ -8,3 +8,9 @@ Times displayed on project-related receipts and detail pages must inherit the pr
 **Why:** The user explicitly required project-timezone inheritance while asking for readable inventory receipt and custody-history dates.
 
 **How to apply:** Use the same project timezone for screen details, printed receipts/PDFs, custody and decision history, and local count-recovery displays. Include a timezone indicator where times are shown. Keep original stored timestamps and audit evidence unchanged; formatting is a display concern.
+
+Verify project timezone inheritance with deliberately different project and site settings, including disabled site timezone handling.
+
+**Why:** Matching defaults can let tests pass even when a detail-data API mistakenly uses the site timezone instead of the project's setting. Correct formatting alone does not prove correct timezone selection.
+
+**How to apply:** Check both returned detail metadata and rendered/printed dates with conflicting timezones. A site-wide enable/disable switch must not override an explicitly configured project timezone.

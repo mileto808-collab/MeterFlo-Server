@@ -19,6 +19,15 @@ const { chromium, expect } = require("@playwright/test");
     await api("POST", "/api/auth/local/login", fixture);
     const root = `/api/projects/${fixture.projectId}`;
     await api("PATCH", root, { timezone: "America/Denver" });
+    // Matching defaults hid a prior bug: inventory details used site timezone
+    // settings even though printed receipts correctly used the project.
+    for (const isEnabled of [true, false]) {
+      await api("PUT", "/api/settings/timezone", { timezone: "America/Honolulu", isEnabled });
+      assert.equal((await api("GET", `${root}/inventory`)).timezone, "America/Denver",
+        "Project timezone wins over a different or disabled site timezone");
+      assert.equal((await api("GET", `${root}/inventory/stock/context`)).timezone, "America/Denver",
+        "Stock detail context also inherits project timezone");
+    }
     const command = (action, data) => api("POST", `${root}/inventory/commands`,
       { operationId: crypto.randomUUID(), action, data });
     const initial = await api("GET", `${root}/inventory`);

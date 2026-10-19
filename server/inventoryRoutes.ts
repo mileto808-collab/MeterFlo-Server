@@ -68,7 +68,6 @@ export function registerInventoryRoutes(app: Express) {
   };
   const snapshot = async (res: any) => {
     const c = res.locals.inventory, state = inventoryVisibleState(await inventoryState(c.project.id), c.user.id, c.admin, c.permissions.includes(inventoryPermissions.count), c.permissions);
-    const [defaultTimezone, timezoneEnabled] = await Promise.all([storage.getSetting("default_timezone"), storage.getSetting("timezone_enabled")]);
     const { rows: users } = await pool.query(`SELECT u.id,u.username FROM public.users u
       WHERE NOT coalesce(u.is_locked,false) AND
       (EXISTS(SELECT 1 FROM public.user_projects up WHERE up.user_id=u.id AND up.project_id=$1)
@@ -76,7 +75,7 @@ export function registerInventoryRoutes(app: Express) {
          WHERE gm.user_id=u.id AND gp.project_id=$1)) ORDER BY u.username`, [c.project.id]);
     const { rows: actors } = await pool.query(`SELECT id, username FROM public.users WHERE id = ANY($1::text[])`,
       [[...new Set([...state.receipts.map(receipt => receipt.actor), ...state.returns.flatMap(r => (r.history ?? []).map(h => h.actor))])]]);
-    return { enabled: !!c.project.inventoryEnabled, projectName: c.project.name, timezone: timezoneEnabled === "false" ? "UTC" : defaultTimezone || "America/Denver",
+    return { enabled: !!c.project.inventoryEnabled, projectName: c.project.name, timezone: c.project.timezone ?? "UTC",
       state, permissions: c.permissions, users: users.map(u => ({ id: u.id, username: u.username || u.id })), actors };
   };
   app.use(base, isAuthenticated, auth());
@@ -176,11 +175,9 @@ export function registerInventoryRoutes(app: Express) {
     stockOptions(client, res.locals.inventory.project.id, z.string().max(300).default("").parse(req.query.q))));
   app.get(`${base}/stock/context`, stockRead(async (client, _req, res) => {
     const c = res.locals.inventory;
-    const [timezone, timezoneEnabled, summary] = await Promise.all([
-      storage.getSetting("default_timezone"), storage.getSetting("timezone_enabled"), stockSummary(client, c.project.id),
-    ]);
+    const summary = await stockSummary(client, c.project.id);
     return { enabled: !!c.project.inventoryEnabled, projectName: c.project.name,
-      timezone: timezoneEnabled === "false" ? "UTC" : timezone || "America/Denver", permissions: c.permissions, summary };
+      timezone: c.project.timezone ?? "UTC", permissions: c.permissions, summary };
   }));
   app.post(`${base}/commands`, handler(async (req, res) => {
     const c = res.locals.inventory, command = inventoryCommandSchema.parse(req.body);
