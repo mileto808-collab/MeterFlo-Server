@@ -36,7 +36,7 @@ import { GPSCapture } from "./gps-capture";
 import SignaturePad, { SignaturePadRef, SignatureType } from "./signature-pad";
 import { ActualUseCollector, actualUseLinesAreValid, initialActualUse, type ActualUseDraft } from "./inventory/actual-use-collector";
 import { resolveFieldStock, type FieldStockSettings } from "@shared/inventory-field-stock";
-import { plannedUseDrafts } from "@shared/inventory-wizard-use";
+import { plannedUseDrafts, inventoryWizardBasis, refreshApprovedUse, type PlannedStockMode } from "@shared/inventory-wizard-use";
 import { bindWizardEquipmentSerials } from "@shared/inventory-wizard-use";
 import {
   ArrowLeft,
@@ -280,6 +280,14 @@ export function SystemChangeoutWizard({
   const actualUseLocationBaseline = useRef(new Map<string, string>());
   const actualUseTouched = useRef(false);
   const [basisAccepted, setBasisAccepted] = useState(false);
+  const [defaultsBusy, setDefaultsBusy] = useState(false);
+  const [defaultsApplied, setDefaultsApplied] = useState(0);
+  const [defaultsError, setDefaultsError] = useState("");
+  const defaultsSession = useRef(0);
+  const [defaultsReview, setDefaultsReview] = useState<{
+    basis: string; sourceId: string; sourceLabel: string; mode: PlannedStockMode; lines: ActualUseDraft[];
+    locationBasis: string; draftBasis: string;
+  } | null>(null);
   const prepareAttempt = useRef<{
     fingerprint: string; operationId: string; intent: string; revision: number;
     requirements: string; reservedLines: string;
@@ -306,13 +314,49 @@ export function SystemChangeoutWizard({
     actualUseLocationBaseline.current.get(id) !== locationSignatureIn(workInventory, id));
   const accessibleWarehouses = (snapshot: WizardInventory | undefined) => (snapshot?.warehouses ?? [])
     .filter(warehouse => warehouseAccessible({ locationTypes: snapshot?.locationTypes ?? [] }, warehouse, user?.id, user?.role === "admin"));
-  const inventoryBasis = JSON.stringify({
-    revision: workInventory?.revision ?? 0,
-    allocation: workInventory?.allocation ?? null,
-    requirements: workInventory?.requirements ?? null,
-    fieldSettings: workInventory?.fieldSettings ?? [],
-    removal: workInventory ? removalConfig(workInventory) : null, workflow: workInventory?.workflow,
-  });
+  const inventoryBasis = inventoryWizardBasis(workInventory);
+  const reviewApprovedDefaults = async (apply = false) => {
+    const session = defaultsSession.current;
+    setDefaultsBusy(true);
+    setDefaultsError("");
+    try {
+      const checked = await refetchWorkInventory();
+      if (session !== defaultsSession.current) return;
+      if (checked.isError || !checked.data) throw new Error("Current project defaults could not load. Your entries have been kept.");
+      const latest = checked.data;
+      const resolved = resolveFieldStock(latest, user!.id, user?.role === "admin", fieldSourceId);
+      const source = resolved.source;
+      if (!source) throw new Error(resolved.reason + " Your entries have been kept.");
+      const lines = refreshApprovedUse(actualUse, latest.requirements?.lines ?? [], latest.items,
+        source.id, resolved.settings.fulfillment, latest.allocation?.lines ?? []);
+      const review = { basis: inventoryWizardBasis(latest), sourceId: source.id,
+        sourceLabel: `${source.code} · ${source.name}`, mode: resolved.settings.fulfillment, lines,
+        locationBasis: locationSignatureIn(latest, source.id), draftBasis: JSON.stringify(actualUse) };
+      if (!apply) { setDefaultsReview(review); return; }
+      if (!defaultsReview || review.basis !== defaultsReview.basis || review.sourceId !== defaultsReview.sourceId ||
+        review.locationBasis !== defaultsReview.locationBasis || review.draftBasis !== defaultsReview.draftBasis ||
+        JSON.stringify(review.lines) !== JSON.stringify(defaultsReview.lines)) {
+        setDefaultsReview(review);
+        throw new Error("Inventory changed again. Review the updated defaults before applying. Your entries have been kept.");
+      }
+      // Only the inventory plan changes. Readings, device scans, photos, notes,
+      // signatures and removed-equipment captures remain in their own state.
+      setActualUse(lines);
+      setDefaultsApplied(value => value + 1);
+      setFieldSourceId(source.id);
+      setFieldSourceOverridden(false);
+      actualUseBaseline.current = review.basis;
+      actualUseLocationBaseline.current.clear();
+      captureLocationBasis(latest, [...lines.map(line => line.warehouseId),
+        ...Object.values(removedMeters).map(value => value.warehouseId)]);
+      actualUseTouched.current = true;
+      setBasisAccepted(false);
+      setDefaultsReview(null);
+    } catch (error) {
+      if (session === defaultsSession.current)
+        setDefaultsError(error instanceof Error ? error.message : "Could not refresh defaults. Your entries have been kept.");
+    } finally { if (session === defaultsSession.current) setDefaultsBusy(false); }
+  };
   const actualUseConflict = actualUseTouched.current && actualUseBaseline.current !== null &&
     (actualUseBaseline.current !== inventoryBasis || locationPolicyChanged) && !basisAccepted;
 
@@ -324,6 +368,10 @@ export function SystemChangeoutWizard({
 
   useEffect(() => {
     if (!isOpen) {
+      defaultsSession.current++;
+      setDefaultsReview(null);
+      setDefaultsError("");
+      setDefaultsBusy(false);
       actualUseInitializedFor.current = null;
       actualUseBaseline.current = null;
       actualUseLocationBaseline.current.clear();
@@ -336,6 +384,10 @@ export function SystemChangeoutWizard({
       return;
     }
     if (workInventory && user?.id && actualUseInitializedFor.current !== workOrderId) {
+      defaultsSession.current++;
+      setDefaultsReview(null);
+      setDefaultsError("");
+      setDefaultsBusy(false);
       actualUseInitializedFor.current = workOrderId;
       let preferred = "";
       try { preferred = localStorage.getItem(fieldPreferenceKey) ?? ""; } catch { /* Browser storage may be disabled. */ }
@@ -698,6 +750,7 @@ export function SystemChangeoutWizard({
   };
 
   const canProceed = (): boolean => {
+    if (defaultsBusy || defaultsReview) return false;
     switch (currentStep) {
       case "modeSelection":
         // For user_choice mode, require a selection
@@ -995,9 +1048,7 @@ export function SystemChangeoutWizard({
         if (!hasPermission("inventory.assign")) throw new Error("Inventory assignment permission is required to record actual stock use.");
         const latest = await apiRequest("GET", `/api/projects/${projectId}/work-orders/${workOrderId}/inventory`)
           .then(response => response.json() as Promise<WizardInventory>);
-        const latestBasis = JSON.stringify({ revision: latest.revision ?? 0, allocation: latest.allocation ?? null, requirements: latest.requirements ?? null,
-          fieldSettings: latest.fieldSettings ?? [],
-          removal: removalConfig(latest), workflow: latest.workflow });
+        const latestBasis = inventoryWizardBasis(latest);
         if (!actualUseLinesAreValid(bindWizardEquipmentSerials(actualUse, latest.items ?? [],
           { system: data.newSystemId, module: data.newModuleId }), latest.items ?? []))
           throw new Error("Check used quantities and serials. Reserved lines can only use their reserved quantity and serials.");
@@ -1836,7 +1887,9 @@ export function SystemChangeoutWizard({
                 workInventoryError || !workInventory ? <Card><CardContent className="p-4"><p className="text-sm text-destructive">Work-order inventory could not load.</p><Button className="mt-2" size="sm" variant="outline" onClick={() => void refetchWorkInventory()}>Retry</Button></CardContent></Card> :
                 <div className="space-y-3">
                   <ActualUseCollector
+                    key={defaultsApplied}
                     value={actualUse}
+                    disabled={defaultsBusy || !!defaultsReview}
                     onChange={next => {
                       if (workInventory) captureLocationBasis(workInventory, next.map(line => line.warehouseId));
                       actualUseTouched.current = true; setBasisAccepted(false); setActualUse(next);
@@ -1860,17 +1913,33 @@ export function SystemChangeoutWizard({
                         try { localStorage.setItem(fieldPreferenceKey, id); } catch { /* Optional device preference only. */ }
                     }}
                   />
+                  <div className="rounded-md border p-3 space-y-2 text-sm">
+                    <p>Project stock defaults can change while this changeout is open. Review the latest approved source and kit handling without restarting.</p>
+                    <Button type="button" size="sm" variant="outline" disabled={defaultsBusy || !!defaultsReview ||
+                      !!workInventory.allocation?.lines.length || actualUse.some(line => line.reserved)}
+                      onClick={() => void reviewApprovedDefaults()}>Review current project defaults</Button>
+                    {!!workInventory.allocation?.lines.length && <p className="text-muted-foreground">Existing reservations keep their locations and stock handling. Change reservations in the work-order Inventory section if needed.</p>}
+                    {defaultsReview && <div role="region" aria-label="Review approved stock defaults" className="space-y-2">
+                      <p className="font-medium">Approved stock source: {defaultsReview.sourceLabel}</p>
+                      <p>Approved kit handling: {defaultsReview.mode === "kits" ? "Preassembled kits" : "Loose components"}</p>
+                      <p>{defaultsReview.lines.length
+                        ? "This replaces actual-use quantities with current planned requirements and removes extra use rows. Inventory serials are retained only for unchanged items, quantities and locations; new kit serials must be entered."
+                        : "There are no planned requirements. This clears manual actual-use rows so you can select items again using the approved stock source and kit handling."} Your readings, equipment scans, photos, notes, signatures and removed-equipment details stay unchanged.</p>
+                      <ul>{defaultsReview.lines.map(line => <li key={line.key}>{line.quantity} × {workInventory.items.find(item => item.id === line.itemId)?.name ?? line.itemId}</li>)}</ul>
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="button" size="sm" disabled={defaultsBusy} onClick={() => void reviewApprovedDefaults(true)}>Apply approved defaults</Button>
+                        <Button type="button" size="sm" variant="outline" disabled={defaultsBusy} onClick={() => { setDefaultsReview(null); setDefaultsError(""); }}>Keep my entries</Button>
+                      </div>
+                    </div>}
+                    {defaultsError && <p role="alert" className="text-destructive">{defaultsError}</p>}
+                  </div>
                   {actualUseConflict && <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm" role="alert">
                     <p className="font-medium">Inventory basis changed while you were entering use</p>
                     <p className="mt-1 text-muted-foreground">Your quantities and serials were kept. Recheck before continuing; current stock and access are still validated by the server.</p>
                     <Button className="mt-2" type="button" size="sm" variant="outline" onClick={async () => {
                       const checked = await refetchWorkInventory();
                       if (checked.isError || !checked.data) return;
-                      actualUseBaseline.current = JSON.stringify({
-                        revision: checked.data.revision ?? 0,
-                        allocation: checked.data.allocation ?? null,
-                        requirements: checked.data.requirements ?? null,
-                      });
+                      actualUseBaseline.current = inventoryWizardBasis(checked.data);
                        actualUseLocationBaseline.current.clear();
                        captureLocationBasis(checked.data, currentLocationIds);
                       setBasisAccepted(true);
@@ -2531,7 +2600,6 @@ export function SystemChangeoutWizard({
             {!hasPermission("inventory.assign") ? (
               <Card className="border-destructive/40"><CardContent className="pt-4 text-sm text-destructive">Inventory assignment permission is required to complete this work order.</CardContent></Card>
             ) : <Card><CardContent className="pt-4 text-sm text-muted-foreground">
-              Actual stock use was entered during the physical installation step. No import reservation or empty assignment is created.
               {wizardActualUse.filter(line => Number(line.quantity) > 0).length > 0 && <ul className="mt-2 space-y-1 text-foreground">{wizardActualUse.filter(line => Number(line.quantity) > 0).map(line => {
                 const warehouse = workInventory?.warehouses.find(value => value.id === line.warehouseId);
                 return <li key={line.key}>{workInventory?.items.find(item => item.id === line.itemId)?.name ?? line.itemId} · {line.quantity} from {warehouse?.code ?? line.warehouseId}{warehouse && workInventory ? ` · ${locationTypeLabel({ locationTypes: workInventory.locationTypes ?? [] }, warehouse)}` : ""}</li>;

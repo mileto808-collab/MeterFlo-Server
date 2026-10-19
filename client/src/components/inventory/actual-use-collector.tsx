@@ -65,7 +65,6 @@ export function ActualUseCollector({ value, onChange, items, warehouses, require
   const labels = plannedInventoryLabels(requirements, items);
   const kitMode: PlannedStockMode = value.some(line => items.find(item => item.id === line.itemId)?.components.length) ? "kits" : "components";
   const sources = [...new Set(value.map(line => line.warehouseId).filter(Boolean))];
-  const source = sources.length === 1 && value.every(line => !!line.warehouseId) ? sources[0] : "";
   const changePlan = (warehouseId: string, mode: PlannedStockMode) =>
     onChange(plannedUseDrafts(requirements, items, warehouseId, mode, reservations));
   const reservedPlan = planned && reservations.length > 0;
@@ -97,8 +96,6 @@ export function ActualUseCollector({ value, onChange, items, warehouses, require
         </Select>
       </div>}
     {!reservedPlan && !displaySources.length && sourceReason && <p role="alert" className="text-sm text-amber-800 dark:text-amber-200">{sourceReason}</p>}
-    {!reservedPlan && fieldSourceId && (planned ? source !== fieldSourceId : value.some(line => !line.reserved && line.warehouseId !== fieldSourceId)) &&
-      <Button type="button" size="sm" variant="outline" onClick={() => changeSource(fieldSourceId)}>Use current project stock source</Button>}
     <div className="flex flex-wrap items-center justify-between gap-2">
       <p className="text-xs text-muted-foreground">Kit handling: {(planned ? kitMode : newKitMode) === "kits" ? "Preassembled kits" : "Loose components"}</p>
       {!reservedPlan && canChangeFulfillment && <Button type="button" size="sm" variant="ghost" disabled={disabled}

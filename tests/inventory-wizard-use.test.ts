@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { InventoryItem } from "../shared/inventory";
-import { actualUseLinesAreValid, bindWizardEquipmentSerials, initialActualUse, plannedInventoryLabels, plannedUseDrafts } from "../shared/inventory-wizard-use";
+import { actualUseLinesAreValid, bindWizardEquipmentSerials, initialActualUse, plannedInventoryLabels, plannedUseDrafts, refreshApprovedUse, inventoryWizardBasis } from "../shared/inventory-wizard-use";
 
 const product = (id: string, extra: Partial<InventoryItem> = {}): InventoryItem => ({
   id, sku: id.toUpperCase(), name: id, tracking: "regular", equipment: "none", active: true,
@@ -16,6 +16,55 @@ const items = [
     components: [{ itemId: "system", quantity: 1 }, { itemId: "inner", quantity: 1 }, { itemId: "labor", quantity: 1.5 }] }),
 ];
 const requirements = [{ itemId: "kit", quantity: 1 }];
+
+test("approved refresh changes method alone or location and method without mutating captures", () => {
+  const loose = bindWizardEquipmentSerials(plannedUseDrafts(requirements, items, "van", "components"), items,
+    { system: "0000123", module: "MOD-0002" });
+  const original = structuredClone(loose);
+  for (const source of ["van", "warehouse"]) {
+    const kits = refreshApprovedUse(loose, requirements, items, source, "kits");
+    assert.deepEqual(kits.map(line => [line.itemId, line.warehouseId, line.serials]), [["kit", source, ""]]);
+    const rebound = bindWizardEquipmentSerials(refreshApprovedUse(kits, requirements, items, source, "components"),
+      items, { system: "0000123", module: "MOD-0002" });
+    assert.equal(rebound.find(line => line.itemId === "system")?.serials, "0000123");
+  }
+  assert.deepEqual(loose, original);
+});
+
+test("refresh retains matching inventory serials but not serials moved to another source", () => {
+  const lines = plannedUseDrafts(requirements, items, "van", "kits");
+  lines[0].serials = "KIT-0001";
+  assert.equal(refreshApprovedUse(lines, requirements, items, "van", "kits")[0].serials, "KIT-0001");
+  assert.equal(refreshApprovedUse(lines, requirements, items, "other", "kits")[0].serials, "");
+});
+
+test("without a plan, reviewed refresh clears manual use rather than guessing kit lineage", () => {
+  const lines = plannedUseDrafts(requirements, items, "van", "components");
+  const before = structuredClone(lines);
+  assert.deepEqual(refreshApprovedUse(lines, [], items, "van", "kits"), []);
+  assert.deepEqual(lines, before);
+});
+
+test("failed refresh and reserved plans leave all actual use untouched", () => {
+  const reserved = [{ warehouseId: "van", itemId: "kit", quantity: 1, serials: ["KIT-0001"] }];
+  const lines = initialActualUse({ lines: reserved }, requirements, items);
+  lines[0].serials = "KIT-0001";
+  const before = structuredClone(lines);
+  assert.throws(() => refreshApprovedUse(lines, requirements, items, "other", "components"), /reservations/);
+  assert.throws(() => refreshApprovedUse([], requirements, items, "other", "components", reserved), /reservations/);
+  assert.throws(() => refreshApprovedUse([], requirements, items, "", "kits"), /unavailable/);
+  assert.deepEqual(lines, before);
+});
+
+test("one inventory basis includes approved defaults and removal rules in every comparison", () => {
+  const base = {};
+  assert.equal(inventoryWizardBasis(base), inventoryWizardBasis(structuredClone(base)));
+  assert.notEqual(inventoryWizardBasis(base), inventoryWizardBasis({ fieldSettings: [{
+    id: "field-defaults", sourceMode: "assigned_vehicle", warehouseId: null, fulfillment: "kits",
+  }] }));
+  assert.notEqual(inventoryWizardBasis(base), inventoryWizardBasis({ workflow: { wizardMode: "changeout", equipment: "both" } }));
+  assert.notEqual(inventoryWizardBasis(base), inventoryWizardBasis({ removalRules: [] }));
+});
 
 test("planned labels show leaf inventory and labor allowances, not nested kit names", () => {
   const labels = plannedInventoryLabels(requirements, items);

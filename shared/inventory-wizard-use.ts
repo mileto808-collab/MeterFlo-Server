@@ -1,6 +1,8 @@
 import type { Allocation, InventoryItem } from "./inventory";
 import { inventoryComponentDetails } from "./inventory-component-details";
 import { requirementLeaves } from "./inventory-requirements";
+import { removalConfig, type RemovalWorkflow } from "./inventory-removal-policy";
+import type { InventoryState, WorkAllocation, WorkRequirements } from "./inventory";
 
 export type ActualUseDraft = {
   key: string; itemId: string; warehouseId: string; quantity: string; serials: string;
@@ -8,6 +10,38 @@ export type ActualUseDraft = {
 };
 export type PlannedStockMode = "components" | "kits";
 type Requirement = { itemId: string; quantity: number };
+
+type WizardBasis = Pick<InventoryState, "fieldSettings" | "removalRules" | "removalPolicies"> & {
+  workflow?: RemovalWorkflow; revision?: number; allocation?: WorkAllocation | null; requirements?: WorkRequirements;
+};
+
+/** Initialization, review and submission must compare exactly the same basis. */
+export function inventoryWizardBasis(snapshot: WizardBasis | undefined): string {
+  return JSON.stringify({
+    revision: snapshot?.revision ?? 0,
+    allocation: snapshot?.allocation ?? null,
+    requirements: snapshot?.requirements ?? null,
+    fieldSettings: snapshot?.fieldSettings ?? [],
+    removal: snapshot ? removalConfig(snapshot) : null,
+    workflow: snapshot?.workflow,
+  });
+}
+
+/** Explicitly replace actual use, never a reserved plan or wizard captures.
+ * Without a plan, kit lineage cannot be inferred from loose rows: the reviewed
+ * refresh clears manual use for re-selection under the approved defaults.
+ */
+export function refreshApprovedUse(current: ActualUseDraft[], requirements: Requirement[], items: InventoryItem[],
+  warehouseId: string, mode: PlannedStockMode, reservations: Allocation[] = []): ActualUseDraft[] {
+  if (reservations.length || current.some(line => line.reserved))
+    throw new Error("Existing reservations keep their locations and stock handling. Change reservations in the work-order Inventory section.");
+  if (!warehouseId) throw new Error("The approved stock source is unavailable or inaccessible. Your entries have been kept.");
+  return plannedUseDrafts(requirements, items, warehouseId, mode).map(line => {
+    const prior = current.find(row => row.itemId === line.itemId && row.warehouseId === line.warehouseId &&
+      row.quantity === line.quantity);
+    return prior ? { ...line, serials: prior.serials } : line;
+  });
+}
 
 /** The stock representation is explicit: never debit both a finished kit and its parts. */
 export function plannedUseDrafts(requirements: Requirement[], items: InventoryItem[], warehouseId: string,

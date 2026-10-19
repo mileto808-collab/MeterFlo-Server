@@ -66,16 +66,29 @@ const { chromium, expect } = require("@playwright/test");
       ...(planned ? { newSystemType: type.productId } : {}),
       ...(assignee ? { assignedUserId: assignee } : {}),
     });
-    const start = async (work, both = false) => {
+    const photo = async kind => {
+      // Browser-generated PNG: valid image data, not an unchecked base64 fixture.
+      const png = await page.evaluate(() => {
+        const canvas = document.createElement("canvas"); canvas.width = 8; canvas.height = 8;
+        canvas.getContext("2d").fillRect(0, 0, 8, 8);
+        return canvas.toDataURL("image/png").split(",")[1];
+      });
+      const chooser = page.waitForEvent("filechooser");
+      await page.getByTestId(`button-capture-${kind}-photo`).click();
+      await (await chooser).setFiles({ name: `${kind}.png`, mimeType: "image/png", buffer: Buffer.from(png, "base64") });
+      await expect(page.getByTestId(`photo-thumbnail-${kind}-0`)).toBeVisible();
+    };
+    const start = async (work, both = false, captures = false) => {
       await page.goto(`/projects/${fixture.projectId}/work-orders?edit=${work.id}`);
       await page.getByRole("button", { name: "Start Changeout", exact: true }).click();
       await page.getByTestId("button-system-can-change").click();
       await page.getByTestId("input-old-system-reading").fill("1");
       if (both) await page.getByTestId("input-old-module-reading").fill("1");
       await next.click();
+      if (captures) { await photo("before"); await next.click(); }
       await expect(page.getByText("Perform Physical Changeout", { exact: true })).toBeVisible();
     };
-    const scanIds = async (system, module) => {
+    const scanIds = async (system, module, captures = false) => {
       for (const serial of [system, module].filter(Boolean)) {
         await page.getByTestId("button-hid-id").click();
         await page.getByTestId("input-hid-system-id").pressSequentially(serial, { delay: 5 });
@@ -86,8 +99,13 @@ const { chromium, expect } = require("@playwright/test");
       await page.getByTestId("input-new-system-reading").fill("0");
       if (module) await page.getByTestId("input-new-module-reading").fill("0");
       await next.click();
+      if (captures) { await photo("after"); await next.click(); }
       await page.getByTestId("input-gps-coordinates").fill("40,-74");
       await next.click();
+      if (captures) {
+        await page.getByTestId("input-completion-notes").fill("Keep this captured changeout note");
+        await next.click();
+      }
       await page.getByTestId("button-signature-type-mode").click();
       await page.getByTestId("input-signature-name").fill("Fixture technician");
       await page.getByTestId("button-confirm-type").click();
@@ -96,6 +114,7 @@ const { chromium, expect } = require("@playwright/test");
     const finish = async (work, both = false, inventory = true) => {
       if (inventory) {
         await expect(page.getByRole("heading", { name: "Inventory use & removed equipment review", level: 3, exact: true })).toBeVisible();
+        await expect(page.getByText("Actual stock use was entered during the physical installation step.", { exact: false })).toHaveCount(0);
         for (const [equipment, serial] of [["system", work.oldSystemId], ...(both ? [["module", work.oldModuleId]] : [])]) {
           const card = page.locator(`#removed-${equipment}`).locator("..").locator("..");
           await expect(card.locator(`#removed-${equipment}`)).toHaveValue(serial);
@@ -163,6 +182,23 @@ const { chromium, expect } = require("@playwright/test");
         await choose(page.locator("#planned-stock-mode"), /^Preassembled kits$/);
       }
       await actual.getByRole("button", { name: "Add", exact: true }).click();
+      if (mode === "components") {
+        // Manual use has no trustworthy kit lineage. Reviewed refresh explicitly
+        // clears use for re-selection, instead of guessing a kit from loose rows.
+        await command("fieldSettings", { sourceMode: "project_warehouse", warehouseId: "wizard-w", fulfillment: "kits" });
+        await page.getByRole("button", { name: "Review current project defaults", exact: true }).click();
+        await expect(page.getByRole("region", { name: "Review approved stock defaults" })).toContainText("clears manual actual-use rows");
+        await page.getByRole("button", { name: "Apply approved defaults", exact: true }).click();
+        await expect(next).toBeDisabled();
+        await choose(page.locator("#actual-use-item"), /MAN-K · Manual serialized kit/);
+        await actual.getByRole("button", { name: "Add", exact: true }).click();
+        await expect(actual.getByLabel("Kit serial", { exact: true })).toBeVisible();
+        await command("fieldSettings", { sourceMode: "project_warehouse", warehouseId: "wizard-w", fulfillment: "components" });
+        await page.getByRole("button", { name: "Review current project defaults", exact: true }).click();
+        await page.getByRole("button", { name: "Apply approved defaults", exact: true }).click();
+        await choose(page.locator("#actual-use-item"), /MAN-K · Manual serialized kit/);
+        await actual.getByRole("button", { name: "Add", exact: true }).click();
+      }
       if (mode === "kits") await actual.getByLabel("Kit serial", { exact: true }).fill("KIT-ONE");
       else {
         await expect(actual).toContainText("Scan the new system serial in the next wizard step");
@@ -236,15 +272,96 @@ const { chromium, expect } = require("@playwright/test");
     await command("receive", { orderId: "tech-kit-po", lines: techKitStock });
     await command("assemble", { warehouseId: "shared-vehicle", itemId: "manual-kit", quantity: 1, serials: ["KIT-TECH"],
       components: techKitStock });
+    await command("fieldSettings", { sourceMode: "assigned_vehicle", warehouseId: null, fulfillment: "components" });
+    await api("PATCH", root, { wizardShowBeforePhotosStep: true, wizardShowAfterPhotosStep: true, wizardShowNotesStep: true });
     const techKit = await makeWork("tech-kit", true, true, fixture.viewer.id);
-    await start(techKit, true);
+    await start(techKit, true, true);
+    await next.click(); await scanIds("SYS-TECH", "MOD-TECH", true);
+    // Return to the inventory plan after capturing every other wizard field.
+    const back = page.getByTestId("button-wizard-back");
+    for (let i = 0; i < 9 && !await page.getByText("Perform Physical Changeout", { exact: true }).isVisible(); i++) await back.click();
+    const plannedRegion = page.getByRole("region", { name: "Planned work-order requirements" });
+    const reviewDefaults = page.getByRole("button", { name: "Review current project defaults", exact: true });
+    const applyDefaults = page.getByRole("button", { name: "Apply approved defaults", exact: true });
+    await expect(plannedRegion).toContainText("Kit handling: Loose components");
+    // Inaccessible approved source fails without losing any captures or use rows.
+    await command("warehouse", { id: "shared-vehicle", code: "SHARED", name: "Shared crew vehicle", type: "vehicle",
+      vin: "1HGCM82633A004352", plate: "TEST", plateState: "CO", userIds: [fixture.id] });
+    await reviewDefaults.click();
+    await expect(page.getByRole("alert").filter({ hasText: "no assigned vehicle" })).toBeVisible();
+    await expect(plannedRegion).toContainText("Kit handling: Loose components");
+    await command("warehouse", { id: "shared-vehicle", code: "SHARED", name: "Shared crew vehicle", type: "vehicle",
+      vin: "1HGCM82633A004352", plate: "TEST", plateState: "CO", userIds: [fixture.id, fixture.viewer.id] });
+    // Method-only change is available to a normal technician, not an override.
+    await command("fieldSettings", { sourceMode: "assigned_vehicle", warehouseId: null, fulfillment: "kits" });
+    const forbiddenMethod = await viewerContext.request.post(`${root}/inventory/commands`, { data: {
+      operationId: crypto.randomUUID(), action: "prepareUse", data: { workOrderId: techKit.id, revision: 0, mode: "changeout",
+        used: techKitStock.map(line => ({ ...line, warehouseId: "shared-vehicle" })), dispositions: [] },
+    } });
+    assert.equal(forbiddenMethod.status(), 403, "Normal technicians cannot forge a fulfillment override");
+    await reviewDefaults.click();
+    await expect(page.getByRole("region", { name: "Review approved stock defaults" })).toContainText("Preassembled kits");
+    await expect(plannedRegion).toContainText("Kit handling: Loose components");
+    await page.getByRole("button", { name: "Keep my entries", exact: true }).click();
+    await expect(plannedRegion).toContainText("Kit handling: Loose components");
+    await reviewDefaults.click(); await applyDefaults.click();
     await expect(page.getByRole("region", { name: "Planned work-order requirements" })).toContainText("Kit handling: Preassembled kits");
     await expect(page.getByRole("button", { name: "Change kit handling" })).toHaveCount(0);
+    await expect(next).toBeDisabled();
     await page.getByLabel("Kit serial", { exact: true }).fill("KIT-TECH");
-    await next.click(); await scanIds("SYS-TECH", "MOD-TECH"); await finish(techKit, true);
+    // A reservation arriving while the wizard is open must not be rebuilt.
+    await command("assign", { workOrderId: techKit.id, lines: [
+      { warehouseId: "shared-vehicle", itemId: "manual-kit", quantity: 1, serials: ["KIT-TECH"] },
+    ] });
+    await reviewDefaults.click();
+    await expect(page.getByRole("alert").filter({ hasText: "Existing reservations" })).toBeVisible();
+    await expect(page.getByLabel("Kit serial", { exact: true })).toHaveValue("KIT-TECH");
+    await expect(reviewDefaults).toBeDisabled();
+    await command("assign", { workOrderId: techKit.id, lines: [] });
+    // Refresh query with the retained-plan recheck, which uses the same basis as submit.
+    await page.getByRole("button", { name: "Recheck and keep my entries" }).click();
+    await expect(reviewDefaults).toBeEnabled();
+    // Location plus method changes are reviewed; a second remote edit invalidates review.
+    await command("fieldSettings", { sourceMode: "project_warehouse", warehouseId: "wizard-w", fulfillment: "components" });
+    await reviewDefaults.click();
+    await command("fieldSettings", { sourceMode: "project_warehouse", warehouseId: "wizard-w", fulfillment: "kits" });
+    await applyDefaults.click();
+    await expect(page.getByRole("alert").filter({ hasText: "Inventory changed again" })).toBeVisible();
+    await expect(plannedRegion).toContainText("Stock source: SHARED");
+    await applyDefaults.click();
+    await expect(plannedRegion).toContainText("Stock source: WIZ");
+    await expect(page.getByLabel("Kit serial", { exact: true })).toHaveValue("");
+    // Apply both a new location and method together, then return to approved vehicle kits.
+    await command("fieldSettings", { sourceMode: "assigned_vehicle", warehouseId: null, fulfillment: "components" });
+    await reviewDefaults.click(); await applyDefaults.click();
+    await expect(plannedRegion).toContainText("Stock source: SHARED");
+    await expect(plannedRegion).toContainText("Kit handling: Loose components");
+    await command("fieldSettings", { sourceMode: "assigned_vehicle", warehouseId: null, fulfillment: "kits" });
+    await reviewDefaults.click(); await applyDefaults.click();
+    await page.getByLabel("Kit serial", { exact: true }).fill("KIT-TECH");
+    await page.screenshot({ path: "generated-artifacts/wizard-use/refreshed-approved-defaults.jpg", fullPage: true });
+    await back.click();
+    await expect(page.getByTestId("photo-thumbnail-before-0")).toBeVisible();
+    await next.click(); await next.click();
+    await expect(page.getByTestId("text-new-system-id")).toHaveText("SYS-TECH");
+    await expect(page.getByTestId("text-new-module-id")).toHaveText("MOD-TECH");
+    await next.click();
+    await expect(page.getByTestId("input-new-system-reading")).toHaveValue("0");
+    await expect(page.getByTestId("input-new-module-reading")).toHaveValue("0");
+    await next.click();
+    await expect(page.getByTestId("photo-thumbnail-after-0")).toBeVisible();
+    await next.click();
+    await expect(page.getByTestId("input-gps-coordinates")).toHaveValue("40,-74");
+    await next.click();
+    await expect(page.getByTestId("input-completion-notes")).toHaveValue("Keep this captured changeout note");
+    await next.click();
+    await expect(page.getByTestId("input-signature-name")).toHaveValue("Fixture technician");
+    await expect(next).toBeEnabled();
+    await next.click(); await finish(techKit, true);
     const kitUsage = (await api("GET", `${root}/work-orders/${techKit.id}/inventory`)).allocation.used;
     assert.deepEqual(kitUsage.map(l => l.itemId), ["manual-kit"], "Do not deduct loose components again");
     assert.deepEqual(kitUsage[0].serials, ["KIT-TECH"]);
+    await api("PATCH", root, { wizardShowBeforePhotosStep: false, wizardShowAfterPhotosStep: false, wizardShowNotesStep: false });
     await api("PATCH", root, { changeoutEquipmentType: "system" });
     await command("typeLink", { equipment: "system", typeId: type.id, itemId: "planned-kit" });
     await command("fieldSettings", { sourceMode: "assigned_vehicle", warehouseId: null, fulfillment: "components" });
