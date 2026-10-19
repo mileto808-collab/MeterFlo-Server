@@ -10,12 +10,13 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 
 export type ReturnDecisionDraft = { ruleId: string; basis: string; itemId: string; reason: string };
-export function RemovedEquipmentActions({ record, state, canReceive, canDecide, post, draft, onDraft, actorLabel, timezone }: {
+export function RemovedEquipmentActions({ record, state, canReceive, canDecide, post, draft, onDraft, actorLabel, timezone, onHandoff }: {
   record: EquipmentReturn; state: InventoryState; canReceive: boolean; canDecide: boolean;
   post: (action: "returnAccept" | "returnDecide" | CustodyAction, data: Record<string, unknown>, operationId: string) => Promise<unknown>;
   draft?: ReturnDecisionDraft; onDraft: (draft: ReturnDecisionDraft | null) => void;
   actorLabel: (id: string) => string;
   timezone: string;
+  onHandoff: () => void;
 }) {
   const { toast } = useToast();
   const { ruleId = "", basis = "", itemId = "", reason = "" } = draft ?? {};
@@ -35,7 +36,7 @@ export function RemovedEquipmentActions({ record, state, canReceive, canDecide, 
   };
   const style = "h-10 w-full rounded-md border bg-background px-3 text-sm";
   return <div className="w-full space-y-2 sm:max-w-md">
-    {canDecide && <RemovedEquipmentCustodyActions record={record} busy={busy} run={run} />}
+    {canDecide && <RemovedEquipmentCustodyActions record={record} busy={busy} run={run} onHandoff={onHandoff} />}
     {!!record.history?.length && <details className="text-xs"><summary className="cursor-pointer">Custody & decision history</summary><ul className="space-y-1 py-2">{record.history.map(h => <li key={h.operationId} className="break-words">{removalHistoryLabel(state, record, h)} · {h.reason} · <time dateTime={h.occurredAt}>{inventoryDateTime(h.occurredAt, timezone)}</time> · {actorLabel(h.actor)}</li>)}</ul></details>}
     {record.disposition === "returned" && record.status === "pending" && canReceive && <Button type="button" size="sm" disabled={busy} onClick={() => void run("returnAccept", { id: record.id })}>Accept into quarantine</Button>}
     {record.status === "quarantine" && canDecide && <fieldset disabled={busy} className="space-y-2">

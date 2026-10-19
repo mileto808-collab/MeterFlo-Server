@@ -219,12 +219,15 @@ export function registerInventoryRoutes(app: Express) {
   }));
   app.get(`${base}/print/:kind/:id`, handler(async (req, res) => {
     const c = res.locals.inventory, state = inventoryVisibleState(await inventoryState(c.project.id), c.user.id, c.admin);
-    const record: any = (req.params.kind === "order" ? state.orders : req.params.kind === "receipt" ? state.receipts : req.params.kind === "count" ? state.counts : req.params.kind === "return" ? state.returns : []).find((r: any) => r.id === req.params.id);
+    const record: any = (req.params.kind === "order" ? state.orders : req.params.kind === "receipt" ? state.receipts : req.params.kind === "count" ? state.counts : req.params.kind === "return" ? state.returns : req.params.kind === "customer-handoff" ? state.customerHandoffs ?? [] : []).find((r: any) => r.id === req.params.id);
     if (!record) throw Object.assign(new InventoryError("Document not found."), { status: 404 });
     const { rows: actors } = await pool.query(`SELECT id, username FROM public.users WHERE id = ANY($1::text[])`,
       [[...new Set([...state.receipts.map(receipt => receipt.actor), ...state.returns.flatMap(record => (record.history ?? []).map(event => event.actor))])]]);
+    const handoff = req.params.kind === "customer-handoff" ? record :
+      req.params.kind === "receipt" && record.action === "returnCustomerBatch" ? state.customerHandoffs?.find(handoff => handoff.id === record.reference) : undefined;
     const workOrderLabels = req.params.kind === "return"
-      ? await inventoryWorkOrderLabels(c.project.databaseName, [record.workOrderId]) : {};
+      ? await inventoryWorkOrderLabels(c.project.databaseName, [record.workOrderId]) :
+      handoff ? await inventoryWorkOrderLabels(c.project.databaseName, handoff.lines.map((line: { workOrderId: number }) => line.workOrderId)) : {};
     res.type("html").send(inventoryPrint(req.params.kind, record, state, c.project.name, actors, c.project.timezone ?? "UTC", workOrderLabels));
   }));
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } });

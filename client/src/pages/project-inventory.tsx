@@ -2,6 +2,7 @@ import { inventoryDateTime } from "@shared/inventory-date-time";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRoute } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { CustomerHandoffDialog } from "@/components/inventory/customer-handoff-dialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useAuth } from "@/hooks/useAuth";
@@ -283,6 +284,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   };
   const [operationOrder, setOperationOrder] = useState<InventoryOrder | null>(null);
   const [sessionState, setSessionState] = useState<InventoryState | null>(null);
+  const [customerHandoffIds, setCustomerHandoffIds] = useState<string[] | null>(null);
   const [sessionDraft, setSessionDraft] = useState<SavedShipmentDraft | undefined>();
   const [transitOrder, setTransitOrder] = useState<InventoryOrder | null>(null);
   const [operation, setOperation] = useState<"receive" | "dispatch" | "accept">("receive");
@@ -929,7 +931,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       else toast({ title: "Closure not confirmed", description: "Your reason is still available. Retry unchanged to confirm the result.", variant: "destructive" });
     } catch { /* The mutation reports the failure; keep the reason and stable retry identity. */ }
   };
-  const openPrint = (kind: "order" | "receipt" | "count" | "return", id: string) => {
+  const openPrint = (kind: "order" | "receipt" | "count" | "return" | "customer-handoff", id: string) => {
     window.open(`${base}/print/${kind}/${encodeURIComponent(id)}`, "_blank", "noopener,noreferrer");
   };
   const receiptSummary = (receipt: InventoryState["receipts"][number]) => {
@@ -1982,7 +1984,9 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           </Alert>;
         })}
         <InventoryRecordsWorkspace kind="returns" title="Removed Equipment" description="Returned systems and modules enter quarantine first. Release to usable inventory only after inspection." dataset={returnsDataset} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
-          headerAction={<RemovalRulesManager state={state} authorized={can("inventory.manageRemovalRules")} post={(action, payload, operationId) => command.mutateAsync({ action, data: payload, operationId })} />}
+          headerAction={<div className="flex flex-wrap gap-2">
+            {can("inventory.resolveReturns") && <Button size="sm" variant="outline" onClick={() => setCustomerHandoffIds([])}>Customer handoffs</Button>}
+            <RemovalRulesManager state={state} authorized={can("inventory.manageRemovalRules")} post={(action, payload, operationId) => command.mutateAsync({ action, data: payload, operationId })} /></div>}
           renderRow={row => { const returned = state.returns.find(value => value.id === row.id); if (!returned) return null;
             return <article className="flex min-w-0 flex-col justify-between gap-3 rounded-md border bg-card px-3 py-3 sm:flex-row sm:items-start sm:px-4">
               <div className="min-w-0"><div className="flex flex-wrap items-center gap-2 font-medium"><span>{returned.equipment === "system" ? "System" : "Module"}</span><span className="break-all font-mono text-sm">{returned.serial}</span><Badge variant={returned.status === "released" ? "default" : "outline"}>{row.cells.status}</Badge></div>
@@ -1995,7 +1999,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
                 </div>}
               </div><div className="flex min-w-0 flex-col gap-3">
               <Button size="sm" variant="outline" className="self-start" onClick={() => openPrint("return", returned.id)} aria-label={`Print removed equipment ${returned.serial}`}><Printer className="mr-2 h-4 w-4" />Print</Button>
-              <RemovedEquipmentActions record={returned} state={state} canReceive={can("inventory.receive")} canDecide={can("inventory.resolveReturns")}
+              {returned.customerHandoffId && <Button size="sm" variant="outline" onClick={() => openPrint("customer-handoff", returned.customerHandoffId!)}>Print customer manifest</Button>}
+              <RemovedEquipmentActions record={returned} state={state} canReceive={can("inventory.receive")} canDecide={can("inventory.resolveReturns")} onHandoff={() => setCustomerHandoffIds([returned.id])}
                 actorLabel={id => inventoryActorLabel(id, data.actors ?? data.users)}
                 timezone={timezone}
                 draft={returnInspect[returned.id]} onDraft={draft => setReturnInspect(current => { const next = { ...current }; if (draft) next[returned.id] = draft; else delete next[returned.id]; return next; })}
@@ -2019,6 +2024,10 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     </div>
     </Tabs>
     </div>
+    {can("inventory.resolveReturns") && <CustomerHandoffDialog open={customerHandoffIds !== null} onClose={() => setCustomerHandoffIds(null)}
+      initialIds={customerHandoffIds ?? []} state={state} timezone={timezone} workOrderLabels={data.workOrderLabels ?? {}}
+      post={(payload, operationId) => command.mutateAsync({ action: "returnCustomerBatch", data: payload, operationId })}
+      print={id => openPrint("customer-handoff", id)} />}
     {kitDialogMode && <InventoryKitDialog key={kitDialogMode} state={state} projectId={projectId} mode={kitDialogMode}
       canResolve={can("inventory.resolveExceptions")} onDirtyChange={setKitDirty} onOperationPending={setKitOperationPending}
       onClose={() => { setKitDialogMode(null); setKitDirty(false); setKitOperationPending(false); }}

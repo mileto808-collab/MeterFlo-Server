@@ -41,3 +41,15 @@ A changed revision still matters when movements leave the same final quantity.
 **How to apply:** Keep the editor warning and authoritative posting check on the
 same semantic comparison. Show current on-hand expectations separately from the
 original count-start amounts; never silently rebase a stale count to make it post.
+
+Cross-table inventory clear/restore operations require one explicitly owned
+transaction, including disposable test-fixture cleanup.
+
+**Why:** Deferred foreign keys are checked at the end of each autocommitted
+statement. A sequence of pool queries is not a transaction and can fail while
+clearing valid handoff/header/equipment references, even when production deletion
+correctly succeeds inside its transaction.
+
+**How to apply:** Acquire one client and use BEGIN/COMMIT (with rollback) around
+the complete relational operation. Reordering metadata is not a substitute for
+the transaction boundary.

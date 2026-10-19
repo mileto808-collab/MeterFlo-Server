@@ -27,6 +27,21 @@ Built-in actions cannot be reassigned. Once a custom action is selected for tech
 
 Handoff records include the responsible user and server timestamp. Screens, history and printing use the project's timezone. Individual printouts include customer work-order identity, inspection decisions, corrections and handoff evidence. Activity records custody steps separately from disposition decisions.
 
+## Bulk customer handoffs and manifests
+
+1. In **Inventory → Removed Equipment**, decide which inspected equipment is **Return to customer**. It remains held outside usable stock.
+2. Choose **Customer handoffs**, or **Verify and hand off to customer** on an individual entry.
+3. Choose one source location and select the entries physically leaving that location. Search by the recorded old serial or customer work order. A handoff supports up to 500 entries.
+4. Choose **Visually inspect recorded serials** and attest that every selected serial matches, or **Scan every serial**. A scanner can submit each scan with Enter; **Add scan** also accepts an entered serial.
+5. Scanning requires one exact match per selected serial. Duplicate, missing, unexpected or ambiguous scans are rejected. Changing the equipment selection or verification mode clears verification.
+6. Enter the customer recipient, optional collection/shipping reference and handoff notes. Confirm only after physical collection or dispatch.
+7. **Print this manifest** prints a summary followed by a separate serials page. Scan mode prints the verified scans in scan order; visual mode prints the previously collected serials for the selected equipment. Equipment serial identities are not overwritten.
+8. Reprint from **Completed handoffs**, the equipment entry's **Print customer manifest**, or the handoff Activity receipt. Manifest dates inherit the project timezone; work orders use customer IDs with internal-number fallback.
+
+Handoffs require **Inventory: resolve removed equipment** (`inventory.resolveReturns`) and access to the source location. Each batch is atomic: a stale, moved, already-handed-off or invalid entry rejects the whole batch. No stock is released or deducted. Header and equipment lines are relational records, with project-scoped foreign keys and a uniqueness constraint preventing one equipment return from appearing in two manifests.
+
+If a connection fails, **Retry this handoff** retains the original payload and posting identity while the page remains open, including after closing/reopening the dialog. Do not prepare a different handoff until that outcome is resolved. After a browser reload, check **Completed handoffs** first; completed equipment is no longer selectable. Backups retain the batch, verification evidence and custody links.
+
 ## Correct an incorrect decision
 
 1. On an eligible entry, select **Correct warehouse decision**.

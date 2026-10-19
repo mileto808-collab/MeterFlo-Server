@@ -33,6 +33,19 @@ Present one disposition choice, with its stock/custody behavior configured under
 
 **How to apply:** Keep identity, label and action distinct. Preserve warehouse-only authority for stock release, scrap decisions, customer handoffs and corrections. Do not treat selecting customer return as evidence that the equipment has already left custody.
 
+Customer handoffs can include multiple removed systems/modules and must offer
+visual serial inspection or scanning every serial. Printed manifests need a
+separate serials page: actual verified scans for scan mode, or the previously
+collected equipment serials for visual mode.
+
+**Why:** The user explicitly requested both verification methods and specified
+which serial evidence belongs on the manifest. Old equipment serials are already
+recorded; a handoff scan is verification, not a replacement equipment identity.
+
+**How to apply:** Retain verification evidence with the handoff, match scans to
+selected custody records, and reject duplicate/unexpected/incomplete scans.
+Reprinting must preserve the handoff's captured serial evidence.
+
 Independently saved removal controls that share a policy revision must serialize saves through completion of the refreshed snapshot.
 
 **Why:** Saving technician selections and immediately toggling mandatory returns can otherwise submit an earlier revision even after the database has accepted the first save.

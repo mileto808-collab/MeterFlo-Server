@@ -8,12 +8,19 @@ import { receiptSerialAppendix, receiptSerialSummary } from "./inventoryReceiptS
 import { inventoryKitPrint } from "./inventoryKitPrint";
 import { inventoryDateTime } from "../shared/inventory-date-time";
 import { inventoryRemovedEquipmentPrint } from "./inventoryRemovedEquipmentPrint";
+import { inventoryCustomerHandoffPrint } from "./inventoryCustomerHandoffPrint";
 import type { InventoryWorkOrderLabels } from "../shared/inventory-work-order-labels";
 import { removalActivityIndex, removalActivityDisplay } from "../shared/inventory-removal-display";
 
 const escape = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 export function inventoryPrint(kind: string, record: any, state: InventoryState, project: string, actors: readonly InventoryActorLabel[] = [], timezone = "UTC", workOrderLabels: InventoryWorkOrderLabels = {}) {
   if (kind === "return") return inventoryRemovedEquipmentPrint(record, state, project, actors, timezone, workOrderLabels);
+  if (kind === "customer-handoff") return inventoryCustomerHandoffPrint(record, state, project, actors, timezone, workOrderLabels);
+  if (kind === "receipt" && record.action === "returnCustomerBatch") {
+    const handoff = state.customerHandoffs?.find(handoff => handoff.id === record.reference);
+    if (!handoff) throw new Error("Customer handoff manifest is unavailable.");
+    return inventoryCustomerHandoffPrint(handoff, state, project, actors, timezone, workOrderLabels);
+  }
   const removal = kind === "receipt" ? removalActivityDisplay(state, removalActivityIndex(state).get(record.id) ?? []) : undefined;
   const lineList = record.lines || record.snapshot?.map((b: any) => ({ ...b, quantity: b.quantity })) || [];
   const warehouse = (id: string) => state.warehouses.find(w => w.id === id)?.name || id || "";

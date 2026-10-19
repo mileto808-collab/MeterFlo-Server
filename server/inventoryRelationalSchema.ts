@@ -10,6 +10,7 @@ const referenceTables: Record<string, string> = {
   replacementFor: "inventory_orders",
   locationTypeId: "inventory_location_types",
   ruleId: "inventory_removal_rules",
+  customerHandoffId: "inventory_customer_handoffs", returnId: "inventory_returns",
 };
 
 /** Development/standalone maintenance only. Publish transports schema to managed production. */
@@ -87,6 +88,8 @@ export async function applyInventoryRelationalSchema(pool: Pool) {
     }
   }
   statements.push(`ALTER TABLE public.inventory_quantities ADD COLUMN IF NOT EXISTS revision integer NOT NULL DEFAULT 0`);
+  statements.push(`CREATE UNIQUE INDEX IF NOT EXISTS inventory_customer_handoff_return_unique
+    ON public.inventory_customer_handoff_lines(project_id,return_id)`);
   statements.push(`ALTER TABLE public.inventory_quantities ADD COLUMN IF NOT EXISTS _position integer NOT NULL DEFAULT 0`);
   fk("inventory_quantities", ["project_id", "warehouse_id"], "inventory_warehouses");
   statements.push(`CREATE TABLE IF NOT EXISTS public.inventory_stock_serials (

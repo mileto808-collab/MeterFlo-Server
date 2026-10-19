@@ -20,7 +20,16 @@ async function main() {
     const fixture = JSON.parse(await fs.readFile(file, "utf8"));
     await fs.rm(path.join(await getProjectFilesPath(), `inventory-${fixture.projectId}`), { recursive: true, force: true });
     await pool.query(`DROP SCHEMA IF EXISTS "${fixture.schema}" CASCADE`);
-    await clearRelationalInventory(pool, fixture.projectId);
+    // Inventory relations use deferred cross-table FKs; clearing them must use
+    // one transaction, just like production project deletion and restore.
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await clearRelationalInventory(client, fixture.projectId);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK"); throw error;
+    } finally { client.release(); }
     for (const table of ["inventory_movements", "inventory_state"]) await pool.query(`DELETE FROM public.${table} WHERE project_id=$1`, [fixture.projectId]);
     await pool.query("DELETE FROM public.projects WHERE id=$1", [fixture.projectId]);
     await pool.query("DELETE FROM public.sessions WHERE sess->'passport'->'user'->'claims'->>'sub'=$1", [fixture.id]);
@@ -100,4 +109,7 @@ async function main() {
     viewerRoleId: viewerRole.id, viewer: { id: viewer.id, username: viewer.username, password: viewerPassword } }), { mode: 0o600 });
   console.log("Isolated inventory UI fixture created.");
 }
-main().catch(() => { console.error("Inventory fixture setup failed."); process.exitCode = 1; }).finally(() => pool.end());
+main().catch((error) => {
+  console.error("Inventory fixture setup/cleanup failed.", { code: error?.code, table: error?.table, constraint: error?.constraint });
+  process.exitCode = 1;
+}).finally(() => pool.end());

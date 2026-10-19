@@ -1,6 +1,7 @@
 import type { PoolClient } from "pg";
 import { emptyInventory, warehouseSchema, itemSchema, vendorSchema, allocationSchema, savedCountDraftSchema, categoryNameSchema, categoryKey, type InventoryState } from "../shared/inventory";
 import { z } from "zod";
+import { validateCustomerHandoffs } from "../shared/inventory-customer-handoffs";
 import { mergeOrderHighWater, validateOrderNumbers } from "../shared/inventory-order-labels";
 import { countPayloadFits } from "../shared/inventory-count-limits";
 import { reserved } from "../shared/inventory-engine";
@@ -70,10 +71,10 @@ export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: n
     id: z.string().min(1), workOrderId: z.number().int().positive(),
     status: z.enum(["pending", "quarantine", "released", "scrapped", "left_onsite", "customer_pending", "customer_returned"]),
     customerRecipient: z.string().trim().min(1).max(200).optional(), customerReference: z.string().max(200).optional(),
-    customerHandoffAt: z.string().datetime().optional(), customerHandoffBy: z.string().min(1).optional(),
+    customerHandoffAt: z.string().datetime().optional(), customerHandoffBy: z.string().min(1).optional(), customerHandoffId: z.string().uuid().optional(),
     itemId: z.string().min(1).optional(), history: z.array(z.object({
       recipient: z.string().max(200).optional(), reference: z.string().max(200).optional(), previousStatus: z.string().max(40).optional(),
-      physicallyPresent: z.boolean().optional(),
+      physicallyPresent: z.boolean().optional(), handoffId: z.string().uuid().optional(),
       operationId: z.string().min(1), actor: z.string().min(1), occurredAt: z.string().datetime(),
       outcome: z.enum(["returned", "scrapped", "left_onsite", "released", "quarantine", "customer_return", "customer_returned", "decision_corrected"]), reason: z.string().min(1),
       ruleId: z.string().uuid().optional(), ruleRevision: z.number().int().positive().optional(), ruleName: z.string().min(1).max(200).optional(),
@@ -97,6 +98,7 @@ export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: n
         ["quarantine", "released"].includes(returned.status) && (!returned.warehouseId || returned.disposition !== "returned"))
       throw new Error("Inventory backup has invalid removed-equipment custody.");
   }
+  validateCustomerHandoffs(s);
   // A pre-type backup used assigned-user checks even for physical warehouses.
   // Restore that policy explicitly rather than applying the live cutover default.
   const locations = normalizeInventoryLocations(s, "assigned");

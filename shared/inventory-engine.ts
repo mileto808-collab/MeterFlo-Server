@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { applyCustomerHandoff } from "./inventory-customer-handoffs";
 import { requirementsSatisfied } from "./inventory-requirements";
 import { normalizeRemovalPolicy, applyRemovalRuleCommand, resolveFieldDisposition, removalChoices } from "./inventory-removal-policy";
 import { applyCustomerReturnCommand } from "./inventory-customer-returns";
@@ -527,6 +528,9 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     } else { allocation.status = "released"; receipt(`work-order-${input.workOrderId}`, null, [], input.reason); }
     allocation.lines = []; allocation.mode = null;
     // Reconciliation reverses stock use, not the physical custody of removed equipment.
+  } else if (a === "returnCustomerBatch") {
+    applyCustomerHandoff(s, command, actor, now, access);
+    receipt(command.operationId, String(d.warehouseId), [], String(d.reason));
   } else if (a === "returnCustomerHandoff" || a === "returnCorrectDecision") {
     applyCustomerReturnCommand(s, command, actor, now, access, (warehouseId, lines, direction) => move(s, warehouseId, lines, direction), receipt);
   } else if (a === "returnAccept" || a === "returnRelease" || a === "returnDecide") {

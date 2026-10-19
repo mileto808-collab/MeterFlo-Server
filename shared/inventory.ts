@@ -73,7 +73,7 @@ export const savedCountDraftSchema = countDraftSchema.extend({
 export const inventoryCommandSchema = z.object({
   operationId: z.string().uuid(), action: z.enum(["fieldSettings", "warehouse", "locationType", "locationTypeDelete", "vendor", "item", "itemDelete", "category", "categoryRename", "categoryDelete", "order", "release",
     "cancel", "unrelease", "archiveOrder", "restoreOrder", "numberOrders", "receive", "dispatch", "accept", "assemble", "verifyVendorKit", "disassemble", "resolveKitHold", "countStart", "countPost", "countCancel", "countSaveDraft",
-    "assign", "prepareUse", "returnAccept", "returnRelease", "returnDecide", "returnCustomerHandoff", "returnCorrectDecision", "removalRule", "removalRuleDelete", "removalPolicy", "removalFieldChoices", "reconcileWorkOrder", "closeOrder", "resolveTransit", "resolveHold",
+    "assign", "prepareUse", "returnAccept", "returnRelease", "returnDecide", "returnCustomerHandoff", "returnCustomerBatch", "returnCorrectDecision", "removalRule", "removalRuleDelete", "removalPolicy", "removalFieldChoices", "reconcileWorkOrder", "closeOrder", "resolveTransit", "resolveHold",
     "shipmentDraftSave", "shipmentDraftPrepare", "shipmentDraftUnlock", "shipmentDraftDelete", "shipmentDraftClaim", "typeLink"]),
   data: z.record(z.unknown()),
 }).strict();
@@ -103,10 +103,11 @@ export type InventoryReceipt = { id: string; action: string; reference: string; 
   holdDisposition?: HoldDisposition; kitHoldId?: string; kitInspection?: StockLine;
   kitConversion?: { assemblyId: string; recovered: Array<import("./inventory-kits").KitRecovery> } };
 export type EquipmentReturn = Disposition & { id: string; workOrderId: number; status: "pending" | "quarantine" | "released" | "scrapped" | "left_onsite" | "customer_pending" | "customer_returned"; itemId?: string;
-  customerRecipient?: string; customerReference?: string; customerHandoffAt?: string; customerHandoffBy?: string;
+  customerRecipient?: string; customerReference?: string; customerHandoffAt?: string; customerHandoffBy?: string; customerHandoffId?: string;
   history?: Array<{ operationId: string; actor: string; occurredAt: string; outcome: string; reason: string; ruleId?: string; ruleRevision?: number; ruleName?: string;
-    recipient?: string; reference?: string; previousStatus?: string; physicallyPresent?: boolean }> };
+    recipient?: string; reference?: string; previousStatus?: string; physicallyPresent?: boolean; handoffId?: string }> };
 export type InventoryState = { warehouses: Warehouse[]; vendors: Vendor[]; items: InventoryItem[]; stock: Stock[];
+  customerHandoffs?: import("./inventory-customer-handoffs").CustomerHandoff[];
   fieldSettings?: FieldStockSettings[];
   locationTypes?: InventoryLocationType[];
   removalRules?: RemovalRule[]; removalPolicies?: RemovalPolicy[];
@@ -125,7 +126,7 @@ export const emptyInventory = (): InventoryState => ({ warehouses: [], vendors: 
 export const commandPermission = (action: InventoryCommand["action"]) =>
   action === "fieldSettings" ? inventoryPermissions.configure :
   ["removalRule", "removalRuleDelete", "removalPolicy", "removalFieldChoices"].includes(action) ? inventoryPermissions.manageRemovalRules :
-  ["returnRelease", "returnDecide", "returnCustomerHandoff", "returnCorrectDecision"].includes(action) ? inventoryPermissions.resolveReturns :
+  ["returnRelease", "returnDecide", "returnCustomerHandoff", "returnCustomerBatch", "returnCorrectDecision"].includes(action) ? inventoryPermissions.resolveReturns :
   ["locationType", "locationTypeDelete"].includes(action) ? inventoryPermissions.manageLocationTypes :
   action === "closeOrder" ? inventoryPermissions.closeOrders :
   ["resolveTransit", "resolveHold", "resolveKitHold"].includes(action) ? inventoryPermissions.resolveExceptions :
