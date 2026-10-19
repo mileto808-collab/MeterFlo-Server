@@ -1,3 +1,4 @@
+import { inventoryDateTime } from "@shared/inventory-date-time";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useRoute } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -1708,7 +1709,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
                   {p.closedShort > 0 && <span>closed short {p.closedShort}</span>}
                 </p>;
                   })}</div>
-                  {order.closure && <p className="rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">Closed by {order.closure.actor} · {new Date(order.closure.occurredAt).toLocaleString()} · {order.closure.reason}</p>}
+                  {order.closure && <p className="rounded-md bg-muted/40 px-3 py-2 text-xs text-muted-foreground">Closed by {order.closure.actor} · {inventoryDateTime(order.closure.occurredAt, timezone)} · {order.closure.reason}</p>}
                 </div>
               </details>
             </article>;
@@ -1761,7 +1762,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
         <InventoryRecordsWorkspace kind="counts" title="Cycle counts"
           description="Review physical count snapshots, continue open drafts, and retain posted or cancelled counts as audit history."
           dataset={countsDataset} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
-          persistentHeaderAction={can("inventory.count") ? <CountRecoveryInbox records={countRecovery.records} counts={state.counts}
+          persistentHeaderAction={can("inventory.count") ? <CountRecoveryInbox records={countRecovery.records} counts={state.counts} timezone={timezone}
             onOpen={count => requestCountTransition(() => openCount(count, true))} onDiscard={countRecovery.discardRecord} /> : null}
           headerAction={can("inventory.count") ? <Button size="sm" className="h-9 w-9 shrink-0 p-0 sm:w-auto sm:px-3" aria-label="Start count" title="Start count" onClick={() => setCountStartOpen(true)} disabled={command.isPending}><Plus className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">Start count</span></Button> : null}
           renderRow={row => {
@@ -1842,7 +1843,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
               Entry filter active: “{countSearch}” · {matchingCountRows.length} matching
             </span>}
             {countRecovery.error && <Alert variant="destructive"><AlertTitle>Local recovery unavailable</AlertTitle><AlertDescription>{countRecovery.error}</AlertDescription></Alert>}
-            {countRecovery.pending && <CountRecoveryNotice record={countRecovery.pending} count={state.counts.find(count => count.id === activeCount.id) ?? activeCount}
+            {countRecovery.pending && <CountRecoveryNotice record={countRecovery.pending} count={state.counts.find(count => count.id === activeCount.id) ?? activeCount} timezone={timezone}
               disabled={command.isPending || !can("inventory.count")}
               onDiscard={countRecovery.discardRecovery}
               onRestore={() => {
@@ -1989,6 +1990,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
                 {returned.ruleName && <div className="mt-1 text-xs text-muted-foreground">Field disposition: {returned.ruleName}</div>}
               </div><RemovedEquipmentActions record={returned} state={state} canReceive={can("inventory.receive")} canDecide={can("inventory.resolveReturns")}
                 actorLabel={id => inventoryActorLabel(id, data.actors ?? data.users)}
+                timezone={timezone}
                 draft={returnInspect[returned.id]} onDraft={draft => setReturnInspect(current => { const next = { ...current }; if (draft) next[returned.id] = draft; else delete next[returned.id]; return next; })}
                 post={(action, payload, operationId) => command.mutateAsync({ action, data: payload, operationId })} /></article>;
           }} />

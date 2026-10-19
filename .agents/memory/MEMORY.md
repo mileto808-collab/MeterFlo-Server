@@ -50,3 +50,4 @@
 - [Attachment ownership](attachment-ownership-boundary.md) — a matching numeric project suffix cannot prove ownership of an old directory.
 - [Live module refactors](live-module-refactors.md) — update consumers before removing exports; Vite observes intermediate file writes, not just the final valid code.
 - [Multipart audit identity](multipart-audit-identity.md) — streamed photo callbacks can lose request identity; re-establish the verified actor after parsing, never substitute an import user.
+- [Project timezone display](project-timezone-display.md) — project-related dates and times inherit the project's timezone, including inventory receipts and detail history.

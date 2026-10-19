@@ -1,3 +1,4 @@
+import { inventoryDateTime } from "@shared/inventory-date-time";
 import type { InventoryCount } from "@shared/inventory";
 import { countRecoveryBaseline, type CountRecovery } from "@/lib/inventory-count-recovery";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -13,8 +14,9 @@ function downloadRecovery(record: CountRecovery) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-export function CountRecoveryInbox({ records, counts, onOpen, onDiscard }: {
+export function CountRecoveryInbox({ records, counts, onOpen, onDiscard, timezone }: {
   records: CountRecovery[]; counts: InventoryCount[];
+  timezone: string;
   onOpen: (count: InventoryCount) => void; onDiscard: (record: CountRecovery) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -30,7 +32,7 @@ export function CountRecoveryInbox({ records, counts, onOpen, onDiscard }: {
           const count = counts.find(value => value.id === record.countId);
           return <div key={`${record.countId}:${record.writer}`} className="space-y-2 rounded border p-3">
             <p className="text-sm font-medium">{count ? inventoryCountReference(counts, count.id) : "Count no longer available"} · {record.rows.length} entries</p>
-            <p className="text-xs text-muted-foreground">{new Date(record.updatedAt).toLocaleString()}{count?.status !== "open" && " · Cannot restore: count is closed or unavailable."}</p>
+            <p className="text-xs text-muted-foreground">{inventoryDateTime(new Date(record.updatedAt), timezone)}{count?.status !== "open" && " · Cannot restore: count is closed or unavailable."}</p>
             <div className="flex flex-wrap gap-2">
               {count?.status === "open" && <Button size="sm" onClick={() => { setOpen(false); onOpen(count); }}>Open count</Button>}
               <Button size="sm" variant="outline" onClick={() => downloadRecovery(record)}>Download local copy</Button>
@@ -45,15 +47,16 @@ export function CountRecoveryInbox({ records, counts, onOpen, onDiscard }: {
   </>;
 }
 
-export function CountRecoveryNotice({ record, count, disabled, onRestore, onDiscard }: {
+export function CountRecoveryNotice({ record, count, disabled, onRestore, onDiscard, timezone }: {
   record: CountRecovery; count: InventoryCount; disabled?: boolean; onRestore: () => void; onDiscard: () => void;
+  timezone: string;
 }) {
   const sameBaseline = record.baseline === countRecoveryBaseline(count);
   const newerDraft = record.revision !== (count.draft?.revision ?? 0);
   return <Alert data-testid="count-recovery-notice">
     <AlertTitle>Unsaved entries found on this device</AlertTitle>
     <AlertDescription className="space-y-2">
-      <p>{record.rows.length} entries captured {new Date(record.updatedAt).toLocaleString()}. Nothing has been saved or posted automatically.</p>
+      <p>{record.rows.length} entries captured {inventoryDateTime(new Date(record.updatedAt), timezone)}. Nothing has been saved or posted automatically.</p>
       {newerDraft && <p>A different server draft revision exists. Restored entries can be reviewed, but saving and posting remain blocked until you reload the saved draft.</p>}
       {!sameBaseline && <p>The count snapshot has changed. Download your local copy for reference; these entries cannot be restored onto a different snapshot.</p>}
       <div className="flex flex-wrap gap-2">

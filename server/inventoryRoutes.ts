@@ -224,7 +224,7 @@ export function registerInventoryRoutes(app: Express) {
     if (!record) throw Object.assign(new InventoryError("Document not found."), { status: 404 });
     const { rows: actors } = await pool.query(`SELECT id, username FROM public.users WHERE id = ANY($1::text[])`,
       [[...new Set(state.receipts.map(receipt => receipt.actor))]]);
-    res.type("html").send(inventoryPrint(req.params.kind, record, state, c.project.name, actors));
+    res.type("html").send(inventoryPrint(req.params.kind, record, state, c.project.name, actors, c.project.timezone ?? "UTC"));
   }));
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } });
   app.post(`${base}/images`, upload.single("image"), handler(async (req, res) => {
