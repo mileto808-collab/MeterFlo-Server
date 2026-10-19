@@ -2,6 +2,8 @@
 
 ## Field stock defaults and shared vehicles
 
+Work-order readers can view planned requirements, kit components and recorded usage for work orders they are authorized to see without warehouse-wide inventory permission. Field technicians remain limited to their own or their field group's assignments. This read-only view does not grant catalog access, stock reservation/consumption, pricing/supplier information or warehouse-management access.
+
 After enabling Inventory and saving the project, open **Edit Project → Details → Field inventory stock**. These settings save independently; they do not submit or discard other project edits.
 
 1. Create the required locations in **Inventory → Locations**.

@@ -18,3 +18,9 @@ That can be mistaken for a missing-record or responsive-layout failure.
 **How to apply:** Grant the minimal navigation and reading permissions through
 normal role management, then separately verify create/edit/delete remain denied.
 An API read alone does not establish that the account can enter the page.
+
+Work-order viewing must not require warehouse-wide inventory access just to read that work order's inventory requirements and recorded usage.
+
+**Why:** A field technician's authorized work-order detail displayed an inventory loading error because the embedded read required broader inventory permission. Granting catalog/warehouse access solely to fix that panel would broaden access unnecessarily.
+
+**How to apply:** Verify the assignment-scoped read with only work-order permissions, including linked kit components. Keep unrelated work orders, warehouse/catalog endpoints and mutations denied; omit pricing/supplier and unrelated location information. Inventory management and its event stream retain their own permissions.

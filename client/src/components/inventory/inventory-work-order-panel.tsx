@@ -10,7 +10,6 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useInventoryEvents } from "@/hooks/useInventoryEvents";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -22,6 +21,7 @@ import { Loader2, PackageCheck, Plus, Trash2 } from "lucide-react";
 type WorkInventorySnapshot = {
   enabled: boolean; allocation: WorkAllocation | null; items: InventoryItem[]; warehouses: Warehouse[];
   locationTypes?: InventoryLocationType[]; requirements?: WorkRequirements; canSelect?: boolean;
+  canManageInventory: boolean;
   componentTrace?: WorkKitComponentTrace[];
   removalRules?: RemovalRule[]; removalPolicies?: RemovalPolicy[]; workflow?: RemovalWorkflow;
 };
@@ -33,10 +33,13 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
   const { hasPermission } = usePermissions();
   const { user } = useAuth();
   const { toast } = useToast();
-  const inventoryEvents = useInventoryEvents(projectId);
+  const canViewInventory = hasPermission("inventory.view");
+  const inventoryEvents = useInventoryEvents(canViewInventory ? projectId : null);
   const key = ["/api/projects", projectId, "work-orders", workOrderId, "inventory"];
   const projectInventoryKey = [`/api/projects/${projectId}/inventory`];
-  const { data, isLoading, isError, refetch } = useQuery<WorkInventorySnapshot>({ queryKey: key });
+  const { data, isLoading, isError, refetch } = useQuery<WorkInventorySnapshot>({
+    queryKey: key, refetchInterval: canViewInventory ? false : 30000,
+  });
   const [lines, setLines] = useState<DraftLine[]>([]);
   const [itemId, setItemId] = useState("");
   const [warehouseId, setWarehouseId] = useState("");
@@ -58,7 +61,7 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
   const [draftTouched, setDraftTouched] = useState(false);
   const [staleAllocation, setStaleAllocation] = useState(false);
   const projectReadingOnly = data?.workflow?.wizardMode === "reading_only" || readingOnly;
-  const canAssign = hasPermission("inventory.assign") && data?.canSelect !== false && !projectReadingOnly;
+  const canAssign = data?.canManageInventory === true && hasPermission("inventory.assign") && data?.canSelect !== false && !projectReadingOnly;
   const workMode = data?.workflow?.wizardMode === "user_choice" ? mode : projectReadingOnly ? "reading_only" : "changeout";
   const visibleEquipment = (["system", "module"] as const).filter(e => !["system", "module"].includes(data?.workflow?.equipment ?? "") || e === data?.workflow?.equipment);
 
@@ -154,8 +157,8 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
     mutation.mutate({ action: "assign", payload: { workOrderId, lines: remaining } });
   };
 
-  if (isLoading) return <Card><CardContent className="p-5 space-y-3"><div className="h-5 w-40 animate-pulse rounded bg-muted" /><div className="h-12 animate-pulse rounded bg-muted" /></CardContent></Card>;
-  if (isError) return <Card><CardContent className="p-5"><p className="text-sm text-destructive">Inventory assignments could not load.</p><Button type="button" className="mt-3" variant="outline" onClick={() => refetch()}>Retry</Button></CardContent></Card>;
+  if (isLoading) return <div className="space-y-3" aria-label="Loading work-order inventory"><div className="h-5 w-40 animate-pulse rounded bg-muted" /><div className="h-12 animate-pulse rounded bg-muted" /></div>;
+  if (isError) return <div role="alert"><p className="text-sm text-destructive">Work-order inventory could not load.</p><Button type="button" className="mt-3" variant="outline" onClick={() => refetch()}>Retry</Button></div>;
   if (!data?.enabled) return null;
 
   const addLine = () => {
@@ -256,24 +259,24 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
     });
   };
 
-  return <Card className="border-l-4 border-l-primary/60">
-    <CardHeader className="pb-3"><div className="flex items-center justify-between gap-2"><CardTitle className="flex items-center gap-2 text-base"><PackageCheck className="h-4 w-4 text-primary" />Inventory</CardTitle>
+  return <div className="space-y-4" data-testid="work-order-inventory-panel">
+    <div className="flex flex-wrap items-start justify-between gap-2">
+      <p className="min-w-0 flex-1 text-sm text-muted-foreground">Planned requirements are separate from reserved stock. Actual usage is recorded during installation.</p>
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <span data-testid="inventory-live-indicator" aria-live="polite" className="text-[11px] text-muted-foreground">
+        {canViewInventory && <span data-testid="inventory-live-indicator" aria-live="polite" className="text-[11px] text-muted-foreground">
           {inventoryEvents.status === "live" ? "Live inventory" : inventoryEvents.status === "reconnecting" ? "Reconnecting" : inventoryEvents.status === "unavailable" ? "Live unavailable" : "Connecting"}
-        </span>
-        {inventoryEvents.status === "unavailable" && <Button type="button" size="sm" variant="outline" aria-label="Retry live inventory updates" onClick={inventoryEvents.reconnect}>Retry</Button>}
+        </span>}
+        {canViewInventory && inventoryEvents.status === "unavailable" && <Button type="button" size="sm" variant="outline" aria-label="Retry live inventory updates" onClick={inventoryEvents.reconnect}>Retry</Button>}
         {data.allocation && <Badge variant={data.allocation.mode ? "default" : "outline"}>{consumed ? "Consumed" : data.allocation.mode ? "Review complete" : "Reserved"}</Badge>}
       </div></div>
-      <p className="text-sm text-muted-foreground">Planned requirements are separate from reserved stock. Technicians record what they actually use from an accessible stock location during installation.</p></CardHeader>
-    <CardContent className="space-y-4">
-      {projectReadingOnly ? <p className="text-sm text-muted-foreground">Reading-only projects do not reserve or consume replacement inventory and do not record removed equipment.</p> : <section className="rounded-md border bg-muted/20 p-3" aria-label="Planned requirements">
+    <div className="space-y-4">
+      {projectReadingOnly ? <p className="text-sm text-muted-foreground">Reading-only projects do not reserve or consume replacement inventory and do not record removed equipment.</p> : <section className="space-y-2" aria-label="Planned requirements">
         <p className="mb-2 text-sm font-medium">Planned requirements <span className="ml-1 text-xs font-normal text-muted-foreground">No reservation created</span></p>
         {(data.requirements?.lines ?? []).length ? <ul className="space-y-1.5 text-sm">
           {(data.requirements?.lines ?? []).map((line, index) => {
             const item = items.find(value => value.id === line.itemId);
             const components = inventoryComponentDetails(line.itemId, line.quantity, items);
-            return <li key={`${line.itemId}-${index}`} className="rounded border p-2">
+            return <li key={`${line.itemId}-${index}`} className="border-b py-2 last:border-b-0">
               <div className="flex justify-between gap-3"><span className="min-w-0 break-words">{item?.name ?? line.itemId}{item?.components.length ? " · kit" : ""}</span><span className="shrink-0 tabular-nums">{line.quantity} {item?.unit ?? "units"}</span></div>
               {!!components.length && <details className="mt-2 text-xs">
                 <summary className="cursor-pointer font-medium">View kit components</summary>
@@ -327,7 +330,7 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
             setItemId(line.itemId); setWarehouseId(line.warehouseId); setQuantity(String(line.quantity)); setSerials(line.serials.join("\n")); setLines([]);
           }}>Edit</Button><Button type="button" aria-label={`Remove ${item?.name ?? "item"} reservation`} variant="ghost" size="icon" disabled={mutation.isPending} onClick={() => void removeReservation(line)}><Trash2 className="h-4 w-4" /></Button></div>}
         </div>;
-      })}</div> : <div className="rounded-md border border-dashed p-4 text-sm text-muted-foreground">{consumed ? "No actual inventory use was recorded." : "No stock is reserved for this work order."}</div>}
+      })}</div> : <p className="text-sm text-muted-foreground">{consumed ? "No actual inventory use was recorded." : "No stock is reserved for this work order."}</p>}
       {consumed && !!data.componentTrace?.length && <details className="mt-2 rounded border p-2 text-xs">
         <summary className="cursor-pointer font-medium">Recorded original kit components</summary>
         {data.componentTrace.map(trace => <div key={trace.sourceId} className="mt-2">
@@ -341,7 +344,7 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
       </details>}
       </section>}
 
-      {canAssign && data.allocation?.status !== "consumed" && <div className="space-y-3 rounded-md bg-muted/40 p-3">
+      {canAssign && data.allocation?.status !== "consumed" && <div className="space-y-3 border-t pt-4">
         {!data.allocation && <Button type="button" variant="outline" onClick={() => void createEmptyAssignment()} disabled={mutation.isPending}>Create empty assignment</Button>}
         <p className="text-sm font-medium">Add reserved stock</p>
         <div className="grid gap-3 sm:grid-cols-3">
@@ -380,17 +383,17 @@ export function InventoryWorkOrderPanel({ projectId, workOrderId, readingOnly = 
           <div className="flex gap-2"><Button type="button" onClick={() => void submitReview()} disabled={mutation.isPending || !canAssign || allocationConflict}>{mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}Confirm inventory review</Button><Button type="button" variant="ghost" onClick={() => { draftEditEpoch.current++; setReviewing(false); }}>Cancel</Button></div>
         </div>}
       </div>}
-      {data.allocation?.status === "consumed" && hasPermission("inventory.count") && <div className="border-t pt-4">
+      {data.canManageInventory && data.allocation?.status === "consumed" && hasPermission("inventory.count") && <div className="border-t pt-4">
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-muted/40 p-3">
           <div><p className="text-sm font-medium">Inventory reconciliation</p><p className="text-xs text-muted-foreground">Use only when this completed work order is being reset, reopened, or removed.</p></div>
           <Button type="button" variant="outline" onClick={() => setReconcileOpen(true)}>Reconcile consumed stock</Button>
         </div>
       </div>}
-    </CardContent>
+    </div>
     <Dialog open={reconcileOpen} onOpenChange={setReconcileOpen}><DialogContent><DialogHeader><DialogTitle>Reconcile work-order inventory</DialogTitle><DialogDescription>Record why the completed inventory use is being reversed. Choose whether physically used stock is actually returning.</DialogDescription></DialogHeader>
       <div className="space-y-3"><div className="space-y-1"><Label htmlFor={`reconcile-reason-${workOrderId}`}>Required reason</Label><Input id={`reconcile-reason-${workOrderId}`} value={reconcileReason} onChange={event => setReconcileReason(event.target.value)} placeholder="Explain reset, reopen, or deletion" /></div>
         <label className="flex items-start gap-2 rounded-md border p-3 text-sm"><Checkbox checked={restoreUsedStock} onCheckedChange={checked => setRestoreUsedStock(checked === true)} /><span><span className="font-medium">Restore used quantities to stock</span><span className="mt-1 block text-xs text-muted-foreground">Only check if the physical meters are confirmed back in the selected inventory location.</span></span></label>
       </div><DialogFooter><Button variant="outline" onClick={() => setReconcileOpen(false)}>Keep inventory as posted</Button><Button variant="destructive" disabled={!reconcileReason.trim() || mutation.isPending} onClick={() => mutation.mutate({ action: "reconcileWorkOrder", payload: { workOrderId, reason: reconcileReason.trim(), restoreUsedStock } }, { onSuccess: () => { setReconcileOpen(false); setReconcileReason(""); setRestoreUsedStock(false); } })}>Confirm reconciliation</Button></DialogFooter>
     </DialogContent></Dialog>
-  </Card>;
+  </div>;
 }

@@ -9,6 +9,7 @@ import { InventoryError } from "../shared/inventory-engine";
 import { inventoryState, postInventory } from "./inventoryService";
 import { inventoryStreamAllowed, inventoryStreamPermissions, subscribeInventoryEvents } from "./inventoryEvents";
 import { storage } from "./storage";
+import { visibleAssignedOrders } from "./workOrderVisibility";
 import { pool } from "./db";
 import { isAuthenticated } from "./replitAuth";
 import { getProjectFilesPath } from "./fileStorage";
@@ -41,7 +42,7 @@ export function inventoryVisibleState(state: InventoryState, actor: string, admi
 }
 export function registerInventoryRoutes(app: Express) {
   const base = "/api/projects/:projectId/inventory";
-  const auth = async (req: any, res: any, next: any) => {
+  const auth = (workOrderRead = false) => async (req: any, res: any, next: any) => {
     try {
       const projectId = z.coerce.number().int().positive().parse(req.params.projectId);
       const user = await storage.getUser(req.user.claims.sub);
@@ -49,9 +50,11 @@ export function registerInventoryRoutes(app: Express) {
       const admin = await storage.isAdminUser(user), project = await storage.getProject(projectId);
       if (!project || !admin && !await storage.isUserAssignedToProject(user.id, projectId)) return res.status(403).json({ message: "Project access required." });
       if (project.isActive === false && !await storage.hasPermission(user, "projects.viewInactive")) return res.status(403).json({ message: "Inactive project access required." });
-      if (!await storage.hasPermission(user, inventoryPermissions.view)) return res.status(403).json({ message: "Inventory view permission required." });
+      const canViewInventory = await storage.hasPermission(user, inventoryPermissions.view);
+      if (!canViewInventory && !(workOrderRead && await storage.hasPermission(user, "workOrders.view")))
+        return res.status(403).json({ message: "Inventory view permission required." });
       const permissions = (await storage.getUserEffectivePermissions(user)).filter(p => p.startsWith("inventory."));
-      res.locals.inventory = { user, admin, project, permissions };
+      res.locals.inventory = { user, admin, project, permissions, canViewInventory };
       res.set("Cache-Control", "no-store"); next();
     } catch { res.status(503).json({ message: "Inventory access could not be verified." }); }
   };
@@ -76,7 +79,7 @@ export function registerInventoryRoutes(app: Express) {
     return { enabled: !!c.project.inventoryEnabled, projectName: c.project.name, timezone: timezoneEnabled === "false" ? "UTC" : defaultTimezone || "America/Denver",
       state, permissions: c.permissions, users: users.map(u => ({ id: u.id, username: u.username || u.id })), actors };
   };
-  app.use(base, isAuthenticated, auth);
+  app.use(base, isAuthenticated, auth());
   app.get(`${base}/type-links`, handler(async (_req, res) => {
     const c = res.locals.inventory;
     const [state, systemTypes, moduleTypes] = await Promise.all([
@@ -242,23 +245,47 @@ export function registerInventoryRoutes(app: Express) {
     const file = path.join(await getProjectFilesPath(), `inventory-${res.locals.inventory.project.id}`, req.params.name);
     await fs.access(file); res.sendFile(file);
   }));
-  app.get("/api/projects/:projectId/work-orders/:workOrderId/inventory", isAuthenticated, auth, handler(async (req, res) => {
-    const c = res.locals.inventory, s = inventoryVisibleState(await inventoryState(c.project.id), c.user.id, c.admin);
+  app.get("/api/projects/:projectId/work-orders/:workOrderId/inventory", isAuthenticated, auth(true), handler(async (req, res) => {
+    const c = res.locals.inventory;
     const id = z.coerce.number().int().positive().parse(req.params.workOrderId);
     if (!c.project.databaseName || !/^[a-z0-9_]+$/.test(c.project.databaseName)) throw new InventoryError("Work-order storage unavailable.");
     const { rows: [wo] } = await pool.query(`SELECT * FROM "${c.project.databaseName}".work_orders WHERE id=$1`, [id]);
     if (!wo) throw new InventoryError("Work order not found.");
+    if (!(await visibleAssignedOrders(c.user, [{ assignedUserId: wo.assigned_user_id, assignedGroupId: wo.assigned_group_id }])).length)
+      throw Object.assign(new InventoryError("This work order is not assigned to you or your field group."), { status: 403 });
+    const s = inventoryVisibleState(await inventoryState(c.project.id), c.user.id, c.admin);
     const allocation = s.allocations.find(a => a.workOrderId === id) || null;
     const { rows: labels } = await pool.query("SELECT label FROM public.work_order_statuses WHERE lower(code)=lower($1)", [wo.status]);
-    const canSelect = ![String(wo.status).toLowerCase(), ...labels.map(l => String(l.label).toLowerCase())]
+    const canSelect = c.canViewInventory && ![String(wo.status).toLowerCase(), ...labels.map(l => String(l.label).toLowerCase())]
       .some(status => ["completed", "closed", "cancelled"].includes(status));
     const requirements = allocation?.status === "consumed"
       ? s.workRequirements?.find(r => r.workOrderId === id)
       : await workRequirements(pool as any, c.project.id, s, wo);
-    return { enabled: !!c.project.inventoryEnabled, canSelect, allocation, requirements: requirements ?? { workOrderId: id, lines: [], missing: [] },
-      items: s.items, warehouses: s.warehouses, locationTypes: s.locationTypes, fieldSettings: s.fieldSettings, revision: s.revision,
-      canChangeFieldStock: c.admin || c.permissions.includes(inventoryPermissions.maintain) || c.permissions.includes(inventoryPermissions.configure),
-      componentTrace: workKitComponentTrace(s, id),
+    const componentTrace = workKitComponentTrace(s, id);
+    const referencedItems = new Set([
+      ...(requirements?.lines ?? []), ...(allocation?.lines ?? []), ...(allocation?.used ?? []),
+      ...componentTrace.flatMap(trace => trace.components),
+    ].map(line => line.itemId));
+    const includeComponents = (id: string, visited = new Set<string>()) => {
+      if (visited.has(id)) return;
+      visited.add(id);
+      for (const child of s.items.find(item => item.id === id)?.components ?? []) {
+        referencedItems.add(child.itemId);
+        includeComponents(child.itemId, visited);
+      }
+    };
+    [...referencedItems].forEach(id => includeComponents(id));
+    const referencedWarehouses = new Set([...(allocation?.lines ?? []), ...(allocation?.used ?? []),
+      ...(allocation?.dispositions ?? [])].map(line => line.warehouseId));
+    return { enabled: !!c.project.inventoryEnabled, canSelect, canManageInventory: c.canViewInventory,
+      allocation, requirements: requirements ?? { workOrderId: id, lines: [], missing: [] },
+      items: c.canViewInventory ? s.items : s.items.filter(item => referencedItems.has(item.id))
+        .map(({ cost, billingRate, vendorId, ...item }) => item),
+      warehouses: c.canViewInventory ? s.warehouses : s.warehouses.filter(w => referencedWarehouses.has(w.id))
+        .map(({ id, code, name, type, locationTypeId, active }) => ({ id, code, name, type, locationTypeId, active })),
+      locationTypes: s.locationTypes, fieldSettings: c.canViewInventory ? s.fieldSettings : undefined, revision: s.revision,
+      canChangeFieldStock: c.canViewInventory && (c.admin || c.permissions.includes(inventoryPermissions.maintain) || c.permissions.includes(inventoryPermissions.configure)),
+      componentTrace,
       removalRules: removalConfig(s).rules, removalPolicies: [removalConfig(s).policy],
       workflow: { wizardMode: c.project.wizardMode ?? "changeout", equipment: c.project.changeoutEquipmentType ?? "both", readingEquipment: c.project.readingEquipmentType ?? "both" } };
   }));
