@@ -32,6 +32,8 @@ test("safe defaults, custom same-outcome names, rename history, stale review, an
   assert.deepEqual(removalChoices(s, "system", "field").map(r => r.outcome), ["returned"]);
   const rule = { ...removalChoices(s, "system", "field")[0], id: randomUUID(), name: "Contract salvage return" };
   s = post(s, "removalRule", rule);
+  assert.equal(removalChoices(s, "system", "field").length, 1, "New rules are not enabled for technicians automatically");
+  s = post(s, "removalFieldChoices", { equipment: "system", ruleIds: [removalConfig(s).rules[0].id, rule.id], revision: removalConfig(s).policy.revision });
   assert.equal(removalChoices(s, "system", "field").length, 2);
   s = post(s, "prepareUse", { workOrderId: 1, revision: 0, mode: "changeout", used: [], dispositions: [{ ...removed(s), ruleId: rule.id }] });
   const complete = completeInventoryWorkOrder(s, 1, false, "installer", "2026-10-17T12:00:00.000Z");
@@ -59,6 +61,8 @@ test("mandatory returns reject forged field scrap, warehouse-only choices, stale
   assert.throws(() => prepare({ ...removed(s), ruleId: removalConfig(s).rules[2].id, disposition: "scrapped", warehouseId: null }), /approved/i);
   assert.throws(() => prepare({ ...removed(s), ruleName: "Forged", policyRevision: 99 }), /changed/i);
   s = post(s, "removalPolicy", { ...removalConfig(s).policy, requireSystemReturn: false });
+  assert.ok(!removalChoices(s, "system", "field").some(r => r.id === scrap.id), "Optional returns do not expose unselected rules");
+  s = post(s, "removalFieldChoices", { equipment: "system", ruleIds: [removalConfig(s).rules[0].id, scrap.id], revision: removalConfig(s).policy.revision });
   assert.ok(removalChoices(s, "system", "field").some(r => r.id === scrap.id));
   assert.ok(!removalChoices(s, "module", "field").some(r => r.id === scrap.id));
   s = prepare({ ...removed(s), ruleId: scrap.id, disposition: "scrapped", warehouseId: null });

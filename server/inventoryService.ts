@@ -91,7 +91,7 @@ export async function saveInventory(client: PoolClient, projectId: number, befor
     entityChanges.push({ field: "categoryCatalog", before: before.categoryCatalog ?? [], after: after.categoryCatalog ?? [] });
   if (JSON.stringify(before.locationTypes ?? []) !== JSON.stringify(after.locationTypes ?? []))
     entityChanges.push({ field: "locationTypes", before: before.locationTypes ?? [], after: after.locationTypes ?? [] });
-  for (const field of ["removalRules", "removalPolicies", "fieldSettings"] as const)
+  for (const field of ["removalRules", "removalPolicies", "fieldRemovalChoices", "fieldSettings"] as const)
     if (JSON.stringify(before[field] ?? []) !== JSON.stringify(after[field] ?? []))
       entityChanges.push({ field, before: before[field] ?? [], after: after[field] ?? [] });
   await writeRelationalInventory(client, projectId, after, before);
@@ -120,8 +120,8 @@ export async function postInventory(projectId: number, command: InventoryCommand
           !admin && !await storage.isUserAssignedToProject(actor, projectId))
         throw Object.assign(new InventoryError("Configure project inventory permission required."), { status: 403 });
     }
-    const removalPermission = ["removalRule", "removalRuleDelete", "removalPolicy"].includes(command.action)
-      ? inventoryPermissions.manageRemovalRules : ["returnDecide", "returnRelease"].includes(command.action) ? inventoryPermissions.resolveReturns : null;
+    const removalPermission = ["removalRule", "removalRuleDelete", "removalPolicy", "removalFieldChoices"].includes(command.action)
+      ? inventoryPermissions.manageRemovalRules : ["returnDecide", "returnRelease", "returnCustomerHandoff", "returnCorrectDecision"].includes(command.action) ? inventoryPermissions.resolveReturns : null;
     if (removalPermission) {
       const user = await storage.getUser(actor);
       if (!user || user.isLocked || !await storage.hasPermission(user, removalPermission) ||

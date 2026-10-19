@@ -3,6 +3,7 @@ import { inventoryDateTime } from "@shared/inventory-date-time";
 import type { EquipmentReturn, InventoryState } from "@shared/inventory";
 import { removalChoices } from "@shared/inventory-removal-policy";
 import { removalHistoryLabel } from "@shared/inventory-removal-display";
+import { RemovedEquipmentCustodyActions, type CustodyAction } from "./removed-equipment-custody-actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,7 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 export type ReturnDecisionDraft = { ruleId: string; basis: string; itemId: string; reason: string };
 export function RemovedEquipmentActions({ record, state, canReceive, canDecide, post, draft, onDraft, actorLabel, timezone }: {
   record: EquipmentReturn; state: InventoryState; canReceive: boolean; canDecide: boolean;
-  post: (action: "returnAccept" | "returnDecide", data: Record<string, unknown>, operationId: string) => Promise<unknown>;
+  post: (action: "returnAccept" | "returnDecide" | CustodyAction, data: Record<string, unknown>, operationId: string) => Promise<unknown>;
   draft?: ReturnDecisionDraft; onDraft: (draft: ReturnDecisionDraft | null) => void;
   actorLabel: (id: string) => string;
   timezone: string;
@@ -24,16 +25,17 @@ export function RemovedEquipmentActions({ record, state, canReceive, canDecide, 
   const rules = removalChoices(state, record.equipment, "warehouse");
   const selected = rules.find(r => r.id === ruleId);
   const stale = !!basis && basis !== JSON.stringify({ record, rules });
-  const run = async (action: "returnAccept" | "returnDecide", data: Record<string, unknown>) => {
-    if (busy) return;
+  const run = async (action: "returnAccept" | "returnDecide" | CustodyAction, data: Record<string, unknown>) => {
+    if (busy) return false;
     const fp = JSON.stringify({ action, data }), id = attempts.current.get(fp) ?? crypto.randomUUID();
     attempts.current.set(fp, id); setBusy(true);
-    try { await post(action, data, id); attempts.current.delete(fp); onDraft(null); }
-    catch (e) { toast({ title: "Equipment action not saved", description: e instanceof Error ? e.message : "Retry after reconnecting.", variant: "destructive" }); }
+    try { await post(action, data, id); attempts.current.delete(fp); onDraft(null); return true; }
+    catch (e) { toast({ title: "Equipment action not saved", description: e instanceof Error ? e.message : "Retry after reconnecting.", variant: "destructive" }); return false; }
     finally { setBusy(false); }
   };
   const style = "h-10 w-full rounded-md border bg-background px-3 text-sm";
   return <div className="w-full space-y-2 sm:max-w-md">
+    {canDecide && <RemovedEquipmentCustodyActions record={record} busy={busy} run={run} />}
     {!!record.history?.length && <details className="text-xs"><summary className="cursor-pointer">Custody & decision history</summary><ul className="space-y-1 py-2">{record.history.map(h => <li key={h.operationId} className="break-words">{removalHistoryLabel(state, record, h)} · {h.reason} · <time dateTime={h.occurredAt}>{inventoryDateTime(h.occurredAt, timezone)}</time> · {actorLabel(h.actor)}</li>)}</ul></details>}
     {record.disposition === "returned" && record.status === "pending" && canReceive && <Button type="button" size="sm" disabled={busy} onClick={() => void run("returnAccept", { id: record.id })}>Accept into quarantine</Button>}
     {record.status === "quarantine" && canDecide && <fieldset disabled={busy} className="space-y-2">

@@ -2,7 +2,7 @@ import type { InventoryItem, Stock, Warehouse } from "../../../shared/inventory"
 
 export type StockBalanceRow = Stock & {
   item: Pick<InventoryItem, "id" | "sku" | "name" | "category" | "unit" | "tracking">;
-  warehouse: Pick<Warehouse, "id" | "name" | "code" | "type">;
+  warehouse: Pick<Warehouse, "id" | "name" | "code" | "type" | "locationTypeId"> & { locationTypeName?: string };
   reserved: number; serialCount?: number;
 };
 export type StockExportContext = { project: string; timezone: string };
@@ -14,7 +14,7 @@ const escape = (value: Cell) => String(value).replace(/[&<>"']/g, char =>
 
 export function stockBalanceExportRows(rows: readonly StockBalanceRow[]): Cell[][] {
   return rows.map(row => [row.item.sku, row.item.name, row.item.category, row.item.unit, row.item.tracking,
-    row.warehouse.code, row.warehouse.name, row.warehouse.type, row.quantity, row.reserved,
+    row.warehouse.code, row.warehouse.name, row.warehouse.locationTypeName ?? row.warehouse.type, row.quantity, row.reserved,
     row.quantity - row.reserved, row.serialCount ?? row.serials.length]);
 }
 

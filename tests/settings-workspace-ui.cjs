@@ -21,6 +21,7 @@ async function main() {
   await fs.mkdir(out,{recursive:true});
   try {
     const context = await browser.newContext({baseURL:require("./support/workspace-ui-base.cjs")(),
+      hasTouch:true,
       viewport:{width:1440,height:1000},hasTouch:true,isMobile:true});
     assert.equal((await context.request.post("/api/auth/local/login",{data:fixture})).status(),200);
     const page = await context.newPage(), errors=[], writes=[];
@@ -33,7 +34,9 @@ async function main() {
     const choose = async ([group,section,label]) => {
       const menu = page.getByTestId("settings-mobile-menu");
       if(await menu.isVisible()) {
-        await menu.click(); await page.getByRole("option",{name:label,exact:true}).click();
+        // Touch avoids desktop hover-scroll arrows moving the phone menu's last
+        // option between pointer-down and pointer-up.
+        await menu.click(); await page.getByRole("option",{name:label,exact:true}).tap();
         await expect(page.locator('[role="listbox"]')).toHaveCount(0);
       } else {
         await page.getByTestId(`settings-tab-${group}`).click();

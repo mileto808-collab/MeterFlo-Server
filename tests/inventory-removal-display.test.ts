@@ -24,7 +24,7 @@ function fixture() {
     ],
   };
   state.returns = [returned, { ...returned, id: "returned-2", serial: "OLD-2", status: "pending", history: [],
-    ruleId: state.removalRules[3].id, ruleName: state.removalRules[3].name }];
+    ruleId: state.removalRules.at(-1)!.id, ruleName: state.removalRules.at(-1)!.name }];
   state.receipts = returned.history!.map(event => ({
     id: event.operationId, action: event.outcome === "returned" ? "complete" : event.outcome === "quarantine" ? "returnAccept" : "returnDecide",
     reference: returned.id, warehouseId: "w", lines: [], actor: event.actor, occurredAt: event.occurredAt,
@@ -39,8 +39,8 @@ test("project names and stable identities distinguish dispositions sharing the s
   assert.ok(field.options.some(option => option.label === "Customer depot return"));
   assert.ok(field.options.some(option => option.label === "Contract exception return"));
   assert.ok(!field.options.some(option => option.value === "returned" || option.label === "returned"));
-  for (const [index, label] of [[0, "Customer depot return"], [3, "Contract exception return"]] as const) {
-    const rule = state.removalRules![index];
+  for (const label of ["Customer depot return", "Contract exception return"]) {
+    const rule = state.removalRules!.find(rule => rule.name === label)!;
     const matches = filterOperationsRows(dataset, "", { fieldDisposition: removalFilterKey(rule.id, rule.outcome) }, dataset.defaultSort);
     assert.equal(matches.length, 1);
     assert.equal(matches[0].cells.fieldDisposition, label);
@@ -101,7 +101,7 @@ test("one completion containing system and module dispositions matches either st
   second.equipment = "module";
   second.history = [{ ...state.returns[0].history![0], ruleId: second.ruleId, ruleName: second.ruleName }];
   const activity = buildOperationsDataset("activity", state);
-  for (const rule of [state.removalRules![0], state.removalRules![3]])
+  for (const rule of [state.removalRules![0], state.removalRules!.at(-1)!])
     assert.ok(filterOperationsRows(activity, "", { fieldDisposition: removalFilterKey(rule.id, rule.outcome) }, activity.defaultSort)
       .some(row => row.id === "field-1"));
 });

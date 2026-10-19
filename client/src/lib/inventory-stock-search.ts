@@ -2,9 +2,9 @@ import type { StockBalanceRow } from "./inventory-stock-export";
 
 type Availability = "all" | "in-stock" | "available" | "reserved" | "out-of-stock";
 type SortBy = "item-asc" | "item-desc" | "location-asc" | "location-desc" | "available-asc" | "available-desc";
-export type InventoryStockFilters = { warehouse: string; category: string; tracking: string; availability: Availability; sort: SortBy };
+export type InventoryStockFilters = { warehouse: string; locationType: string; category: string; tracking: string; availability: Availability; sort: SortBy };
 export const initialStockFilters: InventoryStockFilters = {
-  warehouse: "all", category: "all", tracking: "all", availability: "all", sort: "item-asc",
+  warehouse: "all", locationType: "all", category: "all", tracking: "all", availability: "all", sort: "item-asc",
 };
 
 export function filterInventoryStockRows(rows: readonly StockBalanceRow[], query: string, filters: InventoryStockFilters): StockBalanceRow[] {
@@ -14,6 +14,7 @@ export function filterInventoryStockRows(rows: readonly StockBalanceRow[], query
     if (needle && ![row.item.sku, row.item.name, row.warehouse.code, row.warehouse.name, ...row.serials]
       .join(" ").toLocaleLowerCase().includes(needle)) return false;
     if (filters.warehouse !== "all" && row.warehouseId !== filters.warehouse) return false;
+    if (filters.locationType !== "all" && row.warehouse.locationTypeId !== filters.locationType) return false;
     if (filters.category !== "all" && row.item.category.trim() !== filters.category) return false;
     if (filters.tracking !== "all" && row.item.tracking !== filters.tracking) return false;
     if (filters.availability === "in-stock" && row.quantity <= 0) return false;

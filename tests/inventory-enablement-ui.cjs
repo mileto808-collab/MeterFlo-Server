@@ -21,8 +21,8 @@ function signaturePng() {
 (async () => {
   const fixture = JSON.parse(fs.readFileSync("/tmp/meterflo-inventory-ui-fixture.json", "utf8"));
   const browser = await chromium.launch({ executablePath: "/repl/tools/bin/chromium", args: ["--no-sandbox"] });
-  const admin = await browser.newContext({ baseURL: `https://${process.env.REPLIT_DEV_DOMAIN}` });
-  const member = await browser.newContext({ baseURL: `https://${process.env.REPLIT_DEV_DOMAIN}` });
+  const admin = await browser.newContext({ baseURL: require("./support/workspace-ui-base.cjs")() });
+  const member = await browser.newContext({ baseURL: require("./support/workspace-ui-base.cjs")() });
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   const root = `/api/projects/${fixture.projectId}`;
   const api = async (context, method, path, data, status = 200) => {
@@ -65,7 +65,9 @@ function signaturePng() {
     await request("PATCH", root, { inventoryEnabled: "false" }, 400);
     const page = await admin.newPage(), errors = [];
     page.on("pageerror", error => errors.push(error.message));
+    await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(`/projects/${fixture.projectId}/edit`);
+    await page.getByRole("tab", { name: "Inventory", exact: true }).click();
     await expect(page.getByTestId("switch-inventory-enabled")).toHaveAttribute("aria-checked", "true");
     await expect(page.getByTestId("inventory-toggle-preservation-note")).toContainText("Existing reservations remain reserved");
     await page.getByTestId("switch-inventory-enabled").click();
@@ -100,7 +102,9 @@ function signaturePng() {
     assert.deepEqual((await snapshot()).state, before);
     assert.equal(await ledger(), beforeLedger);
     await page.setViewportSize({ width: 390, height: 844 });
+    await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(`/projects/${fixture.projectId}/edit`);
+    await page.getByRole("tab", { name: "Inventory", exact: true }).click();
     await expect(page.getByTestId("switch-inventory-enabled")).toHaveAttribute("aria-checked", "false");
     await page.getByTestId("switch-inventory-enabled").click();
     const enabling = page.waitForResponse(r => r.request().method() === "PATCH" && r.url().endsWith(root));
@@ -112,7 +116,9 @@ function signaturePng() {
     await page.goto(`/projects/${fixture.projectId}/work-orders?edit=${work.id}`);
     await expect(page.getByTestId("accordion-inventory")).toBeVisible();
     // Verify useful backend errors are visible instead of a generic save failure.
+    await page.setViewportSize({ width: 1280, height: 900 });
     await page.goto(`/projects/${fixture.projectId}/edit`);
+    await page.getByRole("tab", { name: "Inventory", exact: true }).click();
     await page.route(`**${root}`, route => route.request().method() === "PATCH"
       ? route.fulfill({ status: 403, json: { message: "Inventory configuration permission required (acceptance fixture)." } }) : route.continue());
     await page.getByTestId("switch-inventory-enabled").click();

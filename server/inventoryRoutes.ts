@@ -287,7 +287,7 @@ export function registerInventoryRoutes(app: Express) {
       locationTypes: s.locationTypes, fieldSettings: c.canViewInventory ? s.fieldSettings : undefined, revision: s.revision,
       canChangeFieldStock: c.canViewInventory && (c.admin || c.permissions.includes(inventoryPermissions.maintain) || c.permissions.includes(inventoryPermissions.configure)),
       componentTrace,
-      removalRules: removalConfig(s).rules, removalPolicies: [removalConfig(s).policy],
+      removalRules: removalConfig(s).rules, removalPolicies: [removalConfig(s).policy], fieldRemovalChoices: s.fieldRemovalChoices,
       workflow: { wizardMode: c.project.wizardMode ?? "changeout", equipment: c.project.changeoutEquipmentType ?? "both", readingEquipment: c.project.readingEquipmentType ?? "both" } };
   }));
 }

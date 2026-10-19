@@ -5,6 +5,7 @@ import { emptyInventory, type InventoryState } from "../shared/inventory";
 import { readInventoryCategories, storedCategoryState } from "./inventoryCategories";
 import { inventoryFromRelational, inventoryToRelational, writeRelationalInventory } from "./inventoryRelationalCodec";
 import { normalizeInventoryLocations } from "../shared/inventory-location-types";
+import { normalizeRemovalPolicy } from "../shared/inventory-removal-policy";
 
 type Client = Pick<PoolClient, "query">;
 /** Keep the same database transaction when a caller uses Drizzle. */
@@ -78,7 +79,7 @@ export async function migrateRelationalInventories(pool: Pool) {
     const { rows } = await client.query("SELECT project_id FROM public.inventory_state ORDER BY project_id FOR UPDATE");
     for (const row of rows) {
       const state = await readRelationalInventory(client, row.project_id);
-      await writeRelationalInventory(client, row.project_id, state);
+      await writeRelationalInventory(client, row.project_id, normalizeRemovalPolicy(state));
     }
     await client.query("SET CONSTRAINTS ALL IMMEDIATE");
     const { rows: constraints } = await client.query(`SELECT conrelid::regclass::text AS relation,conname

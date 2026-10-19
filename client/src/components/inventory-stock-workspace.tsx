@@ -43,11 +43,12 @@ export function InventoryStockWorkspace({ base, projectName, timezone, onRefresh
   const url = stockUrl(base, "", params);
   const stock = useQuery<StockPage>({ queryKey: [base, "stock", url], queryFn: ({ signal }) => fetchStock(url, signal) });
   const optionsUrl = stockUrl(base, "/options", { q: optionSearch });
-  const options = useQuery<{ categories: string[]; warehouses: Array<{ id: string; name: string; code: string }> }>({
+  const options = useQuery<{ categories: string[]; warehouses: Array<{ id: string; name: string; code: string }>; locationTypes: Array<{ id: string; name: string }> }>({
     queryKey: [base, "stock", optionsUrl], queryFn: ({ signal }) => fetchStock(optionsUrl, signal), enabled: filtersOpen,
   });
   const categories = options.data?.categories ?? [];
   const warehouses = options.data?.warehouses ?? [];
+  const locationTypes = options.data?.locationTypes ?? [];
   const total = stock.data?.total ?? 0;
   const matchingCount = stock.data?.filtered ?? 0;
   const visibleRows = stock.data?.rows ?? [];
@@ -55,7 +56,7 @@ export function InventoryStockWorkspace({ base, projectName, timezone, onRefresh
   const currentPage = stock.data ? Math.floor(stock.data.offset / rowsPerPage) : page;
   const pageCount = Math.max(1, Math.ceil(matchingCount / rowsPerPage));
   const exportCount = matchingCount;
-  const activeFilterCount = Number(filters.warehouse !== "all") + Number(filters.category !== "all") +
+  const activeFilterCount = Number(filters.warehouse !== "all") + Number(filters.locationType !== "all") + Number(filters.category !== "all") +
     Number(filters.tracking !== "all") + Number(filters.availability !== "all") + Number(filters.sort !== "item-asc");
 
   useEffect(() => {
@@ -215,9 +216,9 @@ export function InventoryStockWorkspace({ base, projectName, timezone, onRefresh
         <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>Filter stock</DialogTitle>
-            <DialogDescription>Refine stock balances by location, catalog category, tracking, and availability.</DialogDescription>
+            <DialogDescription>Refine stock balances by location, location type, catalog category, tracking, and availability.</DialogDescription>
           </DialogHeader>
-          <Input aria-label="Find filter choices" placeholder="Find locations or categories (up to 200 choices)" value={optionSearch} onChange={event => setOptionSearch(event.target.value)} />
+          <Input aria-label="Find filter choices" placeholder="Find locations, types or categories (up to 200 choices)" value={optionSearch} onChange={event => setOptionSearch(event.target.value)} />
           {options.isError && <p role="alert">Filter choices could not be loaded. <Button variant="ghost" onClick={() => void options.refetch()}>Retry</Button></p>}
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
@@ -226,6 +227,14 @@ export function InventoryStockWorkspace({ base, projectName, timezone, onRefresh
                 <option value="all">All locations</option>
                 {filters.warehouse !== "all" && !warehouses.some(w => w.id === filters.warehouse) && <option value={filters.warehouse}>Selected location</option>}
                 {warehouses.map(warehouse => <option key={warehouse.id} value={warehouse.id}>{warehouse.name} · {warehouse.code}</option>)}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="stock-filter-location-type">Location type</Label>
+              <select id="stock-filter-location-type" className={selectClass} value={filters.locationType} onChange={event => updateFilters(current => ({ ...current, locationType: event.target.value }))}>
+                <option value="all">All location types</option>
+                {filters.locationType !== "all" && !locationTypes.some(type => type.id === filters.locationType) && <option value={filters.locationType}>Selected location type</option>}
+                {locationTypes.map(type => <option key={type.id} value={type.id}>{type.name}</option>)}
               </select>
             </div>
             <div className="space-y-2">

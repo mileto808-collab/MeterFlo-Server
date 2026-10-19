@@ -124,11 +124,16 @@ export async function applyInventoryRelationalSchema(pool: Pool) {
       id='field-defaults' AND source_mode IN ('assigned_vehicle','project_warehouse') AND fulfillment IN ('components','kits') AND
       ((source_mode='assigned_vehicle' AND warehouse_id IS NULL) OR (source_mode='project_warehouse' AND warehouse_id IS NOT NULL)));
     END IF; END $$`);
-  constraints.push(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='public.inventory_removal_rules'::regclass AND conname='inventory_removal_rule_valid') THEN
-    ALTER TABLE public.inventory_removal_rules ADD CONSTRAINT inventory_removal_rule_valid CHECK (
+  constraints.push(`ALTER TABLE public.inventory_removal_rules DROP CONSTRAINT IF EXISTS inventory_removal_rule_valid`);
+  constraints.push(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='public.inventory_field_removal_choices'::regclass AND conname='inventory_field_removal_choice_valid') THEN
+    ALTER TABLE public.inventory_field_removal_choices ADD CONSTRAINT inventory_field_removal_choice_valid CHECK (
+      id IS NOT NULL AND equipment IS NOT NULL AND equipment IN ('system','module') AND rule_id IS NOT NULL AND id=equipment || ':' || rule_id::text);
+    END IF; END $$`);
+  constraints.push(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='public.inventory_removal_rules'::regclass AND conname='inventory_removal_rule_action_valid') THEN
+    ALTER TABLE public.inventory_removal_rules ADD CONSTRAINT inventory_removal_rule_action_valid CHECK (
       id IS NOT NULL AND length(btrim(name)) BETWEEN 1 AND 200 AND active IS NOT NULL AND revision>0 AND
       equipment IN ('system','module','both') AND
-      (stage='field' AND outcome IN ('returned','scrapped','left_onsite') OR stage='warehouse' AND outcome IN ('released','scrapped')));
+      (stage='field' AND outcome IN ('returned','scrapped','left_onsite') OR stage='warehouse' AND outcome IN ('released','scrapped','customer_return')));
     END IF; END $$`);
   constraints.push(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='public.inventory_removal_policies'::regclass AND conname='inventory_removal_policy_valid') THEN
     ALTER TABLE public.inventory_removal_policies ADD CONSTRAINT inventory_removal_policy_valid CHECK (

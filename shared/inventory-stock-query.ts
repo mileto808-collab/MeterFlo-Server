@@ -3,6 +3,7 @@ import { z } from "zod";
 export const stockQuerySchema = z.object({
   q: z.string().max(300).default(""),
   warehouse: z.string().max(200).default("all"),
+  locationType: z.union([z.literal("all"), z.string().uuid()]).default("all"),
   category: z.string().max(300).default("all"),
   tracking: z.enum(["all", "regular", "serialized"]).default("all"),
   availability: z.enum(["all", "in-stock", "available", "reserved", "out-of-stock"]).default("all"),

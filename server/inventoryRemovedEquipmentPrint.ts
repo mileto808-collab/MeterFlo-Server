@@ -2,7 +2,7 @@ import type { EquipmentReturn, InventoryState } from "../shared/inventory";
 import { inventoryDateTime } from "../shared/inventory-date-time";
 import { inventoryActorLabel, type InventoryActorLabel } from "../shared/inventory-display-labels";
 import { inventoryWorkOrderLabel, type InventoryWorkOrderLabels } from "../shared/inventory-work-order-labels";
-import { removalDispositionDisplay, removalHistoryLabel, warehouseRemovalDecision } from "../shared/inventory-removal-display";
+import { removalDispositionDisplay, removalHistoryLabel, warehouseRemovalDecision, removalStatusLabel } from "../shared/inventory-removal-display";
 
 const escape = (value: unknown) => String(value ?? "").replace(/[&<>"']/g,
   char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]!);
@@ -19,10 +19,13 @@ export function inventoryRemovedEquipmentPrint(record: EquipmentReturn, state: I
   <body><button onclick="window.print()">Print / Save PDF</button><h1>Removed Equipment</h1><h2>${escape(project)}</h2>
   <dl><dt>Equipment</dt><dd>${record.equipment === "system" ? "System" : "Module"}</dd>
   <dt>Serial</dt><dd>${escape(record.serial)}</dd><dt>Work order</dt><dd>${escape(inventoryWorkOrderLabel(record.workOrderId, workOrderLabels))}</dd>
-  <dt>Status</dt><dd>${escape(record.status)}</dd><dt>Field disposition</dt><dd>${escape(removalDispositionDisplay(state, record, "field").label)}</dd>
+  <dt>Status</dt><dd>${escape(removalStatusLabel(record.status))}</dd><dt>Field disposition</dt><dd>${escape(removalDispositionDisplay(state, record, "field").label)}</dd>
   <dt>Warehouse decision</dt><dd>${escape(decision ? removalDispositionDisplay(state, decision, "warehouse").label :
     record.disposition === "returned" ? "No warehouse decision recorded" : "Not applicable")}</dd>
   <dt>Return location</dt><dd>${escape(location?.name ?? "Location unavailable")}</dd>
+  ${record.customerHandoffAt ? `<dt>Customer recipient</dt><dd>${escape(record.customerRecipient)}</dd>
+  <dt>Customer reference</dt><dd>${escape(record.customerReference || "Not recorded")}</dd>
+  <dt>Customer handoff</dt><dd>${escape(inventoryDateTime(record.customerHandoffAt, timezone))} · ${escape(inventoryActorLabel(record.customerHandoffBy ?? "", actors))}</dd>` : ""}
   ${item ? `<dt>Released item</dt><dd>${escape(item.sku)} · ${escape(item.name)}</dd>` : ""}</dl>
   <h2>Custody &amp; decision history</h2><p>Timezone: ${escape(timezone)} · Disposition names below are shown as recorded.</p>
   ${record.history?.length ? `<table><thead><tr><th>Date &amp; time</th><th>Disposition / outcome</th><th>Reason</th><th>User</th></tr></thead><tbody>

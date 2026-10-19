@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { requirementsSatisfied } from "./inventory-requirements";
 import { normalizeRemovalPolicy, applyRemovalRuleCommand, resolveFieldDisposition, removalChoices } from "./inventory-removal-policy";
+import { applyCustomerReturnCommand } from "./inventory-customer-returns";
 import { itemDeletionBlockers, categoryDeletionBlockers } from "./inventory-deletion";
 import { normalizeInventoryCategories, inventoryCategoryLabels } from "./inventory-categories";
 import { allocateOrderNumber, uuidOrderId } from "./inventory-order-labels";
@@ -189,7 +190,7 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
       assert(!!warehouse?.active && warehouse.type === "physical", "Choose an active physical project warehouse.");
     } else settings.warehouseId = null;
     s.fieldSettings = [settings];
-  } else if (["removalRule", "removalRuleDelete", "removalPolicy"].includes(a)) {
+  } else if (["removalRule", "removalRuleDelete", "removalPolicy", "removalFieldChoices"].includes(a)) {
     applyRemovalRuleCommand(s, a, d);
   } else if (a === "locationType" || a === "locationTypeDelete") {
     applyLocationTypeCommand(s, a, d);
@@ -526,6 +527,8 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
     } else { allocation.status = "released"; receipt(`work-order-${input.workOrderId}`, null, [], input.reason); }
     allocation.lines = []; allocation.mode = null;
     // Reconciliation reverses stock use, not the physical custody of removed equipment.
+  } else if (a === "returnCustomerHandoff" || a === "returnCorrectDecision") {
+    applyCustomerReturnCommand(s, command, actor, now, access, (warehouseId, lines, direction) => move(s, warehouseId, lines, direction), receipt);
   } else if (a === "returnAccept" || a === "returnRelease" || a === "returnDecide") {
     const r = s.returns.find(r => r.id === identifier.parse(d.id)); assert(r && r.warehouseId, "Return not found."); access(r.warehouseId);
     if (a === "returnAccept") {
@@ -548,7 +551,7 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
         r.status = "released"; r.itemId = itemId;
         input.push({ itemId, quantity: 1, serials: matched.tracking === "serialized" ? [r.serial] : [] });
         move(s, r.warehouseId, input, 1);
-      } else { r.status = "scrapped"; }
+      } else { r.status = rule.outcome === "customer_return" ? "customer_pending" : "scrapped"; }
       (r.history ??= []).push({ operationId: command.operationId, actor, occurredAt: now,
         outcome: rule.outcome, reason, ruleId: rule.id, ruleRevision: rule.revision, ruleName: rule.name });
       receipt(r.id, r.warehouseId, input, reason);

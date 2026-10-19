@@ -1615,14 +1615,22 @@ export default function Settings() {
     if (!workspace) return;
     const previousHeight = workspace.style.height;
     const viewport = window.visualViewport;
+    let frame = 0;
     const fitViewport = () => {
       const currentViewport = window.visualViewport;
       const height = currentViewport?.height ?? window.innerHeight;
       const offsetTop = currentViewport?.offsetTop ?? 0;
       const top = workspace.getBoundingClientRect().top;
-      workspace.style.height = `${Math.max(0, height - Math.max(0, top - offsetTop))}px`;
+      const nextHeight = `${Math.max(0, height - Math.max(0, top - offsetTop))}px`;
+      if (workspace.style.height !== nextHeight) workspace.style.height = nextHeight;
     };
-    const observer = new ResizeObserver(fitViewport);
+    // A child-height write during its parent's observer delivery can resize the
+    // parent again. Coalesce writes into the next frame, outside that delivery.
+    const scheduleFit = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => { frame = 0; fitViewport(); });
+    };
+    const observer = new ResizeObserver(scheduleFit);
     if (workspace.parentElement) observer.observe(workspace.parentElement);
     window.addEventListener("resize", fitViewport);
     viewport?.addEventListener("resize", fitViewport);
@@ -1630,6 +1638,7 @@ export default function Settings() {
     fitViewport();
     return () => {
       observer.disconnect();
+      cancelAnimationFrame(frame);
       window.removeEventListener("resize", fitViewport);
       viewport?.removeEventListener("resize", fitViewport);
       viewport?.removeEventListener("scroll", fitViewport);

@@ -15,6 +15,7 @@ export async function prepareStockQueries(client: Client, projectId: number) {
 const joins = `FROM public.inventory_quantities b
   JOIN public.inventory_items i ON i.project_id=b.project_id AND i.id=b.item_id
   JOIN public.inventory_warehouses w ON w.project_id=b.project_id AND w.id=b.warehouse_id
+  LEFT JOIN public.inventory_location_types lt ON lt.project_id=w.project_id AND lt.id=w.location_type_id
   LEFT JOIN public.inventory_categories c ON c.project_id=i.project_id AND c.id=i.category_id`;
 
 export function stockPredicate(projectId: number, input: StockQuery) {
@@ -28,6 +29,7 @@ export function stockPredicate(projectId: number, input: StockQuery) {
         AND s.warehouse_id=b.warehouse_id AND s.item_id=b.item_id AND lower(s.serial) LIKE ${p}))`);
   }
   if (input.warehouse !== "all") add("b.warehouse_id=?", input.warehouse);
+  if (input.locationType !== "all") add("w.location_type_id=?", input.locationType);
   if (input.category !== "all") add("btrim(coalesce(c.name,''))=?", input.category);
   if (input.tracking !== "all") add("i.tracking=?", input.tracking);
   const availability = { all: "", "in-stock": "b.quantity>0", available: "b.quantity-b.reserved>0",
@@ -51,7 +53,7 @@ export async function queryStock(client: Client, projectId: number, input: Stock
   const { rows } = await client.query(`SELECT b.item_id AS "itemId",b.warehouse_id AS "warehouseId",
     b.quantity,b.reserved,b.revision,
     json_build_object('id',i.id,'sku',i.sku,'name',i.name,'category',coalesce(c.name,''),'unit',i.unit,'tracking',i.tracking) AS item,
-    json_build_object('id',w.id,'name',w.name,'code',w.code,'type',w.type) AS warehouse,
+    json_build_object('id',w.id,'name',w.name,'code',w.code,'type',w.type,'locationTypeId',w.location_type_id,'locationTypeName',lt.name) AS warehouse,
     (SELECT count(*)::int FROM public.inventory_stock_serials s WHERE s.project_id=b.project_id
       AND s.warehouse_id=b.warehouse_id AND s.item_id=b.item_id) AS "serialCount"
     ${joins} WHERE ${where} ORDER BY ${order},b.warehouse_id,b.item_id LIMIT $${args.length + 1} OFFSET $${args.length + 2}`,
@@ -100,5 +102,7 @@ export async function stockOptions(client: Client, projectId: number, search: st
     JOIN public.inventory_items i ON i.project_id=c.project_id AND i.category_id=c.id
     JOIN public.inventory_quantities b ON b.project_id=i.project_id AND b.item_id=i.id
     WHERE c.project_id=$1 AND lower(c.name) LIKE $2 ORDER BY name LIMIT 200`, args);
-  return { warehouses, categories: categories.map(row => row.name) };
+  const { rows: locationTypes } = await client.query(`SELECT id,name FROM public.inventory_location_types
+    WHERE project_id=$1 AND lower(name) LIKE $2 ORDER BY name,id LIMIT 200`, args);
+  return { warehouses, locationTypes, categories: categories.map(row => row.name) };
 }

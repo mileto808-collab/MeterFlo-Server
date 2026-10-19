@@ -25,7 +25,19 @@ Warehouse handling needs a distinct “Return to customer” choice, separate fr
 
 **Why:** The user described recording scrap with a note saying return to customer, but actually wanted to return the equipment rather than scrap it.
 
-**How to apply:** Do not infer physical handling or rewrite prior decisions from free-text notes. Preserve the recorded history when introducing the distinct workflow or correcting an existing decision.
+**How to apply:** Do not infer physical handling or rewrite prior decisions from free-text notes. Customer returns stay unavailable to stock while held, and require a separately recorded actual handoff. An incorrect decision needs an authorized, audited correction with physical-presence verification, retaining the original history.
+
+Present one disposition choice, with its stock/custody behavior configured underneath. Built-ins do not need a second operational-outcome selector; custom dispositions explicitly map to a supported behavior in advanced configuration, never by matching their name.
+
+**Why:** The user found the two routine choices duplicative, then confirmed the distinction between an editable name and its underlying action. Renaming must not change business behavior.
+
+**How to apply:** Keep identity, label and action distinct. Preserve warehouse-only authority for stock release, scrap decisions, customer handoffs and corrections. Do not treat selecting customer return as evidence that the equipment has already left custody.
+
+Independently saved removal controls that share a policy revision must serialize saves through completion of the refreshed snapshot.
+
+**Why:** Saving technician selections and immediately toggling mandatory returns can otherwise submit an earlier revision even after the database has accepted the first save.
+
+**How to apply:** Coordinate pending writes across the settings controls, while preserving unsaved selections and rejecting genuinely stale submissions.
 
 The work-order Inventory section must be its own collapsible card immediately after System/Module Details, named “Inventory,” not nested inside equipment details.
 

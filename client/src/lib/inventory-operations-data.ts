@@ -7,7 +7,8 @@ import { locationTypeFor, locationTypeLabel } from "@shared/inventory-location-t
 import { orderDate } from "@shared/inventory-order-search";
 import { inventoryWorkOrderLabel, type InventoryWorkOrderLabels } from "@shared/inventory-work-order-labels";
 import { removalConfig } from "@shared/inventory-removal-policy";
-import { removalDispositionDisplay, warehouseRemovalDecision, removalFilterKey, removalActivityIndex, removalActivityDisplay } from "@shared/inventory-removal-display";
+import { removalDispositionDisplay, warehouseRemovalDecision, removalFilterKey, removalActivityIndex, removalActivityDisplay, removalStatusLabel } from "@shared/inventory-removal-display";
+import { inventoryDateTime } from "@shared/inventory-date-time";
 
 export type OperationsKind = "locations" | "exceptions" | "returns" | "activity" | "categories" | "counts";
 export type OperationsRow = { id: string; search: string; cells: Record<string, string | number>; facets: Record<string, string>; facetValues?: Record<string, string[]>; timestamps?: string[] };
@@ -154,9 +155,11 @@ export function buildOperationsDataset(
       const decision = warehouseRemovalDecision(r);
       const warehouse = decision ? rememberDisposition("warehouseDisposition", removalDispositionDisplay(state, decision, "warehouse")) : undefined;
       return textSearch({ id: r.id, cells: {
-      equipment: r.equipment === "system" ? "System" : "Module", serial: r.serial, status: r.status,
+      equipment: r.equipment === "system" ? "System" : "Module", serial: r.serial, status: removalStatusLabel(r.status),
       workOrder: inventoryWorkOrderLabel(r.workOrderId, workOrderLabels), location: locationName(r.warehouseId), fieldDisposition: field.label,
       warehouseDisposition: warehouse?.label ?? (r.disposition === "returned" ? "No warehouse decision recorded" : "Not applicable"),
+      customerRecipient: r.customerRecipient ?? "", customerReference: r.customerReference ?? "",
+      customerHandoffAt: r.customerHandoffAt ? inventoryDateTime(r.customerHandoffAt, timezone) : "",
       sku: r.itemId ? items.get(r.itemId)?.sku ?? "Unavailable item" : "", item: r.itemId ? items.get(r.itemId)?.name ?? "Unavailable item" : "",
     }, facets: { equipment: r.equipment, status: r.status, warehouse: r.warehouseId ?? "none",
       fieldDisposition: field.key, warehouseDisposition: warehouse?.key ?? "none" },
@@ -164,6 +167,7 @@ export function buildOperationsDataset(
     });
     cols = columns([["equipment", "Equipment"], ["serial", "Serial"], ["status", "Status"], ["workOrder", "Work order"],
       ["location", "Return location"], ["fieldDisposition", "Field disposition"], ["warehouseDisposition", "Warehouse decision"], ["sku", "SKU"], ["item", "Released item"]]);
+    cols.push(...columns([["customerRecipient", "Customer recipient"], ["customerReference", "Customer reference"], ["customerHandoffAt", `Customer handoff (${timezone})`]]));
     filterKeys = [["equipment", "Equipment"], ["status", "Status"], ["warehouse", "Return location"], ["fieldDisposition", "Field disposition"], ["warehouseDisposition", "Warehouse decision"]];
     sorts = [{ key: "workOrder:desc", label: "Work order · highest first" }, { key: "workOrder:asc", label: "Work order · lowest first" },
       { key: "serial:asc", label: "Serial · A–Z" }, { key: "status:asc", label: "Status · A–Z" }];
@@ -223,6 +227,7 @@ export function buildOperationsDataset(
         ...rows.flatMap(r => r.facetValues?.[key] ?? [r.facets[key]]),
       ])].map(value => ({
         value, label: key === "warehouse" ? locationName(value === "none" ? null : value) :
+          kind === "returns" && key === "status" ? removalStatusLabel(value as InventoryState["returns"][number]["status"]) :
           key === "fieldDisposition" || key === "warehouseDisposition" ? dispositionOptions[key].get(value) ?? `No ${key === "fieldDisposition" ? "field disposition" : "warehouse decision"} recorded` :
           key === "actor" ? inventoryActorLabel(value, people) :
           key === "type" ? locationTypes.get(value)?.name ?? (value === "physical" ? "Warehouse" : value === "vehicle" ? "Vehicle" : value) : value,

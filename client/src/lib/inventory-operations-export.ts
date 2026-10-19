@@ -42,6 +42,7 @@ export function operationsPrintHtml(context: Context, kind: OperationsKind, data
     counts: ["reference", "location", "status", "snapshotItems", "snapshotQuantity", "countedItems", "countedQuantity", "reason"],
   };
   printKeys.returns.push("fieldDisposition", "warehouseDisposition");
+  printKeys.returns.push(...["customerRecipient", "customerReference", "customerHandoffAt"].filter(key => rows.some(row => !!row.cells[key])));
   printKeys.activity.push("fieldDisposition", "warehouseDisposition", "custodyEvent");
   const cols = dataset.columns.filter(c => printKeys[kind].includes(c.key));
   return `<!doctype html><html><head><meta charset="utf-8"><title>${escape(context.project)} — ${titles[kind]}</title>

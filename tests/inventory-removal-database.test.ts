@@ -34,6 +34,7 @@ test("removal rules, FK isolation, historical rename and restore retain original
       };
       const rule = { ...removalConfig(state).rules[0], id: randomUUID(), name: "Contract return" };
       await post("removalRule", rule);
+      await post("removalFieldChoices", { equipment: "system", ruleIds: [rule.id], revision: removalConfig(state).policy.revision });
       await post("prepareUse", { workOrderId: 1, revision: 0, mode: "changeout", used: [], dispositions: [
         { equipment: "system", serial: "REMOVED-01", disposition: "returned", warehouseId: "w", ruleId: rule.id, ruleRevision: 1 },
       ] });

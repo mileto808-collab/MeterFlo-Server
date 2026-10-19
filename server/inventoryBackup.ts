@@ -49,6 +49,11 @@ export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: n
       throw new Error("Inventory field stock settings reference a missing project warehouse.");
   const rules = z.array(removalRuleSchema).max(1000).parse(s.removalRules ?? []);
   const policies = z.array(removalPolicySchema).max(1).parse(s.removalPolicies ?? []);
+  const choices = z.array(z.object({ id: z.string().min(1), equipment: z.enum(["system", "module"]), ruleId: z.string().uuid() }).strict()).max(2000).parse(s.fieldRemovalChoices ?? []);
+  if (new Set(choices.map(choice => choice.id)).size !== choices.length || choices.some(choice =>
+    choice.id !== `${choice.equipment}:${choice.ruleId}` || !rules.some(rule => rule.id === choice.ruleId &&
+      rule.stage === "field" && [choice.equipment, "both"].includes(rule.equipment))))
+    throw new Error("Inventory backup has orphaned or invalid technician disposition selections.");
   if ((s.removalRules === undefined) !== (s.removalPolicies === undefined) ||
       s.removalPolicies !== undefined && policies.length !== 1 ||
       new Set(rules.map(r => r.id)).size !== rules.length ||
@@ -63,16 +68,29 @@ export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: n
   }
   const returnSchema = dispositionSchema.extend({
     id: z.string().min(1), workOrderId: z.number().int().positive(),
-    status: z.enum(["pending", "quarantine", "released", "scrapped", "left_onsite"]),
+    status: z.enum(["pending", "quarantine", "released", "scrapped", "left_onsite", "customer_pending", "customer_returned"]),
+    customerRecipient: z.string().trim().min(1).max(200).optional(), customerReference: z.string().max(200).optional(),
+    customerHandoffAt: z.string().datetime().optional(), customerHandoffBy: z.string().min(1).optional(),
     itemId: z.string().min(1).optional(), history: z.array(z.object({
+      recipient: z.string().max(200).optional(), reference: z.string().max(200).optional(), previousStatus: z.string().max(40).optional(),
+      physicallyPresent: z.boolean().optional(),
       operationId: z.string().min(1), actor: z.string().min(1), occurredAt: z.string().datetime(),
-      outcome: z.enum(["returned", "scrapped", "left_onsite", "released", "quarantine"]), reason: z.string().min(1),
+      outcome: z.enum(["returned", "scrapped", "left_onsite", "released", "quarantine", "customer_return", "customer_returned", "decision_corrected"]), reason: z.string().min(1),
       ruleId: z.string().uuid().optional(), ruleRevision: z.number().int().positive().optional(), ruleName: z.string().min(1).max(200).optional(),
     }).strict()).optional(),
   }).strict();
   for (const returned of z.array(returnSchema).parse(s.returns)) {
     historical(returned);
     for (const event of returned.history ?? []) historical(event);
+    if (["customer_pending", "customer_returned"].includes(returned.status)) {
+      const history = returned.history ?? [], handoff = history.at(-1);
+      if (returned.disposition !== "returned" || !returned.warehouseId || returned.itemId ||
+        !history.some(event => event.outcome === "customer_return") ||
+        returned.status === "customer_returned" && (!returned.customerRecipient || !returned.customerHandoffAt || !returned.customerHandoffBy ||
+          handoff?.outcome !== "customer_returned" || handoff.recipient !== returned.customerRecipient ||
+          handoff.occurredAt !== returned.customerHandoffAt || handoff.actor !== returned.customerHandoffBy))
+        throw new Error("Inventory backup has invalid customer-return custody.");
+    }
     if (!workOrderIds.includes(returned.workOrderId) ||
         returned.warehouseId && !s.warehouses.some(w => w.id === returned.warehouseId) ||
         returned.itemId && !s.items.some(i => i.id === returned.itemId) ||

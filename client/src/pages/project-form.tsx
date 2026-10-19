@@ -17,7 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import type { Project, User, ServiceTypeRecord } from "@shared/schema";
-import { ArrowLeft, Save, Loader2, Globe, Clock, Users, X, CalendarDays, Plus, Wand2, Zap, Copy, Scan, Settings2, ClipboardList, CalendarClock, Cable } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Globe, Clock, Users, X, CalendarDays, Plus, Wand2, Zap, Copy, Scan, Settings2, ClipboardList, CalendarClock, Cable, Package } from "lucide-react";
 import type { ProjectHoliday } from "@shared/schema";
 import { Checkbox } from "@/components/ui/checkbox";
 import { usePermissions } from "@/hooks/usePermissions";
@@ -107,7 +107,7 @@ export default function ProjectForm() {
   const canManageSubStatuses = hasPermission("projects.manageSubStatuses");
   const canManageTroubleCodes = hasPermission("projects.manageTroubleCodes");
   const isMobile = useIsMobile();
-  type ProjectSection = "details" | "work-orders" | "schedule" | "people" | "integrations";
+  type ProjectSection = "details" | "work-orders" | "inventory" | "schedule" | "people" | "integrations";
   type WorkOrderSection = "wizard" | "search" | "service-types" | "sub-statuses" | "trouble-codes";
   const [activeSection, setActiveSection] = useState<ProjectSection>("details");
   const [activeWorkOrderSection, setActiveWorkOrderSection] = useState<WorkOrderSection>("wizard");
@@ -118,6 +118,7 @@ export default function ProjectForm() {
   const sections = [
     { id: "details" as const, label: "Details", icon: Settings2 },
     { id: "work-orders" as const, label: "Work Orders", icon: ClipboardList },
+    ...(hasPermission("inventory.configure") ? [{ id: "inventory" as const, label: "Inventory", icon: Package }] : []),
     { id: "schedule" as const, label: "Schedule", icon: CalendarClock },
     ...(isEditing ? [
       { id: "people" as const, label: "People", icon: Users },
@@ -261,12 +262,12 @@ export default function ProjectForm() {
     };
     const field = firstPath(errors) as keyof ProjectFormValues | undefined;
     if (!field) return;
-    const section: ProjectSection = field === "operationalHoursEnabled" || field === "operationalHoursStart" ||
+    const section: ProjectSection = field === "inventoryEnabled" ? "inventory" : field === "operationalHoursEnabled" || field === "operationalHoursStart" ||
       field === "operationalHoursEnd" || field === "operationalHoursDays" || field === "timezone"
       ? "schedule"
       : field === "defaultServiceMinutes" || field === "defaultAppointmentToleranceMinutes"
         ? "schedule"
-      : ["name", "description", "isActive", "inventoryEnabled", "customerEmail", "phone", "address", "city", "state", "zip", "notes"].includes(field)
+      : ["name", "description", "isActive", "customerEmail", "phone", "address", "city", "state", "zip", "notes"].includes(field)
         ? "details" : "work-orders";
     setFocusAfterSectionChange(field);
     setActiveSection(section);
@@ -676,37 +677,6 @@ export default function ProjectForm() {
                   </FormItem>
                 )}
               />
-              {hasPermission("inventory.configure") && (
-                <FormField
-                  control={form.control}
-                  name="inventoryEnabled"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-row items-center justify-between rounded-lg border border-l-4 border-l-primary/60 p-4">
-                      <div className="space-y-0.5">
-                        <FormLabel className="text-base">Project inventory</FormLabel>
-                        <FormDescription>
-                          Enable project stock locations, meter serial tracking, receiving, transfers, and work-order reservations.
-                        </FormDescription>
-                        {isEditing && <FormDescription data-testid="inventory-toggle-preservation-note">
-                          Turning Inventory off pauses tracking without deleting stock, serials, history, reservations, orders, counts or returns.
-                          Work completed while it is off will not deduct inventory. Existing reservations remain reserved.
-                          Before resuming tracking, review unfinished inventory work and reconcile physical stock; off-period usage is not deducted retroactively.
-                        </FormDescription>}
-                      </div>
-                      <FormControl>
-                        <Switch
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                          aria-label="Enable project inventory"
-                          data-testid="switch-inventory-enabled"
-                        />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-              )}
-              {isEditing && (project as any)?.inventoryEnabled && form.watch("inventoryEnabled") && hasPermission("inventory.configure") &&
-                <ProjectFieldStockSettings projectId={Number(id)} />}
               {isEditing && (
                 <FormField
                   control={form.control}
@@ -828,6 +798,27 @@ export default function ProjectForm() {
 
             </div>
 
+            {hasPermission("inventory.configure") && <div id="project-panel-inventory" data-project-section="inventory" role="tabpanel" aria-label="Inventory"
+              hidden={activeSection !== "inventory"} className="space-y-5 pb-5">
+              <FormField control={form.control} name="inventoryEnabled" render={({ field }) => (
+                <FormItem className="flex flex-row items-center justify-between rounded-lg border border-l-4 border-l-primary/60 p-4">
+                  <div className="space-y-0.5">
+                    <FormLabel className="text-base">Project inventory</FormLabel>
+                    <FormDescription>Enable project stock locations, meter serial tracking, receiving, transfers, and work-order reservations.</FormDescription>
+                    {isEditing && <FormDescription data-testid="inventory-toggle-preservation-note">
+                      Turning Inventory off pauses tracking without deleting stock, serials, history, reservations, orders, counts or returns.
+                      Work completed while it is off will not deduct inventory. Existing reservations remain reserved.
+                      Before resuming tracking, review unfinished inventory work and reconcile physical stock; off-period usage is not deducted retroactively.
+                    </FormDescription>}
+                  </div>
+                  <FormControl><Switch checked={field.value} onCheckedChange={field.onChange} aria-label="Enable project inventory" data-testid="switch-inventory-enabled" /></FormControl>
+                </FormItem>
+              )} />
+              {isEditing && (project as any)?.inventoryEnabled && form.watch("inventoryEnabled") &&
+                <ProjectFieldStockSettings projectId={Number(id)} />}
+              {form.watch("inventoryEnabled") && (!isEditing || !(project as any)?.inventoryEnabled) &&
+                <p className="text-sm text-muted-foreground">Save the project with Inventory enabled before configuring field inventory stock.</p>}
+            </div>}
             {isEditing && <div id="project-panel-integrations" data-project-section="integrations" role="tabpanel" aria-label="Integrations"
               hidden={activeSection !== "integrations"} className="space-y-5 pb-5">
               <section className="rounded-xl border bg-card p-5">

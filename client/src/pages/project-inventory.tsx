@@ -1985,10 +1985,14 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           headerAction={<RemovalRulesManager state={state} authorized={can("inventory.manageRemovalRules")} post={(action, payload, operationId) => command.mutateAsync({ action, data: payload, operationId })} />}
           renderRow={row => { const returned = state.returns.find(value => value.id === row.id); if (!returned) return null;
             return <article className="flex min-w-0 flex-col justify-between gap-3 rounded-md border bg-card px-3 py-3 sm:flex-row sm:items-start sm:px-4">
-              <div className="min-w-0"><div className="flex flex-wrap items-center gap-2 font-medium"><span>{returned.equipment === "system" ? "System" : "Module"}</span><span className="break-all font-mono text-sm">{returned.serial}</span><Badge variant={returned.status === "released" ? "default" : "outline"}>{returned.status}</Badge></div>
+              <div className="min-w-0"><div className="flex flex-wrap items-center gap-2 font-medium"><span>{returned.equipment === "system" ? "System" : "Module"}</span><span className="break-all font-mono text-sm">{returned.serial}</span><Badge variant={returned.status === "released" ? "default" : "outline"}>{row.cells.status}</Badge></div>
                 <div className="mt-1 text-sm text-muted-foreground">Work order #{row.cells.workOrder} · Return location: {warehouses.find(w => w.id === returned.warehouseId)?.name ?? "Location unavailable"}</div>
                 <div className="mt-1 text-xs text-muted-foreground">Field disposition: {row.cells.fieldDisposition}</div>
                 <div className="mt-1 text-xs text-muted-foreground">Warehouse decision: {row.cells.warehouseDisposition}</div>
+                {returned.customerHandoffAt && <div className="mt-1 text-xs text-muted-foreground">
+                  Customer recipient: {row.cells.customerRecipient} · {row.cells.customerHandoffAt}
+                  {!!row.cells.customerReference && <> · Reference: {row.cells.customerReference}</>}
+                </div>}
               </div><div className="flex min-w-0 flex-col gap-3">
               <Button size="sm" variant="outline" className="self-start" onClick={() => openPrint("return", returned.id)} aria-label={`Print removed equipment ${returned.serial}`}><Printer className="mr-2 h-4 w-4" />Print</Button>
               <RemovedEquipmentActions record={returned} state={state} canReceive={can("inventory.receive")} canDecide={can("inventory.resolveReturns")}
