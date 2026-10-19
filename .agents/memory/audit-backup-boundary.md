@@ -14,3 +14,17 @@ Do not equate an unsuccessful SQL restore with a fully rolled-back database. Kee
 **Why:** PostgreSQL archive restores and their optional cleanup are not one cross-resource transaction. SQL failures can leave partial database changes, while later file failures cannot undo a successful database restore.
 
 **How to apply:** Do not claim `databaseCommitted: false` for a generic SQL failure unless rollback is proven. Report committed database success explicitly when later file work fails, including unexpected file-helper or path-resolution exceptions.
+
+Keep the initiating system-restore request and progress screen mounted outside
+authentication and access gates. A restored session becoming invalid is not a
+restore failure or evidence of completion.
+
+**Why:** Restoring login sessions can make background access checks fail while
+the server continues restoring. The generic access screen hid progress and its
+Retry button could not repair a 401.
+
+**How to apply:** Pause the initiating browser's authentication/access checks,
+retain a dedicated restore screen until the server reports its outcome, and
+require fresh sign-in afterward. Treat lost responses or page reloads as
+unconfirmed outcomes, never automatic success or permission to replay a restore.
+Do not weaken backend authorization or turn browser markers into access grants.

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { systemRestoreStore } from "@/lib/system-restore-state";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -93,6 +94,9 @@ export default function Maintenance({ embedded = false, active = true }: { embed
     percent: number;
     message: string;
   } | null>(null);
+  useEffect(() => {
+    if (isSystemRestoring && uploadProgress) systemRestoreStore.progress(uploadProgress);
+  }, [isSystemRestoring, uploadProgress]);
   useEffect(() => {
     if (!active) {
       setRestoreDialogOpen(false);
@@ -287,6 +291,12 @@ export default function Maintenance({ embedded = false, active = true }: { embed
   const handleSystemFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!systemRestoreStore.begin()) return;
+    // Preserve the initiating view/request even if restored sessions invalidate
+    // a background authentication query while the server is still working.
+    void queryClient.cancelQueries({ queryKey: ["/api/auth/user"] });
+    void queryClient.cancelQueries({ queryKey: ["/api/access-locks/status"] });
+    setSystemRestoreDialogOpen(false);
 
     setIsSystemRestoring(true);
     setUploadProgress({ stage: "uploading", percent: 0, message: "Preparing upload..." });
@@ -388,6 +398,8 @@ export default function Maintenance({ embedded = false, active = true }: { embed
           description: incomplete ? `${result.message || "Some data or files could not be restored."} ${description} Review server logs before resuming work.` : description,
           variant: incomplete ? "destructive" : "default",
         });
+        systemRestoreStore.finish(incomplete ? "incomplete" : "complete",
+          `${incomplete ? `${result.message || "Some data or files could not be restored."} ` : ""}${description}${result.warnings?.length ? ` ${result.warnings.length} restore warnings; review the server logs.` : ""}`);
 
         if (result.errors?.length > 0) {
           console.error("Restore errors:", result.errors);
@@ -400,6 +412,8 @@ export default function Maintenance({ embedded = false, active = true }: { embed
         formData.append("backup", file);
         formData.append("clearExisting", String(systemClearExisting));
 
+        setUploadProgress({ stage: "processing", percent: 50,
+          message: "Uploading backup and waiting for the server to restore it…" });
         const response = await fetch("/api/system/restore", {
           method: "POST",
           credentials: "include",
@@ -438,6 +452,8 @@ export default function Maintenance({ embedded = false, active = true }: { embed
           description: incomplete ? `${result.message || "Some data or files could not be restored."} ${description} Review server logs before resuming work.` : description,
           variant: incomplete ? "destructive" : "default",
         });
+        systemRestoreStore.finish(incomplete ? "incomplete" : "complete",
+          `${incomplete ? `${result.message || "Some data or files could not be restored."} ` : ""}${description}${result.warnings?.length ? ` ${result.warnings.length} restore warnings; review the server logs.` : ""}`);
 
         if (result.errors?.length > 0) {
           console.error("Restore errors:", result.errors);
@@ -447,8 +463,10 @@ export default function Maintenance({ embedded = false, active = true }: { embed
       queryClient.invalidateQueries({ queryKey: ["/api/maintenance/projects"] });
       setSystemRestoreDialogOpen(false);
     } catch (error) {
+      systemRestoreStore.finish("unconfirmed",
+        "The restore did not return a confirmed success. The server may still be working, or some changes may already have been applied. Check the server logs before starting another restore.");
       toast({
-        title: "Restore failed",
+        title: "Restore not confirmed",
         description: error instanceof Error ? error.message : "Failed to restore system backup",
         variant: "destructive",
       });

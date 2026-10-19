@@ -8,6 +8,11 @@ import type { AccessLockStatus } from "@shared/access-locks";
 import { AlertDialog, AlertDialogDescription, AlertDialogOverlay, AlertDialogPortal, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
+import { useSystemRestore } from "@/lib/system-restore-state";
+
+class AccessStatusError extends Error {
+  constructor(readonly status: number, message: string) { super(message); }
+}
 
 function routeProjectId(path: string): number | undefined {
   const match = path.match(/^\/projects\/(\d+)(?:\/|$)/);
@@ -15,6 +20,7 @@ function routeProjectId(path: string): number | undefined {
 }
 
 export function AccessLockGate({ children }: { children: ReactNode }) {
+  const restore = useSystemRestore();
   const { isAuthenticated } = useAuth();
   const [location] = useLocation();
   const projectId = routeProjectId(location);
@@ -22,11 +28,11 @@ export function AccessLockGate({ children }: { children: ReactNode }) {
   const queryKey = ["/api/access-locks/status", projectId ?? null] as const;
   const statusQuery = useQuery<AccessLockStatus>({
     queryKey,
-    enabled: isAuthenticated,
+    enabled: isAuthenticated && !restore,
     queryFn: async () => {
       const suffix = projectId ? `?projectId=${projectId}` : "";
       const response = await fetch(`/api/access-locks/status${suffix}`, { credentials: "include" });
-      if (!response.ok) throw new Error(`${response.status}: ${await response.text()}`);
+      if (!response.ok) throw new AccessStatusError(response.status, `${response.status}: ${await response.text()}`);
       return response.json();
     },
     staleTime: 0,
@@ -61,7 +67,8 @@ export function AccessLockGate({ children }: { children: ReactNode }) {
   const waiting = checkedRoute !== routeKey || statusQuery.isLoading || (!statusQuery.isError && !statusMatchesRoute);
   const blocked = statusQuery.data?.blocked ?? null;
   const hideProtectedContent = isAuthenticated && (waiting || statusQuery.isError || !!blocked);
-  const showGate = isAuthenticated && hideProtectedContent;
+  const showGate = !restore && isAuthenticated && hideProtectedContent;
+  const unauthorized = statusQuery.error instanceof AccessStatusError && statusQuery.error.status === 401;
 
   return (
     <AlertDialog open={showGate} onOpenChange={() => {}}>
@@ -96,18 +103,23 @@ export function AccessLockGate({ children }: { children: ReactNode }) {
                   <div className="flex h-10 w-10 items-center justify-center rounded-md bg-muted text-foreground">
                     <AlertTriangle className="h-5 w-5 text-destructive" />
                   </div>
-                  <AlertDialogTitle className="text-lg font-semibold">Access status unavailable</AlertDialogTitle>
+                  <AlertDialogTitle className="text-lg font-semibold">{unauthorized ? "Sign in required" : "Access status unavailable"}</AlertDialogTitle>
                   <AlertDialogDescription>
-                    We could not verify access, so protected content is hidden.{" "}
-                    {statusQuery.error instanceof Error ? statusQuery.error.message : ""}
+                    {unauthorized ? "Your sign-in session is no longer valid. Sign in again to continue."
+                      : <>We could not verify access, so protected content is hidden.{" "}
+                        {statusQuery.error instanceof Error ? statusQuery.error.message : ""}</>}
                   </AlertDialogDescription>
                   <div className="flex flex-wrap gap-2 pt-1">
+                    {unauthorized ? <Button type="button" onClick={() => { window.location.href = "/login"; }}>
+                      Sign in again
+                    </Button> : <>
                     <Button type="button" onClick={() => statusQuery.refetch()} disabled={statusQuery.isFetching}>
                       <RefreshCw className="mr-2 h-4 w-4" />Retry
                     </Button>
                     <Button type="button" variant="outline" onClick={() => { window.location.href = "/api/logout"; }}>
                       <LogOut className="mr-2 h-4 w-4" />Log out
                     </Button>
+                    </>}
                   </div>
                 </>
               ) : blocked ? (

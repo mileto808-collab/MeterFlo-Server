@@ -18,6 +18,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { HttpLoginRecoveryAlert } from "@/components/http-login-recovery-alert";
 import { RouteSessionCleanup } from "@/components/work-order-routing/route-session-cleanup";
 import { AccessLockGate } from "@/components/access-locks/access-lock-gate";
+import { SystemRestoreBoundary } from "@/components/system-restore-boundary";
 
 import Landing from "@/pages/landing";
 import LoginPage from "@/pages/login";
@@ -316,11 +317,13 @@ function Router() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
+      <SystemRestoreBoundary>
       <RouteSessionCleanup />
       <TooltipProvider>
         <Router />
         <Toaster />
       </TooltipProvider>
+      </SystemRestoreBoundary>
     </QueryClientProvider>
   );
 }
