@@ -85,9 +85,16 @@ const { chromium, expect } = require("@playwright/test");
       assert.equal(style.background, "rgba(0, 0, 0, 0)");
       assert.equal(style.overflow, false);
       await page.screenshot({ path: `generated-artifacts/inventory-panel/${name}-${width}.jpg`, fullPage: true });
+      if (name === "admin") {
+        await page.goto("/settings?section=access-levels");
+        await expect(page.getByText("Define access levels (subroles) with specific permissions", { exact: true })).toBeVisible();
+        await expect(page.getByRole("button", { name: "Add Access Level" })).toBeVisible();
+        await expect(page.locator("vite-error-overlay")).toHaveCount(0);
+        await page.screenshot({ path: "generated-artifacts/inventory-panel/settings-access-levels.jpg", fullPage: true });
+      }
       assert.deepEqual(errors, []);
       await page.close();
     }
-    console.log("PASS: work-order-only technician reads planned inventory and components; unrelated work orders/catalog/mutations denied; rates hidden; no unauthorized event subscription; seamless technician phone/admin desktop panel.");
+    console.log("PASS: work-order-only technician reads planned inventory and components; unrelated work orders/catalog/mutations denied; rates hidden; no unauthorized event subscription; seamless technician phone/admin desktop panel; Settings Access Levels renders without browser errors.");
   } finally { await admin.close(); await viewer.close(); await browser.close(); }
 })().catch(error => { console.error(error); process.exit(1); });

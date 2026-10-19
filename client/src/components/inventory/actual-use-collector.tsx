@@ -3,7 +3,6 @@ import type { Allocation, InventoryItem, Warehouse } from "@shared/inventory";
 import { inventoryComponentDetails as expandedComponents } from "@shared/inventory-component-details";
 import { AlertTriangle, Plus, Trash2 } from "lucide-react";
 import { plannedUseDrafts, plannedInventoryLabels, type PlannedStockMode, type ActualUseDraft } from "@shared/inventory-wizard-use";
-export { initialActualUse, actualUseLinesAreValid, type ActualUseDraft } from "@shared/inventory-wizard-use";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";

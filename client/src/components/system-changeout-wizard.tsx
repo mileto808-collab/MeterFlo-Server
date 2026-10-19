@@ -34,10 +34,10 @@ import { useGpsCapture, type GpsCaptureSource } from "@/hooks/use-gps-capture";
 import { isValidReading, getReadingInputValue, readingLimitMessage } from "@shared/reading-precision";
 import { GPSCapture } from "./gps-capture";
 import SignaturePad, { SignaturePadRef, SignatureType } from "./signature-pad";
-import { ActualUseCollector, actualUseLinesAreValid, initialActualUse, type ActualUseDraft } from "./inventory/actual-use-collector";
+import { ActualUseCollector } from "./inventory/actual-use-collector";
 import { resolveFieldStock, type FieldStockSettings } from "@shared/inventory-field-stock";
-import { plannedUseDrafts, inventoryWizardBasis, refreshApprovedUse, type PlannedStockMode } from "@shared/inventory-wizard-use";
-import { bindWizardEquipmentSerials } from "@shared/inventory-wizard-use";
+import { plannedUseDrafts, inventoryWizardBasis, refreshApprovedUse, actualUseLinesAreValid, initialActualUse,
+  bindWizardEquipmentSerials, type ActualUseDraft, type PlannedStockMode } from "@shared/inventory-wizard-use";
 import {
   ArrowLeft,
   ArrowRight,

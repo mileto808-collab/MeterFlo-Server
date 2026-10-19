@@ -48,3 +48,4 @@
 - [Project trouble codes](project-trouble-code-policy.md) — core choices always available, flat project-only custom codes, and permanent identities for rename-safe business rules.
 - [Pre-distribution compatibility](pre-distribution-compatibility.md) — no distributed users yet; prefer clean migrations over speculative permanent legacy layers.
 - [Attachment ownership](attachment-ownership-boundary.md) — a matching numeric project suffix cannot prove ownership of an old directory.
+- [Live module refactors](live-module-refactors.md) — update consumers before removing exports; Vite observes intermediate file writes, not just the final valid code.
