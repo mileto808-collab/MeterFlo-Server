@@ -15,6 +15,18 @@ Disposition names must be project-defined and consistent across choices, filters
 
 **How to apply:** Filter by rule identity and physical outcome, not display text or outcome alone, so two custom rules with the same result stay distinct. Current entry details follow renamed project labels; history and event receipts preserve recorded names and say so. Match Activity to the exact operation, never a later decision on the same equipment. Quarantine acceptance is a custody step, not a configurable final disposition.
 
+When mandatory warehouse returns are off, project administrators should explicitly select which individual field dispositions are included, rather than automatically exposing every active rule.
+
+**Why:** The user explicitly requested individual disposition selection when the mandatory-return setting is off.
+
+**How to apply:** Treat this as a configuration requirement, separately for the affected equipment scope. Do not confuse removal-rule existence or global active state with the project's allowed technician choices.
+
+Warehouse handling needs a distinct “Return to customer” choice, separate from scrap and return to usable stock.
+
+**Why:** The user described recording scrap with a note saying return to customer, but actually wanted to return the equipment rather than scrap it.
+
+**How to apply:** Do not infer physical handling or rewrite prior decisions from free-text notes. Preserve the recorded history when introducing the distinct workflow or correcting an existing decision.
+
 The work-order Inventory section must be its own collapsible card immediately after System/Module Details, named “Inventory,” not nested inside equipment details.
 
 **Why:** The user explicitly changed this placement and name.
