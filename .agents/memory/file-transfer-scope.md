@@ -12,3 +12,11 @@ Customer SFTP imports require a configurable filename-matching pattern to select
 **Why:** The user explicitly selected the combined workspace and both export modes, and clarified that customer processing requirements vary by status during both schedule setup and manual operation.
 
 **How to apply:** Preserve those independent controls when extending scheduled transfers; do not replace manual import/mapping workflows or hardcode a short list of exportable statuses.
+
+## Self-contained cross-platform requirement
+
+The user wants file transfers to be self-contained across Replit and standalone Windows/Linux.
+
+**Why:** The user explicitly requested this deployment scope. They have not chosen between a universal HTTPS approach and SFTP with hosting-specific infrastructure.
+
+**How to apply:** Do not assume an external SFTP service is an accepted requirement. Check current Replit published-port documentation before promising a public embedded SSH/SFTP listener; distinguish outbound SFTP support from accepting inbound customer SFTP connections.
