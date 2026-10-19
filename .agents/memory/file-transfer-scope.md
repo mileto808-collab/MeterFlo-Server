@@ -29,6 +29,8 @@ Customers with MeterFlo access can manually put files into project files through
 
 The user wants Replit-hosted instances to use Replit methods and standalone Windows/Linux instances to use a MeterFlo SFTP/SSH server.
 
+For Replit, the user clarified that a secure equivalent is acceptable; it does not have to be actual SFTP.
+
 **Why:** The user explicitly corrected the suggestion to replace existing methods with a universal HTTPS approach. File delivery and collection are additional options around the existing import/export processing, not a redesign of it.
 
 **How to apply:** Preserve current manual and scheduled workflows. Do not equate HTTPS with contractual SFTP support, or give customers development-workspace SSH access. Explain any platform limitation separately without silently changing the requested workflow or treating an external gateway as already approved.
