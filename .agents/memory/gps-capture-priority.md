@@ -22,3 +22,9 @@ The user approved requiring installed native apps/helpers for device-first GPS.
 **Why:** The user explicitly requested web changeouts as an option and asked to preserve browser fallback on devices without internal or external GPS.
 
 **How to apply:** Native helpers must not become prerequisites for web changeouts. Browser geolocation may itself use a phone's GPS; show reported accuracy rather than assuming acquisition path proves accuracy. Preserve clearly labeled reuse/manual alternatives under project rules and keep any new accuracy requirement opt-in.
+
+Some projects specify GPS capture in the background; preserve that mode and show capture information in the wizard during review and submittal instead of routine capture messages.
+
+**Why:** The user explicitly warned not to break background capture and requested viewable wizard review/submittal information rather than messages.
+
+**How to apply:** Keep automatic acquisition alongside the active wizard without introducing an extra step or routine app notifications. Keep manual-step and disabled modes distinct; only explicit project requirements should interrupt submission. Browser/OS permission dialogs cannot be suppressed by the app.
