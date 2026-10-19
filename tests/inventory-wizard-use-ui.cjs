@@ -1,5 +1,7 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const http = require("node:http");
+const https = require("node:https");
 const { chromium, expect } = require("@playwright/test");
 
 (async () => {
@@ -222,8 +224,10 @@ const { chromium, expect } = require("@playwright/test");
     // Shared vehicle: two technicians use one balance, with no source picker.
     await api("PATCH", root, { changeoutEquipmentType: "system" });
     const registry = await api("GET", "/api/permissions");
-    await api("PUT", `/api/subroles/${fixture.viewerRoleId}/permissions`, { permissions: registry.filter(p =>
-      p.key.startsWith("workOrders.") || ["projects.view", "project.workOrders", "inventory.view", "inventory.assign"].includes(p.key)).map(p => p.key) });
+    const technicianPermissions = registry.filter(p =>
+      ["workOrders.view", "workOrders.meterChangeout", "project.workOrders", "nav.dashboard",
+        "inventory.view", "inventory.assign"].includes(p.key)).map(p => p.key);
+    await api("PUT", `/api/subroles/${fixture.viewerRoleId}/permissions`, { permissions: technicianPermissions });
     await command("warehouse", { id: "shared-vehicle", code: "SHARED", name: "Shared crew vehicle", type: "vehicle",
       vin: "1HGCM82633A004352", plate: "TEST", plateState: "CO", userIds: [fixture.id, fixture.viewer.id] });
     const vehicleStock = [{ itemId: "qty-system", quantity: 2, serials: [] }, { itemId: "seal", quantity: 2, serials: [] }];
@@ -246,8 +250,37 @@ const { chromium, expect } = require("@playwright/test");
     assert.equal(forbiddenConfig.status(), 403, "Technicians cannot reconfigure project defaults");
     page = await viewerContext.newPage(); next = page.getByTestId("button-wizard-next");
     page.on("pageerror", error => errors.push(error.message));
+    await api("PATCH", root, { wizardShowBeforePhotosStep: true, wizardShowAfterPhotosStep: true,
+      wizardShowNotesStep: true });
     const sharedSecond = await makeWork("shared-second", false, true, fixture.viewer.id);
-    await start(sharedSecond);
+    // Real uploads arrive over time. Deliver chunks after the request's audit
+    // middleware has run, rather than relying on a fully buffered small body.
+    await page.route(`**/api/projects/${fixture.projectId}/work-orders/${sharedSecond.id}/system-changeout`, async route => {
+      const original = route.request(), url = new URL(original.url());
+      const headers = { ...await original.allHeaders(), "transfer-encoding": "chunked" };
+      delete headers["content-length"];
+      const body = original.postDataBuffer();
+      assert.ok(body && body.length, "Wizard sends multipart capture");
+      const response = await new Promise((resolve, reject) => {
+        const request = (url.protocol === "https:" ? https : http).request(url, { method: "POST", headers }, result => {
+          const chunks = [];
+          result.on("data", chunk => chunks.push(chunk));
+          result.on("error", reject);
+          result.on("end", () => resolve({ status: result.statusCode, body: Buffer.concat(chunks) }));
+        });
+        request.on("error", reject);
+        void (async () => {
+          await new Promise(resolve => setTimeout(resolve, 30));
+          for (let at = 0; at < body.length; at += 512) {
+            request.write(body.subarray(at, at + 512));
+            await new Promise(resolve => setTimeout(resolve, 2));
+          }
+          request.end();
+        })().catch(reject);
+      });
+      await route.fulfill({ status: response.status, contentType: "application/json", body: response.body });
+    });
+    await start(sharedSecond, false, true);
     await expect(page.getByRole("region", { name: "Planned work-order requirements" })).toContainText("Stock source: SHARED");
     await expect(page.getByRole("button", { name: "Change stock source" })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Change kit handling" })).toHaveCount(0);
@@ -256,7 +289,23 @@ const { chromium, expect } = require("@playwright/test");
       operationId: crypto.randomUUID(), action: "prepareUse", data: { workOrderId: sharedSecond.id, revision: 0, mode: "changeout",
         used: [{ warehouseId: "wizard-w", itemId: "qty-system", quantity: 1, serials: [] }], dispositions: [] } } });
     assert.equal(forbiddenSource.status(), 403, "Direct API requests cannot bypass source permissions");
-    await next.click(); await scanIds("SHARED-SECOND"); await finish(sharedSecond);
+    await next.click(); await scanIds("SHARED-SECOND", undefined, true); await finish(sharedSecond);
+    const completedByTechnician = await api("GET", `${root}/work-orders/${sharedSecond.id}`);
+    assert.equal(completedByTechnician.status.toLowerCase(), "completed");
+    const technicianAudit = await api("GET", `/api/audit?projectId=${fixture.projectId}&entityId=${sharedSecond.id}&actorId=${encodeURIComponent(fixture.viewer.id)}`);
+    assert.ok(technicianAudit.events.length, "Streamed completion is audited as the authenticated technician");
+    assert.ok(technicianAudit.events.every(event => event.actorId === fixture.viewer.id));
+    await api("PUT", `/api/subroles/${fixture.viewerRoleId}/permissions`, {
+      permissions: technicianPermissions.filter(permission => permission !== "inventory.assign"),
+    });
+    const deniedUse = await viewerContext.request.post(`${root}/inventory/commands`, { data: {
+      operationId: crypto.randomUUID(), action: "prepareUse", data: { workOrderId: sharedSecond.id, revision: 0,
+        mode: "changeout", used: [], dispositions: [] },
+    } });
+    assert.equal(deniedUse.status(), 403, "Restoring upload identity must not bypass missing inventory permission");
+    await api("PUT", `/api/subroles/${fixture.viewerRoleId}/permissions`, { permissions: technicianPermissions });
+    await api("PATCH", root, { wizardShowBeforePhotosStep: false, wizardShowAfterPhotosStep: false,
+      wizardShowNotesStep: false });
     const sharedState = (await api("GET", `${root}/inventory`)).state;
     assert.equal(sharedState.stock.find(s => s.warehouseId === "shared-vehicle" && s.itemId === "qty-system")?.quantity ?? 0, 0);
     assert.equal(sharedState.stock.find(s => s.warehouseId === "wizard-w" && s.itemId === "qty-system")?.quantity, 1);

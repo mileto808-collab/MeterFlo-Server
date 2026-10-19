@@ -317,7 +317,8 @@ export async function inventoryWorkOrderChange(client: PoolClient, schema: strin
       }
     }
     const actorId = auditContext.getStore()?.actorId;
-    const completionUser = actorId ? await storage.getUser(actorId) : await storage.getUserByUsername("file_import");
+    if (!actorId) throw new InventoryError("Authenticated inventory identity required to complete inventory work.");
+    const completionUser = await storage.getUser(actorId);
     if (!completionUser || completionUser.isLocked || !readingVisit && !await storage.hasPermission(completionUser, inventoryPermissions.assign))
       throw new InventoryError("Inventory usage permission required to complete inventory work.");
     const completionAdmin = await storage.isAdminUser(completionUser);

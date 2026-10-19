@@ -49,3 +49,4 @@
 - [Pre-distribution compatibility](pre-distribution-compatibility.md) — no distributed users yet; prefer clean migrations over speculative permanent legacy layers.
 - [Attachment ownership](attachment-ownership-boundary.md) — a matching numeric project suffix cannot prove ownership of an old directory.
 - [Live module refactors](live-module-refactors.md) — update consumers before removing exports; Vite observes intermediate file writes, not just the final valid code.
+- [Multipart audit identity](multipart-audit-identity.md) — streamed photo callbacks can lose request identity; re-establish the verified actor after parsing, never substitute an import user.

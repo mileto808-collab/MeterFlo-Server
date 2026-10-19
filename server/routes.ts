@@ -3989,7 +3989,10 @@ export async function registerRoutes(
   });
 
   // System changeout workflow endpoint
-  app.post("/api/projects/:projectId/work-orders/:workOrderId/system-changeout", isAuthenticated, upload.array("photos", 20), async (req: any, res) => {
+  // Multipart file callbacks can resume outside the request's AsyncLocalStorage
+  // scope. Re-establish the verified actor after parsing the upload, before any
+  // file writes or transactional inventory completion checks.
+  app.post("/api/projects/:projectId/work-orders/:workOrderId/system-changeout", isAuthenticated, upload.array("photos", 20), auditActorMiddleware, async (req: any, res) => {
     try {
       const currentUser = await storage.getUser(req.user.claims.sub);
       const projectId = parseInt(req.params.projectId);
