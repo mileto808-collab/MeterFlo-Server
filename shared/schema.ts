@@ -535,7 +535,10 @@ export const workOrderSubStatuses = pgTable("work_order_sub_statuses", {
 // Trouble codes table - configurable trouble/issue codes for work orders
 export const troubleCodes = pgTable("trouble_codes", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-  code: varchar("code", { length: 50 }).notNull(),
+  // Retain through the staged UUID cutover: installed project-schema FKs can
+  // still reference code while Publish reconciles the public schema.
+  // Remove only after checking installed references no longer target code.
+  code: varchar("code", { length: 50 }).notNull().unique("trouble_codes_code_key"),
   label: varchar("label", { length: 100 }).notNull(),
   description: text("description"),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }),

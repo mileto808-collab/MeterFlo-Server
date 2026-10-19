@@ -26,3 +26,33 @@ Do not use `REPLIT_ENVIRONMENT=production` to identify a published app.
 **Why:** Replit's editor and post-merge runner also supplied that platform label. Treating it as the app's deployment stage rejected legitimate development setup.
 
 **How to apply:** Use the documented published-runtime flag `REPLIT_DEPLOYMENT=1`; require workspace signals such as the dev domain for development-only scripts. Test the editor's production platform label separately from actual published-runtime rejection.
+
+Retain the trouble-code global unique key until a read-only production check
+confirms that installed project work-order foreign keys no longer reference
+the descriptive code.
+
+**Why:** The supported comparison emitted public-schema changes without the
+per-project reference conversion, so removing that key failed dependency
+validation. The retained key is a staged cutover safeguard, not a permanent
+requirement for globally unique project code values or a legacy application
+read path.
+
+**How to apply:** Keep the source declaration and actual development constraint
+aligned during the stage. Clearly disclose the temporary global-code
+restriction. Never use CASCADE or direct production DDL; verify installed
+references before planning a separate removal through Publish.
+
+Inspect referenced unique-key representation and the entire generated statement
+order, not just the first failure.
+
+**Why:** Standalone unique indexes supporting foreign keys were omitted by
+comparison, while existing-table UNIQUE constraints were added after new
+foreign keys. A public-only diff can therefore drop a needed index or reference
+a key not yet created.
+
+**How to apply:** Represent required candidate keys as actual constraints and
+prefer already-existing primary keys for new references where they are the
+same immutable domain identity. Prove any identity equivalence before changing
+references. Validate the unchanged generated order on an owned populated
+database and retain the authoritative Publish fork check. Never truncate
+already-unique business records to satisfy a generic uniqueness warning.

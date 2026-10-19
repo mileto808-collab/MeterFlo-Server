@@ -13,6 +13,12 @@ const referenceTables: Record<string, string> = {
   customerHandoffId: "inventory_customer_handoffs", returnId: "inventory_returns",
 };
 
+// These entities persist their immutable domain ID as _key. Their existing
+// composite primary keys are available before Publish adds dependent FKs;
+// secondary unique constraints on existing tables can be emitted after FKs.
+const referenceColumns = (field: string) =>
+  ["project_id", field === "returnId" || field === "customerHandoffId" ? "_key" : "id"];
+
 /** Development/standalone maintenance only. Publish transports schema to managed production. */
 export async function applyInventoryRelationalSchema(pool: Pool) {
   const statements: string[] = [
@@ -65,7 +71,7 @@ export async function applyInventoryRelationalSchema(pool: Pool) {
     if (model.columns.id && model.name !== "inventory_items")
       statements.push(`CREATE UNIQUE INDEX IF NOT EXISTS ${model.name}_identity ON public.${model.name}(project_id,id)`);
     for (const field of Object.keys(model.columns))
-      if (referenceTables[field]) fk(model.name, ["project_id", columnName(field)], referenceTables[field]);
+      if (referenceTables[field]) fk(model.name, ["project_id", columnName(field)], referenceTables[field], referenceColumns(field));
     if (model.arrays?.length) values(arrayTable(model.name), model.name, false);
     for (const child of model.children ?? []) {
       statements.push(`CREATE TABLE IF NOT EXISTS public.${child.name} (
@@ -80,7 +86,7 @@ export async function applyInventoryRelationalSchema(pool: Pool) {
           END IF; END $$`);
       fk(child.name, ["project_id", "parent_id"], model.name, ["project_id", "_key"]);
       for (const field of Object.keys(child.columns))
-        if (referenceTables[field]) fk(child.name, ["project_id", columnName(field)], referenceTables[field]);
+        if (referenceTables[field]) fk(child.name, ["project_id", columnName(field)], referenceTables[field], referenceColumns(field));
       if (child.arrays?.length) values(arrayTable(child.name), child.name, true);
       if (["integer", "numeric"].includes(child.columns.quantity))
         constraints.push(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='public.${child.name}'::regclass AND conname='inventory_quantity_nonnegative') THEN
