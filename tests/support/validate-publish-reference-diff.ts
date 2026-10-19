@@ -5,6 +5,7 @@
  */
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { publishingPostgres } from "../helpers/publishing-postgres";
 
 const file = process.argv[2];
@@ -23,7 +24,7 @@ try {
   // Minimal metadata-equivalent dependencies, populated with synthetic records.
   // No production data, credentials, connection strings or schemas are copied.
   await pool.query(`
-    CREATE TABLE public.projects(id integer PRIMARY KEY);
+    CREATE TABLE public.projects(id integer PRIMARY KEY,database_name text);
     CREATE TABLE public.users(id varchar PRIMARY KEY);
     CREATE TABLE public.inventory_state(project_id integer PRIMARY KEY);
     CREATE TABLE public.inventory_warehouses(project_id integer NOT NULL,_key text NOT NULL,id text,
@@ -41,7 +42,7 @@ try {
     CREATE TABLE project_publish_reference_fixture.work_orders(id integer PRIMARY KEY,trouble varchar(50),
       CONSTRAINT fk_trouble_code FOREIGN KEY(trouble) REFERENCES public.trouble_codes(code)
         ON UPDATE CASCADE ON DELETE RESTRICT);
-    INSERT INTO public.projects VALUES(1);
+    INSERT INTO public.projects VALUES(1,'project_publish_reference_fixture');
     INSERT INTO public.users VALUES('warehouse-fixture');
     INSERT INTO public.inventory_state VALUES(1);
     INSERT INTO public.inventory_warehouses VALUES(1,'warehouse','warehouse');
@@ -85,5 +86,13 @@ try {
     VALUES(1,'handoff-1','lines',1,'{}','return-1')`), (error: any) => error.code === "23505");
   await assert.rejects(pool.query("UPDATE public.trouble_codes SET rule_key=(SELECT rule_key FROM public.trouble_codes WHERE id=1) WHERE id=2"),
     (error: any) => error.code === "23505");
+  // Invoke the real startup routine in a fresh process, with the owned test
+  // environment installed before importing server modules. No dev/prod URL
+  // is inherited. A generated-SQL-only check cannot catch startup schema drift.
+  const startup = await owned.run(process.execPath, [
+    resolve("node_modules/tsx/dist/cli.mjs"),
+    resolve("tests/support/verify-publish-trouble-startup.ts"),
+  ], owned.env);
+  console.log(startup.trim());
   console.log(`PASS: original dependent-key failure reproduced; all ${diff.statementsToExecute.length} regenerated statements applied in their original order; records preserved, handoff references enforced, no truncation.`);
 } finally { await owned.close(); }

@@ -134,13 +134,10 @@ export async function initializeAllProjectTroubleCodes() {
       const exists = await client.query("SELECT to_regclass($1) AS t", [`"${row.database_name}".work_orders`]);
       if (exists.rows[0].t) await installProjectTroubleCodes(client, row.database_name);
     }
-    // All text foreign keys have now been converted. Codes are unique within
-    // their applicable catalog, not across unrelated projects.
-    const old = await client.query(`SELECT c.conname FROM pg_constraint c
-      WHERE c.conrelid='public.trouble_codes'::regclass AND c.contype='u'
-      AND c.conkey=ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid=c.conrelid AND attname='code')]::smallint[]`);
-    for (const row of old.rows)
-      await client.query(`ALTER TABLE public.trouble_codes DROP CONSTRAINT "${String(row.conname).replaceAll('"','""')}"`);
+    // Do not remove schema-declared keys at startup. The managed production
+    // database may still have code-based project FKs when Publish compares it
+    // with development. Remove the staged key only through a reviewed schema
+    // change after checking the target's installed references.
     await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS trouble_codes_core_code_unique ON public.trouble_codes(lower(code)) WHERE project_id IS NULL;
       CREATE UNIQUE INDEX IF NOT EXISTS trouble_codes_project_code_unique ON public.trouble_codes(project_id,lower(code)) WHERE project_id IS NOT NULL`);
     await client.query("COMMIT");

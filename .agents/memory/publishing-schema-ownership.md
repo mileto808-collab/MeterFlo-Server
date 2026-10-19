@@ -42,6 +42,18 @@ aligned during the stage. Clearly disclose the temporary global-code
 restriction. Never use CASCADE or direct production DDL; verify installed
 references before planning a separate removal through Publish.
 
+Verify the retained key and comparison after full development startup, not just
+immediately after applying the development repair.
+
+**Why:** The original generated-SQL test passed, but an older initialization
+cleanup removed the declared unique key on restart, so the next Publish again
+proposed the blocked removal. Testing the SQL alone missed that drift.
+
+**How to apply:** Startup must not automatically remove schema-declared keys.
+Include real initialization in an owned child process in migration regression
+checks, and check the actual development constraint and fresh diff after a
+workspace restart before recommending another publish.
+
 Inspect referenced unique-key representation and the entire generated statement
 order, not just the first failure.
 

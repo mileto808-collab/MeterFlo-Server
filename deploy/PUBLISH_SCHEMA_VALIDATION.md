@@ -47,10 +47,16 @@ No managed-production runtime or deployment DDL was added.
    The validator creates its own disposable PostgreSQL cluster. It reproduces
    the original dependency failure, applies the complete regenerated SQL in
    its original order, and checks populated synthetic records and handoff
-   integrity. It accepts no caller-supplied database URL and does not access
+   integrity. It also invokes the real startup initializer twice in an owned
+   child process and verifies that the retained key and index survive. A SQL
+   diff that passes before startup is insufficient if initialization removes
+   a schema-declared constraint afterward.
+   It accepts no caller-supplied database URL and does not access
    production. Its representative fixture is not a full production clone;
    Publish still performs the authoritative fork validation.
-4. Retry **Publish** normally. Keep existing records if asked about uniqueness.
+4. Restart the development application and verify that the retained trouble-code
+   key still exists, then recompute the diff. Retry **Publish** normally.
+   Keep existing records if asked about uniqueness.
    Do **not** truncate the trouble-code or inventory-return tables and do not
    select production-data overwrite. Existing production trouble-code values
    and return identities were checked to be unique.
