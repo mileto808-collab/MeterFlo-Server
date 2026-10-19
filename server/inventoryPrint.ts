@@ -11,6 +11,7 @@ import { inventoryRemovedEquipmentPrint } from "./inventoryRemovedEquipmentPrint
 import { inventoryCustomerHandoffPrint } from "./inventoryCustomerHandoffPrint";
 import type { InventoryWorkOrderLabels } from "../shared/inventory-work-order-labels";
 import { removalActivityIndex, removalActivityDisplay } from "../shared/inventory-removal-display";
+import { inventoryReceiptContexts, inventoryReceiptOperationReference } from "../shared/inventory-receipt-context";
 
 const escape = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 export function inventoryPrint(kind: string, record: any, state: InventoryState, project: string, actors: readonly InventoryActorLabel[] = [], timezone = "UTC", workOrderLabels: InventoryWorkOrderLabels = {}) {
@@ -32,6 +33,8 @@ export function inventoryPrint(kind: string, record: any, state: InventoryState,
   const origin = linkedOrder || record;
   const kitReceipt = kind === "receipt" && ["assemble", "verifyVendorKit", "disassemble", "resolveKitHold"].includes(record.action);
   const kitItem = kitReceipt ? state.items.find(i => i.id === record.reference) : undefined;
+  const operationReference = kind === "receipt"
+    ? inventoryReceiptOperationReference(record, inventoryReceiptContexts(state).get(record.id), workOrderLabels) : "";
   return `<!doctype html><html><head><meta charset="utf-8"><title>${escape(reference)}</title><style>
      body{font:14px Arial;margin:30px;color:#111}table{border-collapse:collapse;width:100%;margin-top:20px}th,td{border:1px solid #bbb;padding:8px;text-align:left}button{padding:10px}
     .internal-barcode{margin:12px 0;break-inside:avoid;page-break-inside:avoid}.internal-barcode figcaption{font-size:12px;font-weight:bold;margin-bottom:4px}.internal-barcode svg{display:block;width:135mm;max-width:100%;height:auto}
@@ -46,7 +49,7 @@ export function inventoryPrint(kind: string, record: any, state: InventoryState,
     <p>${escape(reference)} · Status: ${escape(record.status || record.action)}</p>
     ${orderReference ? `<p><strong>Order number / reference: ${escape(orderReference)}</strong></p>` :
       kitReceipt ? `<p>Kit / component: ${escape(kitItem ? `${kitItem.sku} · ${kitItem.name}` : "Unavailable product")}</p>` :
-      kind === "receipt" && record.reference ? `<p>Operation reference: ${escape(record.reference)}</p>` : ""}
+      kind === "receipt" && record.reference ? `<p>Operation reference: ${escape(operationReference)}</p>` : ""}
     <p>Date: ${escape(inventoryDateTime(record.createdAt || record.occurredAt, timezone))} · Actor: ${escape(actorLabel(record.actor))}</p>
     <p>From: ${escape(warehouse(origin.sourceId))} · To: ${escape(warehouse(origin.destinationId || record.warehouseId))}</p>
     <p>Vendor: ${escape(state.vendors.find(v => v.id === origin.vendorId)?.name)} · ${escape(record.reason || record.notes)}</p>

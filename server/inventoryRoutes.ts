@@ -7,7 +7,8 @@ import { promises as fs } from "node:fs";
 import { inventoryCommandSchema, inventoryPermissions, commandPermission, type InventoryState } from "../shared/inventory";
 import { InventoryError } from "../shared/inventory-engine";
 import { inventoryState, postInventory } from "./inventoryService";
-import { inventoryWorkOrderLabels } from "./inventoryWorkOrderLabels";
+import { inventoryWorkOrderLabels, inventoryWorkOrderContext } from "./inventoryWorkOrderLabels";
+import { inventoryReceiptContexts } from "../shared/inventory-receipt-context";
 import { inventoryStreamAllowed, inventoryStreamPermissions, subscribeInventoryEvents } from "./inventoryEvents";
 import { storage } from "./storage";
 import { visibleAssignedOrders } from "./workOrderVisibility";
@@ -76,8 +77,11 @@ export function registerInventoryRoutes(app: Express) {
          WHERE gm.user_id=u.id AND gp.project_id=$1)) ORDER BY u.username`, [c.project.id]);
     const { rows: actors } = await pool.query(`SELECT id, username FROM public.users WHERE id = ANY($1::text[])`,
       [[...new Set([...state.receipts.map(receipt => receipt.actor), ...state.returns.flatMap(r => (r.history ?? []).map(h => h.actor))])]]);
-    const workOrderLabels = await inventoryWorkOrderLabels(c.project.databaseName, state.returns.map(record => record.workOrderId));
-    return { enabled: !!c.project.inventoryEnabled, projectName: c.project.name, timezone: c.project.timezone ?? "UTC", workOrderLabels,
+    const receiptContexts = inventoryReceiptContexts(state);
+    const workOrders = await inventoryWorkOrderContext(c.project.databaseName,
+      [...state.returns.map(record => record.workOrderId), ...[...receiptContexts.values()].flatMap(context => context.workOrderIds)]);
+    const workOrderLabels = workOrders.labels;
+    return { enabled: !!c.project.inventoryEnabled, projectName: c.project.name, timezone: c.project.timezone ?? "UTC", workOrderLabels, workOrderIdentifiers: workOrders.identifiers,
       state, permissions: c.permissions, users: users.map(u => ({ id: u.id, username: u.username || u.id })), actors };
   };
   app.use(base, isAuthenticated, auth());
@@ -227,7 +231,8 @@ export function registerInventoryRoutes(app: Express) {
       req.params.kind === "receipt" && record.action === "returnCustomerBatch" ? state.customerHandoffs?.find(handoff => handoff.id === record.reference) : undefined;
     const workOrderLabels = req.params.kind === "return"
       ? await inventoryWorkOrderLabels(c.project.databaseName, [record.workOrderId]) :
-      handoff ? await inventoryWorkOrderLabels(c.project.databaseName, handoff.lines.map((line: { workOrderId: number }) => line.workOrderId)) : {};
+      handoff ? await inventoryWorkOrderLabels(c.project.databaseName, handoff.lines.map((line: { workOrderId: number }) => line.workOrderId)) :
+      req.params.kind === "receipt" ? await inventoryWorkOrderLabels(c.project.databaseName, inventoryReceiptContexts(state).get(record.id)?.workOrderIds ?? []) : {};
     res.type("html").send(inventoryPrint(req.params.kind, record, state, c.project.name, actors, c.project.timezone ?? "UTC", workOrderLabels));
   }));
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } });

@@ -43,7 +43,8 @@ export function InventoryRecordsWorkspace({ kind, title, description, dataset, p
   const matchingRows = useMemo(() => filterOperationsRows(dataset, query, selected, sort, { from, to, timezone }),
     [dataset, query, selected, sort, from, to, timezone]);
   const activeFilterCount = dataset.filters.reduce((count, filter) => count + Number(!!selected[filter.key] && selected[filter.key] !== "all"), 0) +
-    Number(sort !== dataset.defaultSort) + Number(!!from) + Number(!!to);
+    Number(sort !== dataset.defaultSort) + Number(!!from) + Number(!!to) +
+    (dataset.searchFilters ?? []).filter(filter => selected[filter.key]?.trim()).length;
   const lastPage = Math.max(0, Math.ceil(matchingRows.length / rowsPerPage) - 1);
   const currentPage = Math.min(page, lastPage);
   const pageCount = Math.max(1, Math.ceil(matchingRows.length / rowsPerPage));
@@ -123,6 +124,12 @@ export function InventoryRecordsWorkspace({ kind, title, description, dataset, p
           {(kind === "returns" || kind === "activity") && " Disposition filters use current project names; history keeps the names recorded at the time."}
         </DialogDescription></DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
+          {(dataset.searchFilters ?? []).map(filter => <div className="space-y-2" key={filter.key}>
+            <Label htmlFor={`operations-${kind}-${filter.key}`}>{filter.label}</Label>
+            <Input id={`operations-${kind}-${filter.key}`} type="search" autoComplete="off"
+              placeholder={`Enter ${filter.label.toLocaleLowerCase()}`} value={selected[filter.key] ?? ""}
+              onChange={event => setSelected(current => ({ ...current, [filter.key]: event.target.value }))} />
+          </div>)}
           {dataset.filters.map(filter => <div className="space-y-2" key={filter.key}>
             <Label htmlFor={`operations-${kind}-${filter.key}`}>{filter.label}</Label>
             <select id={`operations-${kind}-${filter.key}`} className={selectClass} value={selected[filter.key] ?? "all"} onChange={event => setSelected(current => ({ ...current, [filter.key]: event.target.value }))}>

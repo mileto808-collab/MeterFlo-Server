@@ -73,7 +73,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertTriangle, ArrowLeftRight, ArrowLeft, BarChart3, Boxes, ChevronDown, ChevronUp, ClipboardList, Download, FileSpreadsheet, FileText, Filter, ListOrdered, Loader2, Menu, Package, Plus, Printer, RefreshCw, Search, Trash2, Warehouse as WarehouseIcon } from "lucide-react";
 
-type Snapshot = { enabled: boolean; projectName: string; timezone: string; state: InventoryState; permissions: string[]; users: Array<{ id: string; username: string }>; actors?: InventoryActorLabel[]; workOrderLabels?: Record<string, string> };
+type Snapshot = { enabled: boolean; projectName: string; timezone: string; state: InventoryState; permissions: string[]; users: Array<{ id: string; username: string }>; actors?: InventoryActorLabel[]; workOrderLabels?: Record<string, string>; workOrderIdentifiers?: import("@shared/inventory-work-order-labels").InventoryWorkOrderIdentifiers };
 type ResourceKind = "warehouse" | "vendor" | "item";
 const blankWarehouse = (): Warehouse => ({ id: "", code: "", name: "", type: "physical", active: true, address: "", city: "", state: "", zip: "", contact: "", phone: "", location: "", vin: "", plate: "", plateState: "", make: "", model: "", year: null, assignedUserId: null, userIds: [] });
 const blankVendor = (): Vendor => ({ id: "", name: "", contact: "", address: "", phone: "", email: "", reference: "", active: true });
@@ -351,8 +351,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   }, [activeCount, state, currentCountStock, countRows]);
   const currentClosingOrder = orderToClose ? state?.orders.find(order => order.id === orderToClose.id) : undefined;
   const locationsDataset = useMemo(() => buildOperationsDataset("locations", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone), [state, data?.actors, data?.users, timezone]);
-  const returnsDataset = useMemo(() => buildOperationsDataset("returns", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone, data?.workOrderLabels), [state, data?.actors, data?.users, timezone, data?.workOrderLabels]);
-  const activityDataset = useMemo(() => buildOperationsDataset("activity", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone), [state, data?.actors, data?.users, timezone]);
+  const returnsDataset = useMemo(() => buildOperationsDataset("returns", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone, data?.workOrderLabels, data?.workOrderIdentifiers), [state, data?.actors, data?.users, timezone, data?.workOrderLabels, data?.workOrderIdentifiers]);
+  const activityDataset = useMemo(() => buildOperationsDataset("activity", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone, data?.workOrderLabels, data?.workOrderIdentifiers), [state, data?.actors, data?.users, timezone, data?.workOrderLabels, data?.workOrderIdentifiers]);
   const categoriesDataset = useMemo(() => buildOperationsDataset("categories", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone), [state]);
   const countsDataset = useMemo(() => buildOperationsDataset("counts", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone), [state, timezone]);
   const categoryCatalog = state?.categoryCatalog ?? [];
