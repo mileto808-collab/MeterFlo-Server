@@ -9,7 +9,7 @@ In the inventory-enabled changeout wizard, planned inventory should appear as an
 
 **Why:** The user wants imported type mappings to supply the inventory plan without making the field tech select those items again. They explicitly clarified that inventory-disabled projects must retain the previous workflow.
 
-**How to apply:** Keep stock-source selection and the distinction between assembled-kit custody and loose component stock explicit. Defer equipment-serial validation until the wizard capture step, but require exact validated identities at completion. Missing type mappings are configuration problems, not permission to bypass the plan.
+**How to apply:** Use approved project/vehicle stock defaults and show the source clearly, rather than requiring a location choice on every work order. Honor existing reservations and keep assembled-kit custody distinct from loose component stock. Defer equipment-serial validation until the wizard capture step, but require exact validated identities at completion. Missing type mappings are configuration problems, not permission to bypass the plan.
 
 Inventory enablement is reversible even with unfinished inventory work. Disabling is a non-destructive pause, not cancellation: preserve stock, serials, history, reservations, open orders, counts and returns. Existing reservations remain reserved. Ordinary work-order completion while disabled must not deduct stock; re-enabling must not invent retroactive consumption.
 

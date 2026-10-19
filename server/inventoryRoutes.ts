@@ -256,7 +256,8 @@ export function registerInventoryRoutes(app: Express) {
       ? s.workRequirements?.find(r => r.workOrderId === id)
       : await workRequirements(pool as any, c.project.id, s, wo);
     return { enabled: !!c.project.inventoryEnabled, canSelect, allocation, requirements: requirements ?? { workOrderId: id, lines: [], missing: [] },
-      items: s.items, warehouses: s.warehouses, locationTypes: s.locationTypes, revision: s.revision,
+      items: s.items, warehouses: s.warehouses, locationTypes: s.locationTypes, fieldSettings: s.fieldSettings, revision: s.revision,
+      canChangeFieldStock: c.admin || c.permissions.includes(inventoryPermissions.maintain) || c.permissions.includes(inventoryPermissions.configure),
       componentTrace: workKitComponentTrace(s, id),
       removalRules: removalConfig(s).rules, removalPolicies: [removalConfig(s).policy],
       workflow: { wizardMode: c.project.wizardMode ?? "changeout", equipment: c.project.changeoutEquipmentType ?? "both", readingEquipment: c.project.readingEquipmentType ?? "both" } };

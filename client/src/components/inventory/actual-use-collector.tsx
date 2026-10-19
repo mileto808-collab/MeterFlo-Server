@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Allocation, InventoryItem, Warehouse } from "@shared/inventory";
 import { inventoryComponentDetails as expandedComponents } from "@shared/inventory-component-details";
 import { AlertTriangle, Plus, Trash2 } from "lucide-react";
@@ -21,7 +21,8 @@ function recipeItemIds(itemId: string, items: InventoryItem[], ancestors = new S
   return result;
 }
 
-export function ActualUseCollector({ value, onChange, items, warehouses, requirements = [], missing = [], reservations = [], disabled = false }: {
+export function ActualUseCollector({ value, onChange, items, warehouses, requirements = [], missing = [], reservations = [], disabled = false,
+  fieldSourceId, sourceChoices, canChangeSource, canChangeFulfillment, defaultFulfillment, sourceReason, onSourceChange }: {
   value: ActualUseDraft[];
   onChange: (next: ActualUseDraft[]) => void;
   items: InventoryItem[];
@@ -30,12 +31,21 @@ export function ActualUseCollector({ value, onChange, items, warehouses, require
   missing?: Array<{ equipment: "system" | "module"; typeId: string }>;
   reservations?: Allocation[];
   disabled?: boolean;
+  fieldSourceId: string;
+  sourceChoices: Warehouse[];
+  canChangeSource: boolean;
+  canChangeFulfillment: boolean;
+  defaultFulfillment: PlannedStockMode;
+  sourceReason?: string;
+  onSourceChange: (id: string) => void;
 }) {
   const [newItem, setNewItem] = useState("");
-  const [newWarehouse, setNewWarehouse] = useState("");
-  const [newKitMode, setNewKitMode] = useState<PlannedStockMode>("components");
+  const newWarehouse = fieldSourceId;
+  const [newKitMode, setNewKitMode] = useState<PlannedStockMode>(defaultFulfillment);
+  const [editingSource, setEditingSource] = useState(false);
+  const [editingFulfillment, setEditingFulfillment] = useState(false);
+  useEffect(() => { setNewKitMode(defaultFulfillment); }, [defaultFulfillment]);
   const activeItems = useMemo(() => items.filter(item => item.active && item.kind !== "labor"), [items]);
-  const activeWarehouses = useMemo(() => warehouses.filter(warehouse => warehouse.active), [warehouses]);
   const overlappingLine = value.find(line => Number(line.quantity) > 0 && line.itemId !== newItem &&
     (recipeItemIds(newItem, items).has(line.itemId) || recipeItemIds(line.itemId, items).has(newItem)));
   const duplicateSameStockLine = value.some(line => line.itemId === newItem && line.warehouseId === newWarehouse && Number(line.quantity) > 0);
@@ -58,6 +68,54 @@ export function ActualUseCollector({ value, onChange, items, warehouses, require
   const source = sources.length === 1 && value.every(line => !!line.warehouseId) ? sources[0] : "";
   const changePlan = (warehouseId: string, mode: PlannedStockMode) =>
     onChange(plannedUseDrafts(requirements, items, warehouseId, mode, reservations));
+  const reservedPlan = planned && reservations.length > 0;
+  const displaySources = planned ? sources : fieldSourceId ? [fieldSourceId] : [];
+  const changeSource = (id: string) => {
+    if (reservedPlan) return;
+    onSourceChange(id);
+    if (planned) changePlan(id, kitMode);
+    else onChange(value.map(line => line.reserved ? line : { ...line, warehouseId: id, serials: "" }));
+    setEditingSource(false);
+  };
+  const stockSource = <div className="space-y-2 pt-2">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <p className="min-w-0 break-words text-sm"><span className="font-medium">Stock source: </span>
+        {displaySources.length ? displaySources.map(id => {
+          const warehouse = warehouses.find(w => w.id === id);
+          return warehouse ? `${warehouse.code} · ${warehouse.name}` : "Unavailable location";
+        }).join(", ") : "Not selected"}
+      </p>
+      {!reservedPlan && canChangeSource && <Button type="button" size="sm" variant="ghost" disabled={disabled}
+        onClick={() => setEditingSource(!editingSource)}>Change stock source</Button>}
+    </div>
+    {reservedPlan && <p className="text-xs text-muted-foreground">Existing reservations keep their locations and stock handling. Change reservations in the work-order Inventory section if needed.</p>}
+    {!reservedPlan && (editingSource || !displaySources.length) && sourceChoices.length > 0 &&
+      <div className="space-y-1"><Label htmlFor="planned-use-warehouse">Working stock location</Label>
+        <Select value={fieldSourceId} onValueChange={changeSource} disabled={disabled}>
+          <SelectTrigger id="planned-use-warehouse"><SelectValue placeholder="Choose your working vehicle or warehouse" /></SelectTrigger>
+          <SelectContent>{sourceChoices.map(w => <SelectItem key={w.id} value={w.id}>{w.code} · {w.name}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>}
+    {!reservedPlan && !displaySources.length && sourceReason && <p role="alert" className="text-sm text-amber-800 dark:text-amber-200">{sourceReason}</p>}
+    {!reservedPlan && fieldSourceId && (planned ? source !== fieldSourceId : value.some(line => !line.reserved && line.warehouseId !== fieldSourceId)) &&
+      <Button type="button" size="sm" variant="outline" onClick={() => changeSource(fieldSourceId)}>Use current project stock source</Button>}
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <p className="text-xs text-muted-foreground">Kit handling: {(planned ? kitMode : newKitMode) === "kits" ? "Preassembled kits" : "Loose components"}</p>
+      {!reservedPlan && canChangeFulfillment && <Button type="button" size="sm" variant="ghost" disabled={disabled}
+        onClick={() => setEditingFulfillment(!editingFulfillment)}>Change kit handling</Button>}
+    </div>
+    {!reservedPlan && editingFulfillment && canChangeFulfillment &&
+      <div className="space-y-1"><Label htmlFor="planned-stock-mode">Kit handling for this changeout</Label>
+        <Select value={planned ? kitMode : newKitMode} onValueChange={mode => {
+          setNewKitMode(mode as PlannedStockMode);
+          if (planned) changePlan(fieldSourceId, mode as PlannedStockMode);
+          setEditingFulfillment(false);
+        }} disabled={disabled}>
+          <SelectTrigger id="planned-stock-mode"><SelectValue /></SelectTrigger>
+          <SelectContent><SelectItem value="components">Loose components</SelectItem><SelectItem value="kits">Preassembled kits</SelectItem></SelectContent>
+        </Select>
+      </div>}
+  </div>;
 
   return <div className="space-y-4">
     {(planned || !!missing.length) && <section className="space-y-2" aria-label="Planned work-order requirements">
@@ -67,21 +125,7 @@ export function ActualUseCollector({ value, onChange, items, warehouses, require
         <span className="shrink-0 tabular-nums text-muted-foreground">{row.quantity} {row.unit}</span>
       </li>)}</ul>}
       {!!missing.length && <div className="mt-2 flex gap-2 rounded border border-amber-500/40 bg-amber-500/5 p-2 text-xs text-amber-900 dark:text-amber-200"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><span>Some equipment types have no item mapping: {missing.map(row => `${row.equipment} type ${row.typeId}`).join(", ")}.</span></div>}
-      {planned && <div className="grid gap-3 pt-2 sm:grid-cols-2">
-        <div className="space-y-1"><Label htmlFor="planned-use-warehouse">Stock location</Label>
-          <Select value={source} onValueChange={id => changePlan(id, kitMode)} disabled={disabled}>
-            <SelectTrigger id="planned-use-warehouse"><SelectValue placeholder={sources.length > 1 ? "Using reserved locations" : "Choose vehicle or warehouse"} /></SelectTrigger>
-            <SelectContent>{activeWarehouses.map(warehouse => <SelectItem key={warehouse.id} value={warehouse.id}>{warehouse.code} · {warehouse.name}</SelectItem>)}</SelectContent>
-          </Select>
-          {sources.length > 1 && <p className="text-xs text-muted-foreground">{sources.map(id => warehouses.find(w => w.id === id)?.name ?? id).join(", ")}</p>}
-        </div>
-        {requirements.some(row => items.find(item => item.id === row.itemId)?.components.length) && <div className="space-y-1"><Label htmlFor="planned-stock-mode">Use stock as</Label>
-          <Select value={kitMode} onValueChange={mode => changePlan(source, mode as PlannedStockMode)} disabled={disabled}>
-            <SelectTrigger id="planned-stock-mode"><SelectValue /></SelectTrigger>
-            <SelectContent><SelectItem value="components">Loose components</SelectItem><SelectItem value="kits">Preassembled kits</SelectItem></SelectContent>
-          </Select>
-        </div>}
-      </div>}
+      {planned && stockSource}
       {value.filter(line => {
         const item = items.find(item => item.id === line.itemId);
         return item?.tracking === "serialized" && (!!item.components.length || item.equipment === "none");
@@ -96,7 +140,8 @@ export function ActualUseCollector({ value, onChange, items, warehouses, require
     </section>}
 
     {!planned && !missing.length && <section className="space-y-2" aria-label="Actual items used">
-      <div><h4 className="text-sm font-semibold">Actual items used</h4><p className="text-xs text-muted-foreground">Choose stock from the vehicle or another accessible location. No reservation is created.</p></div>
+      <div><h4 className="text-sm font-semibold">Actual items used</h4><p className="text-xs text-muted-foreground">Add what you install. Stock comes from the working location shown below; no reservation is created.</p></div>
+      {stockSource}
       {value.map((line, index) => {
         const item = items.find(entry => entry.id === line.itemId);
         const warehouse = warehouses.find(entry => entry.id === line.warehouseId);
@@ -121,17 +166,10 @@ export function ActualUseCollector({ value, onChange, items, warehouses, require
          {wizardEquipmentScan && quantity > 1 && <p role="alert" className="mt-2 text-xs text-destructive">Use one serialized {item?.equipment} per changeout.</p>}
         </div>;
       })}
-      <div className="grid gap-2 rounded-md border border-dashed p-3 sm:grid-cols-[1fr_1fr_auto]">
+      <div className="grid gap-2 rounded-md border border-dashed p-3 sm:grid-cols-[1fr_auto]">
          <div className="space-y-1"><Label htmlFor="actual-use-item">Add an item or kit</Label><Select value={newItem} onValueChange={setNewItem} disabled={disabled}><SelectTrigger id="actual-use-item"><SelectValue placeholder="Choose catalog item" /></SelectTrigger><SelectContent>{activeItems.map(item => <SelectItem key={item.id} value={item.id}>{item.sku} · {item.name}{item.components.length ? " · kit" : ""}</SelectItem>)}</SelectContent></Select></div>
-        <div className="space-y-1"><Label htmlFor="actual-use-warehouse">Stock location</Label><Select value={newWarehouse} onValueChange={setNewWarehouse}><SelectTrigger id="actual-use-warehouse"><SelectValue placeholder="Vehicle or warehouse" /></SelectTrigger><SelectContent>{activeWarehouses.map(warehouse => <SelectItem key={warehouse.id} value={warehouse.id}>{warehouse.code} · {warehouse.name}</SelectItem>)}</SelectContent></Select></div>
         <Button type="button" className="self-end" variant="outline" disabled={disabled || !newItem || !newWarehouse || !!overlappingLine || duplicateSameStockLine} onClick={addLine}><Plus className="mr-1 h-4 w-4" />Add</Button>
       </div>
-       {!!items.find(item => item.id === newItem)?.components.length && <div className="space-y-1"><Label htmlFor="manual-kit-mode">Use selected kit as</Label>
-         <Select value={newKitMode} onValueChange={mode => setNewKitMode(mode as PlannedStockMode)} disabled={disabled}>
-           <SelectTrigger id="manual-kit-mode"><SelectValue /></SelectTrigger>
-           <SelectContent><SelectItem value="components">Loose components</SelectItem><SelectItem value="kits">Preassembled kit</SelectItem></SelectContent>
-         </Select>
-       </div>}
       {(overlappingLine || duplicateSameStockLine) && <p role="status" className="text-xs text-amber-800 dark:text-amber-200">This item overlaps an existing kit recipe or stock line. Edit that line instead to avoid counting the same physical components twice.</p>}
     </section>}
   </div>;

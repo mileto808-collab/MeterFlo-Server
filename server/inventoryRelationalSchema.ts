@@ -117,6 +117,13 @@ export async function applyInventoryRelationalSchema(pool: Pool) {
   statements.push(`CREATE UNIQUE INDEX IF NOT EXISTS inventory_location_type_name_unique
     ON public.inventory_location_types(project_id,lower(regexp_replace(btrim(name),'\\s+',' ','g')))`);
   statements.push(`CREATE UNIQUE INDEX IF NOT EXISTS inventory_removal_rule_name_unique ON public.inventory_removal_rules(project_id,lower(btrim(name)))`);
+  statements.push(`ALTER TABLE public.inventory_field_settings ALTER COLUMN id SET NOT NULL,
+    ALTER COLUMN source_mode SET NOT NULL, ALTER COLUMN fulfillment SET NOT NULL`);
+  constraints.push(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='public.inventory_field_settings'::regclass AND conname='inventory_field_settings_valid') THEN
+    ALTER TABLE public.inventory_field_settings ADD CONSTRAINT inventory_field_settings_valid CHECK (
+      id='field-defaults' AND source_mode IN ('assigned_vehicle','project_warehouse') AND fulfillment IN ('components','kits') AND
+      ((source_mode='assigned_vehicle' AND warehouse_id IS NULL) OR (source_mode='project_warehouse' AND warehouse_id IS NOT NULL)));
+    END IF; END $$`);
   constraints.push(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid='public.inventory_removal_rules'::regclass AND conname='inventory_removal_rule_valid') THEN
     ALTER TABLE public.inventory_removal_rules ADD CONSTRAINT inventory_removal_rule_valid CHECK (
       id IS NOT NULL AND length(btrim(name)) BETWEEN 1 AND 200 AND active IS NOT NULL AND revision>0 AND

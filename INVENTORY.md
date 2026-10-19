@@ -1,5 +1,20 @@
 # Project Inventory Control
 
+## Field stock defaults and shared vehicles
+
+After enabling Inventory and saving the project, open **Edit Project → Details → Field inventory stock**. These settings save independently; they do not submit or discard other project edits.
+
+1. Create the required locations in **Inventory → Locations**.
+2. Choose **Assigned vehicle stock** when technicians work from vehicle inventory. Assign every technician using that vehicle to it. One assigned vehicle is selected automatically. If a technician has multiple assigned vehicles, they choose their working vehicle once; the choice is remembered on that device for that user and project and rechecked against current assignments.
+3. Alternatively choose **Project warehouse stock** and select an active physical warehouse. Technicians consume directly from that warehouse; warehouse-to-vehicle transfers are not required.
+4. Set **Normal kit fulfillment** to **Loose components** or **Preassembled kits**, then click **Save field inventory settings**.
+
+The wizard shows the stock source and normal kit handling rather than asking the technician to configure them for each work order. Shared vehicles have one common balance, not a separate balance for each technician. Stock is deducted atomically at completion. A preassembled kit is consumed as a kit using its recorded contents; its loose components are not deducted again. Serialized equipment inside a kit still uses the wizard's new-system/module scan; a serialized kit also requires its separate kit label. Labor is non-stock.
+
+Inventory-disabled projects retain their existing workflow. Existing reservations retain their locations and stock representation even when defaults change. Change reservations in the work-order Inventory section rather than moving them implicitly.
+
+**Permissions:** `inventory.configure` manages project defaults. Explicit source/kit-handling exceptions require `inventory.maintain` or `inventory.configure`; ordinary technicians may choose among their own assigned vehicles. All consumption still requires `inventory.assign`, project access and current location access. Missing assignments, inactive/unavailable configured warehouses and stock shortages stop the operation; the application never silently consumes from another warehouse. Unconfigured projects default to assigned-vehicle stock, so direct-warehouse projects must select their physical warehouse before technicians complete inventory work.
+
 ## Project equipment-removal policy
 
 Authorized administrators configure **Inventory → Removed Equipment → Removal rules**. Rules are project-scoped relational records with immutable IDs and editable labels. The policy separately controls whether all removed systems and/or modules must return. The safe default requires both to return and offers technicians “Return to warehouse”; no field scrap or leave-onsite authority is inferred. Administrators can create several differently named return rules, scope them to systems/modules, disable them, or delete only unused rules. Used rules remain for historical evidence. A project with no applicable active choice must be corrected before removal review can proceed.

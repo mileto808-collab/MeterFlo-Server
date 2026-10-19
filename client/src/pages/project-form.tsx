@@ -27,6 +27,7 @@ import { getReadingPrecision } from "@shared/reading-precision";
 import { getProjectEquipmentVisibility } from "@shared/project-equipment-scope";
 import { WorkOrderSubStatusManager } from "@/components/work-order-sub-statuses/work-order-sub-status-manager";
 import { ProjectTroubleCodeManager } from "@/components/project-trouble-code-manager";
+import { ProjectFieldStockSettings } from "@/components/inventory/project-field-stock-settings";
 
 const DAYS_OF_WEEK = [
   { value: 'monday', label: 'Mon' },
@@ -704,6 +705,8 @@ export default function ProjectForm() {
                   )}
                 />
               )}
+              {isEditing && (project as any)?.inventoryEnabled && form.watch("inventoryEnabled") && hasPermission("inventory.configure") &&
+                <ProjectFieldStockSettings projectId={Number(id)} />}
               {isEditing && (
                 <FormField
                   control={form.control}

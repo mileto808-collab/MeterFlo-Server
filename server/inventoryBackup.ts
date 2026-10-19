@@ -11,6 +11,7 @@ import { readInventoryCategories, storedCategoryState, writeInventoryCategories,
 import { validateKitBackup } from "./inventoryKitBackup";
 import { readRelationalInventory, writeRelationalInventory, clearRelationalInventory } from "./inventoryRelational";
 import { normalizeInventoryLocations } from "../shared/inventory-location-types";
+import { fieldStockSettingsSchema } from "../shared/inventory-field-stock";
 import { removalRuleSchema, removalPolicySchema } from "../shared/inventory-removal-policy";
 import { dispositionSchema } from "../shared/inventory";
 
@@ -42,6 +43,10 @@ export function validateInventoryBackup(backup: InventoryBackup, workOrderIds: n
       throw new Error("Saved shipment draft references an unrelated receipt.");
   }
   const s = backup.state;
+  const fieldSettings = z.array(fieldStockSettingsSchema).max(1).parse(s.fieldSettings ?? []);
+  for (const setting of fieldSettings)
+    if (setting.sourceMode === "project_warehouse" && !s.warehouses.some(w => w.id === setting.warehouseId && w.type === "physical"))
+      throw new Error("Inventory field stock settings reference a missing project warehouse.");
   const rules = z.array(removalRuleSchema).max(1000).parse(s.removalRules ?? []);
   const policies = z.array(removalPolicySchema).max(1).parse(s.removalPolicies ?? []);
   if ((s.removalRules === undefined) !== (s.removalPolicies === undefined) ||

@@ -21,6 +21,12 @@ A vehicle warehouse may have one or more technicians working out of the same sto
 
 **How to apply:** Support shared vehicle stock without creating separate per-technician balances. Allow direct consumption from a project's authorized physical warehouse without requiring an intermediate vehicle transfer.
 
+The user approved project defaults for assigned-vehicle versus direct-warehouse consumption and normal loose-component versus preassembled-kit fulfillment. The wizard should normally show the resolved source rather than ask technicians to configure it on every work order.
+
+**Why:** Technicians work from a shared vehicle or a project's single warehouse; repeatedly choosing stock location and representation is not their normal installation workflow.
+
+**How to apply:** Automatically resolve one assigned vehicle; let technicians choose among multiple assigned vehicles and reuse their choice for that user/project/device. Direct-warehouse projects use their configured physical source instead. Existing reservations retain custody; authorized exceptions must be deliberate, and shortages must never cause a silent switch of location or stock representation.
+
 Legacy backup restoration must not repeat the live cutover to shared warehouse
 access. A backup predating configurable location types retains the former
 assignment-restricted policy; backups with explicit types retain those policies.

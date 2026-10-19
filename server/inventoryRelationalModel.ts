@@ -21,6 +21,8 @@ export const relationalEntities: EntityModel[] = [
   { name: "inventory_warehouses", field: "warehouses",
     columns: { ...text("id", "code", "name", "type", "address", "city", "state", "zip", "contact", "phone", "location", "vin", "plate", "plateState", "make", "model", "assignedUserId"), locationTypeId: "uuid", year: "integer", active: "boolean" },
     arrays: ["userIds"] },
+  { name: "inventory_field_settings", field: "fieldSettings",
+    columns: text("id", "sourceMode", "warehouseId", "fulfillment") },
   { name: "inventory_vendors", field: "vendors", columns: { ...text("id", "name", "contact", "address", "phone", "email", "reference"), active: "boolean" } },
   { name: "inventory_items", field: "items", columns: { ...text("id", "sku", "name", "description", "unit", "tracking", "equipment", "barcode", "manufacturer", "model", "vendorId", "kind"), categoryId: "uuid", cost: "double precision", billingRate: "numeric", reorderPoint: "double precision", active: "boolean" },
     arrays: ["images"], children: [{ name: "inventory_kit_recipe_lines", paths: ["components"], columns: { ...line, quantity: "numeric" } }] },

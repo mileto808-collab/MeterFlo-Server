@@ -7,6 +7,7 @@ import { allocateOrderNumber, uuidOrderId } from "./inventory-order-labels";
 import { COUNT_MAX_LINES, COUNT_MAX_SERIALS, countPayloadFits } from "./inventory-count-limits";
 import { countStockScopeMatches } from "./inventory-count-stock";
 import { normalizeInventoryLocations, warehouseAccessible, resolveWarehouseInput, applyLocationTypeCommand } from "./inventory-location-types";
+import { fieldStockSettingsSchema } from "./inventory-field-stock";
 import { allocationSchema, dispositionSchema, itemSchema, stockLineSchema, vendorSchema, warehouseSchema, countDraftSchema,
   categoryNameSchema, categoryKey, inventoryCategoryNames,
   type Allocation, type InventoryCommand, type InventoryState, type StockLine, type Stock } from "./inventory";
@@ -181,6 +182,13 @@ export function applyInventoryCommand(original: InventoryState, command: Invento
           { from: { kind: "hold", id: hold.id }, to: { kind: "retired", id: command.operationId } });
       }
     }
+  } else if (a === "fieldSettings") {
+    const settings = fieldStockSettingsSchema.parse(d);
+    if (settings.sourceMode === "project_warehouse") {
+      const warehouse = s.warehouses.find(w => w.id === settings.warehouseId);
+      assert(!!warehouse?.active && warehouse.type === "physical", "Choose an active physical project warehouse.");
+    } else settings.warehouseId = null;
+    s.fieldSettings = [settings];
   } else if (["removalRule", "removalRuleDelete", "removalPolicy"].includes(a)) {
     applyRemovalRuleCommand(s, a, d);
   } else if (a === "locationType" || a === "locationTypeDelete") {

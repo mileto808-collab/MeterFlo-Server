@@ -6,6 +6,7 @@ import type { InventoryCategory } from "./inventory-categories";
 import type { KitAssembly, KitHold } from "./inventory-kits";
 import type { InventoryLocationType } from "./inventory-location-types";
 import type { RemovalRule, RemovalPolicy } from "./inventory-removal-policy";
+import type { FieldStockSettings } from "./inventory-field-stock";
 
 export const inventoryPermissions = {
   configure: "inventory.configure", view: "inventory.view", maintain: "inventory.maintain",
@@ -70,7 +71,7 @@ export const savedCountDraftSchema = countDraftSchema.extend({
   savedBy: id, savedAt: z.string().datetime(),
 });
 export const inventoryCommandSchema = z.object({
-  operationId: z.string().uuid(), action: z.enum(["warehouse", "locationType", "locationTypeDelete", "vendor", "item", "itemDelete", "category", "categoryRename", "categoryDelete", "order", "release",
+  operationId: z.string().uuid(), action: z.enum(["fieldSettings", "warehouse", "locationType", "locationTypeDelete", "vendor", "item", "itemDelete", "category", "categoryRename", "categoryDelete", "order", "release",
     "cancel", "unrelease", "archiveOrder", "restoreOrder", "numberOrders", "receive", "dispatch", "accept", "assemble", "verifyVendorKit", "disassemble", "resolveKitHold", "countStart", "countPost", "countCancel", "countSaveDraft",
     "assign", "prepareUse", "returnAccept", "returnRelease", "returnDecide", "removalRule", "removalRuleDelete", "removalPolicy", "reconcileWorkOrder", "closeOrder", "resolveTransit", "resolveHold",
     "shipmentDraftSave", "shipmentDraftPrepare", "shipmentDraftUnlock", "shipmentDraftDelete", "shipmentDraftClaim", "typeLink"]),
@@ -104,6 +105,7 @@ export type InventoryReceipt = { id: string; action: string; reference: string; 
 export type EquipmentReturn = Disposition & { id: string; workOrderId: number; status: "pending" | "quarantine" | "released" | "scrapped" | "left_onsite"; itemId?: string;
   history?: Array<{ operationId: string; actor: string; occurredAt: string; outcome: string; reason: string; ruleId?: string; ruleRevision?: number; ruleName?: string }> };
 export type InventoryState = { warehouses: Warehouse[]; vendors: Vendor[]; items: InventoryItem[]; stock: Stock[];
+  fieldSettings?: FieldStockSettings[];
   locationTypes?: InventoryLocationType[];
   removalRules?: RemovalRule[]; removalPolicies?: RemovalPolicy[];
   typeLinks?: InventoryTypeLink[]; workRequirements?: WorkRequirements[];
@@ -118,6 +120,7 @@ export type InventoryState = { warehouses: Warehouse[]; vendors: Vendor[]; items
 export const emptyInventory = (): InventoryState => ({ warehouses: [], vendors: [], categories: [], items: [], stock: [], orders: [],
   counts: [], allocations: [], receipts: [], returns: [], operations: {}, revision: 0, serialOccupancy: [], shipmentHolds: [] });
 export const commandPermission = (action: InventoryCommand["action"]) =>
+  action === "fieldSettings" ? inventoryPermissions.configure :
   ["removalRule", "removalRuleDelete", "removalPolicy"].includes(action) ? inventoryPermissions.manageRemovalRules :
   ["returnRelease", "returnDecide"].includes(action) ? inventoryPermissions.resolveReturns :
   ["locationType", "locationTypeDelete"].includes(action) ? inventoryPermissions.manageLocationTypes :

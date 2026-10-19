@@ -13,6 +13,7 @@ import { kitSerialContents } from "../shared/inventory-kits";
 import { readRelationalInventory, writeRelationalInventory } from "./inventoryRelational";
 import { setWorkRequirements, workRequirements } from "./inventoryRequirements";
 import { actualEquipmentLines } from "../shared/inventory-requirements";
+import { fieldStockSourceAllowed, fieldFulfillmentAllowed } from "../shared/inventory-field-stock";
 import { resolveWarehouseInput } from "../shared/inventory-location-types";
 import { validateRemovalWorkflow, sameRemovalCapture, hasInventoryReplacement } from "../shared/inventory-removal-policy";
 
@@ -90,7 +91,7 @@ export async function saveInventory(client: PoolClient, projectId: number, befor
     entityChanges.push({ field: "categoryCatalog", before: before.categoryCatalog ?? [], after: after.categoryCatalog ?? [] });
   if (JSON.stringify(before.locationTypes ?? []) !== JSON.stringify(after.locationTypes ?? []))
     entityChanges.push({ field: "locationTypes", before: before.locationTypes ?? [], after: after.locationTypes ?? [] });
-  for (const field of ["removalRules", "removalPolicies"] as const)
+  for (const field of ["removalRules", "removalPolicies", "fieldSettings"] as const)
     if (JSON.stringify(before[field] ?? []) !== JSON.stringify(after[field] ?? []))
       entityChanges.push({ field, before: before[field] ?? [], after: after[field] ?? [] });
   await writeRelationalInventory(client, projectId, after, before);
@@ -113,6 +114,12 @@ export async function postInventory(projectId: number, command: InventoryCommand
     if (!p?.inventory_enabled) throw new InventoryError("Inventory is disabled for this project.");
     if (p.is_active === false) throw new InventoryError("Reactivate this project before posting inventory.");
     const before = await lockInventory(client, projectId);
+    if (command.action === "fieldSettings") {
+      const user = await storage.getUser(actor);
+      if (!user || user.isLocked || !await storage.hasPermission(user, inventoryPermissions.configure) ||
+          !admin && !await storage.isUserAssignedToProject(actor, projectId))
+        throw Object.assign(new InventoryError("Configure project inventory permission required."), { status: 403 });
+    }
     const removalPermission = ["removalRule", "removalRuleDelete", "removalPolicy"].includes(command.action)
       ? inventoryPermissions.manageRemovalRules : ["returnDecide", "returnRelease"].includes(command.action) ? inventoryPermissions.resolveReturns : null;
     if (removalPermission) {
@@ -136,6 +143,14 @@ export async function postInventory(projectId: number, command: InventoryCommand
         throw new InventoryError("Reading-only projects cannot reserve replacement inventory.");
       if (command.action === "prepareUse") {
         const parsed = z.object({ mode: z.string(), used: z.array(allocationSchema), dispositions: z.array(dispositionSchema) }).parse(command.data);
+        const user = await storage.getUser(actor);
+        const canOverride = admin || !!user && (await storage.hasPermission(user, inventoryPermissions.maintain) ||
+          await storage.hasPermission(user, inventoryPermissions.configure));
+        const reserved = before.allocations.find(a => a.workOrderId === command.data.workOrderId)?.lines ?? [];
+        if (parsed.used.some(line => !fieldStockSourceAllowed(before, actor, admin, canOverride, line, reserved)))
+          throw Object.assign(new InventoryError("Use your assigned vehicle or the configured project warehouse. Changing the stock source requires inventory maintenance or configuration permission."), { status: 403 });
+        if (!fieldFulfillmentAllowed(before, Number(command.data.workOrderId), parsed.used, reserved, canOverride))
+          throw Object.assign(new InventoryError("Use the project's configured kit handling. A fulfillment exception requires inventory maintenance or configuration permission."), { status: 403 });
         validateRemovalWorkflow(parsed.mode, parsed.used, parsed.dispositions, before,
           { wizardMode: p.wizard_mode ?? "changeout", equipment: p.changeout_equipment_type ?? "both" });
       }
@@ -308,7 +323,16 @@ export async function inventoryWorkOrderChange(client: PoolClient, schema: strin
     const completionAdmin = await storage.isAdminUser(completionUser);
     if (!completionAdmin && (next.assigned_user_id && next.assigned_user_id !== completionUser.id || !await storage.isUserAssignedToProject(completionUser.id, p.id)))
       throw new InventoryError("Inventory work order is not assigned to this user.");
-    for (const l of state.allocations.find(a => a.workOrderId === next.id)?.used || []) warehouseAccess(state, l.warehouseId, completionUser.id, completionAdmin);
+    const fieldAllocation = state.allocations.find(a => a.workOrderId === next.id);
+    const canOverrideFieldStock = completionAdmin || await storage.hasPermission(completionUser, inventoryPermissions.maintain) ||
+      await storage.hasPermission(completionUser, inventoryPermissions.configure);
+    if (fieldAllocation && !fieldFulfillmentAllowed(state, next.id, fieldAllocation.used, fieldAllocation.lines, canOverrideFieldStock))
+      throw new InventoryError("Project kit handling changed. Review inventory before completing.");
+    for (const l of fieldAllocation?.used || []) {
+      warehouseAccess(state, l.warehouseId, completionUser.id, completionAdmin);
+      if (!fieldStockSourceAllowed(state, completionUser.id, completionAdmin, canOverrideFieldStock, l, fieldAllocation?.lines))
+        throw new InventoryError("Field stock settings or vehicle assignments changed. Review the stock source before completing.");
+    }
     if (prepared?.mode) validateRemovalWorkflow(prepared.mode, prepared.used, prepared.dispositions, state,
       { wizardMode: p.wizard_mode ?? "changeout", equipment: p.changeout_equipment_type ?? "both" });
     state = completeInventoryWorkOrder(state, next.id, p.wizard_mode === "reading_only", completionUser.id);

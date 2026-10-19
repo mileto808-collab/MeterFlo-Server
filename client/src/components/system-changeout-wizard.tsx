@@ -35,6 +35,8 @@ import { isValidReading, getReadingInputValue, readingLimitMessage } from "@shar
 import { GPSCapture } from "./gps-capture";
 import SignaturePad, { SignaturePadRef, SignatureType } from "./signature-pad";
 import { ActualUseCollector, actualUseLinesAreValid, initialActualUse, type ActualUseDraft } from "./inventory/actual-use-collector";
+import { resolveFieldStock, type FieldStockSettings } from "@shared/inventory-field-stock";
+import { plannedUseDrafts } from "@shared/inventory-wizard-use";
 import { bindWizardEquipmentSerials } from "@shared/inventory-wizard-use";
 import {
   ArrowLeft,
@@ -259,6 +261,7 @@ export function SystemChangeoutWizard({
   const { hasPermission } = usePermissions();
   const inventoryQueryKey = ["/api/projects", projectId, "work-orders", workOrderId, "inventory"];
   type WizardInventory = { enabled: boolean; allocation: WorkAllocation | null; items: InventoryItem[]; warehouses: Warehouse[];
+    fieldSettings?: FieldStockSettings[]; canChangeFieldStock?: boolean;
     locationTypes?: InventoryLocationType[]; requirements?: WorkRequirements;
     removalRules?: RemovalRule[]; removalPolicies?: RemovalPolicy[]; workflow?: RemovalWorkflow;
     revision?: number };
@@ -267,6 +270,11 @@ export function SystemChangeoutWizard({
     enabled: !!inventoryEnabled && isOpen,
   });
   const [actualUse, setActualUse] = useState<ActualUseDraft[]>([]);
+  const [fieldSourceId, setFieldSourceId] = useState("");
+  const [fieldSourceOverridden, setFieldSourceOverridden] = useState(false);
+  const fieldPreferenceKey = `meterflo.field-stock:${projectId}:${user?.id ?? ""}`;
+  const fieldStock = workInventory && user?.id ? resolveFieldStock(workInventory, user.id, user.role === "admin",
+    fieldSourceId, workInventory.canChangeFieldStock && fieldSourceOverridden ? fieldSourceId : "") : undefined;
   const actualUseInitializedFor = useRef<number | null>(null);
   const actualUseBaseline = useRef<string | null>(null);
   const actualUseLocationBaseline = useRef(new Map<string, string>());
@@ -281,7 +289,7 @@ export function SystemChangeoutWizard({
   const locationSignatureIn = (snapshot: WizardInventory, id: string) => {
     const warehouse = snapshot.warehouses.find(value => value.id === id);
     const type = warehouse ? locationTypeFor({ locationTypes: snapshot.locationTypes ?? [] }, warehouse) : undefined;
-    return JSON.stringify({ id, active: warehouse?.active ?? false, type: type
+    return JSON.stringify({ id, active: warehouse?.active ?? false, assignedUserId: warehouse?.assignedUserId, userIds: warehouse?.userIds, type: type
       ? { id: type.id, revision: type.revision, kind: type.kind, accessPolicy: type.accessPolicy }
       : null });
   };
@@ -302,6 +310,7 @@ export function SystemChangeoutWizard({
     revision: workInventory?.revision ?? 0,
     allocation: workInventory?.allocation ?? null,
     requirements: workInventory?.requirements ?? null,
+    fieldSettings: workInventory?.fieldSettings ?? [],
     removal: workInventory ? removalConfig(workInventory) : null, workflow: workInventory?.workflow,
   });
   const actualUseConflict = actualUseTouched.current && actualUseBaseline.current !== null &&
@@ -321,18 +330,29 @@ export function SystemChangeoutWizard({
       actualUseTouched.current = false;
       prepareAttempt.current = null;
       setActualUse([]);
+      setFieldSourceId("");
+      setFieldSourceOverridden(false);
       setBasisAccepted(false);
       return;
     }
-    if (workInventory && actualUseInitializedFor.current !== workOrderId) {
+    if (workInventory && user?.id && actualUseInitializedFor.current !== workOrderId) {
       actualUseInitializedFor.current = workOrderId;
-      setActualUse(initialActualUse(workInventory.allocation, workInventory.requirements?.lines, workInventory.items));
-      captureLocationBasis(workInventory, (workInventory.allocation?.lines ?? []).map(line => line.warehouseId));
+      let preferred = "";
+      try { preferred = localStorage.getItem(fieldPreferenceKey) ?? ""; } catch { /* Browser storage may be disabled. */ }
+      const resolved = resolveFieldStock(workInventory, user.id, user.role === "admin", preferred);
+      setFieldSourceId(resolved.source?.id ?? "");
+      const reserved = workInventory.allocation?.lines ?? [];
+      const initial = reserved.length
+        ? initialActualUse(workInventory.allocation, workInventory.requirements?.lines, workInventory.items)
+        : plannedUseDrafts(workInventory.requirements?.lines ?? [], workInventory.items,
+          resolved.source?.id ?? "", resolved.settings.fulfillment);
+      setActualUse(initial);
+      captureLocationBasis(workInventory, initial.map(line => line.warehouseId));
       actualUseBaseline.current = inventoryBasis;
       actualUseTouched.current = false;
       setBasisAccepted(false);
     }
-  }, [isOpen, workInventory, workOrderId, inventoryBasis]);
+  }, [isOpen, workInventory, workOrderId, inventoryBasis, user?.id, fieldPreferenceKey]);
   
   // Default search method settings - all enabled by default
   const searchSettings: SearchMethodSettings = searchMethodSettings ?? {
@@ -976,6 +996,7 @@ export function SystemChangeoutWizard({
         const latest = await apiRequest("GET", `/api/projects/${projectId}/work-orders/${workOrderId}/inventory`)
           .then(response => response.json() as Promise<WizardInventory>);
         const latestBasis = JSON.stringify({ revision: latest.revision ?? 0, allocation: latest.allocation ?? null, requirements: latest.requirements ?? null,
+          fieldSettings: latest.fieldSettings ?? [],
           removal: removalConfig(latest), workflow: latest.workflow });
         if (!actualUseLinesAreValid(bindWizardEquipmentSerials(actualUse, latest.items ?? [],
           { system: data.newSystemId, module: data.newModuleId }), latest.items ?? []))
@@ -1825,6 +1846,19 @@ export function SystemChangeoutWizard({
                     requirements={workInventory.requirements?.lines ?? []}
                     missing={workInventory.requirements?.missing ?? []}
                     reservations={workInventory.allocation?.lines ?? []}
+                    fieldSourceId={fieldStock?.source?.id ?? ""}
+                    sourceChoices={workInventory.canChangeFieldStock ? accessibleWarehouses(workInventory) :
+                      fieldStock?.settings.sourceMode === "assigned_vehicle" ? fieldStock.vehicles : []}
+                    canChangeSource={!!workInventory.canChangeFieldStock || fieldStock?.settings.sourceMode === "assigned_vehicle" && fieldStock.vehicles.length > 1}
+                    canChangeFulfillment={!!workInventory.canChangeFieldStock}
+                    defaultFulfillment={fieldStock?.settings.fulfillment ?? "components"}
+                    sourceReason={fieldStock?.reason}
+                    onSourceChange={id => {
+                      setFieldSourceId(id);
+                      setFieldSourceOverridden(!!workInventory.canChangeFieldStock);
+                      if (fieldStock?.vehicles.some(w => w.id === id))
+                        try { localStorage.setItem(fieldPreferenceKey, id); } catch { /* Optional device preference only. */ }
+                    }}
                   />
                   {actualUseConflict && <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm" role="alert">
                     <p className="font-medium">Inventory basis changed while you were entering use</p>
