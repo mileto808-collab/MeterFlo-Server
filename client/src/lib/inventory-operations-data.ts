@@ -12,7 +12,7 @@ import { removalDispositionDisplay, warehouseRemovalDecision, removalFilterKey, 
 import { inventoryDateTime } from "@shared/inventory-date-time";
 
 export type OperationsKind = "locations" | "exceptions" | "returns" | "activity" | "categories" | "counts";
-export type OperationsRow = { id: string; search: string; cells: Record<string, string | number>; facets: Record<string, string>; facetValues?: Record<string, string[]>; timestamps?: string[]; searchFields?: Record<string, string[]> };
+export type OperationsRow = { id: string; search: string; cells: Record<string, string | number>; facets: Record<string, string>; facetValues?: Record<string, string[]>; timestamps?: string[]; searchFields?: Record<string, string[]>; children?: OperationsRow[] };
 export type OperationsDataset = {
   rows: OperationsRow[];
   columns: { key: string; label: string }[];
@@ -259,14 +259,15 @@ export function filterOperationsRows(dataset: OperationsDataset, query: string, 
   const needle = query.trim().toLocaleLowerCase();
   const [key, direction] = sort.split(":");
   if (dataset.dateFilterLabel && dates?.from && dates.to && dates.from > dates.to) return [];
-  return dataset.rows.filter(row => (!needle || row.search.includes(needle)) &&
+  const matches = (row: OperationsRow) => (!needle || row.search.includes(needle)) &&
     Object.entries(selected).every(([facet, value]) => dataset.searchFilters?.some(filter => filter.key === facet)
       ? !value.trim() || (row.searchFields?.[facet] ?? []).some(identifier => identifier.toLocaleLowerCase().includes(value.trim().toLocaleLowerCase()))
       : !value || value === "all" || (row.facetValues?.[facet] ?? [row.facets[facet]]).includes(value)) &&
     (!dataset.dateFilterLabel || !dates || !dates.from && !dates.to || (row.timestamps ?? []).some(timestamp => {
       const day = orderDate(timestamp, dates.timezone);
       return !!day && (!dates.from || day >= dates.from) && (!dates.to || day <= dates.to);
-    })))
+    }));
+  return dataset.rows.filter(row => row.children ? row.children.some(matches) : matches(row))
     .sort((a, b) => {
       const left = a.cells[key] ?? "", right = b.cells[key] ?? "";
       const comparison = typeof left === "number" && typeof right === "number" ? left - right :

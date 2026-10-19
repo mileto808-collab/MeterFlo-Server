@@ -8,6 +8,8 @@ import { inventoryCommandSchema, inventoryPermissions, commandPermission, type I
 import { InventoryError } from "../shared/inventory-engine";
 import { inventoryState, postInventory } from "./inventoryService";
 import { inventoryWorkOrderLabels, inventoryWorkOrderContext } from "./inventoryWorkOrderLabels";
+import { inventoryActivityGroups } from "../shared/inventory-activity-groups";
+import { inventoryActivityPrint } from "./inventoryActivityPrint";
 import { inventoryReceiptContexts } from "../shared/inventory-receipt-context";
 import { inventoryStreamAllowed, inventoryStreamPermissions, subscribeInventoryEvents } from "./inventoryEvents";
 import { storage } from "./storage";
@@ -223,17 +225,22 @@ export function registerInventoryRoutes(app: Express) {
   }));
   app.get(`${base}/print/:kind/:id`, handler(async (req, res) => {
     const c = res.locals.inventory, state = inventoryVisibleState(await inventoryState(c.project.id), c.user.id, c.admin);
-    const record: any = (req.params.kind === "order" ? state.orders : req.params.kind === "receipt" ? state.receipts : req.params.kind === "count" ? state.counts : req.params.kind === "return" ? state.returns : req.params.kind === "customer-handoff" ? state.customerHandoffs ?? [] : []).find((r: any) => r.id === req.params.id);
+    const record: any = req.params.kind === "activity"
+      ? inventoryActivityGroups(state).find(group => group.receipts.some(receipt => receipt.id === req.params.id))
+      : (req.params.kind === "order" ? state.orders : req.params.kind === "receipt" ? state.receipts : req.params.kind === "count" ? state.counts : req.params.kind === "return" ? state.returns : req.params.kind === "customer-handoff" ? state.customerHandoffs ?? [] : []).find((r: any) => r.id === req.params.id);
     if (!record) throw Object.assign(new InventoryError("Document not found."), { status: 404 });
     const { rows: actors } = await pool.query(`SELECT id, username FROM public.users WHERE id = ANY($1::text[])`,
       [[...new Set([...state.receipts.map(receipt => receipt.actor), ...state.returns.flatMap(record => (record.history ?? []).map(event => event.actor))])]]);
     const handoff = req.params.kind === "customer-handoff" ? record :
       req.params.kind === "receipt" && record.action === "returnCustomerBatch" ? state.customerHandoffs?.find(handoff => handoff.id === record.reference) : undefined;
-    const workOrderLabels = req.params.kind === "return"
+    const workOrderLabels = req.params.kind === "activity" ? await inventoryWorkOrderLabels(c.project.databaseName, record.workOrderIds) : req.params.kind === "return"
       ? await inventoryWorkOrderLabels(c.project.databaseName, [record.workOrderId]) :
       handoff ? await inventoryWorkOrderLabels(c.project.databaseName, handoff.lines.map((line: { workOrderId: number }) => line.workOrderId)) :
       req.params.kind === "receipt" ? await inventoryWorkOrderLabels(c.project.databaseName, inventoryReceiptContexts(state).get(record.id)?.workOrderIds ?? []) : {};
-    res.type("html").send(inventoryPrint(req.params.kind, record, state, c.project.name, actors, c.project.timezone ?? "UTC", workOrderLabels));
+    res.type("html").send(req.params.kind === "activity"
+      ? inventoryActivityPrint(inventoryActivityGroups(state, workOrderLabels).find(group => group.id === record.id)!, state,
+        c.project.name, actors, c.project.timezone ?? "UTC", workOrderLabels)
+      : inventoryPrint(req.params.kind, record, state, c.project.name, actors, c.project.timezone ?? "UTC", workOrderLabels));
   }));
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } });
   app.post(`${base}/images`, upload.single("image"), handler(async (req, res) => {

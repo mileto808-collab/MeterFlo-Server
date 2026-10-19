@@ -73,6 +73,10 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertTriangle, ArrowLeftRight, ArrowLeft, BarChart3, Boxes, ChevronDown, ChevronUp, ClipboardList, Download, FileSpreadsheet, FileText, Filter, ListOrdered, Loader2, Menu, Package, Plus, Printer, RefreshCw, Search, Trash2, Warehouse as WarehouseIcon } from "lucide-react";
 
+import { inventoryActivityGroups } from "@shared/inventory-activity-groups";
+import { groupedInventoryActivity } from "@/lib/inventory-activity-data";
+import { InventoryActivityEntry } from "@/components/inventory-activity-entry";
+
 type Snapshot = { enabled: boolean; projectName: string; timezone: string; state: InventoryState; permissions: string[]; users: Array<{ id: string; username: string }>; actors?: InventoryActorLabel[]; workOrderLabels?: Record<string, string>; workOrderIdentifiers?: import("@shared/inventory-work-order-labels").InventoryWorkOrderIdentifiers };
 type ResourceKind = "warehouse" | "vendor" | "item";
 const blankWarehouse = (): Warehouse => ({ id: "", code: "", name: "", type: "physical", active: true, address: "", city: "", state: "", zip: "", contact: "", phone: "", location: "", vin: "", plate: "", plateState: "", make: "", model: "", year: null, assignedUserId: null, userIds: [] });
@@ -352,7 +356,9 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
   const currentClosingOrder = orderToClose ? state?.orders.find(order => order.id === orderToClose.id) : undefined;
   const locationsDataset = useMemo(() => buildOperationsDataset("locations", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone), [state, data?.actors, data?.users, timezone]);
   const returnsDataset = useMemo(() => buildOperationsDataset("returns", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone, data?.workOrderLabels, data?.workOrderIdentifiers), [state, data?.actors, data?.users, timezone, data?.workOrderLabels, data?.workOrderIdentifiers]);
-  const activityDataset = useMemo(() => buildOperationsDataset("activity", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone, data?.workOrderLabels, data?.workOrderIdentifiers), [state, data?.actors, data?.users, timezone, data?.workOrderLabels, data?.workOrderIdentifiers]);
+  const activityGroups = useMemo(() => inventoryActivityGroups(state ?? emptyInventory(), data?.workOrderLabels), [state, data?.workOrderLabels]);
+  const activityGroupById = useMemo(() => new Map(activityGroups.map(group => [group.id, group])), [activityGroups]);
+  const activityDataset = useMemo(() => groupedInventoryActivity(buildOperationsDataset("activity", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone, data?.workOrderLabels, data?.workOrderIdentifiers), activityGroups), [state, data?.actors, data?.users, timezone, data?.workOrderLabels, data?.workOrderIdentifiers, activityGroups]);
   const categoriesDataset = useMemo(() => buildOperationsDataset("categories", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone), [state]);
   const countsDataset = useMemo(() => buildOperationsDataset("counts", state ?? emptyInventory(), data?.actors ?? [], data?.users ?? [], timezone), [state, timezone]);
   const categoryCatalog = state?.categoryCatalog ?? [];
@@ -921,7 +927,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
       else toast({ title: "Closure not confirmed", description: "Your reason is still available. Retry unchanged to confirm the result.", variant: "destructive" });
     } catch { /* The mutation reports the failure; keep the reason and stable retry identity. */ }
   };
-  const openPrint = (kind: "order" | "receipt" | "count" | "return" | "customer-handoff", id: string) => {
+  const openPrint = (kind: "order" | "receipt" | "count" | "return" | "customer-handoff" | "activity", id: string) => {
     window.open(`${base}/print/${kind}/${encodeURIComponent(id)}`, "_blank", "noopener,noreferrer");
   };
   const receiptSummary = (receipt: InventoryState["receipts"][number]) => {
@@ -1974,18 +1980,9 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           }} />
       </TabsContent>
       <TabsContent value="activity" data-testid="inventory-activity-entries" className="data-[state=inactive]:hidden data-[state=active]:flex min-h-0 flex-1 flex-col overflow-hidden">
-        <InventoryRecordsWorkspace kind="activity" title="Stock movement ledger" description="Good, damaged and short quantities retain their reasons and printable receipt references." dataset={activityDataset} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
-          renderRow={row => { const receipt = state.receipts.find(value => value.id === row.id); if (!receipt) return null;
-            return <article className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-md border bg-card px-3 py-3 sm:px-4">
-              <div className="min-w-0"><div className="break-words font-medium" data-testid="inventory-activity-title">{receipt.action} · {row.cells.reference}</div>
-                <div className="mt-1 break-words text-xs text-muted-foreground">{row.cells.date} · {row.cells.actor} · {receiptSummary(receipt)}</div>
-                {!!row.cells.fieldDisposition && <p className="mt-1 text-xs">Field disposition: {row.cells.fieldDisposition} <span className="text-muted-foreground">(as recorded)</span></p>}
-                {!!row.cells.warehouseDisposition && <p className="mt-1 text-xs">Warehouse decision: {row.cells.warehouseDisposition} <span className="text-muted-foreground">(as recorded)</span></p>}
-                {!!row.cells.custodyEvent && <p className="mt-1 text-xs">{row.cells.custodyEvent}</p>}
-                {receipt.holdId && <p className="mt-1 text-xs">{inventoryHoldLabel(state.shipmentHolds ?? [], receipt.holdId)}</p>}
-              </div><Button size="sm" variant="outline" onClick={() => openPrint(receipt.action.startsWith("count") ? "count" : "receipt", receipt.action.startsWith("count") ? receipt.reference : receipt.id)}><Printer className="mr-2 h-4 w-4" />Print</Button>
-            </article>;
-          }} />
+        <InventoryRecordsWorkspace kind="activity" title="Stock movement ledger" description="Related transactions appear once. Expand or print the complete history, including batch operations. Filters match individual transactions; each matching summary retains its full history." dataset={activityDataset} projectName={data.projectName} timezone={timezone} onRefresh={() => void refetch()}
+          renderRow={row => { const group = activityGroupById.get(row.id); return group ?
+            <InventoryActivityEntry group={group} row={row} state={state} receiptSummary={receiptSummary} print={openPrint} /> : null; }} />
       </TabsContent>
     </div>
     </Tabs>
