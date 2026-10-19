@@ -5,6 +5,7 @@ import { orderLabel, orderReference, uuidOrderId } from "@shared/inventory-order
 import { holdStatus, remainingHold } from "@shared/inventory-shipment-model";
 import { locationTypeFor, locationTypeLabel } from "@shared/inventory-location-types";
 import { orderDate } from "@shared/inventory-order-search";
+import { inventoryWorkOrderLabel, type InventoryWorkOrderLabels } from "@shared/inventory-work-order-labels";
 
 export type OperationsKind = "locations" | "exceptions" | "returns" | "activity" | "categories" | "counts";
 export type OperationsRow = { id: string; search: string; cells: Record<string, string | number>; facets: Record<string, string>; timestamps?: string[] };
@@ -26,7 +27,7 @@ const displayTime = (iso: string, timezone: string) => {
 
 export function buildOperationsDataset(
   kind: OperationsKind, state: InventoryState, actors: readonly InventoryActorLabel[] = [],
-  users: readonly { id: string; username: string }[] = [], timezone = "UTC",
+  users: readonly { id: string; username: string }[] = [], timezone = "UTC", workOrderLabels: InventoryWorkOrderLabels = {},
 ): OperationsDataset {
   const locations = new Map(state.warehouses.map(w => [w.id, w]));
   const locationTypes = new Map((state.locationTypes ?? []).map(type => [type.id, type]));
@@ -141,7 +142,7 @@ export function buildOperationsDataset(
   } else if (kind === "returns") {
     rows = state.returns.map(r => textSearch({ id: r.id, cells: {
       equipment: r.equipment === "system" ? "System" : "Module", serial: r.serial, status: r.status,
-      workOrder: r.workOrderId, location: locationName(r.warehouseId), disposition: r.ruleName ?? r.disposition,
+      workOrder: inventoryWorkOrderLabel(r.workOrderId, workOrderLabels), location: locationName(r.warehouseId), disposition: r.ruleName ?? r.disposition,
       sku: r.itemId ? items.get(r.itemId)?.sku ?? "Unavailable item" : "", item: r.itemId ? items.get(r.itemId)?.name ?? "Unavailable item" : "",
     }, facets: { equipment: r.equipment, status: r.status, warehouse: r.warehouseId ?? "none", disposition: r.disposition },
     timestamps: (r.history ?? []).map(event => event.occurredAt) }));
@@ -215,7 +216,8 @@ export function filterOperationsRows(dataset: OperationsDataset, query: string, 
     })))
     .sort((a, b) => {
       const left = a.cells[key] ?? "", right = b.cells[key] ?? "";
-      const comparison = typeof left === "number" && typeof right === "number" ? left - right : String(left).localeCompare(String(right));
+      const comparison = typeof left === "number" && typeof right === "number" ? left - right :
+        String(left).localeCompare(String(right), undefined, key === "workOrder" ? { numeric: true } : undefined);
       return direction === "desc" ? -comparison : comparison;
     });
 }

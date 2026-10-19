@@ -51,3 +51,4 @@
 - [Live module refactors](live-module-refactors.md) — update consumers before removing exports; Vite observes intermediate file writes, not just the final valid code.
 - [Multipart audit identity](multipart-audit-identity.md) — streamed photo callbacks can lose request identity; re-establish the verified actor after parsing, never substitute an import user.
 - [Project timezone display](project-timezone-display.md) — project-related dates and times inherit the project's timezone, including inventory receipts and detail history.
+- [Work-order display identity](work-order-display-identity.md) — display the customer work-order ID; fall back to the internal number only when empty, without changing relational IDs.

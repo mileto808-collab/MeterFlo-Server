@@ -7,6 +7,7 @@ import { promises as fs } from "node:fs";
 import { inventoryCommandSchema, inventoryPermissions, commandPermission, type InventoryState } from "../shared/inventory";
 import { InventoryError } from "../shared/inventory-engine";
 import { inventoryState, postInventory } from "./inventoryService";
+import { inventoryWorkOrderLabels } from "./inventoryWorkOrderLabels";
 import { inventoryStreamAllowed, inventoryStreamPermissions, subscribeInventoryEvents } from "./inventoryEvents";
 import { storage } from "./storage";
 import { visibleAssignedOrders } from "./workOrderVisibility";
@@ -75,7 +76,8 @@ export function registerInventoryRoutes(app: Express) {
          WHERE gm.user_id=u.id AND gp.project_id=$1)) ORDER BY u.username`, [c.project.id]);
     const { rows: actors } = await pool.query(`SELECT id, username FROM public.users WHERE id = ANY($1::text[])`,
       [[...new Set([...state.receipts.map(receipt => receipt.actor), ...state.returns.flatMap(r => (r.history ?? []).map(h => h.actor))])]]);
-    return { enabled: !!c.project.inventoryEnabled, projectName: c.project.name, timezone: c.project.timezone ?? "UTC",
+    const workOrderLabels = await inventoryWorkOrderLabels(c.project.databaseName, state.returns.map(record => record.workOrderId));
+    return { enabled: !!c.project.inventoryEnabled, projectName: c.project.name, timezone: c.project.timezone ?? "UTC", workOrderLabels,
       state, permissions: c.permissions, users: users.map(u => ({ id: u.id, username: u.username || u.id })), actors };
   };
   app.use(base, isAuthenticated, auth());
@@ -217,11 +219,13 @@ export function registerInventoryRoutes(app: Express) {
   }));
   app.get(`${base}/print/:kind/:id`, handler(async (req, res) => {
     const c = res.locals.inventory, state = inventoryVisibleState(await inventoryState(c.project.id), c.user.id, c.admin);
-    const record = (req.params.kind === "order" ? state.orders : req.params.kind === "receipt" ? state.receipts : req.params.kind === "count" ? state.counts : []).find((r: any) => r.id === req.params.id);
+    const record: any = (req.params.kind === "order" ? state.orders : req.params.kind === "receipt" ? state.receipts : req.params.kind === "count" ? state.counts : req.params.kind === "return" ? state.returns : []).find((r: any) => r.id === req.params.id);
     if (!record) throw Object.assign(new InventoryError("Document not found."), { status: 404 });
     const { rows: actors } = await pool.query(`SELECT id, username FROM public.users WHERE id = ANY($1::text[])`,
-      [[...new Set(state.receipts.map(receipt => receipt.actor))]]);
-    res.type("html").send(inventoryPrint(req.params.kind, record, state, c.project.name, actors, c.project.timezone ?? "UTC"));
+      [[...new Set([...state.receipts.map(receipt => receipt.actor), ...state.returns.flatMap(record => (record.history ?? []).map(event => event.actor))])]]);
+    const workOrderLabels = req.params.kind === "return"
+      ? await inventoryWorkOrderLabels(c.project.databaseName, [record.workOrderId]) : {};
+    res.type("html").send(inventoryPrint(req.params.kind, record, state, c.project.name, actors, c.project.timezone ?? "UTC", workOrderLabels));
   }));
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } });
   app.post(`${base}/images`, upload.single("image"), handler(async (req, res) => {
