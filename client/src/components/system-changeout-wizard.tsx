@@ -30,7 +30,9 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
-import { useGpsCapture, type GpsCaptureSource } from "@/hooks/use-gps-capture";
+import { useGpsCapture } from "@/hooks/use-gps-capture";
+import { GpsReview } from "./gps-review";
+import { gpsAccuracyError, type GpsFix } from "@shared/gps-capture";
 import { isValidReading, getReadingInputValue, readingLimitMessage } from "@shared/reading-precision";
 import { GPSCapture } from "./gps-capture";
 import SignaturePad, { SignaturePadRef, SignatureType } from "./signature-pad";
@@ -94,6 +96,8 @@ export type GpsCaptureMode = "automatic" | "manual_step" | "disabled";
 export interface WizardConfig {
   wizardMode: WizardWorkflowMode;
   gpsMode: GpsCaptureMode;
+  gpsMaxAccuracyMetres?: number | null;
+  timezone?: string | null;
   showNotesStep: boolean;
   showBeforePhotosStep: boolean;
   showAfterPhotosStep: boolean;
@@ -125,6 +129,7 @@ interface SystemChangeoutData {
   newModuleReading: string;
   afterPhotos: CapturedPhoto[];
   gpsCoordinates: string;
+  gpsCapture?: GpsFix | null;
   completionNotes: string;
   signatureData: string | null;
   signatureName: string;
@@ -560,22 +565,32 @@ export function SystemChangeoutWizard({
   
   // GPS capture hook for background capture
   const gpsCapture = useGpsCapture({
-    existingGps: existingGps,
-    oldGps: oldGps,
-    address: address || undefined,
+    captureKey: `${projectId}:${workOrderId}:${isOpen}:${effectiveGpsMode}`,
+    accuracyLimit: config.gpsMaxAccuracyMetres,
     onSuccess: (result) => {
-      setData((prev) => ({ ...prev, gpsCoordinates: result.coordinates }));
-      if (effectiveGpsMode === "automatic") {
-        toast({
-          title: "GPS Captured",
-          description: `Location captured from ${result.source === "device" ? "device" : result.source === "geocode" ? "address" : result.source === "existing" ? "existing data" : "manual entry"}`,
-        });
-      }
+      setData((prev) => ({ ...prev, gpsCoordinates: result.coordinates, gpsCapture: result }));
     },
   });
-  
-  // Track GPS capture source for display purposes
-  const [gpsCaptureSource, setGpsCaptureSource] = useState<GpsCaptureSource>(null);
+  useEffect(() => {
+    gpsCapture.reset();
+    if (!isOpen || effectiveGpsMode === "disabled") return;
+    return gpsCapture.cancel;
+  }, [isOpen, workOrderId, effectiveGpsMode, gpsCapture.reset, gpsCapture.cancel]);
+  const editGps = (coordinates: string) => {
+    setData(prev => ({ ...prev, gpsCoordinates: coordinates, gpsCapture: null }));
+    gpsCapture.setManualCoordinates(coordinates);
+  };
+  const gpsReview = effectiveGpsMode !== "disabled" && data.canChange ? (
+    <div className="col-span-2 min-w-0">
+      <GpsReview fix={data.gpsCapture ?? null} coordinates={data.gpsCoordinates}
+        status={gpsCapture.status} error={gpsCapture.error || (gpsCapture.status !== "capturing" ? gpsAccuracyError(data.gpsCapture, config.gpsMaxAccuracyMetres) : null)} timezone={config.timezone}
+        accuracyLimit={config.gpsMaxAccuracyMetres} disabled={isSubmitting}
+        onRetry={() => void gpsCapture.startCapture()}
+        onReuse={(existingGps || oldGps) ? () => gpsCapture.setManualCoordinates(existingGps || oldGps || "", "existing") : undefined}
+        onManual={editGps} />
+      <a href="/gps-setup" target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground underline">GPS device setup</a>
+    </div>
+  ) : null;
 
   // Reset the step when the dialog opens to ensure it starts at the correct step for the mode
   useEffect(() => {
@@ -657,6 +672,7 @@ export function SystemChangeoutWizard({
   }, []);
 
   const resetWizard = useCallback(() => {
+    gpsCapture.reset();
     // Always clear capture flags when resetting wizard to prevent stuck state
     clearCaptureFlags();
     
@@ -802,7 +818,7 @@ export function SystemChangeoutWizard({
       case "afterPhotos":
         return data.afterPhotos.length >= 1;
       case "gps":
-        return isValidGps(data.gpsCoordinates);
+        return isValidGps(data.gpsCoordinates) && !gpsAccuracyError(data.gpsCapture, config.gpsMaxAccuracyMetres);
       case "notes":
         return true; // Notes are optional
       case "signature":
@@ -831,7 +847,8 @@ export function SystemChangeoutWizard({
         // - "automatic": GPS optional (best effort, already captured in background)
         // - "manual_step": GPS required (user went through the step)
         const gpsRequired = effectiveGpsMode === "manual_step";
-        const gpsValid = !gpsRequired || isValidGps(data.gpsCoordinates);
+        const gpsValid = (!gpsRequired || isValidGps(data.gpsCoordinates)) &&
+          (effectiveGpsMode === "disabled" || !gpsAccuracyError(data.gpsCapture, config.gpsMaxAccuracyMetres));
         
         if (isReadingOnlyMode) {
           // Check if this is a trouble event (canChange = false) in reading-only mode
@@ -936,11 +953,7 @@ export function SystemChangeoutWizard({
     if (canChange) {
       // Start GPS capture now that user has confirmed they can proceed
       if (effectiveGpsMode === "automatic") {
-        gpsCapture.startCapture().then((result) => {
-          if (result) {
-            setGpsCaptureSource(result.source);
-          }
-        });
+        void gpsCapture.startCapture();
       }
       
       // Find the next step after "canChange" in the success steps
@@ -956,7 +969,7 @@ export function SystemChangeoutWizard({
       // User selected trouble path - stop GPS capture and clear any captured coordinates
       gpsCapture.reset();
       setData((prev) => ({ ...prev, gpsCoordinates: "" }));
-      setGpsCaptureSource(null);
+      setData(prev => ({ ...prev, gpsCapture: null }));
       setCurrentStep("troubleCapture");
     }
   };
@@ -1043,6 +1056,9 @@ export function SystemChangeoutWizard({
     }
 
     setIsSubmitting(true);
+    // Freeze the accepted result before any inventory/photo/network awaits.
+    // Optional background capture must never change the submission underneath us.
+    gpsCapture.stop();
     try {
       if (inventoryEnabled && data.canChange && !isReadingOnlyMode) {
         if (!hasPermission("inventory.assign")) throw new Error("Inventory assignment permission is required to record actual stock use.");
@@ -2533,11 +2549,16 @@ export function SystemChangeoutWizard({
               <Label>GPS Coordinates *</Label>
               <GPSCapture
                 value={data.gpsCoordinates}
-                onChange={(value) => setData((prev) => ({ ...prev, gpsCoordinates: value }))}
+                onChange={editGps}
+                capture={gpsCapture.startCapture}
+                capturing={gpsCapture.status === "capturing"}
                 data-testid="input-gps-coordinates"
               />
               {gpsError && data.gpsCoordinates && (
                 <p className="text-sm text-destructive">{gpsError}</p>
+              )}
+              {gpsCapture.status !== "capturing" && (gpsCapture.error || gpsAccuracyError(data.gpsCapture, config.gpsMaxAccuracyMetres)) && (
+                <p role="status" className="text-sm text-destructive">{gpsCapture.error || gpsAccuracyError(data.gpsCapture, config.gpsMaxAccuracyMetres)}</p>
               )}
               <p className="text-xs text-muted-foreground">Format: latitude,longitude (e.g., 37.7749,-122.4194)</p>
             </div>
@@ -2691,12 +2712,7 @@ export function SystemChangeoutWizard({
                         </>
                       )}
                       
-                      {effectiveGpsMode !== "disabled" && data.gpsCoordinates && (
-                        <>
-                          <span className="text-muted-foreground">GPS:</span>
-                          <span className="font-medium">{data.gpsCoordinates}</span>
-                        </>
-                      )}
+                      {gpsReview}
                       
                       {config.showAfterPhotosStep && (
                         <>
@@ -2829,12 +2845,7 @@ export function SystemChangeoutWizard({
                       </>
                     )}
                     
-                    {effectiveGpsMode !== "disabled" && data.gpsCoordinates && (
-                      <>
-                        <span className="text-muted-foreground">GPS:</span>
-                        <span className="font-medium">{data.gpsCoordinates}</span>
-                      </>
-                    )}
+                    {gpsReview}
                     
                     {config.showAfterPhotosStep && (
                       <>

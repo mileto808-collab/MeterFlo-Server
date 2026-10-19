@@ -801,6 +801,7 @@ export default function ProjectWorkOrders() {
         newSystemReading: editingWorkOrder.newSystemReading != null ? String(editingWorkOrder.newSystemReading) : undefined,
         oldGps: editingWorkOrder.oldGps || "",
         newGps: editingWorkOrder.newGps || "",
+        gpsCapture: editingWorkOrder.gpsCapture ?? null,
         notes: editingWorkOrder.notes || "",
         status: editingWorkOrder.status || "Open",
         assignedUserId: (editingWorkOrder as any).assignedUserId || undefined,
@@ -865,7 +866,7 @@ export default function ProjectWorkOrders() {
     }
     
     // Always required fields
-    if (!data.newGps) missingFields.push("New GPS");
+    if (project?.wizardGpsMode === "manual_step" && !data.newGps) missingFields.push("New GPS");
     if (!signatureData) missingFields.push("Signature");
     if (!signatureName) missingFields.push("Signature Name");
     return missingFields;
@@ -2641,6 +2642,8 @@ export default function ProjectWorkOrders() {
           wizardConfig={{
             wizardMode: (project?.wizardMode as "changeout" | "reading_only" | "user_choice") ?? "changeout",
             gpsMode: (project?.wizardGpsMode as "automatic" | "manual_step" | "disabled") ?? "automatic",
+            gpsMaxAccuracyMetres: project?.wizardGpsMaxAccuracyMetres ?? null,
+            timezone: project?.timezone,
             showNotesStep: project?.wizardShowNotesStep ?? true,
             showBeforePhotosStep: project?.wizardShowBeforePhotosStep ?? true,
             showAfterPhotosStep: project?.wizardShowAfterPhotosStep ?? true,
@@ -3239,7 +3242,10 @@ export default function ProjectWorkOrders() {
                       <FormItem><FormLabel>Old GPS</FormLabel><FormControl><GPSCapture value={field.value || ""} onChange={field.onChange} placeholder="40.7128,-74.0060" data-testid="input-create-old-gps" /></FormControl><FormMessage /></FormItem>
                     )} />
                     <FormField control={form.control} name="newGps" render={({ field }) => (
-                      <FormItem><FormLabel>New GPS</FormLabel><FormControl><GPSCapture value={field.value || ""} onChange={field.onChange} placeholder="40.7128,-74.0060" data-testid="input-create-new-gps" /></FormControl><FormMessage /></FormItem>
+                      <FormItem><FormLabel>New GPS</FormLabel><FormControl><GPSCapture value={field.value || ""}
+                        onChange={value => { field.onChange(value); form.setValue("gpsCapture", null); }}
+                        onCaptured={fix => form.setValue("gpsCapture", fix)}
+                        placeholder="40.7128,-74.0060" data-testid="input-create-new-gps" /></FormControl><FormMessage /></FormItem>
                     )} />
                   </div>
                 </AccordionContent>
@@ -3742,7 +3748,8 @@ export default function ProjectWorkOrders() {
           <FormItem>
             <FormLabel>New GPS Coordinates</FormLabel>
             <FormControl>
-              <Input {...field} value={field.value || ""} placeholder="40.7128,-74.0060" data-testid="input-new-gps" />
+              <Input {...field} onChange={event => { field.onChange(event); formInstance.setValue("gpsCapture", null); }}
+                value={field.value || ""} placeholder="40.7128,-74.0060" data-testid="input-new-gps" />
             </FormControl>
             <FormMessage />
           </FormItem>

@@ -1,5 +1,19 @@
 # Work-order sub-statuses
 
+## GPS capture contract
+
+Project-scoped sync download exposes `gpsCapture` on work orders and
+`meta.gpsContractVersion`, `meta.wizardGpsMode`, `meta.wizardGpsMaxAccuracyMetres`,
+and the existing project timezone. Keep capture timestamps when uploading offline
+work, not the later sync time. Completion/sync must send `gpsCapture` alongside the
+new coordinates when a fix was captured. Missing metadata is historical/unknown,
+not proof of a fresh position.
+
+See [GPS setup, policy and native integration](docs/GPS_CAPTURE.md), including
+the Expo screen handoff and the optional Windows/Linux helper. Background capture
+stays quiet; optional capture does not add a completion requirement. An explicit
+project accuracy requirement is enforced by the server on completion.
+
 Sync download `referenceData.workOrderSubStatuses` contains shared and project-specific definitions, including inactive entries used historically. Each definition includes `id`, `parentStatusId`, `parentStatusCode`, `parentStatusLabel`, `projectId`, `code`, `label`, `description`, `color`, `sortOrder`, and `active`. A null project ID means shared.
 
 Downloaded work orders expose `subStatusId` (also `sub_status_id` in raw records). Upload `subStatusId: UUID | null`; the snake-case alias is accepted if it does not conflict with the camel-case field. Offer only active definitions for the order's core status, while retaining an existing inactive selection. Changing core status must clear an incompatible selection. Never replace the core `status` with a combined label or sub-status code: all core rules remain mandatory. Server/database validation rejects cross-project or incompatible assignments and retired new selections.

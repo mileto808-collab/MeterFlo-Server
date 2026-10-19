@@ -5,6 +5,7 @@ import { z } from "zod";
 import { relations } from "drizzle-orm";
 import { readingDecimalPlacesSchema } from "./reading-precision";
 import { inventoryImportSchema } from "./inventory";
+import { gpsAccuracyLimitSchema, gpsFixSchema } from "./gps-capture";
 
 // Session storage table - mandatory for Replit Auth
 export const sessions = pgTable(
@@ -124,6 +125,7 @@ export const projects = pgTable("projects", {
   timezone: varchar("timezone", { length: 100 }),
   wizardMode: varchar("wizard_mode", { length: 20 }).default("changeout"),
   wizardGpsMode: varchar("wizard_gps_mode", { length: 20 }).default("automatic"),
+  wizardGpsMaxAccuracyMetres: integer("wizard_gps_max_accuracy_metres"),
   systemReadingDecimalPlaces: integer("system_reading_decimal_places").notNull().default(3),
   moduleReadingDecimalPlaces: integer("module_reading_decimal_places").notNull().default(3),
   wizardShowNotesStep: boolean("wizard_show_notes_step").default(true),
@@ -148,6 +150,7 @@ export const projects = pgTable("projects", {
   check("visit_default_tolerance_range", sql`${table.defaultAppointmentToleranceMinutes} BETWEEN 0 AND 240`),
   check("projects_system_reading_decimal_places_check", sql`${table.systemReadingDecimalPlaces} BETWEEN 0 AND 6`),
   check("projects_module_reading_decimal_places_check", sql`${table.moduleReadingDecimalPlaces} BETWEEN 0 AND 6`),
+  check("projects_gps_accuracy_range", sql`${table.wizardGpsMaxAccuracyMetres} BETWEEN 1 AND 100000`),
 ]);
 
 // Project Holidays - dates to exclude from scheduling
@@ -760,6 +763,7 @@ export const insertProjectSchema = z.object({
   defaultAppointmentToleranceMinutes: z.number().int().min(0).max(240).nullable().optional(),
   wizardMode: z.enum(wizardModeEnum).optional().default("changeout"),
   wizardGpsMode: z.enum(gpsModeEnum).optional().default("automatic"),
+  wizardGpsMaxAccuracyMetres: gpsAccuracyLimitSchema.refine(value => value == null || Number.isInteger(value)).optional(),
   systemReadingDecimalPlaces: readingDecimalPlacesSchema.optional().default(3),
   moduleReadingDecimalPlaces: readingDecimalPlacesSchema.optional().default(3),
   wizardShowNotesStep: z.boolean().optional().default(true),
@@ -872,6 +876,7 @@ export const insertProjectWorkOrderSchema = z.object({
   newSystemReading: z.union([z.string(),z.number()]).optional().nullable(),
   oldGps: z.string().max(100).optional().nullable(),
   newGps: z.string().max(100).optional().nullable(),
+  gpsCapture: gpsFixSchema.optional().nullable(),
   status: z.string().max(50).optional().nullable(),
   subStatusId: z.string().uuid().optional().nullable(),
   scheduledAt: z.string().optional().nullable(),

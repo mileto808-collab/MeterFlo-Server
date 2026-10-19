@@ -28,3 +28,15 @@ Some projects specify GPS capture in the background; preserve that mode and show
 **Why:** The user explicitly warned not to break background capture and requested viewable wizard review/submittal information rather than messages.
 
 **How to apply:** Keep automatic acquisition alongside the active wizard without introducing an extra step or routine app notifications. Keep manual-step and disabled modes distinct; only explicit project requirements should interrupt submission. Browser/OS permission dialogs cannot be suppressed by the app.
+
+The existing Expo mobile app is maintained separately from this workspace.
+
+**Why:** The agreed scope allows a precise native integration handoff when that application's source is unavailable; it does not authorize replacing it with a new mobile app here.
+
+**How to apply:** Keep web changeouts functional independently. Distinguish delivered bridge/helper code from integration into the separate mobile app, and never claim physical receiver or mobile-build verification without performing it.
+
+GPS policy verification must exercise real project creation, reload, and completion—not only the settings editor or pure validation functions.
+
+**Why:** A parsed accuracy requirement can silently disappear in creation-specific field selection, leaving completions unrestricted even though settings and validation tests pass.
+
+**How to apply:** Use an owned disposable database to cover minimal and settings-rich project creation, then verify behavior against the reloaded policy. Distinguish a recorded device/browser fix on the same order from saved coordinates with no capture evidence; preserve genuine capture timestamps through delayed completion.

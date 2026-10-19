@@ -61,6 +61,7 @@ const projectFormSchema = z.object({
   defaultAppointmentToleranceMinutes: z.number().int().min(0).max(240).nullable().optional(),
   wizardMode: z.enum(["changeout", "reading_only", "user_choice"]).optional().default("changeout"),
   wizardGpsMode: z.enum(["automatic", "manual_step", "disabled"]).optional().default("automatic"),
+  wizardGpsMaxAccuracyMetres: z.number().int().min(1).max(100000).nullable().optional(),
   wizardShowNotesStep: z.boolean().optional().default(true),
   wizardShowGpsStep: z.boolean().optional().default(true),
   wizardShowBeforePhotosStep: z.boolean().optional().default(true),
@@ -236,6 +237,7 @@ export default function ProjectForm() {
       defaultAppointmentToleranceMinutes: 60,
       wizardMode: "changeout",
       wizardGpsMode: "automatic",
+      wizardGpsMaxAccuracyMetres: null,
       wizardShowNotesStep: true,
       wizardShowGpsStep: true,
       wizardShowBeforePhotosStep: true,
@@ -317,6 +319,7 @@ export default function ProjectForm() {
         defaultAppointmentToleranceMinutes: (project as any).defaultAppointmentToleranceMinutes ?? null,
         wizardMode: (project.wizardMode as "changeout" | "reading_only" | "user_choice") || "changeout",
         wizardGpsMode: (project.wizardGpsMode as "automatic" | "manual_step" | "disabled") || "automatic",
+        wizardGpsMaxAccuracyMetres: project.wizardGpsMaxAccuracyMetres ?? null,
         wizardShowNotesStep: project.wizardShowNotesStep !== false,
         wizardShowGpsStep: project.wizardShowGpsStep !== false,
         wizardShowBeforePhotosStep: project.wizardShowBeforePhotosStep !== false,
@@ -1137,7 +1140,7 @@ export default function ProjectForm() {
                           </SelectContent>
                         </Select>
                         <FormDescription className="text-xs mt-2">
-                          {field.value === "automatic" && "GPS is captured automatically in the background using priority: External GPS → Device GPS → Address Geocoding"}
+                          {field.value === "automatic" && "Quiet background capture: native device first when connected, browser location last. Details appear on Review & Submit."}
                           {field.value === "manual_step" && "User manually captures or confirms GPS coordinates in a dedicated wizard step"}
                           {field.value === "disabled" && "GPS coordinates are not captured during the wizard"}
                         </FormDescription>
@@ -1146,6 +1149,23 @@ export default function ProjectForm() {
                     )}
                   />
 
+                  <FormField
+                    control={form.control}
+                    name="wizardGpsMaxAccuracyMetres"
+                    render={({ field }) => (
+                      <FormItem className="rounded-lg border p-3">
+                        <FormLabel>Maximum GPS error (metres, optional)</FormLabel>
+                        <FormControl>
+                          <Input type="number" min="1" max="100000" step="1" value={field.value ?? ""}
+                            disabled={form.watch("wizardGpsMode") === "disabled"}
+                            onChange={event => field.onChange(event.target.value === "" ? null : Number(event.target.value))}
+                            data-testid="input-gps-accuracy-limit" placeholder="No accuracy requirement" />
+                        </FormControl>
+                        <FormDescription>Leave empty for best-effort capture. When set, completion requires a native or browser fix with reported accuracy at least this good; saved/manual coordinates cannot verify accuracy.</FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                   <FormField
                     control={form.control}
                     name="wizardShowNotesStep"

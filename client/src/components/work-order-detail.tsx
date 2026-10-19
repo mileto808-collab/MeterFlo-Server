@@ -2166,7 +2166,8 @@ export function WorkOrderDetail({
                               <FormControl>
                                 <GPSCapture 
                                   value={field.value || ""} 
-                                  onChange={field.onChange} 
+                                  onChange={(value) => { field.onChange(value); form.setValue("gpsCapture", null, { shouldDirty: true }); }}
+                                  onCaptured={(fix) => form.setValue("gpsCapture", fix, { shouldDirty: true })}
                                   placeholder="40.7128,-74.0060" 
                                   disabled={!canEdit}
                                   data-testid="input-new-gps" 
@@ -3493,6 +3494,7 @@ export function WorkOrderDetail({
             newSystemType: data.newSystemType,
             newModuleType: data.newModuleType,
             gpsCoordinates: data.gpsCoordinates,
+            gpsCapture: data.gpsCapture ?? null,
             completionNotes: data.completionNotes,
             signatureData: data.signatureData,
             signatureName: data.signatureName,

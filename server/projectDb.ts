@@ -18,6 +18,23 @@ import { migrateProjectTroubleCodeReferences, exportTroubleCodes, restoreTrouble
 import { exportProjectRouting, restoreProjectRouting } from "./routing/configuration";
 import { installVisitScheduling, writeVisitScheduling } from "./visitScheduling";
 import { schedulingDto, validateVisitScheduling, schedulingDefaultsSchema } from "../shared/visitScheduling";
+import { installGpsColumns } from "./gpsSchema";
+import { gpsFixDto, gpsMetadataUpdate, completionGpsFix, validateGpsFix, gpsAccuracyError, type GpsFix } from "../shared/gps-capture";
+
+async function requireGpsAccuracy(client: Pick<PoolClient, "query">, schema: string, fix: GpsFix | null) {
+  const { rows: [configuration] } = await client.query(
+    "SELECT wizard_gps_mode,wizard_gps_max_accuracy_metres FROM public.projects WHERE database_name=$1", [schema]);
+  if (configuration?.wizard_gps_mode === "disabled") return;
+  const message = gpsAccuracyError(fix, configuration?.wizard_gps_max_accuracy_metres);
+  if (message) throw Object.assign(new Error(message), { status: 400, code: "GPS_ACCURACY" });
+}
+
+async function writeGpsCapture(client: Pick<PoolClient, "query">, schema: string, id: number, capture: unknown, coordinates: unknown) {
+  if (capture == null) return;
+  const fix = validateGpsFix(capture, coordinates)!;
+  await client.query(`UPDATE "${schema}".work_orders SET gps_source=$2,gps_accuracy=$3,gps_captured_at=$4,gps_receiver=$5 WHERE id=$1`,
+    [id, fix.source, fix.accuracy, fix.capturedAt, fix.receiver]);
+}
 
 function readingSetClauses(column: string, valueIndex: number, textIndex: number) {
   // Old clients may echo a rounded numeric compatibility field. Preserve the
@@ -60,6 +77,10 @@ export const projectWorkOrders = pgTable("work_orders", {
   newSystemId: varchar("new_system_id", { length: 100 }),
   oldGps: varchar("old_gps", { length: 100 }),
   newGps: varchar("new_gps", { length: 100 }),
+  gpsSource: varchar("gps_source", { length: 20 }),
+  gpsAccuracy: numeric("gps_accuracy"),
+  gpsCapturedAt: timestamp("gps_captured_at", { withTimezone: true }),
+  gpsReceiver: varchar("gps_receiver", { length: 20 }),
   oldSystemReading: numeric("old_system_reading"),
   newSystemReading: numeric("new_system_reading"),
   scheduledAt: timestamp("scheduled_at"),
@@ -89,8 +110,8 @@ export const projectWorkOrders = pgTable("work_orders", {
   scheduledBy: varchar("scheduled_by", { length: 50 }),
 });
 
-export type ProjectWorkOrder = typeof projectWorkOrders.$inferSelect;
-export type InsertProjectWorkOrder = typeof projectWorkOrders.$inferInsert;
+export type ProjectWorkOrder = Omit<typeof projectWorkOrders.$inferSelect, "gpsSource" | "gpsAccuracy" | "gpsCapturedAt" | "gpsReceiver"> & { gpsCapture?: GpsFix | null };
+export type InsertProjectWorkOrder = typeof projectWorkOrders.$inferInsert & { gpsCapture?: GpsFix | null };
 
 // Sanitize project name for use as schema name
 export function sanitizeSchemaName(projectName: string, projectId: number): string {
@@ -201,6 +222,7 @@ export async function createProjectSchema(projectName: string, projectId: number
     await installProjectSubStatuses(client,schemaName);
     await migrateProjectTroubleCodeReferences(schemaName,connectionPool);
     await installVisitScheduling(client,schemaName);
+    await installGpsColumns(client,schemaName);
     if (auditingEnabled) {
       await client.query(`INSERT INTO meterflo_audit.project_scopes(schema_name,project_id,project_label) VALUES($1,$2,$3)
         ON CONFLICT(schema_name) DO UPDATE SET project_id=EXCLUDED.project_id,project_label=EXCLUDED.project_label`,[schemaName,projectId,projectName]);
@@ -390,6 +412,7 @@ export async function migrateProjectSchema(schemaName: string, connectionPool: P
     await installProjectSubStatuses(client,schemaName);
     await migrateProjectTroubleCodeReferences(schemaName,connectionPool);
     await installVisitScheduling(client,schemaName);
+    await installGpsColumns(client,schemaName);
     if (auditingEnabled) await installProjectAudit(client,schemaName);
 
     // Step 5: Drop deprecated _id suffix columns (consolidate to text-based references)
@@ -739,6 +762,8 @@ export class ProjectWorkOrderStorage {
       const scheduledBy = workOrder.scheduledAt && createdBy ? await this.resolveUserId(createdBy) : null;
       await client.query("BEGIN");
       await lockInventoryForSchema(client, this.schemaName);
+      if (status === "Completed" && !ordinaryImport)
+        await requireGpsAccuracy(client, this.schemaName, validateGpsFix(workOrder.gpsCapture, workOrder.newGps));
       const result = await client.query(
         `INSERT INTO "${this.schemaName}".work_orders 
          (status, created_by, completed_at, notes, attachments, customer_wo_id, customer_id, customer_name, address, city, state, zip, phone, email, route, zone, service_type, old_system_id, new_system_id, old_gps, new_gps, old_system_reading, new_system_reading, scheduled_at, updated_by, trouble, old_system_type, new_system_type, old_module_id, new_module_id, old_module_read, new_module_read, old_module_type, new_module_type, signature_data, signature_name, assigned_user_id, assigned_group_id, completed_by, scheduled_by,old_system_reading_text,new_system_reading_text,old_module_read_text,new_module_read_text)
@@ -792,6 +817,7 @@ export class ProjectWorkOrderStorage {
       // Re-fetch with JOINs to get display fields (scheduledByDisplay, completedByDisplay)
       const createdId = result.rows[0].id;
       await writeVisitScheduling(client, this.schemaName, createdId, workOrder);
+      await writeGpsCapture(client, this.schemaName, createdId, workOrder.gpsCapture, workOrder.newGps);
       if (workOrder.subStatusId)
         await client.query(`UPDATE "${this.schemaName}".work_orders SET sub_status_id=$1 WHERE id=$2`, [workOrder.subStatusId,createdId]);
       await inventoryWorkOrderChange(client, this.schemaName, null, result.rows[0], undefined, (workOrder as any).inventoryItems, ordinaryImport);
@@ -1064,7 +1090,11 @@ export class ProjectWorkOrderStorage {
           new_module_id = CASE WHEN $7::boolean THEN NULL ELSE new_module_id END,
           new_module_read = CASE WHEN $7::boolean THEN NULL ELSE new_module_read END,
           new_module_type = CASE WHEN $7::boolean THEN NULL ELSE new_module_type END,
-          new_gps = CASE WHEN $7::boolean THEN NULL ELSE new_gps END
+          new_gps = CASE WHEN $7::boolean THEN NULL ELSE new_gps END,
+          gps_source = CASE WHEN $7::boolean THEN NULL ELSE gps_source END,
+          gps_accuracy = CASE WHEN $7::boolean THEN NULL ELSE gps_accuracy END,
+          gps_captured_at = CASE WHEN $7::boolean THEN NULL ELSE gps_captured_at END,
+          gps_receiver = CASE WHEN $7::boolean THEN NULL ELSE gps_receiver END
          WHERE id = $1 RETURNING *`,
         [id, assignment.assignedUserId, assignment.assignedGroupId, attachments, notes, actor, options.capturedData === "clear"],
       );
@@ -1201,6 +1231,33 @@ export class ProjectWorkOrderStorage {
         [id]
       );
       const visit = validateVisitScheduling({ ...schedulingDto(existingStateResult.rows[0] ?? {}), ...updates });
+      const beforeGps = existingStateResult.rows[0];
+      const gpsUpdate = gpsMetadataUpdate(beforeGps ?? {}, updates);
+      const previousFix = gpsFixDto(beforeGps ?? {}).gpsCapture;
+      const completionFix = completionGpsFix(updates.newGps, updates.gpsCapture,
+        { newGps: beforeGps?.new_gps, gpsCapture: previousFix });
+      const metadataFix = gpsUpdate.fix ?? (updates.newGps !== undefined ? completionFix : null);
+      if (metadataFix) {
+        for (const [column, value] of Object.entries({
+          gps_source: metadataFix.source, gps_accuracy: metadataFix.accuracy,
+          gps_captured_at: metadataFix.capturedAt, gps_receiver: metadataFix.receiver,
+        })) {
+          setClauses.push(`${column} = $${paramCount++}`);
+          values.push(value);
+        }
+      } else if (updates.newGps !== undefined) {
+        // Compare inside the UPDATE too: a concurrent position change must not
+        // leave somebody else's provenance attached to these coordinates.
+        const coordinateParameter = paramCount++;
+        values.push(updates.newGps);
+        for (const column of ["gps_source", "gps_accuracy", "gps_captured_at", "gps_receiver"])
+          setClauses.push(`${column} = CASE WHEN new_gps IS NOT DISTINCT FROM $${coordinateParameter} THEN ${column} ELSE NULL END`);
+      }
+      const proofChanged = gpsUpdate.fix && (["source", "accuracy", "capturedAt", "receiver"] as const)
+        .some(key => gpsUpdate.fix![key] !== previousFix?.[key]);
+      if (!ordinaryImport && ((updates.status === "Completed" && beforeGps?.status !== "Completed") ||
+          (beforeGps?.status === "Completed" && (gpsUpdate.changed || proofChanged))))
+        await requireGpsAccuracy(client, this.schemaName, completionFix);
       for (const [key, column] of Object.entries({
         serviceDurationMinutes: "service_duration_minutes",
         appointmentWindowStart: "appointment_window_start",
@@ -1672,6 +1729,7 @@ export class ProjectWorkOrderStorage {
   private mapRowToWorkOrder(row: any): ProjectWorkOrder {
     const result: any = {
       ...exactReadingDto(row),
+      ...gpsFixDto(row),
       id: row.id,
       status: row.status,
       subStatusId: row.sub_status_id ?? null,
@@ -1774,6 +1832,7 @@ async function backupProjectDatabaseData(schemaName: string): Promise<{
     
     const workOrders = result.rows.map((row) => ({
       ...exactReadingDto(row),
+      ...gpsFixDto(row),
       id: row.id,
       status: row.status,
       subStatusId: row.sub_status_id ?? null,
@@ -1958,6 +2017,7 @@ async function restoreProjectDatabaseData(
         if (wo.subStatusId) await client.query(`UPDATE "${schemaName}".work_orders SET sub_status_id=$1 WHERE id=$2`,
           [subStatusMapping.get(wo.subStatusId) ?? wo.subStatusId,restoredOrder.rows[0].id]);
         await writeVisitScheduling(client, schemaName, restoredOrder.rows[0].id, wo);
+        await writeGpsCapture(client, schemaName, restoredOrder.rows[0].id, wo.gpsCapture, wo.newGps);
         restored++;
       } catch (error) {
         if (atomic || transactionClient) throw error;

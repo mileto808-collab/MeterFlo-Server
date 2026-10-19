@@ -33,6 +33,7 @@ import { requestLogging } from "./requestLogging";
 import { initializeRouting } from "./routing/configuration";
 import { initializeVisitScheduling } from "./visitScheduling";
 import { initializeAccessLocks } from "./accessLocks";
+import { initializeGpsSchema } from "./gpsSchema";
 
 const app = express();
 
@@ -104,6 +105,7 @@ app.use(requestLogging(log));
   initializeLogger();
   await initializeRouting();
   await initializeVisitScheduling();
+  await initializeGpsSchema(pool);
   await initializeReadingPrecision(pool);
   await initializeProjectExactReadings(pool);
   await initializeCustomerApi();

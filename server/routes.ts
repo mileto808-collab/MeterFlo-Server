@@ -1,4 +1,5 @@
 import type { Express, RequestHandler } from "express";
+import { gpsSubmissionProblem, gpsFixDto } from "../shared/gps-capture";
 import { registerRoutingRoutes } from "./routing/routes";
 import { technicianAssignmentScope, visibleAssignedOrders } from "./workOrderVisibility";
 import { accessLockMiddleware, loginAccessLock, registerAccessLockRoutes, sendAccessLocked } from "./accessLocks";
@@ -1762,6 +1763,8 @@ export async function registerRoutes(
         ? await storage.createProjectWithFullData({
             name: parsed.data.name, description: parsed.data.description, customerEmail: parsed.data.customerEmail,
             inventoryEnabled: parsed.data.inventoryEnabled ?? false,
+            wizardGpsMode: parsed.data.wizardGpsMode,
+            wizardGpsMaxAccuracyMetres: parsed.data.wizardGpsMaxAccuracyMetres ?? null,
             defaultServiceMinutes: parsed.data.defaultServiceMinutes,
             defaultAppointmentToleranceMinutes: parsed.data.defaultAppointmentToleranceMinutes,
             ...getReadingPrecision(parsed.data),
@@ -1842,6 +1845,7 @@ export async function registerRoutes(
         timezone: sourceProject.timezone ?? undefined,
         wizardMode,
         wizardGpsMode,
+        wizardGpsMaxAccuracyMetres: sourceProject.wizardGpsMaxAccuracyMetres ?? null,
         ...getReadingPrecision(sourceProject),
         wizardShowNotesStep: sourceProject.wizardShowNotesStep ?? true,
         wizardShowGpsStep: sourceProject.wizardShowGpsStep ?? true,
@@ -2558,7 +2562,7 @@ export async function registerRoutes(
           return res.status(403).json({ message: "Forbidden: Customers can only view completed work orders" });
         }
         
-        res.json({ ...workOrder, ...schedulingDto(workOrder) });
+        res.json({ ...workOrder, ...schedulingDto(workOrder), ...gpsFixDto(workOrder) });
       } finally {
         client.release();
       }
@@ -2635,7 +2639,7 @@ export async function registerRoutes(
           return res.status(403).json({ message: "Forbidden: Customers can only view completed work orders" });
         }
         
-        res.json(workOrder);
+        res.json({ ...workOrder, ...gpsFixDto(workOrder) });
       } finally {
         client.release();
       }
@@ -2774,6 +2778,7 @@ export async function registerRoutes(
       if (["23514","23503","22P02"].includes((error as any)?.code))
         return res.status(400).json({ message: (error as any).message?.startsWith("Sub-status") ? (error as any).message : "Invalid work-order reference or sub-status." });
       if (error instanceof InventoryError) return res.status(error.status).json({ message: error.message, code: "INVENTORY_CONFLICT" });
+      if ((error as any)?.code === "GPS_ACCURACY") return res.status(400).json({ message: (error as Error).message, code: "GPS_ACCURACY" });
       res.status(500).json({ message: "Failed to create work order" });
     }
   });
@@ -2920,8 +2925,9 @@ export async function registerRoutes(
         }
         
         // Conditionally required fields based on project wizard configuration
-        // GPS is only required if wizardShowGpsStep is enabled (defaults to true)
-        const requireGps = project.wizardShowGpsStep !== false;
+        // The mode is authoritative; background capture is best-effort unless
+        // the project's separate accuracy requirement explicitly requires a fix.
+        const requireGps = project.wizardGpsMode === "manual_step";
         if (requireGps && !mergedData.newGps) missingFields.push("New GPS");
         
         // Signature is only required if wizardShowSignatureStep is enabled (defaults to true)
@@ -3017,6 +3023,7 @@ export async function registerRoutes(
       res.json(workOrder);
     } catch (error) {
       console.error("Error updating work order:", error);
+      if ((error as any)?.code === "GPS_ACCURACY") return res.status(400).json({ message: (error as Error).message, code: "GPS_ACCURACY" });
       if (error instanceof z.ZodError) return res.status(400).json({ message: "Invalid visit scheduling fields.", errors: error.issues });
       if ((error as any)?.code === "23514" || (error as any)?.code === "23503" || (error as any)?.code === "22P02")
         return res.status(400).json({ message: (error as any).message?.startsWith("Sub-status") ? (error as any).message : "Invalid work-order reference or sub-status." });
@@ -4032,6 +4039,8 @@ export async function registerRoutes(
       
       // Parse the changeout data
       const changeoutData = JSON.parse(req.body.data || "{}");
+      const gpsProblem = changeoutData.canChange && gpsSubmissionProblem(project, changeoutData.gpsCoordinates, changeoutData.gpsCapture, workOrder);
+      if (gpsProblem) return res.status(400).json(gpsProblem);
       const {
         canChange,
         troubleCode,
@@ -4145,7 +4154,8 @@ export async function registerRoutes(
             });
           }
         }
-        if (!gpsCoordinates || !signatureName) {
+        if ((project.wizardGpsMode === "manual_step" && !gpsCoordinates) ||
+            (project.wizardShowSignatureStep !== false && !signatureName)) {
           return res.status(400).json({ 
             message: "GPS coordinates and signature name are required" 
           });
@@ -4182,7 +4192,7 @@ export async function registerRoutes(
         }
         
         // Validate GPS format
-        if (!isValidGps(gpsCoordinates)) {
+        if (gpsCoordinates && !isValidGps(gpsCoordinates)) {
           return res.status(400).json({ 
             message: "Invalid GPS format. Use: latitude,longitude (e.g., 37.7749,-122.4194)" 
           });
@@ -4236,7 +4246,10 @@ export async function registerRoutes(
           }
         }
         
-        updateData.newGps = gpsCoordinates;
+        if (gpsCoordinates && project.wizardGpsMode !== "disabled") {
+          updateData.newGps = gpsCoordinates;
+          updateData.gpsCapture = changeoutData.gpsCapture ?? null;
+        }
         updateData.signatureData = signatureData || null;
         updateData.signatureName = signatureName || null;
         updateData.completedAt = new Date().toISOString();
@@ -4384,6 +4397,7 @@ export async function registerRoutes(
       });
     } catch (error: any) {
       console.error("Error processing system changeout:", error);
+      if (error.code === "GPS_ACCURACY") return res.status(400).json({ message: error.message, code: error.code });
       if (error instanceof InventoryError) return res.status(error.status).json({ message: error.message, code: "INVENTORY_CONFLICT" });
       res.status(500).json({ message: error.message || "Failed to process system changeout" });
     }
@@ -9308,6 +9322,7 @@ export async function registerRoutes(
           success: true,
           serverTimestamp,
           workOrders: withExactReadings(result.rows).map((wo: any) => ({ ...wo,
+            ...gpsFixDto(wo),
             ...schedulingDto(wo),
             subStatusId: wo.sub_status_id ?? null,
             ...(inv ? { inventoryAllocation: inv.allocations.find(a => a.workOrderId === wo.id) || null } : {}) })),
@@ -9330,6 +9345,9 @@ export async function registerRoutes(
             count: result.rows.length,
             projectId,
             projectName: project.name,
+            gpsContractVersion: 1,
+            wizardGpsMode: project.wizardGpsMode ?? "automatic",
+            wizardGpsMaxAccuracyMetres: project.wizardGpsMaxAccuracyMetres ?? null,
             visitSchedulingContractVersion: 1,
             timezone: project.timezone || await storage.getSetting("default_timezone") || "America/Denver",
             defaultServiceMinutes: project.defaultServiceMinutes ?? null,
@@ -9677,6 +9695,8 @@ export async function registerRoutes(
       
       // Parse changeout data from request
       const changeoutData = JSON.parse(req.body.data || "{}");
+      const gpsProblem = changeoutData.canChange && gpsSubmissionProblem(project, changeoutData.gpsCoordinates, changeoutData.gpsCapture, workOrder);
+      if (gpsProblem) return res.status(400).json(gpsProblem);
       const {
         canChange,
         troubleCode,
@@ -9763,7 +9783,9 @@ export async function registerRoutes(
       
       if (canChange) {
         // Success path - system was changed (use hasReadingValue for readings to allow 0)
-        if (!hasReadingValue(oldSystemReading) || !newSystemId || !hasReadingValue(newSystemReading) || !gpsCoordinates || !signatureName) {
+        if (!hasReadingValue(oldSystemReading) || !newSystemId || !hasReadingValue(newSystemReading) ||
+            (project.wizardGpsMode === "manual_step" && !gpsCoordinates) ||
+            (project.wizardShowSignatureStep !== false && !signatureName)) {
           return res.status(400).json({ 
             message: "Missing required fields for system changeout" 
           });
@@ -9775,7 +9797,7 @@ export async function registerRoutes(
         if (!isValidSystemReading(newSystemReading)) {
           return res.status(400).json({ message: "New system reading must be a valid number" });
         }
-        if (!isValidGps(gpsCoordinates)) {
+        if (gpsCoordinates && !isValidGps(gpsCoordinates)) {
           return res.status(400).json({ message: "Invalid GPS coordinates format" });
         }
         
@@ -9783,7 +9805,10 @@ export async function registerRoutes(
         updateData.oldSystemReading = String(oldSystemReading).trim();
         updateData.newSystemId = newSystemId;
         updateData.newSystemReading = String(newSystemReading).trim();
-        updateData.newGps = gpsCoordinates;
+        if (gpsCoordinates && project.wizardGpsMode !== "disabled") {
+          updateData.newGps = gpsCoordinates;
+          updateData.gpsCapture = changeoutData.gpsCapture ?? null;
+        }
         updateData.signatureName = signatureName;
         updateData.completedAt = clientCompletedAt || new Date().toISOString();
         updateData.completedBy = currentUser.id;
@@ -9847,6 +9872,7 @@ export async function registerRoutes(
       });
     } catch (error) {
       console.error("Error completing mobile system changeout:", error);
+      if ((error as any)?.code === "GPS_ACCURACY") return res.status(400).json({ message: (error as Error).message, code: "GPS_ACCURACY" });
       if (error instanceof InventoryError) return res.status(error.status).json({ message: error.message, code: "INVENTORY_CONFLICT" });
       res.status(500).json({ message: "Failed to complete system changeout" });
     }
@@ -10034,7 +10060,7 @@ export async function registerRoutes(
       const newModuleId = body.newModuleId ?? body.new_module_id;
       const oldModuleType = body.oldModuleType ?? body.old_module_type;
       const newModuleType = body.newModuleType ?? body.new_module_type;
-      const gpsCoordinates = body.gpsCoordinates ?? body.new_gps ?? body.old_gps;
+      const gpsCoordinates = body.gpsCoordinates ?? body.newGps ?? body.new_gps;
       const signatureData = body.signatureData ?? body.signature_data;
       const signatureName = body.signatureName ?? body.signature_name;
       const completedAt = body.completedAt ?? body.completed_at;
@@ -10209,6 +10235,8 @@ export async function registerRoutes(
       if (gpsCoordinates && !isValidGps(gpsCoordinates)) {
         return res.status(400).json({ message: "Invalid GPS coordinates format. Use 'lat,lng' format" });
       }
+      const gpsProblem = gpsSubmissionProblem(project, gpsCoordinates, body.gpsCapture, workOrder);
+      if (gpsProblem) return res.status(400).json(gpsProblem);
       
       // Build update data - clear scheduledAt since status is changing to Completed
       const updateData: any = {
@@ -10281,8 +10309,9 @@ export async function registerRoutes(
         }
       }
       
-      if (gpsCoordinates) {
+      if (gpsCoordinates && project.wizardGpsMode !== "disabled") {
         updateData.newGps = gpsCoordinates;
+        updateData.gpsCapture = body.gpsCapture ?? null;
       }
       if (signatureName) {
         updateData.signatureName = signatureName;
@@ -10322,6 +10351,7 @@ export async function registerRoutes(
       });
     } catch (error: any) {
       console.error("Error in project-scoped mobile complete endpoint:", error);
+      if (error.code === "GPS_ACCURACY") return res.status(400).json({ message: error.message, code: error.code });
       if (error instanceof InventoryError) return res.status(error.status).json({ message: error.message, code: "INVENTORY_CONFLICT" });
       res.status(500).json({ message: error.message || "Failed to complete system changeout" });
     }

@@ -44,6 +44,7 @@ import Users from "@/pages/users";
 import Settings from "@/pages/settings";
 import Documentation from "@/pages/documentation";
 import NotFound from "@/pages/not-found";
+import GpsSetup from "@/pages/gps-setup";
 
 function LoadingScreen() {
   return (
@@ -73,6 +74,7 @@ function AuthenticatedRouter() {
     <Switch>
       <Route path="/extensions/:extensionId/:screenId" component={CustomerExtension} />
       <Route path="/" component={Dashboard} />
+      <Route path="/gps-setup" component={GpsSetup} />
       
       {role === "customer" && (
         <>

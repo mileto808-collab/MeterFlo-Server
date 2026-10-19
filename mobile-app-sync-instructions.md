@@ -1,5 +1,15 @@
 # MeterFlo Mobile App Synchronization Guide
 
+## GPS capture contract
+
+See [GPS capture and device setup](docs/GPS_CAPTURE.md) and the native bridge
+handoff in `examples/native-gps/MeterFloGpsWebView.tsx`. Preserve project
+automatic/manual/disabled modes, nullable `wizardGpsMaxAccuracyMetres`, original
+capture time and the `gpsCapture` object on completion/sync. Never substitute a
+saved/address-derived position for a fresh capture or relabel browser location
+as native GPS. The separately maintained Expo app is not in this repository;
+integrate and verify the native screen there.
+
 ## Visit scheduling contract
 
 Scheduling contract version 1 adds nullable `serviceDurationMinutes` (1–480 whole

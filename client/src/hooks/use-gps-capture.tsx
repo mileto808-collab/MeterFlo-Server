@@ -1,192 +1,72 @@
-import { useState, useCallback, useRef } from "react";
-
-export type GpsCaptureStatus = "idle" | "capturing" | "success" | "error";
-export type GpsCaptureSource = "external" | "device" | "geocode" | "manual" | "existing" | null;
-
-interface GpsCaptureResult {
-  coordinates: string;
-  source: GpsCaptureSource;
-  accuracy?: number;
-}
+import { useState, useCallback, useRef, useEffect } from "react";
+import { acquireGps } from "@/lib/gps-acquisition";
+import { parseCoordinates, type GpsFix, type GpsCaptureStatus } from "@shared/gps-capture";
+export type { GpsCaptureStatus } from "@shared/gps-capture";
+export type GpsCaptureSource = GpsFix["source"] | null;
 
 interface UseGpsCaptureOptions {
   existingGps?: string | null;
   oldGps?: string | null;
   address?: string | null;
-  onSuccess?: (result: GpsCaptureResult) => void;
+  accuracyLimit?: number | null;
+  captureKey?: string;
+  onSuccess?: (result: GpsFix) => void;
   onError?: (error: string) => void;
 }
 
-interface UseGpsCaptureReturn {
-  status: GpsCaptureStatus;
-  coordinates: string;
-  source: GpsCaptureSource;
-  error: string | null;
-  startCapture: () => Promise<GpsCaptureResult | null>;
-  setManualCoordinates: (coords: string) => void;
-  reset: () => void;
-}
-
-export function useGpsCapture(options: UseGpsCaptureOptions = {}): UseGpsCaptureReturn {
-  const { existingGps, oldGps, address, onSuccess, onError } = options;
-  
+export function useGpsCapture(options: UseGpsCaptureOptions = {}) {
   const [status, setStatus] = useState<GpsCaptureStatus>("idle");
-  const [coordinates, setCoordinates] = useState<string>("");
-  const [source, setSource] = useState<GpsCaptureSource>(null);
+  const [fix, setFix] = useState<GpsFix | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const abortRef = useRef<boolean>(false);
-
-  const reset = useCallback(() => {
-    setStatus("idle");
-    setCoordinates("");
-    setSource(null);
-    setError(null);
-    abortRef.current = false;
-  }, []);
-
-  const setManualCoordinates = useCallback((coords: string) => {
-    setCoordinates(coords);
-    setSource("manual");
+  const active = useRef<AbortController | null>(null);
+  const context = useRef(options.captureKey);
+  if (context.current !== options.captureKey) {
+    active.current?.abort();
+    active.current = null;
+    context.current = options.captureKey;
+  }
+  const result = useRef<GpsFix | null>(null);
+  const callbacks = useRef(options);
+  callbacks.current = options;
+  const cancel = useCallback(() => { active.current?.abort(); active.current = null; }, []);
+  useEffect(() => cancel, [cancel]);
+  const accept = useCallback((value: GpsFix) => {
+    cancel();
+    result.current = value;
+    setFix(value);
     setStatus("success");
     setError(null);
-    onSuccess?.({ coordinates: coords, source: "manual" });
-  }, [onSuccess]);
-
-  // Try device geolocation (browser API)
-  const tryDeviceGps = (): Promise<GpsCaptureResult | null> => {
-    return new Promise((resolve) => {
-      if (!navigator.geolocation) {
-        resolve(null);
-        return;
-      }
-
-      const timeoutId = setTimeout(() => {
-        resolve(null);
-      }, 15000);
-
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          clearTimeout(timeoutId);
-          const lat = position.coords.latitude.toFixed(6);
-          const lng = position.coords.longitude.toFixed(6);
-          resolve({
-            coordinates: `${lat}, ${lng}`,
-            source: "device",
-            accuracy: position.coords.accuracy,
-          });
-        },
-        () => {
-          clearTimeout(timeoutId);
-          resolve(null);
-        },
-        {
-          enableHighAccuracy: true,
-          timeout: 12000,
-          maximumAge: 0,
-        }
-      );
-    });
-  };
-
-  // Try geocoding from address
-  const tryGeocodeAddress = async (): Promise<GpsCaptureResult | null> => {
-    if (!address || !address.trim()) {
-      return null;
-    }
-
+    callbacks.current.onSuccess?.(value);
+  }, [cancel]);
+  const reset = useCallback(() => {
+    cancel(); result.current = null; setFix(null); setStatus("idle"); setError(null);
+  }, [cancel]);
+  const stop = useCallback(() => {
+    cancel();
+    setStatus(result.current ? "success" : "idle");
+  }, [cancel]);
+  const startCapture = useCallback(async (): Promise<GpsFix | null> => {
+    cancel();
+    const controller = new AbortController();
+    active.current = controller;
+    setStatus("capturing"); setError(null);
     try {
-      const response = await fetch(`/api/geocode?address=${encodeURIComponent(address)}`);
-      if (!response.ok) {
-        return null;
-      }
-      const data = await response.json();
-      if (data.lat && data.lng) {
-        return {
-          coordinates: `${data.lat}, ${data.lng}`,
-          source: "geocode",
-        };
-      }
-      return null;
-    } catch {
+      const captured = await acquireGps(controller.signal, callbacks.current.accuracyLimit);
+      if (active.current !== controller || controller.signal.aborted) return null;
+      accept(captured);
+      return captured;
+    } catch (failure) {
+      if (active.current !== controller || controller.signal.aborted) return null;
+      active.current = null;
+      const message = failure instanceof Error ? failure.message : "Location capture failed. Retry location capture.";
+      setStatus("error"); setError(message); callbacks.current.onError?.(message);
       return null;
     }
-  };
-
-  // Main capture function - tries each source in priority order
-  const startCapture = useCallback(async (): Promise<GpsCaptureResult | null> => {
-    if (abortRef.current) return null;
-    
-    setStatus("capturing");
-    setError(null);
-
-    // Priority 1: Use existing GPS if available
-    if (existingGps && existingGps.trim()) {
-      const result: GpsCaptureResult = {
-        coordinates: existingGps,
-        source: "existing",
-      };
-      setCoordinates(existingGps);
-      setSource("existing");
-      setStatus("success");
-      onSuccess?.(result);
-      return result;
-    }
-
-    // Priority 2: External GPS device (not currently supported in browser - future enhancement)
-    // Would check for Web Serial API or Web USB for NMEA devices
-
-    // Priority 3: Device GPS (browser geolocation)
-    const deviceResult = await tryDeviceGps();
-    if (abortRef.current) return null;
-    
-    if (deviceResult) {
-      setCoordinates(deviceResult.coordinates);
-      setSource("device");
-      setStatus("success");
-      onSuccess?.(deviceResult);
-      return deviceResult;
-    }
-
-    // Priority 4: Geocode from address
-    const geocodeResult = await tryGeocodeAddress();
-    if (abortRef.current) return null;
-    
-    if (geocodeResult) {
-      setCoordinates(geocodeResult.coordinates);
-      setSource("geocode");
-      setStatus("success");
-      onSuccess?.(geocodeResult);
-      return geocodeResult;
-    }
-
-    // Priority 5: Fall back to old GPS (existing location from work order)
-    if (oldGps && oldGps.trim()) {
-      const result: GpsCaptureResult = {
-        coordinates: oldGps,
-        source: "existing",
-      };
-      setCoordinates(oldGps);
-      setSource("existing");
-      setStatus("success");
-      onSuccess?.(result);
-      return result;
-    }
-
-    // All automatic methods failed
-    setStatus("error");
-    const errorMsg = "Unable to capture GPS automatically. Please enter coordinates manually.";
-    setError(errorMsg);
-    onError?.(errorMsg);
-    return null;
-  }, [existingGps, oldGps, address, onSuccess, onError]);
-
-  return {
-    status,
-    coordinates,
-    source,
-    error,
-    startCapture,
-    setManualCoordinates,
-    reset,
-  };
+  }, [accept, cancel]);
+  const setManualCoordinates = useCallback((coordinates: string, source: "manual" | "existing" = "manual") => {
+    cancel(); result.current = null; setFix(null); setError(null); setStatus("idle");
+    if (parseCoordinates(coordinates)) accept({ coordinates, source, accuracy: null, capturedAt: null, receiver: "unknown" });
+  }, [accept, cancel]);
+  return { status, fix, error, source: fix?.source ?? null, coordinates: fix?.coordinates ?? "",
+    startCapture, setManualCoordinates, reset, cancel, stop, getFix: () => result.current };
 }

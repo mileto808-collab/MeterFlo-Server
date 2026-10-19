@@ -472,6 +472,8 @@ export class DatabaseStorage implements IStorage {
       description: project.description,
       customerEmail: project.customerEmail,
       inventoryEnabled: project.inventoryEnabled ?? false,
+      wizardGpsMode: project.wizardGpsMode ?? "automatic",
+      wizardGpsMaxAccuracyMetres: project.wizardGpsMaxAccuracyMetres ?? null,
       defaultServiceMinutes: project.defaultServiceMinutes === undefined ? 30 : project.defaultServiceMinutes,
       defaultAppointmentToleranceMinutes: project.defaultAppointmentToleranceMinutes === undefined ? 60 : project.defaultAppointmentToleranceMinutes,
       systemReadingDecimalPlaces: project.systemReadingDecimalPlaces ?? 3,

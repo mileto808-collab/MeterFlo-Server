@@ -13,4 +13,5 @@ if [ -n "${REPL_ID:-}" ]; then
   # opened after the merge. Never run this command in a production build hook.
   npx tsx script/migrate-visit-scheduling.ts --development
   npx tsx script/migrate-route-dispatch.ts --development
+  npx tsx script/migrate-gps.ts --development
 fi
