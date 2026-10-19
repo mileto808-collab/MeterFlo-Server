@@ -4,6 +4,7 @@ import * as path from "path";
 import * as os from "os";
 import { Pool } from "pg";
 import archiver from "archiver";
+import { finished } from "node:stream/promises";
 import unzipper from "unzipper";
 import { storage } from "./storage";
 import { getProjectFilesPath } from "./fileStorage";
@@ -153,7 +154,7 @@ async function runPgCommand(
     
     let outputStream: fs.WriteStream | null = null;
     if (outputFile) {
-      outputStream = fs.createWriteStream(outputFile);
+      outputStream = fs.createWriteStream(outputFile, { mode: 0o600 });
       proc.stdout.pipe(outputStream);
     } else {
       proc.stdout.on("data", (data) => {
@@ -328,6 +329,11 @@ export async function createPgBackup(): Promise<PgBackupResult> {
   };
 }
 
+function protectedSourceEntry(name: string) {
+  return name === ".env" || (name.startsWith(".env.") && name !== ".env.example") ||
+    [".ssh", ".aws", ".azure", ".pgpass", ".netrc", ".npmrc"].includes(name) ||
+    /\.(pem|key|p12|pfx)$/i.test(name);
+}
 function addDirectoryToArchiveRecursive(
   archive: archiver.Archiver,
   dirPath: string,
@@ -345,6 +351,8 @@ function addDirectoryToArchiveRecursive(
   }
   
   for (const entry of entries) {
+    if (entry.name === "meterflo-scheduled-backups") continue;
+    if (excludeDirs.length && protectedSourceEntry(entry.name)) continue;
     const fullPath = path.join(dirPath, entry.name);
     const archivePath = archivePrefix ? `${archivePrefix}/${entry.name}` : entry.name;
     
@@ -387,6 +395,7 @@ const WEB_APP_BACKUP_EXCLUDES = [
   ".vscode",
   ".idea",
   "coverage",
+  "generated-artifacts",
   ".nyc_output",
   "logs",
 ];
@@ -418,6 +427,8 @@ function addWebAppFilesToArchive(
   }
   
   for (const entry of entries) {
+    if (entry.name === "meterflo-scheduled-backups") continue;
+    if (protectedSourceEntry(entry.name)) continue;
     const fullPath = path.join(appDir, entry.name);
     const archivePath = archivePrefix ? `${archivePrefix}/${entry.name}` : entry.name;
     
@@ -651,7 +662,7 @@ GRANT ALL ON SCHEMA public TO public;
   }
   
   // Write combined backup
-  fs.writeFileSync(backupFile, combinedSql);
+  fs.writeFileSync(backupFile, combinedSql, { mode: 0o600 });
   
   // Cleanup temp files
   try {
@@ -758,7 +769,7 @@ export async function createPgBackupArchive(res:any,backupType:BackupType="datab
   if (!auditingEnabled) return createPgBackupArchiveData(res,backupType);
   return auditedOperation("systemBackup",backupType,()=>createPgBackupArchiveData(res,backupType));
 }
-async function createPgBackupArchiveData(res: any, backupType: BackupType = "database"): Promise<void> {
+async function createPgBackupArchiveData(res: any, backupType: BackupType = "database", strict = false): Promise<void> {
   console.log(`[Backup] Starting backup (type: ${backupType})...`);
   
   // Backup types:
@@ -773,6 +784,7 @@ async function createPgBackupArchiveData(res: any, backupType: BackupType = "dat
   const includeProjectFiles = backupType === "project";
   
   let backupResult: PgBackupResult | null = null;
+  try {
   
   if (includeDatabase) {
     try {
@@ -817,6 +829,7 @@ async function createPgBackupArchiveData(res: any, backupType: BackupType = "dat
   const archive = archiver("zip", { zlib: { level: 6 } });
   
   archive.on("error", (err) => {
+    if (strict) res.destroy(err);
     console.error("[Backup] Archive error:", err);
     if (backupResult && fs.existsSync(backupResult.backupFile)) {
       try { fs.unlinkSync(backupResult.backupFile); } catch {}
@@ -827,6 +840,7 @@ async function createPgBackupArchiveData(res: any, backupType: BackupType = "dat
   });
   
   archive.on("warning", (err) => {
+    if (strict) { res.destroy(new Error("A backup source file could not be read.")); archive.abort(); return; }
     if (err.code === "ENOENT") {
       console.warn("[Backup] Archive warning (file not found):", err.message);
     } else if (err.code === "EBUSY" || err.code === "EPERM") {
@@ -847,6 +861,9 @@ async function createPgBackupArchiveData(res: any, backupType: BackupType = "dat
   );
   
   archive.pipe(res);
+  const transportFailure = strict ? new Promise<never>((_resolve, reject) => {
+    res.once("error", (error: Error) => { archive.abort(); reject(error); });
+  }) : null;
   
   // Add database backup
   if ((includeDatabase || includeCleanDatabase) && backupResult) {
@@ -868,6 +885,7 @@ async function createPgBackupArchiveData(res: any, backupType: BackupType = "dat
       console.log("[Backup] Web app source files added to archive");
     } catch (error: any) {
       console.error(`[Backup] Error adding web app files: ${error.message}`);
+      if (strict) { archive.abort(); throw error; }
       archive.append(
         JSON.stringify({ error: error.message, path: appDir }, null, 2),
         { name: "webapp_backup_error.json" }
@@ -883,6 +901,7 @@ async function createPgBackupArchiveData(res: any, backupType: BackupType = "dat
       console.log("[Backup] Project files added to archive");
     } catch (error: any) {
       console.error(`[Backup] Error adding project files: ${error.message}`);
+      if (strict) { archive.abort(); throw error; }
       archive.append(
         JSON.stringify({ error: error.message, path: projectFilesPath }, null, 2),
         { name: "project_files_error.json" }
@@ -894,6 +913,7 @@ async function createPgBackupArchiveData(res: any, backupType: BackupType = "dat
   
   // Add warnings about skipped files
   if (skippedFiles.length > 0) {
+    if (strict) { archive.abort(); throw new Error("Backup source files were inaccessible. No successful backup was recorded."); }
     console.warn(`[Backup] Skipped ${skippedFiles.length} locked/inaccessible files`);
     archive.append(
       JSON.stringify({ 
@@ -924,11 +944,32 @@ async function createPgBackupArchiveData(res: any, backupType: BackupType = "dat
   archive.append(JSON.stringify(metadata, null, 2), { name: "backup_metadata.json" });
   
   console.log("[Backup] Finalizing archive...");
-  await archive.finalize();
+  if (transportFailure) await Promise.race([archive.finalize(), transportFailure]);
+  else await archive.finalize();
   console.log("[Backup] Archive complete");
   
-  if (backupResult && fs.existsSync(backupResult.backupFile)) {
-    try { fs.unlinkSync(backupResult.backupFile); } catch {}
+  } finally {
+    if (backupResult && fs.existsSync(backupResult.backupFile)) {
+      try { fs.unlinkSync(backupResult.backupFile); } catch {}
+    }
+  }
+}
+
+/** The scheduler uses the same restorable archive format without an HTTP response. */
+export async function createPgBackupFile(filename: string, type: BackupType) {
+  const output = fs.createWriteStream(filename, { flags: "wx", mode: 0o600 });
+  const complete = finished(output);
+  complete.catch(() => {}); // creation may fail before we reach the stream await
+  Object.assign(output, { headersSent: true, setHeader() {} });
+  try {
+    await createPgBackupArchiveData(output, type, true);
+    await complete;
+    if (output.bytesWritten === 0) throw new Error("The backup archive was empty.");
+  } catch (error) {
+    output.destroy();
+    await complete.catch(() => {});
+    await fs.promises.unlink(filename).catch(() => {});
+    throw error;
   }
 }
 

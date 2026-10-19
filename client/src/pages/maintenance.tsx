@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -48,10 +48,15 @@ import {
   FileArchive,
   Files,
   Folder,
+  Search,
 } from "lucide-react";
 import { useTimezone } from "@/hooks/use-timezone";
 import { usePermissions } from "@/hooks/usePermissions";
 import type { Project } from "@shared/schema";
+import BackupWorkspace from "@/components/backup-workspace";
+import { InventoryMobileTools } from "@/components/inventory-mobile-tools";
+import { Input } from "@/components/ui/input";
+import { downloadCsv } from "@/lib/backup-export";
 
 interface ProjectWithStats extends Project {
   stats: {
@@ -69,7 +74,11 @@ interface FileStats {
   sizeFormatted: string;
 }
 
-export default function Maintenance({ embedded = false, active = true }: { embedded?: boolean; active?: boolean }) {
+export function ManualMaintenance({ embedded = true, active = true, section = "system" }: {
+  embedded?: boolean;
+  active?: boolean;
+  section?: "system" | "projects" | "files";
+}) {
   const { toast } = useToast();
   const { formatDateTime } = useTimezone();
   const { hasPermission, isLoading: isPermissionsLoading } = usePermissions();
@@ -89,6 +98,10 @@ export default function Maintenance({ embedded = false, active = true }: { embed
   const [isFilesRestoring, setIsFilesRestoring] = useState(false);
   const [backupType, setBackupType] = useState<"database" | "clean" | "files" | "project">("database");
   const [fileStats, setFileStats] = useState<Record<number, FileStats>>({});
+  const [databaseSearch, setDatabaseSearch] = useState("");
+  const [databaseStatus, setDatabaseStatus] = useState("");
+  const [filesSearch, setFilesSearch] = useState("");
+  const [filesStatus, setFilesStatus] = useState("");
   const [uploadProgress, setUploadProgress] = useState<{
     stage: "uploading" | "processing";
     percent: number;
@@ -111,11 +124,29 @@ export default function Maintenance({ embedded = false, active = true }: { embed
   const canSystemRestore = !isPermissionsLoading && hasPermission("maintenance.systemRestore");
   const canAccessProjectMaintenance = canProjectBackup || canProjectRestore;
   const canAccessAnyBackupRestore = canAccessProjectMaintenance || canSystemBackup || canSystemRestore;
-
+  const showSystem = section === "system";
+  const showProjects = section === "projects";
+  const showFiles = section === "files";
   const { data: projects = [], isLoading, refetch } = useQuery<ProjectWithStats[]>({
     queryKey: ["/api/maintenance/projects"],
-    enabled: active && canAccessAnyBackupRestore,
+    enabled: active && (showProjects || showFiles) && canAccessAnyBackupRestore,
   });
+  const filteredDatabaseProjects = useMemo(() => {
+    const query = databaseSearch.trim().toLocaleLowerCase();
+    return projects.filter(project => {
+      const matchesQuery = !query || `${project.name} ${project.description || ""} ${project.databaseName || ""}`.toLocaleLowerCase().includes(query);
+      const matchesStatus = !databaseStatus || (databaseStatus === "active" ? project.isActive : !project.isActive);
+      return matchesQuery && matchesStatus;
+    });
+  }, [projects, databaseSearch, databaseStatus]);
+  const filteredFilesProjects = useMemo(() => {
+    const query = filesSearch.trim().toLocaleLowerCase();
+    return projects.filter(project => {
+      const matchesQuery = !query || `${project.name} ${project.description || ""}`.toLocaleLowerCase().includes(query);
+      const matchesStatus = !filesStatus || (filesStatus === "active" ? project.isActive : !project.isActive);
+      return matchesQuery && matchesStatus;
+    });
+  }, [projects, filesSearch, filesStatus]);
 
   useEffect(() => {
     const fetchFileStats = async () => {
@@ -133,10 +164,10 @@ export default function Maintenance({ embedded = false, active = true }: { embed
       }
       setFileStats(stats);
     };
-    if (active && canAccessProjectMaintenance && projects.length > 0) {
+    if (active && (showProjects || showFiles) && canAccessProjectMaintenance && projects.length > 0) {
       fetchFileStats();
     }
-  }, [projects, canAccessProjectMaintenance, active]);
+  }, [projects, canAccessProjectMaintenance, active, showProjects, showFiles]);
 
   const handleBackup = async (project: ProjectWithStats) => {
     try {
@@ -604,7 +635,7 @@ export default function Maintenance({ embedded = false, active = true }: { embed
         )}
       </div>}
 
-      {(canSystemBackup || canSystemRestore) && (
+      {showSystem && (canSystemBackup || canSystemRestore) && (
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -742,7 +773,7 @@ export default function Maintenance({ embedded = false, active = true }: { embed
         </Card>
       )}
 
-      {canAccessProjectMaintenance && <Card>
+      {showProjects && canAccessProjectMaintenance && <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Database className="h-5 w-5" />
@@ -753,6 +784,24 @@ export default function Maintenance({ embedded = false, active = true }: { embed
           </CardDescription>
         </CardHeader>
         <CardContent>
+          <InventoryMobileTools tab="backup-project-databases">
+            <div className="mb-3 flex flex-col gap-2 rounded-md border bg-card p-2 sm:flex-row sm:items-center">
+              <div className="relative min-w-0 flex-1">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input aria-label="Search project databases" type="search" autoComplete="off" placeholder="Search projects" value={databaseSearch} onChange={event => setDatabaseSearch(event.target.value)} className="pl-9" />
+              </div>
+              <select aria-label="Filter project database status" value={databaseStatus} onChange={event => setDatabaseStatus(event.target.value)} className="h-10 rounded-md border bg-background px-3 text-sm">
+                <option value="">All project statuses</option><option value="active">Active</option><option value="inactive">Inactive</option>
+              </select>
+              <Button type="button" variant="outline" size="sm" onClick={() => downloadCsv("meterflo-project-databases.csv",
+                ["Project", "Status", "Database", "Records", "Size", "Last modified"],
+                filteredDatabaseProjects.map(project => [project.name, project.isActive ? "Active" : "Inactive", project.databaseName || "", project.stats?.totalRecords ?? "", project.stats?.tableSize || "", project.stats?.lastModified || ""]))}
+                disabled={!filteredDatabaseProjects.length}>
+                <Download className="mr-1.5 h-4 w-4" /> Export CSV
+              </Button>
+              <p className="text-right text-xs text-muted-foreground" aria-live="polite">{filteredDatabaseProjects.length} of {projects.length}</p>
+            </div>
+          </InventoryMobileTools>
           {isLoading ? (
             <div className="space-y-4">
               {[1, 2, 3].map((i) => (
@@ -763,6 +812,11 @@ export default function Maintenance({ embedded = false, active = true }: { embed
             <div className="text-center py-8 text-muted-foreground">
               <Database className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>No projects found</p>
+            </div>
+          ) : filteredDatabaseProjects.length === 0 ? (
+            <div className="rounded-md border border-dashed px-4 py-8 text-center text-sm">
+              <p className="font-medium">No matching project databases</p>
+              <p className="mt-1 text-muted-foreground">Adjust the search or status filter to see project records.</p>
             </div>
           ) : (
             <Table>
@@ -776,7 +830,7 @@ export default function Maintenance({ embedded = false, active = true }: { embed
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {projects.map((project) => (
+                {filteredDatabaseProjects.map((project) => (
                   <TableRow key={project.id} data-testid={`row-project-${project.id}`}>
                     <TableCell>
                       <div className="flex items-center gap-2">
@@ -874,7 +928,7 @@ export default function Maintenance({ embedded = false, active = true }: { embed
         </CardContent>
       </Card>}
 
-      {canAccessProjectMaintenance && <Card>
+      {showFiles && canAccessProjectMaintenance && <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Files className="h-5 w-5" />
@@ -885,6 +939,27 @@ export default function Maintenance({ embedded = false, active = true }: { embed
           </CardDescription>
         </CardHeader>
         <CardContent>
+          <InventoryMobileTools tab="backup-project-files">
+            <div className="mb-3 flex flex-col gap-2 rounded-md border bg-card p-2 sm:flex-row sm:items-center">
+              <div className="relative min-w-0 flex-1">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input aria-label="Search project files" type="search" autoComplete="off" placeholder="Search projects" value={filesSearch} onChange={event => setFilesSearch(event.target.value)} className="pl-9" />
+              </div>
+              <select aria-label="Filter project files by project status" value={filesStatus} onChange={event => setFilesStatus(event.target.value)} className="h-10 rounded-md border bg-background px-3 text-sm">
+                <option value="">All project statuses</option><option value="active">Active</option><option value="inactive">Inactive</option>
+              </select>
+              <Button type="button" variant="outline" size="sm" onClick={() => downloadCsv("meterflo-project-files.csv",
+                ["Project", "Status", "Files", "Folders", "Total bytes", "Formatted size"],
+                filteredFilesProjects.map(project => {
+                  const stats = fileStats[project.id];
+                  return [project.name, project.isActive ? "Active" : "Inactive", stats?.fileCount ?? "", stats?.folderCount ?? "", stats?.totalSize ?? "", stats?.sizeFormatted || ""];
+                }))}
+                disabled={!filteredFilesProjects.length}>
+                <Download className="mr-1.5 h-4 w-4" /> Export CSV
+              </Button>
+              <p className="text-right text-xs text-muted-foreground" aria-live="polite">{filteredFilesProjects.length} of {projects.length}</p>
+            </div>
+          </InventoryMobileTools>
           {isLoading ? (
             <div className="space-y-4">
               {[1, 2, 3].map((i) => (
@@ -895,6 +970,11 @@ export default function Maintenance({ embedded = false, active = true }: { embed
             <div className="text-center py-8 text-muted-foreground">
               <Files className="h-12 w-12 mx-auto mb-4 opacity-50" />
               <p>No projects found</p>
+            </div>
+          ) : filteredFilesProjects.length === 0 ? (
+            <div className="rounded-md border border-dashed px-4 py-8 text-center text-sm">
+              <p className="font-medium">No matching project files</p>
+              <p className="mt-1 text-muted-foreground">Adjust the search or status filter to see project files.</p>
             </div>
           ) : (
             <Table>
@@ -908,7 +988,7 @@ export default function Maintenance({ embedded = false, active = true }: { embed
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {projects.map((project) => {
+                {filteredFilesProjects.map((project) => {
                   const stats = fileStats[project.id];
                   return (
                     <TableRow key={project.id} data-testid={`row-files-${project.id}`}>
@@ -1006,7 +1086,7 @@ export default function Maintenance({ embedded = false, active = true }: { embed
         </CardContent>
       </Card>}
 
-      <Dialog open={restoreDialogOpen} onOpenChange={setRestoreDialogOpen}>
+      {showProjects && <Dialog open={restoreDialogOpen} onOpenChange={setRestoreDialogOpen}>
         <DialogContent onCloseAutoFocus={event => { if (!active) event.preventDefault(); }}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -1076,9 +1156,9 @@ export default function Maintenance({ embedded = false, active = true }: { embed
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog>}
 
-      <Dialog open={systemRestoreDialogOpen} onOpenChange={setSystemRestoreDialogOpen}>
+      {showSystem && <Dialog open={systemRestoreDialogOpen} onOpenChange={setSystemRestoreDialogOpen}>
         <DialogContent onCloseAutoFocus={event => { if (!active) event.preventDefault(); }} className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -1168,9 +1248,9 @@ export default function Maintenance({ embedded = false, active = true }: { embed
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog>}
 
-      <Dialog open={filesRestoreDialogOpen} onOpenChange={setFilesRestoreDialogOpen}>
+      {showFiles && <Dialog open={filesRestoreDialogOpen} onOpenChange={setFilesRestoreDialogOpen}>
         <DialogContent onCloseAutoFocus={event => { if (!active) event.preventDefault(); }}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -1240,7 +1320,40 @@ export default function Maintenance({ embedded = false, active = true }: { embed
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog>}
+    </div>
+  );
+}
+
+export default function Maintenance({ embedded = false, active = true }: { embedded?: boolean; active?: boolean }) {
+  const { hasPermission, isLoading } = usePermissions();
+  const canSystemBackup = !isLoading && hasPermission("maintenance.systemBackup");
+  const canSystemRestore = !isLoading && hasPermission("maintenance.systemRestore");
+  const canProjects = !isLoading && (hasPermission("maintenance.projectBackup") || hasPermission("maintenance.projectRestore"));
+  const [section, setSection] = useState<"backup" | "system" | "projects" | "files">("backup");
+
+  const renderManual = (manualSection: "system" | "projects" | "files") => (
+    <ManualMaintenance embedded active={active && section === manualSection} section={manualSection} />
+  );
+
+  return (
+    <div className={embedded ? "space-y-4" : "p-4 sm:p-6 space-y-4"}>
+      {!embedded && (
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-semibold" data-testid="text-page-title">Backup &amp; Restore</h1>
+            <p className="text-sm text-muted-foreground">Protect MeterFlo data and recover it when needed.</p>
+          </div>
+        </div>
+      )}
+      <BackupWorkspace
+        active={active && section === "backup"}
+        canManage={canSystemBackup}
+        onSectionChange={setSection}
+        showSystemManual={canSystemBackup || canSystemRestore}
+        showProjects={canProjects}
+        renderManual={renderManual}
+      />
     </div>
   );
 }

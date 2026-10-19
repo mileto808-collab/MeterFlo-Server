@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+export { backupDestination, backupSchedules, backupRuns } from "./backup-db";
 import { pgTable, text, varchar, timestamp, integer, serial, jsonb, index, uniqueIndex, primaryKey, boolean, uuid, date, check } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";

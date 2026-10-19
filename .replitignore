@@ -1,3 +1,4 @@
+**/meterflo-scheduled-backups/
 /generated-artifacts/
 **/.cache/
 *.apk

@@ -58,6 +58,27 @@ export async function finishAuditOperation(id:string,outcome:string,counts:Recor
   } catch(e) { await client.query("ROLLBACK"); throw e; } finally { client.release(); }
 }
 export async function auditedOperation<T>(type:string,target:string,fn:()=>Promise<T>,projectId:number|null=null,projectLabel:string|null=null):Promise<T> {
+  if (["systemBackup", "systemRestore", "systemFilesRestore"].includes(type)) {
+    const { withBackupExclusive } = await import("./backups/lock");
+    return withBackupExclusive(async () => {
+      const result = await auditedOperationData(type,target,fn,projectId,projectLabel);
+      if (type === "systemRestore") {
+        // Restored schedules may contain another server's paths and queued work.
+        // Recreate the CURRENT operational schema during the explicit restore,
+        // never in managed production startup or deployment hooks.
+        const { migrateBackupSchema } = await import("./backups/schema");
+        await migrateBackupSchema(pool);
+        await pool.query("UPDATE public.backup_schedules SET enabled=false,next_run_at=null,updated_at=now()");
+        await pool.query(`UPDATE public.backup_runs SET status=CASE WHEN status='running' THEN 'interrupted' ELSE 'cancelled' END,
+          completed_at=now(),error='Paused after system restore. Review the destination and re-enable schedules.'
+          WHERE status IN ('queued','running')`);
+      }
+      return result;
+    });
+  }
+  return auditedOperationData(type,target,fn,projectId,projectLabel);
+}
+async function auditedOperationData<T>(type:string,target:string,fn:()=>Promise<T>,projectId:number|null=null,projectLabel:string|null=null):Promise<T> {
   const id=await beginAuditOperation(type,target,projectId,projectLabel);
   const ctx={...(auditContext.getStore() || serviceAuditContext("system")),operationId:id};
   try {

@@ -1,5 +1,6 @@
 import type { Express, RequestHandler } from "express";
 import { gpsSubmissionProblem, gpsFixDto } from "../shared/gps-capture";
+import { registerBackupRoutes } from "./backups/routes";
 import { registerRoutingRoutes } from "./routing/routes";
 import { technicianAssignmentScope, visibleAssignedOrders } from "./workOrderVisibility";
 import { accessLockMiddleware, loginAccessLock, registerAccessLockRoutes, sendAccessLocked } from "./accessLocks";
@@ -8251,6 +8252,7 @@ export async function registerRoutes(
   });
 
   // Full System Backup/Restore API Routes
+  registerBackupRoutes(app, isAuthenticated);
   // Uses pg_dump for SQL-format backup that handles foreign key constraints properly
   // Supports four backup types: database, full (database+webapp+project files), files (webapp only), project (project files only)
   app.get("/api/system/backup", isAuthenticated, async (req: any, res) => {

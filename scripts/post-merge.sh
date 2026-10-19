@@ -14,4 +14,5 @@ if [ -n "${REPL_ID:-}" ]; then
   npx tsx script/migrate-visit-scheduling.ts --development
   npx tsx script/migrate-route-dispatch.ts --development
   npx tsx script/migrate-gps.ts --development
+  npx tsx script/migrate-backups.ts --development
 fi
