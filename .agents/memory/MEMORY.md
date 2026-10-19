@@ -57,3 +57,5 @@
 - [Inventory activity histories](inventory-activity-histories.md) — one summary for related transactions, including batches; expandable, printable full history without changing the ledger.
 - [GPS capture priority](gps-capture-priority.md) — device GPS first, browser location last; target Android/iOS phones and tablets and Windows/Linux laptops.
 - [Scheduled backup scope](scheduled-backup-scope.md) — standalone and hosted backups; durable hosted storage and explicit schedule re-enablement after portable restores.
+- [Project file transfers](file-transfer-scope.md) — one workspace; manual/scheduled customer SFTP, import filename patterns, and independent export mode/status selection.
+- [Orientation verification](orientation-verification.md) — verify settled touch-landscape controls with viewport screenshots; full-page capture alone can misrepresent the responsive state.

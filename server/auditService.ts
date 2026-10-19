@@ -68,6 +68,14 @@ export async function auditedOperation<T>(type:string,target:string,fn:()=>Promi
         // never in managed production startup or deployment hooks.
         const { migrateBackupSchema } = await import("./backups/schema");
         await migrateBackupSchema(pool);
+        const { migrateFileTransfers } = await import("./file-transfers/schema");
+        await migrateFileTransfers(pool);
+        await pool.query("UPDATE public.file_exports SET is_enabled=false,next_run_at=null,updated_at=now()");
+        await pool.query("UPDATE public.file_import_configs SET is_enabled=false WHERE source='sftp'");
+        await pool.query(`UPDATE public.file_export_runs SET status='cancelled',completed_at=now(),
+          message='Paused after system restore. Review the SFTP destination and create a new export.'
+          WHERE status IN ('queued','running','failed','interrupted')`);
+        await pool.query("UPDATE public.file_export_attempts SET status='interrupted',completed_at=now(),message='System restored.' WHERE status='running'");
         await pool.query("UPDATE public.backup_schedules SET enabled=false,next_run_at=null,updated_at=now()");
         await pool.query(`UPDATE public.backup_runs SET status=CASE WHEN status='running' THEN 'interrupted' ELSE 'cancelled' END,
           completed_at=now(),error='Paused after system restore. Review the destination and re-enable schedules.'

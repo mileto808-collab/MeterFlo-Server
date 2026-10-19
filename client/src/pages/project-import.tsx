@@ -51,6 +51,7 @@ import { useTimezone } from "@/hooks/use-timezone";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import * as XLSX from "xlsx";
+import { FileTransferWorkspace } from "@/components/file-transfers/file-transfer-workspace";
 
 type ParsedWorkOrder = {
   customerWoId: string;
@@ -186,7 +187,7 @@ const parsePlanningDuration = (value: string): number | undefined => {
 const hasExplicitOffsetTimestamp = (value: string) =>
   /(?:Z|[+-]\d{2}:\d{2})$/i.test(value.trim()) && Number.isFinite(Date.parse(value.trim()));
 
-export default function ProjectImport() {
+function LegacyImport() {
   const { formatDateTime } = useTimezone();
   const [, params] = useRoute("/projects/:projectId/import");
   const projectId = params?.projectId ? parseInt(params.projectId) : null;
@@ -221,6 +222,8 @@ export default function ProjectImport() {
     isEnabled: true,
     columnMapping: { ...defaultColumnMapping } as Record<string, string>,
     processedFilePattern: "",
+    source: "local" as "local" | "sftp",
+    remoteDirectory: "",
   });
 
   const { data: project, isLoading, error: projectError } = useQuery<Project>({
@@ -426,6 +429,8 @@ export default function ProjectImport() {
       isEnabled: true,
       columnMapping: { ...defaultColumnMapping } as Record<string, string>,
       processedFilePattern: "",
+      source: "local",
+      remoteDirectory: "",
     });
   };
 
@@ -442,6 +447,8 @@ export default function ProjectImport() {
       isEnabled: config.isEnabled !== false,
       columnMapping: savedMapping,
       processedFilePattern: config.processedFilePattern || "",
+      source: (config as any).source || "local",
+      remoteDirectory: (config as any).remoteDirectory || "",
     });
     setScheduleDialogOpen(true);
   };
@@ -449,6 +456,10 @@ export default function ProjectImport() {
   const handleScheduleSubmit = () => {
     if (!scheduleForm.name.trim()) {
       toast({ title: "Name is required", variant: "destructive" });
+      return;
+    }
+    if (scheduleForm.source === "sftp" && !scheduleForm.processedFilePattern.trim()) {
+      toast({ title: "File pattern is required for SFTP", description: "Add a pattern such as *.csv or meter_*.xlsx.", variant: "destructive" });
       return;
     }
     const columnMapping = { ...scheduleForm.columnMapping };
@@ -898,11 +909,6 @@ export default function ProjectImport() {
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold" data-testid="text-project-title">{project?.name}</h1>
-        <p className="text-muted-foreground">Import Work Orders</p>
-      </div>
-
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="file" data-testid="tab-file">
@@ -1619,7 +1625,7 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="file-pattern">File Pattern (Optional)</Label>
+              <Label htmlFor="file-pattern">Processed file pattern {scheduleForm.source === "sftp" && <span className="text-destructive">*</span>}</Label>
               <Input
                 id="file-pattern"
                 value={scheduleForm.processedFilePattern}
@@ -1637,6 +1643,23 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
                   <li><code className="bg-muted px-1 rounded">WO_202?_*.csv</code> - matches WO_2024_jan.csv, WO_2025_feb.csv</li>
                 </ul>
               </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="schedule-source">File source</Label>
+                <Select value={scheduleForm.source} onValueChange={(value: "local" | "sftp") => setScheduleForm(prev => ({ ...prev, source: value }))}>
+                  <SelectTrigger id="schedule-source"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="local">Local / uploaded</SelectItem>
+                    <SelectItem value="sftp">SFTP connection</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {scheduleForm.source === "sftp" && <div className="space-y-2">
+                <Label htmlFor="schedule-remote-directory">Remote directory</Label>
+                <Input id="schedule-remote-directory" value={scheduleForm.remoteDirectory} onChange={e => setScheduleForm(prev => ({ ...prev, remoteDirectory: e.target.value }))} placeholder="/inbound/work-orders" />
+              </div>}
             </div>
 
             <div className="flex items-center gap-2">
@@ -1729,4 +1752,13 @@ WO-003,CUST-789,Bob Wilson,789 Pine Rd,Springfield,IL,62703,Gas,Route A,Zone 1,S
       </AlertDialog>
     </div>
   );
+}
+
+export default function ProjectImport() {
+  const [, params] = useRoute("/projects/:projectId/import");
+  const projectId = params?.projectId ? Number(params.projectId) : null;
+  if (!projectId || !Number.isInteger(projectId)) {
+    return <div className="p-6 text-sm text-muted-foreground">Project not found</div>;
+  }
+  return <FileTransferWorkspace projectId={projectId} renderImports={() => <LegacyImport />} />;
 }

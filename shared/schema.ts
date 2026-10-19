@@ -467,10 +467,14 @@ export const importHistory = pgTable("import_history", {
 });
 
 // File import configurations - scheduled pickup from FTP directory
+export { projectSftpConnections, fileExports, fileExportStatuses, fileExportSubStatuses, fileExportRuns,
+  fileExportRunItems, fileExportCheckpoints, fileExportAttempts, fileImportReceipts, fileImportGeneratedIds } from "./file-transfer-db";
 export const fileImportConfigs = pgTable("file_import_configs", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   name: varchar("name", { length: 255 }).notNull(),
+  source: text("source").notNull().default("local"),
+  remoteDirectory: text("remote_directory").notNull().default(""),
   delimiter: varchar("delimiter", { length: 10 }).notNull().default(","),
   hasHeader: boolean("has_header").default(true),
   columnMapping: jsonb("column_mapping"),
@@ -1177,6 +1181,8 @@ export type ImportHistory = typeof importHistory.$inferSelect;
 export const insertFileImportConfigSchema = z.object({
   projectId: z.number(),
   name: z.string().min(1).max(255),
+  source: z.enum(["local", "sftp"]).optional(),
+  remoteDirectory: z.string().max(500).optional(),
   delimiter: z.string().max(10).optional(),
   hasHeader: z.boolean().optional(),
   columnMapping: z.record(z.string()).optional(),
@@ -1187,6 +1193,8 @@ export const insertFileImportConfigSchema = z.object({
 });
 
 export const updateFileImportConfigSchema = z.object({
+  source: z.enum(["local", "sftp"]).optional(),
+  remoteDirectory: z.string().max(500).optional(),
   name: z.string().min(1).max(255).optional(),
   delimiter: z.string().max(10).optional(),
   hasHeader: z.boolean().optional(),

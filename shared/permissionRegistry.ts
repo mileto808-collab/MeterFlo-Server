@@ -116,6 +116,20 @@ export const permissionRegistry: PermissionDefinition[] = [
     defaultAccess: { administrator: true, projectManager: true, fieldTechnician: true, viewer: true, customer: true },
   },
   {
+    key: "project.fileExports",
+    label: "File Exports",
+    category: "Project Menu",
+    description: "Configure, run and review work-order file exports for assigned projects",
+    defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
+  },
+  {
+    key: "project.sftpConnections",
+    label: "Customer SFTP Connections",
+    category: "Project Menu",
+    description: "Configure and test customer SFTP connections for assigned projects",
+    defaultAccess: { administrator: true, projectManager: true, fieldTechnician: false, viewer: false, customer: false },
+  },
+  {
     key: "project.import",
     label: "File Import",
     category: "Project Menu",

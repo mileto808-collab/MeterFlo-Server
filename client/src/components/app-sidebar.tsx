@@ -241,7 +241,7 @@ export function AppSidebar() {
         </SidebarGroup>
 
         {role !== "customer" && projects.length > 0 &&
-          (hasPermission("project.workOrders") || hasPermission("projects.edit") || hasPermission("project.apiImport") || hasPermission("settings.customerApiLogs") || hasPermission("inventory.view")) && (
+          (hasPermission("project.workOrders") || hasPermission("projects.edit") || hasPermission("project.apiImport") || hasPermission("settings.customerApiLogs") || hasPermission("inventory.view") || hasPermission("project.import") || hasPermission("project.fileExports") || hasPermission("project.sftpConnections")) && (
           <SidebarGroup>
             <SidebarGroupLabel>Projects</SidebarGroupLabel>
             <SidebarGroupContent>
@@ -328,7 +328,7 @@ export function AppSidebar() {
                                 </SidebarMenuSubButton>
                               </SidebarMenuSubItem>
                             )}
-                            {hasPermission("project.import") && (
+                            {(hasPermission("project.import") || hasPermission("project.fileExports") || hasPermission("project.sftpConnections")) && (
                               <SidebarMenuSubItem>
                                 <SidebarMenuSubButton
                                   asChild
@@ -337,7 +337,7 @@ export function AppSidebar() {
                                 >
                                   <NavLink href={`/projects/${project.id}/import`}>
                                     <Upload className="h-3 w-3" />
-                                    <span>File Import</span>
+                                    <span>File Import/Export</span>
                                   </NavLink>
                                 </SidebarMenuSubButton>
                               </SidebarMenuSubItem>

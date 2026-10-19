@@ -5,10 +5,13 @@ import { auditedOperation } from "./auditService";
 import { getProjectWorkOrderStorage } from "./projectDb";
 import { importedVisitScheduling } from "../shared/visitScheduling";
 import { insertProjectWorkOrderSchema } from "@shared/schema";
-import { getProjectFtpFiles, getProjectFtpFilePath } from "./fileStorage";
 import * as fs from "fs";
 import * as XLSX from "xlsx";
-import { minimatch } from "minimatch";
+import { pool } from "./db";
+import { backupLock } from "./backups/lock";
+import { importCandidate, rememberImport, generatedImportId } from "./file-transfers/imports";
+import { projectZone } from "./file-transfers/exports";
+import { TransferError } from "./file-transfers/sftp";
 
 function normalizeColumnName(name: string): string {
   return name
@@ -32,25 +35,31 @@ function createNormalizedRowLookup(row: Record<string, any>): (columnName: strin
 
 class FileImportScheduler {
   private scheduledTasks: Map<number, cron.ScheduledTask> = new Map();
+  private fingerprints = new Map<number, string>();
+  private refreshing = false;
 
   async initialize() {
     console.log("[FileImportScheduler] Initializing scheduled file imports...");
     await this.loadAllSchedules();
+    setInterval(() => void this.loadAllSchedules(), 60000).unref();
   }
 
   private async loadAllSchedules() {
+    if (this.refreshing) return;
+    this.refreshing = true;
     try {
       const activeConfigs = await storage.getAllEnabledFileImportConfigs();
-      console.log(`[FileImportScheduler] Found ${activeConfigs.length} active file import configurations`);
+      const ids = new Set(activeConfigs.filter(config => config.scheduleFrequency !== "manual").map(config => config.id));
+      for (const id of this.scheduledTasks.keys()) if (!ids.has(id)) this.cancelSchedule(id);
 
       for (const config of activeConfigs) {
         if (config.scheduleFrequency && config.scheduleFrequency !== "manual") {
-          this.scheduleImport(config);
+          await this.scheduleImport(config);
         }
       }
     } catch (error) {
-      console.error("[FileImportScheduler] Error loading schedules:", error);
-    }
+      console.error("[FileImportScheduler] Could not refresh import schedules.");
+    } finally { this.refreshing = false; }
   }
 
   private getCronExpression(frequency: string, customCron?: string | null): string | null {
@@ -82,15 +91,14 @@ class FileImportScheduler {
     }
   }
 
-  scheduleImport(config: {
+  async scheduleImport(config: {
     id: number;
     name: string;
     scheduleFrequency: string | null;
     customCronExpression?: string | null;
   }) {
-    this.cancelSchedule(config.id);
-
     if (!config.scheduleFrequency || config.scheduleFrequency === "manual") {
+      this.cancelSchedule(config.id);
       return;
     }
 
@@ -107,18 +115,26 @@ class FileImportScheduler {
 
     console.log(`[FileImportScheduler] Scheduling file import "${config.name}" (ID: ${config.id}) with cron: ${cronExpression}`);
 
+    const stored = await storage.getFileImportConfig(config.id);
+    if (!stored || !stored.isEnabled) return;
+    const timezone = await projectZone(stored.projectId);
+    const fingerprint = JSON.stringify([cronExpression, timezone, stored.source, stored.remoteDirectory, stored.processedFilePattern]);
+    if (this.fingerprints.get(config.id) === fingerprint) return;
+    this.cancelSchedule(config.id);
+    this.fingerprints.set(config.id, fingerprint);
     const task = cron.schedule(cronExpression, async () => {
       console.log(`[FileImportScheduler] Running scheduled file import "${config.name}" (ID: ${config.id})`);
       await withAuditContext(serviceAuditContext("scheduledFileImport"),()=>this.runImport(config.id));
-    });
+    }, { timezone, noOverlap: true });
 
     this.scheduledTasks.set(config.id, task);
   }
 
   cancelSchedule(configId: number) {
+    this.fingerprints.delete(configId);
     const existingTask = this.scheduledTasks.get(configId);
     if (existingTask) {
-      existingTask.stop();
+      void existingTask.destroy();
       this.scheduledTasks.delete(configId);
       console.log(`[FileImportScheduler] Cancelled schedule for config ${configId}`);
     }
@@ -128,9 +144,27 @@ class FileImportScheduler {
     const config=await storage.getFileImportConfig(configId);
     const project=config ? await storage.getProject(config.projectId):undefined;
     const ctx=auditContext.getStore() || serviceAuditContext("scheduledFileImport");
-    return withAuditContext(ctx,()=>auditedOperation("fileImport",String(configId),()=>this.runImportData(configId),project?.id,project?.name));
+    const lock = await pool.connect(); let locked = false;
+    try {
+      locked = (await lock.query("SELECT pg_try_advisory_lock(hashtext($1)) AS locked", [backupLock])).rows[0].locked;
+      if (!locked) return { success: false, imported: 0, failed: 0, error: "Another file operation or backup is running. Try again shortly." };
+      return await withAuditContext(ctx,()=>auditedOperation("fileImport",String(configId),async () => {
+        const total = { success: true, imported: 0, failed: 0, error: undefined as string | undefined, fileName: undefined as string | undefined };
+        for (let index = 0; index < (config?.source === "sftp" ? 25 : 1); index++) {
+          const result = await this.runImportData(configId, index > 0);
+          total.imported += result.imported; total.failed += result.failed;
+          total.success = total.success && result.success; total.error = result.error;
+          if (result.fileName) total.fileName = result.fileName;
+          if (!result.fileName || !result.success || result.failed) break;
+        }
+        return total;
+      },project?.id,project?.name));
+    } finally {
+      if (locked) await lock.query("SELECT pg_advisory_unlock(hashtext($1))", [backupLock]).catch(() => {});
+      lock.release();
+    }
   }
-  private async runImportData(configId: number): Promise<{
+  private async runImportData(configId: number, suppressEmpty = false): Promise<{
     success: boolean;
     imported: number;
     failed: number;
@@ -157,51 +191,25 @@ class FileImportScheduler {
         return { success: false, imported: 0, failed: 0, error: "Project is inactive - import skipped" };
       }
 
-      const ftpFiles = await getProjectFtpFiles(project.name, project.id);
-      if (ftpFiles.length === 0) {
-        await storage.updateFileImportConfigLastRun(configId, "skipped", "No files in FTP directory", 0, null);
-        return { success: true, imported: 0, failed: 0, error: "No files in FTP directory" };
-      }
-
-      // Filter files by pattern if specified
-      const filePattern = importConfig.processedFilePattern?.trim();
-      let matchingFiles = ftpFiles;
-      
-      if (filePattern && filePattern !== "*") {
-        matchingFiles = ftpFiles.filter(file => 
-          minimatch(file.name, filePattern, { nocase: true })
-        );
-        console.log(`[FileImportScheduler] Pattern "${filePattern}" matched ${matchingFiles.length} of ${ftpFiles.length} files`);
-        
-        if (matchingFiles.length === 0) {
-          await storage.updateFileImportConfigLastRun(configId, "skipped", `No files match pattern: ${filePattern}`, 0, null);
-          return { success: true, imported: 0, failed: 0, error: `No files match pattern: ${filePattern}` };
+      const candidate = await importCandidate(importConfig, project);
+      if (!candidate) {
+        if (!suppressEmpty) {
+          await storage.updateFileImportConfigLastRun(configId, "skipped", "No new matching files to process.", 0, importConfig.lastProcessedFile);
+          const skipped = await storage.createFileImportHistoryEntry(configId, importConfig.processedFilePattern || "*", "skipped", project.id,
+            importConfig.source === "sftp" ? "sftp" : "scheduled_file", auditContext.getStore()?.actorLabel || "system");
+          await storage.updateFileImportHistoryEntry(skipped.id, "skipped", 0, 0, "No new matching files to process.");
         }
+        return { success: true, imported: 0, failed: 0 };
       }
-
-      const sortedFiles = matchingFiles.sort((a, b) => 
-        new Date(b.modifiedAt).getTime() - new Date(a.modifiedAt).getTime()
-      );
-      const latestFile = sortedFiles[0];
-
-      if (importConfig.lastProcessedFile === latestFile.name) {
-        console.log(`[FileImportScheduler] Skipping already processed file: ${latestFile.name}`);
-        return { success: true, imported: 0, failed: 0, error: "No new files to process" };
-      }
-
-      const filePath = await getProjectFtpFilePath(project.name, project.id, latestFile.name);
-      if (!filePath) {
-        await storage.updateFileImportConfigLastRun(configId, "failed", "File not found", 0, null);
-        return { success: false, imported: 0, failed: 0, error: "File not found" };
-      }
+      const latestFile = candidate, filePath = candidate.filePath;
 
       const historyEntry = await storage.createFileImportHistoryEntry(
         configId, 
         latestFile.name, 
         "running",
         importConfig.projectId,
-        "scheduled_file",
-        "system"
+        importConfig.source === "sftp" ? "sftp" : "scheduled_file",
+        auditContext.getStore()?.actorLabel || "system"
       );
 
       // Track the actual filename (might be renamed after processing)
@@ -244,28 +252,17 @@ class FileImportScheduler {
           // CSV parsing
           const delimiter = importConfig.delimiter || ",";
           const hasHeader = importConfig.hasHeader !== false;
-          const text = fileContent.toString("utf-8");
-          const lines = text.split(/\r?\n/).filter(line => line.trim());
+          const workbook = XLSX.read(fileContent, { type: "buffer", raw: true, FS: delimiter });
+          const grid = XLSX.utils.sheet_to_json<string[]>(workbook.Sheets[workbook.SheetNames[0]], { header: 1, raw: false, defval: "" });
           
-          if (lines.length === 0) {
+          if (grid.length === 0) {
             await storage.updateFileImportHistoryEntry(historyEntry.id, "failed", 0, 0, "Empty file");
             await storage.updateFileImportConfigLastRun(configId, "failed", "Empty file", 0, latestFile.name);
             return { success: false, imported: 0, failed: 0, error: "Empty file", fileName: latestFile.name };
           }
 
-          let headers: string[];
-          let dataLines: string[];
-
-          if (hasHeader) {
-            headers = lines[0].split(delimiter).map(h => h.trim().replace(/^"|"$/g, ''));
-            dataLines = lines.slice(1);
-          } else {
-            headers = lines[0].split(delimiter).map((_, i) => `column_${i}`);
-            dataLines = lines;
-          }
-
-          rows = dataLines.map(line => {
-            const values = line.split(delimiter).map(v => v.trim().replace(/^"|"$/g, ''));
+          const headers = hasHeader ? grid[0].map(String) : grid[0].map((_, i) => `column_${i}`);
+          rows = (hasHeader ? grid.slice(1) : grid).map(values => {
             const row: Record<string, any> = {};
             headers.forEach((header, i) => {
               row[header] = values[i] || '';
@@ -289,8 +286,13 @@ class FileImportScheduler {
         const allowedServiceTypeCodes = new Set(projectServiceTypes.map(st => st.code));
         const defaultServiceType = projectServiceTypes.length === 1 ? projectServiceTypes[0].code : null;
         const hasMultipleServiceTypes = projectServiceTypes.length > 1;
+        const services = (await pool.query("SELECT code,is_default FROM public.service_types ORDER BY sort_order,id")).rows;
+        const serviceCodes = new Map<string, string>(services.map(service => [service.code.toLowerCase(), service.code]));
+        // A real, non-interactive principal satisfies legacy actor foreign keys.
+        await pool.query(`INSERT INTO public.users(id,username,role) VALUES(gen_random_uuid()::text,'file_import','user')
+          ON CONFLICT(username) DO NOTHING`);
 
-        for (const row of rows) {
+        for (const [rowNumber, row] of rows.entries()) {
           try {
             const mappedData: Record<string, any> = {};
             // columnMapping is stored as {targetField: sourceCol}
@@ -309,7 +311,8 @@ class FileImportScheduler {
             Object.assign(mappedData, importedVisitScheduling(mappedData));
             // Auto-generate customerWoId if not provided
             if (!mappedData.customerWoId) {
-              mappedData.customerWoId = String(nextAutoId);
+              mappedData.customerWoId = importConfig.source === "sftp" ?
+                await generatedImportId(configId, candidate.hash, rowNumber, `SFTP-${configId}-${candidate.hash.slice(0, 32)}-${rowNumber + 1}`) : String(nextAutoId);
               nextAutoId++;
             }
 
@@ -327,11 +330,13 @@ class FileImportScheduler {
                 mappedData.serviceType = defaultServiceType;
               } else {
                 // No service types configured for project, default to Water
-                mappedData.serviceType = "Water";
+                mappedData.serviceType = (services.find(service => service.is_default) || services[0])?.code;
               }
             } else {
-              // Normalize case: capitalize first letter
-              const normalizedType = rawServiceType.charAt(0).toUpperCase() + rawServiceType.slice(1).toLowerCase();
+              const normalizedType = serviceCodes.get(rawServiceType.toLowerCase());
+              if (!normalizedType) {
+                failed++; errors.push(`Row has an unknown service type: ${rawServiceType.slice(0, 100)}`); continue;
+              }
               
               // Validate against project's configured service types
               if (allowedServiceTypeCodes.size > 0 && !allowedServiceTypeCodes.has(normalizedType)) {
@@ -340,13 +345,7 @@ class FileImportScheduler {
                 continue;
               }
               
-              if (["Water", "Electric", "Gas"].includes(normalizedType)) {
-                mappedData.serviceType = normalizedType;
-              } else if (defaultServiceType) {
-                mappedData.serviceType = defaultServiceType;
-              } else {
-                mappedData.serviceType = "Water";
-              }
+              mappedData.serviceType = normalizedType;
             }
 
             if (!mappedData.customerId || !mappedData.customerName || !mappedData.address) {
@@ -387,9 +386,11 @@ class FileImportScheduler {
 
             // Set default status and createdBy
             mappedData.createdBy = "file_import";
+            mappedData.updatedBy = "file_import";
 
             const existingWo = await workOrderStorage.getWorkOrderByCustomerWoId(mappedData.customerWoId);
             if (existingWo) {
+              delete mappedData.createdBy;
               await workOrderStorage.updateWorkOrder(existingWo.id, mappedData, undefined, true);
             } else {
               // Create clean data with explicit status (must be string, not null)
@@ -416,6 +417,7 @@ class FileImportScheduler {
         }
 
         const status = failed === 0 ? "success" : (imported > 0 ? "partial" : "failed");
+        if (failed === 0) await rememberImport(configId, candidate);
         const duration = Date.now() - startTime;
 
         // Rename processed file with _completed_YYYY-MM-DD suffix if any records were imported
@@ -442,7 +444,8 @@ class FileImportScheduler {
 
         console.log(`[FileImportScheduler] File import "${importConfig.name}" completed: ${message} (${duration}ms)`);
 
-        return { success: true, imported, failed, fileName: latestFile.name };
+        return { success: failed === 0, imported, failed, fileName: latestFile.name,
+          error: failed ? `${failed} rows failed. See import history for details.` : undefined };
       } catch (importError: any) {
         // Use processedFileName (which may have been renamed) to ensure we don't reprocess
         await storage.updateFileImportHistoryEntry(historyEntry.id, "failed", 0, 0, importError.message);
@@ -450,15 +453,22 @@ class FileImportScheduler {
         return { success: false, imported: 0, failed: 0, error: importError.message, fileName: processedFileName };
       }
     } catch (error: any) {
-      console.error(`[FileImportScheduler] Error running file import ${configId}:`, error);
-      return { success: false, imported: 0, failed: 0, error: error.message };
+      const message = error instanceof TransferError ? error.message : "File import failed. Check the source file and directory permissions.";
+      const config = await storage.getFileImportConfig(configId);
+      if (config) {
+        await storage.updateFileImportConfigLastRun(configId, "failed", message, 0, config.lastProcessedFile);
+        const entry = await storage.createFileImportHistoryEntry(configId, config.processedFilePattern || "*", "failed", config.projectId,
+          config.source === "sftp" ? "sftp" : "scheduled_file", auditContext.getStore()?.actorLabel || "system");
+        await storage.updateFileImportHistoryEntry(entry.id, "failed", 0, 0, message);
+      }
+      return { success: false, imported: 0, failed: 0, error: message };
     }
   }
 
   async refreshSchedule(configId: number) {
     const config = await storage.getFileImportConfig(configId);
     if (config && config.isEnabled) {
-      this.scheduleImport({
+      await this.scheduleImport({
         id: config.id,
         name: config.name,
         scheduleFrequency: config.scheduleFrequency,

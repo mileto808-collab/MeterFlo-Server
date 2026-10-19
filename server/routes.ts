@@ -230,6 +230,7 @@ async function initializeAdminUser() {
   }
 }
 
+import { registerFileTransferRoutes } from "./file-transfers/routes";
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -239,6 +240,7 @@ export async function registerRoutes(
   app.use(accessLockMiddleware);
   registerAccessLockRoutes(app);
   registerAuditRoutes(app);
+  registerFileTransferRoutes(app, isAuthenticated);
   await initializeAdminUser();
   await storage.seedDefaultWorkOrderStatuses();
   await initializeWorkOrderSubStatuses();
@@ -4830,6 +4832,8 @@ export async function registerRoutes(
         ...req.body,
         projectId,
       });
+      const { fileImportScheduler } = await import("./fileImportScheduler");
+      await fileImportScheduler.refreshSchedule(config.id);
       
       res.status(201).json(config);
     } catch (error) {
@@ -4855,6 +4859,8 @@ export async function registerRoutes(
       }
       
       const updated = await storage.updateFileImportConfig(parseInt(req.params.id), req.body);
+      const { fileImportScheduler } = await import("./fileImportScheduler");
+      await fileImportScheduler.refreshSchedule(config.id);
       res.json(updated);
     } catch (error) {
       console.error("Error updating file import config:", error);
@@ -4876,6 +4882,8 @@ export async function registerRoutes(
       }
       
       await storage.deleteFileImportConfig(parseInt(req.params.id));
+      const { fileImportScheduler } = await import("./fileImportScheduler");
+      fileImportScheduler.cancelSchedule(config.id);
       res.json({ success: true });
     } catch (error) {
       console.error("Error deleting file import config:", error);
@@ -4948,6 +4956,8 @@ export async function registerRoutes(
         }
       }
       
+      // Keep generated customer IDs stable when deliberately reprocessing a file.
+      await pool.query("DELETE FROM public.file_import_receipts WHERE config_id=$1", [config.id]);
       // Clear the lastProcessedFile to allow reprocessing
       await storage.updateFileImportConfig(parseInt(req.params.id), {
         lastProcessedFile: null,
