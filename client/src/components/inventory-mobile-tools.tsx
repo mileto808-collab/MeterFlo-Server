@@ -21,7 +21,7 @@ export function InventoryMobileTools({ children, label = "Search & Tools", tab }
         type="button"
         variant="outline"
         size="sm"
-        className="inventory-mobile-tools-toggle mb-2 flex h-9 w-full justify-between md:hidden"
+        className="inventory-mobile-tools-toggle mb-2 flex h-9 w-full justify-between"
         aria-expanded={open}
         aria-controls={`inventory-mobile-tools-${tab}`}
         data-testid={`inventory-mobile-tools-${tab}-toggle`}
@@ -38,7 +38,7 @@ export function InventoryMobileTools({ children, label = "Search & Tools", tab }
         id={`inventory-mobile-tools-${tab}`}
         data-testid={`inventory-mobile-tools-${tab}`}
         data-open={open}
-        className={`inventory-mobile-tools-content ${open ? "block" : "hidden"} md:block`}
+        className={`inventory-mobile-tools-content ${open ? "block" : "hidden"}`}
       >
         {children}
       </div>

@@ -479,11 +479,6 @@
     padding-inline: 0.5rem;
   }
 
-  [data-testid$="-subheader"] .inventory-mobile-tools-toggle > span:first-child {
-    gap: 0;
-    font-size: 0;
-  }
-
   [data-testid$="-subheader"] .inventory-mobile-tools-content {
     grid-column: 1 / -1;
     min-width: 0;

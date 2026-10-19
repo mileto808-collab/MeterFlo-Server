@@ -5,6 +5,12 @@ description: User priority for Inventory phone layouts and verification.
 
 Inventory on phones must prioritize visible records across every tab, using a menu icon instead of a wrapping tab menu and collapsed Search & Tools like Work Orders.
 
+Inventory Search & Tools must remain recognizable after rotation, including its text label, and preserve the user's open/closed choice like Work Orders.
+
+**Why:** The user reported disappearing controls in landscape. An accessible name can still pass browser assertions when CSS makes the actual label text invisible.
+
+**How to apply:** Check painted label visibility as well as button visibility and accessibility. Include large phones and tablets beyond the compact-landscape breakpoint, not only narrow phone landscape.
+
 **Why:** The user reported that the previous responsive layout used nearly the whole phone screen for menus and controls, leaving records effectively invisible.
 
 **How to apply:** Keep controls accessible without permanently occupying the records area. Verify initial phone loads and short usable viewport heights with actual record-area measurements and screenshots, not only the pager position.
