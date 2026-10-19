@@ -1,6 +1,5 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { queryClient } from "@/lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
 
 interface ProjectEvent {
   type: "workorder_created" | "workorder_updated" | "workorder_deleted" | "file_added" | "file_deleted";
@@ -17,7 +16,7 @@ interface UseProjectEventsOptions {
 export function useProjectEvents(projectId: number | null, options?: UseProjectEventsOptions) {
   const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const { toast } = useToast();
+  const [status, setStatus] = useState<"connecting" | "live" | "reconnecting">("connecting");
 
   const invalidateProjectQueries = useCallback((event: ProjectEvent) => {
     if (!event.projectId) return;
@@ -72,19 +71,27 @@ export function useProjectEvents(projectId: number | null, options?: UseProjectE
   const connect = useCallback(() => {
     if (!projectId) return;
 
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
     }
 
+    setStatus(current => current === "connecting" ? "connecting" : "reconnecting");
     const eventSource = new EventSource(`/api/projects/${projectId}/events`, {
       withCredentials: true,
     });
 
     eventSource.onopen = () => {
+      if (eventSourceRef.current !== eventSource) return;
+      setStatus("live");
       console.log(`SSE connected for project ${projectId}`);
     };
 
     eventSource.onmessage = (event) => {
+      if (eventSourceRef.current !== eventSource) return;
       try {
         const data: ProjectEvent = JSON.parse(event.data);
         invalidateProjectQueries(data);
@@ -94,8 +101,11 @@ export function useProjectEvents(projectId: number | null, options?: UseProjectE
     };
 
     eventSource.onerror = (error) => {
+      if (eventSourceRef.current !== eventSource) return;
+      setStatus("reconnecting");
       console.error("SSE connection error:", error);
       eventSource.close();
+      eventSourceRef.current = null;
       
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
@@ -109,6 +119,7 @@ export function useProjectEvents(projectId: number | null, options?: UseProjectE
   }, [projectId, invalidateProjectQueries]);
 
   useEffect(() => {
+    setStatus("connecting");
     connect();
 
     return () => {
@@ -123,7 +134,7 @@ export function useProjectEvents(projectId: number | null, options?: UseProjectE
     };
   }, [connect]);
 
-  return null;
+  return { status };
 }
 
 export function useGlobalEvents() {

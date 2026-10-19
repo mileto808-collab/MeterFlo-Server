@@ -8,6 +8,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useInventoryEvents } from "@/hooks/useInventoryEvents";
+import { inventoryTabs, InventoryMobileMenu, InventoryDesktopTabs } from "@/components/inventory-navigation";
 import { useUnsavedNavigation } from "@/hooks/use-unsaved-navigation";
 import { usePageHeader } from "@/contexts/page-header-context";
 import { countStockMatches, countStockScopeMatches } from "@shared/inventory-count-stock";
@@ -78,18 +79,6 @@ const blankVendor = (): Vendor => ({ id: "", name: "", contact: "", address: "",
 const blankItem = (): InventoryItem => ({ id: "", sku: "", name: "", description: "", category: "", categoryId: null, unit: "each", tracking: "regular", equipment: "none", barcode: "", manufacturer: "", model: "", vendorId: null, cost: 0, reorderPoint: 0, active: true, images: [], components: [] });
 const freshId = () => crypto.randomUUID();
 const csv = (value: string) => value.split(/[\n,;]/).map(part => part.trim()).filter(Boolean);
-const inventoryTabs = [
-  { value: "stock", label: "Stock & search" },
-  { value: "locations", label: "Locations" },
-  { value: "items", label: "Items" },
-  { value: "categories", label: "Categories" },
-  { value: "vendors", label: "Vendors" },
-  { value: "orders", label: "Orders" },
-  { value: "exceptions", label: "Shipment exceptions" },
-  { value: "counts", label: "Cycle counts" },
-  { value: "returns", label: "Removed Equipment" },
-  { value: "activity", label: "Activity" },
-];
 function savedInventoryTab(key: string) {
   try {
     const saved = window.sessionStorage.getItem(key);
@@ -1366,6 +1355,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     <Tabs value={inventoryTab} onValueChange={value => requestCountTransition(() => requestOrderTransition(() => requestResourceTransition(() => requestMovementTransition(() => requestKitTransition(() => setInventoryTab(value))))))} className="flex min-h-0 flex-1 flex-col gap-1.5 sm:gap-3 [&>[role=tabpanel]]:mt-0 md:[&>[role=tabpanel]]:mt-2">
       <div className="inventory-sticky-header relative z-10 shrink-0 space-y-2 border-b bg-background pb-2 sm:space-y-3 sm:pb-3" data-testid="inventory-sticky-header">
         <div className="flex min-w-0 items-center justify-between gap-2 sm:items-center">
+          <InventoryMobileMenu value={inventoryTab} onValueChange={setInventoryTab} canManageCategories={can("inventory.maintain")} />
           <div className="inventory-desktop-heading hidden min-w-0 md:block">
             <p className="mb-0.5 hidden text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground sm:block">Project operations</p>
             <h1 className="text-xl font-semibold tracking-tight sm:text-3xl">Inventory</h1>
@@ -1415,34 +1405,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
           <Metric label="Open orders" value={summary?.orders ?? orderItems.filter(order => ["draft", "released", "partial"].includes(order.status)).length} detail="Purchases and transfers" icon={<ArrowLeftRight className="h-4 w-4" />} />
           <Metric label="Open counts" value={summary?.counts ?? state.counts.filter(count => count.status === "open").length} detail={summary ? "Snapshots awaiting a post" : `Ledger revision ${state.revision}`} icon={<ClipboardList className="h-4 w-4" />} />
         </div>
-        <div className="inventory-mobile-menu !mt-0 absolute left-0 right-12 top-0 md:hidden">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" variant="outline" className="h-9 w-full justify-between" aria-label={`Inventory sections, current: ${inventoryTabs.find(tab => tab.value === inventoryTab)?.label ?? "Stock & search"}`} data-testid="inventory-mobile-menu">
-                <span className="flex min-w-0 items-center gap-2"><Menu className="h-4 w-4 shrink-0" /><span className="truncate">{inventoryTabs.find(tab => tab.value === inventoryTab)?.label ?? "Stock & search"}</span></span>
-                <ChevronDown className="h-4 w-4 shrink-0" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="max-h-[min(70dvh,30rem)] w-[var(--radix-dropdown-menu-trigger-width)] overflow-y-auto">
-              {can("inventory.maintain") && <DropdownMenuItem onSelect={() => setInventoryTab("categories")}>Manage categories</DropdownMenuItem>}
-              {inventoryTabs.map(tab => <DropdownMenuItem key={tab.value} aria-label={tab.label} data-testid={`inventory-mobile-menu-item-${tab.value}`} onSelect={() => setInventoryTab(tab.value)}>
-                {tab.label}
-              </DropdownMenuItem>)}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-        <TabsList className="inventory-desktop-tabs hidden h-auto w-full flex-wrap justify-start gap-1 md:flex">
-          <TabsTrigger value="stock">Stock &amp; search</TabsTrigger>
-          <TabsTrigger value="locations">Locations</TabsTrigger>
-          <TabsTrigger value="items">Items</TabsTrigger>
-          <TabsTrigger value="categories">Categories</TabsTrigger>
-          <TabsTrigger value="vendors">Vendors</TabsTrigger>
-          <TabsTrigger value="orders">Orders</TabsTrigger>
-          <TabsTrigger value="exceptions">Shipment exceptions</TabsTrigger>
-          <TabsTrigger value="counts">Cycle counts</TabsTrigger>
-          <TabsTrigger value="returns">Removed Equipment</TabsTrigger>
-          <TabsTrigger value="activity">Activity</TabsTrigger>
-        </TabsList>
+        <InventoryDesktopTabs />
       </div>
 
     {/* Preserve the existing navigation policy, but let these toolbar surfaces

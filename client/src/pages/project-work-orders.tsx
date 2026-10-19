@@ -45,6 +45,7 @@ import { useTimezone } from "@/hooks/use-timezone";
 import { WorkOrderPlanningFields } from "@/components/work-order-routing/work-order-planning-fields";
 import { formatDateTimeInTimezone, formatForExport, formatInTimezone } from "@/lib/timezone";
 import { useProjectEvents } from "@/hooks/useProjectEvents";
+import { WorkOrderToolsToggle } from "@/components/work-order-tools-toggle";
 import { useHidScanner } from "@/hooks/useHidScanner";
 import { usePageHeader } from "@/contexts/page-header-context";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -185,7 +186,7 @@ export default function ProjectWorkOrders() {
     }
   }, [projectId]);
   
-  useProjectEvents(projectId, { onWorkOrderUpdated: handleWorkOrderUpdated });
+  const projectEvents = useProjectEvents(projectId, { onWorkOrderUpdated: handleWorkOrderUpdated });
   
   const { user } = useAuth();
   const { hasPermission } = usePermissions();
@@ -3824,20 +3825,9 @@ export default function ProjectWorkOrders() {
 
       {/* Search and Tools - collapsible on both desktop and mobile */}
       <>
-        {/* Toggle for search/tools - visible on all screen sizes */}
-        <Button
-          variant="outline"
-          size="sm"
-          className="flex-shrink-0 w-full justify-between"
-          onClick={() => setShowMobileTools(!showMobileTools)}
-          data-testid="button-toggle-mobile-tools"
-        >
-          <span className="flex items-center gap-2">
-            <Settings2 className="h-4 w-4" />
-            {showMobileTools ? "Hide Search & Tools" : "Show Search & Tools"}
-          </span>
-          {showMobileTools ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-        </Button>
+        {/* Keep connection status beside the tools toggle on every screen size. */}
+        <WorkOrderToolsToggle open={showMobileTools} onToggle={() => setShowMobileTools(value => !value)}
+          status={projectEvents.status} />
         {/* Search/Tools card - collapsible on all screen sizes */}
         {showMobileTools && (
         <Card className="flex-shrink-0">
