@@ -54,14 +54,18 @@ const server = http.createServer((req, res) => {
         fs.mkdirSync("generated-artifacts/projects-ui", { recursive: true });
         await page.screenshot({ path: "generated-artifacts/projects-ui/desktop.png" });
         await row.click({ position: { x: 12, y: 10 } });
-        await expect(page.getByTestId("project-details-dialog")).toBeVisible();
-        await page.keyboard.press("Escape");
-        await expect(page.getByTestId("project-details-dialog")).toHaveCount(0);
+        await expect(page).toHaveURL(/\/projects\/3\/edit$/);
+        await expect(page.getByTestId("input-name")).toHaveValue("Electric Demo");
+        await page.goto("/projects");
         await row.focus(); await page.keyboard.press("Enter");
-        await expect(page.getByTestId("project-details-dialog")).toBeVisible();
-        await page.keyboard.press("Escape");
+        await expect(page).toHaveURL(/\/projects\/3\/edit$/);
+        await page.goto("/projects");
+        await row.focus(); await page.keyboard.press("Space");
+        await expect(page).toHaveURL(/\/projects\/3\/edit$/);
+        await page.goto("/projects");
         await page.getByTestId("button-delete-3").click();
-        await expect(page.getByTestId("project-details-dialog")).toHaveCount(0);
+        await expect(page).toHaveURL(/\/projects$/);
+        await expect(page.getByRole("alertdialog")).toBeVisible();
         await page.getByRole("button", { name: "Cancel", exact: true }).click();
         await page.getByTestId("button-edit-3").click();
         await expect(page).toHaveURL(/\/projects\/3\/edit$/);
@@ -93,6 +97,9 @@ const server = http.createServer((req, res) => {
         assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
         fs.mkdirSync("generated-artifacts/projects-ui", { recursive: true });
         await page.screenshot({ path: "generated-artifacts/projects-ui/phone.png" });
+        await page.getByTestId("row-project-3").click({ position: { x: 12, y: 10 } });
+        await expect(page).toHaveURL(/\/projects\/3\/edit$/);
+        await expect(page.getByTestId("input-name")).toHaveValue("Electric Demo");
       }
       assert.deepEqual(errors, []);
       console.log(`PASS: ${delegated ? "delegated logs-only integrations access" : "clickable rows, isolated actions, embedded push/pull, independent saves, retained project draft, phone width"}`);

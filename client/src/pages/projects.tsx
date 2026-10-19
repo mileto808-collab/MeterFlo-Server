@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,7 +13,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
@@ -61,7 +60,7 @@ export default function Projects() {
   ));
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<number | null>(null);
-  const [detailsProject, setDetailsProject] = useState<Project | null>(null);
+  const [, navigate] = useLocation();
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(1);
   const [workspaceElement, setWorkspaceElement] = useState<HTMLElement | null>(null);
@@ -458,21 +457,20 @@ export default function Projects() {
                 className="grid h-[62px] cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 border-b px-2.5 last:border-b-0 hover-elevate focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:h-10 sm:grid-cols-[52px_minmax(0,1.15fr)_minmax(0,1.3fr)_minmax(0,1fr)_76px_auto] sm:gap-3 sm:px-3"
                 data-testid={`row-project-${project.id}`}
                 data-project-row
-                role="button"
+                role="link"
                 tabIndex={0}
                 aria-label={`View details for ${project.name}`}
-                aria-haspopup="dialog"
                 onClick={event => {
                   const target = event.target as HTMLElement;
                   const control = target.closest('button, a, [role="button"], [role="menuitem"]');
                   if (control && control !== event.currentTarget) return;
-                  setDetailsProject(project);
+                  navigate(`/projects/${project.id}/edit`);
                 }}
                 onKeyDown={event => {
                   if (event.target !== event.currentTarget) return;
                   if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
-                    setDetailsProject(project);
+                    navigate(`/projects/${project.id}/edit`);
                   }
                 }}
               >
@@ -481,9 +479,8 @@ export default function Projects() {
                     <Button
                       className="h-6 min-w-0 justify-start truncate px-0 text-sm font-medium"
                       variant="ghost"
-                      onClick={() => setDetailsProject(project)}
+                      onClick={() => navigate(`/projects/${project.id}/edit`)}
                       aria-label={`Project details for ${project.name}`}
-                      aria-haspopup="dialog"
                       data-testid={`button-project-details-${project.id}`}
                     ><span className="truncate">{project.name}</span></Button>
                     {project.isActive === false && <Badge variant="secondary" className="h-5 shrink-0 px-1.5 text-[10px]">Inactive</Badge>}
@@ -496,9 +493,8 @@ export default function Projects() {
                 <Button
                   className="hidden h-7 min-w-0 justify-start truncate px-0 text-sm font-medium sm:flex"
                   variant="ghost"
-                  onClick={() => setDetailsProject(project)}
+                  onClick={() => navigate(`/projects/${project.id}/edit`)}
                   aria-label={`Project details for ${project.name}`}
-                  aria-haspopup="dialog"
                   data-testid={`button-project-details-${project.id}`}
                 ><span className="min-w-0 truncate">{project.name}</span>{project.isActive === false ? <Badge variant="secondary" className="ml-2 shrink-0 px-1.5 text-[10px]">Inactive</Badge> : null}</Button>
                 <p className="hidden min-w-0 truncate text-xs text-muted-foreground sm:block" title={project.description || ""}>{project.description || "—"}</p>
@@ -586,25 +582,6 @@ export default function Projects() {
           data-testid="button-projects-next"
         >Next</Button>
       </nav>
-
-      <Dialog open={!!detailsProject} onOpenChange={open => { if (!open) setDetailsProject(null); }}>
-        <DialogContent className="max-h-[85dvh] overflow-y-auto sm:max-w-lg" data-testid="project-details-dialog">
-          <DialogHeader>
-            <DialogTitle>{detailsProject?.name}</DialogTitle>
-            <DialogDescription>Project #{detailsProject?.id} · {detailsProject?.isActive === false ? "Inactive" : "Active"}</DialogDescription>
-          </DialogHeader>
-          {detailsProject && (
-            <dl className="grid gap-3 text-sm">
-              <div><dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Description</dt>
-                <dd className="mt-1 whitespace-pre-wrap break-words">{detailsProject.description || "No description provided."}</dd></div>
-              <div><dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Customer email</dt>
-                <dd className="mt-1 break-all">{detailsProject.customerEmail || "Not provided"}</dd></div>
-              <div><dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Created</dt>
-                <dd className="mt-1">{detailsProject.createdAt ? formatDate(detailsProject.createdAt) : "Date unavailable"}</dd></div>
-            </dl>
-          )}
-        </DialogContent>
-      </Dialog>
 
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
