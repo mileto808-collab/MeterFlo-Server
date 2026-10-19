@@ -9,6 +9,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { useInventoryEvents } from "@/hooks/useInventoryEvents";
 import { inventoryTabs, InventoryMobileMenu, InventoryDesktopTabs } from "@/components/inventory-navigation";
+import { StartInventoryButton } from "@/components/start-inventory-button";
 import { useUnsavedNavigation } from "@/hooks/use-unsaved-navigation";
 import { usePageHeader } from "@/contexts/page-header-context";
 import { countStockMatches, countStockScopeMatches } from "@shared/inventory-count-stock";
@@ -1354,6 +1355,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
     >
     <Tabs value={inventoryTab} onValueChange={value => requestCountTransition(() => requestOrderTransition(() => requestResourceTransition(() => requestMovementTransition(() => requestKitTransition(() => setInventoryTab(value))))))} className="flex min-h-0 flex-1 flex-col gap-1.5 sm:gap-3 [&>[role=tabpanel]]:mt-0 md:[&>[role=tabpanel]]:mt-2">
       <div className="inventory-sticky-header relative z-10 shrink-0 space-y-2 border-b bg-background pb-2 sm:space-y-3 sm:pb-3" data-testid="inventory-sticky-header">
+        <StartInventoryButton mobile />
         <div className="flex min-w-0 items-center justify-between gap-2 sm:items-center">
           <InventoryMobileMenu value={inventoryTab} onValueChange={setInventoryTab} canManageCategories={can("inventory.maintain")} />
           <div className="inventory-desktop-heading hidden min-w-0 md:block">
@@ -1362,6 +1364,7 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
             <p className="mt-1 hidden text-sm text-muted-foreground sm:block">Know what’s on hand, where it lives, and which serial leaves with each crew.</p>
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1 sm:flex-wrap sm:gap-2">
+            <StartInventoryButton />
             <span
               data-testid="inventory-live-indicator"
               aria-live="polite"

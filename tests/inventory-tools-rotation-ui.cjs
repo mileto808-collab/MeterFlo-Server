@@ -20,6 +20,7 @@ const { chromium, expect } = require("@playwright/test");
       import { InventoryMobileTools } from "./client/src/components/inventory-mobile-tools";
       import { InventoryMobileMenu, InventoryDesktopTabs } from "./client/src/components/inventory-navigation";
       import { WorkOrderToolsToggle } from "./client/src/components/work-order-tools-toggle";
+      import { StartInventoryButton } from "./client/src/components/start-inventory-button";
       import { Tabs } from "./client/src/components/ui/tabs";
       import { useProjectEvents } from "./client/src/hooks/useProjectEvents";
       import { queryClient } from "./client/src/lib/queryClient";
@@ -41,10 +42,12 @@ const { chromium, expect } = require("@playwright/test");
         <WorkOrderToolsToggle open={open} onToggle={() => setOpen(value => !value)} status={events.status} />
         <Tabs value={value} onValueChange={setValue}>
           <header className="inventory-sticky-header relative space-y-2">
+            <StartInventoryButton mobile />
             <div className="flex min-w-0 items-center justify-between gap-2">
               <InventoryMobileMenu value={value} onValueChange={setValue} canManageCategories={true} />
               <div className="inventory-desktop-heading hidden md:block">Inventory</div>
               <div className="ml-auto flex shrink-0 items-center gap-2">
+                <StartInventoryButton />
                 <span data-testid="fixture-inventory-live" className="rounded border px-2">Live</span>
                 <button data-testid="button-toggle-inventory-stats" className="h-9 rounded border px-2"><svg width="16" height="16" /><span>Show Stats</span></button>
               </div>
@@ -120,6 +123,17 @@ const { chromium, expect } = require("@playwright/test");
           await expect(live).toHaveAttribute("data-status", "live");
         }
         const sourceCount = await page.evaluate(() => window.eventSources.length);
+        const startInventory = page.getByRole("button", { name: "Start Inventory", exact: true });
+        await expect(startInventory).toHaveCount(1);
+        await expect(startInventory).toBeVisible();
+        await expect(startInventory).toBeDisabled();
+        await expect(startInventory).toHaveAttribute("type", "button");
+        await expect(startInventory).toHaveAttribute("data-testid",
+          `button-start-inventory-${device.hasTouch ? "mobile" : "desktop"}`);
+        if (device.hasTouch) {
+          const startBounds = await startInventory.boundingBox();
+          assert.ok(Math.abs(startBounds.width - (device.portrait.width - 32)) < 2, "Mobile Start Inventory fills the available row");
+        }
         const workOrderToggle = page.getByTestId("button-toggle-mobile-tools");
         await workOrderToggle.click();
         await expect(workOrderToggle).toHaveAttribute("aria-expanded", "true");
@@ -133,6 +147,14 @@ const { chromium, expect } = require("@playwright/test");
         await toggle.click();
         await expect(tools).toBeHidden();
         await page.setViewportSize(device.landscape);
+        await expect(startInventory).toHaveCount(1);
+        await expect(startInventory).toBeVisible();
+        await expect(startInventory).toHaveAttribute("data-testid",
+          `button-start-inventory-${device.hasTouch ? "mobile" : "desktop"}`);
+        assert.ok(await startInventory.evaluate(element => {
+          const bounds = element.getBoundingClientRect();
+          return bounds.left >= 0 && bounds.right <= innerWidth;
+        }), "Start Inventory stays inside the viewport after rotation");
         const menu = page.getByTestId("inventory-mobile-menu");
         const desktopTabs = page.locator(".inventory-desktop-tabs");
         if (device.hasTouch) {
@@ -186,7 +208,7 @@ const { chromium, expect } = require("@playwright/test");
         }
       }
       assert.deepEqual(errors, []);
-      console.log(`PASS ${device.name}: compact touch navigation, preserved tools/search, and correctly placed live/SSE connection states through rotation`);
+      console.log(`PASS ${device.name}: responsive Start Inventory placeholder, compact touch navigation, preserved tools/search, and correctly placed live/SSE connection states through rotation`);
       await context.close();
     }
   } finally {

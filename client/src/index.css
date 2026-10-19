@@ -386,6 +386,14 @@
   .inventory-mobile-menu {
     display: block !important;
   }
+
+  .inventory-start-mobile {
+    display: flex !important;
+  }
+
+  .inventory-start-desktop {
+    display: none !important;
+  }
 }
 
 /*
