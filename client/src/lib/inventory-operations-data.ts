@@ -6,9 +6,11 @@ import { holdStatus, remainingHold } from "@shared/inventory-shipment-model";
 import { locationTypeFor, locationTypeLabel } from "@shared/inventory-location-types";
 import { orderDate } from "@shared/inventory-order-search";
 import { inventoryWorkOrderLabel, type InventoryWorkOrderLabels } from "@shared/inventory-work-order-labels";
+import { removalConfig } from "@shared/inventory-removal-policy";
+import { removalDispositionDisplay, warehouseRemovalDecision, removalFilterKey, removalActivityIndex, removalActivityDisplay } from "@shared/inventory-removal-display";
 
 export type OperationsKind = "locations" | "exceptions" | "returns" | "activity" | "categories" | "counts";
-export type OperationsRow = { id: string; search: string; cells: Record<string, string | number>; facets: Record<string, string>; timestamps?: string[] };
+export type OperationsRow = { id: string; search: string; cells: Record<string, string | number>; facets: Record<string, string>; facetValues?: Record<string, string[]>; timestamps?: string[] };
 export type OperationsDataset = {
   rows: OperationsRow[];
   columns: { key: string; label: string }[];
@@ -34,6 +36,13 @@ export function buildOperationsDataset(
   const items = new Map(state.items.map(i => [i.id, i]));
   const orders = new Map(state.orders.map(o => [o.id, o]));
   const people = [...actors, ...users];
+  const dispositionOptions = { fieldDisposition: new Map<string, string>(), warehouseDisposition: new Map<string, string>() };
+  for (const rule of removalConfig(state).rules) dispositionOptions[rule.stage === "field" ? "fieldDisposition" : "warehouseDisposition"]
+    .set(removalFilterKey(rule.id, rule.outcome), `${rule.name}${rule.active ? "" : " (inactive)"}`);
+  const rememberDisposition = (key: keyof typeof dispositionOptions, display: { key: string; label: string }) => {
+    if (!dispositionOptions[key].has(display.key)) dispositionOptions[key].set(display.key, display.label);
+    return display;
+  };
   const locationName = (id: string | null) => id ? locations.get(id)?.name ?? "Unavailable location" : "Not recorded";
   const orderName = (id: string) => {
     const order = orders.get(id);
@@ -140,19 +149,30 @@ export function buildOperationsDataset(
     sorts = [{ key: "occurredAt:desc", label: "Newest first" }, { key: "occurredAt:asc", label: "Oldest first" },
       { key: "item:asc", label: "Item · A–Z" }, { key: "held:desc", label: "Most units held" }];
   } else if (kind === "returns") {
-    rows = state.returns.map(r => textSearch({ id: r.id, cells: {
+    rows = state.returns.map(r => {
+      const field = rememberDisposition("fieldDisposition", removalDispositionDisplay(state, r, "field"));
+      const decision = warehouseRemovalDecision(r);
+      const warehouse = decision ? rememberDisposition("warehouseDisposition", removalDispositionDisplay(state, decision, "warehouse")) : undefined;
+      return textSearch({ id: r.id, cells: {
       equipment: r.equipment === "system" ? "System" : "Module", serial: r.serial, status: r.status,
-      workOrder: inventoryWorkOrderLabel(r.workOrderId, workOrderLabels), location: locationName(r.warehouseId), disposition: r.ruleName ?? r.disposition,
+      workOrder: inventoryWorkOrderLabel(r.workOrderId, workOrderLabels), location: locationName(r.warehouseId), fieldDisposition: field.label,
+      warehouseDisposition: warehouse?.label ?? (r.disposition === "returned" ? "No warehouse decision recorded" : "Not applicable"),
       sku: r.itemId ? items.get(r.itemId)?.sku ?? "Unavailable item" : "", item: r.itemId ? items.get(r.itemId)?.name ?? "Unavailable item" : "",
-    }, facets: { equipment: r.equipment, status: r.status, warehouse: r.warehouseId ?? "none", disposition: r.disposition },
-    timestamps: (r.history ?? []).map(event => event.occurredAt) }));
+    }, facets: { equipment: r.equipment, status: r.status, warehouse: r.warehouseId ?? "none",
+      fieldDisposition: field.key, warehouseDisposition: warehouse?.key ?? "none" },
+    timestamps: (r.history ?? []).map(event => event.occurredAt) });
+    });
     cols = columns([["equipment", "Equipment"], ["serial", "Serial"], ["status", "Status"], ["workOrder", "Work order"],
-      ["location", "Return location"], ["disposition", "Disposition"], ["sku", "SKU"], ["item", "Released item"]]);
-    filterKeys = [["equipment", "Equipment"], ["status", "Status"], ["warehouse", "Return location"], ["disposition", "Disposition"]];
+      ["location", "Return location"], ["fieldDisposition", "Field disposition"], ["warehouseDisposition", "Warehouse decision"], ["sku", "SKU"], ["item", "Released item"]]);
+    filterKeys = [["equipment", "Equipment"], ["status", "Status"], ["warehouse", "Return location"], ["fieldDisposition", "Field disposition"], ["warehouseDisposition", "Warehouse decision"]];
     sorts = [{ key: "workOrder:desc", label: "Work order · highest first" }, { key: "workOrder:asc", label: "Work order · lowest first" },
       { key: "serial:asc", label: "Serial · A–Z" }, { key: "status:asc", label: "Status · A–Z" }];
   } else {
+    const removalEvents = removalActivityIndex(state);
     rows = state.receipts.map((r, index) => {
+      const removal = removalActivityDisplay(state, removalEvents.get(r.id) ?? []);
+      removal.fields.forEach(display => rememberDisposition("fieldDisposition", display));
+      removal.decisions.forEach(display => rememberDisposition("warehouseDisposition", display));
       const order = orders.get(r.reference);
       const returned = state.returns.find(value => value.id === r.reference);
       const item = items.get(r.reference);
@@ -175,7 +195,10 @@ export function buildOperationsDataset(
           r.kitHoldId ? inventoryReceiptLabel(state.receipts, state.kitHolds?.find(h => h.id === r.kitHoldId)?.assemblyId ?? "") : "",
         inspectionSerials: r.kitInspection?.serials.join("; ") ?? "",
         reason: r.reason ?? "", resolution: r.resolution ?? "", externalReference: r.externalReference ?? "",
-      }, facets: { action: r.action, warehouse: r.warehouseId ?? "none", actor: r.actor } },
+        fieldDisposition: removal.fieldLabel, warehouseDisposition: removal.decisionLabel, custodyEvent: removal.custodyLabel,
+      }, facets: { action: r.action, warehouse: r.warehouseId ?? "none", actor: r.actor },
+      facetValues: { fieldDisposition: removal.fields.length ? removal.fields.map(field => field.key) : ["none"],
+        warehouseDisposition: removal.decisions.length ? removal.decisions.map(decision => decision.key) : ["none"] } },
       [r.reference, r.id, ...r.lines.flatMap(l => [items.get(l.itemId)?.sku, ...l.serials]),
         ...(r.components ?? []).flatMap(l => [items.get(l.itemId)?.sku, ...l.serials]), ...(r.kitInspection?.serials ?? []),
         ...(r.kitConversion?.recovered ?? []).flatMap(l => [items.get(l.itemId)?.sku, l.reason, ...l.damagedSerials, ...l.missingSerials])]);
@@ -185,7 +208,8 @@ export function buildOperationsDataset(
       ["damaged", "Damaged quantity"], ["reason", "Reason"], ["resolution", "Resolution"], ["externalReference", "External reference"]]);
     cols.push(...columns([["componentsOut", "Components consumed"], ["componentsIn", "Usable components returned"],
       ["missingComponents", "Missing components"], ["sourceAssembly", "Original assembly"], ["inspectionSerials", "Inspection serials"]]));
-    filterKeys = [["action", "Action"], ["warehouse", "Location"], ["actor", "User"]];
+    cols.push(...columns([["fieldDisposition", "Field disposition"], ["warehouseDisposition", "Warehouse decision"], ["custodyEvent", "Custody event"]]));
+    filterKeys = [["action", "Action"], ["warehouse", "Location"], ["actor", "User"], ["fieldDisposition", "Field disposition"], ["warehouseDisposition", "Warehouse decision"]];
     sorts = [{ key: "sequence:desc", label: "Newest first" }, { key: "sequence:asc", label: "Oldest first" },
       { key: "action:asc", label: "Action · A–Z" }];
   }
@@ -194,8 +218,12 @@ export function buildOperationsDataset(
     columns: cols, sorts, defaultSort: sorts[0].key,
     dateFilterLabel: ({ returns: "Custody or decision activity", counts: "Count activity", exceptions: "Arrival recorded", activity: "Movement recorded" } as Partial<Record<OperationsKind, string>>)[kind],
     filters: filterKeys.map(([key, label]) => ({
-      key, label, options: [...new Set(rows.map(r => r.facets[key]))].map(value => ({
+      key, label, options: [...new Set([
+        ...(key === "fieldDisposition" || key === "warehouseDisposition" ? dispositionOptions[key].keys() : []),
+        ...rows.flatMap(r => r.facetValues?.[key] ?? [r.facets[key]]),
+      ])].map(value => ({
         value, label: key === "warehouse" ? locationName(value === "none" ? null : value) :
+          key === "fieldDisposition" || key === "warehouseDisposition" ? dispositionOptions[key].get(value) ?? `No ${key === "fieldDisposition" ? "field disposition" : "warehouse decision"} recorded` :
           key === "actor" ? inventoryActorLabel(value, people) :
           key === "type" ? locationTypes.get(value)?.name ?? (value === "physical" ? "Warehouse" : value === "vehicle" ? "Vehicle" : value) : value,
       })).sort((a, b) => a.label.localeCompare(b.label)),
@@ -209,7 +237,8 @@ export function filterOperationsRows(dataset: OperationsDataset, query: string, 
   const [key, direction] = sort.split(":");
   if (dataset.dateFilterLabel && dates?.from && dates.to && dates.from > dates.to) return [];
   return dataset.rows.filter(row => (!needle || row.search.includes(needle)) &&
-    Object.entries(selected).every(([facet, value]) => !value || value === "all" || row.facets[facet] === value) &&
+    Object.entries(selected).every(([facet, value]) => !value || value === "all" ||
+      (row.facetValues?.[facet] ?? [row.facets[facet]]).includes(value)) &&
     (!dataset.dateFilterLabel || !dates || !dates.from && !dates.to || (row.timestamps ?? []).some(timestamp => {
       const day = orderDate(timestamp, dates.timezone);
       return !!day && (!dates.from || day >= dates.from) && (!dates.to || day <= dates.to);

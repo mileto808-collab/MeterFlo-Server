@@ -119,7 +119,9 @@ export function InventoryRecordsWorkspace({ kind, title, description, dataset, p
   return <section className="flex min-h-0 flex-1 flex-col" aria-label={title}>
     <Dialog open={filtersOpen} onOpenChange={setFiltersOpen}>
       <DialogContent className="max-h-[90dvh] overflow-y-auto sm:max-w-xl">
-        <DialogHeader><DialogTitle>Filter {nouns[kind]}</DialogTitle><DialogDescription>Refine the matching records. Exports include every result, not only this page.</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>Filter {nouns[kind]}</DialogTitle><DialogDescription>Refine the matching records. Exports include every result, not only this page.
+          {(kind === "returns" || kind === "activity") && " Disposition filters use current project names; history keeps the names recorded at the time."}
+        </DialogDescription></DialogHeader>
         <div className="grid gap-4 sm:grid-cols-2">
           {dataset.filters.map(filter => <div className="space-y-2" key={filter.key}>
             <Label htmlFor={`operations-${kind}-${filter.key}`}>{filter.label}</Label>

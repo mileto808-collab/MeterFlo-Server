@@ -9,6 +9,12 @@ Manage equipment-removal business rules per project within Inventory. Custom dis
 
 **How to apply:** Use the same rules across work-order details, wizards, server completion, and the mobile API. Preserve historical removal decisions rather than reinterpreting them when a custom rule changes. Reading-only work never consumes inventory; project workflow and equipment scope govern available controls.
 
+Disposition names must be project-defined and consistent across choices, filters, current entries, Activity, and printing. Distinguish field dispositions from warehouse decisions; physical outcome keys are not substitutes for configured names.
+
+**Why:** The user identified a filter displaying `returned` while the wizard and warehouse screens showed project-defined names, and approved using the existing per-project removal rules consistently.
+
+**How to apply:** Filter by rule identity and physical outcome, not display text or outcome alone, so two custom rules with the same result stay distinct. Current entry details follow renamed project labels; history and event receipts preserve recorded names and say so. Match Activity to the exact operation, never a later decision on the same equipment. Quarantine acceptance is a custody step, not a configurable final disposition.
+
 The work-order Inventory section must be its own collapsible card immediately after System/Module Details, named “Inventory,” not nested inside equipment details.
 
 **Why:** The user explicitly changed this placement and name.

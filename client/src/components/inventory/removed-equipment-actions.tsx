@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { inventoryDateTime } from "@shared/inventory-date-time";
 import type { EquipmentReturn, InventoryState } from "@shared/inventory";
 import { removalChoices } from "@shared/inventory-removal-policy";
+import { removalHistoryLabel } from "@shared/inventory-removal-display";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -33,11 +34,11 @@ export function RemovedEquipmentActions({ record, state, canReceive, canDecide, 
   };
   const style = "h-10 w-full rounded-md border bg-background px-3 text-sm";
   return <div className="w-full space-y-2 sm:max-w-md">
-    {!!record.history?.length && <details className="text-xs"><summary className="cursor-pointer">Custody & decision history</summary><ul className="space-y-1 py-2">{record.history.map(h => <li key={h.operationId} className="break-words">{h.ruleName ?? h.outcome} · {h.reason} · <time dateTime={h.occurredAt}>{inventoryDateTime(h.occurredAt, timezone)}</time> · {actorLabel(h.actor)}</li>)}</ul></details>}
+    {!!record.history?.length && <details className="text-xs"><summary className="cursor-pointer">Custody & decision history</summary><ul className="space-y-1 py-2">{record.history.map(h => <li key={h.operationId} className="break-words">{removalHistoryLabel(state, record, h)} · {h.reason} · <time dateTime={h.occurredAt}>{inventoryDateTime(h.occurredAt, timezone)}</time> · {actorLabel(h.actor)}</li>)}</ul></details>}
     {record.disposition === "returned" && record.status === "pending" && canReceive && <Button type="button" size="sm" disabled={busy} onClick={() => void run("returnAccept", { id: record.id })}>Accept into quarantine</Button>}
     {record.status === "quarantine" && canDecide && <fieldset disabled={busy} className="space-y-2">
       {stale && <div role="alert" className="text-sm text-destructive">Return or rules changed. Your input is retained.<Button type="button" variant="outline" size="sm" onClick={() => { if (window.confirm("Review the current return/rules and keep your inspection note?")) update({ basis: JSON.stringify({ record, rules }), ruleId: "" }); }}>Review current rules</Button></div>}
-      <div><Label htmlFor={`return-rule-${record.id}`}>Warehouse disposition</Label><select id={`return-rule-${record.id}`} className={style} value={ruleId} onChange={e => update({ ruleId: e.target.value })}><option value="">Select inspection outcome</option>{rules.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
+      <div><Label htmlFor={`return-rule-${record.id}`}>Warehouse decision</Label><select id={`return-rule-${record.id}`} className={style} value={ruleId} onChange={e => update({ ruleId: e.target.value })}><option value="">Select approved warehouse decision</option>{rules.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
       {!rules.length && <p className="text-sm text-destructive">No approved warehouse dispositions. Ask an administrator to configure removal rules.</p>}
       {selected?.outcome === "released" && <div><Label htmlFor={`return-item-${record.id}`}>Matching equipment item</Label><select id={`return-item-${record.id}`} className={style} value={itemId} onChange={e => update({ itemId: e.target.value })}><option value="">Select item for stock</option>{state.items.filter(i => i.active && i.equipment === record.equipment && !i.components.length).map(i => <option key={i.id} value={i.id}>{i.sku} · {i.name}</option>)}</select></div>}
       <div><Label htmlFor={`return-reason-${record.id}`}>Inspection reason</Label><Input id={`return-reason-${record.id}`} value={reason} onChange={e => update({ reason: e.target.value })} maxLength={1000} /></div>

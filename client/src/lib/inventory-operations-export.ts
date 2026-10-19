@@ -41,6 +41,8 @@ export function operationsPrintHtml(context: Context, kind: OperationsKind, data
     categories: ["name", "itemCount"],
     counts: ["reference", "location", "status", "snapshotItems", "snapshotQuantity", "countedItems", "countedQuantity", "reason"],
   };
+  printKeys.returns.push("fieldDisposition", "warehouseDisposition");
+  printKeys.activity.push("fieldDisposition", "warehouseDisposition", "custodyEvent");
   const cols = dataset.columns.filter(c => printKeys[kind].includes(c.key));
   return `<!doctype html><html><head><meta charset="utf-8"><title>${escape(context.project)} — ${titles[kind]}</title>
 <style>body{font:12px Arial,sans-serif;margin:24px;color:#111}h1{font-size:22px}button{padding:10px}table{width:100%;table-layout:fixed;border-collapse:collapse}th,td{border:1px solid #bbb;padding:5px;text-align:left;vertical-align:top;overflow-wrap:anywhere}thead{display:table-header-group}tr{break-inside:avoid;page-break-inside:avoid}@page{size:landscape;margin:12mm}@media print{body{margin:0}button{display:none}table{font-size:9pt}}</style></head>

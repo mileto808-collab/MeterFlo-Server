@@ -1987,7 +1987,8 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
             return <article className="flex min-w-0 flex-col justify-between gap-3 rounded-md border bg-card px-3 py-3 sm:flex-row sm:items-start sm:px-4">
               <div className="min-w-0"><div className="flex flex-wrap items-center gap-2 font-medium"><span>{returned.equipment === "system" ? "System" : "Module"}</span><span className="break-all font-mono text-sm">{returned.serial}</span><Badge variant={returned.status === "released" ? "default" : "outline"}>{returned.status}</Badge></div>
                 <div className="mt-1 text-sm text-muted-foreground">Work order #{row.cells.workOrder} · Return location: {warehouses.find(w => w.id === returned.warehouseId)?.name ?? "Location unavailable"}</div>
-                {returned.ruleName && <div className="mt-1 text-xs text-muted-foreground">Field disposition: {returned.ruleName}</div>}
+                <div className="mt-1 text-xs text-muted-foreground">Field disposition: {row.cells.fieldDisposition}</div>
+                <div className="mt-1 text-xs text-muted-foreground">Warehouse decision: {row.cells.warehouseDisposition}</div>
               </div><div className="flex min-w-0 flex-col gap-3">
               <Button size="sm" variant="outline" className="self-start" onClick={() => openPrint("return", returned.id)} aria-label={`Print removed equipment ${returned.serial}`}><Printer className="mr-2 h-4 w-4" />Print</Button>
               <RemovedEquipmentActions record={returned} state={state} canReceive={can("inventory.receive")} canDecide={can("inventory.resolveReturns")}
@@ -2003,6 +2004,9 @@ function ProjectInventoryWorkspace({ projectId }: { projectId: string }) {
             return <article className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-md border bg-card px-3 py-3 sm:px-4">
               <div className="min-w-0"><div className="break-words font-medium" data-testid="inventory-activity-title">{receipt.action} · {row.cells.reference}</div>
                 <div className="mt-1 break-words text-xs text-muted-foreground">{row.cells.date} · {row.cells.actor} · {receiptSummary(receipt)}</div>
+                {!!row.cells.fieldDisposition && <p className="mt-1 text-xs">Field disposition: {row.cells.fieldDisposition} <span className="text-muted-foreground">(as recorded)</span></p>}
+                {!!row.cells.warehouseDisposition && <p className="mt-1 text-xs">Warehouse decision: {row.cells.warehouseDisposition} <span className="text-muted-foreground">(as recorded)</span></p>}
+                {!!row.cells.custodyEvent && <p className="mt-1 text-xs">{row.cells.custodyEvent}</p>}
                 {receipt.holdId && <p className="mt-1 text-xs">{inventoryHoldLabel(state.shipmentHolds ?? [], receipt.holdId)}</p>}
               </div><Button size="sm" variant="outline" onClick={() => openPrint(receipt.action.startsWith("count") ? "count" : "receipt", receipt.action.startsWith("count") ? receipt.reference : receipt.id)}><Printer className="mr-2 h-4 w-4" />Print</Button>
             </article>;

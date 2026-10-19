@@ -9,10 +9,12 @@ import { inventoryKitPrint } from "./inventoryKitPrint";
 import { inventoryDateTime } from "../shared/inventory-date-time";
 import { inventoryRemovedEquipmentPrint } from "./inventoryRemovedEquipmentPrint";
 import type { InventoryWorkOrderLabels } from "../shared/inventory-work-order-labels";
+import { removalActivityIndex, removalActivityDisplay } from "../shared/inventory-removal-display";
 
 const escape = (v: unknown) => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
 export function inventoryPrint(kind: string, record: any, state: InventoryState, project: string, actors: readonly InventoryActorLabel[] = [], timezone = "UTC", workOrderLabels: InventoryWorkOrderLabels = {}) {
   if (kind === "return") return inventoryRemovedEquipmentPrint(record, state, project, actors, timezone, workOrderLabels);
+  const removal = kind === "receipt" ? removalActivityDisplay(state, removalActivityIndex(state).get(record.id) ?? []) : undefined;
   const lineList = record.lines || record.snapshot?.map((b: any) => ({ ...b, quantity: b.quantity })) || [];
   const warehouse = (id: string) => state.warehouses.find(w => w.id === id)?.name || id || "";
   const reference = kind === "count" ? inventoryCountReference(state.counts, record.id) :
@@ -53,5 +55,8 @@ export function inventoryPrint(kind: string, record: any, state: InventoryState,
         <td>${escape(Number(line.cost).toFixed(2))}</td><td>${escape(Number(line.billingRate).toFixed(2))}</td><td>${escape((line.quantity * line.cost).toFixed(2))}</td><td>${escape((line.quantity * line.billingRate).toFixed(2))}</td></tr>`).join("")}</tbody></table>` : ""}
     ${shipmentPrint(kind, record, state, actorLabel, timezone)}
       ${kitReceipt ? inventoryKitPrint(record, state) : record.components ? `<h2>Components</h2><p>${kind === "receipt" ? record.components.map((l: any) => `${escape(l.itemId)}: ${escape(l.quantity)} (${receiptSerialSummary(l)})`).join("; ") : escape(record.components.map((l: any) => `${l.itemId}: ${l.quantity} (${(l.serials || []).join(", ")})`).join("; "))}</p>` : ""}
+     ${removal?.fieldLabel ? `<p>Field disposition: ${escape(removal.fieldLabel)}</p>` : ""}
+     ${removal?.decisionLabel ? `<p>Warehouse decision: ${escape(removal.decisionLabel)}</p>` : ""}
+     ${removal?.custodyLabel ? `<p>Custody event: ${escape(removal.custodyLabel)}</p>` : ""}
      ${kind === "receipt" ? receiptSerialAppendix(record, state, project) : ""}</body></html>`;
 }
