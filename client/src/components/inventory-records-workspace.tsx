@@ -30,6 +30,9 @@ export function InventoryRecordsWorkspace({ kind, title, description, dataset, p
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Record<string, string>>({});
   const [sort, setSort] = useState(dataset.defaultSort);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const invalidDateRange = !!from && !!to && from > to;
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(1);
@@ -37,14 +40,15 @@ export function InventoryRecordsWorkspace({ kind, title, description, dataset, p
   const rowHeightRef = useRef(0);
   const containerWidthRef = useRef(0);
   const containerHeightRef = useRef(0);
-  const matchingRows = useMemo(() => filterOperationsRows(dataset, query, selected, sort), [dataset, query, selected, sort]);
+  const matchingRows = useMemo(() => filterOperationsRows(dataset, query, selected, sort, { from, to, timezone }),
+    [dataset, query, selected, sort, from, to, timezone]);
   const activeFilterCount = dataset.filters.reduce((count, filter) => count + Number(!!selected[filter.key] && selected[filter.key] !== "all"), 0) +
-    Number(sort !== dataset.defaultSort);
+    Number(sort !== dataset.defaultSort) + Number(!!from) + Number(!!to);
   const lastPage = Math.max(0, Math.ceil(matchingRows.length / rowsPerPage) - 1);
   const currentPage = Math.min(page, lastPage);
   const pageCount = Math.max(1, Math.ceil(matchingRows.length / rowsPerPage));
   const visibleRows = matchingRows.slice(currentPage * rowsPerPage, (currentPage + 1) * rowsPerPage);
-  useEffect(() => { setPage(0); rowHeightRef.current = 0; }, [kind, query, selected, sort, dataset]);
+  useEffect(() => { setPage(0); rowHeightRef.current = 0; }, [kind, query, selected, sort, dataset, from, to]);
   useEffect(() => { setPage(current => Math.min(current, lastPage)); }, [lastPage]);
   useEffect(() => {
     const main = resultsElement?.closest("main");
@@ -99,7 +103,7 @@ export function InventoryRecordsWorkspace({ kind, title, description, dataset, p
     window.addEventListener("resize", measure); measure();
     return () => { cancelAnimationFrame(frame); observer.disconnect(); window.removeEventListener("resize", measure); };
   }, [resultsElement, matchingRows, currentPage, filtersOpen, rowsPerPage]);
-  const reset = () => { setSelected({}); setSort(dataset.defaultSort); };
+  const reset = () => { setSelected({}); setSort(dataset.defaultSort); setFrom(""); setTo(""); };
   const exportFile = async (format: "csv" | "xlsx" | "pdf") => {
     try { await downloadInventoryOperations(format, { project: projectName, timezone }, kind, dataset, matchingRows); }
     catch (error) { toast({ title: `${format === "xlsx" ? "Excel" : format.toUpperCase()} export failed`, description: error instanceof Error ? error.message : "Try again.", variant: "destructive" }); }
@@ -123,6 +127,18 @@ export function InventoryRecordsWorkspace({ kind, title, description, dataset, p
               <option value="all">All {filter.label.toLocaleLowerCase()}</option>{filter.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </div>)}
+          {dataset.dateFilterLabel && <>
+            <div className="space-y-2"><Label htmlFor={`operations-${kind}-from`}>From date</Label>
+              <Input id={`operations-${kind}-from`} type="date" value={from} max={to || undefined} aria-invalid={invalidDateRange}
+                aria-describedby={`operations-${kind}-date-help`} onChange={event => setFrom(event.target.value)} /></div>
+            <div className="space-y-2"><Label htmlFor={`operations-${kind}-to`}>To date</Label>
+              <Input id={`operations-${kind}-to`} type="date" value={to} min={from || undefined} aria-invalid={invalidDateRange}
+                aria-describedby={`operations-${kind}-date-help`} onChange={event => setTo(event.target.value)} /></div>
+            <p id={`operations-${kind}-date-help`} className="text-xs text-muted-foreground sm:col-span-2">
+              {dataset.dateFilterLabel} · {timezone}. Both dates are inclusive. A record matches if any recorded event falls within the range.
+              Records without a recorded date are excluded while a date range is active.</p>
+            {invalidDateRange && <p role="alert" className="text-sm text-destructive sm:col-span-2">From date must be on or before the to date.</p>}
+          </>}
           <div className="space-y-2 sm:col-span-2"><Label htmlFor={`operations-${kind}-sort`}>Sort by</Label>
             <select id={`operations-${kind}-sort`} className={selectClass} value={sort} onChange={event => setSort(event.target.value)}>
               {dataset.sorts.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}

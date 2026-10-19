@@ -4,15 +4,17 @@ import { inventoryCountReference } from "@shared/inventory-count-reference";
 import { orderLabel, orderReference, uuidOrderId } from "@shared/inventory-order-labels";
 import { holdStatus, remainingHold } from "@shared/inventory-shipment-model";
 import { locationTypeFor, locationTypeLabel } from "@shared/inventory-location-types";
+import { orderDate } from "@shared/inventory-order-search";
 
 export type OperationsKind = "locations" | "exceptions" | "returns" | "activity" | "categories" | "counts";
-export type OperationsRow = { id: string; search: string; cells: Record<string, string | number>; facets: Record<string, string> };
+export type OperationsRow = { id: string; search: string; cells: Record<string, string | number>; facets: Record<string, string>; timestamps?: string[] };
 export type OperationsDataset = {
   rows: OperationsRow[];
   columns: { key: string; label: string }[];
   filters: { key: string; label: string; options: { value: string; label: string }[] }[];
   sorts: { key: string; label: string }[];
   defaultSort: string;
+  dateFilterLabel?: string;
 };
 const columns = (pairs: [string, string][]) => pairs.map(([key, label]) => ({ key, label }));
 const textSearch = (row: Omit<OperationsRow, "search">, extra: unknown[] = []): OperationsRow =>
@@ -65,6 +67,12 @@ export function buildOperationsDataset(
     sorts = [{ key: "name:asc", label: "Name · A–Z" }, { key: "name:desc", label: "Name · Z–A" },
       { key: "itemCount:desc", label: "Most items" }, { key: "itemCount:asc", label: "Fewest items" }];
   } else if (kind === "counts") {
+    const countDates = new Map<string, string[]>();
+    for (const receipt of state.receipts) if (receipt.action.startsWith("count")) {
+      const dates = countDates.get(receipt.reference) ?? [];
+      dates.push(receipt.occurredAt);
+      countDates.set(receipt.reference, dates);
+    }
     rows = state.counts.map((count, index) => {
       const snapshotQuantity = count.snapshot.reduce((total, line) => total + line.quantity, 0);
       const countedQuantity = (count.lines ?? []).reduce((total, line) => total + line.quantity, 0);
@@ -83,6 +91,7 @@ export function buildOperationsDataset(
           sequence: index + 1,
         },
         facets: { warehouse: count.warehouseId, status: count.status },
+        timestamps: [...(countDates.get(count.id) ?? []), ...(count.draft?.savedAt ? [count.draft.savedAt] : [])],
       }, [count.id]);
     });
     cols = columns([["reference", "Count"], ["location", "Location"], ["status", "Status"],
@@ -118,7 +127,8 @@ export function buildOperationsDataset(
         status: holdStatus(h), quantity: h.quantity, held: remaining.quantity, serialCount: remaining.serials.length,
         unidentified: remaining.unidentifiedQuantity, actor: inventoryActorLabel(h.actor, people),
         date: displayTime(h.occurredAt, timezone), occurredAt: h.occurredAt, reason: h.reason,
-      }, facets: { warehouse: h.warehouseId, status: holdStatus(h), tracking: item?.tracking ?? "Unknown", actor: h.actor } },
+      }, facets: { warehouse: h.warehouseId, status: holdStatus(h), tracking: item?.tracking ?? "Unknown", actor: h.actor },
+      timestamps: [h.occurredAt] },
       [h.orderId, h.receiptId, ...h.serials, ...h.expectedSerials]);
     });
     cols = columns([["reference", "Hold"], ["order", "Order"], ["orderReference", "Order reference"], ["receipt", "Receipt"],
@@ -133,7 +143,8 @@ export function buildOperationsDataset(
       equipment: r.equipment === "system" ? "System" : "Module", serial: r.serial, status: r.status,
       workOrder: r.workOrderId, location: locationName(r.warehouseId), disposition: r.ruleName ?? r.disposition,
       sku: r.itemId ? items.get(r.itemId)?.sku ?? "Unavailable item" : "", item: r.itemId ? items.get(r.itemId)?.name ?? "Unavailable item" : "",
-    }, facets: { equipment: r.equipment, status: r.status, warehouse: r.warehouseId ?? "none", disposition: r.disposition } }));
+    }, facets: { equipment: r.equipment, status: r.status, warehouse: r.warehouseId ?? "none", disposition: r.disposition },
+    timestamps: (r.history ?? []).map(event => event.occurredAt) }));
     cols = columns([["equipment", "Equipment"], ["serial", "Serial"], ["status", "Status"], ["workOrder", "Work order"],
       ["location", "Return location"], ["disposition", "Disposition"], ["sku", "SKU"], ["item", "Released item"]]);
     filterKeys = [["equipment", "Equipment"], ["status", "Status"], ["warehouse", "Return location"], ["disposition", "Disposition"]];
@@ -178,7 +189,9 @@ export function buildOperationsDataset(
       { key: "action:asc", label: "Action · A–Z" }];
   }
   return {
-    rows, columns: cols, sorts, defaultSort: sorts[0].key,
+    rows: kind === "activity" ? rows.map(row => ({ ...row, timestamps: [String(row.cells.occurredAt)] })) : rows,
+    columns: cols, sorts, defaultSort: sorts[0].key,
+    dateFilterLabel: ({ returns: "Custody or decision activity", counts: "Count activity", exceptions: "Arrival recorded", activity: "Movement recorded" } as Partial<Record<OperationsKind, string>>)[kind],
     filters: filterKeys.map(([key, label]) => ({
       key, label, options: [...new Set(rows.map(r => r.facets[key]))].map(value => ({
         value, label: key === "warehouse" ? locationName(value === "none" ? null : value) :
@@ -189,11 +202,17 @@ export function buildOperationsDataset(
   };
 }
 
-export function filterOperationsRows(dataset: OperationsDataset, query: string, selected: Record<string, string>, sort: string): OperationsRow[] {
+export function filterOperationsRows(dataset: OperationsDataset, query: string, selected: Record<string, string>, sort: string,
+  dates?: { from: string; to: string; timezone: string }): OperationsRow[] {
   const needle = query.trim().toLocaleLowerCase();
   const [key, direction] = sort.split(":");
+  if (dataset.dateFilterLabel && dates?.from && dates.to && dates.from > dates.to) return [];
   return dataset.rows.filter(row => (!needle || row.search.includes(needle)) &&
-    Object.entries(selected).every(([facet, value]) => !value || value === "all" || row.facets[facet] === value))
+    Object.entries(selected).every(([facet, value]) => !value || value === "all" || row.facets[facet] === value) &&
+    (!dataset.dateFilterLabel || !dates || !dates.from && !dates.to || (row.timestamps ?? []).some(timestamp => {
+      const day = orderDate(timestamp, dates.timezone);
+      return !!day && (!dates.from || day >= dates.from) && (!dates.to || day <= dates.to);
+    })))
     .sort((a, b) => {
       const left = a.cells[key] ?? "", right = b.cells[key] ?? "";
       const comparison = typeof left === "number" && typeof right === "number" ? left - right : String(left).localeCompare(String(right));
