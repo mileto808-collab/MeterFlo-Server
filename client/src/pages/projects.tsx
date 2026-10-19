@@ -239,19 +239,21 @@ export default function Projects() {
         }
         if (!height) return;
         const row = container.querySelector<HTMLElement>("[data-project-row]");
+        const headerHeight = container.querySelector<HTMLElement>("[data-project-list-header]")?.getBoundingClientRect().height ?? 0;
         // Once paging starts, keep boundaries fixed. A later row can never
         // redefine the page size; genuine viewport/scope changes reset to page 1.
         if (currentPage > 0) return;
-        const rowHeight = row?.getBoundingClientRect().height || (isMobile ? 62 : 50);
-        const verticalPadding = 16;
-        const rowGap = 4;
-        const fitted = Math.max(1, Math.floor((Math.max(0, height - verticalPadding) + rowGap) / (rowHeight + rowGap)));
+        const rowHeight = row?.getBoundingClientRect().height || (isMobile ? 62 : 40);
+        const verticalInset = 18; // Results padding (16px) plus the list region border (2px).
+        const fitted = Math.max(1, Math.floor(Math.max(0, height - headerHeight - verticalInset) / rowHeight));
         const nextSize = Math.min(100, Math.max(1, filteredProjects.length || fitted), fitted);
         setPageSize(previous => previous === nextSize ? previous : nextSize);
       });
     };
     const observer = new ResizeObserver(measure);
     observer.observe(container);
+    const listHeader = container.querySelector<HTMLElement>("[data-project-list-header]");
+    if (listHeader) observer.observe(listHeader);
     container.querySelectorAll("[data-project-row]").forEach(item => observer.observe(item));
     window.addEventListener("resize", measure);
     window.visualViewport?.addEventListener("resize", measure);
@@ -437,13 +439,42 @@ export default function Projects() {
             {[...Array(6)].map((_, index) => <Skeleton key={index} className="h-[54px] rounded-md" />)}
           </div>
         ) : pageProjects.length ? (
-          <div className="space-y-1" data-testid="projects-record-list">
+          <div className="overflow-hidden rounded-md border bg-card" data-testid="projects-record-list">
+            <div
+              className="hidden h-8 grid-cols-[52px_minmax(0,1.15fr)_minmax(0,1.3fr)_minmax(0,1fr)_76px_auto] items-center gap-3 border-b bg-muted px-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground sm:grid"
+              data-project-list-header
+              aria-hidden="true"
+            >
+              <span>ID</span>
+              <span>Project</span>
+              <span>Description</span>
+              <span>Customer email</span>
+              <span>Created</span>
+              <span className="text-right">Actions</span>
+            </div>
             {pageProjects.map(project => (
               <article
                 key={project.id}
-                className="grid h-[62px] grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 overflow-hidden rounded-md border bg-card px-2.5 sm:h-[50px] sm:grid-cols-[52px_minmax(0,1.15fr)_minmax(0,1.3fr)_minmax(0,1fr)_76px_auto] sm:gap-3 sm:px-3"
+                className="grid h-[62px] cursor-pointer grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 border-b px-2.5 last:border-b-0 hover-elevate focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring sm:h-10 sm:grid-cols-[52px_minmax(0,1.15fr)_minmax(0,1.3fr)_minmax(0,1fr)_76px_auto] sm:gap-3 sm:px-3"
                 data-testid={`row-project-${project.id}`}
                 data-project-row
+                role="button"
+                tabIndex={0}
+                aria-label={`View details for ${project.name}`}
+                aria-haspopup="dialog"
+                onClick={event => {
+                  const target = event.target as HTMLElement;
+                  const control = target.closest('button, a, [role="button"], [role="menuitem"]');
+                  if (control && control !== event.currentTarget) return;
+                  setDetailsProject(project);
+                }}
+                onKeyDown={event => {
+                  if (event.target !== event.currentTarget) return;
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    setDetailsProject(project);
+                  }
+                }}
               >
                 <div className="min-w-0 sm:hidden">
                   <div className="flex min-w-0 items-center gap-1.5">

@@ -38,9 +38,9 @@ function defaults(): CustomerPushSettings {
   return customerPushSettings({});
 }
 
-export default function ProjectCustomerApi() {
+export default function ProjectCustomerApi({ projectId: explicitProjectId, embedded = false }: { projectId?: number; embedded?: boolean } = {}) {
   const [, params] = useRoute("/projects/:projectId/customer-api");
-  const projectId = Number(params?.projectId);
+  const projectId = explicitProjectId ?? Number(params?.projectId);
   const [, navigate] = useLocation();
   const search = useSearch();
   const { user, hasPermission } = usePermissions();
@@ -49,7 +49,8 @@ export default function ProjectCustomerApi() {
   const canReadPush = hasPermission("projects.edit") || hasPermission("settings.customerApiLogs");
   const canReadLogs = hasPermission("settings.customerApiLogs");
   const isAdmin = user?.role === "admin" || user?.subroleKey === "administrator";
-  const sectionParam = new URLSearchParams(search).get("section");
+  const [embeddedSection, setEmbeddedSection] = useState(new URLSearchParams(search).get("direction"));
+  const sectionParam = embedded ? embeddedSection : new URLSearchParams(search).get("section");
   const section = sectionParam === "pull" && canPull ? "pull" : canReadPush ? "push" : "pull";
   const [form, setForm] = useState<CustomerPushSettings>(defaults);
   const [formProjectId, setFormProjectId] = useState(projectId);
@@ -130,7 +131,8 @@ export default function ProjectCustomerApi() {
     ...(canPull ? [{ key: "pull", label: "Pull import", icon: CloudDownload }] : []),
   ], [canReadPush, canPull]);
   const chooseSection = (next: "push" | "pull") => {
-    navigate(`/projects/${projectId}/customer-api?section=${next}`);
+    if (embedded) setEmbeddedSection(next);
+    else navigate(`/projects/${projectId}/customer-api?section=${next}`);
   };
 
   if (!projectId || Number.isNaN(projectId)) {
@@ -141,12 +143,12 @@ export default function ProjectCustomerApi() {
   }
 
   return (
-    <main className="min-h-[100dvh] bg-[hsl(var(--background))]">
-      <div className="mx-auto max-w-7xl px-4 py-6 md:px-8 md:py-9">
+    <div className={embedded ? "min-w-0" : "min-h-[100dvh] bg-[hsl(var(--background))]"}>
+      <div className={embedded ? "min-w-0" : "mx-auto max-w-7xl px-4 py-6 md:px-8 md:py-9"}>
         <header className="mb-7 flex flex-col justify-between gap-5 border-b border-border/70 pb-6 sm:flex-row sm:items-end">
           <div>
             <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground"><Cable className="h-4 w-4 text-primary" />Project integrations</div>
-            <h1 className="font-display text-3xl font-semibold tracking-tight md:text-4xl">Customer API</h1>
+            <h2 className={embedded ? "text-xl font-semibold tracking-tight" : "font-display text-3xl font-semibold tracking-tight md:text-4xl"}>Customer API</h2>
             <p className="mt-2 text-sm text-muted-foreground">{projectQuery.data?.name || `Project ${projectId}`} · Separate controls for inbound work orders and outbound completion data.</p>
           </div>
           <div className="flex flex-wrap gap-2" role="tablist" aria-label="Customer API direction">
@@ -237,8 +239,8 @@ export default function ProjectCustomerApi() {
           </>
         )}
 
-        {section === "pull" && canPull && <ProjectApiImport projectId={projectId} />}
+        {section === "pull" && canPull && <ProjectApiImport projectId={projectId} embedded={embedded} />}
       </div>
-    </main>
+    </div>
   );
 }

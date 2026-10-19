@@ -370,16 +370,16 @@ export function AppSidebar() {
                                 </SidebarMenuSubButton>
                               </SidebarMenuSubItem>
                             )}
-                            {(hasPermission("projects.edit") || hasPermission("project.apiImport") || hasPermission("settings.customerApiLogs")) && (
+                            {!hasPermission("nav.projects") && (hasPermission("projects.edit") || hasPermission("project.apiImport") || hasPermission("settings.customerApiLogs")) && (
                               <SidebarMenuSubItem>
                                 <SidebarMenuSubButton
                                   asChild
-                                  isActive={location.startsWith(`/projects/${project.id}/customer-api`) || location.startsWith(`/projects/${project.id}/api-import`)}
-                                  data-testid={`nav-project-${project.id}-customer-api`}
+                                  isActive={location.startsWith(`/projects/${project.id}/edit`)}
+                                  data-testid={`nav-project-${project.id}-settings`}
                                 >
-                                  <NavLink href={`/projects/${project.id}/customer-api`}>
+                                  <NavLink href={`/projects/${project.id}/edit?section=integrations`}>
                                     <Cable className="h-3 w-3" />
-                                    <span>Customer API</span>
+                                    <span>Project settings</span>
                                   </NavLink>
                                 </SidebarMenuSubButton>
                               </SidebarMenuSubItem>

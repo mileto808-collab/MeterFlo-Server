@@ -92,7 +92,7 @@ function statusTone(status: string) {
 const activeRunStatuses = ["queued", "running", "retrying"];
 const retryableRunStatuses = ["partial", "failed", "interrupted", "cancelled"];
 
-export default function ProjectApiImport({ projectId: explicitProjectId }: { projectId?: number } = {}) {
+export default function ProjectApiImport({ projectId: explicitProjectId, embedded = false }: { projectId?: number; embedded?: boolean } = {}) {
   const [, params] = useRoute("/projects/:projectId/api-import");
   const projectId = explicitProjectId ?? Number(params?.projectId);
   const [, navigate] = useLocation();
@@ -255,11 +255,11 @@ export default function ProjectApiImport({ projectId: explicitProjectId }: { pro
   }
 
   return (
-    <main className="min-h-[100dvh] bg-[hsl(var(--background))]">
-      <div className="mx-auto max-w-7xl px-4 py-6 md:px-8 md:py-9">
+    <main className={embedded ? "min-w-0" : "min-h-[100dvh] bg-[hsl(var(--background))]"}>
+      <div className={embedded ? "min-w-0" : "mx-auto max-w-7xl px-4 py-6 md:px-8 md:py-9"}>
         <div className="mb-7 flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-3">
-            <Button variant="ghost" size="icon" className="mt-1" onClick={() => navigate(`/projects/${projectId}/work-orders`)} aria-label="Back to project"><ArrowLeft className="h-4 w-4" /></Button>
+            {!embedded && <Button variant="ghost" size="icon" className="mt-1" onClick={() => navigate(`/projects/${projectId}/work-orders`)} aria-label="Back to project"><ArrowLeft className="h-4 w-4" /></Button>}
             <div>
               <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground"><Cable className="h-4 w-4 text-primary" />Project data source</div>
               <h1 className="font-display text-3xl font-semibold tracking-tight md:text-4xl">Customer API pull</h1>

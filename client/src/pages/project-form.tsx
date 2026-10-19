@@ -2,7 +2,8 @@ import { useEffect, useState, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { useLocation, useRoute, Link } from "wouter";
+import { useLocation, useRoute, useSearch, Link } from "wouter";
+import ProjectCustomerApi from "@/pages/project-customer-api";
 import { z } from "zod";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -109,7 +110,19 @@ export default function ProjectForm() {
   const isMobile = useIsMobile();
   type ProjectSection = "details" | "work-orders" | "inventory" | "schedule" | "people" | "integrations";
   type WorkOrderSection = "wizard" | "search" | "service-types" | "sub-statuses" | "trouble-codes";
-  const [activeSection, setActiveSection] = useState<ProjectSection>("details");
+  const requestedSection = new URLSearchParams(useSearch()).get("section");
+  const canAccessCustomerApi = hasPermission("projects.edit") || hasPermission("project.apiImport") || hasPermission("settings.customerApiLogs");
+  const integrationsOnly = isEditing && !permissionsLoading && !hasPermission("nav.projects");
+  const [activeSection, setActiveSection] = useState<ProjectSection>(requestedSection === "integrations" || integrationsOnly ? "integrations" : "details");
+  const [integrationsVisited, setIntegrationsVisited] = useState(activeSection === "integrations");
+  useEffect(() => {
+    if (permissionsLoading) return;
+    if (!canAccessCustomerApi) setActiveSection(current => current === "integrations" ? "details" : current);
+    else if (requestedSection === "integrations" || integrationsOnly) setActiveSection("integrations");
+  }, [id, requestedSection, integrationsOnly, canAccessCustomerApi, permissionsLoading]);
+  useEffect(() => {
+    if (activeSection === "integrations") setIntegrationsVisited(true);
+  }, [activeSection]);
   const [activeWorkOrderSection, setActiveWorkOrderSection] = useState<WorkOrderSection>("wizard");
   const [focusAfterSectionChange, setFocusAfterSectionChange] = useState<keyof ProjectFormValues | null>(null);
   const workspaceRef = useRef<HTMLDivElement>(null);
@@ -122,9 +135,9 @@ export default function ProjectForm() {
     { id: "schedule" as const, label: "Schedule", icon: CalendarClock },
     ...(isEditing ? [
       { id: "people" as const, label: "People", icon: Users },
-      { id: "integrations" as const, label: "Integrations", icon: Cable },
+      ...(canAccessCustomerApi ? [{ id: "integrations" as const, label: "Integrations", icon: Cable }] : []),
     ] : []),
-  ];
+  ].filter(section => !integrationsOnly || section.id === "integrations");
   const workOrderSections = [
     { id: "wizard" as const, label: "Wizard" },
     { id: "search" as const, label: "Search" },
@@ -649,7 +662,7 @@ export default function ProjectForm() {
       </div>
 
       <Form {...form}>
-        <form noValidate onSubmit={form.handleSubmit(onSubmit, handleInvalid)} className="flex min-h-0 flex-1 flex-col">
+        <form noValidate onSubmit={form.handleSubmit(onSubmit, handleInvalid)} hidden={activeSection === "integrations"} className={activeSection === "integrations" ? "hidden" : "flex min-h-0 flex-1 flex-col"}>
           <div ref={contentRef} data-testid="project-content" className="min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1">
             <div id="project-panel-details" data-project-section="details" role="tabpanel" aria-label="Details"
               hidden={activeSection !== "details"} className="space-y-5 pb-5">
@@ -792,7 +805,7 @@ export default function ProjectForm() {
               {!isEditing && (
                 <div className="flex gap-3 rounded-lg border bg-muted/30 p-4 text-sm">
                   <Globe className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                  <p className="text-muted-foreground">Customer API connections can be configured from the Customer API hub immediately after this project is created.</p>
+                  <p className="text-muted-foreground">Customer API connections can be configured under Integrations after this project is created.</p>
                 </div>
               )}
 
@@ -818,21 +831,6 @@ export default function ProjectForm() {
                 <ProjectFieldStockSettings projectId={Number(id)} />}
               {form.watch("inventoryEnabled") && (!isEditing || !(project as any)?.inventoryEnabled) &&
                 <p className="text-sm text-muted-foreground">Save the project with Inventory enabled before configuring field inventory stock.</p>}
-            </div>}
-            {isEditing && <div id="project-panel-integrations" data-project-section="integrations" role="tabpanel" aria-label="Integrations"
-              hidden={activeSection !== "integrations"} className="space-y-5 pb-5">
-              <section className="rounded-xl border bg-card p-5">
-                <div className="flex items-center gap-2 mb-2">
-                  <Globe className="h-5 w-5 text-muted-foreground" />
-                  <h3 className="text-lg font-medium">Customer API</h3>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Push delivery and inbound work-order imports are configured independently in the Customer API hub.
-                </p>
-                <Link href={`/projects/${id}/customer-api`} className="mt-3 inline-flex">
-                  <Button type="button" variant="outline">Open Customer API setup</Button>
-                </Link>
-              </section>
             </div>}
 
             <div id="project-panel-work-orders" data-project-section="work-orders" role="tabpanel" aria-label="Work Orders"
@@ -1665,6 +1663,13 @@ export default function ProjectForm() {
           </footer>
         </form>
       </Form>
+      {isEditing && canAccessCustomerApi && integrationsVisited && (
+        <div id="project-panel-integrations" data-project-section="integrations" role="tabpanel" aria-label="Integrations"
+          hidden={activeSection !== "integrations"} className={activeSection === "integrations" ? "min-h-0 flex-1 overflow-y-auto p-4 md:p-6" : "hidden"}>
+          {/* Separate saves must never submit or reset the project details form. */}
+          <ProjectCustomerApi projectId={Number(id)} embedded />
+        </div>
+      )}
     </div>
   );
 }

@@ -85,12 +85,13 @@ function AuthenticatedRouter() {
         <>
           <Route path="/projects" component={Projects} />
           <Route path="/projects/new" component={ProjectForm} />
-          <Route path="/projects/:id/edit" component={ProjectForm} />
           <Route path="/projects/:projectId/db-import" component={ProjectDbImport} />
         </>
       )}
 
-      <Route path="/projects/:projectId/customer-api" component={ProjectCustomerApi} />
+      {(hasPermission("nav.projects") || hasPermission("projects.edit") || hasPermission("project.apiImport") || hasPermission("settings.customerApiLogs")) &&
+        <Route path="/projects/:id/edit" component={ProjectForm} />}
+      <Route path="/projects/:projectId/customer-api"><ProjectCustomerApi /></Route>
       
       {hasPermission("nav.users") && (
         <Route path="/users" component={Users} />
