@@ -15,6 +15,12 @@ The user approved shared warehouse access versus assigned-user mobile access, an
 
 **How to apply:** Default physical warehouses to shared project access and vehicles to assigned-user access; keep action permissions and project boundaries enforced. Use stable type references rather than names as identifiers, and do not treat a type rename as an access-policy change.
 
+A vehicle warehouse may have one or more technicians working out of the same stock. Some projects use just one warehouse and do not perform warehouse-to-vehicle transfers.
+
+**Why:** The user explicitly described both operating models for field inventory consumption.
+
+**How to apply:** Support shared vehicle stock without creating separate per-technician balances. Allow direct consumption from a project's authorized physical warehouse without requiring an intermediate vehicle transfer.
+
 Legacy backup restoration must not repeat the live cutover to shared warehouse
 access. A backup predating configurable location types retains the former
 assignment-restricted policy; backups with explicit types retain those policies.
