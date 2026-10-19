@@ -14,6 +14,14 @@ These permissions do not grant access to other projects. Existing customer-accou
 
 ## SFTP
 
+### Who connects to whom?
+
+MeterFlo currently provides an **outbound SFTP client**, not an SSH/SFTP server. The SFTP Connections tab saves the remote server that MeterFlo connects to. Project FTP Files is a storage folder, not a listening FTP/SFTP endpoint.
+
+For customer-hosted SFTP, the customer’s server administrator creates a restricted account for MeterFlo, preferably isolated per project. This is not a MeterFlo web-login account. For customers to connect to a server you operate, first provision a separate Windows/Linux or managed SFTP server with project-isolated accounts and no interactive shell. MeterFlo can connect to that same handoff server to import customer uploads and deliver exports.
+
+Give customers the actual SFTP hostname, configured SSH port (usually 22), their project-specific username, approved authentication method, independently verified SHA256 server host-key fingerprint, actual upload/download directories, and agreed filename patterns. The MeterFlo website URL is not automatically an SFTP address. Share public keys with the server administrator, never private keys or Replit workspace SSH credentials. Directory names such as `/incoming` and `/outgoing` are examples, not automatically provisioned paths.
+
 Save the customer's host, port, username, authentication method and independently verified `SHA256:...` SSH host-key fingerprint. Use password authentication or a private key and optional passphrase. Secrets are encrypted with the instance's session secret and never returned by the API. Blank credential fields retain saved credentials; changing server identity requires entering credentials again. **Test saved connection** verifies authentication and the pinned host key without uploading a probe file.
 
 Use absolute remote directories, such as `/incoming/work-orders` or `/outgoing/completed`. The service does not create or remove customer directories. Remote import source files are not deleted or renamed. Coordinate remote retention with the customer.
