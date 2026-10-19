@@ -55,3 +55,4 @@
 - [Project timezone display](project-timezone-display.md) — project-related dates and times inherit the project's timezone, including inventory receipts and detail history.
 - [Work-order display identity](work-order-display-identity.md) — display the customer work-order ID; fall back to the internal number only when empty, without changing relational IDs.
 - [Inventory activity histories](inventory-activity-histories.md) — one summary for related transactions, including batches; expandable, printable full history without changing the ledger.
+- [GPS capture priority](gps-capture-priority.md) — device GPS first, browser location last; target Android/iOS phones and tablets and Windows/Linux laptops.
