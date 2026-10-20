@@ -65,3 +65,4 @@
 - [Orientation verification](orientation-verification.md) — verify settled touch-landscape controls with viewport screenshots; full-page capture alone can misrepresent the responsive state.
 - [Support request context](support-request-context.md) — authenticated account/project associations and draft/attachment preservation across responsive navigation changes.
 - [Operational log cleanup](log-maintenance-scope.md) — failed imports are manual-only; protect retry/replay state; new retention categories require explicit opt-in.
+- [Field changeout priorities](field-changeout-priorities.md) — field-first completion, backend inventory reconciliation, shared Open-order claiming and interruption-safe wizard captures.
